@@ -322,4 +322,32 @@ describe('Agent composer · interactions and drafts', () => {
       )
     );
   });
+
+  // BUG-017: the composer carried two hint lines — the launcher's and an older
+  // copy in launch-controls, same chords under drifted words. Counted over the
+  // whole rendered surface, so hiding one would not satisfy it either.
+  it('states each composer chord exactly once', async () => {
+    const { container } = renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
+    );
+    const surface = container.textContent ?? '';
+    for (const chord of [
+      '⏎ start',
+      '↓ recent',
+      '⌥↑↓',
+      '⇥ adjust',
+      '⌘⌥T shell',
+      '⌘V image',
+      '⇧⏎ newline',
+    ]) {
+      expect(surface.split(chord).length - 1, chord).toBe(1);
+    }
+  });
 });

@@ -225,12 +225,18 @@ export function AgentLauncher({
         </p>
       ) : null}
 
+      {/* The composer's ONE keyboard hint (BUG-017). The surrounding
+          `launch-controls.tsx` printed a second copy of the same chords under
+          drifted words; this line is the single owner, so every key the
+          composer answers to belongs on it — including `↓ recent`, which the
+          composer implements and this component does not. */}
       <p
         aria-hidden="true"
         data-launcher-hints
         className="px-0.5 font-mono text-chrome-micro leading-none text-hud-text-dim"
       >
-        ⏎ start · ⌥↑↓ setup · ⇥ adjust · ⌘⌥T shell · ⌘V image · ⇧⏎ newline
+        ⏎ start · ↓ recent · ⌥↑↓ setup · ⇥ adjust · ⌘⌥T shell · ⌘V image · ⇧⏎
+        newline
       </p>
 
       <span className="sr-only" aria-live="polite">

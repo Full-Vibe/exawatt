@@ -2711,17 +2711,11 @@ export function AgentComposer({
           </Link>
         </div>
       </div>
-      {/* the keyboard grammar teaches itself (D21): ⌘T is a complete
-          keyboard path, so its keys are visible where they apply */}
-      <p
-        data-composer-hints
-        aria-hidden="true"
-        className="px-0.5 pt-0.5 font-mono text-chrome-micro leading-none"
-        style={{ color: HUD.textDim }}
-      >
-        ⏎ start · ↓ recent · ⌥↑↓ configuration · ⌘⌥T shell · ⌘V image · ⇧⏎
-        newline
-      </p>
+      {/* The composer's keyboard grammar is stated ONCE, by the New Agent
+          surface that owns it (`launcher/agent-launcher.tsx`). This file used
+          to print a second, older copy of the same keys — same chords, drifted
+          words ("configuration" for what the launcher calls a setup) — so the
+          highest-frequency path in the app carried two hint lines (BUG-017). */}
       {configurationMessage && (
         <p
           role="status"

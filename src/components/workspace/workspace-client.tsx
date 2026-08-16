@@ -37,7 +37,8 @@ import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
 import { Button } from '@/components/ui/button';
 import { CloseConfirm, CloseProjectConfirm } from './close-confirm';
-import { navHistory } from '@/components/nav/nav-history';
+import { navHistory, type NavLocation } from '@/components/nav/nav-history';
+import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener } from './project-opener';
 import { ExposeOverlay } from './expose-overlay';
 import { useLiveConsumptionByTab } from '@/components/consumption/use-live-consumption-by-tab';
@@ -897,6 +898,29 @@ export function WorkspaceClient() {
     });
   }, [ready, overviewOpen, activeProject, activeTab]);
 
+  // Where the operator stands, for the authority that decides which
+  // asynchronous completions are still allowed to move him (BUG-018). Read
+  // through a ref and registered ONCE, like the resolver above.
+  //
+  // At the Sessions altitude the position deliberately carries NO tab: the
+  // subject up there is the roving tile, and the tab underneath is not where
+  // he is. That is also what makes "he asked from Team and is still at Team"
+  // survive the launch selecting a tab underneath him.
+  const positionRef = useRef<NavLocation>({ surface: '/workspace', tab: null });
+  positionRef.current = {
+    surface: overviewOpen ? '/workspace?view=sessions' : '/workspace',
+    tab:
+      !overviewOpen && activeProject && activeTab
+        ? { dir: activeProject.dir, tabId: activeTab.id }
+        : null,
+  };
+  useEffect(() => {
+    operatorPosition.setSource(() => positionRef.current);
+    // An unmounted workspace owns no position, and a stale one would let a
+    // completion authorise a move into a surface that is no longer on screen.
+    return () => operatorPosition.setSource(null);
+  }, []);
+
   // ENG-025 F1: quick feedback submitted from the workspace attributes to the
   // active Project and durable Session without the provider knowing any
   // workspace state.
@@ -914,8 +938,15 @@ export function WorkspaceClient() {
     );
   }, [updateOverview]);
 
+  // Both roadmap launchers below drop the operator out of Team when they
+  // land, and both land after preferences, the source registry, and a cold
+  // provider spawn — long enough for him to have gone somewhere else. The
+  // altitude change is part of the ask, so it is allowed while the ask is
+  // still current, and dropped otherwise (BUG-018; the "changed altitude to
+  // Agent without intent" half of BUG-012's recurrence).
   const startRoadmapAgent = useCallback(
     async (dir: string, item: RoadmapItemView): Promise<boolean> => {
+      const claim = operatorPosition.claimHere();
       const [preferenceLoad, registryLoad] = await Promise.all([
         loadAgentSourcePreferences(),
         loadAgentSourceRegistry('launch'),
@@ -948,7 +979,7 @@ export function WorkspaceClient() {
         roadmapItemId: item.id,
         initialPrompt: `Execute ${label} — ${item.title}. Read the roadmap contract and linked project doc, start with the next unfinished milestone, keep canonical docs current, and complete the repository delivery loop.`,
       });
-      if (ok) closeOverview();
+      if (ok && claim.stillCurrent()) closeOverview();
       return ok;
     },
     [closeOverview, launch, setError]
@@ -956,6 +987,7 @@ export function WorkspaceClient() {
 
   const startRoadmapRemediation = useCallback(
     async (dir: string): Promise<boolean> => {
+      const claim = operatorPosition.claimHere();
       const [preferenceLoad, registryLoad] = await Promise.all([
         loadAgentSourcePreferences(),
         loadAgentSourceRegistry('launch'),
@@ -987,7 +1019,7 @@ export function WorkspaceClient() {
         initialPrompt:
           "Adapt this repository to the Exawatt roadmap convention v2. Preserve its product intent and existing evidence. Use frontmatter `exawatt-roadmap: v2`; H2 queue sections Now, Next, Later, Backlog, Shipped, and Parked; H3 items with stable `<PREFIX>-<digits>` ids; optional Status, Scope, Exit criteria, Milestones, and Project doc blocks. Backlog records use exactly `Status: kind · OWNING-ID · provenance`. Keep ambiguous choices visible in the roadmap or linked project docs, then complete this repository's delivery loop.",
       });
-      if (ok) closeOverview();
+      if (ok && claim.stillCurrent()) closeOverview();
       return ok;
     },
     [closeOverview, launch, setError]
@@ -1055,7 +1087,9 @@ export function WorkspaceClient() {
       // Each tab's turn read the way its own light reads it, then counted by
       // consequence: an interrupted turn and a discarded question are
       // different losses and the dialog names them separately.
-      const turns = project.tabs.map(tab => sessionGlyphState(turnFactsFor(tab)));
+      const turns = project.tabs.map(tab =>
+        sessionGlyphState(turnFactsFor(tab))
+      );
       setProjectCloseConfirm({
         dir,
         name: project.name,

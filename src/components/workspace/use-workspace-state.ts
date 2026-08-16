@@ -23,6 +23,7 @@ import {
   useState,
 } from 'react';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
+import { operatorPosition } from '@/components/nav/operator-position';
 import { pickDistinctColor, projectColor } from './project-colors';
 import {
   moveProjectInList,
@@ -749,7 +750,44 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     []
   );
 
-  /** append a PTY incarnation as a live or stopped tab in its Project */
+  /**
+   * The ONE door selection goes through (BUG-018).
+   *
+   * Every verb that takes the operator TO a Project or tab goes through here.
+   * Each used to carry its own copy of "make this the operator's position",
+   * which is why an asynchronous completion could be born asserting one.
+   * Operator-driven verbs call this directly; asynchronous ones must first
+   * hold a still-current claim from `operatorPosition`
+   * (see `src/components/nav/operator-position.ts`).
+   *
+   * Closing is the one thing that does NOT come through here: it repairs a
+   * position the operator himself destroyed, by following the neighbour rule.
+   *
+   * `tabId` is null for a move that only changes Project (⌘⌥N onto a Project
+   * with no tabs), which leaves that Project's own current tab alone.
+   */
+  const moveOperator = useCallback((dir: string, tabId: string | null) => {
+    setActiveDir(dir);
+    if (tabId === null) return;
+    setProjects(prev =>
+      prev.map(g => (g.dir === dir ? { ...g, activeTabId: tabId } : g))
+    );
+  }, []);
+
+  /**
+   * Append a PTY incarnation as a live or stopped tab in its Project.
+   *
+   * Deliberately does not move the operator. Appending is bookkeeping; going
+   * there is a decision, and it belongs to the caller that knows whether the
+   * intent authorising it is still current. Mount adoption appends a whole
+   * fleet at once and must move nobody: it used to assert selection once per
+   * adopted Session, so the LAST one won and a relaunch landed on an
+   * arbitrary Agent instead of the tab the layout restored.
+   *
+   * A Project still always names a current tab while it has one — filling an
+   * EMPTY slot says where the operator would land if he ever went there,
+   * which moves nobody; overwriting a filled one is a move.
+   */
   const addSession = useCallback(
     (
       s: PtySessionInfo,
@@ -781,11 +819,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         next[i] = {
           ...next[i],
           tabs: [...next[i].tabs, tab],
-          activeTabId: tab.id,
+          activeTabId: next[i].activeTabId ?? tab.id,
         };
         return next;
       });
-      setActiveDir(s.projectDir);
       return tab.id;
     },
     []
@@ -982,6 +1019,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (Object.keys(seededDelegation).length > 0) {
         setDelegation(prev => ({ ...seededDelegation, ...prev }));
       }
+      /** where the restored layout put the operator, if anywhere */
+      let restoredActiveDir: string | null = null;
       if (persisted) {
         const assigned: Array<string | undefined> = persisted.projects.map(
           g => g.color
@@ -1112,7 +1151,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           }),
         }));
         setProjects(restored);
-        setActiveDir(persisted.activeDir ?? restored[0]?.dir ?? null);
+        restoredActiveDir = persisted.activeDir ?? restored[0]?.dir ?? null;
+        setActiveDir(restoredActiveDir);
         setLastUsedDir(persisted.lastUsedDir ?? '');
         // tolerate a corrupt/hand-edited recentProjects: a bad shape here
         // must not break every later debounced save or the shutdown
@@ -1133,8 +1173,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // exited since the last save) — or the whole fresh-start case. Exited
       // entries reconstruct an honest stopped tab; dropping them here would
       // make Terminal disagree with the local Fleet/Spatial inventory.
+      //
+      // Adoption appends and moves nobody. Only a workspace with no restored
+      // position needs one, and it lands on the FIRST adopted Session rather
+      // than on whichever one happened to be enumerated last.
       for (const s of liveByDurableId.values()) {
         addSession(s, s.exited ? s.durableSessionId : undefined);
+      }
+      if (!restoredActiveDir) {
+        const [firstAdopted] = liveByDurableId.values();
+        if (firstAdopted) setActiveDir(firstAdopted.projectDir);
       }
       setReady(true);
       // reconcile durable identity (S5 P3) — async, so a slow/offline registry
@@ -1492,6 +1540,19 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
       const launchLabel = opts.harness === 'shell' ? 'shell' : 'Agent';
+      // BUG-018: everything below this line waits on a worktree checkout and a
+      // cold provider, so it may land minutes after the operator asked. State
+      // the position that authorises going to the new Session NOW, while the
+      // ask is his. ⌘T launches from the draft tab itself, so that tab is the
+      // position; every other path launches from wherever he stands.
+      const claim = opts.reuseTabId
+        ? operatorPosition.claimTab(
+            stateRef.current.projects.find(group =>
+              group.tabs.some(tab => tab.id === opts.reuseTabId)
+            )?.dir ?? dir,
+            opts.reuseTabId
+          )
+        : operatorPosition.claimHere();
       try {
         let cwd = dir;
         if (opts.worktreeBranch) {
@@ -1571,6 +1632,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         setError(null);
         setLastUsedDir(dir);
+        // Promoting the tab to live ALWAYS happens; going there happens only
+        // while the ask is still current. Conflating the two is what let a
+        // late launch yank the operator off the Agent he had moved to.
+        //
+        // Asked BEFORE the tab lands, so the answer is about where the
+        // operator stands and never about a position this launch just changed.
+        const mayMove = claim.stillCurrent();
         if (opts.reuseTabId) {
           // the draft becomes the live tab in place — same id, same spot
           const tab = tabFromPtySession(
@@ -1585,12 +1653,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 ? {
                     ...grp,
                     tabs: grp.tabs.map(t => (t.id === tabId ? tab : t)),
-                    activeTabId: tab.id,
                   }
                 : grp
             )
           );
-          setActiveDir(launchedSession.projectDir);
         } else {
           addSession(
             launchedSession,
@@ -1599,6 +1665,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             statedTask || opts.initialPrompt?.trim() || null
           );
         }
+        if (mayMove) moveOperator(launchedSession.projectDir, tabId);
         // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
         // Project in the durable, synced registry. Best-effort — a registry
         // failure (offline, not signed in) must NEVER stop the operator opening
@@ -1615,7 +1682,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
     },
-    [addSession, syncProjectIdentity]
+    [addSession, moveOperator, syncProjectIdentity]
   );
 
   /**
@@ -1741,25 +1808,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!g) return null;
       const existing = g.tabs.find(t => t.lifecycle === 'draft');
       if (existing) {
-        setProjects(prev =>
-          prev.map(grp =>
-            grp.dir === g.dir
-              ? {
-                  ...grp,
-                  activeTabId: existing.id,
-                  tabs:
-                    Object.keys(requested).length > 0
-                      ? grp.tabs.map(t =>
-                          t.id === existing.id
-                            ? applyWorkspaceDraftPatch(t, requested)
-                            : t
-                        )
-                      : grp.tabs,
-                }
-              : grp
-          )
-        );
-        setActiveDir(g.dir);
+        if (Object.keys(requested).length > 0) {
+          setProjects(prev =>
+            prev.map(grp =>
+              grp.dir === g.dir
+                ? {
+                    ...grp,
+                    tabs: grp.tabs.map(t =>
+                      t.id === existing.id
+                        ? applyWorkspaceDraftPatch(t, requested)
+                        : t
+                    ),
+                  }
+                : grp
+            )
+          );
+        }
+        moveOperator(g.dir, existing.id);
         return existing.id;
       }
       const tab: WorkspaceTab = {
@@ -1788,19 +1853,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const seededTab = applyWorkspaceDraftPatch(tab, requested);
       setProjects(prev =>
         prev.map(grp =>
-          grp.dir === g.dir
-            ? {
-                ...grp,
-                tabs: [...grp.tabs, seededTab],
-                activeTabId: seededTab.id,
-              }
-            : grp
+          grp.dir === g.dir ? { ...grp, tabs: [...grp.tabs, seededTab] } : grp
         )
       );
-      setActiveDir(g.dir);
+      moveOperator(g.dir, seededTab.id);
       return seededTab.id;
     },
-    []
+    [moveOperator]
   );
 
   /** the composer reports its work-in-progress here (D28): the draft tab
@@ -1956,6 +2015,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     async (durableSessionId: string, reuseTabId?: string): Promise<boolean> => {
       const api = window.electron?.pty;
       if (!api?.reopenSession) return false;
+      // The ledger read is a main-process round trip; ⌘⇧T must not land on
+      // whichever tab the operator moved to while it was in flight.
+      const claim = reuseTabId
+        ? operatorPosition.claimTab(
+            stateRef.current.projects.find(group =>
+              group.tabs.some(tab => tab.id === reuseTabId)
+            )?.dir ?? '',
+            reuseTabId
+          )
+        : operatorPosition.claimHere();
       const entry = await api.reopenSession(durableSessionId);
       if (!entry) return false;
       const repairsLegacyCatalogTitle =
@@ -1996,6 +2065,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           [entry.durableSessionId]: entry.goal as string,
         }));
       }
+      const mayMove = claim.stillCurrent();
       setProjects(prev => {
         const i = prev.findIndex(grp => grp.dir === entry.projectDir);
         if (i === -1) {
@@ -2024,14 +2094,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 candidate.id === reuseTabId ? tab : candidate
               )
             : [...next[i].tabs, tab],
-          activeTabId: tab.id,
+          activeTabId: next[i].activeTabId ?? tab.id,
         };
         return next;
       });
-      setActiveDir(entry.projectDir);
+      if (mayMove) moveOperator(entry.projectDir, tab.id);
       return true;
     },
-    []
+    [moveOperator]
   );
 
   const listClosedSessions = useCallback(
@@ -2221,6 +2291,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  git worktrees grouped under the same durable Project identity. */
   const openProject = useCallback(
     async (dir: string): Promise<boolean> => {
+      const claim = operatorPosition.claimHere();
       const result = await window.electron?.projects?.resolve(dir);
       if (!result) return false;
       if (!result.ok) {
@@ -2228,6 +2299,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
       const canonicalDir = result.projectDir;
+      const mayMove = claim.stillCurrent();
       setProjects(prev => {
         if (prev.some(project => project.dir === canonicalDir)) return prev;
         return [
@@ -2241,7 +2313,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           },
         ];
       });
-      setActiveDir(canonicalDir);
+      // The Project is registered either way; going to it needs the ask to
+      // still be his (the resolve is a main-process round trip).
+      if (mayMove) moveOperator(canonicalDir, null);
       setLastUsedDir(canonicalDir);
       setError(null);
       syncProjectIdentity({
@@ -2250,7 +2324,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       });
       return true;
     },
-    [syncProjectIdentity]
+    [moveOperator, syncProjectIdentity]
   );
 
   /** Curated import adds inert Projects in one state transition. Every path is
@@ -2259,6 +2333,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     async (directories: string[]): Promise<boolean> => {
       const unique = [...new Set(directories)];
       if (unique.length === 0) return false;
+      const claim = operatorPosition.claimHere();
       const resolved = await Promise.all(
         unique.map(directory => window.electron?.projects?.resolve(directory))
       );
@@ -2277,6 +2352,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           !!result && result.ok
       );
       if (refs.length === 0) return false;
+      const mayMove = claim.stillCurrent();
       setProjects(prev => {
         const next = [...prev];
         for (const ref of refs) {
@@ -2292,7 +2368,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return next;
       });
       const first = refs[0];
-      setActiveDir(first.projectDir);
+      if (mayMove) moveOperator(first.projectDir, null);
       setLastUsedDir(first.projectDir);
       setError(null);
       for (const ref of refs) {
@@ -2303,7 +2379,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       return true;
     },
-    [syncProjectIdentity]
+    [moveOperator, syncProjectIdentity]
   );
 
   /**
@@ -2342,33 +2418,36 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     return true;
   }, []);
 
-  const selectProject = useCallback((index: number): boolean => {
-    const g = stateRef.current.projects[index];
-    if (!g) return false;
-    setActiveDir(g.dir);
-    return true;
-  }, []);
+  const selectProject = useCallback(
+    (index: number): boolean => {
+      const g = stateRef.current.projects[index];
+      if (!g) return false;
+      moveOperator(g.dir, null);
+      return true;
+    },
+    [moveOperator]
+  );
 
   /** Activate a tab by live PTY, stable tab, or durable Session identity. */
-  const activateSession = useCallback((sessionRef: string): boolean => {
-    const { projects: gs } = stateRef.current;
-    for (const g of gs) {
-      const tab = g.tabs.find(
-        t =>
-          t.sessionId === sessionRef ||
-          t.id === sessionRef ||
-          t.durableSessionId === sessionRef
-      );
-      if (tab) {
-        setActiveDir(g.dir);
-        setProjects(prev =>
-          prev.map(x => (x.dir === g.dir ? { ...x, activeTabId: tab.id } : x))
+  const activateSession = useCallback(
+    (sessionRef: string): boolean => {
+      const { projects: gs } = stateRef.current;
+      for (const g of gs) {
+        const tab = g.tabs.find(
+          t =>
+            t.sessionId === sessionRef ||
+            t.id === sessionRef ||
+            t.durableSessionId === sessionRef
         );
-        return true;
+        if (tab) {
+          moveOperator(g.dir, tab.id);
+          return true;
+        }
       }
-    }
-    return false;
-  }, []);
+      return false;
+    },
+    [moveOperator]
+  );
 
   /** ⌘D: pin the active tab for a split ("watch one, drive one") — the
    *  pinned tab stays visible beside whatever becomes active; ⌘D unpins.
@@ -2395,41 +2474,36 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, []);
 
   /** back/forward tab application (D27): select only if it still exists */
-  const selectExistingTab = useCallback((dir: string, tabId: string) => {
-    const { projects: gs } = stateRef.current;
-    const g = gs.find(x => x.dir === dir);
-    if (!g || !g.tabs.some(t => t.id === tabId)) return;
-    setActiveDir(dir);
-    setProjects(prev =>
-      prev.map(x => (x.dir === dir ? { ...x, activeTabId: tabId } : x))
-    );
-  }, []);
+  const selectExistingTab = useCallback(
+    (dir: string, tabId: string) => {
+      const { projects: gs } = stateRef.current;
+      const g = gs.find(x => x.dir === dir);
+      if (!g || !g.tabs.some(t => t.id === tabId)) return;
+      moveOperator(dir, tabId);
+    },
+    [moveOperator]
+  );
 
-  const selectTab = useCallback((dir: string, tabId: string) => {
-    setActiveDir(dir);
-    setProjects(prev =>
-      prev.map(g => (g.dir === dir ? { ...g, activeTabId: tabId } : g))
-    );
-  }, []);
+  const selectTab = useCallback(
+    (dir: string, tabId: string) => moveOperator(dir, tabId),
+    [moveOperator]
+  );
 
   /** ⌘⇧[/]: rotate through every visible section in display order, crossing
    *  project boundaries (operator, 2026-07-03) — the strip is one global
    *  ring. Open zero-tab Projects are real stops (D19): landing on one
    *  activates its empty state (the Agent composer) instead of skipping it.
    *  The ring math is pure and unit-tested in tab-ring.ts (D18). */
-  const cycleTab = useCallback((delta: 1 | -1): boolean => {
-    const { projects: gs, activeDir: ad } = stateRef.current;
-    const next = nextTabInRing(gs, ad, delta);
-    if (!next) return false;
-    setActiveDir(next.dir);
-    const tab = next.tab;
-    if (tab) {
-      setProjects(prev =>
-        prev.map(x => (x.dir === next.dir ? { ...x, activeTabId: tab.id } : x))
-      );
-    }
-    return true;
-  }, []);
+  const cycleTab = useCallback(
+    (delta: 1 | -1): boolean => {
+      const { projects: gs, activeDir: ad } = stateRef.current;
+      const next = nextTabInRing(gs, ad, delta);
+      if (!next) return false;
+      moveOperator(next.dir, next.tab?.id ?? null);
+      return true;
+    },
+    [moveOperator]
+  );
 
   /** ⌘1–⌘9: jump straight to the Nth tab of the global ring (D18 — the
    *  highest-frequency switch gets the cheapest chord, browser-style). */
@@ -2504,17 +2578,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [applyProjectOrder]
   );
 
-  const selectTabByOrdinal = useCallback((index: number): boolean => {
-    const target = tabAtOrdinal(stateRef.current.projects, index);
-    if (!target) return false;
-    setActiveDir(target.dir);
-    setProjects(prev =>
-      prev.map(x =>
-        x.dir === target.dir ? { ...x, activeTabId: target.tab.id } : x
-      )
-    );
-    return true;
-  }, []);
+  const selectTabByOrdinal = useCallback(
+    (index: number): boolean => {
+      const target = tabAtOrdinal(stateRef.current.projects, index);
+      if (!target) return false;
+      moveOperator(target.dir, target.tab.id);
+      return true;
+    },
+    [moveOperator]
+  );
 
   const activeProject = projects.find(g => g.dir === activeDir) ?? null;
   /** operator naming (W0.4): titles/names persist via the layout save; the
