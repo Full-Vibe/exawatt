@@ -704,6 +704,24 @@ Built:
   succeeds, and the next run can recover any interrupted transaction. The
   running app is never restarted. See
   [`agent-delivery.md`](agent-delivery.md) and decision `0030`;
+- one owner for login-shell invocation
+  (`electron/main/pty/login-shell.ts`). Running a harness, probing a source,
+  reading a model catalog, or scanning resumes all execute the operator's own
+  shell, which means executing arbitrary user startup code. The owner holds
+  both contracts that were previously re-derived per call site: per-shell login
+  argv (tcsh rejects a combined `-l -c`; PowerShell spells it `-Login
+  -Command`), and the rule that startup files never execute inside a Project —
+  the shell starts in an app-owned scratch directory and enters the Project
+  only afterwards, so a side effect of the operator's dotfiles cannot land in
+  his repository (incident `0006`);
+- standing main-thread stall instrumentation
+  (`electron/main/main-thread-stall-trace.ts`). A beachball is a main process
+  not servicing its run loop, and it freezes every window and every IPC reply.
+  A sampled heartbeat measures its own lateness, and one wrapper at the single
+  trusted-IPC door names the work that was open, or that started and finished,
+  inside the blocked window. It records to a bounded, rotated, rate-limited
+  local JSONL that rides along in a diagnostics bundle, and it fails closed —
+  instrumentation may never become the reason the app is slow;
 - deep terminal fundamentals and opt-in native attention notifications;
   immediate measured startup feedback backed by real bootstrap milestones,
   deferred command-module loading, warm renderer prestart, and bounded renderer

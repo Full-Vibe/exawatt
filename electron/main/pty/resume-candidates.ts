@@ -10,14 +10,11 @@ import {
   RecentConversationCatalog,
   parseOpencodeSessionList,
 } from './conversation-catalog';
+import { planLoginShell, shellQuote } from './login-shell';
 
 export { parseOpencodeSessionList } from './conversation-catalog';
 
 const execFileAsync = promisify(execFile);
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
 
 export interface HarnessResumeCandidate {
   id: string;
@@ -61,20 +58,16 @@ async function listOpencodeResumeCandidates(
   const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
   let stdout = '';
   try {
-    const result = await execFileAsync(
-      shell,
-      [
-        '-l',
-        '-c',
-        `${invocation} --pure session list --format json --max-count 200`,
-      ],
-      {
-        cwd,
-        timeout: Math.max(1, Math.min(15_000, timeoutMs)),
-        maxBuffer: 2 * 1024 * 1024,
-        encoding: 'utf8',
-      }
-    );
+    const plan = planLoginShell(shell, {
+      command: `${invocation} --pure session list --format json --max-count 200`,
+      directory: cwd,
+    });
+    const result = await execFileAsync(shell, plan.args, {
+      cwd: plan.cwd,
+      timeout: Math.max(1, Math.min(15_000, timeoutMs)),
+      maxBuffer: 2 * 1024 * 1024,
+      encoding: 'utf8',
+    });
     stdout = result.stdout;
   } catch {
     throw new Error('OpenCode session catalog command failed');
@@ -133,16 +126,16 @@ export async function opencodeSessionAgent(
   const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
   let stdout = '';
   try {
-    const result = await execFileAsync(
-      shell,
-      ['-l', '-c', `${invocation} --pure export ${shellQuote(sessionId)}`],
-      {
-        cwd,
-        timeout: Math.max(1, Math.min(15_000, timeoutMs)),
-        maxBuffer: 2 * 1024 * 1024,
-        encoding: 'utf8',
-      }
-    );
+    const plan = planLoginShell(shell, {
+      command: `${invocation} --pure export ${shellQuote(sessionId)}`,
+      directory: cwd,
+    });
+    const result = await execFileAsync(shell, plan.args, {
+      cwd: plan.cwd,
+      timeout: Math.max(1, Math.min(15_000, timeoutMs)),
+      maxBuffer: 2 * 1024 * 1024,
+      encoding: 'utf8',
+    });
     stdout = result.stdout;
   } catch {
     throw new Error('OpenCode session export command failed');

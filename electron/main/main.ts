@@ -72,6 +72,18 @@ import {
   rendererAppearanceBootstrapSnapshot,
   type NativeAppearanceResolution,
 } from './appearance';
+import { AX_TILEABLE_WINDOW_SHAPE } from './window-shape';
+import { createDiagnosticsLog } from './diagnostics-log';
+import {
+  MainThreadStallTrace,
+  STALL_LOG_MAX_BYTES,
+  installMainThreadStallTrace,
+} from './main-thread-stall-trace';
+import {
+  configureLoginShellScratchDir,
+  observedShellStartupArtifacts,
+  prepareLoginShellScratchDir,
+} from './pty/login-shell';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -600,16 +612,11 @@ function createWindow(
     show: showAtCreation,
     width: 1400,
     height: 900,
-    // Keep the floor BELOW common tiling cells: AX window managers (Divvy,
-    // Rectangle, …) set frames through the Accessibility API and macOS
-    // clamps them to the window minimum — an 800×600 floor silently vetoed
-    // every half/third-screen cell on laptop displays, which read as "the
-    // window manager can't resize Exawatt" (operator, 2026-07-20). Half of
-    // a 14" MacBook Pro is ~756×460 logical; the chrome is responsive and
-    // eval-verified down to 560 wide.
-    minWidth: 560,
-    minHeight: 400,
-    titleBarStyle: 'hiddenInset',
+    // Every option an Accessibility-API window manager (Divvy, Rectangle, …)
+    // depends on, as one named contract with a test behind it. Do not inline a
+    // replacement here; amend `window-shape.ts` so the reason travels with the
+    // value (BUG-002, incidents `0001`).
+    ...AX_TILEABLE_WINDOW_SHAPE,
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: appearance.bootstrap.background,
     webPreferences: {
@@ -1588,7 +1595,62 @@ async function bootstrapCommandSurface(): Promise<void> {
   if (!isDev) pruneRendererCache();
 }
 
+/**
+ * Main-process diagnostics: `logs/main.jsonl`, bounded and rotated, alongside
+ * `updater.jsonl` / `auth.jsonl` / `summarizer.jsonl`. A recorder that cannot
+ * open its file degrades to a no-op — instrumentation must never keep the app
+ * from booting.
+ */
+function createMainDiagnostics(): (
+  event: string,
+  fields?: Record<string, unknown>
+) => void {
+  try {
+    return createDiagnosticsLog(
+      path.join(app.getPath('userData'), 'logs', 'main.jsonl'),
+      STALL_LOG_MAX_BYTES
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * The operator's shell startup runs in an Exawatt-owned scratch directory, not
+ * in his Projects (incident `0006`). Because Exawatt owns that directory it can
+ * also SEE what the startup writes, which is the finding the incident wanted:
+ * the files are named in the diagnostics log instead of being discovered as
+ * mystery junk in a repository. One observation per run, well after launch.
+ */
+function watchShellStartupArtifacts(
+  record: (event: string, fields?: Record<string, unknown>) => void
+): void {
+  configureLoginShellScratchDir(
+    path.join(app.getPath('userData'), 'shell-startup')
+  );
+  void prepareLoginShellScratchDir()
+    .then(() => {
+      const timer = setTimeout(() => {
+        void observedShellStartupArtifacts()
+          .then(names => {
+            if (names.length === 0) return;
+            record('shell.startup.writes-files', { names });
+          })
+          .catch(() => {});
+      }, 90_000);
+      timer.unref?.();
+    })
+    .catch(() => {});
+}
+
 app.whenReady().then(() => {
+  const mainDiagnostics = createMainDiagnostics();
+  // Standing main-thread instrumentation: the next beachball records itself.
+  // Started before the window so a stall during startup is captured too.
+  installMainThreadStallTrace(
+    new MainThreadStallTrace({ record: mainDiagnostics })
+  );
+  watchShellStartupArtifacts(mainDiagnostics);
   // Warm server startup is already in flight. On a version cache miss, give
   // the native launch frame priority over archive extraction.
   let commandSurface = rendererWasWarmAtLaunch

@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import { defaultShell } from './session-manager';
 import type { PtySessionManager } from './session-manager';
+import { planLoginShell } from './login-shell';
 import {
   recordHostedCallHttpFailure,
   recordHostedCallTransportFailure,
@@ -1046,8 +1047,10 @@ export class ContextSummarizer extends EventEmitter {
     maxChars: number
   ): Promise<string | null> {
     const shell = await defaultShell();
+    const plan = planLoginShell(shell, { command: this.recapCommand });
     return new Promise((resolve, reject) => {
-      const proc = spawn(shell, ['-l', '-c', this.recapCommand], {
+      const proc = spawn(shell, plan.args, {
+        cwd: plan.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true,
       });

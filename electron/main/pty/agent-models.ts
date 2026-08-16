@@ -7,6 +7,7 @@ import {
   AgentModelCatalogCache,
   catalogCacheKey,
 } from './agent-model-catalog-cache';
+import { planLoginShell, shellQuote } from './login-shell';
 
 /**
  * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
@@ -28,8 +29,12 @@ async function execWithDeadline(
   command: string,
   options: { cwd: string; timeout: number; maxBuffer: number }
 ): Promise<{ stdout: string; timedOut: boolean }> {
-  const child = spawn(shell, ['-l', '-c', command], {
-    cwd: options.cwd,
+  const plan = planLoginShell(shell, {
+    command,
+    directory: options.cwd,
+  });
+  const child = spawn(shell, plan.args, {
+    cwd: plan.cwd,
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -92,10 +97,6 @@ const MODEL_ENV_KEYS = [
   'OPENCODE_CONFIG_DIR',
   'OPENCODE_CONFIG_CONTENT',
 ] as const;
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
 
 export interface AgentEffortOption {
   id: string;

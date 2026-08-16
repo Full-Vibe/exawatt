@@ -91,7 +91,15 @@ export interface DiagnosticsReportInput {
   readLog?: (filePath: string) => string | null;
 }
 
-const LOG_NAMES = ['updater.jsonl', 'auth.jsonl', 'summarizer.jsonl'];
+const LOG_NAMES = [
+  'updater.jsonl',
+  'auth.jsonl',
+  'summarizer.jsonl',
+  // Main-thread stall records and shell-startup findings (incident `0006`).
+  // Riding along here is the whole operator workflow for a beachball: file a
+  // report, the trace is already attached.
+  'main.jsonl',
+];
 
 function defaultReadLog(filePath: string): string | null {
   try {

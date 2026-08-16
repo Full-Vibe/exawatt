@@ -16,12 +16,9 @@ import {
   decodeGrokCwdDirname,
   encodeGrokCwdDirname,
 } from '@exawatt/core';
+import { planLoginShell, shellQuote } from './login-shell';
 
 const execFileAsync = promisify(execFile);
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
 
 export type ConversationHarness = Exclude<PtyHarness, 'shell'>;
 
@@ -947,20 +944,16 @@ export class OpenCodeConversationAdapter implements ConversationCatalogAdapter {
         ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, 'opencode')
         : null;
     const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
-    const result = await execFileAsync(
-      shell,
-      [
-        '-l',
-        '-c',
-        `${invocation} --pure session list --format json --max-count 200`,
-      ],
-      {
-        cwd: projectDir,
-        timeout: 15_000,
-        maxBuffer: 2 * 1024 * 1024,
-        encoding: 'utf8',
-      }
-    );
+    const plan = planLoginShell(shell, {
+      command: `${invocation} --pure session list --format json --max-count 200`,
+      directory: projectDir,
+    });
+    const result = await execFileAsync(shell, plan.args, {
+      cwd: plan.cwd,
+      timeout: 15_000,
+      maxBuffer: 2 * 1024 * 1024,
+      encoding: 'utf8',
+    });
     const parsed = JSON.parse(result.stdout) as unknown;
     if (!Array.isArray(parsed)) {
       throw new Error('OpenCode session catalog returned invalid JSON');
@@ -1163,7 +1156,9 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
     return out;
   }
 
-  private async readSummaries(directory: string): Promise<GrokSessionSummary[]> {
+  private async readSummaries(
+    directory: string
+  ): Promise<GrokSessionSummary[]> {
     let entries: string[];
     try {
       entries = await fs.promises.readdir(directory);
@@ -1196,9 +1191,7 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
 }
 
 /** `GROK_HOME` is the harness's own override; Exawatt reads it, never sets it. */
-export function grokSessionsRoot(
-  env: NodeJS.ProcessEnv = process.env
-): string {
+export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
   if (env.EXAWATT_GROK_SESSIONS_ROOT) return env.EXAWATT_GROK_SESSIONS_ROOT;
   if (env.GROK_HOME) return path.join(env.GROK_HOME, 'sessions');
   return path.join(os.homedir(), '.grok', 'sessions');

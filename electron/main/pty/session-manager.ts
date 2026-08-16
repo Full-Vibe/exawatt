@@ -26,6 +26,7 @@ import {
   type ResumeIdentityHint,
 } from './resume-candidates';
 import { ownerOfCodexCandidate } from './codex-identity-match';
+import { planLoginShell } from './login-shell';
 import { OrderedWriteBuffer } from './ordered-write-buffer';
 import {
   type AgentHarness,
@@ -384,13 +385,15 @@ export class PtySessionManager extends EventEmitter {
     };
     let proc: pty.IPty;
     try {
-      const args =
-        options.harness === 'shell'
-          ? ['-l']
-          : [
-              '-l',
-              '-c',
-              buildHarnessCommand(
+      // `login-shell.ts` owns both halves of this: the per-shell login argv,
+      // and the rule that startup files never execute inside the Project (the
+      // structural cause of incident `0006`). The Project is entered after
+      // startup — as a `cd` prefix here, as fish's `-C` for a plain shell.
+      const plan = planLoginShell(shell, {
+        command:
+          options.harness === 'shell'
+            ? null
+            : buildHarnessCommand(
                 options.harness,
                 harnessSessionId,
                 !!options.resumeSessionId,
@@ -401,13 +404,14 @@ export class PtySessionManager extends EventEmitter {
                 options.effort,
                 wiring
               ),
-            ];
+        directory: cwd,
+      });
 
-      proc = pty.spawn(shell, args, {
+      proc = pty.spawn(shell, plan.args, {
         name: 'xterm-256color',
         cols,
         rows,
-        cwd,
+        cwd: plan.cwd,
         env: {
           ...process.env,
           // programs in the session must see the RESOLVED shell, not whatever

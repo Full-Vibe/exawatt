@@ -15,6 +15,7 @@ import {
   inspectOpencodeLaunchEnvironment,
   sourceOwnedActionCommand,
 } from './agent-source-registry';
+import { configureLoginShellScratchDir } from './login-shell';
 import type { AgentSourceRegistrySnapshot } from '@exawatt/core';
 
 describe('Agent Source registry truth', () => {
@@ -216,26 +217,47 @@ describe('Agent Source registry truth', () => {
     ).resolves.toBe('occupied');
   });
 
-  it('runs the OpenCode config seam probe from the requested workspace', async () => {
+  it('runs the OpenCode config seam probe in the workspace, but its shell startup outside it', async () => {
+    // Incident `0006`: a shell runs its startup files in the directory it was
+    // SPAWNED in. The probe still has to observe the workspace's environment —
+    // that is the whole point of the seam predicate — but the operator's
+    // startup code must not execute inside his repository, because anything it
+    // writes lands there.
     const fixtureRoot = fs.mkdtempSync(
       path.join(os.tmpdir(), 'exawatt-opencode-preflight-')
     );
     const workspace = path.join(fixtureRoot, 'workspace');
-    const shell = path.join(fixtureRoot, 'assert-cwd.sh');
+    const scratch = path.join(fixtureRoot, 'scratch');
+    const shell = path.join(fixtureRoot, 'dirty-shell.sh');
+    const checkCwd = path.join(fixtureRoot, 'check-cwd.sh');
     fs.mkdirSync(workspace);
     fs.writeFileSync(
+      checkCwd,
+      '#!/bin/sh\n[ "$(pwd -P)" = "$EXAWATT_TEST_OPENCODE_CWD" ] || exit 91\n',
+      { mode: 0o755 }
+    );
+    // `: > ./-l` stands in for the malformed OpenClaw fish completion, which
+    // redirects to `./-l` while the shell is reading its configuration.
+    fs.writeFileSync(
       shell,
-      '#!/bin/sh\n[ "$(pwd -P)" = "$EXAWATT_TEST_OPENCODE_CWD" ] || exit 91\nexec /bin/sh "$@"\n',
+      `#!/bin/sh\n: > ./-l\nexec /bin/sh -c "$3\n${checkCwd}"\n`,
       { mode: 0o755 }
     );
     process.env.EXAWATT_TEST_OPENCODE_CWD = fs.realpathSync(workspace);
     delete process.env.OPENCODE_CONFIG_CONTENT;
+    configureLoginShellScratchDir(scratch);
 
     try {
+      // 'free' only comes back if the predicate ran AND the cwd check passed.
       await expect(
         inspectOpencodeLaunchEnvironment(shell, workspace)
       ).resolves.toBe('free');
+      expect(fs.readdirSync(workspace)).toEqual([]);
+      expect(fs.readdirSync(scratch)).toEqual(['-l']);
     } finally {
+      configureLoginShellScratchDir(
+        path.join(os.tmpdir(), 'exawatt-shell-startup')
+      );
       fs.rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });

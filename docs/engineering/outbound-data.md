@@ -269,8 +269,8 @@ sent before it is sent. Any other feedback kind never offers it.
   and Node versions, locale
 - the current `ProductUpdateStatus`
 - `signedIn` (a renderer self-report) and a count of live Sessions
-- the last 40 lines each of `updater.jsonl`, `auth.jsonl`, and
-  `summarizer.jsonl` from `userData/logs`
+- the last 40 lines each of `updater.jsonl`, `auth.jsonl`,
+  `summarizer.jsonl`, and `main.jsonl` from `userData/logs`
 
 **Not in it, by construction:** agent transcripts, prompts, Session output,
 Project names, paths inside a Project, file contents, environment variables,
@@ -286,7 +286,14 @@ prompt, or the Project the Session belongs to. Reviewers checking this claim
 should read values, not key names: an earlier version of the exclusion test
 asserted on key names the logs do not use and could never have failed.
 
-Home directories are rewritten to `~`. The three logs are
+`main.jsonl` carries main-process facts and no content: a stall's duration in
+milliseconds, IPC **channel names** (`pty:create`, `pty:list`, …) with their
+durations, an open-work count, and resident memory in megabytes. Its other
+writer names files the operator's own shell startup created in Exawatt's
+scratch directory (incident `0006`), which are file NAMES in a directory
+Exawatt owns, never anything from a Project.
+
+Home directories are rewritten to `~`. All four logs are
 redacted at write time by `electron/main/diagnostics-redaction.ts` (bearer
 tokens, JWTs, `access_token`/`refresh_token`/`code` forms, and long opaque
 values), which is the same pass `auth.jsonl` has always used.

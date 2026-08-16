@@ -15,6 +15,7 @@ import type {
   AgentSourceState,
 } from '@exawatt/core';
 import { harnessDescriptor } from './harness-registry';
+import { planLoginShell, shellQuote } from './login-shell';
 import {
   parseGrokAuthBanner,
   parseGrokModelCatalog,
@@ -31,10 +32,6 @@ interface CommandResult {
   ok: boolean;
   stdout: string;
   stderr: string;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 function provenance(
@@ -64,11 +61,12 @@ async function loginShellCommand(
   shell: string,
   command: string,
   timeout = 3_000,
-  cwd = os.homedir()
+  directory: string | null = null
 ): Promise<CommandResult> {
+  const plan = planLoginShell(shell, { command, directory });
   try {
-    const result = await execFileAsync(shell, ['-l', '-c', command], {
-      cwd,
+    const result = await execFileAsync(shell, plan.args, {
+      cwd: plan.cwd,
       timeout,
       maxBuffer: 256 * 1024,
       encoding: 'utf8',
@@ -103,13 +101,13 @@ const OPENCODE_LAUNCH_ENVIRONMENT_SCRIPT =
  */
 export async function inspectOpencodeLaunchEnvironment(
   shell: string,
-  cwd: string
+  directory: string
 ): Promise<OpencodeLaunchEnvironmentState> {
   const result = await loginShellCommand(
     shell,
     `sh -c ${shellQuote(OPENCODE_LAUNCH_ENVIRONMENT_SCRIPT)}`,
     8_000,
-    cwd
+    directory
   );
   if (!result.ok) return 'unknown';
   return result.stdout === 'free'
