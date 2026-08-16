@@ -118,6 +118,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
           name: 'agent-land-fixture',
           private: true,
           scripts: {
+            'open-source:paths:check': 'node -e "process.exit(0)"',
             'content:scan': 'node -e "process.exit(0)"',
             'type-check': 'node -e "process.exit(0)"',
             'test:agent-delivery': 'node -e "process.exit(0)"',
@@ -204,6 +205,7 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
         name: 'agent-land-fifo-fixture',
         private: true,
         scripts: {
+          'open-source:paths:check': 'node -e "process.exit(0)"',
           'content:scan': 'node -e "process.exit(0)"',
           'type-check': 'node -e "process.exit(0)"',
           'test:agent-delivery': 'node -e "process.exit(0)"',

@@ -9,6 +9,7 @@ import {
   findTextFindings,
   scanChangedFiles,
 } from './public-content-scan.mjs';
+import { createPathClassifier } from './lib/open-source-paths.mjs';
 
 function pngChunk(type, data = Buffer.alloc(0)) {
   const header = Buffer.alloc(8);
@@ -115,6 +116,7 @@ test('changed-file scan checks positive and negative fixtures and skips deletes'
     'clean.md',
   ]);
   assert.equal(result.checkedFiles, 3);
+  assert.equal(result.skippedFiles, 0);
   assert.deepEqual(
     result.findings.map(entry => [entry.file, entry.rule]),
     [
@@ -122,6 +124,113 @@ test('changed-file scan checks positive and negative fixtures and skips deletes'
       ['linked-project', 'operator-home-path'],
     ]
   );
+});
+
+test('path classification skips private files but scans PUBLIC and GENERATED files', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-content-policy-'));
+  t.after(() =>
+    import('node:fs/promises').then(fs => fs.rm(root, { recursive: true }))
+  );
+  const unapprovedEmail = ['person', 'company.dev'].join('@');
+  await writeFile(path.join(root, 'private.md'), unapprovedEmail);
+  await writeFile(path.join(root, 'public.md'), unapprovedEmail);
+  await writeFile(path.join(root, 'generated.md'), unapprovedEmail);
+
+  const classifyPath = createPathClassifier({
+    schemaVersion: 1,
+    rules: [
+      {
+        id: 'public',
+        classification: 'PUBLIC',
+        include: ['public.md'],
+        exclude: [],
+      },
+      {
+        id: 'private',
+        classification: 'PRIVATE',
+        include: ['private.md'],
+        exclude: [],
+      },
+    ],
+    exceptions: [
+      {
+        path: 'generated.md',
+        classification: 'GENERATED',
+        recipe: 'generated',
+        reason: 'public output',
+      },
+    ],
+    recipes: {
+      generated: {
+        kind: 'fixture',
+        inputs: ['generated.md'],
+        outputs: [{ path: 'generated.md', mode: '100644' }],
+      },
+    },
+  });
+
+  const privateOnly = await scanChangedFiles(root, ['private.md'], {
+    classifyPath,
+  });
+  assert.deepEqual(privateOnly, {
+    checkedFiles: 0,
+    skippedFiles: 1,
+    findings: [],
+  });
+
+  const publicBound = await scanChangedFiles(
+    root,
+    ['private.md', 'public.md', 'generated.md'],
+    { classifyPath }
+  );
+  assert.equal(publicBound.checkedFiles, 2);
+  assert.equal(publicBound.skippedFiles, 1);
+  assert.deepEqual(
+    publicBound.findings.map(entry => [entry.file, entry.rule]),
+    [
+      ['generated.md', 'unapproved-email'],
+      ['public.md', 'unapproved-email'],
+    ]
+  );
+});
+
+test('verified third-party metadata skips only email shape checks', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-notice-policy-'));
+  t.after(() =>
+    import('node:fs/promises').then(fs => fs.rm(root, { recursive: true }))
+  );
+  const thirdPartyEmail = ['maintainer', 'upstream.dev'].join('@');
+  const privateTerm = ['private', 'project'].join(' ');
+  const homePath = ['/Users', 'specific-name', 'checkout'].join('/');
+  await writeFile(
+    path.join(root, 'NOTICE'),
+    [thirdPartyEmail, privateTerm, homePath].join('\n')
+  );
+  const vocabulary = path.join(root, '.private-vocabulary');
+  await writeFile(vocabulary, privateTerm);
+
+  const classifyPath = createPathClassifier({
+    schemaVersion: 1,
+    rules: [],
+    exceptions: [
+      {
+        path: 'NOTICE',
+        classification: 'PUBLIC',
+        reason: 'verified third-party notice',
+        contentPolicy: { allowThirdPartyEmailMetadata: true },
+      },
+    ],
+    recipes: {},
+  });
+  const result = await scanChangedFiles(root, ['NOTICE'], {
+    classifyPath,
+    forbiddenVocabularyPath: vocabulary,
+  });
+  assert.deepEqual(
+    result.findings.map(entry => entry.rule),
+    ['operator-home-path', 'private-forbidden-vocabulary']
+  );
+  assert.doesNotMatch(JSON.stringify(result.findings), /maintainer/i);
 });
 
 test('private vocabulary is optional, private, and redacted from findings', async t => {
