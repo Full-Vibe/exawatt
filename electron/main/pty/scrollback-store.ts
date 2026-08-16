@@ -1,45 +1,44 @@
+import { TranscriptWindow } from './transcript-window';
+
 export interface ScrollbackDelta {
   text: string;
   /** The requested cursor fell before retained scrollback. */
   truncated: boolean;
 }
 
-interface ScrollbackEntry {
-  text: string;
-  /** Absolute character offsets survive trimming from the retained head. */
-  start: number;
-  end: number;
-}
-
 /**
  * Bounded replay buffers with absolute cursors. Terminal panes consume the
  * retained text; context paging consumes only text appended after a visit.
+ *
+ * The buffer itself is a `TranscriptWindow` (ENG-016 BUG-024): appending used
+ * to rebuild the whole 4 MB window roughly once per output LINE once a Session
+ * reached the cap, which is a sustained stream of multi-megabyte allocations on
+ * the Electron main process.
  */
 export class ScrollbackStore {
-  private readonly entries = new Map<string, ScrollbackEntry>();
+  private readonly entries = new Map<string, TranscriptWindow>();
 
   constructor(private readonly limit = 4_000_000) {}
 
+  /** The live window, so persistence can read deltas instead of full copies. */
+  window(id: string): TranscriptWindow | undefined {
+    return this.entries.get(id);
+  }
+
+  private ensure(id: string): TranscriptWindow {
+    const existing = this.entries.get(id);
+    if (existing) return existing;
+    const created = new TranscriptWindow(this.limit);
+    this.entries.set(id, created);
+    return created;
+  }
+
   seed(id: string, text: string, cursor = text.length): void {
-    const retained = text.length > this.limit ? text.slice(-this.limit) : text;
-    const end = Math.max(cursor, retained.length);
-    this.entries.set(id, {
-      text: retained,
-      start: end - retained.length,
-      end,
-    });
+    this.ensure(id).seed(text, cursor);
   }
 
   append(id: string, data: string): void {
-    const previous = this.entries.get(id) ?? { text: '', start: 0, end: 0 };
-    const end = previous.end + data.length;
-    let text = previous.text + data;
-    if (text.length > this.limit) {
-      text = text.slice(-this.limit);
-      const newline = text.indexOf('\n');
-      if (newline !== -1 && newline < 4096) text = text.slice(newline + 1);
-    }
-    this.entries.set(id, { text, start: end - text.length, end });
+    this.ensure(id).append(data);
   }
 
   delete(id: string): void {
@@ -47,20 +46,21 @@ export class ScrollbackStore {
   }
 
   text(id: string): string {
-    return this.entries.get(id)?.text ?? '';
+    return this.entries.get(id)?.text() ?? '';
+  }
+
+  /** Retained size without materialising the transcript. */
+  length(id: string): number {
+    return this.entries.get(id)?.length ?? 0;
   }
 
   cursor(id: string): number {
-    return this.entries.get(id)?.end ?? 0;
+    return this.entries.get(id)?.cursor ?? 0;
   }
 
   since(id: string, cursor: number): ScrollbackDelta {
-    const entry = this.entries.get(id);
-    if (!entry || cursor >= entry.end) return { text: '', truncated: false };
-    const truncated = cursor < entry.start;
-    return {
-      text: entry.text.slice(Math.max(0, cursor - entry.start)),
-      truncated,
-    };
+    return (
+      this.entries.get(id)?.since(cursor) ?? { text: '', truncated: false }
+    );
   }
 }

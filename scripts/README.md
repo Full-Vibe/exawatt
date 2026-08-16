@@ -75,6 +75,7 @@ such without first revalidating their fixture and owner:
 - `registry-e2e-eval.mjs`
 - `roadmap-rail-eval.mjs`
 - `terminal-cost-probe.mjs`
+- `transcript-replay-probe.mjs`
 
 ## Adding or changing a script
 

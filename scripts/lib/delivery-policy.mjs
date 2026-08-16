@@ -62,7 +62,7 @@ export const SURFACE_GATES = [
     why: 'a paused Agent must state how it ended and must not read its transcript to render',
     match: file =>
       /^src\/components\/workspace\/paused-agent-record\.tsx?$/.test(file) ||
-      /^electron\/main\/pty\/(?:transcript-lines|session-history-store)\.ts$/.test(
+      /^electron\/main\/pty\/(?:transcript-lines|transcript-window|scrollback-store|session-history-store)\.ts$/.test(
         file
       ),
   },

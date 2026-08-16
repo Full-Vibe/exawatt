@@ -158,6 +158,7 @@
         "scripts/r3f-eval/**",
         "scripts/sign-renderer-archive.cjs",
         "scripts/terminal-cost-probe.mjs",
+        "scripts/transcript-replay-probe.mjs",
         "scripts/worktree-setup.mjs"
       ],
       "exclude": []
