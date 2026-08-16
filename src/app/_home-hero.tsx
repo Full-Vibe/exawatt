@@ -2,8 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { CommandKeySwitchButton } from '@/components/hud/webgl/keyswitch-study';
+import {
+  BandContent,
+  BandCopy,
+  BandHeading,
+} from '@/components/site/bands/band-section';
+import { bandById } from '@/components/site/bands/manifest';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { HeroBg } from './_hero-bg';
+
+// The fold band owns this surface's height, width and heading role
+// (ENG-031 W1); the hero owns what is inside it.
+const FOLD = bandById('fold');
 
 const COMMAND_KEY_DELAY_MS = 1_000;
 const COMMAND_KEY_FADE_DURATION_MS = 2_000;
@@ -42,7 +52,7 @@ export function HomeHero() {
 
   return (
     <div
-      className="relative -mt-12 flex min-h-screen items-center justify-center bg-black pt-12"
+      className="relative flex flex-1 items-center justify-center bg-black pt-12"
       data-background-ready={backgroundReady ? 'true' : 'false'}
       data-home-hero
       data-public-exhibition-surface="true"
@@ -52,22 +62,18 @@ export function HomeHero() {
         reducedMotion={reducedMotion}
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
-      <main
-        className="home-hero-content relative z-10 flex flex-col items-center gap-8 px-4 text-center"
-        data-home-hero-content
-      >
-        <h1
-          className="home-hero-title text-4xl font-bold tracking-tight text-white drop-shadow-lg sm:text-6xl"
+      <BandContent className="home-hero-content" data-home-hero-content>
+        <BandHeading
+          band={FOLD}
+          className="home-hero-title text-white drop-shadow-lg"
           data-home-hero-title
-        >
-          Exawatt
-        </h1>
-        <p className="home-hero-copy w-full max-w-3xl text-xs leading-relaxed text-white/80 drop-shadow-md sm:text-lg">
+        />
+        <BandCopy className="home-hero-copy text-xs leading-relaxed text-white/80 drop-shadow-md sm:text-lg">
           <span className="block">The economy is refactoring.</span>
           <span className="block">
             Exawatt is the command interface for billions of agents.
           </span>
-        </p>
+        </BandCopy>
         <div
           aria-hidden={!keyInteractive}
           data-home-command-key-reveal
@@ -89,7 +95,7 @@ export function HomeHero() {
             interactive={keyInteractive}
           />
         </div>
-      </main>
+      </BandContent>
     </div>
   );
 }

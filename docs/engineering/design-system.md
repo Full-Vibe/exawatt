@@ -48,6 +48,7 @@ The core of the scale is the **D39 chrome type roles**, already tokens in `globa
 | surface-title | 20        | `text-surface-title`              | a surface's h1 (settings, labs)                                                                                                                        |
 | display       | 22        | `text-display`                    | hero numbers and top-level headings on dense surfaces                                                                                                  |
 | marketing     | 24+       | `text-2xl` … `text-4xl`           | marketing/site pages only, never app chrome                                                                                                            |
+| site-closing  | 72        | `text-7xl` (`text-5xl` under `sm`) | the homepage closing band ONLY (ENG-031); the largest type on the page, one per page, never app chrome                                                  |
 
 Weights: `font-medium` for labels/controls, `font-semibold` for titles/headings (164/163 uses — the two workhorses); `font-bold` is rare and stays rare. Uppercase is legal **only** on mono micro-labels ≤ 11px with wide tracking (`tracking-[0.1em]`–`[0.18em]`) — the established HUD label idiom; never on sentences or headings.
 
@@ -317,6 +318,28 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-08-16 — ENG-031 W1 homepage band system
+  (`src/components/site/bands/`). **The marketing register gains one rung
+  above `text-4xl`: `site-closing` at 72px.** The 16-site measurement that
+  shapes the site overhaul is unambiguous that loudness is spent at the END of
+  a page, never the beginning: section headings stay small, and the closing CTA
+  runs 3x to 7x the section-heading size at 10 words or fewer. Our section
+  heading on a band is the existing 18px `section` rung, so the closing band
+  needs 54px to 126px and no existing rung reaches it; `text-4xl` is 2x and
+  lands inside the "premium feeling, no downloads" failure the study measured.
+  72px is 4x, mid-window, and `text-5xl` under `sm` keeps it on one line on a
+  phone. It is scoped by construction: `BandHeadingRole` allows exactly one
+  `closing` band per page and a unit test enforces it, so this cannot become a
+  general marketing size. No new colour, spacing, or motion rung, and the app
+  register is untouched. The rung is DECLARED by W1 and first RENDERED by W3,
+  which owns the closing copy and therefore owes the browser-pixel evidence;
+  W1 shipped with before/after geometry proving the existing fold renders
+  identically (every rect and computed font equal at 1440x900, 844x390 and
+  390x844; desktop and portrait screenshots byte-identical). One lesson worth
+  carrying: a shared component must not default a `leading-*` utility, because
+  tailwind-merge treats a caller's `text-*` as conflicting with it and drops
+  the base leading silently. Size and leading travel together.
 
 - 2026-08-14 — ENG-008 E12 usage-multiplexer design options
   (`/hud-gallery/usage-directions`, gallery-only, awaiting the operator's
