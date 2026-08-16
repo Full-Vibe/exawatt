@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Full-Vibe/exawatt/blob/master/contracts/release-provenance-v1.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Exawatt Release Provenance v1",
+  "description": "The source-composition identity embedded in an Exawatt community or official desktop release.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profile",
+    "version",
+    "publicSha",
+    "overlaySha",
+    "distributionSha256",
+    "compositionSha256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "enum": ["community", "official-desktop"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic application version without a v prefix.",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\\+([0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*))?$"
+    },
+    "publicSha": {
+      "type": "string",
+      "description": "Exact commit in the public application repository.",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "overlaySha": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "distributionSha256": {
+      "type": "string",
+      "description": "SHA-256 of the exact resolved distribution configuration bytes.",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "compositionSha256": {
+      "type": "string",
+      "description": "SHA-256 of UTF-8 JSON containing distributionSha256, overlaySha, profile, publicSha, schemaVersion, and version in that lexicographic key order. The JSON has no whitespace, byte-order mark, prefix, or trailing newline; compositionSha256 is excluded.",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "community"
+          }
+        },
+        "required": ["profile"]
+      },
+      "then": {
+        "properties": {
+          "overlaySha": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "overlaySha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        }
+      }
+    }
+  ]
+}
