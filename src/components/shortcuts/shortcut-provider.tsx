@@ -29,7 +29,17 @@ import type {
   Shortcut,
 } from '@/types/shortcuts';
 import { isChord } from '@/types/shortcuts';
-import { bindingToAccelerator } from '@/lib/shortcuts/accelerator';
+import {
+  bindingToAccelerator,
+  commandVerbForMenuCommand,
+  menuCommandShortcutIds,
+  menuCommandVerbs,
+  FIXED_SESSION_MENU_COMMAND_IDS,
+  agentSourceMenuCommandId,
+  type WorkspaceContextCommand,
+} from '@exawatt/core';
+import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
+import type { AgentSourceId } from '@/components/workspace/agent-sources';
 import {
   APP_SURFACES,
   surfaceForShortcut,
@@ -44,6 +54,9 @@ import {
   CLOSE_ACTIVE_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
+  OPEN_ROADMAP_EVENT,
+  RESUME_ACTIVE_AGENT_EVENT,
+  RESUME_PARKED_SCOPE_EVENT,
   requestProjectPicker,
   requestAgentComposer,
   requestReopenLastClosed,
@@ -62,38 +75,33 @@ import { useWorkspaceCommandAvailability } from '@/components/workspace/workspac
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 
 /** application-menu command → the registry id whose binding it displays
- *  (D10): rebinding a verb updates the menu's accelerator column */
-const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
-  'command-palette': 'command-palette',
-  'go-terminal': 'command-terminal',
-  'go-sessions': 'command-sessions',
-  'go-spatial': 'command-spatial',
-  'history-back': 'history-back',
-  'history-forward': 'history-forward',
-  'open-project': 'workspace-new-project',
-  'new-agent': 'workspace-new-agent',
-  'launch-shell': 'workspace-new-shell',
-  'reopen-closed-tab': 'workspace-reopen-closed-tab',
-  'rename-tab': 'workspace-rename',
-  'toggle-split': 'workspace-split',
-  'close-tab': 'workspace-close-tab',
-  'jump-attention': 'workspace-jump-attention',
-};
+ *  (D10): rebinding a verb updates the menu's accelerator column. Derived
+ *  from the command-verb manifest, which is the same source the native
+ *  template builds from. */
+const MENU_COMMAND_SHORTCUTS: Record<string, string> = menuCommandShortcutIds();
 
-const WORKSPACE_MENU_AVAILABILITY_COMMANDS = [
-  'launch-shell',
-  'reopen-closed-tab',
-  'rename-tab',
-  'toggle-split',
-  'move-tab-left',
-  'move-tab-right',
-  'move-project-left',
-  'move-project-right',
-  'close-tab',
-  'jump-attention',
-] as const;
+/** Agent Sources the Session menu can start directly (same contract file the
+ *  Electron template reads). */
+const AGENT_LAUNCH_MENU_SOURCES = new Map<string, AgentSourceId>(
+  AGENT_SOURCE_DECLARATIONS.filter(
+    declaration =>
+      declaration.harness !== null && declaration.capabilities.interactiveLaunch
+  ).map(declaration => [
+    agentSourceMenuCommandId(declaration.adapterId),
+    declaration.adapterId as AgentSourceId,
+  ])
+);
 
-/** Contract join for fixed families that declare native-menu coverage. */
+/** Menu commands whose enablement follows renderer-published workspace truth:
+ *  the manifest's verbs that name an availability, plus the fixed families. */
+const WORKSPACE_MENU_AVAILABILITY_COMMANDS: readonly string[] = [
+  ...menuCommandVerbs()
+    .filter(verb => verb.availability !== undefined)
+    .map(verb => verb.menu.commandId),
+  ...FIXED_SESSION_MENU_COMMAND_IDS,
+];
+
+/** Contract join for manifests that declare native-menu coverage. */
 export const WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS: ReadonlySet<string> =
   new Set(WORKSPACE_MENU_AVAILABILITY_COMMANDS);
 
@@ -112,14 +120,10 @@ export const WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS: ReadonlySet<string> =
  * the snapshot on unmount, so availability itself is their tenant gate.
  */
 export const LIVE_WORKSPACE_MENU_COMMANDS: ReadonlySet<string> = new Set([
-  'new-agent',
-  'launch-claude',
-  'launch-codex',
-  'launch-opencode',
-  'launch-grok',
-  'open-project',
-  'launch-shell',
-  'reopen-closed-tab',
+  ...menuCommandVerbs()
+    .filter(verb => verb.tenantScope === 'personal-workspace')
+    .map(verb => verb.menu.commandId),
+  ...AGENT_LAUNCH_MENU_SOURCES.keys(),
 ]);
 
 interface ShortcutContextValue {
@@ -250,6 +254,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           case 'command-palette':
             setCommandPaletteOpen(true);
             break;
+          // ⌘, is registered natively in the packaged app, so the main
+          // process usually gets there first; this keeps the verb live in the
+          // browser, where there is no menu bar to catch it.
+          case 'open-settings':
+            navigateCommandSurface('/settings');
+            break;
           case 'quick-feedback':
             requestQuickFeedback();
             break;
@@ -305,6 +315,17 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           return;
         }
       }
+      // Session-menu launch rows are one row per launchable Agent Source
+      // (`contracts/agent-sources.json`), so a new source arrives with its
+      // menu item already working instead of waiting for a hand-added case.
+      const launchSource = AGENT_LAUNCH_MENU_SOURCES.get(command);
+      if (launchSource) {
+        requestAgentComposer(launchSource);
+        if (!window.location.pathname.startsWith('/workspace')) {
+          navigateCommandSurface('/workspace');
+        }
+        return;
+      }
       switch (command) {
         case 'go-terminal':
           activateCommandAltitude('terminal');
@@ -326,30 +347,6 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
         case 'command-palette':
           setCommandPaletteOpen(true);
-          break;
-        case 'launch-claude':
-          requestAgentComposer('claude');
-          if (!window.location.pathname.startsWith('/workspace')) {
-            navigateCommandSurface('/workspace');
-          }
-          break;
-        case 'launch-codex':
-          requestAgentComposer('codex');
-          if (!window.location.pathname.startsWith('/workspace')) {
-            navigateCommandSurface('/workspace');
-          }
-          break;
-        case 'launch-opencode':
-          requestAgentComposer('opencode');
-          if (!window.location.pathname.startsWith('/workspace')) {
-            navigateCommandSurface('/workspace');
-          }
-          break;
-        case 'launch-grok':
-          requestAgentComposer('grok');
-          if (!window.location.pathname.startsWith('/workspace')) {
-            navigateCommandSurface('/workspace');
-          }
           break;
         case 'new-agent':
           requestAgentComposer();
@@ -436,6 +433,30 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             dispatch(JUMP_ATTENTION_EVENT);
           }
           break;
+        case 'open-roadmap':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['open-roadmap'].available
+          ) {
+            dispatch(OPEN_ROADMAP_EVENT);
+          }
+          break;
+        case 'resume-agent':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['resume-agent'].available
+          ) {
+            dispatch(RESUME_ACTIVE_AGENT_EVENT);
+          }
+          break;
+        case 'resume-scope':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['resume-scope'].available
+          ) {
+            dispatch(RESUME_PARKED_SCOPE_EVENT);
+          }
+          break;
       }
     });
   }, [
@@ -475,29 +496,20 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const api = window.electron?.menu?.syncAvailability;
     if (!api) return;
     const commands = workspaceAvailability.commands;
-    const availability: Record<
-      (typeof WORKSPACE_MENU_AVAILABILITY_COMMANDS)[number],
-      boolean
-    > = {
+    const availability: Record<string, boolean> = {};
+    for (const command of WORKSPACE_MENU_AVAILABILITY_COMMANDS) {
+      // The manifest names the truth each verb reads; a fixed family's menu
+      // id IS its availability key.
+      const key = (commandVerbForMenuCommand(command)?.availability ??
+        command) as WorkspaceContextCommand;
       // Launch verbs carry the tenant gate into the menu itself: enabled-
-      // but-inert would be a lie, so a non-personal tenant greys them.
-      'launch-shell':
-        personalTenantActive && commands['launch-shell'].available,
-      'reopen-closed-tab':
-        personalTenantActive && commands['reopen-closed-tab'].available,
-      'rename-tab': onWorkspaceRoute && commands['rename-tab'].available,
-      'toggle-split': onWorkspaceRoute && commands['toggle-split'].available,
-      'move-tab-left': onWorkspaceRoute && commands['move-tab-left'].available,
-      'move-tab-right':
-        onWorkspaceRoute && commands['move-tab-right'].available,
-      'move-project-left':
-        onWorkspaceRoute && commands['move-project-left'].available,
-      'move-project-right':
-        onWorkspaceRoute && commands['move-project-right'].available,
-      'close-tab': onWorkspaceRoute && commands['close-tab'].available,
-      'jump-attention':
-        onWorkspaceRoute && commands['jump-attention'].available,
-    };
+      // but-inert would be a lie, so a non-personal tenant greys them. Every
+      // other verb acts on what is on screen, so the route is its gate.
+      const scope = LIVE_WORKSPACE_MENU_COMMANDS.has(command)
+        ? personalTenantActive
+        : onWorkspaceRoute;
+      availability[command] = scope && (commands[key]?.available ?? false);
+    }
     void api(availability);
   }, [onWorkspaceRoute, personalTenantActive, workspaceAvailability]);
 

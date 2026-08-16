@@ -21,21 +21,31 @@ const browser = await chromium.launch({
   ...(await resolveQaBrowserLaunchOptions(chromium)),
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const errors = [];
+page.on('pageerror', error => errors.push(String(error.message || error)));
+// Chrome probes `/favicon.ico` on its own even when the document declares an
+// icon (this app serves `app/icon.png`), so that 404 is the browser talking to
+// itself, not a product failure. It made this gate nondeterministic: the probe
+// depends on profile state, so the evaluator passed or failed at random with
+// the single most unactionable message a browser produces.
+const IGNORED_RESOURCE_ERRORS = [/\/favicon\.ico$/];
+page.on('console', message => {
+  if (message.type() !== 'error') return;
+  if (message.text().includes('eval() is not supported')) return;
+  // Chrome puts a failed subresource's URL in the message LOCATION, not in its
+  // text, which is why "Failed to load resource" alone was undiagnosable.
+  const where = message.location()?.url ?? '';
+  if (IGNORED_RESOURCE_ERRORS.some(pattern => pattern.test(where))) return;
+  errors.push(where ? `${message.text()} — ${where}` : message.text());
+});
+
 // Returning-operator state. Without this the account first-run invitation
 // floats over the chrome and silently intercepts whatever it covers — a
 // suppressed bug in the eval, not a product signal. The helper existed and
-// nothing called it (D51).
+// nothing called it (D51). It runs AFTER the listeners above: a resource that
+// 404s during this first navigation reports its console error late, so
+// priming first meant the failure was recorded with no way to name it.
 await primeEvalBrowserPage(page);
-const errors = [];
-page.on('pageerror', error => errors.push(String(error.message || error)));
-page.on('console', message => {
-  if (
-    message.type() === 'error' &&
-    !message.text().includes('eval() is not supported')
-  ) {
-    errors.push(message.text());
-  }
-});
 
 await page.addInitScript(() => {
   const session = {

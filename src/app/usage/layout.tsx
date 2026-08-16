@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
+import { CONSUMPTION_SURFACE_NAME } from '@exawatt/core';
 
 // segment title only (ENG-016 D9) — the root layout's template appends the
 // app name; the page itself stays a client component. The display name is

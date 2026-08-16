@@ -75,6 +75,19 @@ export const SURFACE_GATES = [
       ),
   },
   {
+    gate: 'eval:navigation:spine',
+    why: 'the native application menu is a cross-process surface: labels, accelerators and enablement only exist once Electron builds the real menu',
+    // FIX-012: Resume had a chord and a palette row and no menu item, and no
+    // gate noticed, because the menu template lived inside main.ts where
+    // nothing exercised it. The template is now its own module, derived from
+    // the command-verb manifest, and both files owe the eval that reads the
+    // real Menu.getApplicationMenu().
+    match: file =>
+      file === 'electron/main/application-menu.ts' ||
+      file === 'packages/core/src/shortcuts/command-verbs.ts' ||
+      file === 'src/components/shortcuts/shortcut-provider.tsx',
+  },
+  {
     gate: 'eval:workspace:launcher',
     why: 'the New Agent launcher has a deterministic state/interaction rig',
     // option-menu is the launcher's list renderer (decision `0033`, one menu

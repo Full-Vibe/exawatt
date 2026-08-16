@@ -1,5 +1,5 @@
 import { spatialReturnHref } from './spatial-return';
-import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
+import { CONSUMPTION_SURFACE_NAME } from '@exawatt/core';
 
 /**
  * Navigation manifest (ENG-016 D8).

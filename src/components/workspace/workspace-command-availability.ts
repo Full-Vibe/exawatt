@@ -2,27 +2,19 @@
 
 import { useSyncExternalStore } from 'react';
 
+import type { WorkspaceContextCommand } from '@exawatt/core';
+
 /**
  * Workspace command truth shared by passive hints, the command palette, and
  * the native macOS menu. A command is available only when invoking it now
  * would change the visible workspace; unavailable commands carry the short
  * reason the palette can show instead of failing silently.
+ *
+ * The key union lives in the shared command-verb manifest, because the native
+ * menu's enablement is derived from the same declaration that gives each verb
+ * its row and its chord (ENG-016 D44, FIX-012).
  */
-export type WorkspaceContextCommand =
-  | 'launch-shell'
-  | 'reopen-closed-tab'
-  | 'rename-tab'
-  | 'rename-project'
-  | 'toggle-split'
-  | 'close-tab'
-  | 'move-tab-left'
-  | 'move-tab-right'
-  | 'move-project-left'
-  | 'move-project-right'
-  | 'jump-attention'
-  | 'open-roadmap'
-  | 'resume-agent'
-  | 'resume-scope';
+export type { WorkspaceContextCommand };
 
 export interface CommandAvailability {
   available: boolean;

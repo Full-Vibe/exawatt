@@ -158,6 +158,60 @@ await withElectronApp(
     window.electron.menu.syncAccelerators({ 'rename-tab': 'Command+E' })
   );
 
+  // FIX-012: every verb the product offers owes a native menu item derived
+  // from the command-verb manifest, not just a chord and a palette row.
+  const helpMenu = menuDump.find(m => m.label === 'Help');
+  for (const row of [
+    'Resume This Agent|Command+Alt+R',
+    'Resume Parked Agents|Command+Alt+Shift+R',
+  ]) {
+    check(
+      `Session menu publishes ${row.split('|')[0]}`,
+      sessionMenu.includes(row)
+    );
+  }
+  check(
+    'Go>Project Roadmap displays Command+B',
+    goMenu.sub.some(s => s.includes('Project Roadmap|Command+B|reg:false'))
+  );
+  check(
+    'Help>Submit Feedback… displays Command+Shift+F',
+    helpMenu.sub.some(s => s.includes('Command+Shift+F|reg:false'))
+  );
+  check(
+    'Help>Keyboard Shortcuts displays Command+/',
+    helpMenu.sub.some(s => s.includes('Keyboard Shortcuts|Command+/|reg:false'))
+  );
+  // FIX-014: the application menu leads with product identity.
+  const appMenuLabels = menuDump[0].sub.map(s => s.split('|')[0]);
+  const versionIndex = appMenuLabels.findIndex(l => l.startsWith('Version '));
+  const buildIndex = appMenuLabels.findIndex(l => l.startsWith('Build '));
+  check('application menu shows the app version', versionIndex > -1);
+  check(
+    'the build sha stays behind the version',
+    buildIndex > versionIndex && buildIndex > -1
+  );
+
+  // Menu enablement is renderer-published truth for every verb that declares
+  // an availability, resume included.
+  await page.evaluate(() =>
+    window.electron.menu.syncAvailability({
+      'resume-agent': true,
+      'resume-scope': true,
+    })
+  );
+  await page.waitForTimeout(500);
+  const resumeEnabled = await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()
+      .items.find(i => i.label === 'Session')
+      .submenu.items.filter(s => s.label.startsWith('Resume '))
+      .map(s => `${s.label}|${s.enabled}`)
+  );
+  check(
+    'Resume rows follow the availability sync',
+    resumeEnabled.length === 2 && resumeEnabled.every(s => s.endsWith('|true'))
+  );
+
   // the spine follows you onto off-spine surfaces (Settings)
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(120);
