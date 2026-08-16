@@ -446,6 +446,22 @@ body {
 .terminal-pane .xterm {
   -webkit-font-smoothing: auto;
   -webkit-text-stroke: var(--terminal-font-stroke, 0px) currentColor;
+  /* The ONE terminal inset (BUG-019). It lives on `.xterm` on purpose: the
+     fit addon subtracts this element's computed padding when it derives the
+     column count, so breathing room is paid for in columns and the reported
+     width stays the width that actually paints. The variables are declared
+     in `terminal-geometry.ts` and set on `.terminal-pane`. */
+  padding: var(--terminal-inset-y, 0px) var(--terminal-inset-x, 0px);
+}
+
+/* xterm's legacy viewport is an absolutely positioned rectangle across the
+   whole PADDING box with a hardcoded black ground, so with an inset it paints
+   black bars beside the live content. Its own rule is `.xterm .xterm-viewport`
+   in a stylesheet that loads after this one, so the override needs the third
+   class to win on specificity rather than order. The pane carries the terminal
+   ground colour across the gutter instead. */
+.terminal-pane .xterm .xterm-viewport {
+  background-color: transparent;
 }
 
 .fleet-shell {
