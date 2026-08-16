@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,10 +19,6 @@ import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 
 const execFileAsync = promisify(execFile);
 const script = fileURLToPath(new URL('./agent-land.mjs', import.meta.url));
-// Admission follows the repository floor. Its fixture currently crosses four
-// serial pnpm process boundaries before publishing a ticket, so a generic
-// five-second poll budget is shorter than the behavior under test.
-const FLOOR_ADMISSION_TIMEOUT_MS = 15_000;
 
 async function command(commandName, args, cwd) {
   const { stdout } = await execFileAsync(commandName, args, { cwd });
@@ -26,10 +29,14 @@ async function git(cwd, ...args) {
   return command('git', args, cwd);
 }
 
-function runStreaming(commandName, args, cwd) {
+function runStreaming(commandName, args, cwd, env = {}) {
   let output = '';
   const ownsProcessGroup = process.platform !== 'win32';
-  const child = spawn(commandName, args, { cwd, detached: ownsProcessGroup });
+  const child = spawn(commandName, args, {
+    cwd,
+    detached: ownsProcessGroup,
+    env: { ...process.env, ...env },
+  });
   let settled = false;
   child.stdout.on('data', chunk => {
     output += chunk;
@@ -63,6 +70,17 @@ function runStreaming(commandName, args, cwd) {
       }
       await completion.catch(() => {});
     },
+  };
+}
+
+async function writeFastPnpm(directory) {
+  const bin = path.join(directory, 'bin');
+  const executable = path.join(bin, 'pnpm');
+  await mkdir(bin, { recursive: true });
+  await writeFile(executable, '#!/bin/sh\nexit 0\n');
+  await chmod(executable, 0o755);
+  return {
+    PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
   };
 }
 
@@ -164,17 +182,17 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
     const initial = await git(main, 'rev-parse', 'HEAD');
 
     deliveryLock = await acquireDeliveryLock(main, { log() {} });
+    const fastFloorEnv = await writeFastPnpm(directory);
     landing = runStreaming(
       process.execPath,
       [script, '--verify', 'verify-ok'],
-      agent
+      agent,
+      fastFloorEnv
     );
-    await waitFor(
-      () =>
-        landing
-          .output()
-          .includes('waiting for the active master delivery transaction'),
-      FLOOR_ADMISSION_TIMEOUT_MS
+    await waitFor(() =>
+      landing
+        .output()
+        .includes('waiting for the active master delivery transaction')
     );
     assert.equal(
       await git(main, 'rev-parse', 'HEAD'),
@@ -260,17 +278,12 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
     await writeFile(path.join(main, 'operator-note.txt'), 'leave me alone\n');
     const initialMain = await git(main, 'rev-parse', 'HEAD');
     deliveryLock = await acquireDeliveryLock(main, { log() {} });
+    const fastFloorEnv = await writeFastPnpm(directory);
 
-    first = runStreaming(process.execPath, [script], firstPath);
-    await waitFor(
-      () => first.output().includes('admitted ticket 1'),
-      FLOOR_ADMISSION_TIMEOUT_MS
-    );
-    second = runStreaming(process.execPath, [script], secondPath);
-    await waitFor(
-      () => second.output().includes('admitted ticket 2'),
-      FLOOR_ADMISSION_TIMEOUT_MS
-    );
+    first = runStreaming(process.execPath, [script], firstPath, fastFloorEnv);
+    await waitFor(() => first.output().includes('admitted ticket 1'));
+    second = runStreaming(process.execPath, [script], secondPath, fastFloorEnv);
+    await waitFor(() => second.output().includes('admitted ticket 2'));
     await deliveryLock.release();
     deliveryLock = null;
 
