@@ -390,6 +390,45 @@ describe('Sessions overview', () => {
     }
   });
 
+  // ── FIX-002 reopened (2026-08-16): ArrowDown across a Project boundary
+  // landed one tile to the LEFT of the geometric answer. The geometry was
+  // right; the selection was taken back afterwards. Crossing into the next
+  // Project's row scrolls the grid, and Chromium re-dispatches a mouse
+  // event at the cursor's LAST KNOWN position whenever content moves under
+  // a stationary pointer — so whatever tile slid under the resting cursor
+  // claimed the selection the arrow key had just set.
+  it('lets a resting pointer keep still while the keyboard moves the grid', async () => {
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
+    await waitFor(() => expect(alpha).toHaveFocus());
+    expect(alpha).toHaveAttribute('data-selected');
+
+    // The pointer comes to rest over another tile. The first event is the
+    // baseline — the overview's own mount re-dispatches one of these.
+    fireEvent.mouseMove(beta, { clientX: 200, clientY: 500 });
+    expect(alpha).toHaveAttribute('data-selected');
+
+    // A scroll under the stationary cursor re-delivers the SAME position.
+    fireEvent.mouseMove(beta, { clientX: 200, clientY: 500 });
+    expect(alpha).toHaveAttribute('data-selected');
+    expect(beta).not.toHaveAttribute('data-selected');
+
+    // A pointer that genuinely moves still owns the selection.
+    fireEvent.mouseMove(beta, { clientX: 201, clientY: 500 });
+    await waitFor(() => expect(beta).toHaveAttribute('data-selected'));
+  });
+
   // ── FIX-006: the grid claimed every key that was not an arrow, so a
   // focused field never saw j/k and Enter picked a tile instead of
   // committing. The field that showed this was later deleted; the rule is

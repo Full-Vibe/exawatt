@@ -18,6 +18,13 @@
  * simply the nearest row below.
  *
  * Pure, so the movement can be reasoned about and tested without a browser.
+ *
+ * Reopened 2026-08-16 and widened: this module now owns the WHOLE movement
+ * contract, including what happens when a tile cannot be measured and who
+ * may claim the roving selection. Both used to be decided in the overlay,
+ * where the only way to reach them is a live grid with real layout — which
+ * is exactly why the second report looked like a geometry regression when
+ * the geometry was right.
  */
 
 export interface TeamGridRect {
@@ -27,10 +34,33 @@ export interface TeamGridRect {
   height: number;
 }
 
+/**
+ * One tile as the overlay found it: a rectangle, or `null` for a tile it
+ * could not measure — no node yet, or a host with no layout at all.
+ *
+ * Unmeasurable is its own answer, never a rect. The overlay used to
+ * substitute `{0,0,0,0}` for a tile it could not measure, which is not a
+ * neutral value: it is a phantom tile at the viewport origin, above and to
+ * the left of every real one, and it competed for "nearest row" like any
+ * other tile. Making absence representable is what lets the model treat it
+ * as absence.
+ */
+export type TeamGridMeasure = TeamGridRect | null;
+
 export type TeamGridDirection = 'up' | 'down' | 'left' | 'right';
+
+export interface TeamGridPoint {
+  x: number;
+  y: number;
+}
 
 const centerX = (rect: TeamGridRect) => rect.left + rect.width / 2;
 const centerY = (rect: TeamGridRect) => rect.top + rect.height / 2;
+
+/** A rect with no area is a tile the host did not lay out (jsdom reports
+ *  every rect as zero), so it is unmeasurable rather than a point tile. */
+const measured = (measure: TeamGridMeasure): measure is TeamGridRect =>
+  measure !== null && (measure.width > 0 || measure.height > 0);
 
 /** Two tiles share a row when their vertical spans overlap at all. Tiles in
  *  one row are the same height in practice; overlap tolerates the odd
@@ -52,51 +82,65 @@ function sameRow(a: TeamGridRect, b: TeamGridRect): boolean {
  * Up/Down cross rows: nearest row in that direction, then the tile whose
  * horizontal centre is closest, which is what keeps a column feeling like a
  * column while the rows underneath are ragged.
+ *
+ * The DEGRADED cases are part of this contract rather than the caller's
+ * problem, because the caller is a live overlay and anything decided there
+ * is reachable only through real layout. With no measurable geometry at all
+ * — jsdom, a host that has not laid the grid out yet — movement is reading
+ * order, so the behaviour stays defined. With an unmeasurable ORIGIN the
+ * answer is the same: geometry cannot be asked a question about a tile
+ * whose position is unknown, and inventing one is how a real neighbour gets
+ * silently replaced.
  */
 export function teamGridNeighbor(
-  rects: readonly TeamGridRect[],
+  measures: readonly TeamGridMeasure[],
   from: number,
   direction: TeamGridDirection
 ): number | null {
-  const origin = rects[from];
-  if (!origin || rects.length === 0) return null;
+  if (from < 0 || from >= measures.length) return null;
+  const forward = direction === 'down' || direction === 'right';
+  // Reading order: the fallback that keeps every tile one key away, and the
+  // whole of movement where there is nothing to measure.
+  const readingOrder = (): number | null => {
+    const next = forward ? from + 1 : from - 1;
+    return next >= 0 && next < measures.length ? next : null;
+  };
+
+  const origin = measures[from];
+  if (!measured(origin)) return readingOrder();
+  const tiles = measures.flatMap((measure, index) =>
+    index !== from && measured(measure) ? [{ rect: measure, index }] : []
+  );
+  if (tiles.length === 0) return readingOrder();
+
+  const nearestColumn = (row: typeof tiles) =>
+    row.reduce((best, entry) =>
+      Math.abs(centerX(entry.rect) - centerX(origin)) <
+      Math.abs(centerX(best.rect) - centerX(origin))
+        ? entry
+        : best
+    ).index;
 
   if (direction === 'left' || direction === 'right') {
-    const forward = direction === 'right';
-    const candidates = rects
-      .map((rect, index) => ({ rect, index }))
-      .filter(
-        entry =>
-          entry.index !== from &&
-          sameRow(origin, entry.rect) &&
-          (forward
-            ? centerX(entry.rect) > centerX(origin)
-            : centerX(entry.rect) < centerX(origin))
-      );
-    if (candidates.length > 0) {
-      return candidates.reduce((best, entry) =>
-        Math.abs(centerX(entry.rect) - centerX(origin)) <
-        Math.abs(centerX(best.rect) - centerX(origin))
-          ? entry
-          : best
-      ).index;
-    }
+    const candidates = tiles.filter(
+      entry =>
+        sameRow(origin, entry.rect) &&
+        (forward
+          ? centerX(entry.rect) > centerX(origin)
+          : centerX(entry.rect) < centerX(origin))
+    );
+    if (candidates.length > 0) return nearestColumn(candidates);
     // Row edge: continue in reading order so nothing is a dead end.
-    const next = forward ? from + 1 : from - 1;
-    return next >= 0 && next < rects.length ? next : null;
+    return readingOrder();
   }
 
-  const down = direction === 'down';
-  const candidates = rects
-    .map((rect, index) => ({ rect, index }))
-    .filter(
-      entry =>
-        entry.index !== from &&
-        !sameRow(origin, entry.rect) &&
-        (down
-          ? centerY(entry.rect) > centerY(origin)
-          : centerY(entry.rect) < centerY(origin))
-    );
+  const candidates = tiles.filter(
+    entry =>
+      !sameRow(origin, entry.rect) &&
+      (forward
+        ? centerY(entry.rect) > centerY(origin)
+        : centerY(entry.rect) < centerY(origin))
+  );
   if (candidates.length === 0) return null;
 
   // Nearest row first, then nearest column inside it. "The nearest row" is
@@ -109,13 +153,37 @@ export function teamGridNeighbor(
       ? entry
       : best
   );
-  const row = candidates.filter(entry => sameRow(entry.rect, closest.rect));
-  return row.reduce((best, entry) =>
-    Math.abs(centerX(entry.rect) - centerX(origin)) <
-    Math.abs(centerX(best.rect) - centerX(origin))
-      ? entry
-      : best
-  ).index;
+  return nearestColumn(
+    candidates.filter(entry => sameRow(entry.rect, closest.rect))
+  );
+}
+
+/**
+ * May a pointer event claim the roving selection? (FIX-002, reopened.)
+ *
+ * Only if the pointer actually MOVED. Chromium re-dispatches mouse events
+ * at the LAST KNOWN cursor position whenever content moves underneath a
+ * stationary cursor — which the Team grid does on every arrow key that
+ * scrolls, and crossing into the next Project's row almost always scrolls.
+ * So the sequence was: the arrow key selects the geometrically correct
+ * tile, `scrollIntoView` brings it into view, the scroll re-dispatches a
+ * mouse event at the resting cursor, and whatever tile has slid under the
+ * cursor takes the selection back. The operator sees the selection land one
+ * tile to the left of where the geometry put it, and the geometry gets the
+ * blame.
+ *
+ * The rule is exact rather than timed: a synthetic re-dispatch carries the
+ * coordinates the cursor already had, so comparing them is the whole test.
+ * A first event has nothing to compare against and never claims, which is
+ * also what the overlay's mount needs — the same re-dispatch fires when the
+ * overview first appears under a resting cursor.
+ */
+export function teamPointerMoved(
+  previous: TeamGridPoint | null,
+  next: TeamGridPoint
+): boolean {
+  if (previous === null) return false;
+  return previous.x !== next.x || previous.y !== next.y;
 }
 
 /**
