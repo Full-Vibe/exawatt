@@ -37,6 +37,10 @@ in Agent, Team, and Fleet.
   exposes a separately addressable delegate that is operationally meaningful.
 - Agent Type describes a reusable kind of worker; it is not the worker
   instance. Marcus may use a Reddit Marketer Type without becoming that Type.
+- One source-qualified context may fill the Agent's primary-conversation role.
+  Opening the Agent returns there; newer background activity does not silently
+  change who the operator is addressing. OpenClaw maps the role to the
+  configured Agent's exact `main` Session.
 
 This is a product projection, not a claim that all harnesses share one native
 ontology.
@@ -87,9 +91,10 @@ imported Agent, while allowing an explicit existing-Project mapping.
 ### 4. Lifecycle and connection are separate facts
 
 Closing or quitting Exawatt does not stop a remote Agent. Relaunch reopens the
-same Exawatt Agent, reconnects to the same configured source, and catches up
-from the last observed cursor. A stale or unreachable observation is not a
-stopped Agent.
+same Exawatt Agent, reconnects to the same configured source, replaces cached
+views from authoritative snapshots, and reconciles later events by stable
+source/run identity. A connection-local sequence is not a durable replay
+cursor. A stale or unreachable observation is not a stopped Agent.
 
 Product commands name source-supported effects. `Pause`, `Resume`, `Stop
 current work`, `Abort`, `Reconnect`, and `Disconnect` are not aliases. The UI
@@ -133,11 +138,11 @@ remote Agent.
 - ENG-011 later aggregates these projected Agents with local and other remote
   sources while retaining source-specific assurance and capability truth.
 
-## Deferred question
+## Reversible scale-out rule
 
 When one durable Agent has several simultaneous independent responsibilities,
 the working projection keeps one coworker and shows a compact work stack in
-Agent detail. A separately addressable delegate may become another Agent. The
-exact threshold and Team/Fleet presentation remain reversible and must be
-tested with real multi-context OpenClaw activity before becoming a stronger
-rule.
+Agent detail. A transient delegate remains subordinate; a separately
+configured, persistent, directly addressable worker may become another Agent.
+Concurrency alone never creates a coworker. The exact Team/Fleet presentation
+remains reversible and must be tested with real multi-context OpenClaw activity.

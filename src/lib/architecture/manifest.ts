@@ -636,7 +636,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One declaration contract plus Electron-main observations power Settings, launch, and planned remote attach. Configured sources carry placement and credential ownership; preserved source topology projects through versioned Agent/Project mappings. Observed, declared, and simulated evidence stay distinct.',
+            'One declaration contract plus Electron-main observations power Settings, launch, and planned remote attach. Configured sources carry placement and credential ownership; preserved source topology projects through versioned Agent/Project mappings and a source-declared primary conversation. Reconnect replaces cached views from authoritative snapshots; replay positions are optional capabilities.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -792,7 +792,7 @@ export const architectureManifest = {
           id: 'hosted-runtime',
           label: 'Connected + Managed Runtime',
           summary:
-            'Customer-hosted observation first, then command and Exawatt-managed placement behind the same source contract.',
+            'Customer-hosted observation and authoritative reconnect first, then command and Exawatt-managed placement behind the same source contract.',
           layer: 'infrastructure',
           status: 'designed',
           x: 430,
@@ -890,8 +890,9 @@ export const architectureManifest = {
     'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
     'Session identity remains durable across Agent, Team, and Fleet but stays subordinate to the coworker-shaped Agent; PTYs add live runtime state without defining Agent existence.',
     'The primary roster projects source-native topology into coworker-shaped Agents: configured OpenClaw Agents remain one coworker above many contexts, while raw source identities stay preserved and re-projectable.',
+    'An Agent opens at its source-declared primary conversation rather than the latest activity; background contexts form a subordinate work stack and concurrency alone never creates a coworker.',
     'Placement is orthogonal to Agent identity: local, customer-hosted, and Exawatt-hosted configured sources use the same Agent, Project, state, and command contracts.',
-    'Connection freshness is not work state: closing Exawatt or losing a remote observation path never implies that a remote Agent stopped.',
+    'Connection freshness is not work state: closing Exawatt or losing a remote observation path never implies that a remote Agent stopped; reconnect resnapshots authoritative state because transport sequence may be connection-local.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; recovery defaults to the selected Project with Agent and all-Projects as nested alternate scopes, and local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',

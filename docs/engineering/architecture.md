@@ -388,31 +388,38 @@ The projection boundary is additive and versioned:
 ```
 
 The source snapshot separately retains native Agent and Session/context IDs,
-kinds, lineage, cursors, timestamps, and assurance. A mapping edit changes only
-Exawatt. Detach never deletes or edits a remote Agent, workspace, history,
-automation, or credential. A configured source may expose several Agents; a
-Gateway is not automatically a Project. Initial attach suggests one editable
-Project per imported Agent and permits explicit existing/shared mappings.
+kinds, lineage, primary-conversation roles, timestamps, optional durable replay
+positions, and assurance. A mapping edit changes only Exawatt. Detach never
+deletes or edits a remote Agent, workspace, history, automation, or credential.
+A configured source may expose several Agents; a Gateway is not automatically
+a Project. Initial attach suggests one editable Project per imported Agent and
+permits explicit existing/shared mappings.
 
 ENG-010's first mile adds customer-hosted OpenClaw through the existing source
 registry. SSH may bootstrap an authenticated tunnel, but source observation
 uses the OpenClaw Gateway protocol rather than shell-scraping remote files. The
 connection record retains placement, credential owner, compatibility,
-capabilities, freshness, and a catch-up cursor; secrets remain in source-owned
-SSH configuration or OS-keychain custody behind Electron main.
+capabilities, freshness, authoritative resnapshot strategy, and any
+source-declared durable replay position; secrets remain in source-owned SSH
+configuration or OS-keychain custody behind Electron main. Opening an Agent
+resolves its declared primary conversation rather than guessing from recent
+activity; OpenClaw maps that role to the configured Agent's exact `main`
+Session.
 
 Connection state is orthogonal to Agent and Session work state. Quitting or
 closing Exawatt disconnects observation only; a remote Agent may continue.
-Relaunch restores the same projection and catches up idempotently. `Live`,
-`Reconnecting`, `Stale`, and `Unavailable` therefore cannot be collapsed into
-running/stopped or the D40 work-state protocol. Source commands remain
-capability-declared exact verbs; disconnect is not pause, and a fresh context is
-not resume.
+Relaunch restores the same projection, replaces cached views from authoritative
+snapshots, and reconciles subsequent events idempotently by stable source/run
+identity. Connection-local event sequence is never promoted into a durable
+cursor. `Live`, `Reconnecting`, `Stale`, and `Unavailable` therefore cannot be
+collapsed into running/stopped or the D40 work-state protocol. Source commands
+remain capability-declared exact verbs; disconnect is not pause, and a fresh
+context is not resume.
 
 Demo Mode enters below the same configured-source, projection, placement,
-freshness, and catch-up boundary with simulated evidence. The first live slice
-is read-only by contract; write authority follows only after observation and
-reattachment are proven.
+primary-conversation, freshness, resnapshot, and optional replay boundary with
+simulated evidence. The first live slice is read-only by contract; write
+authority follows only after observation and reattachment are proven.
 
 #### Launch Configuration runtime
 

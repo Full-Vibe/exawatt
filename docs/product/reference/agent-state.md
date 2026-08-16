@@ -145,10 +145,11 @@ capabilities a source does not expose.
 
 For remote Agents, an unavailable connection never implies stopped work.
 Closing or quitting Exawatt ends observation only; the source may continue and
-the next connection catches up from the last observed cursor. Placement uses
-quiet metadata, never D40 status color. Session/context history stays beneath
-the coworker unless a meaningful Event, result, fault, or human gate promotes
-it.
+the next connection resnapshots authoritative state before reconciling new
+events. Placement uses quiet metadata, never D40 status color. Session/context
+history stays beneath the coworker unless a meaningful Event, result, fault, or
+human gate promotes it. Opening the coworker returns to its source-declared
+primary conversation; background activity never silently retargets that role.
 
 ## Attention navigation uses visible state
 

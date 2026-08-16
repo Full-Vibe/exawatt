@@ -67,9 +67,17 @@ that work stopped.
 
 Closing a remote Agent tab or quitting Exawatt closes the local view only. On
 relaunch, Exawatt restores the same Agent and Project mapping, reconnects to the
-same configured source, and catches up from its last observed source cursor.
-The source-qualified Agent and context identities prevent reconnect from
-duplicating the coworker or guessing from a display name.
+same configured source, replaces cached views from authoritative Agent,
+Session, transcript, task, and active-run snapshots, then reconciles new events
+by stable source identity. Connection-local event sequence is never treated as
+a durable replay cursor. The source-qualified identities prevent reconnect
+from duplicating the coworker, replaying a turn, or guessing from a display
+name.
+
+Opening a remote Agent resolves its source-declared primary conversation rather
+than the most recent Session. For OpenClaw that role is the configured Agent's
+exact `main` Session. Background channel, cron, task, or subagent activity may
+appear in the Agent's work stack but cannot silently steal the normal composer.
 
 `Reconnect` repairs observation. `Disconnect` removes or disables the
 connection. `Pause`, `Resume`, `Stop current work`, and `Abort` operate the

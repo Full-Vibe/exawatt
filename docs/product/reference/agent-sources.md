@@ -193,7 +193,9 @@ OpenClaw Gateway contract rather than remote shell scraping.
 
 Remote execution lifecycle and Exawatt attachment are independent. Closing or
 quitting Exawatt leaves the remote Agent running; relaunch reconnects to the
-same configured source and catches up from a saved cursor. `Stale` or
+same configured source, resnapshots authoritative state, and reconciles later
+events by stable source identity. A connection-local sequence is not a durable
+cursor; replay positions are optional declared capabilities. `Stale` or
 `Unavailable` describes observation, not a stopped Agent. Write commands appear
 only after the adapter reports their exact semantics and the runtime confirms
 the capability.
