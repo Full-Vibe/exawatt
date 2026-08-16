@@ -41,6 +41,20 @@ import {
   type PopulationDotField,
 } from './population-dots';
 import {
+  BoardField,
+  BoardTransitionProvider,
+  useBoardTransitionClock,
+} from './operations-board-field';
+import {
+  beginBoardTransition,
+  boardTransitionEase,
+  isBoardTransitionActive,
+  boardTransitionProgress,
+  dampBoardZoom,
+  mixBoardZoom,
+  settleBoardTransition,
+} from './operations-board-transition';
+import {
   ALTITUDE_HANDOFF_CROSSFADE_MS,
   ALTITUDE_HANDOFF_FALLBACK_EVENT,
   ALTITUDE_HANDOFF_HOLD_MS,
@@ -248,6 +262,34 @@ function BoardCameraRig({
   const fitZoom = useRef(1);
   const lambda = useRef(FLIGHT_LAMBDA);
   const initialized = useRef(false);
+  /**
+   * Semantic camera moves ride the board's shared transition clock, so the
+   * camera and the field arrive on the same frame and neither starts with the
+   * velocity step damping cannot avoid. Continuous moves -- pan, wheel, pinch,
+   * follow, clamp rubber-band -- keep damping, because their target is still
+   * moving and there is no arrival to schedule.
+   */
+  const transitionClock = useBoardTransitionClock();
+  const flightFrom = useRef<BoardCameraTarget | null>(null);
+  const beginFlight = useCallback(() => {
+    lambda.current = FLIGHT_LAMBDA;
+    if (reduced || !transitionClock || !initialized.current) {
+      flightFrom.current = null;
+      return;
+    }
+    flightFrom.current = { ...current.current };
+    beginBoardTransition(transitionClock.current, performance.now());
+  }, [reduced, transitionClock]);
+  const beginDrift = useCallback((speed: number) => {
+    lambda.current = speed;
+    flightFrom.current = null;
+  }, []);
+  // Held in refs like the other camera helpers here, so the pointer listeners
+  // can stay registered once instead of re-binding whenever these rebuild.
+  const beginFlightRef = useRef(beginFlight);
+  beginFlightRef.current = beginFlight;
+  const beginDriftRef = useRef(beginDrift);
+  beginDriftRef.current = beginDrift;
   const clampEdges = useRef(createBoardClampEdges());
   const clampLimits = useRef<ReturnType<typeof boardCameraLimits> | null>(null);
   const clampEngaged = useRef(false);
@@ -366,7 +408,7 @@ function BoardCameraRig({
       target.current.x = next.x;
       target.current.y = next.y;
       target.current.zoom = next.zoom;
-      lambda.current = FLIGHT_LAMBDA;
+      beginFlightRef.current();
       announceTargetViewport();
     },
     [announceTargetViewport, size.height, size.width]
@@ -531,7 +573,7 @@ function BoardCameraRig({
       target.current.x = next.x;
       target.current.y = next.y;
       target.current.zoom = next.zoom;
-      lambda.current = FLIGHT_LAMBDA;
+      beginFlightRef.current();
       if (reduced) snapToTargetRef.current();
       invalidate();
     }
@@ -551,7 +593,7 @@ function BoardCameraRig({
 
   useEffect(() => {
     target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
-    lambda.current = FLIGHT_LAMBDA;
+    beginFlightRef.current();
     announceTargetViewport();
     if (reduced) snapToTarget();
     invalidate();
@@ -670,7 +712,7 @@ function BoardCameraRig({
             (state.pinchAnchor.y - target.current.y) * ratio;
           target.current.zoom = nextZoom;
           constrainTargetRef.current();
-          lambda.current = NUDGE_LAMBDA;
+          beginDriftRef.current(NUDGE_LAMBDA);
           if (handlers.current.reduced) snapToTargetRef.current();
           invalidate();
           return;
@@ -687,7 +729,7 @@ function BoardCameraRig({
       target.current.y += (event.clientY - state.panLast.y) / zoom;
       constrainTargetRef.current();
       state.panLast = { x: event.clientX, y: event.clientY };
-      lambda.current = NUDGE_LAMBDA;
+      beginDriftRef.current(NUDGE_LAMBDA);
       element.style.cursor = 'grabbing';
       handlers.current.onManualCameraInput?.();
       announceTargetViewportRef.current();
@@ -745,7 +787,7 @@ function BoardCameraRig({
         target.current.y -= event.deltaY / zoom;
       }
       constrainTargetRef.current();
-      lambda.current = NUDGE_LAMBDA;
+      beginDriftRef.current(NUDGE_LAMBDA);
       handlers.current.onManualCameraInput?.();
       announceTargetViewportRef.current();
       if (handlers.current.reduced) snapToTargetRef.current();
@@ -773,7 +815,7 @@ function BoardCameraRig({
       invalidate();
     };
     const cameraChanged = (manual = true) => {
-      lambda.current = NUDGE_LAMBDA;
+      beginDriftRef.current(NUDGE_LAMBDA);
       if (manual) onManualCameraInput?.();
       announceTargetViewport();
       if (reduced) snapToTarget();
@@ -806,7 +848,7 @@ function BoardCameraRig({
         target.current.x = next.x;
         target.current.y = next.y;
         target.current.zoom = next.zoom;
-        lambda.current = FLIGHT_LAMBDA;
+        beginFlightRef.current();
         if (reduced) snapToTarget();
         invalidate();
       },
@@ -818,7 +860,7 @@ function BoardCameraRig({
         // Arrow press can never inherit a delayed dolly or appear to refit.
         target.current.zoom = current.current.zoom;
         if (!followSelection && !force) {
-          lambda.current = FOLLOW_LAMBDA;
+          beginDriftRef.current(FOLLOW_LAMBDA);
           if (reduced) snapToTarget();
           invalidate();
           return;
@@ -830,7 +872,7 @@ function BoardCameraRig({
         );
         target.current.x = next.x;
         target.current.y = next.y;
-        lambda.current = FOLLOW_LAMBDA;
+        beginDriftRef.current(FOLLOW_LAMBDA);
         if (reduced) snapToTarget();
         invalidate();
       },
@@ -847,7 +889,7 @@ function BoardCameraRig({
         );
         target.current.x = next.x;
         target.current.y = next.y;
-        lambda.current = FLIGHT_LAMBDA;
+        beginFlightRef.current();
         if (reduced) snapToTarget();
         invalidate();
       },
@@ -914,40 +956,65 @@ function BoardCameraRig({
         }
       }
     }
-    const speed = lambda.current;
-    const nextX = THREE.MathUtils.damp(
-      current.current.x,
-      target.current.x,
-      speed,
-      delta
-    );
-    const nextY = THREE.MathUtils.damp(
-      current.current.y,
-      target.current.y,
-      speed,
-      delta
-    );
-    const nextZoom = THREE.MathUtils.damp(
-      current.current.zoom,
-      target.current.zoom,
-      speed,
-      delta
-    );
-    const nextTilt = THREE.MathUtils.damp(
-      current.current.tilt,
-      target.current.tilt,
-      speed,
-      delta
-    );
-    const moving =
-      Math.abs(nextX - target.current.x) > 0.001 ||
-      Math.abs(nextY - target.current.y) > 0.001 ||
-      Math.abs(nextZoom - target.current.zoom) > 0.001 ||
-      Math.abs(nextTilt - target.current.tilt) > 0.001;
-    current.current.x = moving ? nextX : target.current.x;
-    current.current.y = moving ? nextY : target.current.y;
-    current.current.zoom = moving ? nextZoom : target.current.zoom;
-    current.current.tilt = moving ? nextTilt : target.current.tilt;
+    const flight = flightFrom.current;
+    let moving = false;
+    if (flight && transitionClock) {
+      const now = performance.now();
+      const progress = boardTransitionProgress(transitionClock.current, now);
+      const eased = boardTransitionEase(progress);
+      current.current.x = flight.x + (target.current.x - flight.x) * eased;
+      current.current.y = flight.y + (target.current.y - flight.y) * eased;
+      // Zoom is multiplicative, so it mixes in log space. Mixing it linearly
+      // made zooming in front-load and zooming out back-load the same journey,
+      // which is why the two directions used to feel like different moves.
+      current.current.zoom = mixBoardZoom(
+        flight.zoom,
+        target.current.zoom,
+        eased
+      );
+      current.current.tilt =
+        flight.tilt + (target.current.tilt - flight.tilt) * eased;
+      moving = progress < 1;
+      if (!moving) {
+        flightFrom.current = null;
+        settleBoardTransition(transitionClock.current, now);
+      }
+    } else {
+      const speed = lambda.current;
+      const nextX = THREE.MathUtils.damp(
+        current.current.x,
+        target.current.x,
+        speed,
+        delta
+      );
+      const nextY = THREE.MathUtils.damp(
+        current.current.y,
+        target.current.y,
+        speed,
+        delta
+      );
+      const nextZoom = dampBoardZoom(
+        current.current.zoom,
+        target.current.zoom,
+        speed,
+        delta
+      );
+      const nextTilt = THREE.MathUtils.damp(
+        current.current.tilt,
+        target.current.tilt,
+        speed,
+        delta
+      );
+      moving =
+        Math.abs(nextX - target.current.x) > 0.001 ||
+        Math.abs(nextY - target.current.y) > 0.001 ||
+        Math.abs(nextZoom - target.current.zoom) > 0.001 ||
+        Math.abs(nextTilt - target.current.tilt) > 0.001;
+      current.current.x = moving ? nextX : target.current.x;
+      current.current.y = moving ? nextY : target.current.y;
+      current.current.zoom = moving ? nextZoom : target.current.zoom;
+      current.current.tilt = moving ? nextTilt : target.current.tilt;
+    }
     applyCamera(current.current);
     notifyViewport();
     if (moving || relaxing) state.invalidate();
@@ -1250,6 +1317,7 @@ function DampedHtmlAnchor({
   const target = useRef(position);
   target.current = position;
   const invalidate = useThree(state => state.invalidate);
+  const transitionClock = useBoardTransitionClock();
   useLayoutEffect(() => {
     if (!reduced || !group.current) return;
     group.current.position.set(...position);
@@ -1258,6 +1326,17 @@ function DampedHtmlAnchor({
   useFrame((state, delta) => {
     const node = group.current;
     if (!node || reduced) return;
+    // During a semantic transition the whole field is being carried, so an
+    // anchor that also damped its own local position would ease twice and lag
+    // behind the piece it labels. It takes the new local spot immediately and
+    // lets the field do the travelling.
+    if (
+      transitionClock &&
+      isBoardTransitionActive(transitionClock.current, performance.now())
+    ) {
+      node.position.set(...target.current);
+      return;
+    }
     const nextX = THREE.MathUtils.damp(
       node.position.x,
       target.current[0],
@@ -2258,11 +2337,6 @@ function AgentPieceLayer({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
-  const motionGroup = useRef<THREE.Group>(null);
-  const previousAltitude = useRef(altitude);
-  const previousPositions = useRef(
-    new Map(visible.map(piece => [piece.id, { x: piece.x, y: -piece.y }]))
-  );
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const invalidate = useThree(state => state.invalidate);
   const pieceGeometry = AGENT_HEX_GEOMETRY;
@@ -2282,82 +2356,13 @@ function AgentPieceLayer({
     [selectedDelegationUnitId, settledDelegation, solid]
   );
 
-  // Carry the unit field through semantic altitude changes. The new layout is
-  // first transformed back onto the ACTUAL previous frame, then that inverse
-  // transform damps to identity. This keeps the selected Project under the
-  // operator instead of teleporting through the old origin.
-  useLayoutEffect(() => {
-    const group = motionGroup.current;
-    const next = new Map(
-      visible.map(piece => [piece.id, { x: piece.x, y: -piece.y }])
-    );
-    if (group && !reduced && previousAltitude.current !== altitude) {
-      const common = visible.filter(piece =>
-        previousPositions.current.has(piece.id)
-      );
-      if (common.length > 0) {
-        let nextX = 0;
-        let nextY = 0;
-        let priorX = 0;
-        let priorY = 0;
-        for (const piece of common) {
-          const prior = previousPositions.current.get(piece.id)!;
-          nextX += piece.x;
-          nextY += -piece.y;
-          priorX += group.position.x + group.scale.x * prior.x;
-          priorY += group.position.y + group.scale.y * prior.y;
-        }
-        nextX /= common.length;
-        nextY /= common.length;
-        priorX /= common.length;
-        priorY /= common.length;
-        let numerator = 0;
-        let denominator = 0;
-        for (const piece of common) {
-          const prior = previousPositions.current.get(piece.id)!;
-          const actualX = group.position.x + group.scale.x * prior.x;
-          const actualY = group.position.y + group.scale.y * prior.y;
-          const dx = piece.x - nextX;
-          const dy = -piece.y - nextY;
-          numerator += dx * (actualX - priorX) + dy * (actualY - priorY);
-          denominator += dx * dx + dy * dy;
-        }
-        const scale = THREE.MathUtils.clamp(
-          denominator > 0.0001 ? numerator / denominator : 1,
-          0.35,
-          2.85
-        );
-        group.scale.set(scale, scale, 1);
-        group.position.set(priorX - scale * nextX, priorY - scale * nextY, 0);
-        invalidate();
-      }
-    }
-    previousAltitude.current = altitude;
-    previousPositions.current = next;
-  }, [altitude, invalidate, reduced, visible]);
-
   // Entrance choreography (V2.4): pieces scale in with a radial slot stagger
   // while the material fades up. Because the layer now survives altitude
   // changes, this remains a board/data arrival signature and never replays on
   // Fleet → Project → Agent navigation.
   useFrame((state, delta) => {
-    const group = motionGroup.current;
-    let fieldMoving = false;
-    if (group && !reduced) {
-      const dt = Math.min(delta, 0.05);
-      const x = THREE.MathUtils.damp(group.position.x, 0, 7.5, dt);
-      const y = THREE.MathUtils.damp(group.position.y, 0, 7.5, dt);
-      const scale = THREE.MathUtils.damp(group.scale.x, 1, 7.5, dt);
-      fieldMoving =
-        Math.abs(x) > 0.001 ||
-        Math.abs(y) > 0.001 ||
-        Math.abs(scale - 1) > 0.0005;
-      group.position.set(fieldMoving ? x : 0, fieldMoving ? y : 0, 0);
-      group.scale.set(fieldMoving ? scale : 1, fieldMoving ? scale : 1, 1);
-    }
     if (entranceClock.current === null) {
       if (bodyMat.current) bodyMat.current.opacity = 1;
-      if (fieldMoving) state.invalidate();
       return;
     }
     entranceClock.current += Math.min(delta, 0.05);
@@ -2388,7 +2393,7 @@ function AgentPieceLayer({
   // reachable but unmarked.
   const selected = statusSubjects.find(piece => piece.selected);
   return (
-    <group ref={motionGroup}>
+    <group>
       <Instances geometry={pieceGeometry} limit={256} range={solid.length}>
         <meshLambertMaterial
           ref={bodyMat}
@@ -3432,6 +3437,7 @@ export function OperationsBoardCanvas({
           top/side split in the fixed-angle projection. */}
       <ambientLight intensity={1.15} />
       <directionalLight position={[26, 42, 80]} intensity={0.65} />
+      <BoardTransitionProvider>
       <BoardCameraRig
         layout={layout}
         projection={projection}
@@ -3447,6 +3453,11 @@ export function OperationsBoardCanvas({
         onManualCameraInput={onManualCameraInput}
         onClampEdges={onClampEdges}
       />
+      <BoardField
+        pieces={layout.pieces}
+        altitude={layout.altitude}
+        reduced={reduced}
+      >
       <BoardGrid bounds={layout.bounds} theme={theme} />
       <ZoneLayer
         zones={visibleZones}
@@ -3518,6 +3529,8 @@ export function OperationsBoardCanvas({
         now={now}
         theme={theme}
       />
+      </BoardField>
+      </BoardTransitionProvider>
       {!lowPower && effectsReady && theme.bloom.enabled && (
         <Suspense fallback={null}>
           <OperationsBoardEffects bloom={theme.bloom} />

@@ -96,9 +96,28 @@ contrast-corrected against the resolved ground.
 3. **Never allocate inside `useFrame`** (`new THREE.Color/Vector3/Euler`, array
    literals). Hoist to `useMemo`/refs/module scope and mutate in place.
 4. **Frame-rate independence — use `delta`.** Accumulate phase as
-   `phase += delta * radPerSec`. Eased transitions:
+   `phase += delta * radPerSec`. Continuous easing:
    `THREE.MathUtils.damp(current, target, lambda /*≈6–10*/, delta)`.
    `clock.elapsedTime` is wall-clock so `sin(elapsed*k)` is already fps-independent.
+4b. **Split motion by kind — `damp` is not for semantic transitions.** `damp`
+   re-aims every frame and never needs to know where it is going, which makes it
+   right for motion whose target is still moving: pan, wheel, pinch, follow,
+   hover lift, a clamp rubber-band. It is wrong for a transition that several
+   things must complete together, for two reasons. It starts at MAXIMUM velocity
+   (`lambda x distance` the instant the target changes), and a step change in
+   velocity is what reads as a jerk. And it has no duration, so two damped
+   owners at different lambdas arrive at different times — the board's camera
+   (5.5) and unit field (7.5) diverged 11.4% at peak and finished 0.22s apart.
+   A semantic transition (altitude change, reframe, a coordinated reveal) gets
+   ONE clock with a real duration and an ease that leaves and arrives at rest,
+   and every participating layer samples the same progress. See
+   `operations-board-transition.ts` for the board's implementation.
+4c. **Interpolate multiplicative quantities in log space.** Camera zoom and
+   uniform scale are ratios, not distances: 1 → 2 and 2 → 4 are the same visual
+   change. Mixing them linearly front-loads zooming in and back-loads zooming
+   out over the same journey — halfway through a linear 1 → 4 the operator has
+   already seen two thirds of the change, and 4 → 1 shows a third. Use
+   `mixBoardZoom` / `dampBoardZoom`, not `MathUtils.damp`, on zoom and scale.
 5. **Clamp first-frame delta** for duration timelines: `Math.min(delta, 0.05)`
    (tab refocus/GC can deliver delta > 1s). `damp` is spike-robust; linear isn't.
 6. **Neon + Bloom ⇒ `toneMapped={false}`** on the emissive/accent material.

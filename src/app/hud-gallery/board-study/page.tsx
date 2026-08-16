@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   selectSpatialBandSelection,
@@ -82,12 +83,13 @@ function href(state: StudyState, patch: Partial<StudyState>): string {
   return `/hud-gallery/board-study?${params.toString()}`;
 }
 
-export default function BoardStudyPage() {
-  // Read after mount so the server and first client render agree.
-  const [state, setState] = useState<StudyState>(DEFAULTS);
-  useEffect(() => {
-    setState(readState(window.location.search));
-  }, []);
+function BoardStudyBench() {
+  // Read reactively, so following a control link re-renders the board in place
+  // instead of only rewriting the address bar. Snapshotting the search string
+  // once at mount left the altitude control dead, which meant the bench could
+  // not exercise a board transition at all -- the one thing it exists for.
+  const params = useSearchParams();
+  const state = useMemo(() => readState(params.toString()), [params]);
 
   const fleetState = useMemo(
     () => boardStudyFleet(state.fixture),
@@ -270,5 +272,13 @@ function Control({
         ))}
       </div>
     </div>
+  );
+}
+
+export default function BoardStudyPage() {
+  return (
+    <Suspense fallback={null}>
+      <BoardStudyBench />
+    </Suspense>
   );
 }
