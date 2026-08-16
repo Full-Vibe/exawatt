@@ -145,6 +145,11 @@ export function surfaceGateMessage(missing) {
 export function classifyDeliveryPolicy(changedPaths, extras = []) {
   const paths = [...new Set(changedPaths)].sort();
   const checks = [
+    {
+      id: 'content:scan',
+      command: 'pnpm',
+      args: ['run', 'content:scan', '--', ...paths],
+    },
     { id: 'type-check', command: 'pnpm', args: ['run', 'type-check'] },
     {
       id: 'test:agent-delivery',

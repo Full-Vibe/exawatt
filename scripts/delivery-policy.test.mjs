@@ -17,12 +17,14 @@ function ids(paths, extras = []) {
   return classifyDeliveryPolicy(paths, extras).map(check => check.id);
 }
 
-test('the cheap type floor cannot be weakened by the caller', () => {
+test('the cheap changed-file floor cannot be weakened by the caller', () => {
   assert.deepEqual(ids(['docs/product/concepts.md']), [
+    'content:scan',
     'type-check',
     'test:agent-delivery',
   ]);
   assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['lint']), [
+    'content:scan',
     'type-check',
     'test:agent-delivery',
     'vitest-related',
@@ -30,13 +32,21 @@ test('the cheap type floor cannot be weakened by the caller', () => {
   ]);
 });
 
+test('content scanning runs first on the sorted, unique candidate paths', () => {
+  const [check] = classifyDeliveryPolicy(['src/z.ts', 'docs/a.md', 'src/z.ts']);
+  assert.deepEqual(check, {
+    id: 'content:scan',
+    command: 'pnpm',
+    args: ['run', 'content:scan', '--', 'docs/a.md', 'src/z.ts'],
+  });
+});
+
 test('provider composition changes receive related consumer tests', () => {
   const checks = classifyDeliveryPolicy(['src/components/ExposeOverlay.tsx']);
-  assert.deepEqual(checks.map(check => check.id), [
-    'type-check',
-    'test:agent-delivery',
-    'vitest-related',
-  ]);
+  assert.deepEqual(
+    checks.map(check => check.id),
+    ['content:scan', 'type-check', 'test:agent-delivery', 'vitest-related']
+  );
   assert.deepEqual(checks.at(-1).args, [
     'run',
     'test:related',
@@ -46,6 +56,7 @@ test('provider composition changes receive related consumer tests', () => {
 
 test('dogfood and Electron orchestration changes receive Electron compilation', () => {
   assert.deepEqual(ids(['scripts/install-dogfood.mjs']), [
+    'content:scan',
     'type-check',
     'test:agent-delivery',
     'vitest-related',
@@ -55,6 +66,7 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
 
 test('roadmap corpus changes receive the canonical parser contract', () => {
   assert.deepEqual(ids(['docs/engineering/roadmap.md']), [
+    'content:scan',
     'type-check',
     'test:agent-delivery',
     'roadmap-contract',
@@ -71,6 +83,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
   assert.deepEqual(
     checks.map(check => check.id),
     [
+      'content:scan',
       'type-check',
       'test:agent-delivery',
       'vitest-related',
