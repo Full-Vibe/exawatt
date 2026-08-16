@@ -3,10 +3,7 @@ import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
-import {
-  listAgentModels,
-  setAgentModelCatalogCache,
-} from './pty/agent-models';
+import { listAgentModels, setAgentModelCatalogCache } from './pty/agent-models';
 import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
 import {
   agentSourceLaunchError,
@@ -40,6 +37,7 @@ import {
   setHostedConversationSummaries,
   setLaunchConfigurationPinned,
   setOperatorAutoPublish,
+  recordOperatorProfilePublicationState,
   setReentryRecapEnabled,
   setAppearancePreferences,
 } from './settings-store';
@@ -381,7 +379,12 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       if (typeof cwd !== 'string' || !cwd.trim() || cwd.includes('\0')) {
         throw new Error('Invalid Project directory');
       }
-      return listAgentModels(harness, cwd, await defaultShell(), refresh === true);
+      return listAgentModels(
+        harness,
+        cwd,
+        await defaultShell(),
+        refresh === true
+      );
     }
   );
   handleTrusted(
@@ -803,8 +806,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     return settings;
   });
   handleTrusted('settings:set-reentry-recap', (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean')
-      throw new Error('Invalid recap setting');
+    if (typeof enabled !== 'boolean') throw new Error('Invalid recap setting');
     const settings = setReentryRecapEnabled(enabled);
     // Applied before the write is announced: no scrollback may be read and no
     // recap process spawned after the operator has switched the recap off.
@@ -822,6 +824,38 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       // at execution time (ENG-035; decision `0029`). Main persists the
       // choice and announces it.
       const settings = setOperatorAutoPublish(enabled);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:record-operator-profile-state',
+    (_event, state: unknown) => {
+      if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        throw new Error('Invalid Operator profile state');
+      }
+      const raw = state as Record<string, unknown>;
+      if (
+        Object.keys(raw).some(
+          key => !['startedAt', 'lastSyncedAt', 'profileEnabled'].includes(key)
+        ) ||
+        (raw.startedAt !== undefined && typeof raw.startedAt !== 'string') ||
+        (raw.lastSyncedAt !== undefined &&
+          typeof raw.lastSyncedAt !== 'string') ||
+        (raw.profileEnabled !== undefined &&
+          typeof raw.profileEnabled !== 'boolean')
+      ) {
+        throw new Error('Invalid Operator profile state');
+      }
+      const settings = recordOperatorProfilePublicationState({
+        ...(raw.startedAt === undefined ? {} : { startedAt: raw.startedAt }),
+        ...(raw.lastSyncedAt === undefined
+          ? {}
+          : { lastSyncedAt: raw.lastSyncedAt }),
+        ...(raw.profileEnabled === undefined
+          ? {}
+          : { profileEnabled: raw.profileEnabled }),
+      });
       broadcast('settings:changed', settings);
       return settings;
     }

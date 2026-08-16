@@ -119,6 +119,34 @@ describe('parseSettings', () => {
     ).toEqual({ autoPublish: false });
   });
 
+  it('keeps only valid durable Operator profile metadata', () => {
+    expect(
+      parseSettings({
+        operatorProfile: {
+          autoPublish: true,
+          startedAt: '2026-08-03T18:00:00.000Z',
+          lastSyncedAt: '2026-08-16T19:00:00.000Z',
+          profileEnabled: true,
+        },
+      }).operatorProfile
+    ).toEqual({
+      autoPublish: true,
+      startedAt: '2026-08-03T18:00:00.000Z',
+      lastSyncedAt: '2026-08-16T19:00:00.000Z',
+      profileEnabled: true,
+    });
+    expect(
+      parseSettings({
+        operatorProfile: {
+          autoPublish: true,
+          startedAt: 'not-a-date',
+          lastSyncedAt: 42,
+          profileEnabled: 'yes',
+        },
+      }).operatorProfile
+    ).toEqual({ autoPublish: true });
+  });
+
   it('sanitizes Agent Source recommendations while preserving future source ids', () => {
     expect(
       parseSettings({

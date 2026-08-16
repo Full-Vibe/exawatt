@@ -214,15 +214,27 @@ public contract. The initial historical adapter derives conservative activity
 intervals from timestamped Claude Code and Codex Consumption samples and keeps
 reported, observed, derived, and unavailable assurance explicit.
 
-The desktop privilege boundary remains narrow and operator initiated. Electron
-main scans machine-local source logs only after the operator requests a preview,
-starts at the locally persisted opt-in instant, and sends the renderer only
+The desktop privilege boundary remains narrow and preference-governed. Electron
+main's incremental Consumption service is the only reader of machine-local
+harness logs; Operator stats requests a settled, samples-only projection from
+that service and never starts a second corpus scan or assembles unrelated plan-
+window history. The renderer schedules the scan only while the durable, off-by-
+default `operatorProfile.autoPublish` preference is on, then receives only
 sanitized daily and Run aggregates. Local source identifiers are hashed before
 they become public idempotency keys and public Run ids; prompts, responses,
-code, repositories, Projects, branches, paths, filenames, diffs, and raw Session
-ids are absent from the IPC and network schemas. Previewing is local. Publishing
-is a separate authenticated action, and disabling public visibility does not
-delete or mutate local history.
+code, repositories, Projects, branches, paths, filenames, diffs, and raw
+Session ids are absent from the IPC and network schemas.
+
+The consent boundary, last successful sync, and cached hosted visibility live
+beside that preference in Electron's settings store, not renderer
+`localStorage`: packaged Electron serves each launch from a different localhost
+port, so origin-scoped storage is not durable application state. An owner-only
+authenticated metadata read recovers the original hosted `joined_at` boundary
+for profiles created before this repair; new profiles anchor at the switch-on
+instant and never upload pre-consent history. The renderer owns Supabase auth,
+GitHub identity resolution, and the coalesced launch/interval/manual POST.
+Pausing stops future writes, while disabling public visibility also pauses and
+does not delete or mutate local history.
 
 The hosted boundary accepts only the versioned allowlist after authenticated
 GitHub identity resolution. A server RPC atomically replaces that operator's
@@ -624,10 +636,12 @@ Built:
   behavior, immediate correction, a repository gold corpus, and a reusable
   authenticated product-feedback intake with private optional screenshots
 - ENG-035 operator-statistics foundation: a pure source-neutral Run/day/rank
-  kernel, conservative Claude Code and Codex Consumption adapter, strict
-  aggregate-only payload parser, operator-triggered Electron-main scan IPC,
-  authenticated idempotent sync/disable API, and RLS-backed Supabase aggregate
-  schema with enabled-only anonymous leaderboard/profile/Run projections
+  kernel, conservative Claude Code and Codex Consumption projection from the
+  shared incremental main-process scanner, strict aggregate-only payload
+  parser, preference-gated Electron-main scan IPC, durable consent/sync state,
+  authenticated idempotent sync/disable/status API, and RLS-backed Supabase
+  aggregate schema with enabled-only anonymous leaderboard/profile/Run
+  projections
 - ENG-038 provider plan-account read (slice 1): a credentialed, remote,
   read-only Electron-main sibling of the local Consumption scanner that
   fetches Claude plan windows from the vendor's own account endpoint using

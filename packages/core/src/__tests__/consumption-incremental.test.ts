@@ -14,6 +14,7 @@ import type {
   ConsumptionFileRef,
   ConsumptionFileSystem,
   ConsumptionScanSink,
+  ConsumptionSourceAdapter,
   ConsumptionWatermark,
 } from '../consumption/ports';
 import { scanConsumption } from '../consumption/scan';
@@ -193,10 +194,11 @@ describe('cancellation', () => {
     const completed = Object.values(first.watermarks)
       .filter(
         mark =>
-          mark.size === Buffer.byteLength(
-            ALL_FIXTURES[mark.path as keyof typeof ALL_FIXTURES] ?? '',
-            'utf8'
-          ) && mark.consumedBytes > 0
+          mark.size ===
+            Buffer.byteLength(
+              ALL_FIXTURES[mark.path as keyof typeof ALL_FIXTURES] ?? '',
+              'utf8'
+            ) && mark.consumedBytes > 0
       )
       .map(mark => mark.path);
     expect(completed.length).toBeGreaterThan(0);
@@ -222,7 +224,8 @@ describe('cancellation', () => {
 
   it('a file aborted mid-read records only its covered extent so it can never be skipped as complete', async () => {
     const path = Object.keys(CODEX_FIXTURE_FILES)[0];
-    const content = CODEX_FIXTURE_FILES[path as keyof typeof CODEX_FIXTURE_FILES];
+    const content =
+      CODEX_FIXTURE_FILES[path as keyof typeof CODEX_FIXTURE_FILES];
     const fs = new BoundedMemoryFileSystem({ [path]: content });
     const signal = { aborted: false };
     let reads = 0;
@@ -300,8 +303,11 @@ describe('streaming sink', () => {
   });
 
   it('reports progress with monotonic bytes and a final complete count', async () => {
-    const seen: Array<{ filesSeen: number; filesTotal: number; bytesRead: number }> =
-      [];
+    const seen: Array<{
+      filesSeen: number;
+      filesTotal: number;
+      bytesRead: number;
+    }> = [];
     await scanConsumption(
       [new CodexConsumptionAdapter('/root/codex')],
       new BoundedMemoryFileSystem(CODEX_FIXTURE_FILES),
@@ -424,9 +430,7 @@ describe('derivePlanWindowRates', () => {
   it('is absent — never zero — when a pace cannot be observed', () => {
     const at = Date.parse('2026-07-05T12:00:00.000Z');
     // Single observation.
-    expect(
-      derivePlanWindowRates([obs({ observedAtMs: at })])
-    ).toEqual({});
+    expect(derivePlanWindowRates([obs({ observedAtMs: at })])).toEqual({});
     // Two observations closer than the minimum span.
     expect(
       derivePlanWindowRates([
@@ -467,5 +471,56 @@ describe('scanConsumption window observations', () => {
     expect(scan.windowObservations.length).toBeGreaterThan(
       scan.planWindows.length
     );
+  });
+
+  it("combines histories beyond V8's argument ceiling without spreading them", async () => {
+    const window: PlanWindow = {
+      source: 'codex',
+      limitId: 'codex',
+      limitName: null,
+      scope: 'primary',
+      usedPercent: 50,
+      windowMinutes: 300,
+      resetsAt: null,
+      planType: 'pro',
+      observedAt: '2026-08-10T09:10:00.000Z',
+      providerSessionId: 'stress-session',
+    };
+    const observations = Array<PlanWindow>(130_000).fill(window);
+    const adapter: ConsumptionSourceAdapter = {
+      source: 'codex',
+      root: '/unused',
+      scan: async () => ({
+        samples: [],
+        planWindows: [window],
+        windowObservations: observations,
+        diagnostics: {
+          filesSeen: 1,
+          filesUnreadable: 0,
+          bytesRead: 1,
+          linesRead: observations.length,
+          linesUnparsable: 0,
+          truncatedFinalLines: 0,
+          linesWithoutUsage: 0,
+          recordsWithoutSessionId: 0,
+          recordsWithoutCwd: 0,
+          recordsWithoutModel: 0,
+          duplicatesMerged: 0,
+          samplesEmitted: 0,
+          planWindowsEmitted: observations.length,
+          delegatedRecords: 0,
+          delegationMetaMissing: 0,
+        },
+        watermarks: {},
+        aborted: false,
+      }),
+    };
+
+    const scan = await scanConsumption(
+      [adapter],
+      new BoundedMemoryFileSystem({})
+    );
+
+    expect(scan.windowObservations).toHaveLength(observations.length);
   });
 });

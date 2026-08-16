@@ -38,13 +38,6 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { isOperatorAutoPublishEnabled } from '@/lib/hosted-features/contract';
 
-/** Consent anchor: recording starts here, never before (decision `0029`). */
-export const OPERATOR_STATS_START_KEY = 'exawatt.operator-stats.started-at.v1';
-/** This device's memory that the profile has been published at least once. */
-export const OPERATOR_STATS_ENABLED_KEY = 'exawatt.operator-stats.enabled.v1';
-export const OPERATOR_STATS_LAST_SYNCED_KEY =
-  'exawatt.operator-stats.last-synced.v1';
-
 /** Well past startup so a sync never competes with launch work. */
 export const OPERATOR_STATS_LAUNCH_SYNC_DELAY_MS = 2 * 60_000;
 export const OPERATOR_STATS_SYNC_INTERVAL_MS = 6 * 60 * 60_000;
@@ -66,6 +59,27 @@ export type OperatorStatsSyncOutcome =
   | 'synced'
   | 'failed';
 
+export type OperatorStatsSyncFailure =
+  | 'local-scan'
+  | 'local-state'
+  | 'network'
+  | 'unauthorized'
+  | 'identity'
+  | 'rejected'
+  | 'service';
+
+export interface OperatorProfilePublicationState {
+  startedAt?: string;
+  lastSyncedAt?: string;
+  profileEnabled?: boolean;
+}
+
+export interface HostedOperatorProfileState {
+  enabled: boolean;
+  startedAt: string;
+  lastSyncedAt: string;
+}
+
 export interface OperatorStatsSyncSnapshot {
   runs: number;
   agentMs: number;
@@ -75,19 +89,28 @@ export interface OperatorStatsSyncSnapshot {
 export interface OperatorStatsSyncResult {
   outcome: OperatorStatsSyncOutcome;
   snapshot: OperatorStatsSyncSnapshot | null;
+  failure: OperatorStatsSyncFailure | null;
 }
 
 export interface OperatorStatsSyncDeps {
   isAutoPublishEnabled: () => Promise<boolean>;
   getSession: () => Promise<Session | null>;
   getGithubIdentity: () => Promise<UserIdentity | null>;
+  getPublicationState: () => Promise<OperatorProfilePublicationState>;
+  getHostedProfileState: (accessToken: string) => Promise<{
+    ok: boolean;
+    status: number;
+    profile: HostedOperatorProfileState | null;
+  }>;
+  recordPublicationState: (
+    state: OperatorProfilePublicationState
+  ) => Promise<void>;
   scan: (since: string, timezone: string) => Promise<LocalOperatorStatsPreview>;
   post: (
     body: string,
     accessToken: string
   ) => Promise<{ ok: boolean; status: number }>;
   captureFailure: (failure: HostedFailure, statusCode: number | null) => void;
-  storage: Pick<Storage, 'getItem' | 'setItem'>;
   now: () => number;
   timezone: () => string;
 }
@@ -125,30 +148,70 @@ export async function performOperatorStatsSync(
   deps: OperatorStatsSyncDeps
 ): Promise<OperatorStatsSyncResult> {
   if (!(await deps.isAutoPublishEnabled())) {
-    return { outcome: 'paused', snapshot: null };
+    return { outcome: 'paused', snapshot: null, failure: null };
   }
   const session = await deps.getSession();
-  if (!session) return { outcome: 'signed-out', snapshot: null };
+  if (!session) return { outcome: 'signed-out', snapshot: null, failure: null };
   const github = await deps.getGithubIdentity();
-  if (!github) return { outcome: 'unlinked', snapshot: null };
+  if (!github) return { outcome: 'unlinked', snapshot: null, failure: null };
+
+  let publication: OperatorProfilePublicationState;
+  try {
+    publication = await deps.getPublicationState();
+  } catch {
+    return { outcome: 'failed', snapshot: null, failure: 'local-state' };
+  }
+
+  let since = publication.startedAt ?? null;
+  if (!since) {
+    let hosted: Awaited<
+      ReturnType<OperatorStatsSyncDeps['getHostedProfileState']>
+    >;
+    try {
+      hosted = await deps.getHostedProfileState(session.access_token);
+    } catch {
+      deps.captureFailure('network', null);
+      return { outcome: 'failed', snapshot: null, failure: 'network' };
+    }
+    if (!hosted.ok) {
+      deps.captureFailure(hostedFailureForStatus(hosted.status), hosted.status);
+      return {
+        outcome: 'failed',
+        snapshot: null,
+        failure: syncFailureForStatus(hosted.status),
+      };
+    }
+    // Existing profiles prove an earlier consent boundary. New profiles start
+    // exactly now. Persist before scanning so a renderer-port change can never
+    // move this anchor or silently backfill pre-consent history.
+    since = hosted.profile?.startedAt ?? new Date(deps.now()).toISOString();
+    try {
+      await deps.recordPublicationState({
+        startedAt: since,
+        ...(hosted.profile
+          ? {
+              lastSyncedAt: hosted.profile.lastSyncedAt,
+              profileEnabled: hosted.profile.enabled,
+            }
+          : { profileEnabled: false }),
+      });
+    } catch {
+      return { outcome: 'failed', snapshot: null, failure: 'local-state' };
+    }
+  }
 
   let preview: LocalOperatorStatsPreview;
   try {
-    let since = deps.storage.getItem(OPERATOR_STATS_START_KEY);
-    if (!since) {
-      since = new Date(deps.now()).toISOString();
-      deps.storage.setItem(OPERATOR_STATS_START_KEY, since);
-    }
     preview = await deps.scan(since, deps.timezone());
   } catch {
     // A local read failure is not a hosted call; nothing to count.
-    return { outcome: 'failed', snapshot: null };
+    return { outcome: 'failed', snapshot: null, failure: 'local-scan' };
   }
 
   // The switch may have flipped during the scan. Once it is off, nothing
   // leaves — re-check at the last moment before the only network write.
   if (!(await deps.isAutoPublishEnabled())) {
-    return { outcome: 'paused', snapshot: null };
+    return { outcome: 'paused', snapshot: null, failure: null };
   }
 
   try {
@@ -157,18 +220,35 @@ export async function performOperatorStatsSync(
       session.access_token
     );
     if (!response.ok) {
-      deps.captureFailure(hostedFailureForStatus(response.status), response.status);
-      return { outcome: 'failed', snapshot: null };
+      deps.captureFailure(
+        hostedFailureForStatus(response.status),
+        response.status
+      );
+      return {
+        outcome: 'failed',
+        snapshot: null,
+        failure: syncFailureForStatus(response.status),
+      };
     }
   } catch {
     deps.captureFailure('network', null);
-    return { outcome: 'failed', snapshot: null };
+    return { outcome: 'failed', snapshot: null, failure: 'network' };
   }
 
-  deps.storage.setItem(OPERATOR_STATS_ENABLED_KEY, 'true');
-  deps.storage.setItem(OPERATOR_STATS_LAST_SYNCED_KEY, String(deps.now()));
+  const syncedAt = deps.now();
+  try {
+    await deps.recordPublicationState({
+      startedAt: since,
+      lastSyncedAt: new Date(syncedAt).toISOString(),
+      profileEnabled: true,
+    });
+  } catch {
+    // Hosted truth already advanced. Keep the successful outcome honest and
+    // let the next sync rehydrate the local cache from the owner-only GET.
+  }
   return {
     outcome: 'synced',
+    failure: null,
     snapshot: {
       runs: preview.runs.length,
       agentMs: preview.days.reduce((sum, day) => sum + day.agentMs, 0),
@@ -180,6 +260,13 @@ export async function performOperatorStatsSync(
   };
 }
 
+function syncFailureForStatus(status: number): OperatorStatsSyncFailure {
+  if (status === 401 || status === 403) return 'unauthorized';
+  if (status === 409) return 'identity';
+  if (status >= 400 && status < 500) return 'rejected';
+  return 'service';
+}
+
 /* ------------------------------------------------------------------ *
  * Live status — one store so the panel renders exactly what the
  * executor is doing, whoever triggered it.
@@ -188,31 +275,20 @@ export async function performOperatorStatsSync(
 export interface OperatorStatsSyncState {
   phase: 'idle' | 'syncing';
   lastOutcome: OperatorStatsSyncOutcome | null;
+  lastFailure: OperatorStatsSyncFailure | null;
   /** Epoch ms of the last successful sync from this device, persisted. */
   lastSyncedAt: number | null;
   lastSnapshot: OperatorStatsSyncSnapshot | null;
 }
 
-function readStoredSyncedAt(): number | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(OPERATOR_STATS_LAST_SYNCED_KEY);
-    const parsed = raw === null ? NaN : Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 let state: OperatorStatsSyncState = {
   phase: 'idle',
   lastOutcome: null,
+  lastFailure: null,
   lastSyncedAt: null,
   lastSnapshot: null,
 };
 
-/** Lazy so the module can evaluate during SSR without touching storage. */
-let storedSyncedAtLoaded = false;
 const listeners = new Set<() => void>();
 
 function setState(patch: Partial<OperatorStatsSyncState>): void {
@@ -221,12 +297,18 @@ function setState(patch: Partial<OperatorStatsSyncState>): void {
 }
 
 export function readOperatorStatsSyncState(): OperatorStatsSyncState {
-  if (!storedSyncedAtLoaded && typeof window !== 'undefined') {
-    storedSyncedAtLoaded = true;
-    const stored = readStoredSyncedAt();
-    if (stored !== null) state = { ...state, lastSyncedAt: stored };
-  }
   return state;
+}
+
+export function hydrateOperatorStatsSyncState(
+  publication: OperatorProfilePublicationState | undefined
+): void {
+  const parsed = publication?.lastSyncedAt
+    ? Date.parse(publication.lastSyncedAt)
+    : NaN;
+  if (Number.isFinite(parsed) && parsed !== state.lastSyncedAt) {
+    setState({ lastSyncedAt: parsed });
+  }
 }
 
 export function subscribeOperatorStatsSync(listener: () => void): () => void {
@@ -271,6 +353,36 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
       const { data } = await supabase.auth.getUserIdentities();
       return findGithub(data?.identities);
     },
+    getPublicationState: async () => {
+      if (!settingsBridge) return {};
+      const settings = await settingsBridge.get();
+      return settings.operatorProfile ?? {};
+    },
+    getHostedProfileState: async accessToken => {
+      const response = await fetch('/api/operator-stats', {
+        method: 'GET',
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        return { ok: false, status: response.status, profile: null };
+      }
+      const body = (await response.json()) as {
+        profile?: HostedOperatorProfileState | null;
+      };
+      return {
+        ok: true,
+        status: response.status,
+        profile: body.profile ?? null,
+      };
+    },
+    recordPublicationState: async publication => {
+      if (!settingsBridge?.recordOperatorProfileState) {
+        throw new Error('Operator profile state is unavailable');
+      }
+      const settings =
+        await settingsBridge.recordOperatorProfileState(publication);
+      hydrateOperatorStatsSyncState(settings.operatorProfile);
+    },
     scan: (since, timezone) => scanApi.scan(since, timezone),
     post: async (body, accessToken) => {
       const response = await fetch('/api/operator-stats', {
@@ -292,7 +404,6 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
         statusCode,
       });
     },
-    storage: window.localStorage,
     now: Date.now,
     timezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
@@ -307,20 +418,36 @@ let inFlight: Promise<OperatorStatsSyncResult> | null = null;
 export function runOperatorStatsSync(): Promise<OperatorStatsSyncResult> {
   if (inFlight) return inFlight;
   if (typeof window === 'undefined') {
-    return Promise.resolve({ outcome: 'unavailable', snapshot: null });
+    return Promise.resolve({
+      outcome: 'unavailable',
+      snapshot: null,
+      failure: null,
+    });
   }
   const deps = defaultDeps();
-  if (!deps) return Promise.resolve({ outcome: 'unavailable', snapshot: null });
-  readOperatorStatsSyncState();
+  if (!deps) {
+    return Promise.resolve({
+      outcome: 'unavailable',
+      snapshot: null,
+      failure: null,
+    });
+  }
   setState({ phase: 'syncing' });
   inFlight = performOperatorStatsSync(deps)
-    .catch((): OperatorStatsSyncResult => ({ outcome: 'failed', snapshot: null }))
+    .catch(
+      (): OperatorStatsSyncResult => ({
+        outcome: 'failed',
+        snapshot: null,
+        failure: 'service',
+      })
+    )
     .then(result => {
       setState({
         phase: 'idle',
         lastOutcome: result.outcome,
+        lastFailure: result.failure,
         ...(result.outcome === 'synced'
-          ? { lastSyncedAt: readStoredSyncedAt(), lastSnapshot: result.snapshot }
+          ? { lastSyncedAt: Date.now(), lastSnapshot: result.snapshot }
           : {}),
       });
       return result;
@@ -356,11 +483,13 @@ export function startOperatorStatsAutoSync(
   let last: boolean | null = null;
   void settingsBridge.get().then(
     settings => {
+      hydrateOperatorStatsSyncState(settings.operatorProfile);
       if (last === null) last = isOperatorAutoPublishEnabled(settings);
     },
     () => undefined
   );
   const offChanged = settingsBridge.onChanged(settings => {
+    hydrateOperatorStatsSyncState(settings.operatorProfile);
     const next = isOperatorAutoPublishEnabled(settings);
     // Only the off→on transition triggers: enabling is the moment the
     // operator expects the profile to appear or refresh. Turning it off
@@ -379,10 +508,10 @@ export function startOperatorStatsAutoSync(
 /** Test seam: forget status and coalescing between suites. */
 export function __resetOperatorStatsSyncForTests(): void {
   inFlight = null;
-  storedSyncedAtLoaded = false;
   state = {
     phase: 'idle',
     lastOutcome: null,
+    lastFailure: null,
     lastSyncedAt: null,
     lastSnapshot: null,
   };

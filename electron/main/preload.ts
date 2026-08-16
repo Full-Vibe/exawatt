@@ -42,13 +42,7 @@ contextBridge.exposeInMainWorld('electron', {
     list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
       ipcRenderer.invoke('agent-sources:list', scope, refresh),
     act: (
-      adapterId:
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | 'grok'
-        | 'openclaw'
-        | 'demo',
+      adapterId: 'claude' | 'codex' | 'opencode' | 'grok' | 'openclaw' | 'demo',
       action: 'authenticate' | 'choose-model' | 'install-guide'
     ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
@@ -69,7 +63,12 @@ contextBridge.exposeInMainWorld('electron', {
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
     listAgentModels: (harness: string, cwd: string, refresh?: boolean) =>
-      ipcRenderer.invoke('pty:list-agent-models', harness, cwd, refresh === true),
+      ipcRenderer.invoke(
+        'pty:list-agent-models',
+        harness,
+        cwd,
+        refresh === true
+      ),
     write: (id: string, data: string, operatorEngaged = false) =>
       ipcRenderer.invoke('pty:write', id, data, operatorEngaged),
     engage: (id: string) => ipcRenderer.invoke('pty:engage', id),
@@ -211,6 +210,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-claude-plan-windows', enabled),
     setOperatorAutoPublish: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-operator-auto-publish', enabled),
+    recordOperatorProfileState: (state: {
+      startedAt?: string;
+      lastSyncedAt?: string;
+      profileEnabled?: boolean;
+    }) => ipcRenderer.invoke('settings:record-operator-profile-state', state),
     recordAgentSourceUse: (
       projectDir: string,
       source: string,
@@ -273,7 +277,12 @@ contextBridge.exposeInMainWorld('electron', {
       conversationSummaries?: { hosted: boolean };
       goalVisuals?: { enabled: boolean };
       reentryRecap?: { enabled: boolean };
-      operatorProfile?: { autoPublish: boolean };
+      operatorProfile?: {
+        autoPublish: boolean;
+        startedAt?: string;
+        lastSyncedAt?: string;
+        profileEnabled?: boolean;
+      };
       agentSources?: {
         projectLastUsed: Record<string, string>;
         sourceRecency: Record<string, number>;

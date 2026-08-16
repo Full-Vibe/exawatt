@@ -1523,11 +1523,11 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerAppIPC();
   registerMenuIPC();
   registerSystemShortcutIPC();
-  registerOperatorStatsIPC();
   consumptionScanner = new ConsumptionScannerService({
     stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
     identities: () => ptySessions.listProviderIdentities(),
   });
+  registerOperatorStatsIPC(consumptionScanner);
   // ENG-038: the credentialed Claude plan-account read — a SIBLING of the
   // scanner (the local parse stays credential- and network-free), merged
   // behind the same IPC seam by the composite.

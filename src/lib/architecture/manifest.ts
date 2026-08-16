@@ -682,7 +682,7 @@ export const architectureManifest = {
           id: 'operator-stats-projection',
           label: 'Operator Stats Projection',
           summary:
-            'Pure Run/day/rank derivation, conservative Consumption adaptation, versioned aggregate-only payload validation, and explicit evidence assurance.',
+            'Pure Run/day/rank derivation over the shared incremental Consumption service, durable consent and sync state, versioned aggregate-only payload validation, and explicit evidence assurance.',
           layer: 'coordination',
           status: 'implemented',
           x: 870,
@@ -896,7 +896,7 @@ export const architectureManifest = {
     'Session context labels follow submitted operator intent, never PTY output volume; one hosted inference path improves a durable last-good label while failures retain it.',
     'Goal visuals are quiet projections of accepted Session context: semantic pivots own revision cadence, a private identity derives the provider-facing natural scene without transmitting goal text, Demo/Live share deterministic fallback behavior, and one app-global device preference gates Electron and hosted renderers.',
     'Product feedback is explicit authenticated evidence with row ownership and private attachments; inference evidence is not persisted as feedback automatically.',
-    'Public operator statistics are an opt-in aggregate projection over local Session and Consumption facts: preview stays local, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
+    'Public operator statistics are an opt-in aggregate projection over the shared local Consumption spine: Electron settings preserve the consent boundary across renderer origins, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
     'Session-continuity diagnostics are local, explainable projections over evidence; hosted systems may aggregate them but never replace their semantics with an opaque health score.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Coding is the first dogfood workload, not the Agent boundary; compatible non-coding sources use the same command and evidence contracts.',

@@ -1,17 +1,16 @@
 import { createHash } from 'node:crypto';
 import {
-  ClaudeConsumptionAdapter,
-  CodexConsumptionAdapter,
   consumptionSamplesToRunFacts,
   deriveOperatorStatsSnapshot,
+  type ConsumptionSample,
   type OperatorStatsPublishPayload,
 } from '@exawatt/core';
-import {
-  NodeConsumptionFileSystem,
-  defaultClaudeConsumptionRoot,
-  defaultCodexConsumptionRoot,
-} from '@exawatt/core/server';
 import { handleTrusted } from './ipc-security';
+
+export interface OperatorStatsConsumptionSource {
+  /** A complete, incrementally maintained local sample view. */
+  settledSamplesSince(sinceMs: number): Promise<ConsumptionSample[]>;
+}
 
 function hash(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -30,6 +29,7 @@ function localDate(at: string, timezone: string): string {
 }
 
 export async function scanLocalOperatorStats(
+  source: OperatorStatsConsumptionSource,
   since: string,
   timezone: string
 ): Promise<
@@ -48,16 +48,15 @@ export async function scanLocalOperatorStats(
     throw new Error('Invalid publication start');
   }
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
-  const fs = new NodeConsumptionFileSystem({ maxFiles: 20_000 });
-  const { scanConsumption } = await import('@exawatt/core');
-  const scan = await scanConsumption(
-    [
-      new ClaudeConsumptionAdapter(defaultClaudeConsumptionRoot()),
-      new CodexConsumptionAdapter(defaultCodexConsumptionRoot()),
-    ],
-    fs
+  // Operator stats is a projection of the canonical Consumption spine, not a
+  // second corpus scanner. Besides avoiding a multi-gigabyte reread every six
+  // hours, this keeps source parsing/watermarks under one main-process owner.
+  // V1's hosted allowlist accepts Claude Code and Codex only; newer source
+  // adapters remain absent until the public schema explicitly evolves.
+  const samples = (await source.settledSamplesSince(sinceMs)).filter(
+    sample => sample.source === 'claude-code' || sample.source === 'codex'
   );
-  const facts = consumptionSamplesToRunFacts(scan.samples, { since });
+  const facts = consumptionSamplesToRunFacts(samples, { since });
   const snapshot = deriveOperatorStatsSnapshot(facts, timezone);
   return {
     schemaVersion: 1,
@@ -87,14 +86,16 @@ export async function scanLocalOperatorStats(
   };
 }
 
-export function registerOperatorStatsIPC(): void {
+export function registerOperatorStatsIPC(
+  source: OperatorStatsConsumptionSource
+): void {
   handleTrusted(
     'operator-stats:scan',
     (_event, since: string, timezone: string) => {
       if (typeof since !== 'string' || typeof timezone !== 'string') {
         throw new Error('Invalid operator stats request');
       }
-      return scanLocalOperatorStats(since, timezone);
+      return scanLocalOperatorStats(source, since, timezone);
     }
   );
 }

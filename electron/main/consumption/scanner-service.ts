@@ -228,6 +228,37 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     };
   }
 
+  /**
+   * A settled, samples-only view for main-process consumers that derive their
+   * own projections (currently the public Operator profile). This deliberately
+   * bypasses plan-window assembly: serializing the retained observation
+   * history is useful to `/usage`, but unrelated to Operator stats and was the
+   * source of a corpus-sized stack overflow in its former duplicate scanner.
+   *
+   * The shared incremental service remains the only reader of harness logs.
+   * We wait for an initial or stale pass so a hosted replacement payload can
+   * never erase newer activity with a partial snapshot.
+   */
+  async settledSamplesSince(sinceMs: number): Promise<ConsumptionSample[]> {
+    if (!Number.isFinite(sinceMs) || sinceMs < 0) {
+      throw new Error('Invalid consumption sample window');
+    }
+    this.ensureStarted();
+    await this.ready;
+    this.kickIfStale();
+    await this.settle();
+    if (!this.firstScanComplete) {
+      throw new Error('Local usage scan is incomplete');
+    }
+    const samples: ConsumptionSample[] = [];
+    for (const sample of this.samples.values()) {
+      if (Date.parse(sample.at) < sinceMs) continue;
+      samples.push(sample);
+    }
+    samples.sort((left, right) => (left.at < right.at ? -1 : 1));
+    return samples;
+  }
+
   rescan(): void {
     this.ensureStarted();
     if (this.passAbort) return; // a pass is running — it already sees the present

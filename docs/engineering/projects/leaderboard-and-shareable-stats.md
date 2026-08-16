@@ -393,6 +393,19 @@ cannot resurrect it). The A3 acceptance list above still holds under the new
 vehicle: no read or upload happens by visiting, and the first write still
 follows explicit consent — the flip.
 
+**Repaired 2026-08-16 — one Consumption reader and application-durable sync
+state.** Operator stats is now a projection of the existing incremental
+main-process Consumption service. A sync waits for its settled sample view,
+filters to the V1 public sources, and never cold-scans the multi-gigabyte
+corpus or assembles plan-window observations. The consent anchor,
+last-successful timestamp, and cached public-profile state moved from renderer
+`localStorage` into the Electron settings store because packaged launches use
+random localhost ports. Existing profiles missing that durable anchor recover
+the owner-only hosted `joined_at` value before reading local history; new
+profiles still begin exactly at consent. The panel distinguishes local scan,
+local state, network, authentication, identity, request, and hosted-service
+failures with concise recovery copy instead of one opaque failure line.
+
 ### A4 — public arena, profile, and Run receipt
 
 Build `/leaderboard`, `/operator/[handle]`, and `/run/[id]`; add production
@@ -445,6 +458,32 @@ Exit criteria:
 | Delivery        | `agent:land` with all relevant verifies and `--dogfood`; signed-out production URL check after deployment |
 
 ## Findings log
+
+- 2026-08-16 (operator report: the last week of usage is absent): **the public
+  profile was frozen because its local sync path failed before POST.** The
+  production profile contained 51 agent-hours entirely on 2026-08-03 and zero
+  on every day from 2026-08-04 through 2026-08-16, even though the installed
+  app had `operatorProfile.autoPublish=true`. A real-corpus Electron evaluation
+  reproduced `RangeError: Maximum call stack size exceeded`: Operator stats
+  ran a second cold scan over 3,844 Claude/Codex files and about 4.48 GB, then
+  spread 195,650 Codex plan-window observations into one function call. Those
+  observations are not part of the public payload at all.
+
+  A second persistence defect made recovery unsafe: the packaged app serves
+  each launch from a random `127.0.0.1:<port>`, while the consent anchor,
+  last-sync time, and published flag were stored in origin-scoped
+  `localStorage`. LevelDB evidence showed fresh per-port consent timestamps on
+  2026-08-16, so a relaunch could move the start boundary forward and omit the
+  missing week even after the scanner stopped crashing. The repair makes the
+  incremental Consumption service the sole corpus reader, removes large-array
+  spread calls from the remaining generic scan/derivation paths, persists
+  publication state in Electron settings, and restores the original boundary
+  from authenticated hosted metadata for existing profiles. Regression proof
+  covers 130,000 observations, settled samples-only projection, durable state,
+  legacy-boundary recovery, owner metadata, and actionable panel failures.
+  The same own-worktree Electron evaluator that failed on the installed corpus
+  then completed successfully through the repaired main-process IPC with four
+  sanitized recent Runs across one local day.
 
 - 2026-08-10 (operator decision, verbatim: "I don't want to preview local
   stats as a user. Just auto-publish or pause publishing, based on a
@@ -657,3 +696,22 @@ and the Electron navigation evaluator searches the rendered palette, executes
 **Go to Leaderboard**, verifies `/leaderboard`, and requires its public footer.
 Future milestone contracts must name each required discovery face explicitly;
 “navigation entry” alone is not acceptance language.
+
+### 2026-08-16 — A3 leaderboard freshness repair
+
+Production inspection and an installed-corpus Electron evaluation isolated the
+missing week to the local pre-upload path, not leaderboard ranking or hosted
+aggregation. The public row last advanced on 2026-08-03. Auto-publishing was
+enabled, but Operator stats performed an independent multi-gigabyte cold scan
+and overflowed V8 while merging an unrelated plan-window history. Separately,
+its origin-scoped timestamps reset as Electron chose a new localhost port.
+
+The landed repair reuses the watermarked Consumption service's settled sample
+view, hardens generic corpus aggregation against V8 argument ceilings, and
+moves all publication lifecycle metadata behind validated Electron settings
+IPC. An authenticated owner-only status read supplies the original hosted
+consent date only for legacy profiles missing local durable state. Public
+payload fields, recursive rejection, GitHub identity enforcement, Demo
+boundary, and no-pre-consent-history policy are unchanged. The publish panel
+now identifies the failing layer and the automatic retry behavior in the
+existing design-system status treatment.

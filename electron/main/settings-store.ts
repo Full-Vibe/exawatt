@@ -101,6 +101,12 @@ export interface ExawattSettings {
      * `0029`, and turning this on IS the consent act. Absent means off, never
      * on; no upload of any kind may happen while it is absent or false. */
     autoPublish: boolean;
+    /** Immutable first-consent boundary. Unlike renderer localStorage, this
+     *  survives the packaged app's per-launch localhost port. */
+    startedAt?: string;
+    /** Cached hosted truth for an honest status surface across relaunches. */
+    lastSyncedAt?: string;
+    profileEnabled?: boolean;
   };
   agentSources?: {
     projectLastUsed: Record<string, string>;
@@ -445,10 +451,25 @@ export function parseSettings(raw: unknown): ExawattSettings {
   const operatorProfile = (raw as { operatorProfile?: unknown })
     .operatorProfile;
   if (operatorProfile && typeof operatorProfile === 'object') {
-    const autoPublish = (operatorProfile as { autoPublish?: unknown })
-      .autoPublish;
+    const candidate = operatorProfile as {
+      autoPublish?: unknown;
+      startedAt?: unknown;
+      lastSyncedAt?: unknown;
+      profileEnabled?: unknown;
+    };
+    const autoPublish = candidate.autoPublish;
     if (typeof autoPublish === 'boolean') {
-      settings.operatorProfile = { autoPublish };
+      const parsed: NonNullable<ExawattSettings['operatorProfile']> = {
+        autoPublish,
+      };
+      const startedAt = normalizedTimestamp(candidate.startedAt);
+      const lastSyncedAt = normalizedTimestamp(candidate.lastSyncedAt);
+      if (startedAt) parsed.startedAt = startedAt;
+      if (lastSyncedAt) parsed.lastSyncedAt = lastSyncedAt;
+      if (typeof candidate.profileEnabled === 'boolean') {
+        parsed.profileEnabled = candidate.profileEnabled;
+      }
+      settings.operatorProfile = parsed;
     }
   }
   const agentSources = (raw as { agentSources?: unknown }).agentSources;
@@ -753,9 +774,60 @@ export function isClaudePlanWindowsEnabled(settings: ExawattSettings): boolean {
   return settings.claudePlanWindows?.enabled !== false;
 }
 
-export function setOperatorAutoPublish(enabled: boolean): ExawattSettings {
+function normalizedTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+export function setOperatorAutoPublish(
+  enabled: boolean,
+  now: () => number = Date.now
+): ExawattSettings {
   const settings = loadSettings();
-  settings.operatorProfile = { autoPublish: enabled };
+  const current = settings.operatorProfile;
+  settings.operatorProfile = { ...current, autoPublish: enabled };
+  // The flip is the consent act (decision 0029), so its time belongs beside
+  // the durable preference. Existing published profiles are migrated from
+  // hosted `joined_at` by the sync executor before their next scan.
+  if (enabled && !settings.operatorProfile.startedAt) {
+    settings.operatorProfile.startedAt = new Date(now()).toISOString();
+  }
+  writeSettings(settings);
+  return settings;
+}
+
+export interface OperatorProfilePublicationState {
+  startedAt?: string;
+  lastSyncedAt?: string;
+  profileEnabled?: boolean;
+}
+
+/** Persist hosted publication truth without moving the consent boundary. */
+export function recordOperatorProfilePublicationState(
+  raw: OperatorProfilePublicationState
+): ExawattSettings {
+  const settings = loadSettings();
+  const current = settings.operatorProfile;
+  if (!current) throw new Error('Publishing preference is unavailable');
+  const startedAt = normalizedTimestamp(raw.startedAt);
+  const lastSyncedAt = normalizedTimestamp(raw.lastSyncedAt);
+  if (raw.startedAt !== undefined && !startedAt) {
+    throw new Error('Invalid publication start');
+  }
+  if (raw.lastSyncedAt !== undefined && !lastSyncedAt) {
+    throw new Error('Invalid publication sync time');
+  }
+  settings.operatorProfile = {
+    ...current,
+    // First consent is immutable. A hosted profile's joined_at only fills the
+    // legacy hole left by the former port-scoped localStorage anchor.
+    ...(current.startedAt || !startedAt ? {} : { startedAt }),
+    ...(lastSyncedAt ? { lastSyncedAt } : {}),
+    ...(typeof raw.profileEnabled === 'boolean'
+      ? { profileEnabled: raw.profileEnabled }
+      : {}),
+  };
   writeSettings(settings);
   return settings;
 }

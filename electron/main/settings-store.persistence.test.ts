@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 import {
   CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES,
   loadSettings,
+  recordOperatorProfilePublicationState,
   setAppearancePreferences,
   setHostedContextLabels,
   setOperatorAutoPublish,
@@ -133,17 +134,45 @@ describe('appearance settings persistence', () => {
     expect(loadSettings().operatorProfile?.autoPublish === true).toBe(false);
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
 
-    expect(setOperatorAutoPublish(true)).toEqual({
+    const consentAt = Date.parse('2026-08-16T18:00:00.000Z');
+    expect(setOperatorAutoPublish(true, () => consentAt)).toEqual({
       terminal: { fontSize: 15 },
-      operatorProfile: { autoPublish: true },
+      operatorProfile: {
+        autoPublish: true,
+        startedAt: '2026-08-16T18:00:00.000Z',
+      },
     });
-    expect(loadSettings().operatorProfile).toEqual({ autoPublish: true });
+    expect(loadSettings().operatorProfile).toEqual({
+      autoPublish: true,
+      startedAt: '2026-08-16T18:00:00.000Z',
+    });
     expect(setOperatorAutoPublish(false).operatorProfile).toEqual({
       autoPublish: false,
+      startedAt: '2026-08-16T18:00:00.000Z',
     });
     expect(loadSettings()).toEqual({
       terminal: { fontSize: 15 },
-      operatorProfile: { autoPublish: false },
+      operatorProfile: {
+        autoPublish: false,
+        startedAt: '2026-08-16T18:00:00.000Z',
+      },
+    });
+  });
+
+  it('records hosted profile truth without moving first consent', () => {
+    setOperatorAutoPublish(true, () => Date.parse('2026-08-03T18:00:00.000Z'));
+
+    expect(
+      recordOperatorProfilePublicationState({
+        startedAt: '2026-08-04T18:00:00.000Z',
+        lastSyncedAt: '2026-08-16T19:00:00.000Z',
+        profileEnabled: true,
+      }).operatorProfile
+    ).toEqual({
+      autoPublish: true,
+      startedAt: '2026-08-03T18:00:00.000Z',
+      lastSyncedAt: '2026-08-16T19:00:00.000Z',
+      profileEnabled: true,
     });
   });
 

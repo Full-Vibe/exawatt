@@ -23,10 +23,11 @@ import {
 } from '@/components/auth/callback-failures';
 import { isOperatorAutoPublishEnabled } from '@/lib/hosted-features/contract';
 import {
-  OPERATOR_STATS_ENABLED_KEY,
+  hydrateOperatorStatsSyncState,
   readOperatorStatsSyncState,
   runOperatorStatsSync,
   subscribeOperatorStatsSync,
+  type OperatorStatsSyncFailure,
   type OperatorStatsSyncState,
 } from '@/lib/operator-stats/auto-sync';
 import { formatAgentHoursLong, formatSyncedAt, formatTokens } from './format';
@@ -48,8 +49,20 @@ import styles from './operator-stats.module.css';
 const SERVER_SYNC_STATE: OperatorStatsSyncState = {
   phase: 'idle',
   lastOutcome: null,
+  lastFailure: null,
   lastSyncedAt: null,
   lastSnapshot: null,
+};
+
+const SYNC_FAILURE_COPY: Record<OperatorStatsSyncFailure, string> = {
+  'local-scan': 'Local usage scan failed. Sync will retry automatically.',
+  'local-state':
+    'Publishing state could not be saved. Restart Exawatt to retry.',
+  network: 'Offline — sync will retry automatically.',
+  unauthorized: 'Sign in again to resume publishing.',
+  identity: 'Relink GitHub to resume publishing.',
+  rejected: 'Usage could not be published. Sync will retry automatically.',
+  service: 'Publishing service unavailable. Sync will retry automatically.',
 };
 
 function findGithub(identities: UserIdentity[] | null | undefined) {
@@ -124,7 +137,6 @@ export function PublishPanel() {
 
   useEffect(() => {
     setInElectron(Boolean(window.electron?.isElectron));
-    setPublished(localStorage.getItem(OPERATOR_STATS_ENABLED_KEY) === 'true');
     if (!supabase) return;
     void supabase.auth
       .getSession()
@@ -165,12 +177,20 @@ export function PublishPanel() {
     let active = true;
     void bridge.get().then(
       settings => {
-        if (active) setAutoPublish(isOperatorAutoPublishEnabled(settings));
+        if (active) {
+          setAutoPublish(isOperatorAutoPublishEnabled(settings));
+          setPublished(settings.operatorProfile?.profileEnabled === true);
+          hydrateOperatorStatsSyncState(settings.operatorProfile);
+        }
       },
       () => undefined
     );
     const off = bridge.onChanged?.(settings => {
-      if (active) setAutoPublish(isOperatorAutoPublishEnabled(settings));
+      if (active) {
+        setAutoPublish(isOperatorAutoPublishEnabled(settings));
+        setPublished(settings.operatorProfile?.profileEnabled === true);
+        hydrateOperatorStatsSyncState(settings.operatorProfile);
+      }
     });
     return () => {
       active = false;
@@ -295,7 +315,6 @@ export function PublishPanel() {
       headers: { authorization: `Bearer ${session.access_token}` },
     });
     if (response.ok) {
-      localStorage.removeItem(OPERATOR_STATS_ENABLED_KEY);
       setPublished(false);
       // Removal pauses publishing too — a scheduled sync must never
       // resurrect a profile the operator just took down. Re-enabling the
@@ -303,6 +322,9 @@ export function PublishPanel() {
       try {
         await window.electron?.settings?.setOperatorAutoPublish?.(false);
         setAutoPublish(false);
+        await window.electron?.settings?.recordOperatorProfileState?.({
+          profileEnabled: false,
+        });
       } catch {
         // The preference write failing leaves the switch honest on refresh.
       }
@@ -360,12 +382,16 @@ export function PublishPanel() {
           </p>
           {autoPublish && (
             <p className={styles.syncStatus} data-sync-state="waiting-for-link">
-              Publishing is on and waiting for GitHub. Syncing resumes once
-              your account is linked.
+              Publishing is on and waiting for GitHub. Syncing resumes once your
+              account is linked.
             </p>
           )}
           {message && (
-            <p className={styles.success} role="status" data-panel-status="success">
+            <p
+              className={styles.success}
+              role="status"
+              data-panel-status="success"
+            >
               {message}
             </p>
           )}
@@ -397,7 +423,11 @@ export function PublishPanel() {
             pass through this website.
           </p>
           {message && (
-            <p className={styles.success} role="status" data-panel-status="success">
+            <p
+              className={styles.success}
+              role="status"
+              data-panel-status="success"
+            >
               {message}
             </p>
           )}
@@ -419,7 +449,9 @@ export function PublishPanel() {
     : syncing
       ? 'Syncing…'
       : sync.lastOutcome === 'failed'
-        ? 'Sync failed — retries automatically.'
+        ? sync.lastFailure
+          ? SYNC_FAILURE_COPY[sync.lastFailure]
+          : 'Sync failed. Sync will retry automatically.'
         : sync.lastSyncedAt
           ? `Up to date · synced ${formatSyncedAt(sync.lastSyncedAt)}`
           : 'Publishing on — first sync runs shortly.';
@@ -467,7 +499,11 @@ export function PublishPanel() {
           </p>
         )}
         {message && (
-          <p className={styles.success} role="status" data-panel-status="success">
+          <p
+            className={styles.success}
+            role="status"
+            data-panel-status="success"
+          >
             {message}
           </p>
         )}

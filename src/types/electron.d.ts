@@ -617,6 +617,9 @@ export interface ExawattSettings {
    *  and turning this on is the consent act. */
   operatorProfile?: {
     autoPublish: boolean;
+    startedAt?: string;
+    lastSyncedAt?: string;
+    profileEnabled?: boolean;
   };
   agentSources?: {
     projectLastUsed: Record<string, string>;
@@ -642,6 +645,11 @@ export interface ElectronSettingsApi {
   setReentryRecap: (enabled: boolean) => Promise<ExawattSettings>;
   setClaudePlanWindows: (enabled: boolean) => Promise<ExawattSettings>;
   setOperatorAutoPublish: (enabled: boolean) => Promise<ExawattSettings>;
+  recordOperatorProfileState: (state: {
+    startedAt?: string;
+    lastSyncedAt?: string;
+    profileEnabled?: boolean;
+  }) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,
     source: string,

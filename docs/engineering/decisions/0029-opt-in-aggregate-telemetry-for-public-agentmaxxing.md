@@ -16,6 +16,13 @@ the consent act; steady-state syncs run automatically while it is on. See the
 dated section at the end. The upload allowlist, forbidden-upload list, and
 public read boundary are unchanged.
 
+Amended 2026-08-16: the consent and publication lifecycle state is application-
+durable Electron settings state, never renderer-origin state; Operator stats
+projects the shared incremental Consumption service rather than rescanning
+harness logs. Existing profiles may recover their original consent boundary
+through an authenticated owner-only metadata read. See the dated section at
+the end. `consentVersion` and every upload field remain unchanged.
+
 ## Context
 
 Exawatt has never uploaded general product telemetry. ENG-008 reads Claude Code
@@ -177,3 +184,37 @@ What changes:
 Unchanged and untouchable: the allowed-upload allowlist, the forbidden-upload
 list, the payload validator's recursive unknown-field rejection, the public
 read boundary, and account deletion as the hosted-data deletion path.
+
+## Amended 2026-08-16 — durable consent state, one local reader
+
+The packaged Electron renderer is served from a random localhost port on each
+launch. Origin-scoped `localStorage` therefore cannot hold application-durable
+consent or publication state: changing ports made the original start instant,
+last successful sync, and public-profile flag disappear. Separately, the first
+Operator stats implementation bypassed the incremental Consumption service and
+cold-scanned all Claude Code and Codex logs for every sync, including plan-
+window history that is forbidden from and irrelevant to the public payload.
+
+What changes:
+
+- `operatorProfile.startedAt`, `lastSyncedAt`, and `profileEnabled` live beside
+  `operatorProfile.autoPublish` in the validated Electron settings store. The
+  start instant is immutable once present. Pausing preserves it; removing the
+  public profile records disabled hosted state and pauses future sync.
+- An existing enabled preference with no durable start instant is a legacy
+  migration case. Before scanning, the authenticated renderer may read only
+  its own hosted `enabled`, `joined_at`, and `last_synced_at` fields and persist
+  `joined_at` as the missing boundary. A new profile has no hosted row and
+  anchors at current explicit consent. Anonymous callers gain nothing.
+- Electron main's incremental Consumption service remains the sole harness-log
+  reader. Operator stats requests a settled samples-only view beginning at the
+  durable boundary and filters it to the version-1 source allowlist. It does
+  not request or serialize plan-window observations.
+- The owner-facing status distinguishes local scan/state failure from network,
+  authentication, identity, request, and hosted-service failure. This changes
+  recovery clarity, not what may leave the machine.
+
+The semantic privacy decision does not change: publishing is still off by
+default; the switch-on remains the consent act; nothing pre-consent is
+uploaded; every outgoing aggregate field and forbidden field remains exactly
+as decided above; `consentVersion` remains 1.

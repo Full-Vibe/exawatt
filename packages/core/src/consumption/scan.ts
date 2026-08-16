@@ -55,9 +55,14 @@ export async function scanConsumption(
   );
 
   for (const { adapter, result } of results) {
-    rawSamples.push(...result.samples);
-    planWindows.push(...result.planWindows);
-    windowObservations.push(...result.windowObservations);
+    // Corpus arrays can exceed V8's function-argument ceiling. Iteration is
+    // linear and heap-stable; spreading a real Codex observation history here
+    // used to throw `Maximum call stack size exceeded`.
+    for (const sample of result.samples) rawSamples.push(sample);
+    for (const window of result.planWindows) planWindows.push(window);
+    for (const observation of result.windowObservations) {
+      windowObservations.push(observation);
+    }
     perSource[adapter.source] = result.diagnostics;
     diagnostics = addDiagnostics(diagnostics, result.diagnostics);
     Object.assign(watermarks, result.watermarks);

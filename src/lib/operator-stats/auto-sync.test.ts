@@ -11,9 +11,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Session, UserIdentity } from '@supabase/supabase-js';
 import {
-  OPERATOR_STATS_ENABLED_KEY,
-  OPERATOR_STATS_LAST_SYNCED_KEY,
-  OPERATOR_STATS_START_KEY,
   __resetOperatorStatsSyncForTests,
   performOperatorStatsSync,
   type LocalOperatorStatsPreview,
@@ -55,17 +52,12 @@ const PREVIEW: LocalOperatorStatsPreview = {
   runs: [],
 } as unknown as LocalOperatorStatsPreview;
 
-function memoryStorage(initial: Record<string, string> = {}) {
-  const map = new Map(Object.entries(initial));
-  return {
-    getItem: (key: string) => map.get(key) ?? null,
-    setItem: (key: string, value: string) => void map.set(key, value),
-    dump: () => Object.fromEntries(map),
-  };
-}
-
 function buildDeps(overrides: Partial<OperatorStatsSyncDeps> = {}) {
-  const storage = memoryStorage();
+  let publicationState: {
+    startedAt?: string;
+    lastSyncedAt?: string;
+    profileEnabled?: boolean;
+  } = {};
   const scanSpy = vi.fn<OperatorStatsSyncDeps['scan']>(async () => PREVIEW);
   const postSpy = vi.fn<OperatorStatsSyncDeps['post']>(async () => ({
     ok: true,
@@ -76,15 +68,29 @@ function buildDeps(overrides: Partial<OperatorStatsSyncDeps> = {}) {
     isAutoPublishEnabled: async () => true,
     getSession: async () => SESSION,
     getGithubIdentity: async () => GITHUB,
+    getPublicationState: async () => publicationState,
+    getHostedProfileState: async () => ({
+      ok: true,
+      status: 200,
+      profile: null,
+    }),
+    recordPublicationState: async next => {
+      publicationState = { ...publicationState, ...next };
+    },
     scan: scanSpy,
     post: postSpy,
     captureFailure: captureSpy,
-    storage,
     now: () => 1_762_800_000_000,
     timezone: () => 'America/Los_Angeles',
     ...overrides,
   };
-  return { ...deps, scanSpy, postSpy, captureSpy, storage };
+  return {
+    ...deps,
+    scanSpy,
+    postSpy,
+    captureSpy,
+    publicationState: () => publicationState,
+  };
 }
 
 afterEach(() => {
@@ -102,7 +108,7 @@ describe('performOperatorStatsSync gates', () => {
     expect(deps.postSpy).not.toHaveBeenCalled();
     expect(deps.captureSpy).not.toHaveBeenCalled();
     // Not even the consent anchor is written: pause means pause.
-    expect(deps.storage.dump()).toEqual({});
+    expect(deps.publicationState()).toEqual({});
   });
 
   it('waits for sign-in without attempting or counting anything', async () => {
@@ -150,6 +156,7 @@ describe('performOperatorStatsSync sync', () => {
 
     expect(result).toEqual({
       outcome: 'synced',
+      failure: null,
       snapshot: { runs: 0, agentMs: 3_600_000, normalizedTokens: 2_000 },
     });
     const [body, accessToken] = deps.postSpy.mock.calls[0];
@@ -174,23 +181,46 @@ describe('performOperatorStatsSync sync', () => {
 
     await performOperatorStatsSync(deps);
 
-    const anchor = deps.storage.dump()[OPERATOR_STATS_START_KEY];
+    const anchor = deps.publicationState().startedAt;
     expect(anchor).toBe(new Date(deps.now()).toISOString());
     expect(deps.scanSpy).toHaveBeenCalledWith(anchor, 'America/Los_Angeles');
 
     await performOperatorStatsSync(deps);
-    expect(deps.storage.dump()[OPERATOR_STATS_START_KEY]).toBe(anchor);
+    expect(deps.publicationState().startedAt).toBe(anchor);
   });
 
-  it('records the published state and last-synced time on success', async () => {
+  it('records hosted publication truth on success', async () => {
     const deps = buildDeps();
 
     await performOperatorStatsSync(deps);
 
-    expect(deps.storage.dump()[OPERATOR_STATS_ENABLED_KEY]).toBe('true');
-    expect(deps.storage.dump()[OPERATOR_STATS_LAST_SYNCED_KEY]).toBe(
-      String(deps.now())
+    expect(deps.publicationState()).toEqual({
+      startedAt: new Date(deps.now()).toISOString(),
+      lastSyncedAt: new Date(deps.now()).toISOString(),
+      profileEnabled: true,
+    });
+  });
+
+  it('recovers an existing profile boundary before reading local history', async () => {
+    const deps = buildDeps({
+      getHostedProfileState: async () => ({
+        ok: true,
+        status: 200,
+        profile: {
+          enabled: true,
+          startedAt: '2026-08-03T18:00:00.000Z',
+          lastSyncedAt: '2026-08-04T19:00:00.000Z',
+        },
+      }),
+    });
+
+    await performOperatorStatsSync(deps);
+
+    expect(deps.scanSpy).toHaveBeenCalledWith(
+      '2026-08-03T18:00:00.000Z',
+      'America/Los_Angeles'
     );
+    expect(deps.publicationState().startedAt).toBe('2026-08-03T18:00:00.000Z');
   });
 });
 
@@ -201,6 +231,7 @@ describe('performOperatorStatsSync failures', () => {
     const result = await performOperatorStatsSync(deps);
 
     expect(result.outcome).toBe('failed');
+    expect(result.failure).toBe('unauthorized');
     expect(deps.captureSpy).toHaveBeenCalledTimes(1);
     expect(deps.captureSpy).toHaveBeenCalledWith('unauthorized', 401);
   });
@@ -215,6 +246,7 @@ describe('performOperatorStatsSync failures', () => {
     const result = await performOperatorStatsSync(deps);
 
     expect(result.outcome).toBe('failed');
+    expect(result.failure).toBe('network');
     expect(deps.captureSpy).toHaveBeenCalledWith('network', null);
   });
 
@@ -228,6 +260,7 @@ describe('performOperatorStatsSync failures', () => {
     const result = await performOperatorStatsSync(deps);
 
     expect(result.outcome).toBe('failed');
+    expect(result.failure).toBe('local-scan');
     expect(deps.postSpy).not.toHaveBeenCalled();
     // No hosted call was attempted, so there is nothing to count.
     expect(deps.captureSpy).not.toHaveBeenCalled();
@@ -248,4 +281,3 @@ describe('performOperatorStatsSync failures', () => {
     expect(deps.captureSpy).not.toHaveBeenCalled();
   });
 });
-

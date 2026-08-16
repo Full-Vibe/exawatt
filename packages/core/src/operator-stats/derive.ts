@@ -254,7 +254,10 @@ export function deriveOperatorStatsSnapshot(
     days,
     records: {
       agentMs: runs.reduce((sum, run) => sum + run.agentMs, 0),
-      longestHandsOffMs: Math.max(0, ...runs.map(run => run.longestHandsOffMs)),
+      longestHandsOffMs: runs.reduce(
+        (longest, run) => Math.max(longest, run.longestHandsOffMs),
+        0
+      ),
       peakFleet: peakConcurrentMembers(facts),
       normalizedTokens: runs.reduce(
         (sum, run) => sum + run.normalizedTokens,

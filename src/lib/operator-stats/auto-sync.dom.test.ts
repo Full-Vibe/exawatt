@@ -50,7 +50,14 @@ function installBridge(options: { autoPublish?: boolean } = {}) {
   let settings: Record<string, unknown> =
     options.autoPublish === undefined
       ? {}
-      : { operatorProfile: { autoPublish: options.autoPublish } };
+      : {
+          operatorProfile: {
+            autoPublish: options.autoPublish,
+            ...(options.autoPublish
+              ? { startedAt: '2026-08-10T00:00:00.000Z' }
+              : {}),
+          },
+        };
   const listeners = new Set<(next: unknown) => void>();
   const scan = vi.fn(async () => PREVIEW);
   const bridge = {
@@ -63,6 +70,19 @@ function installBridge(options: { autoPublish?: boolean } = {}) {
         listeners.add(handler);
         return () => listeners.delete(handler);
       }),
+      recordOperatorProfileState: vi.fn(
+        async (state: Record<string, unknown>) => {
+          settings = {
+            ...settings,
+            operatorProfile: {
+              ...((settings.operatorProfile as object | undefined) ?? {}),
+              ...state,
+            },
+          };
+          for (const listener of listeners) listener(settings);
+          return settings;
+        }
+      ),
     },
   };
   Object.defineProperty(window, 'electron', {
@@ -170,6 +190,7 @@ describe('startOperatorStatsAutoSync', () => {
     const run = vi.fn(async () => ({
       outcome: 'synced' as const,
       snapshot: null,
+      failure: null,
     }));
 
     expect(startOperatorStatsAutoSync(run)).toBeNull();
@@ -183,6 +204,7 @@ describe('startOperatorStatsAutoSync', () => {
     const run = vi.fn(async () => ({
       outcome: 'synced' as const,
       snapshot: null,
+      failure: null,
     }));
 
     const stop = startOperatorStatsAutoSync(run);
@@ -209,6 +231,7 @@ describe('startOperatorStatsAutoSync', () => {
     const run = vi.fn(async () => ({
       outcome: 'synced' as const,
       snapshot: null,
+      failure: null,
     }));
 
     const stop = startOperatorStatsAutoSync(run);

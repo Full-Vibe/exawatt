@@ -80,7 +80,11 @@ function resumePoint(
     return { fromByte: 0, skip: false, carry: undefined };
   }
   if (file.size === watermark.size && file.mtimeMs === watermark.mtimeMs) {
-    return { fromByte: watermark.consumedBytes, skip: true, carry: watermark.sessionContext };
+    return {
+      fromByte: watermark.consumedBytes,
+      skip: true,
+      carry: watermark.sessionContext,
+    };
   }
   return {
     fromByte: watermark.consumedBytes,
@@ -225,7 +229,7 @@ function emitSamples(
 ): void {
   if (samples.length === 0) return;
   if (options.sink) options.sink.samples(samples, file);
-  else pass.rawSamples.push(...samples);
+  else for (const sample of samples) pass.rawSamples.push(sample);
 }
 
 function emitWindows(
@@ -236,7 +240,7 @@ function emitWindows(
 ): void {
   if (windows.length === 0) return;
   if (options.sink) options.sink.planWindows(windows, file);
-  else pass.rawWindows.push(...windows);
+  else for (const window of windows) pass.rawWindows.push(window);
 }
 
 /** Keep the previous pass's watermarks for files this pass never reached. */
@@ -384,15 +388,21 @@ export class ClaudeConsumptionAdapter implements ConsumptionSourceAdapter {
       if (isDelegated && !meta) pass.diagnostics.delegationMetaMissing += 1;
       const fallbackSessionId = sessionIdFromClaudePath(file.path);
 
-      const read = await readCompleteLines(fs, file, fromByte, options, lines => {
-        const parsed = parseClaudeTranscript(lines, {
-          sourceFile: file.path,
-          fallbackSessionId,
-          delegationMeta: meta,
-        });
-        emitSamples(pass, options, file, parsed.samples);
-        mergeInto(pass.diagnostics, parsed.diagnostics);
-      });
+      const read = await readCompleteLines(
+        fs,
+        file,
+        fromByte,
+        options,
+        lines => {
+          const parsed = parseClaudeTranscript(lines, {
+            sourceFile: file.path,
+            fallbackSessionId,
+            delegationMeta: meta,
+          });
+          emitSamples(pass, options, file, parsed.samples);
+          mergeInto(pass.diagnostics, parsed.diagnostics);
+        }
+      );
       if (read.unreadable) {
         pass.diagnostics.filesUnreadable += 1;
         if (previous) pass.watermarks[file.path] = previous;
@@ -462,17 +472,23 @@ export class CodexConsumptionAdapter implements ConsumptionSourceAdapter {
       let context =
         (carry as CodexSessionContext | undefined) ?? emptyCodexContext();
 
-      const read = await readCompleteLines(fs, file, fromByte, options, lines => {
-        const parsed = parseCodexRollout(lines, {
-          sourceFile: file.path,
-          fallbackSessionId,
-          session: context,
-        });
-        context = parsed.session;
-        emitSamples(pass, options, file, parsed.samples);
-        emitWindows(pass, options, file, parsed.planWindows);
-        mergeInto(pass.diagnostics, parsed.diagnostics);
-      });
+      const read = await readCompleteLines(
+        fs,
+        file,
+        fromByte,
+        options,
+        lines => {
+          const parsed = parseCodexRollout(lines, {
+            sourceFile: file.path,
+            fallbackSessionId,
+            session: context,
+          });
+          context = parsed.session;
+          emitSamples(pass, options, file, parsed.samples);
+          emitWindows(pass, options, file, parsed.planWindows);
+          mergeInto(pass.diagnostics, parsed.diagnostics);
+        }
+      );
       if (read.unreadable) {
         pass.diagnostics.filesUnreadable += 1;
         if (previous) pass.watermarks[file.path] = previous;
@@ -481,7 +497,12 @@ export class CodexConsumptionAdapter implements ConsumptionSourceAdapter {
       pass.diagnostics.bytesRead += read.bytesRead;
       bytesReadTotal += read.bytesRead;
       if (read.truncatedFinal) pass.diagnostics.truncatedFinalLines += 1;
-      const mark = watermarkFor(file, read.consumedBytes, read.aborted, context);
+      const mark = watermarkFor(
+        file,
+        read.consumedBytes,
+        read.aborted,
+        context
+      );
       pass.watermarks[file.path] = mark;
       options.sink?.fileScanned?.(file, mark);
       if (read.aborted) {

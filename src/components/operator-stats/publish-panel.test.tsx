@@ -24,6 +24,7 @@ vi.mock('@/lib/tenancy/tenancy-provider', () => ({
 interface FakeSyncState {
   phase: 'idle' | 'syncing';
   lastOutcome: string | null;
+  lastFailure: string | null;
   lastSyncedAt: number | null;
   lastSnapshot: {
     runs: number;
@@ -37,6 +38,7 @@ const { syncStore, runSync } = vi.hoisted(() => {
   const initial = () => ({
     phase: 'idle' as const,
     lastOutcome: null,
+    lastFailure: null,
     lastSyncedAt: null,
     lastSnapshot: null,
   });
@@ -59,7 +61,7 @@ const { syncStore, runSync } = vi.hoisted(() => {
 });
 
 vi.mock('@/lib/operator-stats/auto-sync', () => ({
-  OPERATOR_STATS_ENABLED_KEY: 'exawatt.operator-stats.enabled.v1',
+  hydrateOperatorStatsSyncState: vi.fn(),
   readOperatorStatsSyncState: () => syncStore.state,
   subscribeOperatorStatsSync: (listener: () => void) => {
     syncStore.listeners.add(listener);
@@ -90,15 +92,15 @@ interface LinkCredentials {
   options: { redirectTo: string };
 }
 
-function buildClient(options: {
-  identities?: unknown[];
-  linkIdentity?: () => Promise<unknown>;
-} = {}) {
+function buildClient(
+  options: {
+    identities?: unknown[];
+    linkIdentity?: () => Promise<unknown>;
+  } = {}
+) {
   const answer =
     options.linkIdentity ?? (async () => ({ data: {}, error: null }));
-  const linkIdentity = vi.fn(async (_credentials: LinkCredentials) =>
-    answer()
-  );
+  const linkIdentity = vi.fn(async (_credentials: LinkCredentials) => answer());
   const getUserIdentities = vi.fn(async () => ({
     data: { identities: options.identities ?? [] },
     error: null,
@@ -128,10 +130,12 @@ function electronAuth(linkGithub: ReturnType<typeof vi.fn>) {
       handlers.complete = handler;
       return () => {};
     }),
-    onError: vi.fn((handler: (error: { name: string; message: string }) => void) => {
-      handlers.error = handler;
-      return () => {};
-    }),
+    onError: vi.fn(
+      (handler: (error: { name: string; message: string }) => void) => {
+        handlers.error = handler;
+        return () => {};
+      }
+    ),
     onLinkOutcome: vi.fn((handler: (outcome: string) => void) => {
       handlers.linkOutcome = handler;
       return () => {};
@@ -160,13 +164,19 @@ function electronPanel(
   options: { autoPublish?: boolean; published?: boolean } = {}
 ) {
   client.current = buildClient({ identities: [GITHUB_IDENTITY] });
-  if (options.published) {
-    window.localStorage.setItem('exawatt.operator-stats.enabled.v1', 'true');
-  }
   let settings: Record<string, unknown> =
-    options.autoPublish === undefined
+    options.autoPublish === undefined && options.published === undefined
       ? {}
-      : { operatorProfile: { autoPublish: options.autoPublish } };
+      : {
+          operatorProfile: {
+            ...(options.autoPublish === undefined
+              ? {}
+              : { autoPublish: options.autoPublish }),
+            ...(options.published === undefined
+              ? {}
+              : { profileEnabled: options.published }),
+          },
+        };
   const settingsListeners = new Set<(next: unknown) => void>();
   const bridge = {
     get: vi.fn(async () => settings),
@@ -175,10 +185,29 @@ function electronPanel(
       return () => settingsListeners.delete(handler);
     }),
     setOperatorAutoPublish: vi.fn(async (enabled: boolean) => {
-      settings = { operatorProfile: { autoPublish: enabled } };
+      settings = {
+        ...settings,
+        operatorProfile: {
+          ...((settings.operatorProfile as object | undefined) ?? {}),
+          autoPublish: enabled,
+        },
+      };
       for (const listener of settingsListeners) listener(settings);
       return settings;
     }),
+    recordOperatorProfileState: vi.fn(
+      async (state: Record<string, unknown>) => {
+        settings = {
+          ...settings,
+          operatorProfile: {
+            ...((settings.operatorProfile as object | undefined) ?? {}),
+            ...state,
+          },
+        };
+        for (const listener of settingsListeners) listener(settings);
+        return settings;
+      }
+    ),
   };
   Object.defineProperty(window, 'electron', {
     configurable: true,
@@ -199,7 +228,6 @@ function electronPanel(
 beforeEach(() => {
   client.current = buildClient();
   at('/leaderboard');
-  window.localStorage.clear();
   syncStore.reset();
   runSync.mockClear();
   Object.defineProperty(window, 'electron', {
@@ -240,7 +268,10 @@ describe('an already-linked GitHub reads as done, not failed', () => {
     client.current.auth.getUserIdentities = vi
       .fn()
       .mockResolvedValueOnce({ data: { identities: [] }, error: null })
-      .mockResolvedValue({ data: { identities: [GITHUB_IDENTITY] }, error: null });
+      .mockResolvedValue({
+        data: { identities: [GITHUB_IDENTITY] },
+        error: null,
+      });
 
     await mount();
     await act(async () => {
@@ -268,7 +299,10 @@ describe('an already-linked GitHub reads as done, not failed', () => {
     client.current.auth.getUserIdentities = vi
       .fn()
       .mockResolvedValueOnce({ data: { identities: [] }, error: null })
-      .mockResolvedValue({ data: { identities: [GITHUB_IDENTITY] }, error: null });
+      .mockResolvedValue({
+        data: { identities: [GITHUB_IDENTITY] },
+        error: null,
+      });
 
     await mount();
     await act(async () => {
@@ -324,12 +358,14 @@ describe('a genuine link failure reports on the panel', () => {
 
 describe('the desktop path lands on the panel too', () => {
   it('reports a missing main-process session in product voice', async () => {
-    const linkGithub = vi.fn().mockRejectedValue(
-      new Error(
-        "Error invoking remote method 'auth:link-github': " +
-          'AuthSessionMissingError: Auth session missing!'
-      )
-    );
+    const linkGithub = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Error invoking remote method 'auth:link-github': " +
+            'AuthSessionMissingError: Auth session missing!'
+        )
+      );
     electronAuth(linkGithub);
 
     await mount();
@@ -370,7 +406,10 @@ describe('the desktop path lands on the panel too', () => {
     client.current.auth.getUserIdentities = vi
       .fn()
       .mockResolvedValueOnce({ data: { identities: [] }, error: null })
-      .mockResolvedValue({ data: { identities: [GITHUB_IDENTITY] }, error: null });
+      .mockResolvedValue({
+        data: { identities: [GITHUB_IDENTITY] },
+        error: null,
+      });
 
     await mount();
     await act(async () => {
@@ -473,7 +512,9 @@ describe('publishing paused (the off state)', () => {
     await mount();
 
     expect(
-      screen.getByText('Paused — your profile stays visible and stops updating.')
+      screen.getByText(
+        'Paused — your profile stays visible and stops updating.'
+      )
     ).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Remove public profile' })
@@ -539,7 +580,11 @@ describe('honest sync status while publishing is on', () => {
         phase: 'idle',
         lastOutcome: 'synced',
         lastSyncedAt: Date.now(),
-        lastSnapshot: { runs: 12, agentMs: 10_908_000, normalizedTokens: 52_200_000 },
+        lastSnapshot: {
+          runs: 12,
+          agentMs: 10_908_000,
+          normalizedTokens: 52_200_000,
+        },
       })
     );
 
@@ -547,14 +592,22 @@ describe('honest sync status while publishing is on', () => {
     expect(screen.getByText(/12 Runs · 3.0 agent hours ·/)).toBeTruthy();
   });
 
-  it('admits a failed sync and that it retries on its own', async () => {
+  it('identifies a local scan failure and that it retries on its own', async () => {
     electronPanel({ autoPublish: true, published: true });
 
     await mount();
-    act(() => syncStore.set({ phase: 'idle', lastOutcome: 'failed' }));
+    act(() =>
+      syncStore.set({
+        phase: 'idle',
+        lastOutcome: 'failed',
+        lastFailure: 'local-scan',
+      })
+    );
 
     expect(
-      screen.getByText('Sync failed — retries automatically.')
+      screen.getByText(
+        'Local usage scan failed. Sync will retry automatically.'
+      )
     ).toBeTruthy();
   });
 
@@ -602,9 +655,9 @@ describe('removing the public profile stays a distinct act', () => {
       '/api/operator-stats',
       expect.objectContaining({ method: 'DELETE' })
     );
-    expect(
-      window.localStorage.getItem('exawatt.operator-stats.enabled.v1')
-    ).toBeNull();
+    expect(settingsBridge.recordOperatorProfileState).toHaveBeenCalledWith({
+      profileEnabled: false,
+    });
     expect(settingsBridge.setOperatorAutoPublish).toHaveBeenCalledWith(false);
     expect(screen.getByRole('status')).toHaveTextContent(
       'Public profile removed. Local history was not changed.'

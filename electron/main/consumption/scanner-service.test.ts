@@ -9,9 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  NodeConsumptionFileSystem,
-} from '@exawatt/core/server';
+import { NodeConsumptionFileSystem } from '@exawatt/core/server';
 import type {
   ConsumptionChunk,
   ConsumptionFileSystem,
@@ -50,9 +48,14 @@ const codexTurn = (at: string) =>
     },
   });
 
-const usageBlock = (
-  [input, cached, cacheWrite, output, reasoning, total]: number[]
-) => ({
+const usageBlock = ([
+  input,
+  cached,
+  cacheWrite,
+  output,
+  reasoning,
+  total,
+]: number[]) => ({
   input_tokens: input,
   cached_input_tokens: cached,
   cache_write_input_tokens: cacheWrite,
@@ -103,22 +106,23 @@ const codexTokenCount = (
     },
   });
 
-const CODEX_BASE = [
-  codexMeta('codex-sess-live', '/w/acme', '2026-08-10T08:00:00.000Z'),
-  codexTurn('2026-08-10T08:00:01.000Z'),
-  codexTokenCount(
-    '2026-08-10T08:10:00.000Z',
-    [1_000, 600, 0, 50, 10, 1_050],
-    [1_000, 600, 0, 50, 10, 1_050],
-    rateLimits({ usedPercent: 40 })
-  ),
-  codexTokenCount(
-    '2026-08-10T09:10:00.000Z',
-    [3_000, 1_800, 0, 150, 30, 3_150],
-    [2_000, 1_200, 0, 100, 20, 2_100],
-    rateLimits({ usedPercent: 49.4 })
-  ),
-].join('\n') + '\n';
+const CODEX_BASE =
+  [
+    codexMeta('codex-sess-live', '/w/acme', '2026-08-10T08:00:00.000Z'),
+    codexTurn('2026-08-10T08:00:01.000Z'),
+    codexTokenCount(
+      '2026-08-10T08:10:00.000Z',
+      [1_000, 600, 0, 50, 10, 1_050],
+      [1_000, 600, 0, 50, 10, 1_050],
+      rateLimits({ usedPercent: 40 })
+    ),
+    codexTokenCount(
+      '2026-08-10T09:10:00.000Z',
+      [3_000, 1_800, 0, 150, 30, 3_150],
+      [2_000, 1_200, 0, 100, 20, 2_100],
+      rateLimits({ usedPercent: 49.4 })
+    ),
+  ].join('\n') + '\n';
 
 const CODEX_APPENDED =
   codexTokenCount(
@@ -169,11 +173,7 @@ async function writeCorpus(): Promise<void> {
   claudeRoot = path.join(root, 'claude-projects');
   codexRoot = path.join(root, 'codex-sessions');
   const claudeSession = path.join(claudeRoot, '-w-acme');
-  const subagents = path.join(
-    claudeSession,
-    'sess-claude-1',
-    'subagents'
-  );
+  const subagents = path.join(claudeSession, 'sess-claude-1', 'subagents');
   await fs.promises.mkdir(subagents, { recursive: true });
   await fs.promises.mkdir(path.join(codexRoot, '2026/08/10'), {
     recursive: true,
@@ -191,11 +191,19 @@ async function writeCorpus(): Promise<void> {
     CLAUDE_DELEGATED_META_JSON
   );
   await fs.promises.writeFile(
-    path.join(codexRoot, '2026/08/10', 'rollout-2026-08-10T08-00-00-codex-sess-live.jsonl'),
+    path.join(
+      codexRoot,
+      '2026/08/10',
+      'rollout-2026-08-10T08-00-00-codex-sess-live.jsonl'
+    ),
     CODEX_BASE
   );
   await fs.promises.writeFile(
-    path.join(codexRoot, '2026/08/10', 'rollout-2026-08-09T08-00-00-codex-sess-degen.jsonl'),
+    path.join(
+      codexRoot,
+      '2026/08/10',
+      'rollout-2026-08-09T08-00-00-codex-sess-degen.jsonl'
+    ),
     CODEX_DEGENERATE
   );
 }
@@ -280,15 +288,13 @@ describe('first scan', () => {
     expect(primaries[0].observedAt).toBe('2026-08-10T09:10:00.000Z');
 
     // Degenerate windows are discarded AND counted.
-    expect(
-      snapshot.planWindows.some(w => w.windowMinutes <= 0)
-    ).toBe(false);
+    expect(snapshot.planWindows.some(w => w.windowMinutes <= 0)).toBe(false);
     expect(snapshot.discardedDegenerateWindows).toBeGreaterThan(0);
 
     // Claude Code has no window record at all — absent, never zero.
-    expect(
-      snapshot.planWindows.some(w => w.source === 'claude-code')
-    ).toBe(false);
+    expect(snapshot.planWindows.some(w => w.source === 'claude-code')).toBe(
+      false
+    );
 
     // Pace is observable from the corpus's own history: 9.4%/h.
     const key = planWindowKey(primaries[0]);
@@ -309,6 +315,23 @@ describe('first scan', () => {
     expect(
       bounded.samples.every(
         s => Date.parse(s.at) >= Date.parse('2026-08-10T00:00:00.000Z')
+      )
+    ).toBe(true);
+  });
+
+  it('serves a settled samples-only projection without assembling window history', async () => {
+    const service = makeService();
+    const all = await service.settledSamplesSince(0);
+    const recent = await service.settledSamplesSince(
+      Date.parse('2026-08-10T08:30:00.000Z')
+    );
+
+    expect(all.length).toBeGreaterThan(recent.length);
+    expect(recent.length).toBeGreaterThan(0);
+    expect(
+      recent.every(
+        sample =>
+          Date.parse(sample.at) >= Date.parse('2026-08-10T08:30:00.000Z')
       )
     ).toBe(true);
   });
@@ -384,7 +407,9 @@ describe('persistence and incremental passes', () => {
     const before = await service.snapshot();
     const codexTotal = (samples: typeof before.samples) =>
       samples
-        .filter(s => s.source === 'codex' && s.providerSessionId === 'codex-sess-live')
+        .filter(
+          s => s.source === 'codex' && s.providerSessionId === 'codex-sess-live'
+        )
         .reduce((n, s) => n + totalTokens(s.usage), 0);
     expect(codexTotal(before.samples)).toBe(3_150);
 
@@ -488,14 +513,18 @@ describe('privacy', () => {
     // fs.createWriteStream cannot be spied under ESM; it is used only by log
     // compaction, whose write containment the state-store test pins.
     const spies = [
-      vi.spyOn(fs.promises, 'appendFile').mockImplementation(async (p, ...rest) => {
-        record(p);
-        return realAppend(p as never, ...(rest as [never]));
-      }),
-      vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (p, ...rest) => {
-        record(p);
-        return realWrite(p as never, ...(rest as [never]));
-      }),
+      vi
+        .spyOn(fs.promises, 'appendFile')
+        .mockImplementation(async (p, ...rest) => {
+          record(p);
+          return realAppend(p as never, ...(rest as [never]));
+        }),
+      vi
+        .spyOn(fs.promises, 'writeFile')
+        .mockImplementation(async (p, ...rest) => {
+          record(p);
+          return realWrite(p as never, ...(rest as [never]));
+        }),
       vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (p, ...rest) => {
         record(p);
         return realMkdir(p as never, ...(rest as [never]));
