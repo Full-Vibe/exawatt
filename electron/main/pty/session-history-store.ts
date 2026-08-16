@@ -1,5 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  detach,
+  TranscriptWindow,
+  type TranscriptSource,
+} from './transcript-window';
 
 export interface SessionHistorySnapshot {
   text: string;
@@ -24,6 +29,24 @@ interface JournalRecordV1 {
   updatedAt: number;
 }
 
+/**
+ * What the store remembers about a Session it has already written. It holds
+ * cursors and a short tail, never the transcript: the point of the journal is
+ * that steady-state persistence costs the delta, and keeping a megabyte per
+ * paused Session in this map to compare against would give that back.
+ */
+interface PersistedRecord {
+  cursor: number;
+  length: number;
+  updatedAt: number;
+  tail: string;
+}
+
+interface QueuedSource {
+  source: TranscriptSource;
+  updatedAt: number;
+}
+
 const EMPTY: SessionHistorySnapshot = {
   text: '',
   cursor: 0,
@@ -31,15 +54,16 @@ const EMPTY: SessionHistorySnapshot = {
   corrupt: false,
 };
 const COMPACT_JOURNAL_BYTES = 8 * 1024 * 1024;
+/**
+ * How much of the overlap between the persisted snapshot and the live window
+ * is verified before a delta is journalled as a continuation. The structural
+ * checks (monotone cursor, no gap) do the real work; this catches a window
+ * that was replaced with different content behind the same cursor.
+ */
+const CONTINUITY_TAIL = 4096;
 
 function validSessionId(id: string): boolean {
   return /^[A-Za-z0-9._-]{1,200}$/.test(id);
-}
-
-function stored(
-  snapshot: Omit<SessionHistorySnapshot, 'corrupt'>
-): StoredHistoryV1 {
-  return { v: 1, ...snapshot };
 }
 
 /**
@@ -50,8 +74,8 @@ function stored(
  * new output rather than rewriting the full retained terminal four times/sec.
  */
 export class SessionHistoryStore {
-  private readonly dirty = new Map<string, StoredHistoryV1>();
-  private readonly persisted = new Map<string, StoredHistoryV1>();
+  private readonly dirty = new Map<string, QueuedSource>();
+  private readonly persisted = new Map<string, PersistedRecord>();
   private readonly journalBytes = new Map<string, number>();
   private readonly deleted = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
@@ -116,7 +140,10 @@ export class SessionHistoryStore {
   }> {
     this.file(id);
     if (this.deleted.has(id)) return { bytes: 0, updatedAt: 0, exists: false };
-    const pending = this.dirty.get(id) ?? this.persisted.get(id);
+    const queued = this.dirty.get(id);
+    const pending = queued
+      ? { length: queued.source.length, updatedAt: queued.updatedAt }
+      : this.persisted.get(id);
     const [snapshot, journal] = await Promise.all([
       fs.promises.stat(this.file(id)).catch(() => null),
       fs.promises.stat(this.journal(id)).catch(() => null),
@@ -124,16 +151,16 @@ export class SessionHistoryStore {
     if (!snapshot && !journal) {
       return pending
         ? {
-            bytes: pending.text.length,
+            bytes: pending.length,
             updatedAt: pending.updatedAt,
-            exists: pending.text.length > 0,
+            exists: pending.length > 0,
           }
         : { bytes: 0, updatedAt: 0, exists: false };
     }
     // Bytes on disk include the JSON envelope; the in-memory record is exact
     // when we have one, and the file size is the honest estimate otherwise.
     const bytes = pending
-      ? pending.text.length
+      ? pending.length
       : (snapshot?.size ?? 0) + (journal?.size ?? 0);
     const updatedAt = Math.max(
       pending?.updatedAt ?? 0,
@@ -149,8 +176,19 @@ export class SessionHistoryStore {
     return this.serialize(id, () => this.loadUnlocked(id));
   }
 
+  /**
+   * Replay costs the journal's BYTES, not records x window (ENG-016 BUG-023).
+   *
+   * The window is unbounded here on purpose: each record states the exact
+   * retained length the writer held, and `trimTo` reproduces it by advancing
+   * a head offset. Rebuilding the window per record — `(text + delta).slice(
+   * -retainedLength)` — is what made resuming one of the operator's real
+   * Sessions ~10,000 rebuilds of a saturated 4 MB window.
+   */
   private async loadUnlocked(id: string): Promise<SessionHistorySnapshot> {
-    let current: StoredHistoryV1 = { v: 1, ...EMPTY };
+    const window = new TranscriptWindow(Number.POSITIVE_INFINITY);
+    let cursor = 0;
+    let updatedAt = 0;
     try {
       const raw = JSON.parse(
         await fs.promises.readFile(this.file(id), 'utf8')
@@ -165,7 +203,9 @@ export class SessionHistoryStore {
       ) {
         return { ...EMPTY, corrupt: true };
       }
-      current = raw as StoredHistoryV1;
+      window.seed(raw.text, raw.cursor);
+      cursor = raw.cursor;
+      updatedAt = raw.updatedAt;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         return { ...EMPTY, corrupt: true };
@@ -190,22 +230,19 @@ export class SessionHistoryStore {
         ) {
           return { ...EMPTY, corrupt: true };
         }
-        if (record.cursor <= current.cursor) continue;
+        if (record.cursor <= cursor) continue;
         if (
-          record.fromCursor !== current.cursor ||
+          record.fromCursor !== cursor ||
           record.cursor - record.fromCursor !== record.text.length ||
           record.retainedLength < 0 ||
-          record.retainedLength > current.text.length + record.text.length
+          record.retainedLength > window.length + record.text.length
         ) {
           return { ...EMPTY, corrupt: true };
         }
-        const combined = current.text + record.text;
-        current = {
-          v: 1,
-          text: combined.slice(combined.length - record.retainedLength),
-          cursor: record.cursor,
-          updatedAt: record.updatedAt,
-        };
+        window.append(record.text);
+        window.trimTo(record.retainedLength);
+        cursor = record.cursor;
+        updatedAt = record.updatedAt;
       }
       this.journalBytes.set(id, Buffer.byteLength(journal));
     } catch (error) {
@@ -214,19 +251,41 @@ export class SessionHistoryStore {
       }
       this.journalBytes.set(id, 0);
     }
-    this.persisted.set(id, current);
+    this.persisted.set(id, this.observe(window, updatedAt));
+    return { text: window.text(), cursor, updatedAt, corrupt: false };
+  }
+
+  /**
+   * Read a live window's position and its continuity tail in ONE synchronous
+   * step. The source keeps growing while a write is in flight, so anything
+   * read after an `await` describes a different moment than the record just
+   * written — and recording a cursor ahead of what was journalled leaves a gap
+   * the next record starts after, which replays as corrupt history.
+   */
+  private observe(
+    source: TranscriptSource,
+    updatedAt: number
+  ): PersistedRecord {
     return {
-      text: current.text,
-      cursor: current.cursor,
-      updatedAt: current.updatedAt,
-      corrupt: false,
+      cursor: source.cursor,
+      length: source.length,
+      updatedAt,
+      tail: source.tail(CONTINUITY_TAIL),
     };
   }
 
-  queue(id: string, snapshot: Omit<SessionHistorySnapshot, 'corrupt'>): void {
+  /**
+   * Register a Session's LIVE transcript for persistence.
+   *
+   * The caller hands over the window itself rather than a copy of its text
+   * (ENG-016 BUG-024). The old contract took `{ text, cursor, updatedAt }` on
+   * every PTY chunk, which meant joining the whole retained window once per
+   * chunk and then slicing it twice more per flush to find the delta.
+   */
+  queue(id: string, source: TranscriptSource, updatedAt: number): void {
     this.file(id);
     if (this.deleted.has(id)) return;
-    this.dirty.set(id, stored(snapshot));
+    this.dirty.set(id, { source, updatedAt });
     if (this.timer) return;
     this.timer = setTimeout(() => {
       this.timer = null;
@@ -248,10 +307,10 @@ export class SessionHistoryStore {
     while (this.dirty.size > 0) {
       const batch = Array.from(this.dirty.entries());
       await Promise.all(
-        batch.map(([id, record]) => {
-          if (this.dirty.get(id) === record) this.dirty.delete(id);
+        batch.map(([id, entry]) => {
+          if (this.dirty.get(id) === entry) this.dirty.delete(id);
           if (this.deleted.has(id)) return Promise.resolve();
-          return this.serialize(id, () => this.persist(id, record));
+          return this.serialize(id, () => this.persist(id, entry));
         })
       );
     }
@@ -272,42 +331,64 @@ export class SessionHistoryStore {
     });
   }
 
-  private async persist(id: string, next: StoredHistoryV1): Promise<void> {
+  private async persist(id: string, entry: QueuedSource): Promise<void> {
     let previous = this.persisted.get(id);
     if (!previous) {
       const loaded = await this.loadUnlocked(id);
       if (loaded.corrupt) {
-        await this.replace(id, next);
+        await this.replace(id, entry);
         return;
       }
-      previous = stored(loaded);
+      previous = this.persisted.get(id);
     }
 
-    const previousStart = previous.cursor - previous.text.length;
-    const nextStart = next.cursor - next.text.length;
+    // One synchronous observation of the live window. Everything below —
+    // the continuation test, the delta, the record, and what is remembered
+    // afterwards — describes THIS moment, never a later one.
+    const { source } = entry;
+    const observed = this.observe(source, entry.updatedAt);
+    const cursor = observed.cursor;
+    const length = observed.length;
+    const nextStart = cursor - length;
+    const previousStart = previous ? previous.cursor - previous.length : 0;
     const overlapStart = Math.max(previousStart, nextStart);
-    const appendOnly =
-      next.cursor >= previous.cursor &&
+    const verify = previous
+      ? Math.min(previous.cursor - overlapStart, CONTINUITY_TAIL)
+      : 0;
+    const continues =
+      !!previous &&
+      cursor >= previous.cursor &&
       nextStart <= previous.cursor &&
-      previous.text.slice(overlapStart - previousStart) ===
-        next.text.slice(overlapStart - nextStart, previous.cursor - nextStart);
-    if (!appendOnly || (previous.cursor === 0 && previous.text.length === 0)) {
-      await this.replace(id, next);
+      (verify <= 0 ||
+        previous.tail.slice(previous.tail.length - verify) ===
+          source.range(previous.cursor - verify, verify));
+    if (
+      !continues ||
+      !previous ||
+      (previous.cursor === 0 && previous.length === 0)
+    ) {
+      await this.replace(id, entry);
       return;
     }
 
-    const delta = next.text.slice(previous.cursor - nextStart);
+    const delta = source.range(previous.cursor, cursor - previous.cursor);
     if (delta.length === 0) {
-      this.persisted.set(id, next);
+      this.persisted.set(id, observed);
+      return;
+    }
+    if (delta.length !== cursor - previous.cursor) {
+      // The window trimmed past the persisted cursor between the checks and
+      // the read; a partial delta would journal a lie, so rewrite instead.
+      await this.replace(id, entry);
       return;
     }
     const record: JournalRecordV1 = {
       v: 1,
       fromCursor: previous.cursor,
-      cursor: next.cursor,
-      retainedLength: next.text.length,
+      cursor: previous.cursor + delta.length,
+      retainedLength: length,
       text: delta,
-      updatedAt: next.updatedAt,
+      updatedAt: entry.updatedAt,
     };
     const line = `${JSON.stringify(record)}\n`;
     await fs.promises.appendFile(this.journal(id), line, {
@@ -317,11 +398,24 @@ export class SessionHistoryStore {
     await fs.promises.chmod(this.journal(id), 0o600);
     const bytes = (this.journalBytes.get(id) ?? 0) + Buffer.byteLength(line);
     this.journalBytes.set(id, bytes);
-    this.persisted.set(id, next);
-    if (bytes >= COMPACT_JOURNAL_BYTES) await this.replace(id, next);
+    this.persisted.set(id, observed);
+    if (bytes >= COMPACT_JOURNAL_BYTES) await this.replace(id, entry);
   }
 
-  private async replace(id: string, record: StoredHistoryV1): Promise<void> {
+  /**
+   * Rewrite the whole snapshot and drop the journal. This is the one path that
+   * materialises the transcript, and it runs on compaction and first write, not
+   * per chunk.
+   */
+  private async replace(id: string, entry: QueuedSource): Promise<void> {
+    const text = entry.source.text();
+    const cursor = entry.source.cursor;
+    const record: StoredHistoryV1 = {
+      v: 1,
+      text,
+      cursor,
+      updatedAt: entry.updatedAt,
+    };
     const destination = this.file(id);
     const temporary = `${destination}.tmp-${process.pid}-${++this.temporarySequence}`;
     try {
@@ -334,7 +428,12 @@ export class SessionHistoryStore {
       await fs.promises.chmod(destination, 0o600);
       await fs.promises.rm(this.journal(id), { force: true });
       this.journalBytes.set(id, 0);
-      this.persisted.set(id, record);
+      this.persisted.set(id, {
+        cursor,
+        length: text.length,
+        updatedAt: entry.updatedAt,
+        tail: detach(text.slice(Math.max(0, text.length - CONTINUITY_TAIL))),
+      });
     } finally {
       await fs.promises.rm(temporary, { force: true });
     }

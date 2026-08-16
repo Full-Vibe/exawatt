@@ -26,6 +26,7 @@ const INTENTIONAL_NON_PACKAGE_FILES = new Set([
   'roadmap-rail-eval.mjs',
   'sign-renderer-archive.cjs',
   'terminal-cost-probe.mjs',
+  'transcript-replay-probe.mjs',
 ]);
 
 async function packageJson() {

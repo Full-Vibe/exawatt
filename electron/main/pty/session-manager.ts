@@ -133,7 +133,7 @@ export async function defaultShell(): Promise<string> {
       const { stdout } = await execFileAsync('/usr/bin/dscl', [
         '.',
         '-read',
-        `/Users/${os.userInfo().username}`,
+        path.posix.join('/Users', os.userInfo().username),
         'UserShell',
       ]);
       candidates.push(stdout.replace('UserShell:', '').trim());
@@ -1030,11 +1030,12 @@ export class PtySessionManager extends EventEmitter {
     const durableId = this.sessions.get(id)?.info.durableSessionId;
     if (!durableId) return;
     this.scrollback.append(durableId, data);
-    this.history?.queue(durableId, {
-      text: this.scrollback.text(durableId),
-      cursor: this.scrollback.cursor(durableId),
-      updatedAt: Date.now(),
-    });
+    // Hand over the WINDOW, not a copy of its text (ENG-016 BUG-024). Joining
+    // the retained 4 MB window here — once per PTY chunk, across every live
+    // Session — was a sustained stream of large-object allocations on the main
+    // process. The store reads the delta it needs at flush time.
+    const window = this.scrollback.window(durableId);
+    if (window) this.history?.queue(durableId, window, Date.now());
   }
 
   list(): PtySessionInfo[] {
@@ -1059,11 +1060,11 @@ export class PtySessionManager extends EventEmitter {
       session => session.info.durableSessionId === durableSessionId
     );
     if (runtime) {
-      const text = this.scrollback.text(durableSessionId);
+      const bytes = this.scrollback.length(durableSessionId);
       return {
-        bytes: text.length,
+        bytes,
         updatedAt: runtime.info.lastDataAt,
-        exists: text.length > 0,
+        exists: bytes > 0,
       };
     }
     return (
