@@ -919,3 +919,23 @@ no packet privately extends the contract to solve a local color.
   idle metrics/rasters, decoded scene arrival, Air readable-role contrast, and
   320px overflow/touch targets. Incident `0005` records the five-whys and
   controls.
+- 2026-08-16, BUG-005 closure: **the packaging was correct and the ASSET was
+  the web favicon.** `Exawatt.app/Contents/Resources/icon.icns` was
+  byte-identical to `electron/resources/icon.icns` (`ffa46b21…`) and
+  `CFBundleIconFile` resolved to it, which is why the 2026-08-05 triage read
+  "configured and present" and stopped there. Measured on the 1024 slice, that
+  file was a bare hexagon ring spanning 0.694 x 0.795 of its canvas, painting
+  0.527 of its own bounding box, corners at zero alpha: correct as a favicon,
+  a naked glyph among squircles as an app icon. One brand source was doing two
+  jobs that need different renderings. The operator chose the direction on
+  2026-08-16 — gradient squircle container on the Apple grid (824 of 1024,
+  radius 185, glyph fitted to 540), hexagon knocked out in white, gradient
+  stops sampled from the existing artwork; a near-black container loses
+  definition below 32px and a white container would need the artwork reworked
+  rather than re-containered, so both are rejected and settled. The icon is no
+  longer a placed binary: `electron/resources/icon-master.png` is the only
+  editable source, `pnpm icon:generate` renders every slice, `pnpm icon:check`
+  verifies the committed binary against the master with no image toolchain and
+  runs on every landing, and the release path refuses a bundle whose icon is
+  not that artwork or is not shaped like a macOS app icon. Incident `0010`
+  names the class this shares with `0009`.

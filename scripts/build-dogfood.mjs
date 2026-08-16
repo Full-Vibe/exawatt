@@ -9,6 +9,7 @@ import {
   teamIdentifierFromIdentityName,
   resolveDeveloperIdIdentity,
 } from './lib/macos-code-signing.mjs';
+import { assertPackedApp } from './release-package.mjs';
 
 const root = process.cwd();
 const execFileAsync = promisify(execFile);
@@ -100,3 +101,8 @@ if (buildInfo.sha !== sourceSha) {
     `Dogfood artifact records ${buildInfo.sha}; expected immutable source ${sourceSha}.`
   );
 }
+
+// The dogfood build is the operator's daily artifact and diverges from its
+// config the same way a release does (incident `0010`). It owes no update
+// feed, so it gets everything else: identity, icon, and payload.
+assertPackedApp(path.join(root, 'release', 'mac-arm64', 'Exawatt.app'), { root });
