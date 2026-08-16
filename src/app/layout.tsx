@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Exo_2, Geist, Geist_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ShortcutProvider } from '@/components/shortcuts';
@@ -15,21 +15,30 @@ import { AppearanceProvider } from '@/components/appearance/appearance-provider'
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { APPEARANCE_BOOTSTRAP_SCRIPT } from '@/lib/appearance/bootstrap-script';
 
-const exo2 = Exo_2({
+const exo2 = localFont({
+  src: './fonts/Exo2-Variable-Latin.woff2',
   variable: '--font-exo2',
-  subsets: ['latin'],
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: './fonts/GeistMono-Variable-Latin.woff2',
   variable: '--font-geist-mono',
-  subsets: ['latin'],
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
 });
 
 // Clean technical grotesk for the HUD display + UI type — replaces the
 // "space-font" Orbitron/Rajdhani for a professional, utilitarian read.
-const geistSans = Geist({
+const geistSans = localFont({
+  src: './fonts/Geist-Variable-Latin.woff2',
   variable: '--font-geist-sans',
-  subsets: ['latin'],
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {

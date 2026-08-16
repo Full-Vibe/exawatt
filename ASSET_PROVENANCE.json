@@ -36,6 +36,30 @@
       "exclusionReason": "The operator accepts use on the private marketing site, but the asset is deliberately excluded from the AGPL public seed by ENG-030's 2026-08-15 decision. The public component degrades to its gradient treatment when the file is absent."
     },
     {
+      "path": "src/app/fonts/Exo2-Variable-Latin.woff2",
+      "status": "included",
+      "kind": "vendored variable webfont",
+      "sha256": "4a259dde317e08aa5d37e6eb684e222ae833516b2a0fccba36ee5e36224f16be",
+      "origin": "Exo 2 normal variable weight 100–900 Latin subset from the versioned Google Fonts v26 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "distributionBasis": "SIL Open Font License 1.1; license text is LICENSES/fonts/Exo-2-OFL-1.1.txt."
+    },
+    {
+      "path": "src/app/fonts/Geist-Variable-Latin.woff2",
+      "status": "included",
+      "kind": "vendored variable webfont",
+      "sha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+      "origin": "Geist Sans normal variable weight 100–900 Latin subset from the versioned Google Fonts v5 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "distributionBasis": "SIL Open Font License 1.1; shared Geist license text is LICENSES/fonts/Geist-OFL-1.1.txt."
+    },
+    {
+      "path": "src/app/fonts/GeistMono-Variable-Latin.woff2",
+      "status": "included",
+      "kind": "vendored variable webfont",
+      "sha256": "684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc",
+      "origin": "Geist Mono normal variable weight 100–900 Latin subset from the versioned Google Fonts v6 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "distributionBasis": "SIL Open Font License 1.1; shared Geist license text is LICENSES/fonts/Geist-OFL-1.1.txt."
+    },
+    {
       "path": "src/app/icon.png",
       "status": "included",
       "kind": "web application icon",
