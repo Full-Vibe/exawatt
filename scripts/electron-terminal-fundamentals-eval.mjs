@@ -411,7 +411,7 @@ await withElectronApp(
       JSON.stringify(imagePaste)
     );
   },
-  { maxMs: 420_000 }
+  { maxMs: 240_000 }
 );
 
 rmSync(userData, { recursive: true, force: true });

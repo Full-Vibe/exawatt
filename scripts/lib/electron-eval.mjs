@@ -16,7 +16,8 @@
 
 import { _electron as electron } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { assertNodePtyBuilt } from './native-preflight.mjs';
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 
@@ -114,6 +115,23 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
   }
 }
 
+/** An Electron app that DISAPPEARS mid-run did not fail the eval's contract —
+ *  something outside the run killed it. The known cause on this machine is a
+ *  sibling agent worktree still running the pre-2026-08-16 machine-wide orphan
+ *  sweep, which `pkill -9`s every exawatt playwright Electron including ours;
+ *  it will keep happening until every checkout picks up the scoped sweep, and
+ *  the same shape occurs whenever anything else kills the tree. Distinguish it
+ *  so the harness retries once instead of reporting a product regression. */
+function isExternalTeardown(error) {
+  const message = String(error?.message ?? error);
+  return (
+    message.includes('Target page, context or browser has been closed') ||
+    message.includes('Target closed') ||
+    message.includes('browserContext.close') ||
+    message.includes('Electron app is closed')
+  );
+}
+
 export async function withElectronApp(launchOpts, body, opts = {}) {
   const maxMs = opts.maxMs ?? 90_000;
   const firstWindowMs = opts.firstWindowMs ?? 25_000;
@@ -130,6 +148,48 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     // with the real cause instead of after it, as a paused command engine.
     await assertNoPackagingSnapshot(evalRoot);
   }
+
+  const attempts = opts.attempts ?? 3;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await runElectronAttempt({
+        launchOpts,
+        body,
+        evalRoot,
+        maxMs,
+        firstWindowMs,
+        gracefulMs,
+      });
+    } catch (error) {
+      if (attempt >= attempts || !isExternalTeardown(error)) throw error;
+      console.error(
+        `[harness] the Electron app disappeared mid-run (attempt ${attempt}/${attempts}) — ` +
+          'something outside this run killed it; relaunching'
+      );
+      // A relaunch must start from the same state the first attempt did, or
+      // the retry silently exercises a different app (a Project already open,
+      // a tab already selected). Only ever reset a throwaway temp profile.
+      resetThrowawayUserData(launchOpts.env?.EXAWATT_USER_DATA);
+      await new Promise(resolve => setTimeout(resolve, 2_000));
+    }
+  }
+}
+
+function resetThrowawayUserData(userData) {
+  if (!userData) return;
+  const temp = realpathOrSelf(tmpdir());
+  if (!realpathOrSelf(userData).startsWith(`${temp}/`)) return;
+  rmSync(userData, { recursive: true, force: true });
+}
+
+async function runElectronAttempt({
+  launchOpts,
+  body,
+  evalRoot,
+  maxMs,
+  firstWindowMs,
+  gracefulMs,
+}) {
   sweepOrphans(evalRoot);
 
   let app;
@@ -173,7 +233,7 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     if (watchdog) clearTimeout(watchdog);
     await Promise.race([
       app.close().catch(() => {}),
-      new Promise((r) => setTimeout(r, gracefulMs)),
+      new Promise(r => setTimeout(r, gracefulMs)),
     ]);
     hardKill();
   };
