@@ -40,7 +40,7 @@ import { CloseConfirm, CloseProjectConfirm } from './close-confirm';
 import { navHistory, type NavLocation } from '@/components/nav/nav-history';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener } from './project-opener';
-import { ExposeOverlay } from './expose-overlay';
+import { ExposeOverlay, type TeamSelection } from './expose-overlay';
 import { teamViewProjects } from './team-order';
 import { useTeamOrderPreference } from './team-order-preference';
 import { useLiveConsumptionByTab } from '@/components/consumption/use-live-consumption-by-tab';
@@ -545,12 +545,22 @@ export function WorkspaceClient() {
   // (`tabCanResumeAsAgent`) and the bar's own default scope stay the only
   // truth. Nothing here guesses an identity or resumes without being asked.
   // While Team is open the roving selection IS the subject — Enter opens it,
-  // so the resume verb must act on it too. Targeting `activeTab` from Team
-  // resumed a different Agent than the one on screen.
-  const [teamSelection, setTeamSelection] = useState<{
-    dir: string;
-    tabId: string;
-  } | null>(null);
+  // so workspace verbs must act on it too. Targeting `activeTab` from Team
+  // resumed or advanced from a different Agent than the one on screen.
+  const [teamSelection, setTeamSelection] = useState<TeamSelection | null>(
+    null
+  );
+  // Shortcut listeners deliberately register through React effects. Keep the
+  // higher-altitude subject in a ref too, so the next physical key cannot hit
+  // an older listener closure between Team moving and the effect refreshing.
+  const teamSelectionRef = useRef<TeamSelection | null>(null);
+  const publishTeamSelection = useCallback(
+    (selection: TeamSelection | null) => {
+      teamSelectionRef.current = selection;
+      setTeamSelection(selection);
+    },
+    []
+  );
   // A non-null selection MEANS Team is open: the overlay publishes null when
   // it unmounts, so this needs no second source of truth for the altitude.
   const resumeTargetTab = useMemo(() => {
@@ -1319,8 +1329,21 @@ export function WorkspaceClient() {
           : false,
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
-      cycle: (delta: 1 | -1) =>
-        cycleTab(delta, overviewOpen ? teamDisplayedProjects : undefined),
+      cycle: delta => {
+        const teamAnchor = overviewOpen ? teamSelectionRef.current : null;
+        const next = cycleTab(
+          delta,
+          overviewOpen
+            ? {
+                displayed: teamDisplayedProjects,
+                anchor: teamAnchor ?? undefined,
+              }
+            : undefined
+        );
+        if (!next) return false;
+        if (teamAnchor) publishTeamSelection(next);
+        return true;
+      },
       moveTab: moveTabWithFeedback,
       moveProject: moveProjectWithFeedback,
       newAgent: () => {
@@ -1420,6 +1443,7 @@ export function WorkspaceClient() {
     cycleTab,
     overviewOpen,
     teamDisplayedProjects,
+    publishTeamSelection,
     selectTabByOrdinal,
     moveTabWithFeedback,
     moveProjectWithFeedback,
@@ -1937,6 +1961,7 @@ export function WorkspaceClient() {
           delegation={delegation}
           activeTabId={activeTab?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
+          navigationSelection={teamSelection}
           onStartRoadmapAgent={startRoadmapAgent}
           onStartRoadmapRemediation={startRoadmapRemediation}
           onAttachRoadmapSession={attachRoadmapItem}
@@ -1944,7 +1969,7 @@ export function WorkspaceClient() {
             selectTab(dir, tabId);
             closeOverview();
           }}
-          onSelectionChange={setTeamSelection}
+          onSelectionChange={publishTeamSelection}
           onResumeTab={(dir, tabId) => {
             // Resume in place and STAY at Team: the operator asked to reach
             // the verb from here, not to be thrown down an altitude for it.

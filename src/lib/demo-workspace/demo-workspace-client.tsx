@@ -19,7 +19,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FolderOpen, SquareTerminal, Target } from 'lucide-react';
 import { HUD } from '@/components/hud';
-import { ExposeOverlay } from '@/components/workspace/expose-overlay';
+import {
+  ExposeOverlay,
+  type TeamSelection,
+} from '@/components/workspace/expose-overlay';
+import { teamViewProjects } from '@/components/workspace/team-order';
+import { useTeamOrderPreference } from '@/components/workspace/team-order-preference';
 import { TabStrip } from '@/components/workspace/tab-strip';
 import { CloseConfirm } from '@/components/workspace/close-confirm';
 import { WorkspaceKeyHint } from '@/components/workspace/workspace-client';
@@ -44,6 +49,7 @@ import {
   placeProjectBeside,
   placeTabBeside,
   nextActiveTabAfterClose,
+  nextTabInRing,
 } from '@/components/workspace/tab-ring';
 import {
   orderedAttentionTargets,
@@ -122,6 +128,17 @@ export function DemoWorkspaceClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const overviewOpen = searchParams.get('view') === 'sessions';
+  const [teamSelection, setTeamSelection] = useState<TeamSelection | null>(
+    null
+  );
+  const teamSelectionRef = useRef<TeamSelection | null>(null);
+  const publishTeamSelection = useCallback(
+    (selection: TeamSelection | null) => {
+      teamSelectionRef.current = selection;
+      setTeamSelection(selection);
+    },
+    []
+  );
 
   const agents = useMemo(() => demoShellAgents(), []);
   const [projects, setProjects] = useState(() => demoShellProjects());
@@ -134,6 +151,7 @@ export function DemoWorkspaceClient() {
     []
   );
   const activity = useMemo(() => demoShellActivity(), []);
+  const { mode: teamOrderMode } = useTeamOrderPreference();
   const engaged = useMemo(() => demoShellEngaged(), []);
   const delegation = useMemo(() => demoShellDelegation(), []);
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
@@ -227,6 +245,14 @@ export function DemoWorkspaceClient() {
       return { ...project, tabs, activeTabId };
     });
   }, [projects, transientAgent, transientProject, activeId]);
+  const teamDisplayedProjects = useMemo(
+    () =>
+      teamViewProjects(ribbonProjects, teamOrderMode, {
+        activity,
+        attention,
+      }),
+    [activity, attention, ribbonProjects, teamOrderMode]
+  );
 
   const selectProject = useCallback(
     (index: number): boolean => {
@@ -253,14 +279,27 @@ export function DemoWorkspaceClient() {
 
   const cycleTab = useCallback(
     (delta: 1 | -1): boolean => {
-      const from = allTabs.findIndex(tab => tab.id === activeId);
-      if (from < 0 || allTabs.length < 2) return false;
-      const target = allTabs[(from + delta + allTabs.length) % allTabs.length];
-      setActiveId(target.id);
-      if (overviewOpen) router.replace('/workspace', { scroll: false });
+      const teamAnchor = overviewOpen ? teamSelectionRef.current : null;
+      const target = nextTabInRing(
+        overviewOpen ? teamDisplayedProjects : ribbonProjects,
+        activeProject?.dir ?? null,
+        delta,
+        teamAnchor ?? undefined
+      );
+      if (!target?.tab) return false;
+      setActiveId(target.tab.id);
+      if (teamAnchor) {
+        publishTeamSelection({ dir: target.dir, tabId: target.tab.id });
+      }
       return true;
     },
-    [activeId, allTabs, overviewOpen, router]
+    [
+      activeProject?.dir,
+      overviewOpen,
+      publishTeamSelection,
+      ribbonProjects,
+      teamDisplayedProjects,
+    ]
   );
 
   const moveTab = useCallback(
@@ -807,7 +846,9 @@ export function DemoWorkspaceClient() {
           consumptionByTab={consumptionByTab}
           activeTabId={activeAgent?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
+          navigationSelection={teamSelection}
           roadmapRead={demoRoadmapRead}
+          onSelectionChange={publishTeamSelection}
           onPick={(_dir, tabId) => {
             setActiveId(tabId);
             closeOverview();

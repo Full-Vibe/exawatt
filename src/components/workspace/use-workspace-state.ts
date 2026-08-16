@@ -40,6 +40,7 @@ import {
   placeProjectBeside,
   placeTabBeside,
   tabAtOrdinal,
+  type RingAnchor,
 } from './tab-ring';
 import { nextPin, tabIsPinnable } from './split-layout';
 import {
@@ -2580,12 +2581,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  order the operator is actually looking at. The ring math stays the one
    *  owner either way — only what it is asked about changes. */
   const cycleTab = useCallback(
-    (delta: 1 | -1, displayed?: readonly Project[]): boolean => {
+    (
+      delta: 1 | -1,
+      navigation?: {
+        displayed?: readonly Project[];
+        anchor?: RingAnchor;
+      }
+    ): RingAnchor | null => {
       const { projects: gs, activeDir: ad } = stateRef.current;
-      const next = nextTabInRing(displayed ?? gs, ad, delta);
-      if (!next) return false;
+      const next = nextTabInRing(
+        navigation?.displayed ?? gs,
+        ad,
+        delta,
+        navigation?.anchor
+      );
+      if (!next) return null;
       moveOperator(next.dir, next.tab?.id ?? null);
-      return true;
+      return { dir: next.dir, tabId: next.tab?.id ?? null };
     },
     [moveOperator]
   );

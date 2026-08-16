@@ -9,7 +9,14 @@
  * Enter/click drops into the session, Escape closes. DOM-rendered per the
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import Link from 'next/link';
 import { Play } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
@@ -56,6 +63,7 @@ import {
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { tokens as formatTokens } from '@/components/consumption/flux';
 import { tabCanResumeAsAgent, tabIsLive } from './use-workspace-state';
+import type { RingAnchor } from './tab-ring';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness, SessionDelegation } from '@/types/electron';
 import type { RoadmapItemView } from '@exawatt/ui-model';
@@ -101,6 +109,10 @@ interface EmptyProjectItem {
 
 type SelectionItem = Tile | EmptyProjectItem;
 
+/** Team's operator-owned ring subject. A null tab names an empty Project
+ * tile; null for the whole value means Team no longer owns selection. */
+export type TeamSelection = RingAnchor;
+
 function selectionKey(item: SelectionItem): string {
   return item.tabId ?? `project:${item.dir}`;
 }
@@ -142,6 +154,7 @@ export function ExposeOverlay({
   goalVisuals = {},
   activeTabId,
   activeProjectDir = null,
+  navigationSelection = null,
   roadmapRead,
   onPick,
   onPickProject = () => {},
@@ -187,6 +200,10 @@ export function ExposeOverlay({
   activeTabId: string | null;
   /** selects an empty Project when there is no originating Session */
   activeProjectDir?: string | null;
+  /** The shared navigation owner's current Team subject. Unlike
+   *  `activeTabId`, this can change when the requested ring target is already
+   *  the hidden Agent underlay, so the roving highlight still moves. */
+  navigationSelection?: TeamSelection | null;
   /** tenant roadmap source override (ENG-027 W2): the Demo Workspace lens
    *  reads fixture markdown instead of the `roadmap:read` IPC */
   roadmapRead?: RoadmapReadSource;
@@ -197,9 +214,9 @@ export function ExposeOverlay({
    *  on; the operator had to descend to the Agent altitude to get back. */
   onResumeTab?: (dir: string, tabId: string) => void;
   /** The roving selection, published so workspace-level verbs act on what is
-   *  selected HERE. Without it the resume chord targeted the active tab
-   *  while the operator was looking at a different tile. */
-  onSelectionChange?: (selection: { dir: string; tabId: string } | null) => void;
+   *  selected HERE. Without it resume and tab-ring chords target the hidden
+   *  active tab while the operator is looking at a different tile. */
+  onSelectionChange?: (selection: TeamSelection | null) => void;
   onStartRoadmapAgent?: (
     dir: string,
     item: RoadmapItemView
@@ -470,6 +487,22 @@ export function ExposeOverlay({
     requestAnimationFrame(() => focusSelection(next));
   }, [activeProjectDir, activeTabId, focusSelection, items.length]);
 
+  // The same tab-ring result drives the underlay and Team. This controlled
+  // subject is necessary when the destination already IS the hidden active
+  // tab: no activeTabId prop changes in that case, but the roving highlight
+  // must still move to the command's deterministic target (BUG-021).
+  useLayoutEffect(() => {
+    if (!navigationSelection) return;
+    const next = itemsRef.current.findIndex(
+      item =>
+        item.dir === navigationSelection.dir &&
+        item.tabId === navigationSelection.tabId
+    );
+    if (next === -1 || next === selectedIndexRef.current) return;
+    setSel(next);
+    requestAnimationFrame(() => focusSelection(next));
+  }, [focusSelection, items.length, navigationSelection]);
+
   // take the keyboard away from xterm; entrance flag flips post-mount so
   // tiles transition in (staggered). When a roadmap summon is in flight the
   // rail owns first focus (S12) — the entrance must not steal it back.
@@ -586,9 +619,12 @@ export function ExposeOverlay({
   const selectedItem = items[sel];
   const selectedTabId = selectedItem?.tabId ?? null;
   const selectedDirForVerbs = selectedItem?.dir ?? null;
-  useEffect(() => {
+  // Publish in the same commit that paints the roving highlight. A passive
+  // effect left a one-frame split where a fast tab-ring chord still read the
+  // hidden Agent underlay after Team visibly moved to another tile (BUG-021).
+  useLayoutEffect(() => {
     onSelectionChange?.(
-      selectedTabId && selectedDirForVerbs
+      selectedDirForVerbs
         ? { dir: selectedDirForVerbs, tabId: selectedTabId }
         : null
     );

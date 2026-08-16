@@ -33,6 +33,38 @@ describe('nextTabInRing', () => {
     });
   });
 
+  it("advances from Team's explicit roving subject, not its hidden active tab", () => {
+    const projects = [
+      project('/a', ['a1', 'a2'], 'a1'),
+      project('/b', ['b1', 'b2'], 'b1'),
+    ];
+
+    // The Agent underlay remains on a1 while the operator arrows to b1 in
+    // Team. The next ring target is therefore b2; advancing from a1 would
+    // produce a2, which looked like an arbitrary jump in the Team grid.
+    expect(
+      nextTabInRing(projects, '/a', 1, { dir: '/b', tabId: 'b1' })
+    ).toMatchObject({ dir: '/b', tab: { id: 'b2' } });
+    expect(
+      nextTabInRing(projects, '/a', -1, { dir: '/b', tabId: 'b1' })
+    ).toMatchObject({ dir: '/a', tab: { id: 'a2' } });
+  });
+
+  it("accepts Team's zero-tab Project as an explicit ring subject", () => {
+    const projects = [
+      project('/a', ['a1']),
+      { dir: '/empty', activeTabId: null, tabs: [] as Tab[] },
+      project('/c', ['c1']),
+    ];
+
+    expect(
+      nextTabInRing(projects, '/a', 1, { dir: '/empty', tabId: null })?.tab?.id
+    ).toBe('c1');
+    expect(
+      nextTabInRing(projects, '/a', -1, { dir: '/empty', tabId: null })?.tab?.id
+    ).toBe('a1');
+  });
+
   it('wraps from the last tab back to the first', () => {
     const projects = [project('/a', ['a1']), project('/b', ['b1'], 'b1')];
     expect(nextTabInRing(projects, '/b', 1)).toMatchObject({
