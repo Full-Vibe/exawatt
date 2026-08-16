@@ -155,6 +155,43 @@ describe('board packing', () => {
     });
   }
 
+  for (const [label, state] of scenarios) {
+    it(`keeps every unit inside the Project it belongs to — ${label}`, () => {
+      // The circle is the Project. A piece that reaches past its own edge
+      // reads as belonging to whatever it has drifted into, which is the one
+      // thing the board must never say wrongly. Overlap tests cannot catch
+      // this: units can be perfectly separated and still outside their zone.
+      const layouts: Array<[string, SpatialBoardLayout]> = [
+        ['fleet', selectSpatialBoardLayout(state)],
+      ];
+      for (const zone of selectSpatialBoardLayout(state).zones.slice(0, 3)) {
+        layouts.push([
+          `project:${zone.id}`,
+          selectSpatialBoardLayout(state, {
+            altitude: 'project',
+            focusedProjectId: zone.id,
+          }),
+        ]);
+      }
+      for (const [where, layout] of layouts) {
+        for (const zone of layout.zones) {
+          if (zone.isAggregate) continue;
+          const centerX = zone.rect.x + zone.rect.width / 2;
+          const centerY = zone.rect.y + zone.rect.height / 2;
+          for (const piece of layout.pieces) {
+            if (!piece.visible || piece.projectId !== zone.id) continue;
+            const reach =
+              Math.hypot(piece.x - centerX, piece.y - centerY) + piece.size / 2;
+            expect(
+              reach,
+              `${where}: ${piece.id} escapes ${zone.id}`
+            ).toBeLessThanOrEqual(zone.radius + 1e-6);
+          }
+        }
+      }
+    });
+  }
+
   it('keeps a Project circle sized by population, not by delegation', () => {
     // Circle area is how the board says how much is running. If delegation
     // could grow it, a small busy Project would outrank a large quiet one.
