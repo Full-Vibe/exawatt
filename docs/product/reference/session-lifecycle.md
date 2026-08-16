@@ -85,6 +85,25 @@ source only when its adapter declares exact support and the runtime confirms
 the capability. Exawatt never describes a disconnect as a pause or a fresh
 context as a resume.
 
+### Pause versus detach
+
+The operator may deliberately pause a local Agent, quit Exawatt, reopen it,
+and explicitly resume the exact retained Session. The process does not keep
+running while Exawatt is closed; the resumable identity does.
+
+A remote Agent has a second, equally important path: quit or close Exawatt
+without pausing anything. The source keeps working. Reopening Exawatt
+reattaches observation, resnapshots what happened while the client was absent,
+and returns to the same Agent. This action is **Reconnect**, never **Resume**.
+
+Remote **Pause** is not part of the read-only attachment milestone. It becomes
+available only if an adapter can truthfully name and verify the halted scope —
+active work, queued work, scheduled triggers, or some narrower subset — and
+later continue the same source-native work. Exawatt does not emulate that
+promise by sending a conversational “please wait,” stopping the whole VPS, or
+silently disabling crons. If OpenClaw exposes only narrower controls, the UI
+uses their exact names rather than a generic **Pause Agent**.
+
 Detaching an imported Agent removes its Exawatt projection after confirmation
 but leaves the remote Agent, configuration, workspace, Sessions, automations,
 and credentials intact. Decision `0037` owns the reversible mapping contract.

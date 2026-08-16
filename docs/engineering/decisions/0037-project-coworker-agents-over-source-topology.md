@@ -102,6 +102,16 @@ may place equivalent supported verbs consistently, but an adapter must not
 pretend that disconnecting Exawatt paused OpenClaw or that a new context resumed
 an old one.
 
+Pause specifically promises resumable continuity: execution is deliberately
+halted, its scope is known, and Resume continues the same Agent and preserved
+work. Local coding Sessions can satisfy that with an Exawatt-owned process and
+exact provider identity. Remote OpenClaw does not receive a generic Pause
+control until its adapter can verify an equivalent source-native contract and
+name whether active work, queued work, scheduled triggers, or a narrower scope
+is halted. A conversational instruction, cron edit, Gateway stop, or VPS power
+action is not an implementation substitute. Quitting Exawatt remains the cheap
+detach path and leaves remote execution untouched.
+
 ### 5. Connect first; manage and move later
 
 The Hosted Agents progression is one surface and one adapter family:
@@ -122,6 +132,7 @@ remote Agent.
 - Projection policy is versioned and additive.
 - Project and display-name mappings are editable.
 - Detach is non-destructive to the source.
+- Pause and reconnect remain distinct, capability-declared lifecycle verbs.
 - Read-only observation ships before write authority.
 - The first slice does not require Exawatt-hosted infrastructure.
 

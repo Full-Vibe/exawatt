@@ -894,6 +894,7 @@ export const architectureManifest = {
     'An Agent opens at its source-declared primary conversation rather than the latest activity; background contexts form a subordinate work stack and concurrency alone never creates a coworker.',
     'Placement is orthogonal to Agent identity: local, customer-hosted, and Exawatt-hosted configured sources use the same Agent, Project, state, and command contracts.',
     'Connection freshness is not work state: closing Exawatt or losing a remote observation path never implies that a remote Agent stopped; reconnect resnapshots authoritative state because transport sequence may be connection-local.',
+    'Pause is a resumable-continuity capability, not disconnect: a remote adapter must verify both the halted scope and preservation of the same source-native work before Exawatt offers generic Pause and Resume verbs.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; recovery defaults to the selected Project with Agent and all-Projects as nested alternate scopes, and local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',

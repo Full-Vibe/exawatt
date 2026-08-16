@@ -56,6 +56,12 @@ Anchor stories:
 - **Return to Tyler:** after Exawatt was closed overnight, opening Tyler returns
   to the same conversation, refreshes what happened remotely, and never implies
   that Tyler had been paused.
+- **Leave Tyler working:** quitting Exawatt during Tyler's Reddit work detaches
+  the client only. Reopening reattaches to Tyler and shows the posts, progress,
+  and current work produced while the client was absent; no Resume is offered.
+- **Park a local coder:** pausing a local Claude Code Agent, quitting, reopening,
+  and resuming re-inflates the exact retained Session. A future remote Pause
+  must earn that same continuity promise rather than approximate it.
 - **Marcus is busy:** three active posts and several historical cron runs still
   produce one Marcus card; meaningful current work expands beneath him.
 - **Scout delegates:** a bounded calendar-research child appears as Scout's
@@ -228,6 +234,14 @@ For a remote Agent:
 - **Pause**, **Resume**, **Stop current work**, and **Abort** appear only when
   the adapter declares and the runtime observes their exact semantics.
 
+Pause carries a stricter cross-source promise than a generic control label: it
+halts a declared scope while preserving the same Agent and work for Resume.
+Local process ownership plus exact provider identity can satisfy that contract.
+Remote OpenClaw Pause remains deferred until the adapter can verify comparable
+source-native continuity and say whether active work, queues, triggers, or a
+narrower subset are halted. Exawatt will not approximate it with a prompt, cron
+mutation, Gateway stop, or VPS shutdown.
+
 The H1 read-only slice exposes no write, pause, resume, stop, scheduling, or
 configuration control. H2 earns those controls one capability at a time.
 
@@ -269,7 +283,7 @@ simulated evidence.
 | C1   | Saved read-only source and Gateway transport           | Exawatt can safely test, remember, diagnose, and reconnect to each Hetzner source    |
 | C2   | Connect flow plus Agent/Team projection                | Marcus, Scout, and Tyler appear as remote coworkers with read-only conversation/work |
 | C3   | Relaunch, outage, rename, detach, and retirement proof | Quit/reopen and transient failures preserve the same coworkers without VPS mutation  |
-| H2   | Capability-declared command path                       | Talk to a coworker and later steer/stop only where OpenClaw proves the exact effect  |
+| H2   | Capability-declared command path                       | Talk to a coworker; exact controls follow only where OpenClaw proves their effect    |
 | H3   | Exawatt-managed OpenClaw placement                     | Create a hosted coworker without learning a second roster or control surface         |
 | H4   | Explicit clone/move with a transfer manifest           | Move or copy a coworker only after seeing exactly what transfers and what does not   |
 
@@ -300,7 +314,8 @@ simulated evidence.
 - **H2 Command connected Agents.** Send/follow up through the configured Agent's
   primary conversation (OpenClaw `main`), then add exact
   steer/abort/schedule/context verbs only where OpenClaw reports support and
-  outcome evidence.
+  outcome evidence. Generic remote Pause is not a prerequisite: it lands only
+  if OpenClaw can prove resumable continuity for a clearly named halted scope.
 - **H3 Exawatt-managed placement.** Provision and operate an Exawatt-managed
   OpenClaw behind the same source, Agent, Project, state, and command contracts.
 - **H4 Clone or move.** Offer a source-to-source handoff only after the product
@@ -337,6 +352,8 @@ governance, policy ceilings, and billing. Neither owns a parallel roster.
   workspace, contexts, automations, or credentials.
 - H1 contains no remote command path, even if the protocol client already has
   one.
+- H1 contains no remote Pause implementation, cron mutation, Gateway control,
+  or VPS lifecycle control.
 - Demo and live adapters pass the same projection and lifecycle contract tests.
 
 ## Non-goals for H1
@@ -397,3 +414,13 @@ WebSocket frame sequence resets on every connection and events are not replayed.
 ENG-010 therefore opens the source-declared primary conversation, resnapshots
 authoritative history and active-run state after reconnect, and treats durable
 replay positions as optional adapter capability rather than a baseline promise.
+
+### 2026-08-16 — pause and detach refinement
+
+The operator separated two daily stories. A local Agent may be deliberately
+paused, the app quit, and the exact retained Session explicitly resumed later.
+A remote Agent instead keeps working while Exawatt is closed; relaunch
+reattaches observation and catches up without calling that Resume. ENG-010 C3
+proves the detach/reattach story. H2 starts with conversation and does not take
+on OpenClaw cron mutation, Gateway/VPS lifecycle, or a generic remote Pause
+until the source can prove the halted scope and resumable continuity.

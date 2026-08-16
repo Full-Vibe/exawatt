@@ -70,6 +70,14 @@ relaunch reconnects to the same Agent and catches up. Commanding the main
 conversation follows as the next milestone, using the same Agent, Team, and
 Fleet surfaces rather than a separate cloud roster.
 
+That reconnect path is deliberately different from local pause-and-resume.
+Pausing a local Agent preserves its exact resumable Session while its process
+is stopped. Closing a remote Agent merely detaches the Exawatt view: reopening
+reattaches and shows the progress made while Exawatt was gone. A remote
+**Pause Agent** control will not appear until OpenClaw can report exactly what
+it halts and prove that the same work can resume; Exawatt will not substitute a
+prompt, cron toggle, or VPS shutdown for that guarantee.
+
 Exawatt uses the local harness account you already signed in with. When Claude
 Code, Codex, or OpenCode is entitled through a compatible source-owned account,
 you do not

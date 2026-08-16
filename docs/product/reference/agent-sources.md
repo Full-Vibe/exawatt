@@ -200,6 +200,13 @@ cursor; replay positions are optional declared capabilities. `Stale` or
 only after the adapter reports their exact semantics and the runtime confirms
 the capability.
 
+Remote pause is a separate, stronger capability than attach. Exawatt uses the
+generic **Pause Agent** / **Resume Agent** pair only when the source can declare
+and verify both the halted scope and continuity of the same resumable work.
+Source-specific controls for a cron, queue, or active turn keep their narrower
+names. Disconnecting the client, asking through a prompt, or stopping the VPS
+does not satisfy the pause contract.
+
 Launch recommendations are personal and reversible. One reusable Agent pool is
 ranked by successful launches separately for each Project, and each Project may
 pin its preferred Agent configurations or Shell. Exawatt must not silently

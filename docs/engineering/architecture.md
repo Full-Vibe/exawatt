@@ -451,7 +451,10 @@ identity. Connection-local event sequence is never promoted into a durable
 cursor. `Live`, `Reconnecting`, `Stale`, and `Unavailable` therefore cannot be
 collapsed into running/stopped or the D40 work-state protocol. Source commands
 remain capability-declared exact verbs; disconnect is not pause, and a fresh
-context is not resume.
+context is not resume. Generic remote Pause is a resumable-continuity contract:
+the adapter must name and verify what active work, queued work, or triggers are
+halted and preserve the same source-native work for Resume. Exawatt does not
+fake that contract with a prompt, cron mutation, Gateway stop, or VPS shutdown.
 
 Demo Mode enters below the same configured-source, projection, placement,
 primary-conversation, freshness, resnapshot, and optional replay boundary with
