@@ -10,6 +10,7 @@ import {
   buildSeedPlan,
   createPathClassifier,
   projectPublicPathManifest,
+  readPathManifest,
   validatePathManifest,
   validateTrackedPathCoverage,
 } from './lib/open-source-paths.mjs';
@@ -80,6 +81,22 @@ test('the repository manifest classifies every currently tracked path', async ()
     { cwd: root }
   );
   assert.match(stdout, /classified \d+ tracked paths/);
+});
+
+test('community worktree bootstrap implementation and tests are PUBLIC', async () => {
+  const manifest = await readPathManifest(
+    path.join(root, 'scripts/open-source-paths.manifest.json')
+  );
+  const classify = createPathClassifier(manifest);
+  for (const file of [
+    'scripts/lib/worktree-env.mjs',
+    'scripts/lib/worktree-setup.mjs',
+    'scripts/worktree-env.test.mjs',
+    'scripts/worktree-setup.mjs',
+    'scripts/worktree-setup.test.mjs',
+  ]) {
+    assert.equal(classify(file).classification, 'PUBLIC', file);
+  }
 });
 
 test('coverage fails closed while exact exceptions override directory rules', () => {
