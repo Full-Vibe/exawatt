@@ -175,6 +175,18 @@ supplies official branding, endpoint configuration, analytics configuration,
 Apple signing/notarization, and the update channel. Official binaries remain
 source-correspondent to the public application revision.
 
+Every distributable desktop build carries the public
+`ReleaseProvenanceV1` contract. It records the application version, exact
+public commit, distribution-configuration SHA-256, composition profile, and
+composition SHA-256. A `community` composition has no overlay commit; an
+`official-desktop` composition must record the exact private overlay commit.
+The composition digest covers canonical UTF-8 JSON of every preceding field
+except the digest itself. The Apache-licensed JSON Schema is the compatibility
+surface; the public application package supplies strict parse, create, hash,
+and verify utilities. This record proves source correspondence and detects
+composition drift. It is evidence and telemetry, never authorization or proof
+that a caller may use an Exawatt-hosted service.
+
 Exawatt's server never treats a shared desktop secret, endpoint URL, public
 OAuth client id, build header, or self-reported delivery channel as proof of an
 official binary. Hosted access is defended with authenticated accounts,
