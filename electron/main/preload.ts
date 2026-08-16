@@ -20,6 +20,30 @@ const subscribe =
 const bootstrapAppearance = ipcRenderer.sendSync(
   'app:appearance-bootstrap'
 ) as ElectronAppearanceBootstrapSnapshot;
+const productUpdatesEnabled = process.argv.includes(
+  '--exawatt-capability-updates'
+);
+const productUpdates = productUpdatesEnabled
+  ? {
+      getStatus: () => ipcRenderer.invoke('app:get-update-status'),
+      check: () => ipcRenderer.invoke('app:check-for-updates'),
+      restart: () => ipcRenderer.invoke('app:restart-update'),
+      onStatus: subscribe<{
+        phase:
+          | 'idle'
+          | 'checking'
+          | 'available'
+          | 'downloading'
+          | 'downloaded'
+          | 'error';
+        currentVersion: string;
+        availableVersion: string | null;
+        percent: number | null;
+        liveSessions: number;
+        error: string | null;
+      }>('app:update-status'),
+    }
+  : undefined;
 
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
@@ -327,9 +351,7 @@ contextBridge.exposeInMainWorld('electron', {
       systemAccent: string | null;
       safeTheme: boolean;
     }>('app:appearance-changed'),
-    getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
-    checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
-    restartUpdate: () => ipcRenderer.invoke('app:restart-update'),
+    ...(productUpdates ? { updates: productUpdates } : {}),
     setWorkspaceCheckpointOwner: (ownsWorkspaceState: boolean) =>
       ipcRenderer.invoke(
         'app:set-workspace-checkpoint-owner',
@@ -356,20 +378,6 @@ contextBridge.exposeInMainWorld('electron', {
       currentSha: string;
       installedSha: string;
     }>('app:update-ready'),
-    onUpdateStatus: subscribe<{
-      phase:
-        | 'idle'
-        | 'checking'
-        | 'available'
-        | 'downloading'
-        | 'downloaded'
-        | 'error';
-      currentVersion: string;
-      availableVersion: string | null;
-      percent: number | null;
-      liveSessions: number;
-      error: string | null;
-    }>('app:update-status'),
   },
   auth: {
     startGoogle: (config: {

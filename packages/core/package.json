@@ -22,12 +22,21 @@
       "require": "./dist-cjs/server.js",
       "import": "./src/server.ts",
       "default": "./src/server.ts"
+    },
+    "./distribution": {
+      "types": "./dist/distribution/index.d.ts",
+      "require": "./dist-cjs/distribution/index.js",
+      "import": "./src/distribution/index.ts",
+      "default": "./src/distribution/index.ts"
     }
   },
   "typesVersions": {
     "*": {
       "server": [
         "dist/server.d.ts"
+      ],
+      "distribution": [
+        "dist/distribution/index.d.ts"
       ],
       "*": [
         "dist/index.d.ts"

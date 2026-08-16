@@ -744,7 +744,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted IPC, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, native-network PKCE, atomic delivery, signed updates, and parser-validated roadmap transactions. Every persisted collection declares a size class and names an eviction owner (decision `0039`): the layout stays a small-object record and large per-Session artifacts live in a content-addressed side store, referenced by id.',
+            'Immediate launch frame, trusted IPC, strict build-time distribution identity with cross-artifact digests, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, optional official auth/update capabilities, native-network PKCE, atomic delivery, and parser-validated roadmap transactions. Every persisted collection declares a size class and eviction owner (decision `0039`): the layout stays a small-object record and large per-Session artifacts live in a content-addressed side store, referenced by id.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,
@@ -907,6 +907,7 @@ export const architectureManifest = {
     'Public operator statistics are an opt-in aggregate projection over the shared local Consumption spine: Electron settings preserve the consent boundary across renderer origins, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
     'Session-continuity diagnostics are local, explainable projections over evidence; hosted systems may aggregate them but never replace their semantics with an opaque health score.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
+    'Distribution services are optional versioned capabilities resolved before build; community identity is isolated and service-neutral, while operator-configured Agent Source WebSockets remain an independent local/customer-owned transport.',
     'Coding is the first dogfood workload, not the Agent boundary; compatible non-coding sources use the same command and evidence contracts.',
     'Source entitlement and Consumption are separate: a compatible subscription-backed harness does not require Exawatt API billing, and unreported plan headroom stays unknown.',
     'A Launch Configuration is one exact configured source/model/effort choice; only successful launches train per-Project frecency, Project pins stay local, and unavailable choices never silently substitute.',

@@ -77,7 +77,7 @@ try {
   const hasPty = await page.evaluate(() => !!window.electron?.pty);
   if (!hasPty) throw new Error('Packaged renderer has no PTY preload');
   const initialUpdate = await page.evaluate(() =>
-    window.electron?.app?.getUpdateStatus()
+    window.electron?.app?.updates?.getStatus()
   );
   if (
     initialUpdate?.phase !== 'idle' ||
@@ -114,7 +114,7 @@ try {
     return buffer?.includes('EXAWATT_PACKAGED_OK');
   }, sessionId);
   const updateWithSession = await page.evaluate(() =>
-    window.electron?.app?.getUpdateStatus()
+    window.electron?.app?.updates?.getStatus()
   );
   if (updateWithSession?.liveSessions !== 1) {
     throw new Error(

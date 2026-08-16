@@ -28,6 +28,9 @@ export function runWorktreeSetup({
     run('pnpm electron:rebuild');
   }
 
+  say('preparing the community distribution contract');
+  run('pnpm distribution:prepare');
+
   say('compiling Electron main');
   run('pnpm electron:compile');
 

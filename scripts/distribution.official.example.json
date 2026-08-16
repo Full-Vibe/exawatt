@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "brand": {
+    "appId": "ai.exawatt.desktop",
+    "productName": "Exawatt",
+    "protocolScheme": "exawatt",
+    "iconPath": "electron/resources/icon.icns",
+    "updateChannel": "stable"
+  },
+  "account": {
+    "supabaseUrl": "https://project.supabase.co",
+    "supabaseAnonKey": "public-anon-key",
+    "recoveryOrigin": "https://www.exawatt.ai"
+  },
+  "services": {
+    "productFeedback": {
+      "url": "https://www.exawatt.ai/api/feedback",
+      "protocolVersion": 1
+    },
+    "operatorStats": {
+      "url": "https://www.exawatt.ai/api/operator-stats",
+      "protocolVersion": 1
+    },
+    "projects": null,
+    "preferences": null,
+    "accountData": null
+  },
+  "enrichment": {
+    "contextLabels": {
+      "url": "https://www.exawatt.ai/api/context-labels",
+      "protocolVersion": 1
+    },
+    "conversationSummaries": {
+      "url": "https://www.exawatt.ai/api/conversations/summarize",
+      "protocolVersion": 1
+    },
+    "goalVisuals": {
+      "url": "https://www.exawatt.ai/api/goal-visuals",
+      "protocolVersion": 1
+    }
+  },
+  "analytics": {
+    "ingestOrigin": "https://www.exawatt.ai/ingest",
+    "projectKey": "public-project-key"
+  },
+  "updates": {
+    "feedUrl": "https://updates.exawatt.ai/macos/arm64"
+  }
+}

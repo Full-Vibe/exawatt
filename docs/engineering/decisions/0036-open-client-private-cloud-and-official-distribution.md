@@ -172,6 +172,32 @@ Supabase configuration, analytics sink, update feed, or official-build marker
 by default. It runs Demo Mode and local Agent Sources, and may be configured by
 its distributor to use that distributor's compatible services.
 
+Amended 2026-08-16 during OS4 preflight: schema V1 is one strict, canonical
+build input owned by `@exawatt/core`. An absent input selects the stable
+community identity (`Exawatt Community`, `ai.exawatt.community`); a present
+invalid input fails rather than falling back. Community has no protocol scheme,
+update channel, branded icon, or product-update preload/IPC capability and uses
+a distinct app-id-derived state/cache namespace. The official overlay supplies
+`Exawatt`, `ai.exawatt.desktop`, `exawatt`, its icon, and update channel.
+The installer permits one explicit same-Team migration from the retired
+`com.exawatt.app` identifier to `ai.exawatt.desktop`; it continues to refuse
+every other stable signer identity.
+
+Authentication transport and product services are distinct contract families.
+Every configured V1 product-service or enrichment endpoint is a versioned
+`{ url, protocolVersion: 1 }` reference and requires a configured account;
+`accountData` remains reserved/null until a public protocol exists. Public code
+must never make private Supabase tables, RPCs, or generated database types the
+compatibility contract. Product feedback and owner operator statistics have
+explicit service refs; recovery origin is not a generic API base.
+
+Agent Source transport is independent of distribution services. In particular,
+the community CSP preserves `ws:` for an operator-configured OpenClaw Gateway
+while all Exawatt service refs remain null. Desktop composition is the public
+renderer tree plus distribution configuration only; the hosted web composition
+may add the private route overlay. The packaged contract digest and a hashed
+desktop-composition manifest make that boundary inspectable.
+
 The private official-distribution pipeline pins an exact public commit and
 supplies official branding, endpoint configuration, analytics configuration,
 Apple signing/notarization, and the update channel. Official binaries remain

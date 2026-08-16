@@ -44,6 +44,7 @@ test('community setup skips optional env and still runs every required stage', (
     'pnpm qa:browser:doctor',
     'environment',
     'pnpm electron:rebuild',
+    'pnpm distribution:prepare',
     'pnpm electron:compile',
   ]);
   assert.match(setup.messages.join('\n'), /community-safe setup/);
@@ -56,6 +57,7 @@ test('an existing native binding skips only the rebuild', () => {
   assert.deepEqual(setup.calls, [
     'pnpm install --prefer-offline',
     'environment',
+    'pnpm distribution:prepare',
     'pnpm electron:compile',
   ]);
 });
@@ -86,6 +88,7 @@ for (const [name, environment] of [
       'pnpm qa:browser:doctor',
       'environment',
       'pnpm electron:rebuild',
+      'pnpm distribution:prepare',
       'pnpm electron:compile',
     ]);
     assert.match(setup.messages.at(-1), /ready/);
@@ -96,6 +99,7 @@ for (const requiredStage of [
   'pnpm install --prefer-offline',
   'pnpm qa:browser:doctor',
   'pnpm electron:rebuild',
+  'pnpm distribution:prepare',
   'pnpm electron:compile',
 ]) {
   test(`required setup stage fails visibly: ${requiredStage}`, () => {

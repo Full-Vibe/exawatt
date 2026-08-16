@@ -95,7 +95,7 @@ export interface ApplicationMenuContext {
   accelerators: Record<string, string>;
   availability: Record<string, boolean>;
   onCommand: (command: string) => void;
-  onCheckForUpdates: () => void;
+  onCheckForUpdates?: () => void;
   onWindowManagementHelp: () => void;
 }
 
@@ -156,7 +156,14 @@ export function buildApplicationMenuTemplate(
         // build sha stays as secondary diagnostic detail (FIX-014).
         { label: `Version ${context.version}`, enabled: false },
         { label: `Build ${context.buildSha}`, enabled: false },
-        { label: 'Check for Updates…', click: context.onCheckForUpdates },
+        ...(context.onCheckForUpdates
+          ? [
+              {
+                label: 'Check for Updates…',
+                click: context.onCheckForUpdates,
+              },
+            ]
+          : []),
         separator(),
         verb('open-settings'),
         separator(),

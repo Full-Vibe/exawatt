@@ -37,10 +37,21 @@ const listen = handler =>
     );
   });
 
+const DISTRIBUTION_DIGEST = 'a'.repeat(64);
+
+function prepareDistributionIdentity(root, digest = DISTRIBUTION_DIGEST) {
+  const directory = join(root, '.exawatt-build');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, 'distribution.sha256'), `${digest}\n`);
+}
+
 test('a tree without the node-pty binding fails with the rebuild remedy, not posix_spawnp', () => {
   const root = mkdtempSync(join(tmpdir(), 'preflight-'));
   assert.equal(nodePtyBindingPath(root), null);
-  assert.throws(() => assertNodePtyBuilt(root), /worktree:setup|electron:rebuild/);
+  assert.throws(
+    () => assertNodePtyBuilt(root),
+    /worktree:setup|electron:rebuild/
+  );
 });
 
 test('a built binding passes the preflight', () => {
@@ -54,12 +65,37 @@ test('a built binding passes the preflight', () => {
 
 test('a dev server serving the SAME tree passes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'devid-'));
+  prepareDistributionIdentity(root);
   const { server, origin } = await listen((_request, response) => {
     response.setHeader('content-type', 'application/json');
-    response.end(JSON.stringify({ repoRoot: root }));
+    response.end(
+      JSON.stringify({
+        repoRoot: root,
+        distributionDigest: DISTRIBUTION_DIGEST,
+      })
+    );
   });
   try {
     await assertDevServerServesTree(`${origin}/workspace`, realpathSync(root));
+  } finally {
+    server.close();
+  }
+});
+
+test('a dev server serving another distribution is refused loudly', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'devid-'));
+  prepareDistributionIdentity(root);
+  const { server, origin } = await listen((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(
+      JSON.stringify({ repoRoot: root, distributionDigest: 'b'.repeat(64) })
+    );
+  });
+  try {
+    await assert.rejects(
+      assertDevServerServesTree(`${origin}/workspace`, root),
+      /WRONG DISTRIBUTION/
+    );
   } finally {
     server.close();
   }

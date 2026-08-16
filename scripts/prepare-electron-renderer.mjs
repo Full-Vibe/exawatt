@@ -5,6 +5,7 @@ import {
   mkdir,
   opendir,
   readlink,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -15,7 +16,6 @@ import { createReadStream } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-
 import { assertRendererArchiveServes } from './lib/renderer-archive.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -29,10 +29,33 @@ const staticSource = path.join(root, '.next', 'static');
 const staticTarget = path.join(renderer, '.next', 'static');
 const publicSource = path.join(root, 'public');
 const publicTarget = path.join(renderer, 'public');
+const distributionDigestSource = path.join(
+  root,
+  '.exawatt-build',
+  'distribution.sha256'
+);
+const nextDistributionDigest = path.join(
+  root,
+  '.next',
+  'exawatt-distribution.sha256'
+);
 
 await access(path.join(standalone, 'server.js')).catch(() => {
-  throw new Error('Missing .next/standalone/server.js; run `pnpm build` first.');
+  throw new Error(
+    'Missing .next/standalone/server.js; run `pnpm build` first.'
+  );
 });
+const [preparedDistributionDigest, builtDistributionDigest] = await Promise.all(
+  [
+    readFile(distributionDigestSource, 'utf8'),
+    readFile(nextDistributionDigest, 'utf8'),
+  ]
+);
+if (preparedDistributionDigest.trim() !== builtDistributionDigest.trim()) {
+  throw new Error(
+    `Renderer distribution mismatch: prepared ${preparedDistributionDigest.trim()}, Next ${builtDistributionDigest.trim()}`
+  );
+}
 
 async function removeDanglingSymlinks(directory) {
   for await (const entry of await opendir(directory)) {
@@ -56,15 +79,54 @@ async function relocateSymlinks(directory) {
     const stats = await lstat(entryPath);
     if (stats.isSymbolicLink()) {
       const target = await readlink(entryPath);
-      if (path.isAbsolute(target) && target.startsWith(`${standalone}${path.sep}`)) {
-        const relocatedTarget = path.join(renderer, path.relative(standalone, target));
+      if (
+        path.isAbsolute(target) &&
+        target.startsWith(`${standalone}${path.sep}`)
+      ) {
+        const relocatedTarget = path.join(
+          renderer,
+          path.relative(standalone, target)
+        );
         await rm(entryPath);
-        await symlink(path.relative(path.dirname(entryPath), relocatedTarget), entryPath);
+        await symlink(
+          path.relative(path.dirname(entryPath), relocatedTarget),
+          entryPath
+        );
       }
     } else if (stats.isDirectory()) {
       await relocateSymlinks(entryPath);
     }
   }
+}
+
+async function rendererEntries(directory, relative = '') {
+  const entries = [];
+  for await (const entry of await opendir(directory)) {
+    const entryRelative = path.join(relative, entry.name);
+    const entryPath = path.join(directory, entry.name);
+    const stats = await lstat(entryPath);
+    if (stats.isDirectory()) {
+      entries.push(...(await rendererEntries(entryPath, entryRelative)));
+      continue;
+    }
+    if (stats.isSymbolicLink()) {
+      entries.push({
+        path: entryRelative,
+        kind: 'symlink',
+        target: await readlink(entryPath),
+      });
+      continue;
+    }
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(entryPath)) hash.update(chunk);
+    entries.push({
+      path: entryRelative,
+      kind: 'file',
+      sha256: hash.digest('hex'),
+      bytes: stats.size,
+    });
+  }
+  return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 await rm(renderer, { recursive: true, force: true });
@@ -84,8 +146,35 @@ try {
   // The app currently has no public/ directory. Keep this future-safe.
 }
 
+const composition = `${JSON.stringify(
+  {
+    schemaVersion: 1,
+    profile: 'desktop-public',
+    policy: { hostedOverlayModules: 'forbidden' },
+    distributionDigest: preparedDistributionDigest.trim(),
+    entries: await rendererEntries(renderer),
+  },
+  null,
+  2
+)}\n`;
+const compositionDigest = createHash('sha256')
+  .update(composition)
+  .digest('hex');
+
 await rm(archiveDir, { recursive: true, force: true });
 await mkdir(archiveDir, { recursive: true });
+await writeFile(
+  path.join(archiveDir, 'distribution.sha256'),
+  `${preparedDistributionDigest.trim()}\n`
+);
+await writeFile(
+  path.join(archiveDir, 'renderer.composition.json'),
+  composition
+);
+await writeFile(
+  path.join(archiveDir, 'renderer.composition.sha256'),
+  `${compositionDigest}\n`
+);
 await execFileAsync('/usr/bin/ditto', [
   '-c',
   '-k',

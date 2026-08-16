@@ -12,6 +12,7 @@ const INTENTIONAL_NON_PACKAGE_FILES = new Set([
   'README.md',
   'agent-stop-check.mjs',
   'app-update-config.cjs',
+  'distribution.official.example.json',
   'dogfood-worker.mjs',
   'fathom-transcript.mjs',
   'macos-atomic-swap.c',

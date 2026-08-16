@@ -21,6 +21,7 @@
  */
 
 import type { AnalyticsSurface } from './events';
+import type { DistributionContractV1 } from '@exawatt/core/distribution';
 
 /** The hosted origin that owns the `/ingest` rewrite (decision `0034`). */
 export const EXAWATT_HOSTED_ORIGIN = 'https://www.exawatt.ai';
@@ -50,6 +51,7 @@ export interface AnalyticsRuntime {
 }
 
 export type AnalyticsDisabledReason =
+  | 'no_distribution_config'
   | 'not_production'
   | 'disabled_by_build'
   | 'opted_out'
@@ -116,6 +118,25 @@ export function resolveAnalyticsDecision(
       hostOverride: env.host,
     }),
   };
+}
+
+/** Distribution-aware seam; existing callers migrate in WP2b-2. */
+export function resolveDistributionAnalyticsDecision(
+  distribution: DistributionContractV1,
+  runtime: AnalyticsRuntime,
+  nodeEnv: string | undefined
+): AnalyticsDecision {
+  if (!distribution.analytics) {
+    return { enabled: false, reason: 'no_distribution_config' };
+  }
+  return resolveAnalyticsDecision(
+    {
+      key: distribution.analytics.projectKey,
+      host: distribution.analytics.ingestOrigin,
+      nodeEnv,
+    },
+    runtime
+  );
 }
 
 /**

@@ -148,6 +148,8 @@
         "scripts/macos-atomic-swap.c",
         "scripts/open-source-paths.mjs",
         "scripts/pace-opportunity-shot.mjs",
+        "scripts/prepare-distribution.mjs",
+        "scripts/prepare-electron-builder-config.mjs",
         "scripts/prepare-electron-main.mjs",
         "scripts/prepare-electron-renderer.mjs",
         "scripts/production-audit-baseline.json",
@@ -158,6 +160,7 @@
         "scripts/r3f-eval/**",
         "scripts/renderer-session-lifecycle-leak-probe.mjs",
         "scripts/session-lifecycle-leak-probe.mjs",
+        "scripts/run-next-with-distribution.mjs",
         "scripts/sign-renderer-archive.cjs",
         "scripts/terminal-cost-probe.mjs",
         "scripts/transcript-replay-probe.mjs",
@@ -357,6 +360,11 @@
       "path": "scripts/electron-code-identity-eval.mjs",
       "classification": "PUBLIC",
       "reason": "explicit distribution identity input"
+    },
+    {
+      "path": "scripts/distribution.official.example.json",
+      "classification": "PUBLIC",
+      "reason": "placeholder-only official distribution overlay example"
     },
     {
       "path": "scripts/feedback-lanes.test.mjs",

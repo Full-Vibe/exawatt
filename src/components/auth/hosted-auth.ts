@@ -1,3 +1,5 @@
+import type { DistributionContractV1 } from '@exawatt/core/distribution';
+
 /**
  * Where a desktop operator has to finish an auth flow that leaves the app
  * (ENG-030 OS0.2).
@@ -15,6 +17,23 @@ export const FORGOT_PASSWORD_PATH = '/auth/forgot-password';
 export const UPDATE_PASSWORD_PATH = '/auth/update-password';
 
 export const HOSTED_FORGOT_PASSWORD_URL = `${HOSTED_ORIGIN}${FORGOT_PASSWORD_PATH}`;
+
+export interface HostedAuthTargets {
+  forgotPasswordUrl: string;
+  recoveryOrigin: string;
+}
+
+/** Nullable distribution-aware seam. WP2b migrates the legacy constant user. */
+export function resolveHostedAuthTargets(
+  distribution: DistributionContractV1
+): HostedAuthTargets | null {
+  const origin = distribution.account?.recoveryOrigin;
+  if (!origin) return null;
+  return {
+    recoveryOrigin: origin,
+    forgotPasswordUrl: `${origin}${FORGOT_PASSWORD_PATH}`,
+  };
+}
 
 /** The landing the recovery email must return to: the shared callback route
  *  exchanges the recovery code, then hands off to the update form. */

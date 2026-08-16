@@ -57,7 +57,8 @@ export type OwnAccountFeatureId = (typeof OWN_ACCOUNT_FEATURE_IDS)[number];
  *  the opposite of everything else here (decision `0029`). */
 export const PUBLIC_SHARING_FEATURE_IDS = ['operatorProfile'] as const;
 
-export type PublicSharingFeatureId = (typeof PUBLIC_SHARING_FEATURE_IDS)[number];
+export type PublicSharingFeatureId =
+  (typeof PUBLIC_SHARING_FEATURE_IDS)[number];
 
 /** Every switch on the privacy surface, including the analytics one. */
 export const OUTBOUND_CONTROL_IDS = [
@@ -87,6 +88,15 @@ export interface OutboundControl {
   /** Default-on per decision `0031` for hosted/own-account/analytics rows;
    *  public sharing is default-OFF per decision `0029`. Disclosed either way. */
   defaultEnabled: boolean;
+  /** Null for operator-owned local traffic. WP2b uses this to render an honest
+   * "not configured in this build" state before offering a switch. */
+  requiresDistributionCapability:
+    | 'enrichment.contextLabels'
+    | 'enrichment.conversationSummaries'
+    | 'enrichment.goalVisuals'
+    | 'services.operatorStats'
+    | 'analytics'
+    | null;
 }
 
 export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
@@ -103,6 +113,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // which OS0 forbids, so the local path deliberately survives.
     cost: 'New Sessions keep the label from the task you typed and stop being refined; existing labels stay.',
     defaultEnabled: true,
+    requiresDistributionCapability: 'enrichment.contextLabels',
   },
   conversationSummaries: {
     id: 'conversationSummaries',
@@ -113,6 +124,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     destination: 'Exawatt, then Anthropic',
     cost: 'Recent conversations show their raw harness titles instead.',
     defaultEnabled: true,
+    requiresDistributionCapability: 'enrichment.conversationSummaries',
   },
   goalVisuals: {
     id: 'goalVisuals',
@@ -127,6 +139,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     destination: 'Exawatt, then fal.ai',
     cost: 'Tiles use a plain background; images already generated stay.',
     defaultEnabled: true,
+    requiresDistributionCapability: 'enrichment.goalVisuals',
   },
   reentryRecap: {
     id: 'reentryRecap',
@@ -142,9 +155,11 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // Unlike everything above, this never touches Exawatt: the recap runs the
     // claude CLI already signed in on this machine, so the request is the
     // operator's own API traffic.
-    destination: 'Anthropic, through your own Claude Code sign-in — never Exawatt',
+    destination:
+      'Anthropic, through your own Claude Code sign-in — never Exawatt',
     cost: 'Coming back to a Session shows no "since you left" line; you catch up by reading the terminal.',
     defaultEnabled: true,
+    requiresDistributionCapability: null,
   },
   claudePlanWindows: {
     id: 'claudePlanWindows',
@@ -160,6 +175,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
       'Anthropic, through your own Claude Code sign-in — never Exawatt',
     cost: 'Claude shows no plan windows here; local token counts stay.',
     defaultEnabled: true,
+    requiresDistributionCapability: null,
   },
   operatorProfile: {
     id: 'operatorProfile',
@@ -173,6 +189,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     destination: 'Exawatt — publicly readable on the leaderboard',
     cost: 'Your public profile stops updating; it stays visible until you remove it.',
     defaultEnabled: false,
+    requiresDistributionCapability: 'services.operatorStats',
   },
   productAnalytics: {
     id: 'productAnalytics',
@@ -183,6 +200,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     destination: 'Exawatt, then PostHog',
     cost: 'Failures affecting you become invisible to us until you report them.',
     defaultEnabled: true,
+    requiresDistributionCapability: 'analytics',
   },
 };
 
