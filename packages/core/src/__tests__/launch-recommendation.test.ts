@@ -12,7 +12,7 @@ import {
   type LaunchHistoryEvent,
 } from '../launch-recommendation';
 
-const PROJECT = '/Users/jake/Code/exawatt';
+const PROJECT = '/Users/example/Code/exawatt';
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = 1_800_000_000_000;
 

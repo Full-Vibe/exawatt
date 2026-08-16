@@ -78,18 +78,18 @@ describe('capture scrubbing', () => {
   it('never lets person properties build an account profile', () => {
     const result = scrubAnalyticsCapture({
       ...capture('sign_in_attempted', { method: 'google' }),
-      $set: { email: 'jake@example.com' },
+      $set: { email: 'developer@example.com' },
       $set_once: { user_id: 'account-uuid' },
     });
     expect(result?.$set).toBeUndefined();
     expect(result?.$set_once).toBeUndefined();
-    expect(JSON.stringify(result)).not.toContain('jake@example.com');
+    expect(JSON.stringify(result)).not.toContain('developer@example.com');
   });
 
   it('keeps the crash signal but removes the exception message', () => {
     const result = scrubAnalyticsCapture(
       capture('$exception', {
-        $exception_message: 'summarize failed for /Users/jake/Code/exawatt',
+        $exception_message: 'summarize failed for /Users/example/Code/exawatt',
         $exception_list: [
           {
             type: 'TypeError',
@@ -115,7 +115,7 @@ describe('capture scrubbing', () => {
 
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('refactor the auth coordinator');
-    expect(serialized).not.toContain('/Users/jake');
+    expect(serialized).not.toContain('/Users/example');
     expect(serialized).not.toContain('127.0.0.1');
     expect(result?.properties.$exception_message).toBeUndefined();
 
@@ -165,12 +165,12 @@ describe('capture scrubbing', () => {
         $exception_list: [],
         // Free-text breadcrumbs, gated behind a config this client never sets.
         $exception_steps: [
-          { message: 'ran claude -p on /Users/jake/Code/exawatt' },
+          { message: 'ran claude -p on /Users/example/Code/exawatt' },
         ],
         // Invented by a hypothetical future SDK release.
         $exception_source_context: 'const prompt = "refactor the coordinator"',
         // The Sentry integration's raw, unredacted exception object.
-        $sentry_exception_message: 'summarize failed for /Users/jake',
+        $sentry_exception_message: 'summarize failed for /Users/example',
         // A caller's own extra property.
         project_name: 'exawatt',
       })
@@ -178,7 +178,7 @@ describe('capture scrubbing', () => {
 
     expect(Object.keys(result!.properties)).toEqual(['$exception_list']);
     const serialized = JSON.stringify(result);
-    expect(serialized).not.toContain('/Users/jake');
+    expect(serialized).not.toContain('/Users/example');
     expect(serialized).not.toContain('refactor the coordinator');
     expect(serialized).not.toContain('exawatt');
   });
@@ -189,7 +189,7 @@ describe('capture scrubbing', () => {
         ?.properties.$exception_level;
 
     expect(level('warning')).toBe('warning');
-    expect(level('/Users/jake/Code/exawatt')).toBe('error');
+    expect(level('/Users/example/Code/exawatt')).toBe('error');
     expect(level(undefined)).toBe('error');
   });
 
@@ -205,7 +205,7 @@ describe('capture scrubbing', () => {
               handled: false,
               synthetic: true,
               // `Mechanism.source` is a free-form string in the SDK's types.
-              source: '/Users/jake/Code/exawatt/session.ts',
+              source: '/Users/example/Code/exawatt/session.ts',
             },
           },
         ],
@@ -220,7 +220,7 @@ describe('capture scrubbing', () => {
         synthetic: true,
       },
     });
-    expect(JSON.stringify(result)).not.toContain('/Users/jake');
+    expect(JSON.stringify(result)).not.toContain('/Users/example');
   });
 
   it('never lets a crash payload ride an ordinary event', () => {
@@ -238,10 +238,10 @@ describe('capture scrubbing', () => {
     expect(
       redactFrameLocation('https://www.exawatt.ai/_next/static/chunks/main.js')
     ).toBe('/_next/static/chunks/main.js');
-    expect(redactFrameLocation('file:///Users/jake/Code/exawatt/preload.js')).toBe(
-      '<file>'
-    );
-    expect(redactFrameLocation('/Users/jake/Code/exawatt/preload.js')).toBe(
+    expect(
+      redactFrameLocation('file:///Users/example/Code/exawatt/preload.js')
+    ).toBe('<file>');
+    expect(redactFrameLocation('/Users/example/Code/exawatt/preload.js')).toBe(
       '<local>'
     );
     expect(redactFrameLocation(undefined)).toBeNull();

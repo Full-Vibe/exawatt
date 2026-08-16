@@ -19,7 +19,7 @@ describe('isRepoRelativePath', () => {
 });
 
 describe('resolveContainedPath', () => {
-  const root = '/Users/jake/repo';
+  const root = '/Users/example/repo';
   it('allows the root and its descendants', () => {
     expect(resolveContainedPath(root, root)).toBe(root);
     expect(resolveContainedPath(root, `${root}/docs/a.md`)).toBe(
@@ -27,8 +27,10 @@ describe('resolveContainedPath', () => {
     );
   });
   it('rejects .. escapes and sibling-prefix tricks', () => {
-    expect(resolveContainedPath(root, '/Users/jake/repo/../secret')).toBeNull();
-    expect(resolveContainedPath(root, '/Users/jake/repo-evil/x')).toBeNull();
+    expect(
+      resolveContainedPath(root, '/Users/example/repo/../secret')
+    ).toBeNull();
+    expect(resolveContainedPath(root, '/Users/example/repo-evil/x')).toBeNull();
     expect(resolveContainedPath(root, '/etc/passwd')).toBeNull();
   });
 });

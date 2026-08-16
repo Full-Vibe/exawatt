@@ -5,12 +5,12 @@ describe('agentGoalDisplay', () => {
   it('separates a session description from a long filesystem path', () => {
     expect(
       agentGoalDisplay(
-        'Interactive Claude Code session in /Users/jake/Code/Personal/FullVibeAI/photo-generator'
+        'Interactive Claude Code session in /Users/example/Code/Projects/photo-studio'
       )
     ).toEqual({
       summary: 'Interactive Claude Code session',
-      context: '…/FullVibeAI/photo-generator',
-      contextTitle: '/Users/jake/Code/Personal/FullVibeAI/photo-generator',
+      context: '…/Projects/photo-studio',
+      contextTitle: '/Users/example/Code/Projects/photo-studio',
     });
   });
 

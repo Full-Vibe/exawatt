@@ -90,9 +90,7 @@ describe('SiteHeaderNav account menu', () => {
   });
 
   it('offers Sign out, and only Sign out, once signed in', async () => {
-    render(
-      <SiteHeaderNav isAuthenticated userEmail="jake@jakeschwartz.com" />
-    );
+    render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
 
     openAccountMenu();
 

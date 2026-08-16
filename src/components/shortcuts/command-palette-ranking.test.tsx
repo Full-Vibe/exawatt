@@ -323,29 +323,29 @@ describe('⌘K ranking (ENG-016)', () => {
 describe('⌘K cross-group ranking (FIX-007)', () => {
   const PROJECTS = [
     {
-      id: 'p-cortex',
-      name: 'cortex-ehr',
-      root_path: '/Users/jake/Code/cortex-ehr',
+      id: 'p-atlas',
+      name: 'atlas-notes',
+      root_path: '/Users/example/Code/atlas-notes',
       color: '#50E6FF',
     },
     {
-      id: 'p-gpagent',
-      name: 'gpagent',
-      root_path: '/Users/jake/Code/gpagent',
+      id: 'p-lumen',
+      name: 'lumen-agent',
+      root_path: '/Users/example/Code/lumen-agent',
       color: '#FFB86B',
     },
   ];
 
   // A Session whose title merely CONTAINS the query, in the group authored
-  // above Projects — the `gpagent` report's collision.
+  // above Projects — the `lumen-agent` fixture's collision.
   const PTY_SESSIONS = [
     {
       id: 'pty-1',
       durableSessionId: 'dur-1',
       harness: 'claude' as const,
-      title: 'Wire gpagent telemetry export',
-      cwd: '/Users/jake/Code/other',
-      projectDir: '/Users/jake/Code/other',
+      title: 'Wire lumen-agent telemetry export',
+      cwd: '/Users/example/Code/other',
+      projectDir: '/Users/example/Code/other',
       projectName: 'other',
       cols: 80,
       rows: 24,
@@ -403,13 +403,13 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
     );
   }
 
-  it('ranks the Project above a fuzzy Start row for "cortex"', async () => {
+  it('ranks the Project above a fuzzy Start row for "atlas"', async () => {
     renderPersonalPalette();
     await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
-    await typeQuery('cortex');
+    await typeQuery('atlas');
 
     const rows = visibleRows();
-    expect(rows[0].textContent).toContain('cortex-ehr');
+    expect(rows[0].textContent).toContain('atlas-notes');
     const codex = rows.findIndex(r => r.textContent?.includes('Start Codex'));
     if (codex !== -1) expect(codex).toBeGreaterThan(0);
   });
@@ -417,13 +417,13 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
   it('ranks the exactly-named Project above a Session that contains it', async () => {
     renderPersonalPalette();
     await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
-    await typeQuery('gpagent');
+    await typeQuery('lumen-agent');
 
     const rows = visibleRows();
-    expect(rows[0].textContent).toContain('gpagent');
+    expect(rows[0].textContent).toContain('lumen-agent');
     // the Session is still findable, just no longer ahead of an exact match
     const session = rows.findIndex(r =>
-      r.textContent?.includes('Wire gpagent telemetry export')
+      r.textContent?.includes('Wire lumen-agent telemetry export')
     );
     if (session !== -1) expect(session).toBeGreaterThan(0);
   });
@@ -444,8 +444,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
       durableSessionId: 'dur-parked',
       harness: 'claude' as const,
       title: 'Rebuild the consumer metrics',
-      cwd: '/Users/jake/Code/exawatt',
-      projectDir: '/Users/jake/Code/exawatt',
+      cwd: '/Users/example/Code/exawatt',
+      projectDir: '/Users/example/Code/exawatt',
       projectName: 'exawatt',
       cols: 80,
       rows: 24,

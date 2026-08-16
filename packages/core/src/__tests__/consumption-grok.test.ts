@@ -103,22 +103,24 @@ describe('Grok Build cwd encoding — the harness contract, reproduced', () => {
     expect(grokUrlEncode("aZ0-._~!'()* ")).toBe(
       'aZ0-._~%21%27%28%29%2A%20'
     );
-    expect(grokUrlEncode('/Users/jake/Code')).toBe('%2FUsers%2Fjake%2FCode');
+    expect(grokUrlEncode('/Users/example/Code')).toBe(
+      '%2FUsers%2Fexample%2FCode'
+    );
     // Uppercase hex, and multi-byte characters encoded byte by byte.
     expect(grokUrlEncode('é')).toBe('%C3%A9');
   });
 
   it('round-trips an ordinary launch directory', () => {
-    const cwd = '/Users/jake/Code/Personal/FullVibeAI/exawatt';
+    const cwd = '/Users/example/Code/Projects/exawatt';
     const encoded = encodeGrokCwdDirname(cwd)!;
     expect(encoded).toBe(
-      '%2FUsers%2Fjake%2FCode%2FPersonal%2FFullVibeAI%2Fexawatt'
+      '%2FUsers%2Fexample%2FCode%2FProjects%2Fexawatt'
     );
     expect(decodeGrokCwdDirname(encoded)).toBe(cwd);
   });
 
   it('round-trips a directory with spaces and unicode', () => {
-    const cwd = '/Users/jake/My Projects/café';
+    const cwd = '/Users/example/My Projects/café';
     const encoded = encodeGrokCwdDirname(cwd)!;
     // A space is `%20`, never `+` — the harness uses percent-encoding, not
     // form encoding, and a `+` would name a different directory.
