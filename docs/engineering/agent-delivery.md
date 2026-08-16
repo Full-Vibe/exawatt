@@ -26,6 +26,17 @@ sequencer-contingency review in decision `0030`.
 5. After verified integration, remove the temporary worktree and local branch.
    The command deletes the ticket's remote attempt refs by default.
 
+`worktree:setup` has four required boundaries: dependency installation, the
+signed-browser identity check on macOS, a node-pty rebuild when its Electron
+binding is absent, and Electron main compilation. Any required boundary fails
+the command visibly. Development environment hydration is intentionally
+optional: an unlinked checkout prints a community-safe no-op and never copies
+another checkout's `.env.local`; a linked checkout pulls through an available
+Vercel CLI and may use that same linked checkout's `0600` last-good snapshot
+when the CLI, access, network, or service is unavailable. This keeps a clean
+public clone self-sufficient without taking away the operator's linked-worktree
+convenience.
+
 `--verify` strengthens the candidate evidence; it does not define the minimum
 floor. The repository always owns that floor. `--keep-branch` retains immutable
 attempt refs for diagnosis. `--direct` is an operator-only incident path, not a

@@ -395,6 +395,16 @@ tests remain the recovery floor during the rollout.
   `next typegen` step first, making generated route types an owned input instead
   of ambient build state.
 
+- 2026-08-16, ENG-030 D6 narrowed H4's environment fallback for the public
+  repository boundary. Environment hydration is now an optional setup stage:
+  an unlinked checkout says it is taking the community-safe no-op and never
+  copies the main checkout's `.env.local`. Only a checkout with a local Vercel
+  link attempts a pull, and only that linked context may fall back to its own
+  permission-bounded last-good snapshot. Dependency installation, macOS
+  signed-browser identity, node-pty readiness, and Electron compilation remain
+  required stages. Hermetic setup tests pin both the optional paths and
+  fail-visible required stages.
+
 - 2026-08-02, `.env.local` copying was idempotent only when “a file exists” was
   treated as success; rerunning `pnpm worktree:setup` never refreshed a stale
   worktree snapshot, and the live context-label command did not load the file

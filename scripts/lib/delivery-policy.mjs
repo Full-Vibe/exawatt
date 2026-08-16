@@ -235,7 +235,11 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     checks.push({ id: script, command: 'pnpm', args: ['run', script] });
   }
 
-  return [...new Map(checks.map(check => [check.id, check])).values()];
+  const repositoryOwned = new Map();
+  for (const check of checks) {
+    if (!repositoryOwned.has(check.id)) repositoryOwned.set(check.id, check);
+  }
+  return [...repositoryOwned.values()];
 }
 
 export async function runDeliveryChecks(

@@ -32,6 +32,18 @@ test('the cheap changed-file floor cannot be weakened by the caller', () => {
     'vitest-related',
     'lint',
   ]);
+
+  const duplicateContentScan = classifyDeliveryPolicy(
+    ['src/z.ts', 'docs/a.md'],
+    ['content:scan']
+  ).find(check => check.id === 'content:scan');
+  assert.deepEqual(duplicateContentScan.args, [
+    'run',
+    'content:scan',
+    '--',
+    'docs/a.md',
+    'src/z.ts',
+  ]);
 });
 
 test('path classification runs before content scanning on sorted candidate paths', () => {
