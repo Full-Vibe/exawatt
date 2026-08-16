@@ -32,6 +32,68 @@ Primary-source references:
 - [macOS display link](https://github.com/zed-industries/zed/blob/main/crates/gpui_macos/src/display_link.rs)
 - [Electron all-process tracing](https://www.electronjs.org/docs/latest/api/content-tracing/)
 
+## Execution packet — 2026-08-16
+
+The first implementation mile is deliberately smaller than the full diagnostic
+architecture below. It answers the operator's immediate question without
+turning “can Exawatt feel more like Zed?” into a framework project:
+
+- add one opt-in Electron evaluator using the repository's existing safe
+  process harness;
+- time four warm, representative gestures: Agent tab switch, Agent → Team,
+  Team → Agent, and Team → Fleet;
+- record first semantic/visual acknowledgment separately from intentional
+  transition settle time, and retain raw runs plus median/p95 summaries;
+- add no production observers, telemetry, prewarming, store migration, tracing
+  framework, default landing gate, CI job, or renderer rewrite;
+- if a repeated first-acknowledgment result materially misses the provisional
+  80ms p95 budget, attribute and repair only that owner through a narrow seam;
+  otherwise stop with the evaluator and evidence rather than manufacture an
+  optimization.
+
+This packet supersedes the broader gesture-matrix scope for the current mile;
+the remaining cases below are reference hypotheses, not committed follow-on
+work. A later expansion requires new evidence or an operator-observed problem.
+The run is a development-tree baseline, so it may guide a code decision but may
+not support a packaged-performance or public marketing claim.
+
+### Execution evidence and stop decision
+
+The bounded mile landed on 2026-08-16 with
+`pnpm eval:electron:interaction-performance`. The final control used the staged
+standalone renderer produced by `pnpm build` plus
+`pnpm electron:prepare-renderer`, Electron 43.1.0 / Chromium 150.0.7871.47,
+arm64 macOS, a visible focused 1400×900 window at DPR 2, a measured 8.3ms
+refresh interval (120Hz), one isolated Project, and two real live shell
+Sessions. Five warm runs produced:
+
+| Gesture | Acknowledgment median / p95 | Settled median / p95 | Unexpected frame intervals |
+| --- | --- | --- | --- |
+| Agent tab switch | 8.9 / 9.6ms | 17.1 / 17.5ms | 0 / 10 |
+| Agent → Team | 15.2 / 22.2ms | 333.1 / 375.6ms | 2 / 200, both in one run |
+| Team → Agent | 7.3 / 9.1ms | 319.4 / 339.7ms | 2 / 190, both in one run |
+| warm Team → Fleet | 1.9 / 6.8ms | 244.9 / 291.8ms | 5 / 149, exactly one in each run |
+
+Every acknowledgment cleared the provisional 80ms p95 budget. Team's settle
+figures include its intentional 300ms stage transition; Team → Fleet includes
+the identity handoff. The latter missed exactly one 120Hz frame per run while
+crossing DOM → WebGL, within the existing one-unexpected-interval allowance,
+and its frame-interval p95 remained 10.1ms.
+
+The development server was a useful falsification control, not product
+evidence. Turbopack initially made Agent → Team appear to miss at 74.6ms median
+/ 122.9ms p95, and a trial that put URL synchronization in a React transition
+made it worse at 216.4 / 283.8ms. Server logs correlated the delay with
+development `/workspace?view=sessions` work; the staged standalone renderer
+removed it. The trial was deleted. No production code, prewarm, memoization,
+state-store change, or GPU rewrite survived because no repeatable production
+offender earned one.
+
+This is the planned stop condition, not unfinished optimization. The ignored
+JSON report retains raw samples locally; canon retains only privacy-safe
+distributions. No marketing claim is promoted under Stage 6 because this mile
+measured the existing product rather than shipping a user-visible gain.
+
 ## What the codebase already gets right
 
 The starting point is stronger than a generic Electron application:
@@ -299,7 +361,11 @@ right to propose it.
 
 D55 planning is complete when this brief, decision `0038`, architecture
 contract, roadmap milestone, and runtime map agree. D55 implementation is
-complete only when:
+complete for the bounded 2026-08-16 mile when the execution packet's four
+gestures have a production-renderer control and any repeated acknowledgment
+miss is either repaired with before/after proof or explicitly stopped. The
+broader criteria below become active only if later evidence reactivates the
+reference scope:
 
 - the optional evaluator deterministically exercises the complete gesture
   matrix and emits privacy-safe versioned evidence;
