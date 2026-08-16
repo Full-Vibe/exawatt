@@ -74,6 +74,7 @@ await run('pnpm', [
   'arm64',
 ]);
 await run('pnpm', ['electron:prepare-main']);
+await run('pnpm', ['electron:prepare-licenses']);
 await run(
   'pnpm',
   [

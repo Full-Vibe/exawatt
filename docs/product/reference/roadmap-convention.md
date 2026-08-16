@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Exawatt roadmap convention (v2)
 
 The Exawatt roadmap convention is a markdown grammar for a repo-canonical

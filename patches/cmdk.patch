@@ -1,3 +1,7 @@
+# Third-party notice: cmdk 1.1.1, Copyright (c) 2022 Paco Coursey.
+# Licensed under MIT; exact text: LICENSES/third-party/cmdk-1.1.1-MIT.txt.
+# Upstream issue tracker: https://github.com/dip/cmdk/issues
+# Local fixes repair group ranking lookup and stale group membership cleanup.
 diff --git a/dist/index.js b/dist/index.js
 index c000c7072168b355adf972fe60527264d2b340c9..bf25b74b3d3c733f1bac7cee118c98ec79670b1a 100644
 --- a/dist/index.js

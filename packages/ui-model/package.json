@@ -2,6 +2,12 @@
   "name": "@exawatt/ui-model",
   "version": "0.0.1",
   "private": true,
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Full-Vibe/exawatt.git",
+    "directory": "packages/ui-model"
+  },
   "type": "module",
   "exports": {
     ".": {
