@@ -8,6 +8,10 @@ configuration ribbon remains the primitive, but the always-visible editor,
 unsaved-configuration lifecycle, edit-driven frecency, `⌘S` naming chord, and
 "naming creates a Type" boundary are superseded below.
 
+Amended: 2026-08-16 by decision `0037`. Agent remains the coworker instance;
+Agent Type is the reusable blueprint describing what kind of worker it is, and
+the harness remains the engine. The optional Type axis below is unchanged.
+
 ## Context
 
 The Agent composer today asks the operator to assemble a launch out of five
@@ -24,15 +28,16 @@ Two pressures converge on it:
   it OpenRouter, Kimi, and local models. The flat model `Select` that works for
   six Claude rows does not work for a catalog of hundreds, and the axis count
   grows rather than shrinks.
-- **Agent Types.** ENG-028's frame — the Type is the worker, the harness is only
-  the engine — needs a home in the composer. Adding a sixth dropdown for it
+- **Agent Types.** ENG-028's frame — the Agent is the coworker, its Type
+  describes the worker kind, and the harness is only the engine — needs a home
+  in the composer. Adding a sixth dropdown for it
   would be the wrong answer to a row that is already too dense.
 
 The operator's framing on 2026-08-03: engine chips and named presets should be
-*"same-class citizens… so in the future we can have automatically frecent
+_"same-class citizens… so in the future we can have automatically frecent
 engines / presets in the same sort of row / ribbon. It should be super easy to
 use tab / arrows to pick a new config (engine + agent specialty type +
-harness + intelligence + etc.) or create a custom new one + frecents."*
+harness + intelligence + etc.) or create a custom new one + frecents."_
 
 ## Decision
 
@@ -81,7 +86,7 @@ whole launch, and it replaces the row of independent selectors.
   the current combination as a reusable preset through one short secondary
   action.
 - **Frecency is per-Project over one shared pool.** A configuration exists once
-  in the app; each Project ranks the pool by successful launches *there*.
+  in the app; each Project ranks the pool by successful launches _there_.
   Selection, navigation, editing, naming, failed launch, and abandoned work do
   not increase frecency. Project-local pins sit above learned results, and the
   order freezes while the operator interacts so a focused target never moves.

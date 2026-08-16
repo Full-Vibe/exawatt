@@ -62,7 +62,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-08-03',
+  lastReviewed: '2026-08-16',
   layers: [
     {
       key: 'ui',
@@ -131,9 +131,9 @@ export const architectureManifest = {
         },
         {
           id: 'hosted-sources',
-          label: 'Hosted harnesses',
+          label: 'Connected and hosted harnesses',
           summary:
-            'Remote OpenClaw, hosted VPS agents, and managed execution environments.',
+            'Customer-hosted and Exawatt-hosted runtimes behind the same Agent Source contracts.',
           layer: 'infrastructure',
           x: 830,
           y: 245,
@@ -301,7 +301,7 @@ export const architectureManifest = {
           id: 'agent',
           label: 'Agent',
           summary:
-            'A durable worker identity or capability from any compatible source.',
+            'A durable, addressable coworker projection over preserved source-native identity.',
           layer: 'coordination',
           x: 500,
           y: 300,
@@ -312,7 +312,7 @@ export const architectureManifest = {
           id: 'session',
           label: 'Session',
           summary:
-            'A durable execution episode that can span multiple local process incarnations.',
+            'A subordinate context-bearing execution record: conversation, run, channel, cron, or process.',
           layer: 'coordination',
           x: 715,
           y: 300,
@@ -421,7 +421,8 @@ export const architectureManifest = {
         {
           id: 'gateway',
           label: 'Gateway',
-          summary: 'A local or remote connection to a harness.',
+          summary:
+            'A local or remote connection to a harness; it may expose several Agents and is not a Project.',
           layer: 'infrastructure',
           x: 350,
           y: 705,
@@ -441,7 +442,8 @@ export const architectureManifest = {
         },
         {
           id: 'harness-fleet',
-          label: 'OpenClaw / Codex / Claude Code / OpenCode / Grok Build / Custom',
+          label:
+            'OpenClaw / Codex / Claude Code / OpenCode / Grok Build / Custom',
           summary:
             'The set of local, hosted, third-party, and custom execution backends.',
           layer: 'infrastructure',
@@ -622,7 +624,7 @@ export const architectureManifest = {
           id: 'ui-model',
           label: 'UI Model',
           summary:
-            'Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes.',
+            'Pure typed selectors, versioned source-to-coworker projection, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes.',
           layer: 'coordination',
           status: 'active-build',
           x: 80,
@@ -634,7 +636,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local adapters; subscription-backed and API-backed entitlement remain source-owned modes rather than Exawatt billing. Observed, declared, and simulated evidence stay distinct, and Electron revalidates every Agent launch without exposing provider credentials.',
+            'One declaration contract plus Electron-main observations power Settings, launch, and planned remote attach. Configured sources carry placement and credential ownership; preserved source topology projects through versioned Agent/Project mappings. Observed, declared, and simulated evidence stay distinct.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -754,7 +756,7 @@ export const architectureManifest = {
           id: 'openclaw-client',
           label: 'OpenClaw Client',
           summary:
-            'Core OpenClaw JSON-RPC client, adapters, and fleet manager primitives.',
+            'Core OpenClaw JSON-RPC client, adapters, and fleet primitives; ENG-010 adds authenticated remote attach without shell-scraping source state.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 295,
@@ -788,9 +790,9 @@ export const architectureManifest = {
         },
         {
           id: 'hosted-runtime',
-          label: 'Hosted Runtime',
+          label: 'Connected + Managed Runtime',
           summary:
-            'VPS and hosted control-plane infrastructure for remote harnesses.',
+            'Customer-hosted observation first, then command and Exawatt-managed placement behind the same source contract.',
           layer: 'infrastructure',
           status: 'designed',
           x: 430,
@@ -886,7 +888,10 @@ export const architectureManifest = {
     'Appearance is app-global and source-neutral: one validated snapshot feeds DOM, xterm, R3F, and Electron adapters while product-state color channels keep their meanings.',
     'Open Project identity spans the Agent, Team, and Fleet altitudes even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
     'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
-    'Open Session identity spans the Agent, Team, and Fleet altitudes; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
+    'Session identity remains durable across Agent, Team, and Fleet but stays subordinate to the coworker-shaped Agent; PTYs add live runtime state without defining Agent existence.',
+    'The primary roster projects source-native topology into coworker-shaped Agents: configured OpenClaw Agents remain one coworker above many contexts, while raw source identities stay preserved and re-projectable.',
+    'Placement is orthogonal to Agent identity: local, customer-hosted, and Exawatt-hosted configured sources use the same Agent, Project, state, and command contracts.',
+    'Connection freshness is not work state: closing Exawatt or losing a remote observation path never implies that a remote Agent stopped.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; recovery defaults to the selected Project with Agent and all-Projects as nested alternate scopes, and local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',
@@ -914,7 +919,7 @@ export const architectureManifest = {
     {
       label: 'Microscope',
       summary:
-        'Inspect one agent, one session, tool history, blockers, diffs, and approvals.',
+        'Inspect one Agent, its current contexts, tool history, blockers, diffs, and approvals.',
     },
     {
       label: 'Mission Control',

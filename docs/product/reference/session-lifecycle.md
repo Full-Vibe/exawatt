@@ -1,8 +1,10 @@
 # Session lifecycle
 
-An Exawatt Session is durable even when its local process is not. Quitting the
-desktop app stops local agents and shells after confirmation. Exawatt does not
-install a daemon, LaunchAgent, or other background process to keep them alive.
+An Exawatt Session is durable even when its local process or observation path
+is not. Quitting the desktop app stops local Agents and shells after
+confirmation. Exawatt does not install a daemon, LaunchAgent, or other
+background process to keep them alive. Remote Agents are different: quitting
+disconnects Exawatt but does not stop source-owned execution.
 
 ## States
 
@@ -54,6 +56,30 @@ conversation.
 
 Retained terminal output is labeled **Saved terminal history · read-only** so a
 stopped Session cannot be mistaken for an interactive terminal.
+
+## Remote attachment and return
+
+Remote execution lifecycle is source-owned and separate from Exawatt's
+connection lifecycle. A configured source may report its own Agent and Session
+state; Exawatt also records whether its observation path is `Live`,
+`Reconnecting`, `Stale`, or `Unavailable`. Those connection labels never imply
+that work stopped.
+
+Closing a remote Agent tab or quitting Exawatt closes the local view only. On
+relaunch, Exawatt restores the same Agent and Project mapping, reconnects to the
+same configured source, and catches up from its last observed source cursor.
+The source-qualified Agent and context identities prevent reconnect from
+duplicating the coworker or guessing from a display name.
+
+`Reconnect` repairs observation. `Disconnect` removes or disables the
+connection. `Pause`, `Resume`, `Stop current work`, and `Abort` operate the
+source only when its adapter declares exact support and the runtime confirms
+the capability. Exawatt never describes a disconnect as a pause or a fresh
+context as a resume.
+
+Detaching an imported Agent removes its Exawatt projection after confirmation
+but leaves the remote Agent, configuration, workspace, Sessions, automations,
+and credentials intact. Decision `0037` owns the reversible mapping contract.
 
 ## Closing and reopening
 

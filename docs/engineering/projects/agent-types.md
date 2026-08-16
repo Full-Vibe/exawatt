@@ -12,9 +12,12 @@ From the brief:
 
 And:
 
-> "Perhaps our UI should convey which *type* of agent is running a given project, not just which harness happens to be orchestrating it."
+> "Perhaps our UI should convey which _type_ of agent is running a given project, not just which harness happens to be orchestrating it."
 
-That last sentence is the product claim: **the harness is the engine; the Type is the worker.** Today Exawatt's UI says "Claude Code" where it should eventually say "your Designer, running on Claude Code."
+That last sentence is the product claim, narrowed by decision `0037`: **the
+Agent is the coworker, the Type describes what kind of coworker, and the
+harness is the engine.** Today Exawatt's UI says "Claude Code" where it should
+eventually say "your Designer, running on Claude Code."
 
 ## What an Agent Type is
 
@@ -26,9 +29,14 @@ A named, portable bundle that Exawatt applies at launch:
 - default model and reasoning effort
 - (later) accumulated self-knowledge that improves over time
 
+A Type is a blueprint, not a roster identity. Several Agents may share one
+Type, and importing a named source Agent never creates a Type automatically.
+Marcus may be an individual Agent whose explicit Type is Reddit Marketer;
+another Reddit Marketer remains another coworker.
+
 **Mechanism already proven.** ENG-023 D1 verified that Exawatt can inject per-launch settings into Claude Code via `claude --settings <file>` — settings that MERGE with the user's own project hooks rather than clobbering them, written into Exawatt's own state directory, never mutating `~/.claude`. That is exactly the injection seam an Agent Type needs. ENG-016 D35 already crosses a typed launch boundary carrying model and effort. Types extend an existing path rather than inventing a meta-harness.
 
-**Storage.** Types are repo-storable *and* portable across projects; the operator explicitly rejected the framing that those are mutually exclusive. Design toward a documented file format so a Type can live in a project repo, follow the operator between projects, and eventually be shared or vended by others.
+**Storage.** Types are repo-storable _and_ portable across projects; the operator explicitly rejected the framing that those are mutually exclusive. Design toward a documented file format so a Type can live in a project repo, follow the operator between projects, and eventually be shared or vended by others.
 
 ## Portability across harness classes
 
@@ -38,7 +46,7 @@ Accepted approach: **Types declare what they require; sources declare what they 
 
 ## On SOUL.md and self-improvement
 
-The operator cited OpenClaw's default SOUL.md — *"You're not a chatbot. You're becoming someone."* — for its depth and future-facing leverage. Researched 2026-08-02: SOUL.md is deliberately not a system prompt. System prompts say what to do; soul files say who to be. The template carries three sections — **Core Truths**, **Boundaries**, **Vibe** — and closes with "This file is yours to evolve. As you learn who you are, update it," with the convention that the user is told when the agent changes it.
+The operator cited OpenClaw's default SOUL.md — _"You're not a chatbot. You're becoming someone."_ — for its depth and future-facing leverage. Researched 2026-08-02: SOUL.md is deliberately not a system prompt. System prompts say what to do; soul files say who to be. The template carries three sections — **Core Truths**, **Boundaries**, **Vibe** — and closes with "This file is yours to evolve. As you learn who you are, update it," with the convention that the user is told when the agent changes it.
 
 Two properties Exawatt should inherit:
 
@@ -46,6 +54,11 @@ Two properties Exawatt should inherit:
 2. **Improvement is a reviewable proposal, not an unlogged mutation** — the same constraint the coordination consolidation pass inherits from sleep-time-compute research (ENG-029 C5).
 
 Talking to your Designer over time — the operator's stated want — is a durable Type-scoped conversation that outlives any single Session. That is a real design problem: Sessions are the current unit of conversation, and a Type-scoped thread crosses them. Deliberately left unshaped here.
+
+Amended 2026-08-16 by decision `0037`: durable direct address belongs first to
+the Agent instance, not automatically to every Agent sharing a Type. T4 still
+owns how Type-level knowledge and disclosed self-improvement travel across
+those individual coworkers.
 
 ## Scaling a Type
 

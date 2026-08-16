@@ -1,9 +1,9 @@
 # Agent state at a glance
 
 Agent state is not one status enum. It is a source-agnostic projection of
-several independent facts about an Agent and its current Session: whether it
-needs attention, what work it represents, what meaningfully changed, where it
-is in its intended work, and how fresh the observation is.
+several independent facts about an Agent and its current source contexts:
+whether it needs attention, what work it represents, what meaningfully
+changed, where it is in its intended work, and how fresh the observation is.
 
 Keeping these facts separate matters. A Session can be running but blocked,
 finished with a result that has not been reviewed, stopped with durable state,
@@ -19,7 +19,7 @@ question.
 | Region    | Question answered                               | Preferred evidence                                                                 |
 | --------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Attention | Does this need me now?                          | an Approval, question, blocker, error, unseen result, or policy boundary           |
-| Identity  | Which work is this?                             | Project, Agent or Session label, Agent Source, and durable context cue             |
+| Identity  | Which coworker and work is this?                | Agent, Project, durable context cue, source, and placement                         |
 | Now       | What is happening or what meaningfully changed? | current activity plus the latest meaningful Event                                  |
 | Plan      | Where is it going next?                         | current named step and ordinal position in a mutable plan                          |
 | Freshness | How old is this picture?                        | age of the latest meaningful Event and an explicit stale or disconnected condition |
@@ -32,9 +32,10 @@ region unknown. The questions remain stable even when presentation changes.
 
 The same underlying truth should be projected differently by command altitude:
 
-- **Agent** explains one Session. It owns transcript, commands, evidence,
-  retries, tool detail, steering, and the complete Event history.
-- **Team** compares open Sessions. It should be a dense, stable set of
+- **Agent** explains one coworker and its relevant source contexts. It owns the
+  main conversation, commands, evidence, retries, tool detail, steering, and
+  complete Event history.
+- **Team** compares open Agents. It should be a dense, stable set of
   comparable tiles or rows that lets an operator find attention, reorient, and
   choose where to zoom in.
 - **Fleet** allocates attention across Projects and larger fleets. It should
@@ -42,10 +43,10 @@ The same underlying truth should be projected differently by command altitude:
   Team table.
 
 Team does not contain a second, expanded Agent-detail state. Focus or hover may
-select an item, but activating it navigates to that exact Session at the Agent
-altitude.
-Returning to Sessions should restore the prior Project, ordering, and row
-position so the zoom-out/zoom-in loop preserves orientation.
+select an item, but activating it navigates to that exact Agent and its primary
+context at the Agent altitude. Returning to Team should restore the prior
+Project, ordering, and row position so the zoom-out/zoom-in loop preserves
+orientation.
 
 ## Meaningful Events, not activity exhaust
 
@@ -112,15 +113,19 @@ When a plan changes materially, **Revised** becomes a meaningful Event. When a
 source exposes no plan, the UI says so instead of inferring one from files,
 commands, or elapsed time.
 
-## Attention and lifecycle stay independent
+## Attention, connection, and lifecycle stay independent
 
-Attention, Agent turn state, Session process lifecycle, plan position, and
-freshness are separate channels:
+Attention, Agent turn state, Session process lifecycle, source connection,
+placement, plan position, and freshness are separate channels:
 
 - attention answers whether the operator has leverage now;
 - turn state answers whether an Agent is working, finished, or not yet started;
 - process lifecycle answers whether the Session runtime is running, stopped,
   interrupted, exited, resuming, or failed;
+- connection answers whether Exawatt's observation path is live, reconnecting,
+  stale, or unavailable;
+- placement answers whether the configured source is local, customer-hosted,
+  or Exawatt-hosted;
 - plan position answers what named boundary comes next;
 - freshness answers when Exawatt last received meaningful evidence.
 
@@ -137,6 +142,13 @@ Views can compose these channels into a concise signal, but data and adapters
 must not collapse them into one lossy status. Demo Mode and every live Agent
 Source should feed the same projection contract, with explicit unknowns for
 capabilities a source does not expose.
+
+For remote Agents, an unavailable connection never implies stopped work.
+Closing or quitting Exawatt ends observation only; the source may continue and
+the next connection catches up from the last observed cursor. Placement uses
+quiet metadata, never D40 status color. Session/context history stays beneath
+the coworker unless a meaningful Event, result, fault, or human gate promotes
+it.
 
 ## Attention navigation uses visible state
 

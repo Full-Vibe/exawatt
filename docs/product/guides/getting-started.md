@@ -51,6 +51,25 @@ Settings checks again while the flow completes; a missing CLI links to its
 installation guide. Registry failures remain visibly stale or unavailable and
 cannot enable Agent launch.
 
+### Coming next: connect existing OpenClaw Agents
+
+The first hosted-agent milestone connects to Agents already running on your
+infrastructure. **⌘N → Connect existing Agent…** will add an OpenClaw source,
+test a saved SSH alias or supported Gateway endpoint, discover configured
+Agents, and let you map each one to a renameable Project. Connecting observes
+existing work; it does not provision a server, start an Agent, or edit the
+remote installation.
+
+One configured OpenClaw Agent appears as one coworker. Its main conversation,
+channels, scheduled runs, and helper contexts remain beneath it instead of
+becoming duplicate Agent cards. Agent name and responsibility lead; **Remote**
+and **OpenClaw** remain clear secondary identity.
+
+The first slice is read-only. Closing Exawatt leaves remote work running, and
+relaunch reconnects to the same Agent and catches up. Commanding the main
+conversation follows as the next milestone, using the same Agent, Team, and
+Fleet surfaces rather than a separate cloud roster.
+
 Exawatt uses the local harness account you already signed in with. When Claude
 Code, Codex, or OpenCode is entitled through a compatible source-owned account,
 you do not
@@ -165,8 +184,8 @@ Both modes should exercise the same interface concepts.
 
 - **Workspace:** where your agents, initiatives, context, secrets, and spend live.
 - **Initiative:** a durable high-level goal.
-- **Agent:** a worker pursuing useful work.
-- **Session:** one execution episode for an Agent.
+- **Agent:** the durable coworker you name, open, and direct.
+- **Session:** a context-bearing execution record beneath an Agent.
 - **Context Signal:** a data stream that can inform work.
 - **Decision:** a scoped choice that should improve future behavior.
 - **Consumption:** cost, tokens, energy, time, and other resource usage.

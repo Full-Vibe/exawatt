@@ -2,7 +2,10 @@
 
 Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.
 
-The architecture is source-agnostic: local OpenClaw, hosted OpenClaw, Codex, Claude Code, custom harnesses, and Demo Harnesses all sit behind explicit Agent Source / Harness boundaries.
+The architecture is source-agnostic: OpenClaw on local, customer-hosted, or
+Exawatt-hosted infrastructure; Codex; Claude Code; custom harnesses; and Demo
+Harnesses all sit behind explicit Agent Source / Harness boundaries. Placement
+is a configured-source fact, not a separate kind of Agent.
 
 ## Layers
 
@@ -159,6 +162,14 @@ Canonical product objects:
 
 This layer should hide source-specific plumbing from the UI.
 
+Agent identity is a versioned product projection over preserved source-native
+topology (decision `0037`). The primary roster shows addressable coworkers. A
+configured OpenClaw Agent projects to one durable Exawatt Agent while its main,
+channel, cron, helper, and spawned Sessions stay subordinate. Current local
+coding launches project to mission-bound Agents above their provider Sessions.
+Raw source IDs, kinds, lineage, and freshness remain intact so a later
+projection can be rebuilt without rewriting the source.
+
 This layer also owns translation, durable decisions, context signals, policies,
 budgets, approvals, and consumption records.
 
@@ -310,8 +321,9 @@ are recorded in the
 Settings consumes a source-agnostic Agent Source registry rather than reading
 PTY launch helpers directly. A configured source record combines a source
 adapter with user-scoped instance metadata: display name, endpoint or local
-installation, minimum exposed identity, credential owner, and last successful
-observation. Multiple records may use the same adapter.
+installation, placement (`local`, `customer-hosted`, or `exawatt-hosted`),
+minimum exposed identity, credential owner, and last successful observation.
+Multiple records may use the same adapter.
 
 The production desktop path implements that boundary in Electron main. A
 versioned, generated declaration contract owns stable adapter identity,
@@ -363,6 +375,45 @@ Project-effective launch view by combining source facts, Project draft state,
 and environment policy. This separation prevents an account default in
 Settings from masquerading as the model a particular Agent will launch.
 
+#### Agent projection and remote attachment
+
+The projection boundary is additive and versioned:
+
+```text
+(configuredSourceId, nativeAgentId)
+  -> exawattAgentId
+  -> projectId
+  -> optional displayNameOverride
+  -> projectionVersion
+```
+
+The source snapshot separately retains native Agent and Session/context IDs,
+kinds, lineage, cursors, timestamps, and assurance. A mapping edit changes only
+Exawatt. Detach never deletes or edits a remote Agent, workspace, history,
+automation, or credential. A configured source may expose several Agents; a
+Gateway is not automatically a Project. Initial attach suggests one editable
+Project per imported Agent and permits explicit existing/shared mappings.
+
+ENG-010's first mile adds customer-hosted OpenClaw through the existing source
+registry. SSH may bootstrap an authenticated tunnel, but source observation
+uses the OpenClaw Gateway protocol rather than shell-scraping remote files. The
+connection record retains placement, credential owner, compatibility,
+capabilities, freshness, and a catch-up cursor; secrets remain in source-owned
+SSH configuration or OS-keychain custody behind Electron main.
+
+Connection state is orthogonal to Agent and Session work state. Quitting or
+closing Exawatt disconnects observation only; a remote Agent may continue.
+Relaunch restores the same projection and catches up idempotently. `Live`,
+`Reconnecting`, `Stale`, and `Unavailable` therefore cannot be collapsed into
+running/stopped or the D40 work-state protocol. Source commands remain
+capability-declared exact verbs; disconnect is not pause, and a fresh context is
+not resume.
+
+Demo Mode enters below the same configured-source, projection, placement,
+freshness, and catch-up boundary with simulated evidence. The first live slice
+is read-only by contract; write authority follows only after observation and
+reattachment are proven.
+
 #### Launch Configuration runtime
 
 The shared Launch Configuration domain in `@exawatt/core` owns a versioned
@@ -409,8 +460,8 @@ require the latter when the former makes the harness launchable. Consumption
 observation remains a separate evidence channel and must not be used to infer
 the source's billing mode or unreported plan headroom.
 
-Remote Gateway and future
-custom-source credentials may be held as narrowly scoped OS-keychain connection
+Remote Gateway and future custom-source credentials may be held as narrowly
+scoped OS-keychain connection
 material behind Electron main. That is an explicit seam, not ENG-009's general
 Secrets/Credentials broker.
 
@@ -442,7 +493,7 @@ Provider/runtime boundaries:
 
 - Agent Source / Harness adapters
 - local OpenClaw gateway
-- remote OpenClaw gateway
+- customer-hosted and Exawatt-hosted OpenClaw gateways
 - Codex / Claude Code / OpenCode / Grok Build adapters
 - Demo Harness / Demo Scenario Source
 - custom harnesses
@@ -661,6 +712,8 @@ Implemented:
 Partial:
 
 - source/harness abstraction beyond OpenClaw/mock
+- reversible coworker projection and remote-attachment contract (designed;
+  customer-hosted OpenClaw transport and UI not implemented)
 - architecture overview as a living map
 - Fleet Operations Board extraction into a standalone package
 
@@ -674,7 +727,9 @@ Planned:
   across Agent Sources
 - managed Workspace policy ceilings and Exawatt-enforced action mediation
 - secrets/configuration strategy
-- hosted OpenClaw / remote harnesses
+- customer-hosted OpenClaw attach and read-only observation (ENG-010)
+- command-capable connected Agents, Exawatt-managed placement, and later
+  explicit clone/move workflows (ENG-033)
 - multi-source fleet aggregation
 - exact live Run lifecycle adapters beyond the conservative timestamped
   Consumption projection, and additional public identity providers beyond the

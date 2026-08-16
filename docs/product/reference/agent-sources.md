@@ -6,8 +6,7 @@ Exawatt should stay source-agnostic.
 
 Examples:
 
-- local OpenClaw
-- hosted OpenClaw
+- OpenClaw on the local machine, customer infrastructure, or Exawatt-managed infrastructure
 - Codex
 - Claude Code
 - OpenCode
@@ -26,11 +25,40 @@ multiple instances of one source type, so the row identifies both the adapter
 and the configured source
 (`Personal`, `Work gateway`, or another user-chosen name).
 
+The configured record also carries placement and credential ownership.
+`Local`, `Remote`, and later `Exawatt Cloud` describe where and by whom the
+runtime is operated; they do not create separate Agent nouns or duplicate the
+OpenClaw adapter.
+
 A configured source is how Exawatt reaches the runtime that creates and resumes
 real Agents. It also supplies the identity, model, capability, and health truth
 Exawatt needs to represent those Agents accurately. Connecting does not move
 execution or source-owned authentication into Exawatt; it gives Exawatt the
 minimum command and observation boundary required to operate that source.
+
+## Agent identity projection
+
+The primary roster shows coworker-shaped Agents, not every source-native
+Session. Exawatt preserves the source graph and maps it through a versioned,
+editable projection:
+
+- one configured OpenClaw Agent → one durable Exawatt Agent;
+- its main, channel, cron, helper, and spawned Sessions → subordinate context
+  and execution records;
+- one current Claude Code, Codex, OpenCode, or Grok Build launch → one
+  mission-bound Exawatt Agent backed by its provider Session;
+- one true, separately addressable delegate → a child Agent only when it is
+  operationally meaningful.
+
+The mapping is keyed by configured source and native Agent identity. It carries
+the Exawatt Agent, Project, optional display-name override, and projection
+version. A Project or name edit never rewrites the source. Detach removes the
+projection, not the remote Agent, workspace, history, automation, or
+credentials. Decision `0037` owns this two-way-door contract.
+
+A configured source may expose several Agents, and a Gateway is not itself a
+Project. Connect suggests one renameable Project per imported Agent while
+allowing an existing Project or a shared group to be chosen explicitly.
 
 The registry reports installation, reachability, authentication, identity,
 version compatibility, capabilities, freshness, provenance, and evidence basis
@@ -86,6 +114,11 @@ treated as proof. Gateway launch remains outside the current Agent composer.
 Demo Mode uses the same record and fact shapes with every value marked as
 simulated.
 
+Remote OpenClaw attach is planned, not implemented. Its first slice extends the
+same registry with customer-hosted placement and read-only Gateway discovery;
+it does not add a remote-only roster or provision a server. The complete plan
+is `docs/engineering/projects/connected-openclaw-and-hosted-agents.md`.
+
 Recheck repeats source discovery. When a local CLI reports that sign-in is
 required, Settings can open that source's own login command as a terminal tab and
 then reconcile through several bounded checks, waking immediately when the app
@@ -140,6 +173,30 @@ Coding is likewise the current dogfood workload, not a source-category
 boundary. Research, marketing, operations, and other non-coding Agents should
 enter through the same launch and observation contracts whenever their source
 exposes compatible commands and evidence.
+
+## Connect and attach contract
+
+Launching creates new work. Connecting imports an existing configured source
+and projects existing source Agents without starting or modifying them. The two
+verbs stay distinct even when they eventually share the New flow.
+
+The planned OpenClaw path is **⌘N → Connect existing Agent…**: choose OpenClaw,
+select an existing SSH host alias or supported Gateway endpoint, test the
+connection, inspect discovered configured Agents, and confirm an editable
+Project mapping for each selected Agent. Active configured Agents are suggested;
+retired or historical identities are never activated silently.
+
+The first slice is read-only. Connection material remains in source-owned SSH
+configuration or the operating-system keychain and never reaches the renderer.
+SSH may bootstrap an authenticated tunnel, but source data comes from the
+OpenClaw Gateway contract rather than remote shell scraping.
+
+Remote execution lifecycle and Exawatt attachment are independent. Closing or
+quitting Exawatt leaves the remote Agent running; relaunch reconnects to the
+same configured source and catches up from a saved cursor. `Stale` or
+`Unavailable` describes observation, not a stopped Agent. Write commands appear
+only after the adapter reports their exact semantics and the runtime confirms
+the capability.
 
 Launch recommendations are personal and reversible. One reusable Agent pool is
 ranked by successful launches separately for each Project, and each Project may
@@ -216,12 +273,12 @@ The registry fails closed: a capability is declared only where Exawatt verified
 a mechanism on a real install, and an unverified one is reported absent rather
 than optimistically enabled.
 
-| Source | Model catalog | Reasoning effort | Delegation reported | Plan window |
-| --- | --- | --- | --- | --- |
-| Claude Code | live, per Project | live, per model | yes, through lifecycle hooks | no local record |
-| Codex | live, per Project | live, per model | no | yes, source-reported |
-| OpenCode | live, per Project | live, exact per-model variants | not through its PTY | no local record |
-| Grok Build | live (`grok models`) | source-owned — see below | not through its PTY | no local record |
+| Source      | Model catalog        | Reasoning effort               | Delegation reported          | Plan window          |
+| ----------- | -------------------- | ------------------------------ | ---------------------------- | -------------------- |
+| Claude Code | live, per Project    | live, per model                | yes, through lifecycle hooks | no local record      |
+| Codex       | live, per Project    | live, per model                | no                           | yes, source-reported |
+| OpenCode    | live, per Project    | live, exact per-model variants | not through its PTY          | no local record      |
+| Grok Build  | live (`grok models`) | source-owned — see below       | not through its PTY          | no local record      |
 
 Two Grok Build facts are worth stating plainly because both are absences with
 reasons, not gaps waiting to be filled:
