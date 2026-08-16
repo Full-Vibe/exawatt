@@ -80,6 +80,13 @@ import {
   type OperationsBoardViewport,
 } from './operations-board-camera';
 import { boardPointerAction, pinchZoomTarget } from './operations-board-input';
+import {
+  bandBoardRect,
+  bandGestureMoved,
+  bandOverlayRect,
+  createBoardGestureState,
+  endBoardGesture,
+} from './operations-board-gestures';
 import { mixHexColors } from '@/lib/appearance/color';
 import { delegationElapsedLabel } from '../spatial-agent-copy';
 import { useMinuteClock } from '../use-minute-clock';
@@ -257,6 +264,25 @@ function BoardCameraRig({
   const poseFrame = useRef<number | null>(null);
 
   const projectionScratch = useMemo(() => createBoardProjectionScratch(), []);
+  // The gesture outlives listener re-registration. Everything the pointer
+  // handlers need that CAN change on a data tick is read through a ref, so the
+  // listeners are registered once and a fleet update can never interrupt a
+  // hand movement mid-drag.
+  const gesture = useRef(createBoardGestureState());
+  const constrainTargetRef = useRef<() => void>(() => undefined);
+  const announceTargetViewportRef = useRef<() => void>(() => undefined);
+  const handlers = useRef({
+    onBandSelect,
+    onManualCameraInput,
+    touchSelectionMode,
+    reduced,
+  });
+  handlers.current = {
+    onBandSelect,
+    onManualCameraInput,
+    touchSelectionMode,
+    reduced,
+  };
 
   const notifyViewport = useCallback(() => {
     const ortho = cameraRef.current;
@@ -297,6 +323,7 @@ function BoardCameraRig({
   const announceTargetViewport = useCallback(() => {
     notifyViewport();
   }, [notifyViewport]);
+  announceTargetViewportRef.current = announceTargetViewport;
 
   /**
    * Hold a manually requested camera target inside the board's limits, letting
@@ -326,6 +353,7 @@ function BoardCameraRig({
     clampKey.current = key;
     onClampEdges?.(engaged ? { ...clampEdges.current } : null);
   }, [onClampEdges, reduced, size.height, size.width]);
+  constrainTargetRef.current = constrainTarget;
 
   const targetForRect = useCallback(
     (rect: SpatialBoardRect) => {
@@ -547,174 +575,160 @@ function BoardCameraRig({
         y: current.current.y + (rect.height / 2 - (clientY - rect.top)) / zoom,
       };
     };
-    let dragging = false;
-    let lastX = 0;
-    let lastY = 0;
-    const touches = new Map<number, { x: number; y: number }>();
-    let pinching = false;
-    let pinchDistance = 1;
-    let pinchZoom = 1;
-    let pinchAnchor = { x: 0, y: 0 };
-    // Primary drag draws a selection band (V3.3). The
-    // overlay div is DOM (pixel-crisp, outside the canvas); its transform is
+    const state = gesture.current;
+    // The marquee is DOM (pixel-crisp, outside the canvas); its transform is
     // written directly per move — never through React state (guide rule 14).
-    let banding = false;
-    let bandStartX = 0;
-    let bandStartY = 0;
-    let bandLastX = 0;
-    let bandLastY = 0;
     const positionBandOverlay = (clientX: number, clientY: number) => {
       const overlay = bandOverlayRef?.current;
       if (!overlay) return;
-      const rect = element.getBoundingClientRect();
-      const left = Math.min(bandStartX, clientX) - rect.left;
-      const top = Math.min(bandStartY, clientY) - rect.top;
+      const box = bandOverlayRect(
+        state,
+        clientX,
+        clientY,
+        element.getBoundingClientRect()
+      );
       overlay.style.display = 'block';
-      overlay.style.left = `${left}px`;
-      overlay.style.top = `${top}px`;
-      overlay.style.width = `${Math.abs(clientX - bandStartX)}px`;
-      overlay.style.height = `${Math.abs(clientY - bandStartY)}px`;
+      overlay.style.left = `${box.left}px`;
+      overlay.style.top = `${box.top}px`;
+      overlay.style.width = `${box.width}px`;
+      overlay.style.height = `${box.height}px`;
     };
     const hideBandOverlay = () => {
       const overlay = bandOverlayRef?.current;
       if (overlay) overlay.style.display = 'none';
     };
     const beginPinch = () => {
-      const points = [...touches.values()];
+      const points = [...state.touches.values()];
       if (points.length < 2) return;
       const first = points[0]!;
       const second = points[1]!;
-      pinching = true;
-      dragging = false;
-      banding = false;
+      state.phase = 'pinch';
       hideBandOverlay();
-      pinchDistance = Math.max(
+      state.pinchDistance = Math.max(
         1,
         Math.hypot(second.x - first.x, second.y - first.y)
       );
-      pinchZoom = target.current.zoom;
-      pinchAnchor = worldAt((first.x + second.x) / 2, (first.y + second.y) / 2);
-      onManualCameraInput?.();
+      state.pinchZoom = target.current.zoom;
+      state.pinchAnchor = worldAt(
+        (first.x + second.x) / 2,
+        (first.y + second.y) / 2
+      );
+      handlers.current.onManualCameraInput?.();
     };
     const onPointerDown = (event: PointerEvent) => {
       const action = boardPointerAction({
         pointerType: event.pointerType,
         button: event.button,
-        touchSelectionMode,
-        canBandSelect: Boolean(onBandSelect),
+        touchSelectionMode: handlers.current.touchSelectionMode,
+        canBandSelect: Boolean(handlers.current.onBandSelect),
       });
       if (action === 'ignore') return;
       if (event.pointerType === 'touch') {
-        touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        state.touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
         element.setPointerCapture(event.pointerId);
-        if (touches.size === 2) {
+        if (state.touches.size === 2) {
           beginPinch();
           return;
         }
       }
+      state.pointerId = event.pointerId;
+      element.setPointerCapture(event.pointerId);
       if (action === 'band') {
-        banding = true;
-        bandStartX = event.clientX;
-        bandStartY = event.clientY;
-        bandLastX = event.clientX;
-        bandLastY = event.clientY;
-        element.setPointerCapture(event.pointerId);
+        state.phase = 'band';
+        state.bandStart = { x: event.clientX, y: event.clientY };
+        state.bandLast = { x: event.clientX, y: event.clientY };
         return;
       }
-      dragging = true;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      element.setPointerCapture(event.pointerId);
+      state.phase = 'pan';
+      state.panLast = { x: event.clientX, y: event.clientY };
     };
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerType === 'touch' && touches.has(event.pointerId)) {
-        touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
-        if (touches.size >= 2) {
-          const points = [...touches.values()];
+      if (event.pointerType === 'touch' && state.touches.has(event.pointerId)) {
+        state.touches.set(event.pointerId, {
+          x: event.clientX,
+          y: event.clientY,
+        });
+        if (state.touches.size >= 2) {
+          const points = [...state.touches.values()];
           const first = points[0]!;
           const second = points[1]!;
           const distance = Math.max(
             1,
             Math.hypot(second.x - first.x, second.y - first.y)
           );
-          const nextZoom = pinchZoomTarget(pinchZoom, pinchDistance, distance);
+          const nextZoom = pinchZoomTarget(
+            state.pinchZoom,
+            state.pinchDistance,
+            distance
+          );
           const ratio = target.current.zoom / Math.max(nextZoom, 0.001);
           target.current.x =
-            pinchAnchor.x - (pinchAnchor.x - target.current.x) * ratio;
+            state.pinchAnchor.x -
+            (state.pinchAnchor.x - target.current.x) * ratio;
           target.current.y =
-            pinchAnchor.y - (pinchAnchor.y - target.current.y) * ratio;
+            state.pinchAnchor.y -
+            (state.pinchAnchor.y - target.current.y) * ratio;
           target.current.zoom = nextZoom;
-          constrainTarget();
+          constrainTargetRef.current();
           lambda.current = NUDGE_LAMBDA;
-          if (reduced) snapToTarget();
+          if (handlers.current.reduced) snapToTargetRef.current();
           invalidate();
           return;
         }
       }
-      if (banding) {
-        bandLastX = event.clientX;
-        bandLastY = event.clientY;
+      if (state.phase === 'band') {
+        state.bandLast = { x: event.clientX, y: event.clientY };
         positionBandOverlay(event.clientX, event.clientY);
         return;
       }
-      if (!dragging) return;
+      if (state.phase !== 'pan') return;
       const zoom = Math.max(effectiveBoardCameraZoom(current.current), 0.001);
-      target.current.x -= (event.clientX - lastX) / zoom;
-      target.current.y += (event.clientY - lastY) / zoom;
-      constrainTarget();
-      lastX = event.clientX;
-      lastY = event.clientY;
+      target.current.x -= (event.clientX - state.panLast.x) / zoom;
+      target.current.y += (event.clientY - state.panLast.y) / zoom;
+      constrainTargetRef.current();
+      state.panLast = { x: event.clientX, y: event.clientY };
       lambda.current = NUDGE_LAMBDA;
       element.style.cursor = 'grabbing';
-      onManualCameraInput?.();
-      announceTargetViewport();
-      if (reduced) snapToTarget();
+      handlers.current.onManualCameraInput?.();
+      announceTargetViewportRef.current();
+      if (handlers.current.reduced) snapToTargetRef.current();
       invalidate();
+    };
+    const releaseCapture = (pointerId: number) => {
+      if (element.hasPointerCapture(pointerId)) {
+        element.releasePointerCapture(pointerId);
+      }
     };
     const endDrag = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
-        touches.delete(event.pointerId);
-        if (pinching) {
-          pinching = touches.size >= 2;
-          dragging = false;
-          banding = false;
+        state.touches.delete(event.pointerId);
+        if (state.phase === 'pinch') {
+          if (state.touches.size < 2) endBoardGesture(state);
           hideBandOverlay();
-          if (element.hasPointerCapture(event.pointerId)) {
-            element.releasePointerCapture(event.pointerId);
-          }
+          releaseCapture(event.pointerId);
           return;
         }
       }
-      if (banding) {
-        banding = false;
-        hideBandOverlay();
-        if (element.hasPointerCapture(event.pointerId)) {
-          element.releasePointerCapture(event.pointerId);
-        }
-        const endX = event.pointerType === 'touch' ? bandLastX : event.clientX;
-        const endY = event.pointerType === 'touch' ? bandLastY : event.clientY;
-        const moved =
-          Math.abs(endX - bandStartX) >= 4 || Math.abs(endY - bandStartY) >= 4;
-        // A still click falls through to the piece/zone handlers.
-        if (!moved || !onBandSelect) return;
-        const from = worldAt(bandStartX, bandStartY);
-        const to = worldAt(endX, endY);
-        // World y is up; layout rects are y-down.
-        onBandSelect({
-          x: Math.min(from.x, to.x),
-          y: Math.min(-from.y, -to.y),
-          width: Math.abs(to.x - from.x),
-          height: Math.abs(to.y - from.y),
-        });
-        if (suppressMissRef) suppressMissRef.current = performance.now();
-        return;
-      }
-      if (!dragging) return;
-      dragging = false;
+      const phase = state.phase;
+      // The marquee never outlives the hand that drew it, whatever the drag
+      // selected — including nothing at all.
+      hideBandOverlay();
       element.style.cursor = '';
-      if (element.hasPointerCapture(event.pointerId)) {
-        element.releasePointerCapture(event.pointerId);
-      }
+      releaseCapture(event.pointerId);
+      endBoardGesture(state);
+      if (phase !== 'band') return;
+      const endX =
+        event.pointerType === 'touch' ? state.bandLast.x : event.clientX;
+      const endY =
+        event.pointerType === 'touch' ? state.bandLast.y : event.clientY;
+      // A still click falls through to the piece/zone handlers.
+      if (!bandGestureMoved(state, endX, endY)) return;
+      const commit = handlers.current.onBandSelect;
+      if (!commit) return;
+      const from = worldAt(state.bandStart.x, state.bandStart.y);
+      const to = worldAt(endX, endY);
+      commit(bandBoardRect(from, to));
+      if (suppressMissRef) suppressMissRef.current = performance.now();
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
@@ -730,11 +744,11 @@ function BoardCameraRig({
         target.current.x += event.deltaX / zoom;
         target.current.y -= event.deltaY / zoom;
       }
-      constrainTarget();
+      constrainTargetRef.current();
       lambda.current = NUDGE_LAMBDA;
-      onManualCameraInput?.();
-      announceTargetViewport();
-      if (reduced) snapToTarget();
+      handlers.current.onManualCameraInput?.();
+      announceTargetViewportRef.current();
+      if (handlers.current.reduced) snapToTargetRef.current();
       invalidate();
     };
     element.addEventListener('pointerdown', onPointerDown);
@@ -749,20 +763,7 @@ function BoardCameraRig({
       element.removeEventListener('pointercancel', endDrag);
       element.removeEventListener('wheel', onWheel);
     };
-  }, [
-    announceTargetViewport,
-    bandOverlayRef,
-    constrainTarget,
-    gl,
-    invalidate,
-    onBandSelect,
-    onManualCameraInput,
-    projectionScratch,
-    reduced,
-    snapToTarget,
-    suppressMissRef,
-    touchSelectionMode,
-  ]);
+  }, [bandOverlayRef, gl, invalidate, projectionScratch, suppressMissRef]);
 
   useEffect(() => {
     const span = () => Math.max(layout.bounds.width, layout.bounds.height, 24);

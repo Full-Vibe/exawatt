@@ -1,8 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { selectSpatialBoardLayout } from '@exawatt/ui-model';
+import {
+  selectSpatialBandSelection,
+  selectSpatialBoardLayout,
+  selectSpatialDelegationUnits,
+  type SpatialBoardRect,
+} from '@exawatt/ui-model';
 import { OperationsBoardSurface } from '@/components/fleet/spatial/operations-board/operations-board-surface';
 import {
   BOARD_STUDY_FIXTURES,
@@ -122,6 +127,31 @@ export default function BoardStudyPage() {
     );
   }, [state.theme]);
 
+  // Selection is wired so the bench exercises INTERACTION, not just pixels.
+  // The marquee-left-on-screen bug could not be reproduced here until it was.
+  const delegationUnits = useMemo(
+    () => selectSpatialDelegationUnits(layout),
+    [layout]
+  );
+  const [selected, setSelected] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const bandSelect = useCallback(
+    (band: SpatialBoardRect) => {
+      const caught = selectSpatialBandSelection(layout, delegationUnits, band);
+      setSelected(new Set(caught.agentIds));
+    },
+    [delegationUnits, layout]
+  );
+  const toggleAgent = useCallback((agentId: string) => {
+    setSelected(previous => {
+      const next = new Set(previous);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }, []);
+
   const active = BOARD_STUDY_FIXTURES.find(
     entry => entry.id === state.fixture
   )!;
@@ -196,6 +226,9 @@ export default function BoardStudyPage() {
             onSelectAgent={() => undefined}
             onOverview={() => undefined}
             onProjectionChange={() => undefined}
+            multiSelection={selected}
+            onToggleAgentSelect={toggleAgent}
+            onBandSelect={bandSelect}
             preserveDrawingBuffer
             resolvedAppearance={resolvedAppearance}
           />
