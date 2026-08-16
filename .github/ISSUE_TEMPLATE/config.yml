@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and support
+    url: https://github.com/Full-Vibe/exawatt/discussions
+    about: Ask setup, usage, and extension questions in Discussions.
+  - name: Security vulnerability
+    url: https://github.com/Full-Vibe/exawatt/security/advisories/new
+    about: Report vulnerabilities privately; do not open a public issue.
+  - name: Contribution guide
+    url: https://github.com/Full-Vibe/exawatt/blob/master/CONTRIBUTING.md
+    about: Read scope, evidence, design-lock, AI-disclosure, and CLA requirements.

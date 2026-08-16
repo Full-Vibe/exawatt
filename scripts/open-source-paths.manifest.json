@@ -26,6 +26,25 @@
       "exclude": []
     },
     {
+      "id": "community-health-public",
+      "classification": "PUBLIC",
+      "include": [
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE/roadmap_proposal.yml",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "CLA.md",
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
+        "GOVERNANCE.md",
+        "SECURITY.md",
+        "SUPPORT.md",
+        "TRADEMARKS.md"
+      ],
+      "exclude": []
+    },
+    {
       "id": "repository-agent-public",
       "classification": "PUBLIC",
       "include": [

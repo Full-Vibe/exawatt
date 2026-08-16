@@ -1,0 +1,19 @@
+# Default ownership. @JakeSc is the verified administrator of Full-Vibe/exawatt.
+* @JakeSc
+
+# Canon and governance.
+/AGENTS.md @JakeSc
+/CLA.md @JakeSc
+/CODE_OF_CONDUCT.md @JakeSc
+/CONTRIBUTING.md @JakeSc
+/GOVERNANCE.md @JakeSc
+/SECURITY.md @JakeSc
+/TRADEMARKS.md @JakeSc
+/docs/product/ @JakeSc
+/docs/engineering/ @JakeSc
+
+# Design-locked and architecture-sensitive areas.
+/src/app/hud-gallery/ @JakeSc
+/src/lib/architecture/ @JakeSc
+/src/components/hud/ @JakeSc
+/electron/ @JakeSc
