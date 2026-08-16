@@ -1,7 +1,13 @@
 /**
  * ENG-008 E12 — the real captured snapshot the usage directions render.
  *
- * CAPTURED 2026-08-14T22:08:56.133Z from the operator's own machine,
+ * SCRUBBED 2026-08-15: project names and Session titles are synthetic.
+ * Every number below is a real measurement, but no identifying string
+ * survives — this file ships in the PUBLIC tree (ENG-030) and was
+ * briefly served on production with real names. Never reintroduce a
+ * raw capture here; run the scrubber in the capture step instead.
+ *
+ * Shape captured 2026-08-14T22:08:56.133Z from the operator's machine,
  * read-only: the shipped scanner service over `~/.claude/projects` +
  * `~/.codex/sessions` with a throwaway state dir, the real ENG-038 Claude
  * plan-account read, and his app's own persisted plan-window observation
@@ -794,25 +800,25 @@ export const CAPTURE: FixtureSnapshot = {
         color: '#FF3B8B',
       },
       {
-        label: 'Stock',
+        label: 'Signal',
         nt: 278253537,
         raw: 327579168,
         color: '#9D7BFF',
       },
       {
-        label: 'cortex-ehr',
+        label: 'ledger-sync',
         nt: 116838446.05,
         raw: 222377036,
         color: '#55A0FF',
       },
       {
-        label: 'gpagent',
+        label: 'atlasbot',
         nt: 57129072.85000002,
         raw: 189133464,
         color: '#19E6FF',
       },
       {
-        label: 'Element 14',
+        label: 'Northwind 7',
         nt: 31482345,
         raw: 43502725,
         color: '#55A0FF',
@@ -824,13 +830,13 @@ export const CAPTURE: FixtureSnapshot = {
         color: null,
       },
       {
-        label: 'Switcheroo',
+        label: 'Tidepool',
         nt: 851192.6,
         raw: 6085067,
         color: '#6FE39F',
       },
       {
-        label: 'photo-generator',
+        label: 'image-forge',
         nt: 772706.6,
         raw: 4255461,
         color: '#FFB02E',
@@ -879,7 +885,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: 'ed966727',
         title: null,
         titleKind: null,
-        project: 'Stock',
+        project: 'Signal',
         source: 'claude-code',
         model: 'claude-fable-5',
         nt: 278253537,
@@ -903,7 +909,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: '2a86040d',
         title: null,
         titleKind: null,
-        project: 'cortex-ehr',
+        project: 'ledger-sync',
         source: 'claude-code',
         model: 'claude-opus-5',
         nt: 108205583.25,
@@ -975,7 +981,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: '811bfc6a',
         title: null,
         titleKind: null,
-        project: 'Element 14',
+        project: 'Northwind 7',
         source: 'claude-code',
         model: 'claude-opus-5',
         nt: 31482345,
@@ -985,7 +991,7 @@ export const CAPTURE: FixtureSnapshot = {
       },
       {
         id: '145593b2',
-        title: 'Extract FullVibe project insights from Eve Chen design call',
+        title: 'Extract project insights from the partner design call',
         titleKind: 'context',
         project: 'exawatt',
         source: 'claude-code',
@@ -999,7 +1005,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: 'b48a3cb6',
         title: null,
         titleKind: null,
-        project: 'gpagent',
+        project: 'atlasbot',
         source: 'claude-code',
         model: 'claude-opus-5',
         nt: 16657550.5,
@@ -1023,7 +1029,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: 'c57fe486',
         title: null,
         titleKind: null,
-        project: 'gpagent',
+        project: 'atlasbot',
         source: 'claude-code',
         model: 'claude-opus-5',
         nt: 13775070.25,
@@ -1033,9 +1039,9 @@ export const CAPTURE: FixtureSnapshot = {
       },
       {
         id: '933bff45',
-        title: 'Investigate LP portal invite flow and YC scraping',
+        title: 'Investigate portal invite flow and directory import',
         titleKind: 'context',
-        project: 'gpagent',
+        project: 'atlasbot',
         source: 'claude-code',
         model: 'claude-fable-5',
         nt: 8195859.5,
@@ -1047,7 +1053,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: '019ff2dd',
         title: null,
         titleKind: null,
-        project: 'gpagent',
+        project: 'atlasbot',
         source: 'codex',
         model: 'gpt-5.6-sol',
         nt: 8138556.600000003,
@@ -1057,9 +1063,9 @@ export const CAPTURE: FixtureSnapshot = {
       },
       {
         id: '019ff295',
-        title: 'Edit investment metadata in gpagent portfolio',
+        title: 'Edit record metadata in atlasbot catalog',
         titleKind: 'context',
-        project: 'gpagent',
+        project: 'atlasbot',
         source: 'codex',
         model: 'gpt-5.6-sol',
         nt: 6934691.999999998,
@@ -1071,7 +1077,7 @@ export const CAPTURE: FixtureSnapshot = {
         id: '019ffcf9',
         title: null,
         titleKind: null,
-        project: 'cortex-ehr',
+        project: 'ledger-sync',
         source: 'codex',
         model: 'gpt-5.6-sol',
         nt: 3696719.799999999,
