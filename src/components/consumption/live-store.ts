@@ -23,6 +23,14 @@
  *
  * SSR/web-safe: without the bridge the store is permanently `unavailable`
  * and the tenant seam falls back to the demo corpus (explicitly bannered).
+ *
+ * THREE states, not two (BUG-016). `unavailable` is the honest answer only
+ * where no local filesystem exists. On the desktop the bridge is always
+ * present, so a command engine that died at boot used to sit in `pending`
+ * forever and every surface rendered a complete, zeroed local read — a
+ * stronger and less honest claim than the demo corpus. `paused` names that
+ * state: the bridge is here, nothing was read, and nothing will be until the
+ * engine starts.
  */
 import type {
   ClosedSessionEntry,
@@ -56,7 +64,15 @@ const REPIN_MS = 60_000;
 const RESCAN_MS = 5 * 60_000;
 const REFETCH_DEBOUNCE_MS = 250;
 
-export type LiveConsumptionStatus = 'unavailable' | 'pending' | 'ready';
+export type LiveConsumptionStatus =
+  /** No desktop bridge at all — the hosted web app. */
+  | 'unavailable'
+  /** The bridge is here and the first pull is in flight. */
+  | 'pending'
+  /** The bridge is here and its engine is not running; nothing was read. */
+  | 'paused'
+  /** A snapshot has been applied. */
+  | 'ready';
 
 export interface LiveSessionBurn {
   rawTokens: number;
@@ -100,6 +116,11 @@ const HARNESS_TO_SOURCE: Record<string, HarnessSource> = {
 function bridge() {
   if (typeof window === 'undefined') return undefined;
   return window.electron?.consumption;
+}
+
+function engineBridge() {
+  if (typeof window === 'undefined') return undefined;
+  return window.electron?.commandEngine;
 }
 
 /* ------------------------------------------------------------------ */
@@ -351,6 +372,7 @@ function buildState(
 
 let pulling = false;
 let pullAgain = false;
+let engineStopped = false;
 
 /**
  * Single-flight, monotonic pulls. Two guards close a real race observed on
@@ -399,6 +421,12 @@ async function refetch(): Promise<void> {
     } while (pullAgain);
   } catch {
     // A failed pull keeps the last honest state; the next revision retries.
+    // With nothing yet read, though, "keep the last state" means sitting in
+    // `pending` forever behind a complete, zeroed page. A bridge that cannot
+    // answer at all has not read anything, whatever killed it (BUG-016): a
+    // command engine that never registered the channel, a scanner that
+    // crashed. Same fact on screen, so the same state.
+    noteEngineStopped();
   } finally {
     pulling = false;
   }
@@ -412,11 +440,41 @@ function scheduleRefetch(): void {
   }, REFETCH_DEBOUNCE_MS);
 }
 
+/**
+ * The engine is not running and nothing was read. Real data already applied
+ * keeps its own state: the page's footer carries the read's own age, which is
+ * the honest thing to say about numbers that were genuinely read once.
+ */
+function noteEngineStopped(): void {
+  if (engineStopped) return;
+  engineStopped = true;
+  if (!cached) setState(stopped());
+}
+
 function start(): void {
   if (started) return;
   const api = bridge();
   if (!api) return;
   started = true;
+
+  // Main reports its own bootstrap. This is the authoritative signal; a failed
+  // pull above is the fallback for an engine that came up and then died.
+  const engine = engineBridge();
+  if (engine) {
+    void engine
+      .phase()
+      .then(phase => {
+        if (phase === 'paused') noteEngineStopped();
+      })
+      .catch(() => {
+        /* the channel itself is part of what can be dead */
+      });
+    disposers.push(
+      engine.onChanged(phase => {
+        if (phase === 'paused') noteEngineStopped();
+      })
+    );
+  }
 
   disposers.push(
     api.onUpdated((event: ConsumptionUpdatedEvent) => {
@@ -460,25 +518,36 @@ export function resetLiveConsumptionForTests(): void {
   started = false;
   lastRevision = -1;
   pendingState = null;
+  stoppedState = null;
   pulling = false;
   pullAgain = false;
+  engineStopped = false;
 }
 
 let pendingState: LiveConsumptionState | null = null;
+let stoppedState: LiveConsumptionState | null = null;
+
+function emptyState(status: LiveConsumptionStatus): LiveConsumptionState {
+  return buildState(
+    {
+      snapshot: emptyLiveConsumptionSnapshot(Date.now()),
+      identities: [],
+      projects: [],
+    },
+    status
+  );
+}
 
 /** The pre-first-pull state: an honest empty live view, built once. */
 function pending(): LiveConsumptionState {
-  if (!pendingState) {
-    pendingState = buildState(
-      {
-        snapshot: emptyLiveConsumptionSnapshot(Date.now()),
-        identities: [],
-        projects: [],
-      },
-      'pending'
-    );
-  }
+  pendingState ??= emptyState('pending');
   return pendingState;
+}
+
+/** The same empty view, named for the reason it will stay empty. */
+function stopped(): LiveConsumptionState {
+  stoppedState ??= emptyState('paused');
+  return stoppedState;
 }
 
 export function subscribeLiveConsumption(listener: () => void): () => void {
@@ -491,7 +560,8 @@ export function subscribeLiveConsumption(listener: () => void): () => void {
 
 export function getLiveConsumption(): LiveConsumptionState {
   if (!bridge()) return UNAVAILABLE;
-  return state ?? pending();
+  if (state) return state;
+  return engineStopped ? stopped() : pending();
 }
 
 /** SSR snapshot: the bridge never exists on the server. */

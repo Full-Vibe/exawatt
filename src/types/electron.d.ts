@@ -68,6 +68,23 @@ export interface ElectronConsumptionApi {
   onUpdated: (handler: (event: ConsumptionUpdatedEvent) => void) => () => void;
 }
 
+/**
+ * BUG-016 — the command engine's own state.
+ *
+ * `starting` while the local services come up, `ready` once they are all
+ * registered, `paused` when bootstrap threw. A surface reading a local service
+ * needs this to tell "this machine has no desktop bridge" (no `window.electron`
+ * at all) from "the bridge is here and its engine is dead" — the two used to
+ * be one indistinguishable state, and `/usage` rendered a zeroed local read
+ * for the second one.
+ */
+export type CommandEnginePhase = 'starting' | 'ready' | 'paused';
+
+export interface ElectronCommandEngineApi {
+  phase: () => Promise<CommandEnginePhase>;
+  onChanged: (handler: (phase: CommandEnginePhase) => void) => () => void;
+}
+
 export interface ElectronAgentSourcesApi {
   list: (
     scope?: 'all' | 'launch',
@@ -861,6 +878,7 @@ declare global {
           >
         >;
       };
+      commandEngine?: ElectronCommandEngineApi;
       consumption?: ElectronConsumptionApi;
       pty?: ElectronPtyApi;
       workspace?: ElectronWorkspaceApi;

@@ -5,7 +5,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -13,6 +19,10 @@ import {
   nodePtyBindingPath,
 } from './lib/native-preflight.mjs';
 import { assertDevServerServesTree } from './lib/electron-eval.mjs';
+import {
+  assertNoPackagingSnapshot,
+  discardRuntimeDependencies,
+} from './lib/electron-runtime-deps.mjs';
 
 const listen = handler =>
   new Promise(resolve => {
@@ -108,4 +118,39 @@ test('no server answering fails fast with the start-a-dev-server remedy', async 
 
 test('a non-URL dev target (packaged-app evals) is skipped', async () => {
   await assertDevServerServesTree('not a url', '/nowhere');
+});
+
+/* ------------------------------------------------------------------ */
+/* BUG-016 — a packaging snapshot on the dev resolution path            */
+/* ------------------------------------------------------------------ */
+
+test('a dev tree carrying a packaging snapshot is refused before launch', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'snapshot-'));
+  mkdirSync(join(root, 'dist-electron', 'node_modules', '@exawatt', 'core'), {
+    recursive: true,
+  });
+  await assert.rejects(
+    () => assertNoPackagingSnapshot(root),
+    /electron:compile/
+  );
+});
+
+test('a dev tree with no snapshot resolves the workspace and passes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'snapshot-'));
+  mkdirSync(join(root, 'dist-electron', 'main'), { recursive: true });
+  await assert.doesNotReject(() => assertNoPackagingSnapshot(root));
+});
+
+test('discarding is idempotent and leaves the compiled main alone', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'snapshot-'));
+  mkdirSync(join(root, 'dist-electron', 'node_modules', 'node-pty'), {
+    recursive: true,
+  });
+  mkdirSync(join(root, 'dist-electron', 'main'), { recursive: true });
+  writeFileSync(join(root, 'dist-electron', 'main', 'main.js'), '');
+  await discardRuntimeDependencies(root);
+  await discardRuntimeDependencies(root);
+  assert.equal(existsSync(join(root, 'dist-electron', 'node_modules')), false);
+  assert.ok(existsSync(join(root, 'dist-electron', 'main', 'main.js')));
+  await assert.doesNotReject(() => assertNoPackagingSnapshot(root));
 });

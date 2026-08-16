@@ -18,6 +18,7 @@ import { _electron as electron } from 'playwright-core';
 import { execSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { assertNodePtyBuilt } from './native-preflight.mjs';
+import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 
 /** Kill any orphaned exawatt/playwright Electron left by a prior SIGKILLed run,
  *  so a stale orphan can't poison this launch. Scoped to playwright-launched
@@ -103,7 +104,13 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
   // "posix_spawnp failed." banner deep inside the app
   assertNodePtyBuilt(evalRoot);
   const devUrl = launchOpts.env?.EXAWATT_DEV_URL;
-  if (devUrl) await assertDevServerServesTree(devUrl, evalRoot);
+  if (devUrl) {
+    await assertDevServerServesTree(devUrl, evalRoot);
+    // A dev launch must resolve THIS checkout's @exawatt/core, not a packaging
+    // snapshot left behind by an earlier build (BUG-016). Fail before launch
+    // with the real cause instead of after it, as a paused command engine.
+    await assertNoPackagingSnapshot(evalRoot);
+  }
   sweepOrphans();
 
   let app;

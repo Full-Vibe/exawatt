@@ -46,6 +46,10 @@ import {
 import { randomUUID } from 'crypto';
 import { launchScreenUrl, type StartupStage } from './launch-screen';
 import {
+  registerCommandEngineIPC,
+  setCommandEnginePhase,
+} from './command-engine';
+import {
   loadWorkspace,
   mergeHarnessIdentities,
   saveWorkspace,
@@ -1232,6 +1236,11 @@ async function bootstrapCommandSurface(): Promise<void> {
       ? Promise.resolve(DEV_URL)
       : (rendererReadyPromise ??= startPackagedRenderer())
   ).then(url => {
+    // The trusted origin is established by the step that establishes the
+    // origin. It used to be set at the tail of bootstrap, which meant the
+    // engine-state channel — the one surface whose whole job is to report a
+    // failed bootstrap — would have rejected its own renderer (BUG-016).
+    setTrustedRendererOrigin(url);
     updateStartupScreen({
       progress: 0.62,
       label: 'Renderer online',
@@ -1332,7 +1341,6 @@ async function bootstrapCommandSurface(): Promise<void> {
     'electron.net.fetch'
   );
 
-  setTrustedRendererOrigin(trustedRendererUrl);
   authCoordinator = new runtime.auth.ElectronAuthCoordinator({
     expectedRendererOrigin: trustedRendererUrl,
     openExternal: url => shell.openExternal(url),
@@ -1435,6 +1443,8 @@ async function bootstrapCommandSurface(): Promise<void> {
     detail: 'Command services are ready',
   });
 
+  setCommandEnginePhase('ready');
+
   const win = mainWindow;
   if (win && !win.isDestroyed()) await win.loadURL(workspaceUrl());
   startupComplete = true;
@@ -1499,6 +1509,9 @@ app.whenReady().then(() => {
     new MainThreadStallTrace({ record: mainDiagnostics })
   );
   watchShellStartupArtifacts(mainDiagnostics);
+  // Registered BEFORE bootstrap so it survives bootstrap failing: this is the
+  // channel that reports exactly that (BUG-016).
+  registerCommandEngineIPC(() => BrowserWindow.getAllWindows());
   // Warm server startup is already in flight. On a version cache miss, give
   // the native launch frame priority over archive extraction.
   let commandSurface = rendererWasWarmAtLaunch
@@ -1523,6 +1536,10 @@ app.whenReady().then(() => {
 
   void commandSurface.catch(error => {
     console.error('[startup] command surface failed', error);
+    // Say it on the splash AND on the wire. Without the second half, a
+    // renderer that reaches a product surface anyway shows a complete, zeroed
+    // local read (BUG-016).
+    setCommandEnginePhase('paused');
     updateStartupScreen({
       progress: startupStage.progress,
       label: 'Command engine paused',
