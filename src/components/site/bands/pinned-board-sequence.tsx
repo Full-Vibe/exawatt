@@ -337,7 +337,15 @@ function PinnedPanel({
       data-pinned-panel={band.id}
       data-pinned-panel-active={active ? 'true' : undefined}
     >
-      <div className="pointer-events-none w-full max-w-[28rem] px-6 sm:px-10 lg:pl-16">
+      {/* On a phone the reading column STICKS to the viewport bottom rather
+          than sitting at the bottom of its panel box. A panel is 1.0 to 1.4
+          viewport heights by contract, so `items-end` alone anchors the copy
+          to a box edge that is up to 338px below the fold, and at peak
+          presence the last line of a panel was off screen. Sticky inside the
+          panel keeps the copy over the board's lower third for the whole hold,
+          with no JavaScript and no second layout. Desktop is centred and does
+          not need it. */}
+      <div className="pointer-events-none w-full max-w-[28rem] px-6 sm:px-10 max-md:sticky max-md:bottom-4 lg:pl-16">
         <BandHeading
           band={band}
           className="tracking-tight"
