@@ -636,7 +636,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One declaration contract plus Electron-main observations power Settings and launch; remote attach remains planned. The implemented C0 core kernel projects preserved source topology through explicit source-qualified Agent/Project mappings, a versioned plan/output, and a source-declared primary conversation. Demo/Live adapter parity remains later acceptance; future reconnect replaces cached views from authoritative snapshots and replay positions stay optional capabilities.',
+            'One declaration contract plus Electron-main observations power Settings, launch, and delegation; remote attach remains planned. The implemented C0 core kernel projects preserved source topology through explicit source-qualified Agent/Project mappings, a versioned plan/output, and a source-declared primary conversation. Demo/Live adapter parity remains later acceptance. Codex delegation uses its version-probed read-side app-server protocol; reconnect replaces its cached view from an authoritative snapshot and protocol loss stays absent; replay positions stay optional capabilities.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -898,6 +898,7 @@ export const architectureManifest = {
     'Logical Sessions survive local process death through explicit, deterministic rehydration; recovery defaults to the selected Project with Agent and all-Projects as nested alternate scopes, and local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',
+    'Delegation is source-declared evidence: Codex parent/child lifecycle comes only from its version-probed app-server protocol, reconnect resnapshots exact thread IDs, and an unavailable or incompatible protocol withdraws to absent without filesystem, process, worktree, or terminal inference.',
     'Waiting on the operator is its own reported fact, independent of turn state and of delegation: an Agent asking a question is mid-turn, producing nothing, and answerable only by a human.',
     'Independent attention sources compose semantically and declare their scope: human gates outrank quiet results, merged coverage is the intersection of the sources, and only a map every source covers may drive fleet-wide markers, availability, and navigation — a producer with a narrower lens answers unknown, never quiet.',
     'Attention records what the operator has not yet seen; the status light records what is currently true. Focusing a Session changes the first and never the second.',

@@ -225,6 +225,26 @@ describe('delegation state', () => {
     ]);
   });
 
+  it('uses an exact protocol-correlated label without staging by type', () => {
+    const state = reduce([
+      {
+        kind: 'child-start',
+        childId: 'codex-child',
+        agentType: 'Codex',
+        description: 'map release gates',
+        at: 2,
+      },
+    ]);
+    expect(state.children).toEqual([
+      {
+        id: 'codex-child',
+        agentType: 'Codex',
+        description: 'map release gates',
+        startedAt: 2,
+      },
+    ]);
+  });
+
   it('drops the INCOMING label at the cap so overflow goes unlabeled, never shifted', () => {
     // Correlation is positional: evicting the oldest would hand child 1 the
     // label of child 2 and shift the entire cohort onto its neighbors.

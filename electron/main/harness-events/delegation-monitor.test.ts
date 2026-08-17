@@ -60,6 +60,27 @@ describe('DelegationMonitor publication', () => {
     expect(monitor.getLive('pty-1')).toBeNull();
   });
 
+  it('withdraws failed protocol observation without claiming completion', () => {
+    const { monitor, published, send } = harness();
+    const lifecycle: HarnessEvent[] = [];
+    monitor.on('harness-event', (_id: string, event: HarnessEvent) =>
+      lifecycle.push(event)
+    );
+    send({
+      kind: 'child-start',
+      childId: 'codex-child',
+      agentType: 'Codex',
+      at: 1,
+    });
+    monitor.clearReportedChildren('pty-1');
+
+    expect(published[published.length - 1]).toBeNull();
+    expect(monitor.getLive('pty-1')).toBeNull();
+    expect(lifecycle).toEqual([
+      expect.objectContaining({ kind: 'child-start' }),
+    ]);
+  });
+
   it('broadcasts nothing for a label-only change, and never the staging list', () => {
     const { monitor, published, send } = harness();
     send({ kind: 'turn-start' });

@@ -523,6 +523,10 @@ export class PtySessionManager extends EventEmitter {
       this.beginOpencodeIdentityCapture(session);
     }
 
+    // Source observers need one lifecycle boundary for exact resumes whose
+    // provider identity was known before spawn. Fresh Codex launches attach
+    // later through the existing `identity` event.
+    this.emit('session', { ...info });
     return { ...info };
   }
 

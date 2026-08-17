@@ -455,7 +455,7 @@ describe('buildHarnessCommand', () => {
       expect(command).toContain(`--settings '/tmp/a b/it'"'"'s/pty-1.json'`);
     });
 
-    it('leaves Codex unsubscribed — it reports no delegation', () => {
+    it('leaves Codex launch argv untouched by its read-side protocol observer', () => {
       const command = buildHarnessCommand(
         'codex',
         null,
@@ -468,6 +468,10 @@ describe('buildHarnessCommand', () => {
         { eventChannelSettingsPath: settings }
       );
       expect(command).not.toContain('--settings');
+      expect(harnessDescriptor('codex').delegation).toEqual({
+        observable: true,
+        mechanism: 'protocol',
+      });
     });
 
     it('launches unchanged when no channel is available', () => {

@@ -24,16 +24,53 @@ import { claudeProbeJs, codexProbeJs } from './harness-probe-fixture.mjs';
  *   say <text>           plain stdout, no hook — pure terminal bytes
  *   bell                 a BARE BEL, no hook — Claude Code's idle-prompt nudge
  */
-export function createHarnessFixture(prefix) {
+export function createHarnessFixture(prefix, { codexProtocol = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
   const userData = join(root, 'userData');
   const project = join(root, 'project');
   const fakeBin = join(root, 'bin');
   const fakeHome = join(root, 'home');
-  for (const directory of [userData, project, fakeBin, fakeHome]) {
+  const codexSessions = join(fakeHome, '.codex', 'sessions');
+  for (const directory of [
+    userData,
+    project,
+    fakeBin,
+    fakeHome,
+    codexSessions,
+  ]) {
     mkdirSync(directory, { recursive: true });
   }
   writeFileSync(join(project, 'package.json'), '{}');
+
+  const codexRootId = '11111111-1111-7111-8111-111111111111';
+  const codexChildIds = [
+    '22222222-2222-7222-8222-222222222222',
+    '33333333-3333-7333-8333-333333333333',
+  ];
+  const codexState = join(root, 'codex-app-server-state.json');
+  writeFileSync(
+    codexState,
+    JSON.stringify({
+      available: codexProtocol,
+      rootId: codexRootId,
+      children: [
+        {
+          id: codexChildIds[0],
+          agentPath: '/root/map_release',
+          createdAt: 10,
+          updatedAt: 10,
+          live: true,
+        },
+        {
+          id: codexChildIds[1],
+          agentPath: '/root/audit_ci',
+          createdAt: 20,
+          updatedAt: 20,
+          live: true,
+        },
+      ],
+    })
+  );
 
   writeFileSync(
     join(fakeBin, 'claude'),
@@ -126,20 +163,127 @@ setInterval(() => {}, 1 << 30);
   );
   chmodSync(join(fakeBin, 'claude'), 0o755);
 
-  // Codex reports no DELEGATION. Absent must render as absent, never as an
-  // empty one — that is the control these evals need, and it is unchanged.
-  // It does publish a model catalog, because a real Codex CLI does and because
-  // since D49 an engine that publishes none may not start at all: answering
-  // only `--version` made the product refuse the launch, and the refusal was
-  // read as an eval defect for two months (BUG-014).
+  // The opt-in Codex side is a wire fixture, not an Exawatt mock: Electron
+  // launches it through the exact app-server JSON-RPC boundary and must first
+  // correlate the interactive PTY to the source-owned rollout identity. The
+  // default remains unavailable so reported-turn evals retain their pure byte
+  // inference control. Common version, auth, and model-catalog answers stay in
+  // harness-probe-fixture so this wire fixture cannot drift from every other
+  // launcher eval (BUG-014).
   writeFileSync(
     join(fakeBin, 'codex'),
     `#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
 const cargv = process.argv.slice(2);
 ${codexProbeJs()}
+const protocolEnabled = ${JSON.stringify(codexProtocol)};
+const protocolStatePath = ${JSON.stringify(codexState)};
+const sessionsRoot = ${JSON.stringify(codexSessions)};
+const projectDirectory = ${JSON.stringify(project)};
+const rootThreadId = ${JSON.stringify(codexRootId)};
+if (cargv[0] === 'app-server') {
+  if (!protocolEnabled) process.exit(2);
+  let rpcBuffer = '';
+  const reply = (id, result) =>
+    process.stdout.write(JSON.stringify({ id, result }) + '\\n');
+  process.stdin.on('data', chunk => {
+    rpcBuffer += chunk.toString();
+    let index;
+    while ((index = rpcBuffer.indexOf('\\n')) !== -1) {
+      const line = rpcBuffer.slice(0, index).trim();
+      rpcBuffer = rpcBuffer.slice(index + 1);
+      if (!line) continue;
+      const message = JSON.parse(line);
+      if (message.id == null) continue;
+      const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
+      if (!state.available) process.exit(3);
+      if (message.method === 'initialize') {
+        reply(message.id, {
+          userAgent: message.params.clientInfo.name + '/0.147.0 (fixture)',
+          codexHome: path.dirname(sessionsRoot),
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        });
+      } else if (message.method === 'thread/list') {
+        reply(message.id, {
+          data: state.children.map(child => ({
+            id: child.id,
+            parentThreadId: state.rootId,
+            agentNickname: null,
+            agentRole: null,
+            createdAt: child.createdAt,
+            updatedAt: child.updatedAt,
+            source: {
+              subAgent: {
+                thread_spawn: {
+                  parent_thread_id: state.rootId,
+                  depth: 1,
+                  agent_path: child.agentPath,
+                  agent_nickname: null,
+                  agent_role: null,
+                },
+              },
+            },
+          })),
+          nextCursor: null,
+        });
+      } else if (message.method === 'thread/turns/list') {
+        const child = state.children.find(item => item.id === message.params.threadId);
+        reply(message.id, {
+          data: child
+            ? [{
+                status: child.live ? 'interrupted' : 'completed',
+                completedAt: child.live ? null : child.updatedAt,
+              }]
+            : [],
+        });
+      } else if (message.method === 'thread/items/list') {
+        reply(message.id, {
+          data: state.children.map(child => ({
+            item: {
+              type: 'subAgentActivity',
+              id: 'activity-' + child.id,
+              kind: child.live ? 'started' : 'interrupted',
+              agentThreadId: child.id,
+              agentPath: child.agentPath,
+            },
+          })),
+          nextCursor: null,
+          backwardsCursor: null,
+        });
+      } else {
+        process.stdout.write(JSON.stringify({
+          id: message.id,
+          error: { code: -32601, message: 'fixture method not found' },
+        }) + '\\n');
+      }
+    }
+  });
+} else {
+  if (protocolEnabled) {
+  const rollout = path.join(sessionsRoot, 'rollout-' + rootThreadId + '.jsonl');
+  fs.writeFileSync(
+    rollout,
+    [
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'session_meta',
+        payload: { session_id: rootThreadId, cwd: projectDirectory },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          role: 'user',
+          content: [{ type: 'input_text', text: 'Run two controlled children' }],
+        },
+      }),
+    ].join('\\n')
+  );
+}
 process.stdout.write('FAKE_CODEX_ARGS:' + cargv.join(' ') + '\\n');
-// Accepts \`say <text>\` so a test can drive PURE byte inference on a source
-// that reports nothing — the control for the reported path.
+// Accepts \`say <text>\` for the byte-inference control. Protocol evals change
+// only the fixture server's source-owned state; the PTY never reports children.
 let buffer = '';
 process.stdin.on('data', chunk => {
   buffer += chunk.toString();
@@ -148,14 +292,35 @@ process.stdin.on('data', chunk => {
     const line = buffer.slice(0, index).trim();
     buffer = buffer.slice(index + 1);
     if (line.startsWith('say ')) process.stdout.write(line.slice(4) + '\\n');
+    else if (line.startsWith('finish ')) {
+      const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
+      const child = state.children.find(item => item.id === line.slice(7));
+      if (child) {
+        child.live = false;
+        child.updatedAt += 100;
+        fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+      }
+    } else if (line === 'protocol-down' || line === 'protocol-up') {
+      const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
+      state.available = line === 'protocol-up';
+      fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+    }
   }
 });
 setInterval(() => {}, 1 << 30);
+}
 `
   );
   chmodSync(join(fakeBin, 'codex'), 0o755);
 
-  return { root, userData, project, fakeBin, fakeHome };
+  return {
+    root,
+    userData,
+    project,
+    fakeBin,
+    fakeHome,
+    codex: { rootId: codexRootId, childIds: codexChildIds },
+  };
 }
 
 /** Launch options for `withElectronApp` against a fixture. */
