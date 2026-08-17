@@ -46,9 +46,15 @@ function tracedUnderTheWrongCondition(): string[] {
 
 const nextConfig: NextConfig = {
   // Electron packages this standalone server beside main/preload so the
-  // privileged desktop renderer is one versioned local artifact. The hosted
-  // deployment may use the same build output through its own delivery path.
-  output: 'standalone',
+  // privileged desktop renderer is one versioned local artifact.
+  //
+  // NOT on Vercel. Vercel runs its own output tracing, and asking Next for a
+  // standalone build on top of it leaves the platform looking for a trace
+  // manifest the standalone step did not put where it expects:
+  // `ENOENT .next/next-server.js.nft.json`, which failed every production
+  // deployment until 2026-08-16. The desktop artifact is unaffected because
+  // VERCEL is only set inside Vercel's builder.
+  output: process.env.VERCEL ? undefined : 'standalone',
   outputFileTracingIncludes: {
     '/**/*': tracedUnderTheWrongCondition(),
   },
