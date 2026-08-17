@@ -5,8 +5,9 @@
  * closed-vocabulary link inference, and builds the pure ui-model lens view.
  *
  * Refresh triggers: project switch, session set change, window focus (same
- * trigger the settings store uses), and explicit refresh. Live
- * file-watching arrives in S5.
+ * trigger the settings store uses), explicit refresh, and the main-process
+ * roadmap file-change broadcast. The watch behind that broadcast belongs to
+ * `useFleetRoadmapAttention`, which watches every open Project.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -193,22 +194,24 @@ export function useProjectRoadmap(
 
   // live updates (S5): main watches the roadmap file's directory and
   // broadcasts; a change to THIS project's roadmap reparses immediately —
-  // an agent committing a roadmap edit shows up without a focus round-trip
+  // an agent committing a roadmap edit shows up without a focus round-trip.
+  //
+  // This lens LISTENS but no longer owns the watch (BUG-026):
+  // `useFleetRoadmapAttention` watches every open Project, and two owners of
+  // one per-directory watcher fight — whichever unwatched first (a Project
+  // switch here) would blind the other, and fleet-wide attention would go
+  // stale for the Project the operator just left.
   useEffect(() => {
     const api = window.electron?.roadmap;
-    // fixture sources never change on disk — nothing to watch
-    if (readSource || !projectDir || !api?.watch) return;
-    void api.watch(projectDir).catch(() => {});
+    // fixture sources never change on disk — nothing to listen for
+    if (readSource || !projectDir || !api) return;
     const off = api.onFileChanged?.(({ projectDir: changed }) => {
       if (changed === projectDir) {
         load();
         loadActivity();
       }
     });
-    return () => {
-      off?.();
-      void api.unwatch(projectDir).catch(() => {});
-    };
+    return () => off?.();
   }, [projectDir, load, loadActivity, readSource]);
 
   const view = useMemo(() => {

@@ -22,7 +22,10 @@ import type {
   Project,
   WorkspaceTab,
 } from '@/components/workspace/use-workspace-state';
-import type { SessionAttentionSignal } from '@/components/workspace/session-status';
+import {
+  fleetAttention,
+  mergeFleetAttention,
+} from '@/components/workspace/session-status';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
@@ -115,10 +118,12 @@ const ACTIVITY: Record<string, boolean> = {
   'session-stock-3': true,
   'session-photo-1': true,
 };
-const ATTENTION: Record<string, SessionAttentionSignal> = {
-  'session-exa-4': { kind: 'bell', since: T0 + 10 * MIN },
-  'session-stock-1': { kind: 'bell', since: T0 + 11 * MIN },
-};
+const ATTENTION = mergeFleetAttention(
+  fleetAttention('team-order-study', {
+    'session-exa-4': { kind: 'bell', since: T0 + 10 * MIN },
+    'session-stock-1': { kind: 'bell', since: T0 + 11 * MIN },
+  })
+);
 const SUMMARIES: Record<string, string> = {
   'durable-exa-2': 'Repainting the Sessions grid from live tile geometry',
   'durable-exa-4': 'Two migration paths found — needs a call on which',

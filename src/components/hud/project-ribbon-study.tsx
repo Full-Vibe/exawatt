@@ -3,6 +3,10 @@
 import { useMemo, useState } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from '@/components/workspace/tab-strip';
+import {
+  fleetAttention,
+  mergeFleetAttention,
+} from '@/components/workspace/session-status';
 import type {
   Project,
   WorkspaceTab,
@@ -141,11 +145,14 @@ export function ProjectRibbonStudy() {
             activeDir={activeDir}
             pinnedTabId={null}
             summaries={summaries}
-            attention={
-              attentionSession
-                ? { [attentionSession]: { kind: 'bell', since: 1 } }
-                : {}
-            }
+            attention={mergeFleetAttention(
+              fleetAttention(
+                'ribbon-study',
+                attentionSession
+                  ? { [attentionSession]: { kind: 'bell', since: 1 } }
+                  : {}
+              )
+            )}
             activity={workingSession ? { [workingSession]: true } : {}}
             engaged={Object.fromEntries(
               projects.flatMap(project =>

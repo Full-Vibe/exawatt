@@ -778,7 +778,11 @@ Built:
   activity IPC plus declared-only sequence/state transactions: parser-validated
   targets, real-path containment, per-file serialization, compare/refuse,
   atomic replacement, a named policy seam, guarded undo, and no git operation
-  (decision `0035`)
+  (decision `0035`). Roadmap-derived ATTENTION is a separate, fleet-wide
+  producer (BUG-026): every open Project's roadmap is read and watched by one
+  owner, blocked Sessions are linked without per-Session git, and the result
+  joins PTY attention through a merge where each source declares whether it
+  covers the whole fleet
 - ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable

@@ -9,6 +9,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import { TabStrip } from './tab-strip';
+import { fleetAttention, mergeFleetAttention } from './session-status';
 import { DEFAULT_RIBBON_POLICY } from './project-ribbon-layout';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 
@@ -62,7 +63,7 @@ function view({
         activeDir={activeDir}
         pinnedTabId={null}
         summaries={summaries}
-        attention={attention}
+        attention={mergeFleetAttention(fleetAttention('test', attention))}
         activity={activity}
         dormantProjectDirs={dormantProjectDirs}
         onSelectProject={vi.fn()}

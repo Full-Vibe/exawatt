@@ -4,6 +4,15 @@ import {
   projectRoadmapSessions,
 } from './roadmap-lens-input';
 import type { WorkspaceTab } from './use-workspace-state';
+import {
+  fleetAttention,
+  mergeFleetAttention,
+  NO_FLEET_ATTENTION,
+  type SessionAttentionSignal,
+} from './session-status';
+
+const fleet = (signals: Record<string, SessionAttentionSignal>) =>
+  mergeFleetAttention(fleetAttention('pty', signals));
 
 const tab = (over: Partial<WorkspaceTab>): WorkspaceTab =>
   ({
@@ -34,7 +43,7 @@ describe('projectRoadmapSessions (one lens projection)', () => {
         tab({ id: 't2', sessionId: null }),
         tab({ id: 't3', resumeState: 'ended-resumable' }),
       ],
-      {},
+      NO_FLEET_ATTENTION,
       SOURCES
     );
     expect(rows.map(r => r.tabId)).toEqual(['t1']);
@@ -43,20 +52,22 @@ describe('projectRoadmapSessions (one lens projection)', () => {
   it('rides the one attention rule: a finished turn is not needs-you', () => {
     const rows = projectRoadmapSessions(
       [tab({})],
-      { s1: { kind: 'bell', since: 1 } },
+      fleet({ s1: { kind: 'bell', since: 1 } }),
       SOURCES
     );
     expect(rows[0].needsAttention).toBe(true);
     const done = projectRoadmapSessions(
       [tab({})],
-      { s1: { kind: 'turn-end', since: 1 } },
+      fleet({ s1: { kind: 'turn-end', since: 1 } }),
       SOURCES
     );
     expect(done[0].needsAttention).toBe(false);
   });
 
   it('answers [] for an absent project', () => {
-    expect(projectRoadmapSessions(undefined, {}, SOURCES)).toEqual([]);
+    expect(
+      projectRoadmapSessions(undefined, NO_FLEET_ATTENTION, SOURCES)
+    ).toEqual([]);
   });
 });
 

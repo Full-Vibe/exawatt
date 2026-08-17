@@ -10,7 +10,7 @@ import {
   sessionTurnFacts,
 } from './session-status';
 import { tabIsLive, type Project } from './use-workspace-state';
-import type { SessionAttentionSignal } from './status-glyphs';
+import type { FleetAttentionSignals } from './status-glyphs';
 import { withThemeAlpha } from './workspace-theme';
 
 export type ProjectRibbonSignal =
@@ -38,7 +38,7 @@ export function deriveProjectRibbonSignal({
 }: {
   project: Project;
   summaries: Record<string, string>;
-  attention: Record<string, SessionAttentionSignal>;
+  attention: FleetAttentionSignals;
   activity: Record<string, boolean>;
   engaged: Record<string, boolean>;
   delegation: Record<string, SessionDelegation>;
@@ -81,7 +81,7 @@ function tabStatusLight({
 }: {
   tab: Project['tabs'][number];
   summaries: Record<string, string>;
-  attention: Record<string, SessionAttentionSignal>;
+  attention: FleetAttentionSignals;
   activity: Record<string, boolean>;
   engaged: Record<string, boolean>;
   delegation: Record<string, SessionDelegation>;
