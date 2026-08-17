@@ -1,10 +1,57 @@
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
 import type { NextConfig } from 'next';
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Files the standalone trace resolves under a condition the RUNTIME does not
+ * use, so tracing writes a payload the server cannot boot (BUG-036).
+ *
+ * `@swc/helpers` is `"type": "module"` with a conditional `exports` map, and
+ * Next's compiled output requires its subpaths as `@swc/helpers/_/<helper>`.
+ * `@vercel/nft` resolves that subpath under `require`/`default` and records
+ * `cjs/<helper>.cjs`. Node 22 resolves the SAME request under `module-sync`
+ * (its `require(esm)` support) and loads `esm/<helper>.js`, which the trace
+ * never copied — so the packaged renderer died on its first require with
+ * `MODULE_NOT_FOUND` from `next/dist/server/require-hook.js`, the app booted
+ * to `Command engine paused`, and nothing in the build noticed.
+ *
+ * Resolved rather than globbed: pnpm's store path carries the version, so a
+ * literal glob would silently stop matching on the next bump — the exact
+ * failure mode this entry exists to prevent. The durable guard is not this
+ * list: `scripts/lib/renderer-archive.mjs` boots the sealed archive before
+ * `prepare-electron-renderer.mjs` writes its hash, and `assertRendererServes`
+ * repeats the proof on the packed bundle, so the NEXT under-traced dependency
+ * fails the build instead of the user's launch.
+ *
+ * It fails soft for that reason. An install layout this cannot resolve must not
+ * turn config loading into a new failure mode; the boot proof already refuses
+ * the payload that would result, with the missing file named.
+ */
+function tracedUnderTheWrongCondition(): string[] {
+  try {
+    const nextRoot = path.dirname(require.resolve('next/package.json'));
+    const helpers = path.dirname(
+      require.resolve('@swc/helpers/package.json', { paths: [nextRoot] })
+    );
+    const relative = path.relative(process.cwd(), helpers);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return [];
+    return [`${relative}/esm/**`];
+  } catch {
+    return [];
+  }
+}
 
 const nextConfig: NextConfig = {
   // Electron packages this standalone server beside main/preload so the
   // privileged desktop renderer is one versioned local artifact. The hosted
   // deployment may use the same build output through its own delivery path.
   output: 'standalone',
+  outputFileTracingIncludes: {
+    '/**/*': tracedUnderTheWrongCondition(),
+  },
   // ENG-030 OS1.1 / decision `0034`: analytics reach PostHog only through this
   // Exawatt-owned rewrite, so the desktop app's sole analytics destination is
   // exawatt.ai and no third-party hostname appears in its outbound connections

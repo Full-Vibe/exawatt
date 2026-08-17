@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from 'playwright-core';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -9,6 +10,22 @@ const executable = resolve(
   process.env.EXAWATT_APP_PATH ??
     'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
 );
+
+// This is the only Electron eval that needs no dev server, which is what makes
+// it usable as a delivery gate (`SURFACE_GATES`) — but it does need a package,
+// and a fresh agent worktree has none. Build one rather than fail as though the
+// app were broken. BUG-036 shipped a renderer that could not start precisely
+// because the oracle that proves it could not be routed to unattended.
+if (!process.env.EXAWATT_APP_PATH && !existsSync(executable)) {
+  console.log('[packaged-smoke] no local package; building one');
+  execFileSync('pnpm', ['electron:build:dir'], { stdio: 'inherit' });
+  // Packaging stages dist-electron/node_modules, and that snapshot sits on the
+  // DEVELOPMENT module resolution path (incident 0012). Leaving it behind would
+  // poison every dev Electron eval that runs after this gate in the same tree.
+  execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
+    stdio: 'inherit',
+  });
+}
 const expectedVersion = JSON.parse(
   readFileSync(resolve('package.json'), 'utf8')
 ).version;

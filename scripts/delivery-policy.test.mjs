@@ -206,6 +206,30 @@ test('the shared menu primitive owes the launcher gate', () => {
   );
 });
 
+// BUG-036: a dependency bump that touched no Electron, renderer or UI path
+// shipped a packaged renderer that exited 1 on its first require. A lockfile is
+// a first-class trigger for the one oracle that runs the real thing.
+test('a lockfile change owes the packaged gate', () => {
+  assert.deepEqual(
+    missingSurfaceGates(['pnpm-lock.yaml']).map(entry => entry.gate),
+    ['eval:electron:packaged']
+  );
+});
+
+test('the renderer payload and its seal owe the packaged gate', () => {
+  for (const file of [
+    'next.config.ts',
+    'scripts/prepare-electron-renderer.mjs',
+    'scripts/lib/renderer-archive.mjs',
+  ]) {
+    assert.deepEqual(
+      missingSurfaceGates([file]).map(entry => entry.gate),
+      ['eval:electron:packaged'],
+      file
+    );
+  }
+});
+
 test('ungated paths owe nothing', () => {
   assert.deepEqual(missingSurfaceGates(['docs/engineering/roadmap.md']), []);
   assert.deepEqual(missingSurfaceGates(['src/lib/shortcuts/format.ts']), []);
