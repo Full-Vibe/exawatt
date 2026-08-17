@@ -77,6 +77,16 @@ export function isBoardTransitionActive(
   return clock.startedAt !== null && boardTransitionProgress(clock, nowMs) < 1;
 }
 
+/**
+ * Abandon a transition wherever it is.
+ *
+ * Reduced motion can be switched on mid-flight, and a transition that is no
+ * longer allowed to run must not be left half-applied.
+ */
+export function cancelBoardTransition(clock: BoardTransitionClock): void {
+  clock.startedAt = null;
+}
+
 /** Mark a finished transition as idle so later frames stop sampling it. */
 export function settleBoardTransition(
   clock: BoardTransitionClock,

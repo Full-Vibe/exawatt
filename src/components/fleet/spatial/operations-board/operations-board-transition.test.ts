@@ -4,6 +4,7 @@ import {
   BOARD_FIELD_SCALE_LIMITS,
   BOARD_TRANSITION_MS,
   beginBoardTransition,
+  cancelBoardTransition,
   boardFieldPoseAt,
   boardFieldPoseMoved,
   boardTransitionEase,
@@ -40,6 +41,30 @@ describe('board transition clock', () => {
     beginBoardTransition(clock, 0);
     const samples = [0, 1, 2, 3].map(() => boardTransitionProgress(clock, 120));
     expect(new Set(samples).size).toBe(1);
+  });
+
+  it('abandons a transition partway when motion is switched off', () => {
+    // Reduced motion can arrive mid-flight. A transition that is no longer
+    // allowed to run must not be left half-applied, waiting for a progress it
+    // will never be asked for again.
+    const clock = createBoardTransitionClock();
+    beginBoardTransition(clock, 0);
+    expect(isBoardTransitionActive(clock, 100)).toBe(true);
+    cancelBoardTransition(clock);
+    expect(isBoardTransitionActive(clock, 100)).toBe(false);
+    expect(boardTransitionProgress(clock, 100)).toBe(1);
+  });
+
+  it('restarting reports the beginning again, which is why samplers re-read their start pose', () => {
+    // The clock is shared: the camera restarts it for its own semantic moves.
+    // Anything holding a pose captured at the previous start has to notice.
+    const clock = createBoardTransitionClock();
+    beginBoardTransition(clock, 0);
+    const firstStart = clock.startedAt;
+    expect(boardTransitionProgress(clock, 230)).toBeCloseTo(0.5, 6);
+    beginBoardTransition(clock, 230);
+    expect(clock.startedAt).not.toBe(firstStart);
+    expect(boardTransitionProgress(clock, 230)).toBe(0);
   });
 
   it('settles only once it is actually over', () => {

@@ -344,3 +344,61 @@ describe('population sits in the middle of its Project', () => {
     expect(once).toEqual(twice);
   });
 });
+
+describe('slot selection contract', () => {
+  const rect = { x: 0, y: 0, width: 24, height: 24 };
+
+  it('picks the nearest slots to the middle and no others', () => {
+    // The selection is found from a sorted copy of the DISTANCES rather than by
+    // sorting the slots, because it runs on every data tick. That is only safe
+    // if it still selects exactly the nearest set.
+    const field = computePopulationDotField(
+      [zone('project:p', rect)],
+      [aggregate('project:p', 'working', 20)]
+    );
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    const chosen = Array.from({ length: field.count }, (_, index) => ({
+      x: field.x[index]!,
+      y: field.y[index]!,
+    }));
+    expect(chosen).toHaveLength(20);
+    const worstChosen = Math.max(
+      ...chosen.map(slot => Math.hypot(slot.x - centerX, slot.y - centerY))
+    );
+    // Any slot the packer could have used instead must be at least as far out.
+    const denser = computePopulationDotField(
+      [zone('project:p', rect)],
+      [aggregate('project:p', 'working', 400)]
+    );
+    const sameSize = Array.from({ length: denser.count }, (_, index) => ({
+      x: denser.x[index]!,
+      y: denser.y[index]!,
+      size: denser.size[index]!,
+    })).filter(slot => Math.abs(slot.size - field.size[0]!) < 1e-9);
+    for (const slot of sameSize) {
+      const distance = Math.hypot(slot.x - centerX, slot.y - centerY);
+      const taken = chosen.some(
+        entry =>
+          Math.abs(entry.x - slot.x) < 1e-9 && Math.abs(entry.y - slot.y) < 1e-9
+      );
+      if (!taken) expect(distance).toBeGreaterThanOrEqual(worstChosen - 1e-9);
+    }
+  });
+
+  it('emits row by row so the status bands still read top to bottom', () => {
+    const field = computePopulationDotField(
+      [zone('project:p', rect)],
+      [aggregate('project:p', 'working', 30)]
+    );
+    for (let index = 1; index < field.count; index += 1) {
+      const previousY = field.y[index - 1]!;
+      const y = field.y[index]!;
+      if (y === previousY) {
+        expect(field.x[index]!).toBeGreaterThan(field.x[index - 1]!);
+      } else {
+        expect(y).toBeGreaterThan(previousY);
+      }
+    }
+  });
+});
