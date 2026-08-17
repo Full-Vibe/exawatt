@@ -194,6 +194,19 @@ export interface GoalVisual {
   dataUrl?: string | null;
 }
 
+/**
+ * What a persisted layout stores in place of a `GoalVisual` (BUG-031).
+ *
+ * `identityKey` is already a content address, so the pixels live once in
+ * main's content-addressed side store and the layout carries only the
+ * reference. Main resolves it back through `restoreGoalVisual`.
+ */
+export interface GoalVisualRef {
+  identityKey: string;
+  revision: number;
+  state: GoalVisual['state'];
+}
+
 export interface PtySessionInfo {
   id: string;
   durableSessionId: string;
@@ -350,10 +363,11 @@ export interface ElectronPtyApi {
     durableSessionId: string,
     subtitle: string
   ) => Promise<string | null>;
-  /** Re-seed a validated persisted visual into main on app restart. */
+  /** Re-seed a validated persisted visual reference into main on restart.
+   *  Main resolves the reference to pixels from the content store. */
   restoreGoalVisual?: (
     durableSessionId: string,
-    visual: GoalVisual
+    visual: GoalVisualRef
   ) => Promise<GoalVisual | null>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;

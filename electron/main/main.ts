@@ -30,6 +30,7 @@ import {
 } from './diagnostics-report';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { registerConsumptionIPC } from './consumption-ipc';
+import { resolveSampleHorizonMs } from '@exawatt/core';
 import { ConsumptionScannerService } from './consumption/scanner-service';
 import {
   ClaudePlanAccountService,
@@ -1377,9 +1378,19 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerAppIPC();
   registerMenuIPC();
   registerSystemShortcutIPC();
+  const operatorProfile = loadSettings().operatorProfile;
   consumptionScanner = new ConsumptionScannerService({
     stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
     identities: () => ptySessions.listProviderIdentities(),
+    // BUG-032: samples are a bounded collection now. The floor is the default
+    // horizon; an ACTIVE Operator-profile publication widens it, because that
+    // sync rescans everything since its opt-in anchor and replaces the hosted
+    // aggregate wholesale — pruning under it would truncate a published
+    // profile. `resolveSampleHorizonMs` clamps both ends.
+    sampleHorizonMs: resolveSampleHorizonMs(
+      operatorProfile?.autoPublish ? operatorProfile.startedAt : null,
+      Date.now()
+    ),
   });
   registerOperatorStatsIPC(consumptionScanner);
   // ENG-038: the credentialed Claude plan-account read — a SIBLING of the

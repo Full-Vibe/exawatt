@@ -10,7 +10,7 @@ import {
   inspectAgentSources,
   inspectOpencodeLaunchEnvironment,
 } from './pty/agent-source-registry';
-import { contextSummarizer } from './pty/context-summarizer';
+import { contextSummarizer, type GoalVisual } from './pty/context-summarizer';
 import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
@@ -22,6 +22,7 @@ import {
 } from './pty/closed-session-ledger';
 import { createWorktree, expandTilde } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
+import { hydrateGoalVisual, retainGoalVisual } from './goal-visual-store';
 import {
   loadSettings,
   deleteLaunchConfiguration,
@@ -157,6 +158,9 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   contextSummarizer.on(
     'goal-visual',
     (durableSessionId: string, visual: unknown) => {
+      // The pixels land in the content store as soon as they exist; the
+      // layout only ever persists the reference (BUG-031).
+      void retainGoalVisual(visual as GoalVisual).catch(() => undefined);
       broadcast('pty:goal-visual', { durableSessionId, visual });
     }
   );
@@ -450,11 +454,15 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   );
   handleTrusted(
     'pty:restore-goal-visual',
-    (_event, durableSessionId: string, visual: unknown) =>
-      contextSummarizer.restoreGoalVisual(
-        durableSessionId,
-        visual as import('./pty/context-summarizer').GoalVisual
-      )
+    async (_event, durableSessionId: string, visual: unknown) => {
+      // The renderer hands back the layout's REFERENCE. Main resolves it to
+      // pixels from the content store before the summarizer validates it —
+      // `validGoalVisual` refuses a `ready` visual with no data URL, so a
+      // reference restored raw would silently drop the Session's identity.
+      const hydrated = await hydrateGoalVisual(visual);
+      if (!hydrated) return null;
+      return contextSummarizer.restoreGoalVisual(durableSessionId, hydrated);
+    }
   );
   handleTrusted(
     'pty:resize',

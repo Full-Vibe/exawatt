@@ -21,12 +21,12 @@ export {
   resolveModelWeight,
   weightUsage,
 } from './model-weights';
-export type { ModelTier, ModelWeight, ResolvedModelWeight } from './model-weights';
-export {
-  splitCompleteLines,
-  parseJsonObject,
-  toIso,
-} from './lines';
+export type {
+  ModelTier,
+  ModelWeight,
+  ResolvedModelWeight,
+} from './model-weights';
+export { splitCompleteLines, parseJsonObject, toIso } from './lines';
 export type { LineSplit } from './lines';
 export {
   mergeSamples,
@@ -47,6 +47,7 @@ export {
   emptyCodexContext,
   latestPlanWindows,
   CODEX_PLAN_WINDOW_ASSURANCE,
+  MAX_SEEN_SNAPSHOTS,
 } from './parse-codex';
 export type {
   CodexParseContext,
@@ -68,11 +69,7 @@ export {
   SUPPORTED_ROLLUP_KINDS,
 } from './rollup';
 export type { ProjectResolver, RollupOptions, RollupResult } from './rollup';
-export {
-  parseGrokUpdates,
-  emptyGrokContext,
-  grokUsage,
-} from './parse-grok';
+export { parseGrokUpdates, emptyGrokContext, grokUsage } from './parse-grok';
 export type {
   GrokParseContext,
   GrokParseResult,
@@ -114,6 +111,13 @@ export {
   planWindowKey,
 } from './plan-window-history';
 export type { WindowObservationOptions } from './plan-window-history';
+export {
+  CONSUMPTION_SAMPLE_HORIZON_MS,
+  CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
+  ConsumptionSampleWindow,
+  resolveSampleHorizonMs,
+} from './sample-window';
+export type { ConsumptionSampleWindowOptions } from './sample-window';
 export { scanConsumption } from './scan';
 export type { ConsumptionScan } from './scan';
 export {

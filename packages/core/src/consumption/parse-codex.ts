@@ -87,9 +87,27 @@ export interface CodexSessionContext {
   cliVersion: string | null;
   /** Codex's `originator` (e.g. `codex-tui`) — the entrypoint analogue. */
   originator: string | null;
-  /** Cumulative snapshots already counted, for cross-read idempotency. */
+  /**
+   * Cumulative snapshots already counted, for cross-read idempotency.
+   *
+   * BOUNDED to the newest `MAX_SEEN_SNAPSHOTS` (BUG-032). This array rides the
+   * per-file `ConsumptionWatermark`, which is persisted, so an unbounded one
+   * turned a ~190-byte record into up to 191 KB: 492 Codex watermarks on the
+   * operator's machine held 9.8 MB of the state log's 10.4 MB of marks. It is
+   * only a PARSE-time duplicate filter over the tail a watermark says is new;
+   * the durable idempotency owner is `mergeSamples` keyed by
+   * `idempotencyKey`, so a snapshot that falls off this tail costs one merge,
+   * never a double count.
+   */
   seenSnapshots: string[];
 }
+
+/**
+ * Retained tail of `seenSnapshots`. Sized to cover a whole rewritten rollout
+ * file's worth of re-read turns with room to spare, at ~20 KB per watermark
+ * instead of an unbounded 191 KB.
+ */
+export const MAX_SEEN_SNAPSHOTS = 256;
 
 export function emptyCodexContext(): CodexSessionContext {
   return {
@@ -203,7 +221,9 @@ export function parseCodexRollout(
   const session: CodexSessionContext = {
     ...emptyCodexContext(),
     ...(context.session ?? {}),
-    seenSnapshots: [...(context.session?.seenSnapshots ?? [])],
+    seenSnapshots: (context.session?.seenSnapshots ?? []).slice(
+      -MAX_SEEN_SNAPSHOTS
+    ),
   };
   if (!session.providerSessionId && context.fallbackSessionId) {
     session.providerSessionId = context.fallbackSessionId;
@@ -323,7 +343,9 @@ export function parseCodexRollout(
     diagnostics.samplesEmitted += 1;
   }
 
-  session.seenSnapshots = [...seen];
+  // The bound is enforced where the value is WRITTEN, not where it is read:
+  // this object is persisted verbatim inside the file's watermark.
+  session.seenSnapshots = [...seen].slice(-MAX_SEEN_SNAPSHOTS);
   return { samples, planWindows, diagnostics, session };
 }
 
@@ -334,9 +356,7 @@ export const CODEX_PLAN_WINDOW_ASSURANCE = planWindowAssurance(SOURCE);
  * Latest observed state per (limitId, scope, windowMinutes). Repeated identical
  * windows across thousands of events collapse to the one that matters.
  */
-export function latestPlanWindows(
-  windows: Iterable<PlanWindow>
-): PlanWindow[] {
+export function latestPlanWindows(windows: Iterable<PlanWindow>): PlanWindow[] {
   const byBucket = new Map<string, PlanWindow>();
   for (const window of windows) {
     const key = planWindowKey(window);

@@ -3,6 +3,8 @@ import { splitCompleteLines } from '../consumption/lines';
 import { mergeSamples, totalTokens } from '../consumption/merge';
 import { parseClaudeTranscript } from '../consumption/parse-claude';
 import {
+  MAX_SEEN_SNAPSHOTS,
+  emptyCodexContext,
   latestPlanWindows,
   parseCodexRollout,
 } from '../consumption/parse-codex';
@@ -78,9 +80,9 @@ describe('parseClaudeTranscript', () => {
     expect(diagnostics.linesWithoutUsage).toBe(1);
     expect(diagnostics.linesUnparsable).toBe(0);
     expect(samples).toHaveLength(5);
-    expect(
-      diagnostics.samplesEmitted + diagnostics.linesWithoutUsage
-    ).toBe(diagnostics.linesRead);
+    expect(diagnostics.samplesEmitted + diagnostics.linesWithoutUsage).toBe(
+      diagnostics.linesRead
+    );
   });
 
   it('keys idempotency on requestId', () => {
@@ -258,8 +260,11 @@ describe('Claude duplicate handling', () => {
     const forward = mergeSamples(samples).samples;
     const reversed = mergeSamples([...samples].reverse()).samples;
     const sortKey = (a: { idempotencyKey: string }) => a.idempotencyKey;
-    expect([...reversed].sort((a, b) => sortKey(a).localeCompare(sortKey(b))))
-      .toEqual([...forward].sort((a, b) => sortKey(a).localeCompare(sortKey(b))));
+    expect(
+      [...reversed].sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+    ).toEqual(
+      [...forward].sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+    );
     // Re-merging an already-merged set changes nothing.
     expect(mergeSamples(forward).samples).toEqual(forward);
     expect(mergeSamples(forward).duplicatesMerged).toBe(0);
@@ -267,6 +272,35 @@ describe('Claude duplicate handling', () => {
 });
 
 describe('parseCodexRollout', () => {
+  /**
+   * BUG-032: `seenSnapshots` rides the per-file watermark, which is PERSISTED.
+   * Unbounded, it turned a ~190-byte record into up to 191 KB — 492 Codex
+   * watermarks held 9.8 MB of the operator's state log.
+   */
+  it('bounds the carried snapshot set, because a watermark is a persisted record', () => {
+    const carried = Array.from(
+      { length: MAX_SEEN_SNAPSHOTS * 4 },
+      (_unused, index) => `snapshot-${index}`
+    );
+    const { session } = parseCodexRollout([], {
+      session: { ...emptyCodexContext(), seenSnapshots: carried },
+    });
+    expect(session.seenSnapshots).toHaveLength(MAX_SEEN_SNAPSHOTS);
+    // The newest tail survives: the oldest snapshots are the ones a watermark
+    // already guarantees will never be re-read.
+    expect(session.seenSnapshots.at(-1)).toBe(
+      `snapshot-${MAX_SEEN_SNAPSHOTS * 4 - 1}`
+    );
+  });
+
+  it('still dedupes across an incremental read within the bound', () => {
+    const first = parseCodexRollout(fixtureLines(CODEX_RATE_LIMITED_JSONL));
+    const second = parseCodexRollout(fixtureLines(CODEX_RATE_LIMITED_JSONL), {
+      session: first.session,
+    });
+    expect(second.samples).toHaveLength(0);
+  });
+
   it('normalizes Codex prompt tokens, which include the cached ones', () => {
     const { samples } = parseCodexRollout(
       fixtureLines(CODEX_RATE_LIMITED_JSONL)
@@ -413,10 +447,14 @@ describe('parseCodexRollout', () => {
 
 describe('entrypoint (operator work vs machine-invoked)', () => {
   it('captures Claude Code entrypoint verbatim', () => {
-    const interactive = parseClaudeTranscript(fixtureLines(CLAUDE_ORDINARY_JSONL));
+    const interactive = parseClaudeTranscript(
+      fixtureLines(CLAUDE_ORDINARY_JSONL)
+    );
     expect(interactive.samples.every(s => s.entrypoint === 'cli')).toBe(true);
 
-    const programmatic = parseClaudeTranscript(fixtureLines(CLAUDE_SDK_INVOCATION_JSONL));
+    const programmatic = parseClaudeTranscript(
+      fixtureLines(CLAUDE_SDK_INVOCATION_JSONL)
+    );
     expect(programmatic.samples).toHaveLength(1);
     expect(programmatic.samples[0].entrypoint).toBe('sdk-cli');
   });
@@ -450,7 +488,9 @@ describe('entrypoint (operator work vs machine-invoked)', () => {
   it('does not use the model as a proxy for machine invocation', () => {
     // A haiku turn in an INTERACTIVE session is operator work. Filtering on
     // model rather than entrypoint would wrongly discard it.
-    const result = parseClaudeTranscript(fixtureLines(CLAUDE_INTERACTIVE_HAIKU_JSONL));
+    const result = parseClaudeTranscript(
+      fixtureLines(CLAUDE_INTERACTIVE_HAIKU_JSONL)
+    );
     expect(result.samples).toHaveLength(1);
     expect(result.samples[0].model).toContain('haiku');
     expect(result.samples[0].entrypoint).toBe('cli');

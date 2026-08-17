@@ -86,7 +86,24 @@ import type {
   PtySessionInfo,
   ClosedSessionEntry,
   GoalVisual,
+  GoalVisualRef,
 } from '@/types/electron';
+
+/**
+ * The layout's share of a goal visual: its identity, never its pixels
+ * (BUG-031). A visual that has not settled `ready` persists as nothing at
+ * all, exactly as before — transitional states are not layout.
+ */
+function persistedGoalVisual(
+  visual: GoalVisual | undefined
+): GoalVisualRef | null {
+  if (!visual || visual.state !== 'ready') return null;
+  return {
+    identityKey: visual.identityKey,
+    revision: visual.revision,
+    state: 'ready',
+  };
+}
 
 export interface WorkspaceTab {
   /** stable across revives (sessionId changes when a tab is re-launchd) */
@@ -341,8 +358,15 @@ export interface PersistedV6 {
       initialTask?: string | null;
       startedAt?: number | null;
       contextSummary?: string | null;
-      /** Last accepted visual survives restart; transitional states do not. */
-      goalVisual?: GoalVisual | null;
+      /**
+       * REFERENCE to the last accepted visual; transitional states do not
+       * persist. The pixels live in main's content-addressed side store
+       * (BUG-031) — a layout that inlined them was 4.84 MB, of which 4.81 MB
+       * was nineteen base64 JPEGs on a keystroke-debounced write path.
+       * Layouts written before that change still carry `dataUrl`; main strips
+       * it on load, so this type stays a superset of what it accepts.
+       */
+      goalVisual?: GoalVisualRef | null;
       /** Draft new-tab composer state: any operator-authored launch choice
        * persists; an untouched ⌘T tile still vanishes without ceremony. */
       draftTask?: string | null;
@@ -968,6 +992,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           )
         );
         const restoreGoalVisual = api.restoreGoalVisual;
+        // Only main can turn a persisted REFERENCE back into pixels (the
+        // content store is main's). Without that bridge a restored reference
+        // is honestly a fallback, never a `ready` state with no image.
         const restoredGoalVisuals = restoreGoalVisual
           ? await Promise.all(
               persistedGoalVisuals.map(
@@ -978,7 +1005,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   ] as const
               )
             )
-          : persistedGoalVisuals;
+          : persistedGoalVisuals.map(
+              ([durableSessionId, visual]) =>
+                [
+                  durableSessionId,
+                  { ...visual, state: 'fallback', dataUrl: null } as GoalVisual,
+                ] as const
+            );
         if (cancelled) return;
         for (const [durableSessionId, visual] of restoredGoalVisuals) {
           if (visual) seededGoalVisuals[durableSessionId] = visual;
@@ -1404,11 +1437,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 startedAt: tab.startedAt ?? null,
                 contextSummary:
                   summariesRef.current[tab.durableSessionId] ?? null,
-                goalVisual:
-                  goalVisualsRef.current[tab.durableSessionId]?.state ===
-                  'ready'
-                    ? goalVisualsRef.current[tab.durableSessionId]
-                    : null,
+                // A REFERENCE, never the pixels (BUG-031). The image is a
+                // 265 KB data URL and this record is rewritten end to end
+                // 400 ms after every composer keystroke burst and on every
+                // tab switch; main keeps the bytes in a content-addressed
+                // side store keyed by the same `identityKey` and resolves
+                // them back through `pty:restore-goal-visual`.
+                goalVisual: persistedGoalVisual(
+                  goalVisualsRef.current[tab.durableSessionId]
+                ),
                 ...(tab.lifecycle === 'draft'
                   ? {
                       draftTask: tab.draftTask ?? null,

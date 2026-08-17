@@ -25,16 +25,26 @@
  *   bookkeeping.
  *
  * Compaction rewrites the log from live state when appended bytes exceed
- * about twice the last compacted size — the log's bloat is bounded, and a
+ * about twice what live state would write — the log's bloat is bounded, and a
  * crash mid-compaction leaves the old log intact (rename is last).
+ *
+ * BUG-032 corrected two halves of that sentence. Compaction bounds the LOG
+ * against the STATE, so it is only a bound at all if the state is bounded:
+ * samples now carry the same retention horizon plan-window observations
+ * always had (`ConsumptionSampleWindow`), applied while hydrating so a launch
+ * never materializes more than the horizon. And the comparison floor is now
+ * what a compaction would write TODAY (`retainedBytes`), not the historical
+ * `compactedBytes` in meta — a floor that only ever rose is why a state that
+ * shrank could sit under a permanently oversized log.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import {
+  ConsumptionSampleWindow,
+  MAX_SEEN_SNAPSHOTS,
   emptyDiagnostics,
   localLogAssurance,
-  mergeSamples,
   type ConsumptionDiagnostics,
   type ConsumptionSample,
   type ConsumptionSourceId,
@@ -71,12 +81,28 @@ export interface ConsumptionScanMetaV1 {
 
 export interface LoadedConsumptionState {
   meta: ConsumptionScanMetaV1;
-  samples: Map<string, ConsumptionSample>;
+  /** Bounded live sample state. Never larger than the retention horizon. */
+  samples: ConsumptionSampleWindow;
   watermarks: ConsumptionWatermarks;
   observations: PlanWindowObservation[];
   /** Log lines that failed to parse or validate. Skipped, never fatal. */
   corruptLines: number;
   logBytes: number;
+  /** Sample envelopes dropped for age while hydrating. */
+  expiredSamples: number;
+  /**
+   * What a compaction right now would write. This is the honest floor for the
+   * bloat bound, and it is what `compactedBytes` is set to after a load: the
+   * value persisted in meta is a HISTORICAL artifact, so a state that shrank
+   * (retention, deleted transcripts) would otherwise never trigger the
+   * compaction that reclaims the space.
+   */
+  retainedBytes: number;
+}
+
+export interface ConsumptionStateStoreOptions {
+  /** Sample retention behind the newest sample. See `ConsumptionSampleWindow`. */
+  sampleHorizonMs?: number;
 }
 
 export interface ConsumptionAppendBatch {
@@ -141,6 +167,27 @@ function validMark(value: unknown): value is ConsumptionWatermark {
   );
 }
 
+/**
+ * A watermark is a ~190-byte record with one unbounded field: the Codex
+ * parser's `seenSnapshots` dedupe set, which grows one entry per turn and
+ * reached 191 KB (BUG-032). `parseCodexRollout` bounds it going forward; this
+ * clamps rows written BEFORE the bound existed, so an install reclaims the
+ * space at its next compaction instead of carrying it forever.
+ */
+function boundedMark(mark: ConsumptionWatermark): ConsumptionWatermark {
+  const context = mark.sessionContext;
+  if (!isRecord(context)) return mark;
+  const seen = context.seenSnapshots;
+  if (!Array.isArray(seen) || seen.length <= MAX_SEEN_SNAPSHOTS) return mark;
+  return {
+    ...mark,
+    sessionContext: {
+      ...context,
+      seenSnapshots: seen.slice(-MAX_SEEN_SNAPSHOTS),
+    },
+  };
+}
+
 function validObservation(value: unknown): value is PlanWindowObservation {
   if (!isRecord(value)) return false;
   return (
@@ -183,7 +230,10 @@ export class ConsumptionStateStore {
   private appendedBytes = 0;
   private compactedBytes = 0;
 
-  constructor(private readonly dir: string) {}
+  constructor(
+    private readonly dir: string,
+    private readonly options: ConsumptionStateStoreOptions = {}
+  ) {}
 
   get root(): string {
     return this.dir;
@@ -205,11 +255,15 @@ export class ConsumptionStateStore {
   async load(): Promise<LoadedConsumptionState> {
     const out: LoadedConsumptionState = {
       meta: emptyConsumptionMeta(),
-      samples: new Map(),
+      samples: new ConsumptionSampleWindow({
+        horizonMs: this.options.sampleHorizonMs,
+      }),
       watermarks: {},
       observations: [],
       corruptLines: 0,
       logBytes: 0,
+      expiredSamples: 0,
+      retainedBytes: 0,
     };
     let meta: ConsumptionScanMetaV1 | null = null;
     try {
@@ -256,8 +310,17 @@ export class ConsumptionStateStore {
       crlfDelay: Infinity,
     });
     const observations: PlanWindowObservation[] = [];
+    // Bytes that a compaction would keep, measured as we stream. Samples are
+    // averaged (the retained SET is only known once the newest instant is,
+    // and holding every line's size would defeat the point of the bound);
+    // marks and observations are exact.
+    let sampleLineBytes = 0;
+    let sampleLines = 0;
+    let observationBytes = 0;
+    const markBytesByPath = new Map<string, number>();
     for await (const line of lines) {
-      out.logBytes += Buffer.byteLength(line, 'utf8') + 1;
+      const lineBytes = Buffer.byteLength(line, 'utf8') + 1;
+      out.logBytes += lineBytes;
       if (line.trim().length === 0) continue;
       let envelope: unknown;
       try {
@@ -273,26 +336,44 @@ export class ConsumptionStateStore {
       const kind = envelope.k;
       const value = envelope.v;
       if (kind === 'sample' && validSample(value)) {
-        const sample: ConsumptionSample = {
+        sampleLineBytes += lineBytes;
+        sampleLines += 1;
+        const retained = out.samples.add({
           ...value,
           assurance: REHYDRATED_ASSURANCE[value.source],
-        };
-        const existing = out.samples.get(sample.idempotencyKey);
-        out.samples.set(
-          sample.idempotencyKey,
-          existing ? mergeSamples([existing, sample]).samples[0] : sample
-        );
+        });
+        if (!retained) out.expiredSamples += 1;
       } else if (kind === 'mark' && validMark(value)) {
         // Last write wins per path — later passes append newer marks.
-        out.watermarks[value.path] = value;
+        const bounded = boundedMark(value);
+        out.watermarks[value.path] = bounded;
+        markBytesByPath.set(
+          value.path,
+          bounded === value
+            ? lineBytes
+            : Buffer.byteLength(JSON.stringify({ k: 'mark', v: bounded })) + 1
+        );
       } else if (kind === 'obs' && validObservation(value)) {
         observations.push(value);
+        observationBytes += lineBytes;
       } else {
         out.corruptLines += 1;
       }
     }
     out.observations = observations;
     this.appendedBytes = out.logBytes;
+    const averageSampleLine =
+      sampleLines > 0 ? sampleLineBytes / sampleLines : 0;
+    let markBytes = 0;
+    for (const bytes of markBytesByPath.values()) markBytes += bytes;
+    out.retainedBytes = Math.round(
+      averageSampleLine * out.samples.size + markBytes + observationBytes
+    );
+    // The bloat bound compares the log against what live state WOULD write.
+    // Trusting the persisted `compactedBytes` instead is what let a shrinking
+    // state sit under a permanently oversized log: `shouldCompact` measured
+    // the log against a floor that only ever rose.
+    this.compactedBytes = Math.min(this.compactedBytes, out.retainedBytes);
     return out;
   }
 
