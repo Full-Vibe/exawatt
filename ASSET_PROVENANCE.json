@@ -36,6 +36,14 @@
       "exclusionReason": "The operator accepts use on the private marketing site, but the asset is deliberately excluded from the AGPL public seed by ENG-030's 2026-08-15 decision. The public component degrades to its gradient treatment when the file is absent."
     },
     {
+      "path": "public/images/hero-board-poster.jpg",
+      "status": "included",
+      "kind": "generated Demo Workspace poster",
+      "sha256": "f594af25f57516744587b8fe507f0e4072c5ad07414520072da17b1f5a4759f9",
+      "origin": "Generated from Exawatt's synthetic Demo Workspace hero-board capture by EXA_BASE=<worktree-server> pnpm eval:hero-board -- --poster. The generator and regeneration contract live in scripts/hero-board-idle-eval.mjs and docs/engineering/projects/website-overhaul.md.",
+      "distributionBasis": "First-party generated asset derived only from repository code and synthetic Demo Mode fixtures; distributed under the repository license."
+    },
+    {
       "path": "src/app/fonts/Exo2-Variable-Latin.woff2",
       "status": "included",
       "kind": "vendored variable webfont",
