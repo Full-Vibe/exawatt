@@ -5,10 +5,12 @@ import { ALTITUDE_PANELS } from './altitude-copy';
 import { bandCopyWords, bandById, pinnedBoardBands } from './manifest';
 
 // The board is an R3F client chunk; this suite is about the sequence around it.
+const narrow = { value: false };
 vi.mock('@/components/site/hero-board/hero-board', () => ({
   HeroBoard: (props: Record<string, unknown>) => (
     <div data-testid="hero-board" data-highlight={String(props.highlight)} />
   ),
+  useNarrowViewport: () => narrow.value,
 }));
 
 const reducedMotion = { value: false };
@@ -18,6 +20,7 @@ vi.mock('@/lib/motion/use-prefers-reduced-motion', () => ({
 
 afterEach(() => {
   reducedMotion.value = false;
+  narrow.value = false;
 });
 
 /**
@@ -100,13 +103,18 @@ describe('pinned board sequence', () => {
     add.mockRestore();
   });
 
-  it('binds no scroll listener at all on the poster path', () => {
-    reducedMotion.value = true;
-    const add = vi.spyOn(window, 'addEventListener');
-    render(<PinnedBoardSequence bands={bands} />);
-
-    expect(add.mock.calls.some(call => call[0] === 'scroll')).toBe(false);
-    add.mockRestore();
+  it('binds no scroll listener at all when the layout is not pinned', () => {
+    // Reduced motion and a phone both unpin, and neither has a camera to
+    // drive: the listener does not exist rather than running and being
+    // overridden by a media query.
+    for (const flag of [reducedMotion, narrow]) {
+      flag.value = true;
+      const add = vi.spyOn(window, 'addEventListener');
+      render(<PinnedBoardSequence bands={bands} />);
+      expect(add.mock.calls.some(call => call[0] === 'scroll')).toBe(false);
+      add.mockRestore();
+      flag.value = false;
+    }
   });
 
   it('lets the unpinned layouts win the panel opacity outright', () => {
@@ -130,8 +138,8 @@ describe('pinned board sequence', () => {
     }
   });
 
-  it('opens every panel on the poster path, where nothing drives them', () => {
-    reducedMotion.value = true;
+  it('opens every panel where nothing drives them', () => {
+    narrow.value = true;
     const { container } = render(<PinnedBoardSequence bands={bands} />);
 
     for (const panel of Array.from(
@@ -157,12 +165,26 @@ describe('pinned board sequence', () => {
     ).toHaveAttribute('data-pinned-active', bands[0]!.id);
   });
 
-  it('names the highlighted subject from the capture, in the panel', () => {
+  it('makes every panel name its OWN subject, from the capture', () => {
+    // Unpinned, all three panels are on screen at once; gating the subject on
+    // "am I the active panel" left two of them anonymous and put the third
+    // panel's name under the first panel's copy.
     const { container } = render(<PinnedBoardSequence bands={bands} />);
-    const subject = container.querySelector('[data-pinned-panel-subject]');
+    const subjects = Array.from(
+      container.querySelectorAll('[data-pinned-panel-subject-label]')
+    ).map(node => node.textContent);
 
-    expect(subject).not.toBeNull();
-    expect(subject!.textContent).toContain('need you');
+    expect(subjects).toHaveLength(bands.length);
+    expect(new Set(subjects).size).toBe(bands.length);
+    expect(subjects[0]).toContain('need you');
+    for (const panel of Array.from(
+      container.querySelectorAll('[data-pinned-panel]')
+    )) {
+      expect(
+        panel.querySelector('[data-pinned-panel-subject]'),
+        panel.getAttribute('data-pinned-panel') ?? ''
+      ).not.toBeNull();
+    }
   });
 
   it('holds every rendered panel to its declared copy budget', () => {

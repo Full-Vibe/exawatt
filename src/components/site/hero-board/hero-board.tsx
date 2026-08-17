@@ -67,8 +67,10 @@ export const HERO_BOARD_LIVE_MIN_WIDTH = 768;
 export type HeroBoardMode = 'live' | 'poster';
 
 /** Resolved on the FIRST client render, like `usePrefersReducedMotion`, so the
- *  poster and the canvas never trade places after paint. */
-function useNarrowViewport(): boolean {
+ *  poster and the canvas never trade places after paint. Exported because the
+ *  pinned sequence takes the same fork: below this width there is no live
+ *  board to drive, so there is nothing for a scroll listener to do. */
+export function useNarrowViewport(): boolean {
   const query = `(max-width: ${HERO_BOARD_LIVE_MIN_WIDTH - 1}px)`;
   return useSyncExternalStore(
     onChange => {
