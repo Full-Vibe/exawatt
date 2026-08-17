@@ -697,6 +697,35 @@ Implementation record (landed 2026-07-10):
     repo with this many concurrent worktrees a checkout is stale within
     minutes, and `agent:land`'s own rebase does not happen until the end.
 
+  - **The third member of the family, and the dangerous one: `git stash`.**
+    The first two cost attempts. This one can cost WORK. A worktree gives
+    each agent its own branch, index and working tree, so it is natural to
+    assume the stash is private too — it is not. There is ONE stash stack
+    under the common Git directory, shared by every worktree. `git stash
+    pop` takes `stash@{0}`, whoever pushed it last, so with two dozen live
+    worktrees it can drop another session's half-finished work into your
+    tree, and into `master` if you resolve the conflicts and commit; `drop`
+    and `clear` destroy it outright. Another agent hit exactly that on
+    2026-08-16, popping `agent/oss-wp5a-ci`'s stash into its own tree with
+    conflicts. The rule is now in `AGENTS.md` beside "never `git add -A`",
+    because it is the same rule: **in a shared checkout, never reach for a
+    command whose target is "the most recent one" rather than a name you
+    chose.** `stash@{0}`, like `-A`, means "whatever happens to be there".
+    The safe substitutes are a throwaway detached worktree for reading a
+    baseline (`git worktree add ../exawatt-baseline-<slug> --detach
+    origin/master`) and a commit on your own `agent/*` branch for setting
+    work aside — which is what the delivery queue wants regardless.
+
+  - **This session's stash audit.** Two `git stash` uses happened here
+    before the hazard was known, both scoped and immediately popped: one to
+    compare a fix against its pre-fix behaviour, one around a formatting
+    check. Audited afterwards on request. All twelve files across the three
+    landed commits (`d81db9d`, `dbdaa53`, `2c87aa68`) are in scope and no
+    foreign file appears in any of them; nothing of this session's work went
+    missing; and the other session's entry is still on the stack, intact and
+    unconsumed. No harm done, and the near miss is why the rule is written
+    down rather than remembered.
+
 
 - 2026-08-16 (S6.1.1, landed — FIX-002 closed a second time): **the geometry
   was never wrong. The selection was taken back after the arrow key set it,
