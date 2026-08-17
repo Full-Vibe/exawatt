@@ -725,6 +725,37 @@ Implementation record (landed 2026-07-10):
     keyboard-only browser test could not have caught this, and neither could
     a unit test; the missing ingredient was a pointer that does nothing.
 
+  - **Boyscout, found by the gate that would not stay green: the re-sort
+    glide had stopped animating, and the glide gate could not see it.**
+    Landing this fix took several attempts on a machine running many agent
+    worktrees, and the pre-existing glide gate kept failing. It was not
+    contention. S6.3's FLIP caches one ref callback per tile so React keeps
+    the same ref attached — a fresh closure per render makes React detach
+    and re-attach every ref, and every detach drops the tile's prior rect.
+    S6.3.1's cache **evicted itself on detach**, which inverts the
+    optimisation into its opposite: one detach (React Strict Mode
+    double-invokes refs on every dev mount, which is enough) evicts the
+    callback, the next render builds a fresh closure, React detaches and
+    re-attaches, which evicts again — a cycle with no exit. `rects` was
+    therefore empty at the start of every layout effect, every tile looked
+    like a tile that had just arrived, and the re-sort snapped in silence.
+    Instrumenting the hook showed it directly: `{orderChanged:true,
+    animate:true, nodes:10, rects:0}`, ten `detach` calls between every pair
+    of renders. The cache is no longer dropped on detach (the rect and timer
+    cleanup stay, so a tile that really left re-enters with its entrance).
+    Pinned by `use-flip-tiles.test.tsx`, which asserts callback identity
+    survives a render, a detach, and a re-sort, and which fails on the old
+    behaviour. The GATE also changed, because it had a blind spot wide
+    enough for this to walk through: it read computed transforms once, 80ms
+    after the click, so it both missed real glides on a slow machine and
+    could pass on a lucky sample. It now records the FLIP wrapper's own
+    `transform` transition EVENTS, armed before the click — events are
+    queued as tasks, so they survive a starved renderer, where per-frame
+    sampling cannot (frames get further apart than the 320ms animation is
+    long). Only the slot counts; the tile button inside it runs its own
+    entrance and selection transforms and must never be mistaken for a
+    glide.
+
 - 2026-08-16 (triage, feedback row
   `62a80e43-8d44-4d8c-855d-2c27a71de2ce`, operator on dogfood 0.1.10):
   **FIX-002 is reopened at a Project boundary.** ArrowDown from the last
