@@ -5,9 +5,14 @@ import { TestAuthBridge } from '@/components/workspace/test-auth-bridge';
 import { WorkspaceScopeGate } from '@/lib/tenancy/workspace-scope-gate';
 import { DemoWorkspaceClient } from '@/lib/demo-workspace/demo-workspace-client';
 
+// noindex: the workspace is the app itself. It sits outside the auth gate so
+// the Electron renderer works with the network down (ENG-016 D18), which also
+// leaves it crawlable, so indexability is refused in metadata rather than by
+// routing. Same posture as `/hud-gallery` and `/usage`.
 export const metadata: Metadata = {
   title: 'Agent',
   description: 'Agent terminal workspace',
+  robots: { index: false, follow: false },
 };
 
 export default function WorkspacePage() {

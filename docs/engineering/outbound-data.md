@@ -172,15 +172,28 @@ is dashboard state and is not verifiable from this repository.
 - **Sent** (≤32 KB JSON): the durable session key, **the Project display name
   in cleartext**, the current label, the **initial operator instruction**, and
   **up to eight recent operator prompts** (≤1600 characters each) with
-  timestamps. No redaction is applied on this path.
+  timestamps. Every instruction is passed through
+  `redactContextEvidence` first (`context-summarizer.ts`), which replaces PEM
+  private-key blocks, `sk-`/`sk-ant-`/`xox*`/`gh[pousr]_`/`npm_`/`AIza`/`AKIA`
+  tokens, and Exawatt scratch paths before the text is ever buffered. Corrected
+  2026-08-16: this bullet previously read "No redaction is applied on this
+  path", which the code has disproved since both entry points (`seedFromTask`
+  and the submitted-input path) started routing through the redactor. The
+  Project display name is still sent in cleartext, and redaction is a secret
+  filter, not anonymization: prose you typed leaves as prose.
 - **Onward**: the request JSON is forwarded verbatim as the user message to
   `api.anthropic.com/v1/messages` (`ANTHROPIC_CONTEXT_MODEL ??
   ANTHROPIC_SUMMARY_MODEL ?? claude-haiku-4-5`), using Exawatt's key.
 - **Purpose**: the label on an Agent tab and Session.
 - **Default**: on, and only when signed in.
-- **Off**: `EXAWATT_CONTEXT_LABELS=0` or `EXAWATT_SUMMARIES=0`;
-  `EXAWATT_CONTEXT_LABEL_ENDPOINT` redirects it. **There is no user-facing
-  toggle** — a known gap, and the highest-exposure hosted path in the app.
+- **Off**: Settings → Privacy → **Session context labels**
+  (`contextLabels.hosted`), enforced at the boundary — off assembles no
+  evidence and constructs no request. `EXAWATT_CONTEXT_LABELS=0` or
+  `EXAWATT_SUMMARIES=0` remain the environment overrides;
+  `EXAWATT_CONTEXT_LABEL_ENDPOINT` redirects it. Corrected 2026-08-16: this
+  bullet still said there was no user-facing toggle, which the Known gaps
+  section below has recorded as closed since 2026-08-07 (ENG-030 OS1.5). It
+  remains the highest-exposure Exawatt-hosted path in the app.
 - **Retention**: a per-user quota row (`claim_context_label_quota`); the
   evidence itself is not persisted by the route. Anthropic's retention for API
   traffic applies upstream.
@@ -408,8 +421,13 @@ development.
   scrollback is read and no recap process is spawned; in-flight output is
   discarded. `EXAWATT_SUMMARIES=0` survives as the environment override.
 - The update check cannot be disabled from the UI.
-- The Privacy page must be reconciled with this manifest in the same release
-  that ships analytics (ENG-030 OS1.4, decision `0034`). Until then, treat this
-  file as the accurate one.
+- ~~The Privacy page must be reconciled with this manifest in the same release
+  that ships analytics (ENG-030 OS1.4, decision `0034`).~~ **Closed
+  2026-08-16:** `/privacy` and `/terms` were rewritten against this file and
+  against `OUTBOUND_CONTROLS`, and `src/app/legal-surfaces.test.ts` now pins
+  the load-bearing claims to the same contracts, so the pages cannot silently
+  drift from the code again. That audit also corrected two stale sentences in
+  section 2 of *this* file; a manifest declared canon still has to be read
+  against the source.
 - Retention windows for PostHog and for Anthropic API traffic are vendor
   settings and are not verifiable from this repository.
