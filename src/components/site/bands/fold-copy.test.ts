@@ -8,6 +8,7 @@ import {
   DEFAULT_FOLD_CLOSE_VARIANT,
   FOLD_CLOSE_VARIANTS,
   FOLD_FORBIDDEN,
+  READER_AS_BOTTLENECK,
   closeWords,
   foldBudget,
   foldCloseVariant,
@@ -67,36 +68,68 @@ describe('fold and close copy', () => {
     }
   });
 
-  it('develops both directions the operator selected', () => {
-    const headlines = FOLD_CLOSE_VARIANTS.map(v => v.headline.join(' '));
-
-    expect(
-      headlines.filter(line =>
-        line.includes('One agent you can watch. Two hundred you cannot.')
-      ).length
-    ).toBeGreaterThanOrEqual(1);
-    expect(
-      headlines.filter(line => line.includes('Command a fleet of 100 agents.'))
-        .length
-    ).toBeGreaterThanOrEqual(1);
+  it('never makes the reader the thing that fails', () => {
+    // operator, 2026-08-17, rejecting the first four variants: "'Two hundred
+    // you cannot' - are you trying to pitch me that I can't watch 200 agents?"
+    // The enemy is the old way of working and the tools that have not kept up.
+    for (const variant of FOLD_CLOSE_VARIANTS) {
+      const prose = variantProse(variant).toLowerCase();
+      for (const shape of READER_AS_BOTTLENECK) {
+        expect(prose, `${variant.id} / ${shape}`).not.toContain(shape);
+      }
+    }
   });
 
-  it('gives the thesis line a genuine two-way door', () => {
-    const thesis = 'The economy is refactoring.';
+  it('frames a trajectory, today into tomorrow, in every fold', () => {
+    for (const variant of FOLD_CLOSE_VARIANTS) {
+      const fold = [
+        variant.kicker ?? '',
+        ...variant.headline,
+        ...variant.subhead,
+      ]
+        .join(' ')
+        .toLowerCase();
 
-    // At least one variant keeps it as the h1 proper.
-    const asHeadline = FOLD_CLOSE_VARIANTS.filter(v =>
-      v.headline.join(' ').includes(thesis)
-    );
-    // At least one demotes it to a small kicker above a control-thesis h1.
-    const asKicker = FOLD_CLOSE_VARIANTS.filter(v =>
-      v.kicker?.includes(thesis)
-    );
+      expect(fold, variant.id).toMatch(
+        /\b(tomorrow|about to|will run|next year)\b/u
+      );
+    }
+  });
 
-    expect(asHeadline.length).toBeGreaterThanOrEqual(1);
-    expect(asKicker.length).toBeGreaterThanOrEqual(1);
-    for (const variant of asKicker) {
-      expect(variant.headline.join(' '), variant.id).not.toContain(thesis);
+  it('names the tools as the bottleneck somewhere in every arrangement', () => {
+    for (const variant of FOLD_CLOSE_VARIANTS) {
+      expect(variantProse(variant).toLowerCase(), variant.id).toMatch(
+        /your tools/u
+      );
+    }
+  });
+
+  it('reaches past the single operator, to the team, in every fold', () => {
+    for (const variant of FOLD_CLOSE_VARIANTS) {
+      const fold = [
+        variant.kicker ?? '',
+        ...variant.headline,
+        ...variant.subhead,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      expect(fold, variant.id).toMatch(/your team/u);
+    }
+  });
+
+  it('keeps the kicker slot working without letting the thesis lead', () => {
+    // The mechanism stays, because demoting a clause is a real arrangement
+    // (B hands the whole h1 to the future number). What it must never do is
+    // put the vision line back in the top slot, which the operator's own
+    // draft integrated into the flow instead.
+    const withKicker = FOLD_CLOSE_VARIANTS.filter(variant => variant.kicker);
+
+    expect(withKicker.length).toBeGreaterThanOrEqual(1);
+    for (const variant of withKicker) {
+      expect(variant.kicker!.toLowerCase(), variant.id).not.toContain(
+        'the economy is refactoring'
+      );
     }
   });
 

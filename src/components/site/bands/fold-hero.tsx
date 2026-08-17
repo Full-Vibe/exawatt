@@ -19,11 +19,12 @@ const FOLD = bandById('fold');
  * one primary button, and the requirement line at that button. Under 26 words
  * of reading copy, enforced in `fold-copy.test.ts` rather than intended.
  *
- * TWO-TONE HEADLINE. Where the headline runs to two sentences, the last line
- * is full strength and the setup before it is set back. That is the same
+ * TWO-TONE HEADLINE. Where the headline runs to two lines, the last line is
+ * full strength and the setup before it is set back. That is the same
  * treatment the brief specifies for the thesis band, and it puts the weight on
- * the half that is the argument: "Two hundred you cannot", not "One agent you
- * can watch".
+ * the half that is the payoff: "Tomorrow you will run 10,000.", not "Today you
+ * run 10 agents." Both halves stay at 60px on purpose, because the honesty of
+ * the big number comes from the pair, not from the number.
  *
  * The short-viewport rules (`globals.css`, `max-height: 520px`) are reused by
  * class name rather than re-authored, so a laptop at 1280x800 with browser
@@ -50,9 +51,9 @@ export function FoldHero({
       <BandContent className="home-hero-content gap-6" data-fold-content>
         {/* The kicker is a SENTENCE, so it is set in the reading face. The
             design system reserves mono for tracked micro-labels at 11px and
-            below; the vision line demoted to 12px mono read as a code comment
-            and made the demotion look worse than it is. It sits tight above
-            the headline rather than as a separate block. */}
+            below; a demoted line in 12px mono read as a code comment and made
+            the demotion look worse than it is. It sits tight above the
+            headline rather than as a separate block. */}
         <div className="flex flex-col items-center gap-2 sm:gap-3">
           {copy.kicker ? (
             <p

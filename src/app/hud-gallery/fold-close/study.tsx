@@ -1,12 +1,16 @@
 'use client';
 
 /**
- * Fold and close copy study (ENG-031 W3).
+ * Fold and close copy study (ENG-031 W3, reframed W3b).
  *
  * FOUR complete arrangements of the fold and the closing band, at real type
  * scale, in the real band components, under the real sticky header. Not a
  * mock: this page renders `BandSection` + `FoldHero` + `CloseBand` exactly as
  * the homepage will, so what the operator reads here is what ships.
+ *
+ * All four are developments of ONE frame, the operator's own draft: today into
+ * tomorrow, the tools as the bottleneck, the team's fleets, one direct CTA.
+ * The copy and the reasoning live in `fold-copy.ts`.
  *
  * The chrome is one row of pills on purpose. The operator does not want to
  * read a page of explanation to evaluate a page.
@@ -54,8 +58,9 @@ export function FoldCloseStudy() {
     return {
       fold: selected,
       // The closing line follows the fold unless it is overridden. Overriding
-      // it is the whole two-way-door question: is the thesis worth more as a
-      // kicker at 12px or as the closing line at 72px?
+      // it is a real question and it stays independent: any fold can be read
+      // against any of the four closing lines, including the two that carry
+      // the thesis at 72px.
       close: variantId(searchParams.get('close')) ?? selected,
     };
   }, [searchParams]);
