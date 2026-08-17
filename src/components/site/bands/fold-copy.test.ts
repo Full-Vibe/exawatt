@@ -104,7 +104,12 @@ describe('fold and close copy', () => {
     }
   });
 
-  it('reaches past the single operator, to the team, in every fold', () => {
+  it('addresses one reader and one fleet, never a possessive team', () => {
+    // Operator, 2026-08-17, on the shipped study: "Exawatt is the command
+    // interface for your agent fleet." Singular, no "team's". The climb from
+    // 10 to 10,000 is what reaches past the single operator; the product
+    // sentence stays addressed to the person reading it. The possessive made
+    // a reader count other people's fleets before running one of their own.
     for (const variant of FOLD_CLOSE_VARIANTS) {
       const fold = [
         variant.kicker ?? '',
@@ -114,7 +119,8 @@ describe('fold and close copy', () => {
         .join(' ')
         .toLowerCase();
 
-      expect(fold, variant.id).toMatch(/your team/u);
+      expect(fold, variant.id).not.toContain("team's");
+      expect(fold, variant.id).not.toMatch(/agent fleets/u);
     }
   });
 

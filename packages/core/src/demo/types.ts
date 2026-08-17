@@ -84,9 +84,14 @@ export interface DemoInitiative {
 }
 
 export interface DemoWorkspaceProject {
-  /** Stable key, used everywhere agents reference their Project. */
+  /** Stable slug, used everywhere agents reference or resolve their Project. */
   key: string;
-  /** Repo-style display name. */
+  /**
+   * The DISPLAY name a person reads: plain-English work, never a repo slug
+   * (operator, 2026-08-17). `key` and `dir` carry the slug; this carries the
+   * work. A stranger looking at the Fleet board should read what the team is
+   * doing, not what the checkout is called.
+   */
   name: string;
   /** Plausible local checkout path (stable Project id for cwd resolution). */
   dir: string;

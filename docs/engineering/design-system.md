@@ -319,6 +319,22 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-08-17 — ENG-031 W2c hero board labels. **A name that carries a surface
+  is not a micro-label.** The marketing board's Project names shipped at 10px
+  `font-mono` with tracking, which is the chrome-micro rung; the operator read
+  them as "mono-spaced and too small". They are now the `section` rung, 18px
+  semibold in the reading face, with the agent and needs-you counts one rung
+  below at `chrome-label`. No new rung and no new colour. The rule this records
+  is a companion to W3's "a sentence is never set in mono": **the chrome-micro
+  mono idiom is for labels a reader skims past, and a label that a stranger
+  must read to understand the surface at all is a typographic element, so it is
+  sized like one.** Two mechanical consequences worth carrying: an anchored
+  label sized up must re-derive its offset from the anchor's own radius, not
+  from a constant, or it collides with the neighbour it never touched at the
+  smaller size; and a label panel that overlays live content goes to 93% of the
+  ground rather than 82%, because a translucent panel over a status mark reads
+  as a rendering bug. Evidence: `/hud-gallery/hero-board` on classic, night and
+  air, and `public/images/hero-board-poster.jpg`.
 - 2026-08-17 — ENG-031 W3 fold and close. **The `site-closing` rung is now
   RENDERED, and measured.** All four copy variants compute the closing line to
   exactly 72px / 72px / weight 700 at 1440x900 and 390x844, DPR 2, which is 4x

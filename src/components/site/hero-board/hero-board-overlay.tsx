@@ -116,7 +116,12 @@ export function HeroBoardOverlay({
         node.style.opacity = '0';
         continue;
       }
-      const lift = anchor.radius * 0.55 + 12;
+      // The label sits over the TOP OF ITS OWN circle, not above it. At the
+      // Fleet altitude ten circles leave about twelve pixels of gap between
+      // rows, so a label parked above its circle lands inside the one above.
+      // A fraction of the radius keeps it tucked into the empty crown of its
+      // own zone, where the marks are not, at every altitude.
+      const lift = anchor.radius * 0.46 + 10;
       node.style.transform = `translate3d(${Math.round(anchor.x)}px, ${Math.round(
         anchor.y - lift
       )}px, 0) translate(-50%, -100%)`;
@@ -275,6 +280,10 @@ export function HeroBoardOverlay({
       label: theme.label,
       muted: theme.labelMuted,
       panel: spatialColorWithAlpha(theme.canvas, 0.82),
+      // The Project name chip sits over its own zone fill, so it carries a
+      // heavier panel than the floating card: at 18px it is the first thing a
+      // stranger reads and it may not go translucent over a mark.
+      namePanel: spatialColorWithAlpha(theme.canvas, 0.93),
       hairline: spatialColorWithAlpha(theme.grid, 0.9),
     }),
     [theme]
@@ -331,7 +340,14 @@ export function HeroBoardOverlay({
 
       {projected ? (
         <>
-          {/* Project circles, named. */}
+          {/* Project circles, named. The name is the biggest thing on the
+              board that is not the board: it is what makes a stranger's first
+              two seconds work, so it is set as a primary typographic element
+              (18px semibold sans, the `section` rung) rather than as chrome.
+              Operator, 2026-08-17: "the labels are mono-spaced and too small".
+              Mono is reserved for tracked micro-labels at 11px and below, and
+              a Project name is neither. The counts stay a size below it, so
+              the pair still reads as one label with a hierarchy inside it. */}
           {capture.zones.map((zone, index) => (
             <div
               key={zone.label}
@@ -339,30 +355,32 @@ export function HeroBoardOverlay({
                 if (node) zoneNodes.current.set(index, node);
                 else zoneNodes.current.delete(index);
               }}
-              className="absolute top-0 left-0 flex flex-col items-center gap-0.5 whitespace-nowrap transition-opacity duration-200"
+              className="absolute top-0 left-0 flex flex-col items-center gap-1 whitespace-nowrap transition-opacity duration-200"
               style={{ opacity: 0, willChange: 'transform' }}
               data-hero-zone-label={zone.label}
             >
               <span
-                className="rounded-sm border px-1.5 py-0.5 font-mono text-chrome-micro tracking-[0.1em]"
+                className="rounded-md border px-2.5 py-1 text-lg leading-tight font-semibold tracking-tight"
                 style={{
                   color: chrome.label,
-                  backgroundColor: chrome.panel,
+                  backgroundColor: chrome.namePanel,
                   borderColor: chrome.hairline,
                 }}
+                data-hero-zone-name
               >
                 {zone.label}
               </span>
               <span
-                className="flex items-center gap-1 font-mono text-chrome-micro"
+                className="flex items-center gap-1.5 text-chrome-label font-medium"
                 style={{ color: chrome.muted }}
+                data-hero-zone-counts
               >
                 {zone.agentCount} agents
                 {zone.needsYou > 0 ? (
                   <>
                     <span
                       aria-hidden
-                      className="inline-block size-1 rounded-full"
+                      className="inline-block size-1.5 rounded-full"
                       style={{ backgroundColor: theme.status['needs-you'] }}
                     />
                     <span style={{ color: theme.status['needs-you'] }}>
