@@ -47,7 +47,20 @@ export function useFlipTiles(orderKey: string, animate: boolean) {
   // One stable callback per tile. A fresh closure each render makes React
   // detach and re-attach every ref on every render — 2N ref calls for no
   // change — so they are cached by key and reused.
-  const callbacks = useRef(new Map<string, (node: HTMLElement | null) => void>());
+  //
+  // The cache is NEVER dropped on detach, and that is the whole point of it.
+  // Deleting it there inverted the optimisation into its opposite: any
+  // single detach — Strict Mode's mount double-invoke is enough, and it
+  // happens on every dev mount — evicted the callback, so the next render
+  // built a fresh closure, so React detached and re-attached again, forever.
+  // Each of those detaches cleared `rects`, and a tile with no prior rect
+  // has nothing to glide FROM, so the re-sort silently snapped: the exact
+  // regression `eval:workspace:team`'s glide gate exists to catch, arriving
+  // through the gate's own blind spot. The map dies with the overlay, and
+  // the keys are the tabs open while Team is on screen.
+  const callbacks = useRef(
+    new Map<string, (node: HTMLElement | null) => void>()
+  );
   const registerFlipNode = (key: string) => {
     const existing = callbacks.current.get(key);
     if (existing) return existing;
@@ -55,13 +68,14 @@ export function useFlipTiles(orderKey: string, animate: boolean) {
       if (node) nodes.current.set(key, node);
       else {
         nodes.current.delete(key);
+        // a tile that really left keeps no stale rect: it re-enters with its
+        // entrance, not with a glide from where it used to be
         rects.current.delete(key);
         const timer = timers.current.get(key);
         if (timer !== undefined) {
           window.clearTimeout(timer);
           timers.current.delete(key);
         }
-        callbacks.current.delete(key);
       }
     };
     callbacks.current.set(key, callback);

@@ -104,20 +104,38 @@ try {
 
   // Gate 2+3 — select Activity through the production control; the order
   // changes AND glides.
+  //
+  // The glide is observed through the SLOT's own transform transition,
+  // recorded by a listener armed before the click.
+  //
+  // It used to be read by sampling computed styles once, 80ms after the
+  // click. That is a coin flip on a loaded machine: several concurrent agent
+  // worktrees starve the renderer enough that the whole 320ms animation can
+  // fall between two samples, and the gate then fails for its own reasons
+  // rather than for a regression. Sampling every animation frame does not
+  // fix it either — a starved renderer is exactly the case where frames are
+  // further apart than the animation is long. Transition EVENTS are queued
+  // as tasks and survive that, so they measure the thing itself rather than
+  // a lucky glimpse of it.
+  //
+  // Only the FLIP wrapper counts (`e.target` must BE the slot). The tile
+  // button inside it runs its own entrance and selection transforms, and
+  // those must never be mistaken for a re-sort glide.
+  await page.evaluate(() => {
+    window.__glideSlots = new Set();
+    const record = event => {
+      if (event.propertyName !== 'transform') return;
+      const node = event.target;
+      if (!(node instanceof Element)) return;
+      if (!node.matches('[data-expose-tile-slot]')) return;
+      window.__glideSlots.add(node.getAttribute('data-expose-tile-slot'));
+    };
+    document.addEventListener('transitionrun', record, true);
+    document.addEventListener('transitionstart', record, true);
+  });
   await page.getByRole('radio', { name: 'Activity' }).click();
-  // sample transforms mid-flight: FLIP applies an inverted translate and
-  // releases it over ~320ms, so shortly after the click at least one tile
-  // slot must carry a non-identity transform
-  await page.waitForTimeout(80);
-  const midFlight = await page.evaluate(() =>
-    Array.from(
-      document.querySelectorAll('[data-expose-tile-slot]')
-    ).filter(node => {
-      const transform = getComputedStyle(node).transform;
-      return transform && transform !== 'none';
-    }).length
-  );
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(700);
+  const midFlight = await page.evaluate(() => window.__glideSlots.size);
   const activeOrder = await titles();
   if (activeOrder[0] !== 'Fix Sessions rendering') {
     throw new Error(
