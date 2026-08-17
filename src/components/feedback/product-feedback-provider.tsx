@@ -19,7 +19,9 @@ import {
   MessageSquareWarning,
   X,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { runConfiguredService } from '@/lib/distribution/service-client';
 import type { DiagnosticsReport } from '@/types/electron';
 import type {
   FeedbackKind,
@@ -74,6 +76,8 @@ interface ContextRating {
 }
 
 interface FeedbackContextValue {
+  /** The distributor configured a feedback service for this build. */
+  isAvailable: boolean;
   isAuthenticated: boolean;
   openFeedback: () => void;
   /** ENG-025 F1: the keyboard-first capture bar; no-op when signed out */
@@ -97,6 +101,9 @@ function dataUrlFromFile(file: File): Promise<string> {
 }
 
 export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
+  const distribution = useMemo(() => resolvedDistribution(), []);
+  const feedbackEndpoint = distribution.services.productFeedback;
+  const feedbackAvailable = feedbackEndpoint !== null;
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [open, setOpen] = useState(false);
   const [kind, setKind] =
@@ -137,10 +144,14 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let supabase: ReturnType<typeof createClient>;
-    try {
-      supabase = createClient();
-    } catch {
+    // Capability absence owns the outer edge: a community build must not even
+    // create an account client, much less inspect a cached session or fetch.
+    if (!feedbackEndpoint) {
+      syncSession(null);
+      return;
+    }
+    const supabase = createOptionalClient(distribution);
+    if (!supabase) {
       syncSession(null);
       return;
     }
@@ -151,22 +162,26 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       (_event: AuthChangeEvent, session: Session | null) => syncSession(session)
     );
     return () => subscription.subscription.unsubscribe();
-  }, [syncSession]);
+  }, [distribution, feedbackEndpoint, syncSession]);
 
   useEffect(
     () =>
       window.electron?.menu?.onCommand(command => {
-        if (command === 'submit-feedback' && tokenRef.current) {
+        if (
+          command === 'submit-feedback' &&
+          feedbackAvailable &&
+          tokenRef.current
+        ) {
           setError(null);
           setStatus('idle');
           setOpen(true);
         }
       }),
-    []
+    [feedbackAvailable]
   );
 
   useEffect(() => {
-    if (!window.electron?.feedback?.testMode) return;
+    if (!feedbackEndpoint || !window.electron?.feedback?.testMode) return;
     const install = (event: Event) => {
       const token = (event as CustomEvent<{ accessToken?: unknown }>).detail
         ?.accessToken;
@@ -179,71 +194,78 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     window.addEventListener('exawatt:test-feedback-auth', install);
     return () =>
       window.removeEventListener('exawatt:test-feedback-auth', install);
-  }, []);
+  }, [feedbackEndpoint]);
 
   const submit = useCallback(
     async (
       request: Omit<ProductFeedbackRequest, 'idempotencyKey'>
     ): Promise<boolean> => {
-      const token = tokenRef.current;
-      if (!token) return false;
-      let build: FeedbackBuildInfo | null = null;
-      try {
-        build = (await window.electron?.app?.getBuildInfo?.()) ?? null;
-      } catch {
-        // Build metadata is useful context, never a condition of feedback.
-      }
-      try {
-        const response = await fetch('/api/feedback', {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            ...applyBuildMetadata(request, build),
-            platform:
-              request.platform ??
-              window.electron?.platform ??
-              navigator.platform,
-            idempotencyKey: crypto.randomUUID(),
-          } satisfies ProductFeedbackRequest),
-        });
-        if (response.ok) {
-          window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
-        } else {
-          // ENG-030 OS1.2. Feedback is the channel the external-user audit
-          // found dead; a silent failure here is the one failure that also
-          // destroys the report of itself.
-          captureAnalyticsEvent({
-            name: 'hosted_call_failed',
-            surface: analyticsSurface(),
-            service: 'product_feedback',
-            failure: hostedFailureForStatus(response.status),
-            statusCode: response.status,
-          });
+      const result = await runConfiguredService(
+        feedbackEndpoint,
+        async endpoint => {
+          const token = tokenRef.current;
+          if (!token) return false;
+          let build: FeedbackBuildInfo | null = null;
+          try {
+            build = (await window.electron?.app?.getBuildInfo?.()) ?? null;
+          } catch {
+            // Build metadata is useful context, never a condition of feedback.
+          }
+          try {
+            const response = await fetch(endpoint.url, {
+              method: 'POST',
+              headers: {
+                authorization: `Bearer ${token}`,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                ...applyBuildMetadata(request, build),
+                platform:
+                  request.platform ??
+                  window.electron?.platform ??
+                  navigator.platform,
+                idempotencyKey: crypto.randomUUID(),
+              } satisfies ProductFeedbackRequest),
+            });
+            if (response.ok) {
+              window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
+            } else {
+              // ENG-030 OS1.2. Feedback is the channel the external-user audit
+              // found dead; a silent failure here is the one failure that also
+              // destroys the report of itself.
+              captureAnalyticsEvent({
+                name: 'hosted_call_failed',
+                surface: analyticsSurface(),
+                service: 'product_feedback',
+                failure: hostedFailureForStatus(response.status),
+                statusCode: response.status,
+              });
+            }
+            return response.ok;
+          } catch {
+            captureAnalyticsEvent({
+              name: 'hosted_call_failed',
+              surface: analyticsSurface(),
+              service: 'product_feedback',
+              failure: 'network',
+              statusCode: null,
+            });
+            return false;
+          }
         }
-        return response.ok;
-      } catch {
-        captureAnalyticsEvent({
-          name: 'hosted_call_failed',
-          surface: analyticsSurface(),
-          service: 'product_feedback',
-          failure: 'network',
-          statusCode: null,
-        });
-        return false;
-      }
+      );
+      if (!result.configured) return false;
+      return result.value;
     },
-    []
+    [feedbackEndpoint]
   );
 
   const openFeedback = useCallback(() => {
-    if (!tokenRef.current) return;
+    if (!feedbackAvailable || !tokenRef.current) return;
     setError(null);
     setStatus('idle');
     setOpen(true);
-  }, []);
+  }, [feedbackAvailable]);
 
   // ENG-025 F1 quick capture. The draft survives dismissal and failed sends;
   // the screenshot is captured BEFORE the bar renders so it never contains
@@ -271,7 +293,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
 
   const openQuickCapture = useCallback(
     (kind: QuickFeedbackKind = 'general') => {
-      if (!tokenRef.current) return;
+      if (!feedbackAvailable || !tokenRef.current) return;
       void (async () => {
         setQuickError(null);
         setQuickKind(kind);
@@ -303,7 +325,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         setQuickOpen(true);
       })();
     },
-    []
+    [feedbackAvailable]
   );
 
   useEffect(() => {
@@ -378,7 +400,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
 
   const submitContextRating = useCallback(
     async (rating: ContextRating) => {
-      if (!tokenRef.current) return false;
+      if (!feedbackAvailable || !tokenRef.current) return false;
       const correction =
         rating.betterLabel?.replace(/\s+/g, ' ').trim() || null;
       if (correction) {
@@ -402,7 +424,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [submit]
+    [feedbackAvailable, submit]
   );
 
   const capture = useCallback(async () => {
@@ -467,12 +489,19 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
 
   const contextValue = useMemo<FeedbackContextValue>(
     () => ({
+      isAvailable: feedbackAvailable,
       isAuthenticated,
       openFeedback,
       openQuickCapture,
       submitContextRating,
     }),
-    [isAuthenticated, openFeedback, openQuickCapture, submitContextRating]
+    [
+      feedbackAvailable,
+      isAuthenticated,
+      openFeedback,
+      openQuickCapture,
+      submitContextRating,
+    ]
   );
 
   return (

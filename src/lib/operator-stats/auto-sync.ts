@@ -35,8 +35,9 @@ import {
   hostedFailureForStatus,
   type HostedFailure,
 } from '@/lib/analytics';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
 import { isOperatorAutoPublishEnabled } from '@/lib/hosted-features/contract';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 /** Well past startup so a sync never competes with launch work. */
 export const OPERATOR_STATS_LAUNCH_SYNC_DELAY_MS = 2 * 60_000;
@@ -322,15 +323,15 @@ export function subscribeOperatorStatsSync(listener: () => void): () => void {
  * ------------------------------------------------------------------ */
 
 function defaultDeps(): OperatorStatsSyncDeps | null {
+  const distribution = resolvedDistribution();
+  const endpoint = distribution.services.operatorStats;
+  // Service absence is checked before the desktop bridge, settings, account
+  // session, local scan, or fetch. Community is a true no-op, not signed out.
+  if (!endpoint) return null;
   const scanApi = window.electron?.operatorStats;
   if (!scanApi) return null;
   const settingsBridge = window.electron?.settings;
-  let supabase: ReturnType<typeof createClient> | null;
-  try {
-    supabase = createClient();
-  } catch {
-    supabase = null;
-  }
+  const supabase = createOptionalClient(distribution);
   return {
     isAutoPublishEnabled: async () => {
       if (!settingsBridge) return false;
@@ -359,7 +360,7 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
       return settings.operatorProfile ?? {};
     },
     getHostedProfileState: async accessToken => {
-      const response = await fetch('/api/operator-stats', {
+      const response = await fetch(endpoint.url, {
         method: 'GET',
         headers: { authorization: `Bearer ${accessToken}` },
       });
@@ -385,7 +386,7 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
     },
     scan: (since, timezone) => scanApi.scan(since, timezone),
     post: async (body, accessToken) => {
-      const response = await fetch('/api/operator-stats', {
+      const response = await fetch(endpoint.url, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${accessToken}`,
@@ -468,6 +469,7 @@ export function startOperatorStatsAutoSync(
   run: () => Promise<OperatorStatsSyncResult> = runOperatorStatsSync
 ): (() => void) | null {
   if (typeof window === 'undefined') return null;
+  if (!resolvedDistribution().services.operatorStats) return null;
   const settingsBridge = window.electron?.settings;
   if (!window.electron?.operatorStats || !settingsBridge) return null;
 

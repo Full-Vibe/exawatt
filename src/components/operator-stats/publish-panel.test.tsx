@@ -7,13 +7,54 @@ import {
   LINK_SUCCESS_MESSAGES,
 } from '@/components/auth/callback-failures';
 
-const { client } = vi.hoisted(() => ({
+const { client, distributionState, createOptionalClient } = vi.hoisted(() => ({
   client: { current: null as ReturnType<typeof buildClient> | null },
+  distributionState: { current: null as unknown },
+  createOptionalClient: vi.fn(() => client.current),
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => client.current,
+  createOptionalClient,
 }));
+
+vi.mock('@/lib/distribution/resolved', () => ({
+  resolvedDistribution: () => distributionState.current,
+}));
+
+const OPERATOR_STATS_URL = 'https://services.example.test/operator-stats';
+
+function distribution(
+  operatorStats: object | null = {
+    url: OPERATOR_STATS_URL,
+    protocolVersion: 1,
+  }
+) {
+  return {
+    schemaVersion: 1,
+    brand: null,
+    account: operatorStats
+      ? {
+          supabaseUrl: 'https://account.example.test',
+          supabaseAnonKey: 'distribution-anon-key',
+          recoveryOrigin: 'https://app.example.test',
+        }
+      : null,
+    services: {
+      productFeedback: null,
+      operatorStats,
+      projects: null,
+      preferences: null,
+      accountData: null,
+    },
+    enrichment: {
+      contextLabels: null,
+      conversationSummaries: null,
+      goalVisuals: null,
+    },
+    analytics: null,
+    updates: null,
+  };
+}
 
 vi.mock('@/lib/tenancy/tenancy-provider', () => ({
   useOptionalWorkspaceTenancy: () => null,
@@ -226,6 +267,8 @@ function electronPanel(
 }
 
 beforeEach(() => {
+  distributionState.current = distribution();
+  createOptionalClient.mockClear();
   client.current = buildClient();
   at('/leaderboard');
   syncStore.reset();
@@ -479,6 +522,26 @@ describe('the preview ritual is gone', () => {
   });
 });
 
+describe('an unconfigured distribution', () => {
+  it('renders an honest unavailable state before account auth or fetch', async () => {
+    distributionState.current = distribution(null);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await mount();
+
+    expect(
+      screen.getByRole('heading', { name: 'Operator publishing unavailable' })
+    ).toBeTruthy();
+    expect(screen.getByText(/Not configured in this build/)).toBeTruthy();
+    expect(screen.getByText(/local usage stays on this device/)).toBeTruthy();
+    expect(createOptionalClient).not.toHaveBeenCalled();
+    expect(client.current!.auth.getSession).not.toHaveBeenCalled();
+    expect(client.current!.auth.getUserIdentities).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('publishing paused (the off state)', () => {
   it('defaults off with the consent disclosure inline — absent means paused', async () => {
     electronPanel(); // no preference recorded at all
@@ -652,7 +715,7 @@ describe('removing the public profile stays a distinct act', () => {
     });
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      '/api/operator-stats',
+      OPERATOR_STATS_URL,
       expect.objectContaining({ method: 'DELETE' })
     );
     expect(settingsBridge.recordOperatorProfileState).toHaveBeenCalledWith({

@@ -77,6 +77,11 @@ the packaged payload so the public-tree-only desktop rule can be inspected at
 the artifact boundary; the hosted web delivery may compose a private route
 overlay. Agent Source WebSockets are separate from service origins and remain
 available to community builds for operator-configured Gateways.
+Renderer product-service callers consume only the corresponding versioned
+`services.*` endpoint. Product feedback and operator-stat publication check
+capability absence before creating an account client, reading auth, scheduling
+or scanning, and fetching; community renders an explicit unavailable state
+instead of misreporting the absent service as signed out or failed.
 
 ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.4
 provide strict versioned Classic/Air/Night definitions, a deterministic
@@ -257,7 +262,10 @@ the last-good durable label. PTY output is not label evidence. Hosted failure
 retains existing state rather than invoking a competing local summarizer
 (decision `0019`). Explicit label votes/corrections and general product reports
 use an authenticated Supabase-backed feedback intake with private optional
-attachments; inference excerpts themselves are not persisted.
+attachments. The renderer submits through the distribution-declared
+`services.productFeedback` V1 endpoint; without it the intake is unavailable
+before account/session work and no request is possible. Inference excerpts
+themselves are not persisted.
 
 Goal visual identity is a downstream projection of that accepted Session
 context, never a second classifier. Electron main creates a new revision only
@@ -307,8 +315,12 @@ beside that preference in Electron's settings store, not renderer
 port, so origin-scoped storage is not durable application state. An owner-only
 authenticated metadata read recovers the original hosted `joined_at` boundary
 for profiles created before this repair; new profiles anchor at the switch-on
-instant and never upload pre-consent history. The renderer owns Supabase auth,
-GitHub identity resolution, and the coalesced launch/interval/manual POST.
+instant and never upload pre-consent history. The renderer owns account auth,
+GitHub identity resolution, and the coalesced launch/interval/manual POST
+through the distribution-declared `services.operatorStats` V1 endpoint. With
+that capability absent it creates no account client, reads no auth, installs no
+schedule, scans nothing, and reports publishing as unavailable rather than
+signed out.
 Pausing stops future writes, while disabling public visibility also pauses and
 does not delete or mutate local history.
 
