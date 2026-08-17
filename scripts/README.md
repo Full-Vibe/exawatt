@@ -73,6 +73,7 @@ such without first revalidating their fixture and owner:
 - `pace-opportunity-shot.mjs`
 - `palette-projects-eval.mjs`
 - `registry-e2e-eval.mjs`
+- `renderer-session-lifecycle-leak-probe.mjs`
 - `roadmap-rail-eval.mjs`
 - `session-lifecycle-leak-probe.mjs`
 - `terminal-cost-probe.mjs`
