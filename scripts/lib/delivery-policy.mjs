@@ -96,6 +96,29 @@ export const SURFACE_GATES = [
       file === 'src/components/shortcuts/shortcut-provider.tsx',
   },
   {
+    gate: 'eval:electron:packaged',
+    why: 'only a packaged build runs the standalone renderer, and only running it distinguishes a renderer that serves from one that died',
+    // BUG-036: `next` 16.2.9 → 16.3.1 arrived in a dependency-hardening commit
+    // that touched package.json, pnpm-lock.yaml and three audit scripts. The
+    // new @swc/helpers resolves under `module-sync` at runtime and under
+    // `require` in the trace, so the standalone renderer exited 1 in every
+    // packaged build and the app booted to `Command engine paused`. Nothing
+    // routed there: no Electron path, no renderer path, no UI path changed.
+    //
+    // A LOCKFILE is therefore a first-class trigger here. So is anything that
+    // decides what the renderer payload contains or how it is sealed. This is
+    // the one Electron gate the floor can genuinely run unattended — it needs
+    // no dev server, and the eval builds its own package when the worktree has
+    // none — which is why it is enforced rather than quarantined.
+    match: file =>
+      file === 'pnpm-lock.yaml' ||
+      file === 'next.config.ts' ||
+      file === 'electron-builder.yml' ||
+      file === 'scripts/prepare-electron-renderer.mjs' ||
+      file === 'scripts/lib/renderer-archive.mjs' ||
+      file === 'scripts/electron-packaged-smoke.mjs',
+  },
+  {
     gate: 'eval:workspace:launcher',
     why: 'the New Agent launcher has a deterministic state/interaction rig',
     // option-menu is the launcher's list renderer (decision `0033`, one menu

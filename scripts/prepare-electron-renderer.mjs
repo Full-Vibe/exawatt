@@ -16,6 +16,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 
+import { assertRendererArchiveServes } from './lib/renderer-archive.mjs';
+
 const execFileAsync = promisify(execFile);
 
 const root = process.cwd();
@@ -92,6 +94,27 @@ await execFileAsync('/usr/bin/ditto', [
   renderer,
   archive,
 ]);
+
+// Nothing is sealed until it has been booted (BUG-036). `output: 'standalone'`
+// builds this payload by TRACING, and the trace resolves export conditions the
+// runtime does not use — `@swc/helpers` was traced as CJS and required as ESM,
+// so the server exited 1 on its first require and the packaged app showed
+// `Command engine paused` with no build-time signal at all. The archive is
+// extracted outside the repository and actually started, because a payload
+// nobody runs is a payload nobody checks (incident `0010`).
+//
+// renderer.sha256 is written LAST and only on success: it is the cache key the
+// main process reads, so an archive without it can never be served, and a
+// failed boot leaves no half-valid pair behind.
+try {
+  const { ms } = await assertRendererArchiveServes(archive, {
+    label: 'the standalone renderer archive',
+  });
+  console.log(`[electron-renderer] archive served /workspace in ${ms}ms`);
+} catch (error) {
+  await rm(archiveDir, { recursive: true, force: true });
+  throw error;
+}
 
 const hash = createHash('sha256');
 for await (const chunk of createReadStream(archive)) hash.update(chunk);
