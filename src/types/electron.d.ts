@@ -12,6 +12,7 @@ import type {
   AgentSourceSnapshot,
   AgentSourceState,
   AgentLaunchConfigurationInput,
+  KeyboardShortcutOverridesV1,
   LaunchConfigurationPoolV1,
   PtyHarness,
   DistributionContractV1,
@@ -661,6 +662,9 @@ export interface ExawattSettings {
   };
   launchConfigurations?: LaunchConfigurationPoolV1;
   appearance?: AppearancePreferencesV1;
+  /** Per-device keyboard overrides (BUG-044). Absent means this device has
+   *  never stored a choice, which is not the same as storing none. */
+  keyboardShortcuts?: KeyboardShortcutOverridesV1;
 }
 
 export interface ElectronSettingsApi {
@@ -675,6 +679,9 @@ export interface ElectronSettingsApi {
     enabled: boolean
   ) => Promise<ExawattSettings>;
   setGoalVisualsEnabled: (enabled: boolean) => Promise<ExawattSettings>;
+  setKeyboardShortcuts: (
+    overrides: KeyboardShortcutOverridesV1
+  ) => Promise<ExawattSettings>;
   setReentryRecap: (enabled: boolean) => Promise<ExawattSettings>;
   setClaudePlanWindows: (enabled: boolean) => Promise<ExawattSettings>;
   setOperatorAutoPublish: (enabled: boolean) => Promise<ExawattSettings>;

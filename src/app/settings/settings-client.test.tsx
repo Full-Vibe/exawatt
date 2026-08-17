@@ -36,14 +36,17 @@ async function renderSettings() {
   return view;
 }
 
-const { updateKeyboardShortcuts } = vi.hoisted(() => ({
-  updateKeyboardShortcuts: vi.fn(async () => undefined),
+// Overrides are per-device state, not account state (BUG-044): what a rebind
+// has to reach is the device store, and the account sync behind it is
+// best-effort. Asserting the store call is asserting the durable act.
+const { saveShortcutOverrides } = vi.hoisted(() => ({
+  saveShortcutOverrides: vi.fn(async () => undefined),
 }));
 
-vi.mock('@/app/actions/preferences', () => ({
-  getKeyboardShortcuts: vi.fn(async () => []),
-  updateKeyboardShortcuts,
-  resetKeyboardShortcuts: vi.fn(async () => undefined),
+vi.mock('@/lib/shortcuts/preference-source', () => ({
+  loadShortcutOverrides: vi.fn(async () => []),
+  saveShortcutOverrides,
+  resetShortcutOverrides: vi.fn(async () => undefined),
 }));
 
 vi.mock('./appearance-settings', () => ({
@@ -77,7 +80,7 @@ describe('shortcut settings policy', () => {
     for (const definition of defaultShortcuts) {
       shortcutRegistry.register({ ...definition, action: vi.fn() });
     }
-    updateKeyboardShortcuts.mockClear();
+    saveShortcutOverrides.mockClear();
   });
 
   afterEach(() => {
@@ -120,7 +123,7 @@ describe('shortcut settings policy', () => {
     expect(save).toBeEnabled();
     fireEvent.click(save);
 
-    await waitFor(() => expect(updateKeyboardShortcuts).toHaveBeenCalledOnce());
+    await waitFor(() => expect(saveShortcutOverrides).toHaveBeenCalledOnce());
     expect(shortcutRegistry.getEffectiveKeys('command-terminal')).toEqual({
       key: '7',
       modifiers: ['meta', 'shift'],
@@ -191,7 +194,7 @@ describe('shortcut settings policy', () => {
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save).toBeEnabled();
     fireEvent.click(save);
-    await waitFor(() => expect(updateKeyboardShortcuts).toHaveBeenCalledOnce());
+    await waitFor(() => expect(saveShortcutOverrides).toHaveBeenCalledOnce());
     expect(shortcutRegistry.getEffectiveKeys('command-terminal')).toEqual({
       key: '4',
       modifiers: ['meta', 'shift'],

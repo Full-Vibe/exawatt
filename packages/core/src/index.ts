@@ -65,4 +65,5 @@ export * from './release-provenance';
 export * from './surface-names';
 export * from './shortcuts/command-verbs';
 export * from './shortcuts/accelerator';
+export * from './shortcuts/keyboard-overrides';
 export * from './distribution/index';

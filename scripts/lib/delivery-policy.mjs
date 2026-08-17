@@ -87,6 +87,17 @@ export const SURFACE_GATES = [
     // presses ⌘[ and ⌘] against a real router round trip, and the defect it
     // caught lived in `nav-history.ts` — a file the map did not name, so the
     // change that could have broken it never had to declare this gate.
+    //
+    // NOT quarantined despite BUG-045, on purpose. Under the DEFAULT community
+    // contract the script stops at a `Quick feedback` dialog that build cannot
+    // open (`openQuickCapture` refuses when `services.productFeedback` is
+    // null) — reproduced identically on a clean `origin/master` baseline, so
+    // it is the gate's assumption, the BUG-043 class one script further out.
+    // But the failure is contract-shaped, not universal: quarantining would
+    // drop this surface's only real ⌘[/⌘] and application-menu coverage for
+    // every distribution, to route around a step that is wrong in one. It
+    // stays enforced and is waived per landing until BUG-045 makes the script
+    // ask the contract what it may assert.
     match: file =>
       file === 'electron/main/application-menu.ts' ||
       file === 'packages/core/src/shortcuts/command-verbs.ts' ||
@@ -334,6 +345,37 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       id: 'verify:community-build',
       command: 'pnpm',
       args: ['run', 'verify:community-build'],
+    });
+  }
+
+  // BUG-044: the runtime half of the same defect. A build that compiles still
+  // 500s on the first REQUEST if a server action or route handler demands the
+  // account capability, and `verify:community-build` cannot see that, because
+  // those paths only execute when something calls them. The operator's
+  // workspace logged two 500s per launch for exactly this reason while the
+  // build was green.
+  //
+  // The check owns a CENSUS as well as a behaviour assertion: a newly written
+  // server action or route handler fails it until its author declares what the
+  // entrypoint does with no account service. That is what stops the class from
+  // regrowing one 500 at a time. Separate from the build check above because
+  // its path set is different and a shortcut-store edit should not pay for a
+  // full `next build`.
+  if (
+    paths.some(
+      file =>
+        file.startsWith('src/app/') ||
+        file.startsWith('src/lib/supabase/') ||
+        file.startsWith('src/lib/distribution/') ||
+        file.startsWith('src/lib/shortcuts/') ||
+        file.startsWith('packages/core/src/distribution/') ||
+        file === 'scripts/distribution.official.example.json'
+    )
+  ) {
+    checks.push({
+      id: 'verify:community-runtime',
+      command: 'pnpm',
+      args: ['run', 'verify:community-runtime'],
     });
   }
 

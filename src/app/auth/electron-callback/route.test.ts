@@ -6,6 +6,15 @@ function callback(query: string): Request {
   return new Request(`https://app.test/auth/electron-callback${query}`);
 }
 
+/** Every case below describes a distribution that HAS an account service; the
+ *  community answer is asserted on its own in the runtime-degradation suite. */
+function relayed(
+  request: Request,
+  logFailure?: Parameters<typeof handleElectronCallback>[1]
+): Response {
+  return handleElectronCallback(request, logFailure, true);
+}
+
 async function deepLink(response: Response): Promise<URL> {
   const body = await response.text();
   const match = body.match(/href="(exawatt:\/\/[^"]+)"/);
@@ -15,7 +24,7 @@ async function deepLink(response: Response): Promise<URL> {
 
 describe('the desktop callback relays a code', () => {
   it('hands the authorization code to the app unchanged', async () => {
-    const response = handleElectronCallback(callback('?code=abc123'));
+    const response = relayed(callback('?code=abc123'));
 
     expect(response.status).toBe(200);
     const link = await deepLink(response);
@@ -28,7 +37,7 @@ describe('a desktop link that comes back without a code', () => {
   it('tells the app "already linked" instead of dead-ending in a tab', async () => {
     const logFailure = vi.fn();
 
-    const response = handleElectronCallback(
+    const response = relayed(
       callback(
         '?intent=link&error=server_error&error_code=identity_already_exists' +
           '&error_description=Identity%20is%20already%20linked'
@@ -46,7 +55,7 @@ describe('a desktop link that comes back without a code', () => {
   it('relays a real failure as a code and logs the provider text', async () => {
     const logFailure = vi.fn();
 
-    const response = handleElectronCallback(
+    const response = relayed(
       callback(
         '?intent=link&error_description=Identity%20is%20already%20linked%20to%20another%20user'
       ),
@@ -62,7 +71,7 @@ describe('a desktop link that comes back without a code', () => {
   });
 
   it('reports an empty link callback rather than saying nothing', async () => {
-    const response = handleElectronCallback(callback('?intent=link'));
+    const response = relayed(callback('?intent=link'));
 
     const link = await deepLink(response);
     expect(link.searchParams.get('link')).toBe('link_incomplete');
@@ -76,7 +85,7 @@ describe('a desktop link that comes back without a code', () => {
     ];
 
     for (const query of attempts) {
-      const response = handleElectronCallback(callback(query), () => {});
+      const response = relayed(callback(query), () => {});
       const link = await deepLink(response);
 
       expect(AUTH_LINK_OUTCOMES).toContain(link.searchParams.get('link'));
@@ -88,7 +97,7 @@ describe('a desktop link that comes back without a code', () => {
 
 describe('a sign-in callback is unchanged', () => {
   it('still refuses a callback with no code and no link intent', async () => {
-    const response = handleElectronCallback(callback(''));
+    const response = relayed(callback(''));
 
     expect(response.status).toBe(400);
     await expect(response.text()).resolves.toContain(

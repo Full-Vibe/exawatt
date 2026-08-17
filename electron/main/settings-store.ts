@@ -13,7 +13,9 @@ import {
   renameLaunchConfiguration as renameConfiguration,
   saveNamedLaunchConfiguration as saveNamedConfiguration,
   setLaunchConfigurationPinned as setConfigurationPinned,
+  parseKeyboardShortcutOverrides,
   type AgentLaunchConfigurationInput,
+  type KeyboardShortcutOverridesV1,
   type LaunchConfigurationPoolV1,
 } from '@exawatt/core';
 
@@ -115,6 +117,14 @@ export interface ExawattSettings {
   };
   launchConfigurations?: LaunchConfigurationPoolV1;
   appearance?: ElectronAppearancePreferencesV1;
+  /**
+   * Per-device keyboard overrides (BUG-044). They belong here rather than in
+   * renderer `localStorage` because the packaged renderer's origin changes
+   * every launch (BUG-022), which silently reset anything stored per-origin.
+   * Absent means "this device has never stored a choice", which is what lets
+   * a signed-in operator adopt an account copy exactly once.
+   */
+  keyboardShortcuts?: KeyboardShortcutOverridesV1;
 }
 
 export type ElectronAppearanceSelectionV1 =
@@ -751,6 +761,20 @@ export function setHostedConversationSummaries(
 export function setGoalVisualsEnabled(enabled: boolean): ExawattSettings {
   const settings = loadSettings();
   settings.goalVisuals = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+/**
+ * The renderer's payload is validated here, not trusted: the parser is the
+ * same one the renderer reads back with, so a rejected entry can never differ
+ * between writing and reading (BUG-044).
+ */
+export function setKeyboardShortcutOverrides(
+  overrides: unknown
+): ExawattSettings {
+  const settings = loadSettings();
+  settings.keyboardShortcuts = parseKeyboardShortcutOverrides(overrides);
   writeSettings(settings);
   return settings;
 }

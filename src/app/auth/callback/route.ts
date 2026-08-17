@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { accountServerClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import {
   AUTH_INTENT_PARAM,
@@ -45,9 +45,14 @@ interface ExchangeResult {
 }
 
 export interface AuthCallbackDependencies {
+  /**
+   * `null` when the distribution ships no account service (BUG-044). There is
+   * no identity provider to have sent anyone here, so the route reports that
+   * it does not exist rather than exchanging a code against nothing.
+   */
   createSupabaseClient: () => Promise<{
     auth: { exchangeCodeForSession: (code: string) => Promise<ExchangeResult> };
-  }>;
+  } | null>;
   /**
    * Where the provider's own words go. Keeping the cause out of the URL only
    * costs nothing if the cause is still readable somewhere; a failure nobody
@@ -60,7 +65,7 @@ export interface AuthCallbackDependencies {
 }
 
 const defaultDependencies: AuthCallbackDependencies = {
-  createSupabaseClient: () => createClient(),
+  createSupabaseClient: () => accountServerClient(),
   logFailure: (code, detail) => {
     console.error(
       detail ? `[auth/callback] ${code}: ${detail}` : `[auth/callback] ${code}`
@@ -146,6 +151,17 @@ export async function handleAuthCallback(
     ...defaultDependencies,
     ...dependencies,
   };
+
+  // Resolved before anything is interpreted: without an account service this
+  // landing route has no reason to exist, and every branch below — including
+  // the ones that only redirect — describes an event that cannot have
+  // happened. Reporting 404 is the honest answer; inventing a sign-in failure
+  // would send the operator to a page this distribution does not ship.
+  const supabase = await createSupabaseClient();
+  if (!supabase) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const requestUrl = new URL(request.url);
   const origin = requestUrl.origin;
   const intent = authCallbackIntent(
@@ -204,7 +220,6 @@ export async function handleAuthCallback(
 
   let result: ExchangeResult;
   try {
-    const supabase = await createSupabaseClient();
     result = await supabase.auth.exchangeCodeForSession(code);
   } catch (thrown) {
     if (linking) {

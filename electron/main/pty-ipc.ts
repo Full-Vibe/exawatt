@@ -35,6 +35,7 @@ import {
   setAttentionNotifications,
   setDockBadge,
   setGoalVisualsEnabled,
+  setKeyboardShortcutOverrides,
   setHostedContextLabels,
   setHostedConversationSummaries,
   setLaunchConfigurationPinned,
@@ -815,6 +816,13 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     broadcast('settings:changed', settings);
     return settings;
   });
+  // Per-device keyboard overrides (BUG-044). No broadcast: the writing
+  // renderer already holds the authoritative registry, and a `settings:changed`
+  // round trip would reload bindings mid-edit in the surface being edited.
+  handleTrusted(
+    'settings:set-keyboard-shortcuts',
+    (_event, overrides: unknown) => setKeyboardShortcutOverrides(overrides)
+  );
   handleTrusted('settings:set-reentry-recap', (_event, enabled: boolean) => {
     if (typeof enabled !== 'boolean') throw new Error('Invalid recap setting');
     const settings = setReentryRecapEnabled(enabled);

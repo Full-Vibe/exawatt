@@ -27,9 +27,9 @@ import {
   type ShortcutPlatform,
 } from '@/lib/shortcuts';
 import {
-  updateKeyboardShortcuts,
-  resetKeyboardShortcuts,
-} from '@/app/actions/preferences';
+  resetShortcutOverrides,
+  saveShortcutOverrides,
+} from '@/lib/shortcuts/preference-source';
 import {
   NotificationsSettings,
   PermissionsExplainer,
@@ -351,7 +351,7 @@ export function SettingsClient() {
     try {
       shortcutRegistry.setOverride(editingId, newKeys);
       const overrides = shortcutRegistry.getOverrides();
-      await updateKeyboardShortcuts(overrides);
+      await saveShortcutOverrides(overrides);
       setEditingId(null);
       setRecordedKeys([]);
     } catch (error) {
@@ -364,14 +364,14 @@ export function SettingsClient() {
   const resetToDefault = useCallback(async (shortcutId: string) => {
     shortcutRegistry.removeOverride(shortcutId);
     const overrides = shortcutRegistry.getOverrides();
-    await updateKeyboardShortcuts(overrides);
+    await saveShortcutOverrides(overrides);
   }, []);
 
   const resetAllToDefaults = useCallback(async () => {
     setSaving(true);
     try {
       shortcutRegistry.resetAllOverrides();
-      await resetKeyboardShortcuts();
+      await resetShortcutOverrides();
     } catch (error) {
       console.error('Failed to reset shortcuts:', error);
     } finally {
