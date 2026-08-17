@@ -8,6 +8,10 @@ import {
   recordHostedCallHttpFailure,
   recordHostedCallTransportFailure,
 } from '../analytics-bridge';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV1,
+} from '@exawatt/core/distribution';
 import { SessionScopedState } from './session-scoped-state';
 
 /**
@@ -27,8 +31,6 @@ const MAX_RECAP_CHARS = 240;
 const RECAP_CALL_TIMEOUT_MS = 45_000;
 const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 10 * 60_000;
-const DEFAULT_CONTEXT_ENDPOINT = 'https://www.exawatt.ai/api/context-labels';
-const DEFAULT_GOAL_VISUAL_ENDPOINT = 'https://www.exawatt.ai/api/goal-visuals';
 const MAX_GOAL_VISUAL_DATA_URL_CHARS = 2 * 1024 * 1024;
 const GOAL_VISUAL_RETRY_MS = 2_000;
 const GOAL_VISUAL_MAX_ATTEMPTS = 2;
@@ -99,6 +101,8 @@ interface HostedGoalVisual {
 }
 
 export interface ContextSummarizerOptions {
+  /** Resolved once by Electron main from the packaged/development contract. */
+  distribution?: DistributionContractV1;
   recapAwayMs?: number;
   recapMinChars?: number;
   now?: () => number;
@@ -359,10 +363,8 @@ export class ContextSummarizer extends EventEmitter {
     this.disabled || process.env.EXAWATT_CONTEXT_LABELS === '0';
   private readonly recapCommand =
     process.env.EXAWATT_SUMMARIZER_CMD || 'claude -p --model haiku';
-  private readonly endpoint =
-    process.env.EXAWATT_CONTEXT_LABEL_ENDPOINT || DEFAULT_CONTEXT_ENDPOINT;
-  private readonly goalVisualEndpoint =
-    process.env.EXAWATT_GOAL_VISUAL_ENDPOINT || DEFAULT_GOAL_VISUAL_ENDPOINT;
+  private readonly endpoint: string | null;
+  private readonly goalVisualEndpoint: string | null;
   private readonly recapAwayMs: number;
   private readonly recapMinChars: number;
   private readonly retryBaseMs: number;
@@ -374,6 +376,9 @@ export class ContextSummarizer extends EventEmitter {
 
   constructor(options: ContextSummarizerOptions = {}) {
     super();
+    const distribution = options.distribution ?? COMMUNITY_DISTRIBUTION;
+    this.endpoint = distribution.enrichment.contextLabels?.url ?? null;
+    this.goalVisualEndpoint = distribution.enrichment.goalVisuals?.url ?? null;
     this.recapAwayMs =
       options.recapAwayMs ?? envInt('EXAWATT_RECAP_AWAY_MS', 120_000);
     this.recapMinChars =
@@ -455,7 +460,11 @@ export class ContextSummarizer extends EventEmitter {
 
   /** The one gate every context-label evidence and request path consults. */
   private hostedLabelsAllowed(): boolean {
-    return !this.contextDisabled && this.contextLabelsEnabled;
+    return (
+      !this.contextDisabled &&
+      this.contextLabelsEnabled &&
+      (this.generateLabelOverride !== undefined || this.endpoint !== null)
+    );
   }
 
   /**
@@ -505,6 +514,15 @@ export class ContextSummarizer extends EventEmitter {
         this.queueGoalVisual(durableId, label);
       }
     }
+  }
+
+  /** Distribution capability and operator preference meet at this boundary. */
+  private hostedGoalVisualsAllowed(): boolean {
+    return (
+      this.goalVisualsEnabled &&
+      (this.generateGoalVisualOverride !== undefined ||
+        this.goalVisualEndpoint !== null)
+    );
   }
 
   getSummary(durableSessionId: string): string | null {
@@ -768,13 +786,15 @@ export class ContextSummarizer extends EventEmitter {
   ): Promise<HostedContextLabel> {
     if (this.generateLabelOverride)
       return this.generateLabelOverride(evidence, token);
+    const endpoint = this.endpoint;
+    if (!endpoint) throw new Error('context labels are not configured');
     // Transport-level failures of a genuine attempt are counted (ENG-030
     // OS1.5b). The `hostedLabelsAllowed` guards keep a feature the operator
     // switched off from ever reaching this method — and mid-flight, from
     // reporting — so a disabled feature never shows up as a failure.
     let response: Response;
     try {
-      response = await fetch(this.endpoint, {
+      response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${token}`,
@@ -817,22 +837,28 @@ export class ContextSummarizer extends EventEmitter {
     const next: GoalVisual = {
       identityKey: fallbackIdentityKey(projectKey, label),
       revision,
-      state: this.accessToken ? 'generating' : 'fallback',
+      state:
+        this.hostedGoalVisualsAllowed() && this.accessToken
+          ? 'generating'
+          : 'fallback',
       dataUrl: null,
     };
     this.goalVisuals.set(durableId, next);
-    this.goalVisualPending.set(durableId, { request, revision, attempt: 1 });
     const retry = this.goalVisualRetryTimers.get(durableId);
     if (retry) clearTimeout(retry);
     this.goalVisualRetryTimers.delete(durableId);
     this.emit('goal-visual', durableId, next);
+    // Community builds keep the deterministic visual identity but enqueue no
+    // authenticated work. Supplying a token later cannot invent a capability.
+    if (!this.hostedGoalVisualsAllowed()) return;
+    this.goalVisualPending.set(durableId, { request, revision, attempt: 1 });
     void this.drainGoalVisual(durableId);
   }
 
   private async drainGoalVisual(durableId: string): Promise<void> {
     const pending = this.goalVisualPending.get(durableId);
     if (
-      !this.goalVisualsEnabled ||
+      !this.hostedGoalVisualsAllowed() ||
       !this.accessToken ||
       !pending ||
       this.goalVisualInFlight.has(durableId)
@@ -929,9 +955,11 @@ export class ContextSummarizer extends EventEmitter {
   ): Promise<HostedGoalVisual> {
     if (this.generateGoalVisualOverride)
       return this.generateGoalVisualOverride(request, token);
+    const endpoint = this.goalVisualEndpoint;
+    if (!endpoint) throw new Error('goal visuals are not configured');
     let response: Response;
     try {
-      response = await fetch(this.goalVisualEndpoint, {
+      response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${token}`,
@@ -941,12 +969,12 @@ export class ContextSummarizer extends EventEmitter {
         signal: AbortSignal.timeout(30_000),
       });
     } catch (error) {
-      if (this.goalVisualsEnabled)
+      if (this.hostedGoalVisualsAllowed())
         recordHostedCallTransportFailure('goal_visuals', error);
       throw error;
     }
     if (!response.ok) {
-      if (this.goalVisualsEnabled)
+      if (this.hostedGoalVisualsAllowed())
         recordHostedCallHttpFailure('goal_visuals', response.status);
       throw new GoalVisualEndpointError(response.status);
     }
@@ -1119,5 +1147,3 @@ export class ContextSummarizer extends EventEmitter {
     });
   }
 }
-
-export const contextSummarizer = new ContextSummarizer();

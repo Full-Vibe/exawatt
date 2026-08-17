@@ -16,6 +16,10 @@ import {
   decodeGrokCwdDirname,
   encodeGrokCwdDirname,
 } from '@exawatt/core';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV1,
+} from '@exawatt/core/distribution';
 import { planLoginShell, shellQuote } from './login-shell';
 
 const execFileAsync = promisify(execFile);
@@ -87,8 +91,6 @@ const MAX_TITLE_CHARS = 72;
 const MAX_DESCRIPTION_CHARS = 220;
 const MAX_GENERATED_TITLE_WORDS = 6;
 const MAX_GENERATED_DESCRIPTION_WORDS = 18;
-const DEFAULT_SUMMARY_ENDPOINT =
-  'https://www.exawatt.ai/api/conversations/summarize';
 const DEFAULT_CODEX_SESSIONS_ROOT = path.join(
   os.homedir(),
   '.codex',
@@ -1198,10 +1200,12 @@ export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export interface ConversationCatalogOptions {
+  distribution?: DistributionContractV1;
   adapters?: ConversationCatalogAdapter[];
   projectSessions?: () => ClosedSessionEntry[];
   cacheFile?: string;
-  summaryEndpoint?: string;
+  /** Direct test seam. Production callers provide the resolved distribution. */
+  summaryEndpoint?: string | null;
   fetch?: typeof fetch;
   hostedSummariesEnabled?: () => boolean;
   now?: () => number;
@@ -1211,7 +1215,7 @@ export interface ConversationCatalogOptions {
 export class RecentConversationCatalog {
   private readonly adapters: ConversationCatalogAdapter[];
   private readonly cacheFile: string | null;
-  private readonly summaryEndpoint: string;
+  private readonly summaryEndpoint: string | null;
   private readonly fetchFn: typeof fetch;
   private readonly hostedSummariesEnabled: () => boolean;
   private readonly now: () => number;
@@ -1227,6 +1231,7 @@ export class RecentConversationCatalog {
   >();
 
   constructor(options: ConversationCatalogOptions = {}) {
+    const distribution = options.distribution ?? COMMUNITY_DISTRIBUTION;
     this.adapters = options.adapters ?? [
       new ClaudeConversationAdapter(),
       new CodexConversationAdapter(),
@@ -1238,9 +1243,9 @@ export class RecentConversationCatalog {
     ];
     this.cacheFile = options.cacheFile ?? null;
     this.summaryEndpoint =
-      options.summaryEndpoint ??
-      process.env.EXAWATT_CONVERSATION_SUMMARY_URL ??
-      DEFAULT_SUMMARY_ENDPOINT;
+      options.summaryEndpoint !== undefined
+        ? options.summaryEndpoint
+        : (distribution.enrichment.conversationSummaries?.url ?? null);
     this.fetchFn = options.fetch ?? fetch;
     this.hostedSummariesEnabled =
       options.hostedSummariesEnabled ?? (() => true);
@@ -1297,6 +1302,10 @@ export class RecentConversationCatalog {
     cwd: string,
     accessToken: string
   ): Promise<RecentConversation[]> {
+    const summaryEndpoint = this.summaryEndpoint;
+    // Capability absence is resolved before auth, evidence assembly, or fetch.
+    // The local catalog is the complete community behavior, not an error path.
+    if (!summaryEndpoint) return this.list(cwd);
     if (!accessToken || accessToken.length > 8_000) {
       throw new Error('A valid Exawatt session is required for summaries.');
     }
@@ -1318,7 +1327,7 @@ export class RecentConversationCatalog {
     // above, before any request existed, so they can never be reported.
     let response: Response;
     try {
-      response = await this.fetchFn(this.summaryEndpoint, {
+      response = await this.fetchFn(summaryEndpoint, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${accessToken}`,

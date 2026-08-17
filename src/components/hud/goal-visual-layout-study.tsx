@@ -12,6 +12,7 @@ import {
   withThemeAlpha,
 } from '@/components/workspace/workspace-theme';
 import { createClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import styles from './goal-visual-layout-study.module.css';
 
 const GOALS = [
@@ -187,6 +188,13 @@ export function GoalVisualLanguageStudy() {
     let cancelled = false;
     const load = async () => {
       try {
+        const endpoint = resolvedDistribution().enrichment.goalVisuals;
+        // Capability absence is the community path. Keep every deterministic
+        // study mounted and perform neither session lookup nor network I/O.
+        if (!endpoint) {
+          if (!cancelled) setLoadState('unavailable');
+          return;
+        }
         const supabase = createClient();
         const {
           data: { session },
@@ -198,7 +206,7 @@ export function GoalVisualLanguageStudy() {
         const entries = await Promise.all(
           STUDIES.map(async study => {
             try {
-              const response = await fetch('/api/goal-visuals', {
+              const response = await fetch(endpoint.url, {
                 method: 'POST',
                 headers: {
                   Authorization: `Bearer ${session.access_token}`,
