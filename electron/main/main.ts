@@ -1329,7 +1329,6 @@ async function bootstrapCommandSurface(): Promise<void> {
   });
 
   const runtimeReady = Promise.all([
-    import('./agent-ipc'),
     import('./agent-sources-ipc'),
     import('./pty-ipc'),
     import('./roadmap/roadmap-ipc'),
@@ -1344,7 +1343,6 @@ async function bootstrapCommandSurface(): Promise<void> {
     import('./openclaw-gateway-ipc'),
   ]).then(
     ([
-      agentIpc,
       agentSourcesIpc,
       ptyIpc,
       roadmapIpc,
@@ -1364,7 +1362,6 @@ async function bootstrapCommandSurface(): Promise<void> {
         detail: 'Agent and Session services are initializing',
       });
       return {
-        agentIpc,
         agentSourcesIpc,
         ptyIpc,
         roadmapIpc,
@@ -1452,7 +1449,6 @@ async function bootstrapCommandSurface(): Promise<void> {
     detail: 'Durable local state is ready',
   });
 
-  runtime.agentIpc.registerAgentIPC();
   runtime.agentSourcesIpc.registerAgentSourcesIPC();
   runtime.openClawGatewayIpc.registerOpenClawGatewayIPC();
   runtime.ptyIpc.registerPtyIPC(
