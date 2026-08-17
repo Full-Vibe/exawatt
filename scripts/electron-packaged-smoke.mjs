@@ -6,17 +6,39 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const executable = resolve(
-  process.env.EXAWATT_APP_PATH ??
-    'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
-);
+import {
+  assertPackagedContract,
+  resolvePackagedApp,
+} from './lib/packaged-app.mjs';
+
+// The gate must be correct under EVERY distribution this repository can build,
+// not just the one that used to be the only one (BUG-043). The package name and
+// the capabilities the package owes both come from the resolved contract —
+// `resolveDistributionIdentity` for the bundle, `contract.updates` for the
+// updater group — which is the same source `prepare-electron-builder-config`
+// projects electron-builder's config from.
+async function resolveOrNull() {
+  try {
+    return await resolvePackagedApp();
+  } catch {
+    // The resolver needs the built `@exawatt/core` runtime, which a tree that
+    // has never built anything does not have. Building produces it, so resolve
+    // again on the other side rather than refuse.
+    return null;
+  }
+}
+
+let packaged = await resolveOrNull();
 
 // This is the only Electron eval that needs no dev server, which is what makes
 // it usable as a delivery gate (`SURFACE_GATES`) — but it does need a package,
 // and a fresh agent worktree has none. Build one rather than fail as though the
 // app were broken. BUG-036 shipped a renderer that could not start precisely
 // because the oracle that proves it could not be routed to unattended.
-if (!process.env.EXAWATT_APP_PATH && !existsSync(executable)) {
+if (
+  !process.env.EXAWATT_APP_PATH &&
+  (!packaged || !existsSync(packaged.executablePath))
+) {
   console.log('[packaged-smoke] no local package; building one');
   execFileSync('pnpm', ['electron:build:dir'], { stdio: 'inherit' });
   // Packaging stages dist-electron/node_modules, and that snapshot sits on the
@@ -25,7 +47,20 @@ if (!process.env.EXAWATT_APP_PATH && !existsSync(executable)) {
   execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
     stdio: 'inherit',
   });
+  // The build re-prepares the contract from ambient env, so re-read it: the
+  // identity that just packaged is the only one worth launching.
+  packaged = await resolvePackagedApp();
 }
+if (!packaged) packaged = await resolvePackagedApp();
+
+const executable = packaged.executablePath;
+const { productUpdatesEnabled } = packaged;
+assertPackagedContract(packaged.appPath, packaged.digest);
+console.log(
+  `[packaged-smoke] ${packaged.identity.productName} (${packaged.identity.appId}) ` +
+    `distribution ${packaged.digest.slice(0, 12)}; product updates ` +
+    `${productUpdatesEnabled ? 'declared' : 'excluded'} by the contract`
+);
 const expectedVersion = JSON.parse(
   readFileSync(resolve('package.json'), 'utf8')
 ).version;
@@ -76,23 +111,44 @@ try {
   }
   const hasPty = await page.evaluate(() => !!window.electron?.pty);
   if (!hasPty) throw new Error('Packaged renderer has no PTY preload');
-  const initialUpdate = await page.evaluate(() =>
-    window.electron?.app?.updates?.getStatus()
-  );
-  if (
-    initialUpdate?.phase !== 'idle' ||
-    initialUpdate.currentVersion !== expectedVersion
-  ) {
+  // Product updates are an OPTIONAL grouped preload capability (WP2a): `main.ts`
+  // passes `--exawatt-capability-updates` only when `contract.updates !== null`,
+  // and the preload omits the whole group otherwise. So the gate pins BOTH
+  // directions rather than asserting one and checking neither. Asserting the
+  // absence is the half that matters most: a community package that somehow
+  // exposed an updater would be reaching a feed its contract does not declare,
+  // which is precisely the neutrality the seam exists to guarantee.
+  const updates = await page.evaluate(async () => {
+    const api = window.electron?.app;
+    if (!api || !('updates' in api)) return { exposed: false, status: null };
+    return { exposed: true, status: await api.updates.getStatus() };
+  });
+  const initialUpdate = updates.status;
+  if (productUpdatesEnabled) {
+    if (
+      initialUpdate?.phase !== 'idle' ||
+      initialUpdate.currentVersion !== expectedVersion
+    ) {
+      throw new Error(
+        `Packaged updater IPC is invalid: ${JSON.stringify(initialUpdate)}`
+      );
+    }
+  } else if (updates.exposed) {
     throw new Error(
-      `Packaged updater IPC is invalid: ${JSON.stringify(initialUpdate)}`
+      'Packaged preload exposed window.electron.app.updates, but this ' +
+        'distribution contract declares no update feed. The package would ' +
+        'offer an updater with nothing to update from.'
     );
   }
   const buildInfo = await page.evaluate(() =>
     window.electron?.app?.getBuildInfo()
   );
+  // Orthogonal to the contract: `delivery` is the release CHANNEL, and
+  // `startProductUpdater` only goes live on `signed`. A local package that
+  // recorded `signed` would start checking a feed from a developer's machine.
   if (buildInfo?.delivery !== 'dogfood') {
     throw new Error(
-      `Local package unexpectedly enabled product updates: ${JSON.stringify(buildInfo)}`
+      `Local package recorded the signed release channel: ${JSON.stringify(buildInfo)}`
     );
   }
 
@@ -113,20 +169,24 @@ try {
     const buffer = await window.electron?.pty?.buffer(id);
     return buffer?.includes('EXAWATT_PACKAGED_OK');
   }, sessionId);
-  const updateWithSession = await page.evaluate(() =>
-    window.electron?.app?.updates?.getStatus()
-  );
-  if (updateWithSession?.liveSessions !== 1) {
-    throw new Error(
-      'Updater status did not report restart impact from the live PTY'
+  if (productUpdatesEnabled) {
+    const updateWithSession = await page.evaluate(() =>
+      window.electron?.app?.updates?.getStatus()
     );
+    if (updateWithSession?.liveSessions !== 1) {
+      throw new Error(
+        'Updater status did not report restart impact from the live PTY'
+      );
+    }
   }
 
   if (errors.length > 0) {
     throw new Error(`Packaged Electron errors: ${errors.join(' | ')}`);
   }
   console.log(
-    'PASS packaged Electron: background launch + local renderer + preload + PTY round trip'
+    `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
+      'local renderer + preload + PTY round trip + contract-declared updater ' +
+      `${productUpdatesEnabled ? 'present' : 'absent'}`
   );
 } finally {
   await app.close();

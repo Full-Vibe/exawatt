@@ -360,9 +360,19 @@
       "reason": "generic signing mechanics without official identity defaults"
     },
     {
+      "path": "scripts/lib/packaged-app.mjs",
+      "classification": "PUBLIC",
+      "reason": "resolves the package from the contract, with no official identity"
+    },
+    {
       "path": "scripts/macos-code-signing.test.mjs",
       "classification": "PUBLIC",
       "reason": "distribution-neutral signing fixtures"
+    },
+    {
+      "path": "scripts/packaged-app.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-neutral package resolution fixtures"
     },
     {
       "path": "scripts/open-source-paths.manifest.json",

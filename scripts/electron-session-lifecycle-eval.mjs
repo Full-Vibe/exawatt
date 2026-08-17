@@ -21,11 +21,11 @@ import {
   claudeProbeSh,
   codexProbeSh,
 } from './lib/harness-probe-fixture.mjs';
+import { packagedExecutable } from './lib/packaged-app.mjs';
 
-const executable = resolve(
-  process.env.EXAWATT_APP_PATH ??
-    'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
-);
+// The packaged bundle is named by the distribution contract, not by a literal
+// (BUG-043): the default community contract packages `Exawatt Community.app`.
+const executable = await packagedExecutable();
 const root = mkdtempSync(join(tmpdir(), 'exawatt-lifecycle-'));
 const userData = join(root, 'userData');
 const fakeHome = join(root, 'home');

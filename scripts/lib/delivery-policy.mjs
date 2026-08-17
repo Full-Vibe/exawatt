@@ -115,7 +115,11 @@ export const SURFACE_GATES = [
       file === 'electron-builder.yml' ||
       file === 'scripts/prepare-electron-renderer.mjs' ||
       file === 'scripts/lib/renderer-archive.mjs' ||
-      file === 'scripts/electron-packaged-smoke.mjs',
+      file === 'scripts/electron-packaged-smoke.mjs' ||
+      // BUG-043: the gate resolves the bundle and the capabilities it owes from
+      // the distribution contract. A change to that resolution changes what
+      // every packaged eval launches.
+      file === 'scripts/lib/packaged-app.mjs',
   },
   {
     gate: 'eval:workspace:launcher',

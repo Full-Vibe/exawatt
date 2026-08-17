@@ -12,11 +12,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { sweepOrphans } from './lib/electron-eval.mjs';
+import { packagedExecutable } from './lib/packaged-app.mjs';
 
-const executable = resolve(
-  process.env.EXAWATT_APP_PATH ??
-    'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
-);
+// The packaged bundle is named by the distribution contract, not by a literal
+// (BUG-043): the default community contract packages `Exawatt Community.app`.
+const executable = await packagedExecutable();
 const runs = Math.max(1, Number.parseInt(process.env.STARTUP_RUNS ?? '3', 10));
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-startup-eval-'));
 const staleRendererCache = join(userData, 'renderer-cache', 'stale-build');

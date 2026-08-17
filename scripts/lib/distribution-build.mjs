@@ -29,24 +29,31 @@ export function distributionArtifactPaths(root) {
   };
 }
 
-export async function prepareDistribution({ root, inputJson }) {
-  const {
-    COMMUNITY_DISTRIBUTION,
-    parseDistributionContractJson,
-    serializeDistributionContract,
-  } = distributionCore();
-  let contract;
+/**
+ * The one place an absent config becomes the community contract.
+ *
+ * Exported so a reader that must NOT write build state — the packaged evals,
+ * which have to know which package the current shell's contract would produce
+ * (BUG-043) — asks this instead of keeping a second copy of the answer.
+ */
+export function selectDistributionContract(inputJson) {
+  const { COMMUNITY_DISTRIBUTION, parseDistributionContractJson } =
+    distributionCore();
   try {
-    contract =
-      inputJson === undefined
-        ? COMMUNITY_DISTRIBUTION
-        : parseDistributionContractJson(inputJson);
+    return inputJson === undefined
+      ? COMMUNITY_DISTRIBUTION
+      : parseDistributionContractJson(inputJson);
   } catch (error) {
     throw new Error(
       `Distribution config is present but invalid: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error }
     );
   }
+}
+
+export async function prepareDistribution({ root, inputJson }) {
+  const { serializeDistributionContract } = distributionCore();
+  const contract = selectDistributionContract(inputJson);
   const canonical = serializeDistributionContract(contract);
   const digest = distributionDigest(canonical);
   const paths = distributionArtifactPaths(root);

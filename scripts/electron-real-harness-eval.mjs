@@ -4,12 +4,12 @@ import { _electron as electron } from 'playwright-core';
 import { startAgentFromLauncher } from './lib/electron-eval.mjs';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { packagedExecutable } from './lib/packaged-app.mjs';
 
-const executable = resolve(
-  process.env.EXAWATT_APP_PATH ??
-    'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
-);
+// The packaged bundle is named by the distribution contract, not by a literal
+// (BUG-043): the default community contract packages `Exawatt Community.app`.
+const executable = await packagedExecutable();
 const root = mkdtempSync(join(tmpdir(), 'exawatt-real-harness-'));
 const userData = join(root, 'userData');
 const projectDir = join(root, 'project');
