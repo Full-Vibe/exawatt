@@ -47,10 +47,13 @@ if (
   execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
     stdio: 'inherit',
   });
-  // The build re-prepares the contract from ambient env, so re-read it: the
-  // identity that just packaged is the only one worth launching.
+  // The build produced `@exawatt/core`, so a first attempt that failed for its
+  // absence can now answer. It resolves the same ambient contract the build just
+  // packaged from, so this cannot disagree with the artifact.
   packaged = await resolvePackagedApp();
 }
+// No package to build (EXAWATT_APP_PATH) and no resolution: surface the real
+// error instead of the null.
 if (!packaged) packaged = await resolvePackagedApp();
 
 const executable = packaged.executablePath;
