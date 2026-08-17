@@ -88,16 +88,17 @@ export const SURFACE_GATES = [
     // caught lived in `nav-history.ts` — a file the map did not name, so the
     // change that could have broken it never had to declare this gate.
     //
-    // NOT quarantined despite BUG-045, on purpose. Under the DEFAULT community
-    // contract the script stops at a `Quick feedback` dialog that build cannot
-    // open (`openQuickCapture` refuses when `services.productFeedback` is
-    // null) — reproduced identically on a clean `origin/master` baseline, so
-    // it is the gate's assumption, the BUG-043 class one script further out.
-    // But the failure is contract-shaped, not universal: quarantining would
-    // drop this surface's only real ⌘[/⌘] and application-menu coverage for
-    // every distribution, to route around a step that is wrong in one. It
-    // stays enforced and is waived per landing until BUG-045 makes the script
-    // ask the contract what it may assert.
+    // BUG-045 is CLOSED (2026-08-17, ENG-030 WP2b-5A) and this gate is green
+    // again. It had been waived per landing because the script stopped at a
+    // `Quick feedback` dialog the DEFAULT community contract cannot open
+    // (`openQuickCapture` refuses when `services.productFeedback` is null) —
+    // the BUG-043 class one script further out. The repair is the same shape
+    // BUG-043 chose: the script asks the resolved contract first and asserts
+    // the OPPOSITE property where the capability is absent (the shortcut is
+    // inert), so both distributions are pinned and neither is unchecked.
+    // Quarantining was refused throughout, because it would have dropped this
+    // surface's only real ⌘[/⌘] and application-menu coverage for every
+    // distribution to route around a step that was wrong in one.
     match: file =>
       file === 'electron/main/application-menu.ts' ||
       file === 'packages/core/src/shortcuts/command-verbs.ts' ||

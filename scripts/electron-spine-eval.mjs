@@ -286,8 +286,19 @@ await withElectronApp(
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(120);
   await page.keyboard.press('KeyM');
-  await page.waitForTimeout(1200);
-  check('g m reaches spatial', page.url().includes('/fleet/spatial'));
+  // This is the run's FIRST visit to /fleet/spatial, and the eval drives a dev
+  // server, so the chord is followed by a route compile. A fixed sleep read
+  // that as "the chord did not navigate"; wait for the URL instead. Every
+  // other altitude hop here already waits rather than sleeps.
+  check(
+    'g m reaches spatial',
+    await page
+      .waitForURL(url => url.pathname.endsWith('/fleet/spatial'))
+      .then(
+        () => true,
+        () => false
+      )
+  );
 
   // D11: a focused search field keeps text, but modified global commands must
   // still provide an escape path back to the Agent altitude.
