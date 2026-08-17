@@ -54,6 +54,8 @@ import {
   CLOSE_ACTIVE_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
+  CLOSE_ACTIVE_PROJECT_EVENT,
+  REVEAL_ACTIVE_PATH_EVENT,
   OPEN_ROADMAP_EVENT,
   RESUME_ACTIVE_AGENT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
@@ -423,6 +425,22 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             workspaceAvailability.commands['close-tab'].available
           ) {
             dispatch(CLOSE_ACTIVE_EVENT);
+          }
+          break;
+        case 'close-project':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['close-project'].available
+          ) {
+            dispatch(CLOSE_ACTIVE_PROJECT_EVENT);
+          }
+          break;
+        case 'reveal-path':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['reveal-path'].available
+          ) {
+            dispatch(REVEAL_ACTIVE_PATH_EVENT);
           }
           break;
         case 'jump-attention':

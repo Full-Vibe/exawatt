@@ -9,6 +9,7 @@ import {
   menuCommandShortcutIds,
   menuCommandVerbs,
   type CommandVerb,
+  type CommandVerbMenuSection,
 } from '@exawatt/core';
 import { STATIC_PALETTE_ROW_IDS } from '@/components/shortcuts/command-palette';
 import {
@@ -43,11 +44,37 @@ interface MenuRow {
   registerAccelerator?: boolean;
   role?: string;
   type?: string;
+  /** which top-level menu this row was actually rendered into */
+  section?: CommandVerbMenuSection | null;
 }
+
+const APP_NAME = 'Exawatt';
+
+/**
+ * The menu a section names. Typed as a TOTAL record, so a new section in the
+ * manifest cannot compile until it says which menu publishes it — and the
+ * assertion below then holds the template to it. Before this join `section`
+ * was declared by every verb and read by nothing, which is D44's own disease
+ * one rung down: a declaration with no surface answering for it.
+ */
+const MENU_LABEL_BY_SECTION: Record<CommandVerbMenuSection, string> = {
+  application: APP_NAME,
+  file: 'File',
+  go: 'Go',
+  session: 'Session',
+  help: 'Help',
+};
+
+const SECTION_BY_MENU_LABEL = new Map<string, CommandVerbMenuSection>(
+  Object.entries(MENU_LABEL_BY_SECTION).map(([section, label]) => [
+    label,
+    section as CommandVerbMenuSection,
+  ])
+);
 
 function flattenMenu(): MenuRow[] {
   const template = buildApplicationMenuTemplate({
-    appName: 'Exawatt',
+    appName: APP_NAME,
     version: '9.9.9',
     buildSha: 'abcdef123456',
     isDev: false,
@@ -60,9 +87,11 @@ function flattenMenu(): MenuRow[] {
     onCheckForUpdates: () => {},
     onWindowManagementHelp: () => {},
   });
-  return template.flatMap(section =>
-    Array.isArray(section.submenu) ? (section.submenu as MenuRow[]) : []
-  );
+  return template.flatMap(menu => {
+    if (!Array.isArray(menu.submenu)) return [];
+    const section = SECTION_BY_MENU_LABEL.get(String(menu.label ?? '')) ?? null;
+    return (menu.submenu as MenuRow[]).map(row => ({ ...row, section }));
+  });
 }
 
 const MENU_ROWS = flattenMenu();
@@ -170,6 +199,14 @@ describe('native menu surface', () => {
       const row = menuRow(verb.menu.commandId);
       expect(row, verb.id).toBeDefined();
       expect(row!.label, verb.id).toBe(verb.menu.label);
+    }
+  });
+
+  it('lands each item in the menu its section names', () => {
+    for (const verb of menuCommandVerbs()) {
+      expect(menuRow(verb.menu.commandId)!.section, verb.id).toBe(
+        verb.menu.section
+      );
     }
   });
 

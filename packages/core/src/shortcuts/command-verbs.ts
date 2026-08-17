@@ -80,7 +80,9 @@ export type WorkspaceContextCommand =
   | 'jump-attention'
   | 'open-roadmap'
   | 'resume-agent'
-  | 'resume-scope';
+  | 'resume-scope'
+  | 'reveal-path'
+  | 'close-project';
 
 export type CommandVerbMenuSection =
   | 'application'
@@ -142,8 +144,13 @@ export type CommandVerb = {
   /** workspace truth this verb reads before it can run */
   availability?: WorkspaceContextCommand;
   /**
-   * Verbs that LAUNCH into the personal workspace are inert while another
-   * tenant is on screen (ENG-027); the dispatch point drops them whole.
+   * Verbs that reach PERSONAL-workspace truth are inert while another tenant
+   * is on screen (ENG-027); the dispatch point drops them whole. Two kinds
+   * qualify: verbs that launch or resurrect something there (a PTY, a pending
+   * composer slot), and verbs that address a real directory on this machine.
+   * The remaining workspace verbs ride the availability snapshot instead,
+   * because the active shell publishes it as per-tenant truth and implements
+   * them itself; a verb NO other shell implements cannot use that as a gate.
    */
   tenantScope?: 'personal-workspace';
 } & (KeyboardSurfaced | KeyboardUnsurfaced) &
@@ -313,6 +320,42 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     menu: {
       commandId: 'open-project',
       label: 'Open Project…',
+      section: 'file',
+    },
+  },
+  // The pointer-only verbs D44 named and D57 left for last: both lived in the
+  // Project strip's context menu alone, which is the exact shape of the defect
+  // the manifest exists to forbid. A Project is the File menu's object, so
+  // that is where the two verbs addressing one join Open Project.
+  {
+    id: 'workspace-reveal-path',
+    label: 'Reveal in Finder',
+    description: "Open the active Session's directory in Finder",
+    keys: null,
+    keyboardDiscoverability:
+      "Every R combo is already spent: the View menu registers ⌘R and ⌘⇧R natively for Electron's reload roles, and ⌘⌥R and ⌘⌥⇧R are relaunch recovery. A detour out of the app into Finder does not outrank the verbs that would spend the last single-modifier combos.",
+    availability: 'reveal-path',
+    tenantScope: 'personal-workspace',
+    palette: { rowId: 'ws-reveal' },
+    menu: {
+      commandId: 'reveal-path',
+      label: 'Reveal in Finder',
+      section: 'file',
+    },
+  },
+  {
+    id: 'workspace-close-project',
+    label: 'Close the active Project',
+    description: 'Close the active Project and every Session in it',
+    keys: null,
+    keyboardDiscoverability:
+      "⌘⇧W already answers as ⌘W's alias for closing one Session, so binding the Project close a single shift away would put an irreversible multi-Agent close under the same finger as a single-tab close. The confirmation dialog is a last line, not a licence to sit there.",
+    availability: 'close-project',
+    tenantScope: 'personal-workspace',
+    palette: { rowId: 'ws-close-project' },
+    menu: {
+      commandId: 'close-project',
+      label: 'Close Project',
       section: 'file',
     },
   },

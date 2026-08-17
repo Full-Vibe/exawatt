@@ -153,6 +153,17 @@ export function deriveWorkspaceCommandAvailability({
       'open-roadmap': hasProject
         ? available()
         : unavailable('Open a Project first'),
+      // Both address the Project itself rather than the Session inside it, so
+      // an empty Project still answers: its directory is real, and closing it
+      // is the only way to put it away. Reveal follows the selected Session's
+      // own working directory when there is one (the strip's per-tab entry
+      // reveals exactly that), and falls back to the Project root.
+      'reveal-path': hasProject
+        ? available()
+        : unavailable('Open a Project first'),
+      'close-project': hasProject
+        ? available()
+        : unavailable('Open a Project first'),
       // Recovery keeps D36's exact-identity contract: a tab without a
       // captured provider ID is never counted, so neither verb can offer to
       // guess one (ENG-018).
