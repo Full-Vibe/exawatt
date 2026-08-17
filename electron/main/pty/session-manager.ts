@@ -197,6 +197,12 @@ export class PtySessionManager extends EventEmitter {
   private claimedOpencodeIds = new Set<string>();
   private pendingProviderIdentities = new Set<Promise<void>>();
   private pendingProviderIdentityBySession = new Map<string, Promise<void>>();
+  private productName = 'Exawatt Community';
+
+  setProductName(productName: string): void {
+    if (!productName.trim()) throw new Error('Product name is required');
+    this.productName = productName;
+  }
 
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
@@ -258,7 +264,9 @@ export class PtySessionManager extends EventEmitter {
   }
 
   async create(options: PtyCreateOptions): Promise<PtySessionInfo> {
-    if (!this.acceptingCreates) throw new Error('Exawatt is stopping Sessions');
+    if (!this.acceptingCreates) {
+      throw new Error(`${this.productName} is stopping Sessions`);
+    }
     const durableSessionId =
       options.durableSessionId ?? `session-${randomUUID()}`;
     if (this.creatingDurableIds.has(durableSessionId)) {
@@ -417,7 +425,7 @@ export class PtySessionManager extends EventEmitter {
           // programs in the session must see the RESOLVED shell, not whatever
           // environment the app was launched from
           SHELL: shell,
-          TERM_PROGRAM: 'Exawatt',
+          TERM_PROGRAM: this.productName,
         } as Record<string, string>,
       });
     } catch (error) {

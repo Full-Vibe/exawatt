@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * lifecycle boundary, not the terminal.
  */
 const spawned: FakePty[] = [];
+const spawnEnvironments: Array<Record<string, string>> = [];
 
 class FakePty {
   pid = 4242;
@@ -37,9 +38,14 @@ class FakePty {
 }
 
 vi.mock('node-pty', () => ({
-  spawn: () => {
+  spawn: (
+    _shell: string,
+    _args: string[],
+    options: { env: Record<string, string> }
+  ) => {
     const proc = new FakePty();
     spawned.push(proc);
+    spawnEnvironments.push(options.env);
     return proc;
   },
 }));
@@ -60,6 +66,7 @@ let cwd: string;
 
 beforeEach(() => {
   spawned.length = 0;
+  spawnEnvironments.length = 0;
   cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'exawatt-forget-'));
 });
 
@@ -76,6 +83,18 @@ function forgotten(manager: InstanceType<typeof PtySessionManager>): string[] {
 }
 
 describe('PtySessionManager announces a forgotten Session', () => {
+  it('identifies the resolved distribution to child terminals', async () => {
+    const manager = new PtySessionManager();
+    manager.setProductName('Acme Agent Console');
+    const session = await manager.create({
+      harness: 'shell',
+      cwd,
+      durableSessionId: 'session-distribution-name',
+    });
+    expect(spawnEnvironments[0].TERM_PROGRAM).toBe('Acme Agent Console');
+    await manager.kill(session.id);
+  });
+
   it('announces a close or archive even when this process never ran its PTY', () => {
     // A rehydrated tab: main holds its restored label and goal visual, and no
     // runtime record at all. This is the case the old `if (!found) return;`

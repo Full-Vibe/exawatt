@@ -13,10 +13,14 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
+import { resolvePackagedApp } from './lib/packaged-app.mjs';
 
 const OUT = process.env.NAV_SCREENSHOT_DIR || '/tmp/exawatt-spine-eval';
 mkdirSync(OUT, { recursive: true });
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-spine-eval-'));
+const distribution = await resolvePackagedApp();
+const productName = distribution.identity.productName;
+const feedbackEnabled = distribution.contract.services.productFeedback !== null;
 
 const failures = [];
 const check = (name, ok) => {
@@ -91,19 +95,27 @@ await withElectronApp(
   await page.waitForTimeout(100);
   await page.keyboard.press('Meta+Shift+KeyF');
   const quickFeedback = page.getByRole('dialog', { name: 'Quick feedback' });
-  await quickFeedback.waitFor();
-  const screenshotToggle = quickFeedback.getByRole('button', {
-    name: 'Attach screenshot',
-  });
-  check(
-    'quick feedback visibly labels the Screenshot chip',
-    (await screenshotToggle.innerText()).includes('Screenshot') &&
-      (await screenshotToggle.innerText()).includes('⌘S')
-  );
-  await page.screenshot({
-    path: join(OUT, 'quick-feedback-screenshot-label.png'),
-  });
-  await page.keyboard.press('Escape');
+  if (feedbackEnabled) {
+    await quickFeedback.waitFor();
+    const screenshotToggle = quickFeedback.getByRole('button', {
+      name: 'Attach screenshot',
+    });
+    check(
+      'quick feedback visibly labels the Screenshot chip',
+      (await screenshotToggle.innerText()).includes('Screenshot') &&
+        (await screenshotToggle.innerText()).includes('⌘S')
+    );
+    await page.screenshot({
+      path: join(OUT, 'quick-feedback-screenshot-label.png'),
+    });
+    await page.keyboard.press('Escape');
+  } else {
+    await page.waitForTimeout(250);
+    check(
+      'feedback shortcut is inert when the distribution has no feedback service',
+      (await quickFeedback.count()) === 0
+    );
+  }
 
   // the menu bar mirrors the app's verbs (W4): Go/Session menus exist,
   // Settings… registers ⌘, for real, renderer-owned combos display-only
@@ -260,7 +272,7 @@ await withElectronApp(
 
   // the rail is a live exit from off-spine pages
   await page.locator('[data-command-altitude-level="terminal"]').click();
-  await page.waitForURL('**/workspace');
+  await page.waitForURL(url => url.pathname.endsWith('/workspace'));
   check('rail Agent click works from /settings', true);
 
   // go-chords cover all three altitudes
@@ -282,10 +294,10 @@ await withElectronApp(
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('operator query');
   await page.keyboard.press('Control+Meta+1');
-  await page.waitForURL('**/workspace');
+  await page.waitForURL(url => url.pathname.endsWith('/workspace'));
   check('ctrl+cmd+1 returns from focused Fleet search', true);
   await page.keyboard.press('Control+Meta+3');
-  await page.waitForURL('**/fleet/spatial');
+  await page.waitForURL(url => url.pathname.endsWith('/fleet/spatial'));
 
   // no affordance links back into the retired legacy trio
   const backLink = await page.locator('a[href="/fleet"]').count();
@@ -392,8 +404,8 @@ await withElectronApp(
 
   // per-surface titles via the metadata template
   check(
-    'workspace title is Agent — Exawatt',
-    (await page.title()) === 'Agent — Exawatt'
+    `workspace title is Agent — ${productName}`,
+    (await page.title()) === `Agent — ${productName}`
   );
 
   // registry-resolved workspace verb still fires: ⌘E opens the rename editor
@@ -496,8 +508,8 @@ await withElectronApp(
   await page.waitForURL('**/fleet/spatial**');
   await page.waitForTimeout(600);
   check(
-    'fleet title is Fleet — Exawatt',
-    (await page.title()) === 'Fleet — Exawatt'
+    `fleet title is Fleet — ${productName}`,
+    (await page.title()) === `Fleet — ${productName}`
   );
 
   // D10: the rename cycle must not produce nested-interactive markup warnings
