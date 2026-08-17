@@ -691,16 +691,6 @@ export function commandVerbForMenuCommand(
   return menuCommandVerbs().find(verb => verb.menu.commandId === commandId);
 }
 
-/**
- * Menu command ids whose enablement follows renderer-published workspace
- * truth. Anything absent from this set is unconditionally enabled.
- */
-export function availabilityMenuCommandIds(): readonly string[] {
-  return menuCommandVerbs()
-    .filter(verb => verb.availability !== undefined)
-    .map(verb => verb.menu.commandId);
-}
-
 /** native menu command id → the registry id whose binding it displays (D10) */
 export function menuCommandShortcutIds(): Record<string, string> {
   return Object.fromEntries(
