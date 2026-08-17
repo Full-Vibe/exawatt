@@ -8,20 +8,33 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { proxy } from './proxy';
 
-const ENV_KEYS = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'];
-const savedEnv: Record<string, string | undefined> = {};
+const { distribution } = vi.hoisted(() => ({
+  distribution: {
+    account: {
+      supabaseUrl: 'https://unit-test.supabase.co',
+      supabaseAnonKey: 'unit-test-anon-key',
+      recoveryOrigin: 'https://app.test',
+    } as {
+      supabaseUrl: string;
+      supabaseAnonKey: string;
+      recoveryOrigin: string;
+    } | null,
+  },
+}));
+
+vi.mock('@/lib/distribution/resolved', () => ({
+  resolvedDistribution: () => distribution,
+}));
 
 beforeEach(() => {
-  for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
-  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://unit-test.supabase.co';
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'unit-test-anon-key';
+  distribution.account = {
+    supabaseUrl: 'https://unit-test.supabase.co',
+    supabaseAnonKey: 'unit-test-anon-key',
+    recoveryOrigin: 'https://app.test',
+  };
 });
 
 afterEach(() => {
-  for (const key of ENV_KEYS) {
-    if (savedEnv[key] === undefined) delete process.env[key];
-    else process.env[key] = savedEnv[key];
-  }
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -122,6 +135,21 @@ describe('proxy offline authority', () => {
     vi.stubGlobal('fetch', fetchSpy);
 
     const response = await proxy(request('/admin'));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    expect(response.headers.get('location')).toContain('/sign-in');
+  });
+
+  it('ignores a stale account cookie when the distribution has no account transport', async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error('network call from an accountless distribution');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    distribution.account = null;
+
+    const response = await proxy(request('/admin', sessionCookie()));
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(response.status).toBeGreaterThanOrEqual(300);

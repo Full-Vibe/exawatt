@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 // Surfaces that render without a signed-in user. Everything the Electron
 // shell navigates (workspace, fleet, settings, architecture) must be here:
@@ -97,13 +98,23 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // A stale cookie can survive a switch from the official distribution to a
+  // Community build. It is not authority to reconstruct account transport
+  // from ambient env: the resolved contract is the only capability switch.
+  const account = resolvedDistribution().account;
+  if (!account) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/sign-in';
+    return NextResponse.redirect(url);
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    account.supabaseUrl,
+    account.supabaseAnonKey,
     {
       global: {
         // Bound the validation round-trip so a dead network degrades to

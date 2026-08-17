@@ -467,9 +467,14 @@ export function SiteHeaderNav({
                   Settings
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => feedback?.openFeedback()}>
+              <DropdownMenuItem
+                disabled={!feedback?.isAvailable}
+                onSelect={() => feedback?.openFeedback()}
+              >
                 <MessageSquareWarning className="mr-2 h-4 w-4" />
-                Submit feedback
+                {feedback?.isAvailable
+                  ? 'Submit feedback'
+                  : 'Feedback unavailable in this build'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {isAuthenticated ? (

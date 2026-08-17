@@ -6,7 +6,7 @@ import {
 } from '@exawatt/core/distribution';
 
 const mocks = vi.hoisted(() => ({
-  createClient: vi.fn(),
+  createOptionalClient: vi.fn(),
   getSession: vi.fn(),
   distribution: { current: null as DistributionContractV1 | null },
 }));
@@ -16,7 +16,7 @@ vi.mock('@/lib/distribution/resolved', () => ({
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: mocks.createClient,
+  createOptionalClient: mocks.createOptionalClient,
 }));
 
 import { RecentConversations } from './recent-conversations';
@@ -37,6 +37,11 @@ const LOCAL_CONVERSATION = {
 
 const OFFICIAL_SUMMARY_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
+  account: {
+    supabaseUrl: 'https://account.example.test',
+    supabaseAnonKey: 'public-test-key',
+    recoveryOrigin: 'https://app.example.test',
+  },
   enrichment: {
     ...COMMUNITY_DISTRIBUTION.enrichment,
     conversationSummaries: {
@@ -52,7 +57,7 @@ describe('Recent Conversations distribution boundary', () => {
     mocks.getSession.mockReset().mockResolvedValue({
       data: { session: { access_token: 'official-token' } },
     });
-    mocks.createClient.mockReset().mockReturnValue({
+    mocks.createOptionalClient.mockReset().mockReturnValue({
       auth: { getSession: mocks.getSession },
     });
     window.electron = {
@@ -89,7 +94,7 @@ describe('Recent Conversations distribution boundary', () => {
         name: 'Resume provider-session-id in Codex',
       })
     ).toBeVisible();
-    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.createOptionalClient).not.toHaveBeenCalled();
     expect(window.electron!.settings!.get).not.toHaveBeenCalled();
     expect(
       window.electron!.pty!.enrichRecentConversations

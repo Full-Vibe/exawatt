@@ -112,5 +112,10 @@ describe('SiteHeaderNav account menu', () => {
     ).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByRole('menuitem', { name: 'Sign in' })).toBeNull();
     expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeVisible();
+    expect(
+      screen.getByRole('menuitem', {
+        name: 'Feedback unavailable in this build',
+      })
+    ).toHaveAttribute('aria-disabled', 'true');
   });
 });

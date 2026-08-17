@@ -28,7 +28,7 @@ const OFFICIAL_GOAL_VISUAL_DISTRIBUTION = {
 } satisfies DistributionContractV1;
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
+  createOptionalClient: () => ({
     auth: { getSession },
   }),
 }));

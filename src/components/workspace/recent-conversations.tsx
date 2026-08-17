@@ -14,7 +14,7 @@ import {
 import { ArrowRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
 import type { RecentConversation } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
@@ -106,12 +106,13 @@ export const RecentConversations = forwardRef<
   // the background only for signed-in users; offline/new-task flow is never
   // coupled to this request.
   useEffect(() => {
+    const distribution = resolvedDistribution();
     if (
       state !== 'ready' ||
       !active ||
       hidden ||
       !rows.some(row => row.needsSummary) ||
-      !resolvedDistribution().enrichment.conversationSummaries ||
+      !distribution.enrichment.conversationSummaries ||
       !window.electron?.pty?.enrichRecentConversations ||
       enrichmentAttemptRef.current === projectDir
     ) {
@@ -119,12 +120,8 @@ export const RecentConversations = forwardRef<
     }
     enrichmentAttemptRef.current = projectDir;
     let cancelled = false;
-    let supabase: ReturnType<typeof createClient>;
-    try {
-      supabase = createClient();
-    } catch {
-      return;
-    }
+    const supabase = createOptionalClient(distribution);
+    if (!supabase) return;
     void window.electron?.settings
       ?.get()
       .then(settings => {
