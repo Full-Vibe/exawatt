@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ProductFeedbackProvider,
@@ -69,12 +70,18 @@ function client(session = SESSION) {
 let feedback: ReturnType<typeof useProductFeedback> | null = null;
 
 function Probe() {
-  feedback = useProductFeedback();
+  const value = useProductFeedback();
+  // Publishing the hook result to the module binding is a side effect, so it
+  // belongs in an effect rather than in render (react-hooks/globals). Render
+  // reads only `value`.
+  useEffect(() => {
+    feedback = value;
+  });
   return (
     <p>
-      {feedback.isAvailable ? 'Feedback configured' : 'Feedback unavailable'}
+      {value.isAvailable ? 'Feedback configured' : 'Feedback unavailable'}
       {' / '}
-      {feedback.isAuthenticated ? 'signed in' : 'signed out'}
+      {value.isAuthenticated ? 'signed in' : 'signed out'}
     </p>
   );
 }

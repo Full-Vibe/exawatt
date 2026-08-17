@@ -12,6 +12,12 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
+# ENG-030 WP5a. An outside contributor's fork pull request must be able to run
+# this entire job, and GitHub withholds repository secrets from fork runs. So
+# the job declares least privilege here instead of inheriting the repository
+# default, consumes no `secrets.*`, and every workflow in this repository stays
+# free of `pull_request_target` — that trigger runs a stranger's code with the
+# base repository's credentials, which is the exact vulnerability being avoided.
 permissions:
   contents: read
 
@@ -22,15 +28,26 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A runaway job is a budget event, not just a slow one: the org Actions
+    # allowance is $15/month with a hard stop (AGENTS.md). This is a ceiling,
+    # not a target — a healthy run finishes well inside it.
+    timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      # Third-party actions are pinned to immutable commits. A moving tag is a
+      # remote-code-execution seam into every run, and Dependabot's
+      # github-actions ecosystem proposes the upgrades. `persist-credentials`
+      # keeps the run's token out of the checkout's git config, where any later
+      # step could read it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -42,7 +59,7 @@ jobs:
         run: pnpm open-source:paths:check
 
       - name: Restore Node compile cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: node_modules/.cache/node-compile-cache
           key: node-compile-${{ runner.os }}-${{ runner.arch }}-node-22-${{ hashFiles('pnpm-lock.yaml') }}
@@ -55,14 +72,27 @@ jobs:
       - name: Run type check
         run: pnpm type-check
 
+      # `tsconfig.json` excludes `electron/`, so `type-check` proves the Next
+      # application and nothing about the desktop main process. Without this
+      # step CI can be entirely green over Electron code that does not compile.
+      - name: Compile Electron main
+        run: pnpm electron:compile
+
       - name: Run tests
         run: pnpm test:ci
 
+      # Gate B and the rest of the publication gates over the WHOLE tracked
+      # tree. The landing floor scans only changed paths, so this is the only
+      # run that reads a file nobody touched.
+      - name: Run publication gates
+        run: pnpm publication:check
+
       # With no EXAWATT_DISTRIBUTION_CONFIG_JSON this is the COMMUNITY build,
       # and that is deliberate: it is the composition every reader of the
-      # repository gets. The two Supabase secrets this step used to pass were
-      # inert — `nextDistributionEnvironment` blanks them after ambient env so
-      # legacy variables cannot turn a community capability back on — so they
-      # only made the step look like it proved the official build (BUG-042).
+      # repository gets, and the only one a fork can produce. The two Supabase
+      # secrets this step used to pass were inert — `nextDistributionEnvironment`
+      # blanks them after ambient env so legacy variables cannot turn a
+      # community capability back on — so they only made the step look like it
+      # proved the official build (BUG-042).
       - name: Build
         run: pnpm verify:community-build
