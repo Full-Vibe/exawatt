@@ -15,6 +15,7 @@ import type { SpatialBoardAltitude, SpatialBoardPiece } from '@exawatt/ui-model'
 import {
   BOARD_FIELD_IDENTITY,
   beginBoardTransition,
+  cancelBoardTransition,
   boardFieldPoseAt,
   boardFieldPoseMoved,
   boardTransitionProgress,
@@ -96,6 +97,9 @@ export function BoardField({
   const invalidate = useThree(state => state.invalidate);
   const carry = useRef<BoardFieldPose>(BOARD_FIELD_IDENTITY);
   const previousAltitude = useRef(altitude);
+  /** The transition this field last saw, so it can tell when the shared clock
+   *  was restarted underneath it by the camera. */
+  const seenStart = useRef<number | null>(null);
   const previousPositions = useRef(new Map<string, { x: number; y: number }>());
 
   useLayoutEffect(() => {
@@ -134,10 +138,39 @@ export function BoardField({
     invalidate();
   }, [altitude, clock, invalidate, pieces, reduced]);
 
+  // Reduced motion can be switched on mid-flight. A field left frozen partway
+  // through a carry would keep the whole board at the wrong size in the wrong
+  // place for as long as the session lasts, so it takes its resting pose at
+  // once instead of waiting for a transition it is no longer allowed to run.
+  useLayoutEffect(() => {
+    const node = group.current;
+    if (!node || !reduced) return;
+    carry.current = BOARD_FIELD_IDENTITY;
+    seenStart.current = null;
+    node.position.set(0, 0, 0);
+    node.scale.set(1, 1, 1);
+    if (clock) cancelBoardTransition(clock.current);
+    invalidate();
+  }, [clock, invalidate, reduced]);
+
   useFrame(state => {
     const node = group.current;
     if (!node || reduced || !clock) return;
     const now = performance.now();
+    // The clock is shared with the camera, and a camera flight may restart it
+    // while this field is still travelling. Carrying on from the pose the
+    // field started with would rewind it visibly, so a restart re-reads where
+    // the field actually IS and finishes the journey from there.
+    if (clock.current.startedAt !== seenStart.current) {
+      seenStart.current = clock.current.startedAt;
+      if (clock.current.startedAt !== null) {
+        carry.current = {
+          x: node.position.x,
+          y: node.position.y,
+          scale: node.scale.x,
+        };
+      }
+    }
     const progress = boardTransitionProgress(clock.current, now);
     const pose = boardFieldPoseAt(carry.current, progress);
     node.position.set(pose.x, pose.y, 0);

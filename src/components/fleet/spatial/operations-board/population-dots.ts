@@ -157,19 +157,41 @@ function centeredSlots(
   zone: SpatialBoardProjectZone,
   needed: number
 ): Array<{ x: number; y: number }> {
+  if (needed <= 0) return [];
   if (needed >= slots.length) return slots;
   const centerX = zone.rect.x + zone.radius;
   const centerY = zone.rect.y + zone.radius;
-  const distance = (slot: { x: number; y: number }) =>
-    (slot.x - centerX) ** 2 + (slot.y - centerY) ** 2;
-  return slots
-    .map((slot, index) => ({ slot, index, d: distance(slot) }))
-    // `index` breaks ties so a symmetric ring can never depend on sort
-    // stability: the field has to be identical on every run.
-    .sort((a, b) => a.d - b.d || a.index - b.index)
-    .slice(0, needed)
-    .sort((a, b) => a.slot.y - b.slot.y || a.slot.x - b.slot.x || a.index - b.index)
-    .map(entry => entry.slot);
+  const distances = new Float64Array(slots.length);
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index]!;
+    distances[index] =
+      (slot.x - centerX) ** 2 + (slot.y - centerY) ** 2;
+  }
+  // Sorting a copy of the DISTANCES rather than the slots is what keeps this
+  // affordable: it allocates nothing per slot, and the slot list is already
+  // generated row by row, so filtering it in place keeps the emission order
+  // without a second sort. This runs on every data tick.
+  const threshold = distances.slice().sort()[needed - 1]!;
+  let below = 0;
+  for (let index = 0; index < distances.length; index += 1) {
+    if (distances[index]! < threshold) below += 1;
+  }
+  // Slots exactly on the boundary are taken in generation order, so a
+  // symmetric ring resolves the same way on every run.
+  let ties = needed - below;
+  const chosen: Array<{ x: number; y: number }> = [];
+  for (let index = 0; index < slots.length; index += 1) {
+    const d = distances[index]!;
+    if (d < threshold) {
+      chosen.push(slots[index]!);
+      continue;
+    }
+    if (d === threshold && ties > 0) {
+      ties -= 1;
+      chosen.push(slots[index]!);
+    }
+  }
+  return chosen;
 }
 
 /**

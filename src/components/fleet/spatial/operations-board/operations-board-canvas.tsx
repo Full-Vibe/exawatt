@@ -804,6 +804,15 @@ function BoardCameraRig({
       element.removeEventListener('pointerup', endDrag);
       element.removeEventListener('pointercancel', endDrag);
       element.removeEventListener('wheel', onWheel);
+      // The board going away mid-drag is still the hand letting go: the
+      // marquee is owned by the surface outside this canvas and would
+      // otherwise be left on screen with no one listening to dismiss it.
+      hideBandOverlay();
+      element.style.cursor = '';
+      if (state.pointerId !== null) releaseCapture(state.pointerId);
+      for (const pointerId of state.touches.keys()) releaseCapture(pointerId);
+      state.touches.clear();
+      endBoardGesture(state);
     };
   }, [bandOverlayRef, gl, invalidate, projectionScratch, suppressMissRef]);
 
