@@ -70,6 +70,16 @@ export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
 export const RESUME_ACTIVE_AGENT_EVENT = 'exawatt:resume-active-agent';
 export const RESUME_PARKED_SCOPE_EVENT = 'exawatt:resume-parked-scope';
 export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
+/** palette/menu → workspace: close the ACTIVE Project, Sessions and all. The
+ *  workspace owns the consequence: with tabs open it raises the same
+ *  confirmation the strip's Close project raises, so no entry point can make
+ *  an Agent lose its turn without being asked (FIX-011). */
+export const CLOSE_ACTIVE_PROJECT_EVENT = 'exawatt:close-active-project';
+/** palette/menu → workspace: reveal the active Session's working directory in
+ *  Finder, falling back to the active Project's own directory. Carries no
+ *  path: only the workspace knows which one is selected, and a path on the
+ *  wire would let a stale row open a directory the operator left behind. */
+export const REVEAL_ACTIVE_PATH_EVENT = 'exawatt:reveal-active-path';
 /** palette/menu → workspace: nudge the active tab within its Project
  *  (the ⌘⌥[/⌘⌥] fixed family, D20); detail = { delta: 1 | -1 } */
 export const MOVE_ACTIVE_TAB_EVENT = 'exawatt:move-active-tab';

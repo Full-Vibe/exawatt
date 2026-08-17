@@ -171,7 +171,12 @@ export function buildApplicationMenuTemplate(
     },
     {
       label: 'File',
-      submenu: [verb('workspace-new-project')],
+      submenu: [
+        verb('workspace-new-project'),
+        separator(),
+        verb('workspace-reveal-path'),
+        verb('workspace-close-project'),
+      ],
     },
     {
       label: 'Edit',

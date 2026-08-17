@@ -48,6 +48,8 @@ import {
   CopyPlus,
   Play,
   ListRestart,
+  FolderSearch,
+  FolderX,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -62,6 +64,8 @@ import {
   RESUME_ACTIVE_AGENT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
   CLOSE_ACTIVE_EVENT,
+  CLOSE_ACTIVE_PROJECT_EVENT,
+  REVEAL_ACTIVE_PATH_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
   REOPEN_CLOSED_EVENT,
@@ -227,6 +231,8 @@ const WORKSPACE_PALETTE_ROW_ID = {
   moveProjectLeft: 'ws-move-project-left',
   moveProjectRight: 'ws-move-project-right',
   close: verbRow('workspace-close-tab'),
+  closeProject: verbRow('workspace-close-project'),
+  reveal: verbRow('workspace-reveal-path'),
 } as const;
 
 /** Contract join for the manifests that declare command-palette coverage. */
@@ -880,6 +886,50 @@ export function CommandPalette({
         icon: XCircle,
         availability: workspaceAvailability.commands['close-tab'],
         onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
+      },
+      {
+        id: WORKSPACE_PALETTE_ROW_ID.closeProject,
+        label: 'Close the active Project',
+        value: paletteValue(
+          'Close the active Project',
+          WORKSPACE_PALETTE_ROW_ID.closeProject
+        ),
+        keywords: [
+          'close',
+          'project',
+          'group',
+          'put away',
+          'dismiss',
+          'end',
+          'all sessions',
+        ],
+        icon: FolderX,
+        availability: workspaceAvailability.commands['close-project'],
+        // The workspace decides what closing costs: with Sessions still in it
+        // this raises the same confirmation the strip's entry raises.
+        onSelect: () => dispatch(CLOSE_ACTIVE_PROJECT_EVENT),
+      },
+      {
+        id: WORKSPACE_PALETTE_ROW_ID.reveal,
+        label: 'Reveal in Finder',
+        value: paletteValue(
+          'Reveal in Finder',
+          WORKSPACE_PALETTE_ROW_ID.reveal
+        ),
+        keywords: [
+          'reveal',
+          'finder',
+          'folder',
+          'directory',
+          'path',
+          'show',
+          'open',
+          'disk',
+          'worktree',
+        ],
+        icon: FolderSearch,
+        availability: workspaceAvailability.commands['reveal-path'],
+        onSelect: () => dispatch(REVEAL_ACTIVE_PATH_EVENT),
       },
     ];
   }, [dispatch, handleSelect, shortcutVersion, workspaceAvailability]);

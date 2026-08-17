@@ -64,6 +64,8 @@ import {
   OPEN_ROADMAP_EVENT,
   RENAME_ACTIVE_EVENT,
   CLOSE_ACTIVE_EVENT,
+  CLOSE_ACTIVE_PROJECT_EVENT,
+  REVEAL_ACTIVE_PATH_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
   OPEN_PROJECT_PICKER_EVENT,
   consumePendingProjectPicker,
@@ -1107,6 +1109,33 @@ export function WorkspaceClient() {
     [projects, requestProjectExit, turnFactsFor]
   );
   /**
+   * The Project-level close, from anywhere. The strip's Close project entry
+   * and the File-menu / ⌘K verbs land on this one function, so the
+   * confirmation is a property of the ACT, not of the entry point that
+   * reached it: a Project holding live Agents always names what it would end
+   * before it ends anything.
+   */
+  const closeActiveProject = useCallback((): boolean => {
+    if (!activeProject) return false;
+    requestProjectClose(activeProject.dir);
+    return true;
+  }, [activeProject, requestProjectClose]);
+  /**
+   * One path to Finder for every entry point. The strip reveals the chip the
+   * pointer is on; the verb reveals what is selected, preferring the Session's
+   * own working directory (a worktree is not its Project root) and falling
+   * back to the Project when no Session is selected.
+   */
+  const revealPath = useCallback((path: string) => {
+    void window.electron?.pty?.openPath(path, path);
+  }, []);
+  const revealActivePath = useCallback((): boolean => {
+    const target = activeTab?.cwd ?? activeProject?.dir;
+    if (!target) return false;
+    revealPath(target);
+    return true;
+  }, [activeProject, activeTab, revealPath]);
+  /**
    * Browser-style close target: the active Agent tab wins; when the active
    * Project has no tabs, the same verb closes that empty Project. Keep this
    * shared by the key layer and menu/palette event so ⌘W never becomes an
@@ -1209,6 +1238,8 @@ export function WorkspaceClient() {
   // handled by the state hook and the tab strip)
   useEffect(() => {
     const onCloseActive = () => void closeActiveItem();
+    const onCloseActiveProject = () => void closeActiveProject();
+    const onRevealActivePath = () => void revealActivePath();
     const onReopenClosed = (e: Event) => {
       const durableSessionId = (e as CustomEvent<{ durableSessionId?: string }>)
         .detail?.durableSessionId;
@@ -1216,11 +1247,23 @@ export function WorkspaceClient() {
     };
     window.addEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
     window.addEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
+    window.addEventListener(CLOSE_ACTIVE_PROJECT_EVENT, onCloseActiveProject);
+    window.addEventListener(REVEAL_ACTIVE_PATH_EVENT, onRevealActivePath);
     return () => {
       window.removeEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
       window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
+      window.removeEventListener(
+        CLOSE_ACTIVE_PROJECT_EVENT,
+        onCloseActiveProject
+      );
+      window.removeEventListener(REVEAL_ACTIVE_PATH_EVENT, onRevealActivePath);
     };
-  }, [closeActiveItem, reopenClosedSession]);
+  }, [
+    closeActiveItem,
+    closeActiveProject,
+    reopenClosedSession,
+    revealActivePath,
+  ]);
 
   // Native Session menu requests survive a route transition; the shortcut
   // itself calls the same action directly below. Wait for restored workspace
@@ -1473,9 +1516,7 @@ export function WorkspaceClient() {
               onCloneTab={(id, target) => void cloneSession(id, target)}
               onNewAgent={dir => createDraftTab(dir)}
               onCloseProject={requestProjectClose}
-              onRevealPath={cwd =>
-                void window.electron?.pty?.openPath(cwd, cwd)
-              }
+              onRevealPath={revealPath}
               onSelectProject={selectProject}
               onSelectTab={selectTab}
               onCloseTab={id => void requestClose(id)}
