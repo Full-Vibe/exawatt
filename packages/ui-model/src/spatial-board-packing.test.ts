@@ -192,6 +192,64 @@ describe('board packing', () => {
     });
   }
 
+  for (const [label, state] of scenarios) {
+    it(`keeps each Project's contents balanced in its circle — ${label}`, () => {
+      // Rings fill from opposite sides in turn, so a partly filled ring stays
+      // near-symmetric. Filling a ring as one arc left contents leaning away
+      // from the gap, and since the gap lands wherever the population stops,
+      // neighbouring Projects leaned different ways.
+      const layout = selectSpatialBoardLayout(state);
+      const leans: number[] = [];
+      for (const zone of layout.zones) {
+        const pieces = layout.pieces.filter(
+          piece => piece.visible && piece.projectId === zone.id
+        );
+        if (pieces.length === 0) continue;
+        const centerX = zone.rect.x + zone.rect.width / 2;
+        const xs = pieces.map(piece => piece.x - centerX);
+        const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+        // At worst ONE unit is left unpaired, so the contents can never be
+        // displaced by more than half the spacing between neighbours. The
+        // slack is for separation, which runs after placement where units
+        // delegate and is allowed to nudge the field to buy real clearance.
+        const worst = (zone.slotPitch * Math.sqrt(3)) / 2 + zone.slotPitch / 4;
+        expect(
+          Math.abs(midX),
+          `${zone.id} leans ${midX.toFixed(3)} on pitch ${zone.slotPitch}`
+        ).toBeLessThanOrEqual(worst);
+        leans.push(midX / zone.slotPitch);
+      }
+      // And no two Projects lean opposite ways by more than that one unit, so
+      // neighbouring circles never visibly disagree about their own middle.
+      const spread = Math.max(...leans) - Math.min(...leans);
+      expect(spread).toBeLessThanOrEqual(Math.sqrt(3));
+    });
+  }
+
+  it('never moves an Agent because a sibling arrived', () => {
+    // An Agent's position is its address. Centring a Project's contents on the
+    // slots actually occupied would balance them exactly and is the wrong
+    // trade, because every arrival would then shift everything already placed.
+    const before = selectSpatialBoardLayout(
+      fleet([agent('a', 'Alpha'), agent('b', 'Alpha'), agent('c', 'Alpha')])
+    );
+    const after = selectSpatialBoardLayout(
+      fleet([
+        agent('a', 'Alpha'),
+        agent('b', 'Alpha'),
+        agent('c', 'Alpha'),
+        agent('d', 'Alpha'),
+        agent('e', 'Alpha'),
+      ]),
+      { previousLayout: before }
+    );
+    for (const id of ['agent:a', 'agent:b', 'agent:c']) {
+      const was = before.pieces.find(piece => piece.id === id)!;
+      const now = after.pieces.find(piece => piece.id === id)!;
+      expect({ x: now.x, y: now.y }).toEqual({ x: was.x, y: was.y });
+    }
+  });
+
   it('keeps a Project circle sized by population, not by delegation', () => {
     // Circle area is how the board says how much is running. If delegation
     // could grow it, a small busy Project would outrank a large quiet one.

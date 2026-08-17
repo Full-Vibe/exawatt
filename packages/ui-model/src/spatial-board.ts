@@ -679,26 +679,59 @@ function densityZoneRect(
   );
 }
 
+/**
+ * Where slot `slotIndex` sits, in world units, relative to its Project's
+ * centre.
+ *
+ * Rings fill outward from the middle, and WITHIN a ring the order alternates
+ * between opposite sides. That second part is the whole point. Filling a ring
+ * as one continuous arc leaves a partly filled ring lopsided, so a Project's
+ * contents leaned away from the gap -- and because the gap lands wherever the
+ * population happens to stop, neighbouring Projects leaned different ways and
+ * visibly disagreed about where their own middle was. Taking opposite sides in
+ * turn means almost every count is balanced, and a lone leftover is the worst
+ * it can ever get.
+ *
+ * Centring the constellation on the slots actually occupied would balance it
+ * exactly, and it is the wrong trade: an Agent's position is its ADDRESS, so a
+ * sibling arriving must never move the Agent the operator is watching. The
+ * offset therefore stays a pure function of the slot index and nothing else.
+ */
 function axialSlotOffset(
   slotIndex: number,
   pitch: number
 ): { x: number; y: number } {
   if (slotIndex === 0) return { x: 0, y: 0 };
   const ring = hexRingForCount(slotIndex + 1);
-  const coordinates: Array<{ q: number; r: number; distance: number }> = [];
+  const bands = new Map<number, Array<{ q: number; r: number }>>();
   for (let q = -ring; q <= ring; q += 1) {
     const rMin = Math.max(-ring, -q - ring);
     const rMax = Math.min(ring, -q + ring);
     for (let r = rMin; r <= rMax; r += 1) {
       const distance = Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r));
-      coordinates.push({ q, r, distance });
+      const band = bands.get(distance) ?? [];
+      band.push({ q, r });
+      bands.set(distance, band);
     }
   }
-  coordinates.sort((a, b) => {
-    if (a.distance !== b.distance) return a.distance - b.distance;
-    return Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q);
-  });
-  const coordinate = coordinates[slotIndex]!;
+  const ordered: Array<{ q: number; r: number }> = [];
+  for (const distance of [...bands.keys()].sort((a, b) => a - b)) {
+    const band = bands.get(distance)!;
+    // True cartesian angle, not the angle of the axial pair: the axial basis
+    // is sheared, so sorting on `(q, r)` walks a large ring out of order.
+    band.sort(
+      (a, b) =>
+        Math.atan2(1.5 * a.r, Math.sqrt(3) * (a.q + a.r / 2)) -
+        Math.atan2(1.5 * b.r, Math.sqrt(3) * (b.q + b.r / 2))
+    );
+    const half = Math.ceil(band.length / 2);
+    for (let index = 0; index < half; index += 1) {
+      ordered.push(band[index]!);
+      const opposite = band[index + half];
+      if (opposite) ordered.push(opposite);
+    }
+  }
+  const coordinate = ordered[slotIndex]!;
   return {
     x: round4(pitch * Math.sqrt(3) * (coordinate.q + coordinate.r / 2)),
     y: round4(pitch * 1.5 * coordinate.r),
@@ -955,9 +988,9 @@ function aggregatePieces(
   altitude: SpatialBoardAltitude
 ): SpatialBoardPiece[] {
   const pieces: SpatialBoardPiece[] = [];
-  for (const status of STATUS_ORDER) {
+  const marks = STATUS_ORDER.filter(status => zone.statusCounts[status] > 0);
+  for (const status of marks) {
     const count = zone.statusCounts[status];
-    if (count === 0) continue;
     const slotIndex = pieces.length;
     const position =
       altitude === 'fleet'

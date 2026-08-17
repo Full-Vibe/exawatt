@@ -287,3 +287,60 @@ describe('computePopulationDotField', () => {
     expect(Array.from(first.status)).toEqual(Array.from(second.status));
   });
 });
+
+describe('population sits in the middle of its Project', () => {
+  const rect = { x: 0, y: 0, width: 24, height: 24 };
+
+  function spread(count: number) {
+    const field = computePopulationDotField(
+      [zone('project:p', rect)],
+      [aggregate('project:p', 'working', count)]
+    );
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    const xs = Array.from(field.x.slice(0, field.count));
+    const ys = Array.from(field.y.slice(0, field.count));
+    return {
+      count: field.count,
+      midX: (Math.min(...xs) + Math.max(...xs)) / 2 - centerX,
+      midY: (Math.min(...ys) + Math.max(...ys)) / 2 - centerY,
+      reach: Math.max(
+        ...xs.map((x, index) => Math.hypot(x - centerX, ys[index]! - centerY))
+      ),
+    };
+  }
+
+  it('centres a small population instead of hanging it under the label', () => {
+    // The slot grid is generated row by row down the circle, so filling it in
+    // generation order packed the population into the TOP rows and left the
+    // rest of the circle empty.
+    const small = spread(6);
+    expect(small.count).toBe(6);
+    expect(Math.abs(small.midX)).toBeLessThan(rect.width * 0.05);
+    expect(Math.abs(small.midY)).toBeLessThan(rect.height * 0.05);
+  });
+
+  it('grows the mass outward as the population grows', () => {
+    // The circle says how much room a Project has; the mass says how much of
+    // it is running. That comparison only works if the mass tracks the count.
+    let previous = -1;
+    for (const count of [4, 12, 30, 70]) {
+      const measured = spread(count);
+      expect(measured.reach).toBeGreaterThan(previous);
+      previous = measured.reach;
+    }
+  });
+
+  it('never pushes a dot outside its own Project', () => {
+    for (const count of [1, 6, 40, 400, 4000]) {
+      const measured = spread(count);
+      expect(measured.reach).toBeLessThanOrEqual(rect.width / 2);
+    }
+  });
+
+  it('places the same population identically every run', () => {
+    const once = spread(37);
+    const twice = spread(37);
+    expect(once).toEqual(twice);
+  });
+});
