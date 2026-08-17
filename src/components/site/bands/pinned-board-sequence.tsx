@@ -46,7 +46,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { HeroBoard } from '@/components/site/hero-board/hero-board';
+import {
+  HeroBoard,
+  useNarrowViewport,
+} from '@/components/site/hero-board/hero-board';
 import {
   heroBoardTheme,
   HERO_DEFAULT_THEME,
@@ -99,6 +102,11 @@ export function PinnedBoardSequence({
   className,
 }: PinnedBoardSequenceProps) {
   const reducedMotion = usePrefersReducedMotion();
+  const narrow = useNarrowViewport();
+  // The two conditions the CSS unpins on, in JS. When the layout is not
+  // pinned there is no camera to drive and no presence to schedule, so the
+  // listener does not exist rather than running and being overridden.
+  const unpinned = reducedMotion || narrow;
   const theme = useMemo(() => heroBoardTheme(themeKey), [themeKey]);
 
   const container = useRef<HTMLElement>(null);
@@ -167,8 +175,7 @@ export function PinnedBoardSequence({
   }, [screens, total]);
 
   useEffect(() => {
-    // The poster path has no camera to drive and no panel motion to schedule.
-    if (reducedMotion) return;
+    if (unpinned) return;
     window.addEventListener('scroll', sync, { passive: true });
     window.addEventListener('resize', sync);
     sync();
@@ -176,12 +183,7 @@ export function PinnedBoardSequence({
       window.removeEventListener('scroll', sync);
       window.removeEventListener('resize', sync);
     };
-  }, [sync, reducedMotion]);
-
-  const subject = useMemo(
-    () => resolveHeroHighlight(HERO_BOARD_CAPTURE, highlightId).subject,
-    [highlightId]
-  );
+  }, [sync, unpinned]);
 
   const ground = theme.canvas;
   const sequenceStyle = {
@@ -247,10 +249,9 @@ export function PinnedBoardSequence({
             band={band}
             index={index}
             active={index === active}
-            reducedMotion={reducedMotion}
+            unpinned={unpinned}
             theme={{ label: theme.label, muted: theme.labelMuted }}
             accent={theme.status['needs-you']}
-            subject={index === active ? subject : null}
             register={(node: HTMLElement | null) => {
               if (node) panelNodes.current.set(index, node);
               else panelNodes.current.delete(index);
@@ -266,27 +267,37 @@ function PinnedPanel({
   band,
   index,
   active,
-  reducedMotion,
+  unpinned,
   theme,
   accent,
-  subject,
   register,
 }: {
   band: HomepageBand;
   index: number;
   active: boolean;
-  reducedMotion: boolean;
+  unpinned: boolean;
   theme: { label: string; muted: string };
   accent: string;
-  subject: { label: string; detail: string } | null;
   register: (node: HTMLElement | null) => void;
 }) {
   const copy = altitudePanel(band.id);
+  // Every panel names its OWN subject, not the active one's. Gating it on
+  // "am I active" was wrong twice: unpinned, all three panels are on screen at
+  // once and only one of them would have named anything; and pinned, the
+  // subject would have popped in a frame after the panel it belongs to.
+  const subject = useMemo(
+    () =>
+      resolveHeroHighlight(
+        HERO_BOARD_CAPTURE,
+        band.boardHighlight ?? 'whole-fleet'
+      ).subject,
+    [band.boardHighlight]
+  );
   const style = {
     '--panel-screens': band.screens,
     // The pinned pass owns this after first paint. It starts at the first
     // panel's own presence so nothing flashes in before the listener runs.
-    '--panel-opacity': reducedMotion || index === 0 ? 1 : 0,
+    '--panel-opacity': unpinned || index === 0 ? 1 : 0,
   } as CSSProperties;
 
   return (
