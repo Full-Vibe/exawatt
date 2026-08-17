@@ -11,7 +11,7 @@ import os from 'os';
  * on disk before anything decides to send it, rather than being scrubbed by
  * whichever caller remembers to.
  *
- * Home-directory anonymization is new and applies everywhere. `/Users/dan/...`
+ * Home-directory anonymization is new and applies everywhere. `/Users/example/...`
  * identifies a person; `~/...` answers the same diagnostic question.
  */
 

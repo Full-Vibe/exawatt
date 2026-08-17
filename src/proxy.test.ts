@@ -55,7 +55,7 @@ function sessionCookie(): Record<string, string> {
       id: 'user-1',
       aud: 'authenticated',
       role: 'authenticated',
-      email: 'unit@test.dev',
+      email: 'unit@source.test',
       created_at: '',
       app_metadata: {},
       user_metadata: {},
