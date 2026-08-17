@@ -476,6 +476,13 @@ export default function HudGallery() {
               keyboard-accessible chrome; WebGL is reserved for the scalable
               agent world and reviewable material work.{' '}
               <a
+                href="/hud-gallery/design-canon"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the design canon briefing →
+              </a>{' '}
+              <a
                 href="/hud-gallery/agent-launcher"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}
