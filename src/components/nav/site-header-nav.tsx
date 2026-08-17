@@ -21,6 +21,7 @@ import {
 import {
   Building2,
   Check,
+  CircleOff,
   ChevronLeft,
   ChevronRight,
   Laptop,
@@ -210,12 +211,14 @@ interface SiteHeaderNavProps {
   isAuthenticated: boolean;
   userName?: string;
   userEmail?: string;
+  accountAvailable?: boolean;
 }
 
 export function SiteHeaderNav({
   isAuthenticated,
   userName,
   userEmail,
+  accountAvailable = true,
 }: SiteHeaderNavProps) {
   const pathname = usePathname();
   const isHome = pathname === '/';
@@ -359,7 +362,7 @@ export function SiteHeaderNav({
               </Link>
             </Button>
           )}
-        {!isAuthenticated && isAppRoute(pathname) && (
+        {!isAuthenticated && accountAvailable && isAppRoute(pathname) && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/sign-in" aria-label="Sign In" title="Sign In">
               <LogIn className="h-3.5 w-3.5 sm:hidden" />
@@ -478,7 +481,7 @@ export function SiteHeaderNav({
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>
-              ) : (
+              ) : accountAvailable ? (
                 /* the account menu renders signed out in the desktop app, and
                    used to offer no way in at all — the one place an operator
                    looks for an account had nothing in it (ENG-030 OS0.1) */
@@ -487,6 +490,11 @@ export function SiteHeaderNav({
                     <LogIn className="mr-2 h-4 w-4" />
                     Sign in
                   </Link>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem disabled data-account-not-configured>
+                  <CircleOff className="mr-2 h-4 w-4" />
+                  Accounts unavailable in this build
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

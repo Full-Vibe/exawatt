@@ -1,19 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getSession, from, is } = vi.hoisted(() => ({
-  getSession: vi.fn(),
-  from: vi.fn(() => ({ select: () => ({ is }) })),
-  is: vi.fn(async () => ({ count: 5, error: null })),
+const { useUntriagedFeedbackCount } = vi.hoisted(() => ({
+  useUntriagedFeedbackCount: vi.fn(),
 }));
 
-vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({ auth: { getSession }, from }),
-}));
-
-vi.mock('@/lib/auth/admin', () => ({
-  isAdminEmail: (email: string | null | undefined) =>
-    email?.trim().toLowerCase() === 'maintainer@example.com',
+vi.mock('@/components/feedback/use-untriaged-feedback', () => ({
+  useUntriagedFeedbackCount,
 }));
 
 import { RoadmapRail } from './roadmap-rail';
@@ -38,6 +31,7 @@ function renderRail(untriagedFeedback?: number | null) {
 describe('RoadmapRail untriaged feedback line (ENG-025 F2.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useUntriagedFeedbackCount.mockReturnValue(null);
   });
 
   it('surfaces the operator inbox count in the trust strip', () => {
@@ -58,25 +52,14 @@ describe('RoadmapRail untriaged feedback line (ENG-025 F2.1)', () => {
     expect(document.querySelector('[data-untriaged-feedback]')).toBeNull();
   });
 
-  it('shows the live count to the operator (ENG-025 F3.1)', async () => {
-    getSession.mockResolvedValue({
-      data: { session: { user: { email: 'maintainer@example.com' } } },
-    });
+  it('shows the server-derived live count to a capable operator', () => {
+    useUntriagedFeedbackCount.mockReturnValue(5);
     renderRail();
-    expect(
-      await screen.findByText('5 filed thoughts awaiting triage')
-    ).toBeTruthy();
+    expect(screen.getByText('5 filed thoughts awaiting triage')).toBeTruthy();
   });
 
-  it('never shows a non-operator an operator-lane triage line', async () => {
-    // F3.1(b): the suggestions lane is not drained to canon, so its filer is
-    // shown no triage vocabulary at all.
-    getSession.mockResolvedValue({
-      data: { session: { user: { email: 'someone@example.com' } } },
-    });
+  it('renders no operator-lane copy when capability is absent', () => {
     renderRail();
-    await waitFor(() => expect(getSession).toHaveBeenCalled());
     expect(document.querySelector('[data-untriaged-feedback]')).toBeNull();
-    expect(from).not.toHaveBeenCalled();
   });
 });

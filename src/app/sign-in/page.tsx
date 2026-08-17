@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -19,8 +19,10 @@ import {
   GENERIC_CALLBACK_FAILURE,
   isAuthCallbackFailure,
 } from '@/components/auth/callback-failures';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { useElectronAuth } from '@/hooks/use-electron-auth';
+import { AccountNotConfiguredCard } from '@/components/auth/account-not-configured-card';
 import { FORGOT_PASSWORD_PATH } from '@/components/auth/hosted-auth';
 import {
   analyticsSurface,
@@ -79,7 +81,10 @@ function SignInForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(
+    () => createOptionalClient(resolvedDistribution()),
+    []
+  );
   const { signInWithGoogle } = useElectronAuth(supabase, {
     onError: setError,
     onLoadingChange: setLoading,
@@ -105,6 +110,7 @@ function SignInForm() {
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supabase) return;
     setLoading(true);
     setError(null);
     setCallbackErrorStale(true);
@@ -145,6 +151,7 @@ function SignInForm() {
   };
 
   const handleGoogleSignIn = async () => {
+    if (!supabase) return;
     setLoading(true);
     setError(null);
     setCallbackErrorStale(true);
@@ -176,6 +183,8 @@ function SignInForm() {
       setLoading(false);
     }
   };
+
+  if (!supabase) return <AccountNotConfiguredCard />;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">

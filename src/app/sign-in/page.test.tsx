@@ -7,9 +7,14 @@ import {
   GENERIC_CALLBACK_FAILURE,
 } from '@/components/auth/callback-failures';
 
-const { search, captured } = vi.hoisted(() => ({
+const { search, captured, accountClient } = vi.hoisted(() => ({
   search: { current: '' },
   captured: { events: [] as Array<Record<string, unknown>> },
+  accountClient: {
+    current: {
+      auth: { signInWithPassword: vi.fn(async () => ({ error: null })) },
+    } as object | null,
+  },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -18,9 +23,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    auth: { signInWithPassword: vi.fn(async () => ({ error: null })) },
-  }),
+  createOptionalClient: () => accountClient.current,
 }));
 
 vi.mock('@/hooks/use-electron-auth', () => ({
@@ -42,6 +45,9 @@ async function mount() {
 beforeEach(() => {
   search.current = '';
   captured.events = [];
+  accountClient.current = {
+    auth: { signInWithPassword: vi.fn(async () => ({ error: null })) },
+  };
 });
 
 afterEach(cleanup);
@@ -133,5 +139,16 @@ describe('sign-in page', () => {
     ).toHaveAttribute('href', '/auth/forgot-password');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(captured.events).toHaveLength(0);
+  });
+
+  it('shows an honest local-capability state when accounts are absent', async () => {
+    accountClient.current = null;
+    await mount();
+
+    expect(screen.getByText("Accounts aren't configured")).toBeVisible();
+    expect(
+      screen.getByRole('link', { name: 'Open workspace' })
+    ).toHaveAttribute('href', '/workspace');
+    expect(screen.queryByLabelText('Email')).toBeNull();
   });
 });

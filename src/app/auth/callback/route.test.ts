@@ -128,6 +128,7 @@ describe('/auth/callback exchange outcome', () => {
       'callback carried no authorization code'
     );
   });
+
 });
 
 describe('the ?error= channel is closed', () => {

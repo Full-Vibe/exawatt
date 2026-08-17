@@ -71,6 +71,13 @@ describe('SiteHeaderNav leaderboard link', () => {
     );
   });
 
+  it('does not advertise sign-in when this build has no account service', () => {
+    render(<SiteHeaderNav isAuthenticated={false} accountAvailable={false} />);
+
+    expect(screen.getByRole('link', { name: /leaderboard/i })).toBeVisible();
+    expect(screen.queryByRole('link', { name: /sign in/i })).toBeNull();
+  });
+
   it('places the app-global theme switcher in the account menu', async () => {
     render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
 

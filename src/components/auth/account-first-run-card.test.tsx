@@ -12,9 +12,10 @@ import {
   ACCOUNT_FIRST_RUN_STORAGE_KEY,
 } from './account-first-run-card';
 
-const { pathname, session } = vi.hoisted(() => ({
+const { pathname, session, accountAvailable } = vi.hoisted(() => ({
   pathname: { current: '/workspace' },
   session: { current: null as { user: { id: string } } | null },
+  accountAvailable: { current: true },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -22,14 +23,17 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    auth: {
-      getSession: async () => ({ data: { session: session.current } }),
-      onAuthStateChange: () => ({
-        data: { subscription: { unsubscribe: vi.fn() } },
-      }),
-    },
-  }),
+  createOptionalClient: () =>
+    accountAvailable.current
+      ? {
+          auth: {
+            getSession: async () => ({ data: { session: session.current } }),
+            onAuthStateChange: () => ({
+              data: { subscription: { unsubscribe: vi.fn() } },
+            }),
+          },
+        }
+      : null,
 }));
 
 /** mount and let the component's own session read and effects settle */
@@ -45,6 +49,7 @@ function card() {
 beforeEach(() => {
   pathname.current = '/workspace';
   session.current = null;
+  accountAvailable.current = true;
   window.localStorage.clear();
 });
 
@@ -121,6 +126,12 @@ describe('AccountFirstRunCard', () => {
     expect(
       window.localStorage.getItem(ACCOUNT_FIRST_RUN_STORAGE_KEY)
     ).not.toBeNull();
+  });
+
+  it('stays silent when account services are not configured', async () => {
+    accountAvailable.current = false;
+    await mount();
+    expect(card()).toBeNull();
   });
 
   it('stays off the auth surfaces and off public pages', async () => {

@@ -778,9 +778,9 @@ export const architectureManifest = {
         },
         {
           id: 'supabase-data',
-          label: 'Supabase Data + Artifacts',
+          label: 'Configured Account + Hosted Data',
           summary:
-            'Auth, inference and goal-visual quota, RLS-owned product feedback and operator aggregates, enabled-only public stat projections, private feedback and goal-visual images, hosted app data, and the anonymous signed desktop update channel.',
+            'Optional account auth plus private hosted adapters for quota, feedback, operator aggregates, app data, artifacts, and signed updates. Public callers consume source-neutral DTOs and server-derived capabilities rather than database schemas or browser allowlists.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 760,
