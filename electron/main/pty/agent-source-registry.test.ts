@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  agentSourceLaunchError,
+  agentSourceLaunchReadiness,
+  probeOutcome,
   localSourceState,
   openClawSourceState,
   parseClaudeAuthStatus,
@@ -16,7 +17,30 @@ import {
   sourceOwnedActionCommand,
 } from './agent-source-registry';
 import { configureLoginShellScratchDir } from './login-shell';
-import type { AgentSourceRegistrySnapshot } from '@exawatt/core';
+import type {
+  AgentSourceProbeName,
+  AgentSourceRegistrySnapshot,
+  AgentSourceState,
+} from '@exawatt/core';
+
+/** A launch-scope registry carrying one non-launchable Claude Code source. */
+function claudeSnapshot(source: {
+  state: AgentSourceState;
+  stateLabel: string;
+  unobservedProbes?: readonly AgentSourceProbeName[];
+}): AgentSourceRegistrySnapshot {
+  return {
+    sources: [
+      {
+        harness: 'claude',
+        label: 'Claude Code',
+        launchable: false,
+        unobservedProbes: [],
+        ...source,
+      },
+    ],
+  } as unknown as AgentSourceRegistrySnapshot;
+}
 
 describe('Agent Source registry truth', () => {
   const originalOpencodeConfigContent = process.env.OPENCODE_CONFIG_CONTENT;
@@ -38,68 +62,127 @@ describe('Agent Source registry truth', () => {
   it('keeps local installation, authentication, and degraded states distinct', () => {
     expect(
       localSourceState({
+        installationObserved: true,
         executable: false,
-        versionResponded: false,
+        version: 'unanswered',
         authKnown: false,
         authenticated: false,
       })
     ).toBe('not-installed');
     expect(
       localSourceState({
+        installationObserved: true,
         executable: true,
-        versionResponded: true,
+        version: 'responded',
         authKnown: true,
         authenticated: false,
       })
     ).toBe('action-required');
     expect(
       localSourceState({
+        installationObserved: true,
         executable: true,
-        versionResponded: false,
+        version: 'failed',
         authKnown: true,
         authenticated: true,
       })
     ).toBe('degraded');
     expect(
       localSourceState({
+        installationObserved: true,
         executable: true,
-        versionResponded: true,
+        version: 'responded',
         authKnown: false,
         authenticated: false,
       })
     ).toBe('unknown');
     expect(
       localSourceState({
+        installationObserved: true,
         executable: true,
-        versionResponded: true,
+        version: 'responded',
         authKnown: true,
         authenticated: true,
       })
     ).toBe('ready');
   });
 
+  it('separates a probe that answered no from one that never answered', () => {
+    // BUG-063. `degraded` is a claim about Claude Code; `unknown` is a fact
+    // about how far Exawatt got. A version command killed by its deadline
+    // used to produce the first.
+    expect(
+      localSourceState({
+        installationObserved: true,
+        executable: true,
+        version: 'unanswered',
+        authKnown: true,
+        authenticated: true,
+      })
+    ).toBe('unknown');
+    // The deepest case: a PATH lookup that never came back is not evidence
+    // that nothing is installed.
+    expect(
+      localSourceState({
+        installationObserved: false,
+        executable: false,
+        version: 'unanswered',
+        authKnown: false,
+        authenticated: false,
+      })
+    ).toBe('unknown');
+  });
+
+  it('reads a killed command as unanswered and a nonzero exit as evidence', () => {
+    expect(
+      probeOutcome({ answered: true, ok: true, stdout: '', stderr: '' })
+    ).toBe('responded');
+    expect(
+      probeOutcome({ answered: true, ok: false, stdout: '', stderr: '' })
+    ).toBe('failed');
+    expect(
+      probeOutcome({ answered: false, ok: false, stdout: '', stderr: '' })
+    ).toBe('unanswered');
+  });
+
   it('keeps an unreachable configured gateway distinct from missing setup', () => {
     expect(
       openClawSourceState({
+        installationObserved: true,
         executable: true,
         configured: false,
+        protocolObserved: true,
         protocolReady: false,
       })
     ).toBe('action-required');
     expect(
       openClawSourceState({
+        installationObserved: true,
         executable: true,
         configured: true,
+        protocolObserved: true,
         protocolReady: false,
       })
     ).toBe('degraded');
     expect(
       openClawSourceState({
+        installationObserved: true,
         executable: true,
         configured: true,
+        protocolObserved: true,
         protocolReady: true,
       })
     ).toBe('ready');
+    // A gateway status that never came back says nothing about the gateway.
+    expect(
+      openClawSourceState({
+        installationObserved: true,
+        executable: true,
+        configured: true,
+        protocolObserved: false,
+        protocolReady: false,
+      })
+    ).toBe('unknown');
   });
 
   it('requires successful OpenClaw protocol status instead of trusting JSON or a port', () => {
@@ -276,29 +359,96 @@ describe('Agent Source registry truth', () => {
   });
 
   it('turns source observations into actionable main-process launch errors', () => {
-    const snapshot = {
-      sources: [
-        {
-          harness: 'claude',
-          label: 'Claude Code',
-          state: 'action-required',
-          stateLabel: 'Action required',
-          launchable: false,
-        },
-      ],
-    } as AgentSourceRegistrySnapshot;
-    expect(agentSourceLaunchError(snapshot, 'claude')).toContain(
+    const snapshot = claudeSnapshot({
+      state: 'action-required',
+      stateLabel: 'Action required',
+    });
+    const blocked = agentSourceLaunchReadiness(snapshot, 'claude');
+    expect(blocked).toMatchObject({ known: true, blocked: true });
+    expect(blocked.known && blocked.blocked && blocked.message).toContain(
       'requires sign-in'
     );
     expect(
-      agentSourceLaunchError(
+      agentSourceLaunchReadiness(
         {
           ...snapshot,
           sources: [{ ...snapshot.sources[0], launchable: true }],
         },
         'claude'
       )
-    ).toBeNull();
+    ).toEqual({ known: true, blocked: false });
+  });
+
+  // BUG-063, fifth in the BUG-001 / 008 / 009 / 026 family. The operator saw
+  // "Claude Code launch readiness could not be verified (degraded). Recheck
+  // Settings → Agent Sources." on the first Resume after an app restart, and
+  // his instinct that clicking again would just work was right: the version
+  // probe had been killed by its deadline on a cold login shell, and the
+  // deadline was published as a verdict about Claude Code.
+  describe('an unprobed source cannot produce a failure message', () => {
+    it('answers known: false for a source whose probes never came back', () => {
+      const readiness = agentSourceLaunchReadiness(
+        claudeSnapshot({
+          state: 'unknown',
+          stateLabel: 'Unknown',
+          unobservedProbes: ['version', 'authentication'],
+        }),
+        'claude'
+      );
+      expect(readiness).toEqual({
+        known: false,
+        unobserved: ['version', 'authentication'],
+      });
+    });
+
+    it('never publishes a message for an incomplete observation', () => {
+      // Coverage outranks state: even a snapshot whose producer computed
+      // `degraded` over a probe that never answered may not speak. This is
+      // the assertion that fails if the sixth instance is written.
+      for (const state of [
+        'degraded',
+        'unavailable',
+        'not-installed',
+        'action-required',
+        'incompatible',
+        'unknown',
+      ] as const) {
+        const readiness = agentSourceLaunchReadiness(
+          claudeSnapshot({
+            state,
+            stateLabel: state,
+            unobservedProbes: ['version'],
+          }),
+          'claude'
+        );
+        expect(readiness.known, `state=${state}`).toBe(false);
+        expect('message' in readiness, `state=${state}`).toBe(false);
+      }
+    });
+
+    it('treats a source missing from the snapshot as unlooked-at, not broken', () => {
+      expect(
+        agentSourceLaunchReadiness(
+          { sources: [] } as unknown as AgentSourceRegistrySnapshot,
+          'claude'
+        )
+      ).toEqual({ known: false, unobserved: ['installation'] });
+    });
+
+    it('still speaks for a negative it actually observed', () => {
+      const readiness = agentSourceLaunchReadiness(
+        claudeSnapshot({ state: 'degraded', stateLabel: 'Degraded' }),
+        'claude'
+      );
+      expect(readiness.known && readiness.blocked && readiness.message).toBe(
+        'Claude Code is installed, but its checks did not pass. Open Settings → Agent Sources to recheck.'
+      );
+      // The state enum never reaches the operator, and no sentence tells him
+      // to go recheck a probe that simply has not finished.
+      expect(
+        readiness.known && readiness.blocked && readiness.message
+      ).not.toMatch(/could not be verified|\(degraded\)/);
+    });
   });
 });
 
@@ -333,12 +483,13 @@ describe('Grok Build source truth (ENG-003 S4)', () => {
           state: 'action-required',
           stateLabel: 'Action required',
           launchable: false,
+          unobservedProbes: [],
         },
       ],
     } as unknown as AgentSourceRegistrySnapshot;
-    expect(agentSourceLaunchError(snapshot, 'grok')).toContain('Grok Build');
-    expect(agentSourceLaunchError(snapshot, 'grok')).toContain(
-      'requires sign-in'
-    );
+    const readiness = agentSourceLaunchReadiness(snapshot, 'grok');
+    const message = readiness.known && readiness.blocked && readiness.message;
+    expect(message).toContain('Grok Build');
+    expect(message).toContain('requires sign-in');
   });
 });

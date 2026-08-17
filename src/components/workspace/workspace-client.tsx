@@ -751,7 +751,8 @@ export function WorkspaceClient() {
   // independent roadmap block for the same Session, and neither producer may
   // narrow what the fleet-wide surfaces below are allowed to read.
   const mergedAttention = useMemo(
-    () => mergeFleetAttention(fleetAttention('pty', attention), roadmapAttention),
+    () =>
+      mergeFleetAttention(fleetAttention('pty', attention), roadmapAttention),
     [attention, roadmapAttention]
   );
   // What the Team altitude PAINTS, for the tab ring (BUG-021). `⌘⇧[`/`⌘⇧]`
@@ -992,18 +993,21 @@ export function WorkspaceClient() {
         loadAgentSourcePreferences(),
         loadAgentSourceRegistry('launch'),
       ]);
-      const source = recommendLaunchableAgentSource(
+      // 'none' is an observed claim; an incomplete registry hands back a
+      // source and lets the launch itself settle it (BUG-063).
+      const choice = recommendLaunchableAgentSource(
         preferenceLoad.preferences,
         dir,
         registryLoad.snapshot
       );
-      if (!source) {
+      if (choice.kind === 'none') {
         setError(
           registryLoad.error?.message ??
             'No Agent Source is ready. Configure one in Agent Sources.'
         );
         return false;
       }
+      const source = choice.source;
       const permissionMode = permissionModeFor(
         preferenceLoad.preferences,
         dir,
@@ -1033,18 +1037,21 @@ export function WorkspaceClient() {
         loadAgentSourcePreferences(),
         loadAgentSourceRegistry('launch'),
       ]);
-      const source = recommendLaunchableAgentSource(
+      // 'none' is an observed claim; an incomplete registry hands back a
+      // source and lets the launch itself settle it (BUG-063).
+      const choice = recommendLaunchableAgentSource(
         preferenceLoad.preferences,
         dir,
         registryLoad.snapshot
       );
-      if (!source) {
+      if (choice.kind === 'none') {
         setError(
           registryLoad.error?.message ??
             'No Agent Source is ready. Configure one in Agent Sources.'
         );
         return false;
       }
+      const source = choice.source;
       const permissionMode = permissionModeFor(
         preferenceLoad.preferences,
         dir,

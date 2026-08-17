@@ -123,11 +123,13 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
         interactive: declaration.capabilities.interactiveLaunch,
         initialTask: declaration.capabilities.initialTask,
         exactResume: declaration.capabilities.exactResume,
-        modelSelection: declaration.capabilities.modelSelection !== 'source-owned',
+        modelSelection:
+          declaration.capabilities.modelSelection !== 'source-owned',
         // Grok Build accepts `--reasoning-effort` but publishes no per-model
         // option set to any interface a PTY launch can read, so Exawatt shows
         // no effort control rather than inventing one.
-        effortSelection: declaration.capabilities.effortSelection !== 'source-owned',
+        effortSelection:
+          declaration.capabilities.effortSelection !== 'source-owned',
         permissionModes: declaration.capabilities.permissionModes,
       },
     };
@@ -176,6 +178,15 @@ function fallbackLocalSource(id: AgentSourceId): AgentSourceSnapshot {
     summary:
       'Local source status is available through the Electron desktop bridge.',
     observedAt: fallbackObservedAt,
+    // Nothing was probed at all here: without the bridge there is no login
+    // shell to ask. Declaring that keeps a fallback snapshot from reading as
+    // an observed verdict (BUG-063).
+    unobservedProbes: [
+      'installation',
+      'version',
+      'authentication',
+      'model catalog',
+    ],
     facts: {
       installation: fact,
       reachability: fact,
@@ -213,6 +224,7 @@ function fallbackDemoSource(): AgentSourceSnapshot {
     summary:
       'Demo Mode exercises the same source-facing concepts without a live harness.',
     observedAt: fallbackObservedAt,
+    unobservedProbes: [],
     facts: {
       installation: fact,
       reachability: fact,
@@ -245,6 +257,7 @@ function fallbackOpenClawSource(): AgentSourceSnapshot {
     stateLabel: 'Unknown',
     summary: 'Local gateway status is available through the desktop bridge.',
     observedAt: fallbackObservedAt,
+    unobservedProbes: ['installation', 'gateway'],
     facts: {
       installation: fact,
       reachability: fact,
@@ -445,30 +458,73 @@ export function recommendAgentSource(
   )[0];
 }
 
+/** Sources whose observation is incomplete, so nothing about them is settled. */
+export function unprovenSources(
+  registry: AgentSourceRegistrySnapshot
+): AgentSourceSnapshot[] {
+  return registry.sources.filter(
+    source => source.unobservedProbes.length > 0 || source.state === 'unknown'
+  );
+}
+
+/**
+ * What a one-click launch should do with the registry it can see.
+ *
+ * `none` is a CLAIM: every source was observed, and none of them can launch.
+ * `unproven` is the absence of one, and it still carries a source, because an
+ * incomplete observation is not a reason to refuse the operator a launch. The
+ * main process agrees (`agentSourceLaunchReadiness`): the launch attempt is
+ * the better probe, and the harness speaks for itself in the pane.
+ */
+export type LaunchSourceChoice =
+  | { kind: 'launchable'; source: AgentSourceId }
+  | { kind: 'unproven'; source: AgentSourceId }
+  | { kind: 'none' };
+
 /**
  * Resolve a one-click launch against observed source truth. Preferences rank
  * candidates, but can never select a source the live registry says cannot
- * launch. Returns null when the operator needs to configure a source first.
+ * launch (BUG-063: they also cannot be overruled by a probe that never
+ * answered).
  */
 export function recommendLaunchableAgentSource(
   state: AgentSourcePreferenceState,
   projectDir: string,
   registry: AgentSourceRegistrySnapshot
-): AgentSourceId | null {
+): LaunchSourceChoice {
+  const launchSources = launchSourceSnapshots(registry);
   const launchable = new Set(
-    launchSourceSnapshots(registry)
+    launchSources
       .filter(source => source.launchable)
       .map(source => source.harness)
   );
   const projectChoice = state.projectLastUsed[projectDir];
-  if (projectChoice && launchable.has(projectChoice)) return projectChoice;
-  return (
-    [...AGENT_SOURCE_ORDER]
-      .filter(source => launchable.has(source))
-      .sort(
-        (a, b) => (state.sourceRecency[b] ?? 0) - (state.sourceRecency[a] ?? 0)
-      )[0] ?? null
+  if (projectChoice && launchable.has(projectChoice)) {
+    return { kind: 'launchable', source: projectChoice };
+  }
+  const ranked = [...AGENT_SOURCE_ORDER]
+    .filter(source => launchable.has(source))
+    .sort(
+      (a, b) => (state.sourceRecency[b] ?? 0) - (state.sourceRecency[a] ?? 0)
+    )[0];
+  if (ranked) return { kind: 'launchable', source: ranked };
+  // Nothing is known-launchable. Before saying so, check whether we finished
+  // asking: "no source is ready" over an incomplete registry is the fleet-wide
+  // marker painted from a partial map all over again.
+  const unproven = new Set(
+    unprovenSources(registry)
+      .map(source => source.harness)
+      .filter((harness): harness is AgentSourceId => harness !== null)
   );
+  if (unproven.size === 0) return { kind: 'none' };
+  const preferred = recommendAgentSource(state, projectDir);
+  return {
+    kind: 'unproven',
+    source: unproven.has(preferred)
+      ? preferred
+      : ([...AGENT_SOURCE_ORDER].find(source => unproven.has(source)) ??
+        preferred),
+  };
 }
 
 export function permissionModeFor(

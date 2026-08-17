@@ -106,6 +106,20 @@ export interface AgentSourceDeclaration {
   capabilities: AgentSourceCapabilities;
 }
 
+/**
+ * A probe that a snapshot's producer started but never got an answer from:
+ * the command was killed by its deadline, or it never spawned at all.
+ *
+ * Names are operator-legible because they reach the Settings surface.
+ */
+export type AgentSourceProbeName =
+  | 'installation'
+  | 'version'
+  | 'authentication'
+  | 'model catalog'
+  | 'launch environment'
+  | 'gateway';
+
 export interface AgentSourceSnapshot extends AgentSourceDeclaration {
   id: string;
   configured: boolean;
@@ -114,6 +128,16 @@ export interface AgentSourceSnapshot extends AgentSourceDeclaration {
   stateLabel: string;
   summary: string;
   observedAt: number;
+  /**
+   * Coverage, declared by the producer (BUG-063). Every probe listed here was
+   * asked and never answered, so the `state` beside it is how far Exawatt got,
+   * not what is true of the source. Empty means the observation is complete
+   * and `state` is a claim about the world.
+   *
+   * Required on purpose: a new adapter cannot ship a snapshot that silently
+   * passes off an unfinished probe as an observed verdict.
+   */
+  unobservedProbes: readonly AgentSourceProbeName[];
   facts: {
     installation: AgentSourceFact;
     reachability: AgentSourceFact;
@@ -143,6 +167,23 @@ export interface AgentSourceRegistrySnapshot {
   comingSoon: AgentSourceCatalogEntry[];
   observedAt: number;
 }
+
+/**
+ * What Exawatt learned about a source's ability to launch right now.
+ *
+ * The `known: false` arm carries NO message, by construction. "We did not
+ * finish asking" is a fact about Exawatt's own progress, and it has no
+ * operator-facing sentence anywhere in the product, so no surface can render
+ * one for a source nobody finished probing (BUG-063). That is the same wall
+ * `FleetAttentionSignals` puts around attention in BUG-026: the incomplete
+ * form exists in the type system and cannot reach the surface that publishes.
+ *
+ * `agentSourceLaunchReadiness` is the only producer.
+ */
+export type AgentSourceLaunchReadiness =
+  | { known: true; blocked: false }
+  | { known: true; blocked: true; message: string }
+  | { known: false; unobserved: readonly AgentSourceProbeName[] };
 
 export type AgentSourceAction =
   | 'authenticate'

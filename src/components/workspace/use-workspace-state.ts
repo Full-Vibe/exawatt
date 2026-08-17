@@ -1812,12 +1812,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         loadAgentSourceRegistry('launch', true),
         loadAgentModelCatalog(target.source, project.dir),
       ]);
-      const targetReady = launchSourceSnapshots(registryLoad.snapshot).some(
+      // A clone is refused only on an OBSERVED negative. A source whose probe
+      // never answered is not "not available" (BUG-063); the clone proceeds
+      // and the harness reports for itself.
+      const targetSnapshot = launchSourceSnapshots(registryLoad.snapshot).find(
         source =>
-          source.id === target.sourceId &&
-          source.harness === target.source &&
-          source.launchable
+          source.id === target.sourceId && source.harness === target.source
       );
+      const targetReady =
+        targetSnapshot?.launchable === true ||
+        (targetSnapshot !== undefined &&
+          (targetSnapshot.unobservedProbes.length > 0 ||
+            targetSnapshot.state === 'unknown'));
       const modelReady =
         target.modelId === modelCatalog.effectiveModel ||
         modelCatalog.models.some(model => model.id === target.modelId);

@@ -6,9 +6,12 @@ import * as path from 'path';
 import type {
   AgentHarness,
   AgentSourceActionResult,
+  AgentSourceAdapterId,
   AgentSourceCapabilities,
   AgentSourceFact,
   AgentSourceFactState,
+  AgentSourceLaunchReadiness,
+  AgentSourceProbeName,
   AgentSourceProvenance,
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
@@ -29,6 +32,13 @@ import {
 const execFileAsync = promisify(execFile);
 
 interface CommandResult {
+  /**
+   * The command RAN and produced an exit status, so its result is evidence
+   * either way. False means the probe was killed by its deadline or never
+   * spawned: Exawatt learned NOTHING, which is not the same as learning that
+   * the source is broken (BUG-063).
+   */
+  answered: boolean;
   ok: boolean;
   stdout: string;
   stderr: string;
@@ -72,6 +82,7 @@ async function loginShellCommand(
       encoding: 'utf8',
     });
     return {
+      answered: true,
       ok: true,
       stdout: result.stdout.trim(),
       stderr: result.stderr.trim(),
@@ -80,8 +91,17 @@ async function loginShellCommand(
     const failed = error as {
       stdout?: string;
       stderr?: string;
+      code?: number | string;
     };
+    // Node reports a real exit status as a NUMBER on `code`. A deadline kill
+    // (`killed: true, signal: 'SIGTERM', code: null`), an external signal and
+    // a spawn failure (`code: 'ENOENT'`) all leave no status behind. Output
+    // that overran maxBuffer did answer, just too loudly.
+    const answered =
+      typeof failed.code === 'number' ||
+      failed.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
     return {
+      answered,
       ok: false,
       stdout: failed.stdout?.trim() ?? '',
       stderr: failed.stderr?.trim() ?? '',
@@ -117,10 +137,22 @@ export async function inspectOpencodeLaunchEnvironment(
       : 'unknown';
 }
 
+/**
+ * Where the executable lives, or why we cannot say.
+ *
+ * `answered: false` is the deepest case of BUG-063: a `command -v` killed by
+ * its deadline used to be indistinguishable from one that searched the whole
+ * PATH and found nothing, so a cold login shell published "not installed"
+ * about a CLI sitting right there.
+ */
+type ExecutableProbe =
+  | { answered: true; path: string | null }
+  | { answered: false; path: null };
+
 async function resolveExecutable(
   shell: string,
   executable: string
-): Promise<string | null> {
+): Promise<ExecutableProbe> {
   const testExecutable =
     process.env.EXAWATT_TEST === '1' &&
     process.env.EXAWATT_TEST_HARNESS_BIN &&
@@ -130,9 +162,9 @@ async function resolveExecutable(
   if (testExecutable) {
     try {
       await fs.promises.access(testExecutable, fs.constants.X_OK);
-      return testExecutable;
+      return { answered: true, path: testExecutable };
     } catch {
-      return null;
+      return { answered: true, path: null };
     }
   }
   const result = await loginShellCommand(
@@ -140,9 +172,12 @@ async function resolveExecutable(
     `command -v ${shellQuote(executable)}`,
     8_000
   );
-  if (!result.ok) return null;
+  if (!result.answered) return { answered: false, path: null };
   const resolved = result.stdout.split('\n')[0]?.trim();
-  return resolved && path.isAbsolute(resolved) ? resolved : null;
+  return {
+    answered: true,
+    path: resolved && path.isAbsolute(resolved) ? resolved : null,
+  };
 }
 
 function sourceCommand(executable: string, args: readonly string[]): string {
@@ -236,26 +271,99 @@ export function parseCodexAuthStatus(
     : null;
 }
 
+/**
+ * What one probe produced. `failed` is evidence (the command ran and said no);
+ * `unanswered` is the absence of evidence and must never be reported as one.
+ */
+export type AgentSourceProbeOutcome = 'responded' | 'failed' | 'unanswered';
+
+export function probeOutcome(result: CommandResult): AgentSourceProbeOutcome {
+  if (!result.answered) return 'unanswered';
+  return result.ok ? 'responded' : 'failed';
+}
+
 export function localSourceState(input: {
+  installationObserved: boolean;
   executable: boolean;
-  versionResponded: boolean;
+  version: AgentSourceProbeOutcome;
   authKnown: boolean;
   authenticated: boolean;
 }): AgentSourceState {
+  // Order matters: every "we did not learn" arm resolves to `unknown` BEFORE
+  // any arm that makes a claim about the source (BUG-063).
+  if (!input.installationObserved) return 'unknown';
   if (!input.executable) return 'not-installed';
-  if (!input.versionResponded) return 'degraded';
+  if (input.version === 'unanswered') return 'unknown';
+  if (input.version === 'failed') return 'degraded';
   if (!input.authKnown) return 'unknown';
   return input.authenticated ? 'ready' : 'action-required';
 }
 
 export function openClawSourceState(input: {
+  installationObserved: boolean;
   executable: boolean;
   configured: boolean;
+  protocolObserved: boolean;
   protocolReady: boolean;
 }): AgentSourceState {
+  if (!input.installationObserved) return 'unknown';
   if (!input.executable) return 'not-installed';
   if (!input.configured) return 'action-required';
+  if (!input.protocolObserved) return 'unknown';
   return input.protocolReady ? 'ready' : 'degraded';
+}
+
+/**
+ * The snapshot for a source whose very first probe never came back. Nothing
+ * downstream of `command -v` was attempted, so every fact is `unknown` and the
+ * whole observation declares itself unobserved.
+ */
+function unobservedSourceSnapshot(input: {
+  adapterId: AgentSourceAdapterId;
+  id: string;
+  label: string;
+  observedAt: number;
+}): AgentSourceSnapshot {
+  const declaration = agentSourceDeclaration(input.adapterId);
+  const evidence = provenance(
+    'source-command',
+    `${input.label} CLI`,
+    input.observedAt
+  );
+  const unknownFact = (detail: string): AgentSourceFact =>
+    fact('unknown', 'Unknown', detail, evidence);
+  return {
+    ...declaration,
+    id: input.id,
+    configured: true,
+    launchable: false,
+    state: 'unknown',
+    stateLabel: stateLabel('unknown'),
+    summary: `${input.label} status is not known yet.`,
+    observedAt: input.observedAt,
+    unobservedProbes: [
+      'installation',
+      'version',
+      'authentication',
+      'model catalog',
+    ],
+    facts: {
+      installation: unknownFact(
+        'The PATH lookup did not return before its deadline.'
+      ),
+      reachability: unknownFact('Reachability follows the PATH lookup.'),
+      authentication: unknownFact('No authentication check was reached.'),
+      identity: unknownFact('No source identity was queried.'),
+      compatibility: unknownFact('No version response was reached.'),
+      modelDiscovery: unknownFact('No catalog read was reached.'),
+    },
+    actions: {
+      recheck: true,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: true,
+    },
+  };
 }
 
 async function inspectLocalHarness(
@@ -268,7 +376,7 @@ async function inspectLocalHarness(
   const descriptor = harnessDescriptor(harness);
   const source = descriptor.source;
   const declaration = agentSourceDeclaration(harness);
-  const executablePath = await resolveExecutable(shell, source.executable);
+  const installation = await resolveExecutable(shell, source.executable);
   const commandEvidence = provenance(
     'source-command',
     `${source.label} CLI`,
@@ -279,6 +387,16 @@ async function inspectLocalHarness(
     'Built-in adapter declaration',
     0
   );
+
+  if (!installation.answered) {
+    return unobservedSourceSnapshot({
+      adapterId: harness,
+      id: `${harness}-local`,
+      label: source.label,
+      observedAt,
+    });
+  }
+  const executablePath = installation.path;
 
   if (!executablePath) {
     const state: AgentSourceState = 'not-installed';
@@ -291,6 +409,7 @@ async function inspectLocalHarness(
       stateLabel: stateLabel(state),
       summary: `${source.label} is supported here, but its CLI is not installed.`,
       observedAt,
+      unobservedProbes: [],
       facts: {
         installation: fact(
           'not-installed',
@@ -338,6 +457,13 @@ async function inspectLocalHarness(
     };
   }
 
+  // These deadlines stay SHORT on purpose (BUG-063). Raising them to 8s/10s
+  // looked like the obvious way to make a cold-start expiry rarer, and it is
+  // the wrong trade now that an expiry is harmless: it publishes nothing,
+  // claims nothing, and does not refuse the launch. Every registry read sits
+  // on the path to a usable launcher, and a probe that hangs burns its whole
+  // budget — measured as +6s to settle the composer, in exactly the cold-start
+  // moment the operator complained about. Answer fast and say "not known yet".
   const [versionResult, authResult] = await Promise.all([
     loginShellCommand(
       shell,
@@ -372,12 +498,17 @@ async function inspectLocalHarness(
       : authenticated
         ? (codexIdentity?.identity ?? 'Codex account')
         : 'Not signed in';
+  const versionProbe = probeOutcome(versionResult);
   const state = localSourceState({
+    installationObserved: true,
     executable: true,
-    versionResponded: versionResult.ok,
+    version: versionProbe,
     authKnown,
     authenticated,
   });
+  const unobservedProbes: AgentSourceProbeName[] = [];
+  if (versionProbe === 'unanswered') unobservedProbes.push('version');
+  if (!authResult.answered) unobservedProbes.push('authentication');
   return {
     ...declaration,
     id: `${harness}-local`,
@@ -390,8 +521,11 @@ async function inspectLocalHarness(
         ? `Exawatt can start and resume local ${source.label} Agents. Sign-in and execution remain with ${source.label}.`
         : state === 'action-required'
           ? `${source.label} is installed, but its source-owned sign-in needs attention.`
-          : `${source.label} is installed, but Exawatt could not verify every launch prerequisite.`,
+          : state === 'unknown'
+            ? `${source.label} status is not known yet.`
+            : `${source.label} is installed, but its checks did not pass.`,
     observedAt,
+    unobservedProbes,
     facts: {
       installation: fact(
         'ready',
@@ -400,11 +534,21 @@ async function inspectLocalHarness(
         commandEvidence
       ),
       reachability: fact(
-        versionResult.ok ? 'ready' : 'degraded',
-        versionResult.ok ? 'Local CLI responds' : 'Version check failed',
-        versionResult.ok
+        versionProbe === 'responded'
+          ? 'ready'
+          : versionProbe === 'failed'
+            ? 'degraded'
+            : 'unknown',
+        versionProbe === 'responded'
+          ? 'Local CLI responds'
+          : versionProbe === 'failed'
+            ? 'Version check failed'
+            : 'Unknown',
+        versionProbe === 'responded'
           ? 'Observed through the source version command.'
-          : 'The executable exists, but its version command did not complete.',
+          : versionProbe === 'failed'
+            ? 'The executable exists, and its version command returned an error.'
+            : 'The version command did not return before its deadline.',
         commandEvidence
       ),
       authentication: fact(
@@ -430,12 +574,12 @@ async function inspectLocalHarness(
         commandEvidence
       ),
       compatibility: fact(
-        versionResult.ok ? 'unknown' : 'degraded',
-        versionResult.ok ? 'No minimum pinned' : 'Unknown',
-        versionResult.ok
+        versionProbe === 'failed' ? 'degraded' : 'unknown',
+        versionProbe === 'responded' ? 'No minimum pinned' : 'Unknown',
+        versionProbe === 'responded'
           ? 'Exawatt has not declared a minimum compatible version for this source.'
           : 'Compatibility cannot be evaluated without a version response.',
-        versionResult.ok ? unknownConfigEvidence : commandEvidence
+        versionProbe === 'responded' ? unknownConfigEvidence : commandEvidence
       ),
       modelDiscovery: fact(
         authenticated ? 'unknown' : authKnown ? 'action-required' : 'unknown',
@@ -504,7 +648,16 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
     'Built-in adapter declaration',
     0
   );
-  const executablePath = await resolveExecutable(shell, source.executable);
+  const installation = await resolveExecutable(shell, source.executable);
+  if (!installation.answered) {
+    return unobservedSourceSnapshot({
+      adapterId: 'opencode',
+      id: 'opencode-local',
+      label: 'OpenCode',
+      observedAt,
+    });
+  }
+  const executablePath = installation.path;
   if (!executablePath) {
     return {
       ...declaration,
@@ -515,6 +668,7 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
       stateLabel: 'Not installed',
       summary: 'OpenCode is supported here, but its CLI is not installed.',
       observedAt,
+      unobservedProbes: [],
       facts: {
         installation: fact(
           'not-installed',
@@ -594,15 +748,24 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
   const modelCount = modelsResult.ok
     ? parseOpencodeModelCatalog(modelsResult.stdout).models.length
     : 0;
+  const versionProbe = probeOutcome(versionResult);
   const launchEnvironmentFree = launchEnvironmentState === 'free';
   const state: AgentSourceState =
-    !versionResult.ok || !version
-      ? 'degraded'
-      : !version.compatible
-        ? 'incompatible'
-        : !launchEnvironmentFree
-          ? 'degraded'
-          : 'ready';
+    versionProbe === 'unanswered' || launchEnvironmentState === 'unknown'
+      ? 'unknown'
+      : versionProbe === 'failed' || !version
+        ? 'degraded'
+        : !version.compatible
+          ? 'incompatible'
+          : !launchEnvironmentFree
+            ? 'degraded'
+            : 'ready';
+  const unobservedProbes: AgentSourceProbeName[] = [];
+  if (versionProbe === 'unanswered') unobservedProbes.push('version');
+  if (launchEnvironmentState === 'unknown')
+    unobservedProbes.push('launch environment');
+  if (!authResult.answered) unobservedProbes.push('authentication');
+  if (!modelsResult.answered) unobservedProbes.push('model catalog');
   const credentialCount = auth?.credentialCount ?? null;
   return {
     ...declaration,
@@ -616,8 +779,11 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
         ? 'Exawatt can start and resume local OpenCode Agents. Provider credentials and execution remain with OpenCode.'
         : state === 'incompatible'
           ? 'This OpenCode version predates the adapter contract verified by Exawatt.'
-          : 'OpenCode is installed, but Exawatt could not verify every launch prerequisite.',
+          : state === 'unknown'
+            ? 'OpenCode status is not known yet.'
+            : 'OpenCode is installed, but its checks did not pass.',
     observedAt,
+    unobservedProbes,
     facts: {
       installation: fact(
         'ready',
@@ -626,17 +792,29 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
         commandEvidence
       ),
       reachability: fact(
-        versionResult.ok && launchEnvironmentFree ? 'ready' : 'degraded',
-        !versionResult.ok
-          ? 'Version check failed'
-          : launchEnvironmentFree
-            ? 'Local CLI responds'
-            : 'Launch configuration seam occupied',
-        !versionResult.ok
-          ? 'The executable exists, but its version command did not complete.'
-          : launchEnvironmentFree
-            ? 'Observed through opencode --version.'
-            : 'An existing OPENCODE_CONFIG_CONTENT value is preserved; Exawatt will not replace it to inject a launch agent.',
+        versionProbe === 'unanswered' || launchEnvironmentState === 'unknown'
+          ? 'unknown'
+          : versionProbe === 'responded' && launchEnvironmentFree
+            ? 'ready'
+            : 'degraded',
+        versionProbe === 'unanswered'
+          ? 'Unknown'
+          : versionProbe === 'failed'
+            ? 'Version check failed'
+            : launchEnvironmentState === 'unknown'
+              ? 'Unknown'
+              : launchEnvironmentFree
+                ? 'Local CLI responds'
+                : 'Launch configuration seam occupied',
+        versionProbe === 'unanswered'
+          ? 'The version command did not return before its deadline.'
+          : versionProbe === 'failed'
+            ? 'The executable exists, and its version command returned an error.'
+            : launchEnvironmentState === 'unknown'
+              ? 'The launch environment check did not return before its deadline.'
+              : launchEnvironmentFree
+                ? 'Observed through opencode --version.'
+                : 'An existing OPENCODE_CONFIG_CONTENT value is preserved; Exawatt will not replace it to inject a launch agent.',
         commandEvidence
       ),
       authentication: fact(
@@ -735,7 +913,16 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
     'Built-in adapter declaration',
     0
   );
-  const executablePath = await resolveExecutable(shell, source.executable);
+  const installation = await resolveExecutable(shell, source.executable);
+  if (!installation.answered) {
+    return unobservedSourceSnapshot({
+      adapterId: 'grok',
+      id: 'grok-local',
+      label: 'Grok Build',
+      observedAt,
+    });
+  }
+  const executablePath = installation.path;
   if (!executablePath) {
     return {
       ...declaration,
@@ -746,6 +933,7 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
       stateLabel: 'Not installed',
       summary: 'Grok Build is supported here, but its CLI is not installed.',
       observedAt,
+      unobservedProbes: [],
       facts: {
         installation: fact(
           'not-installed',
@@ -809,16 +997,24 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
   );
   const auth = parseGrokAuthBanner(modelsOutput);
   const modelCount = parseGrokModelCatalog(modelsResult.stdout).models.length;
+  const versionProbe = probeOutcome(versionResult);
   const state: AgentSourceState =
-    !versionResult.ok || !version
-      ? 'degraded'
-      : !version.compatible
-        ? 'incompatible'
-        : !auth
-          ? 'unknown'
-          : auth.authenticated
-            ? 'ready'
-            : 'action-required';
+    versionProbe === 'unanswered'
+      ? 'unknown'
+      : versionProbe === 'failed' || !version
+        ? 'degraded'
+        : !version.compatible
+          ? 'incompatible'
+          : !auth
+            ? 'unknown'
+            : auth.authenticated
+              ? 'ready'
+              : 'action-required';
+  const unobservedProbes: AgentSourceProbeName[] = [];
+  if (versionProbe === 'unanswered') unobservedProbes.push('version');
+  if (!modelsResult.answered) {
+    unobservedProbes.push('authentication', 'model catalog');
+  }
   return {
     ...declaration,
     id: 'grok-local',
@@ -833,8 +1029,11 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
           ? 'This Grok Build version predates the adapter contract verified by Exawatt.'
           : state === 'action-required'
             ? 'Grok Build is installed, but its source-owned sign-in needs attention.'
-            : 'Grok Build is installed, but Exawatt could not verify every launch prerequisite.',
+            : state === 'unknown'
+              ? 'Grok Build status is not known yet.'
+              : 'Grok Build is installed, but its checks did not pass.',
     observedAt,
+    unobservedProbes,
     facts: {
       installation: fact(
         'ready',
@@ -843,11 +1042,21 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
         commandEvidence
       ),
       reachability: fact(
-        versionResult.ok ? 'ready' : 'degraded',
-        versionResult.ok ? 'Local CLI responds' : 'Version check failed',
-        versionResult.ok
+        versionProbe === 'responded'
+          ? 'ready'
+          : versionProbe === 'failed'
+            ? 'degraded'
+            : 'unknown',
+        versionProbe === 'responded'
+          ? 'Local CLI responds'
+          : versionProbe === 'failed'
+            ? 'Version check failed'
+            : 'Unknown',
+        versionProbe === 'responded'
           ? 'Observed through grok --version.'
-          : 'The executable exists, but its version command did not complete.',
+          : versionProbe === 'failed'
+            ? 'The executable exists, and its version command returned an error.'
+            : 'The version command did not return before its deadline.',
         commandEvidence
       ),
       authentication: fact(
@@ -1056,11 +1265,26 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
     'Built-in adapter declaration',
     0
   );
-  const executable = await resolveExecutable(shell, 'openclaw');
+  const installation = await resolveExecutable(shell, 'openclaw');
+  if (!installation.answered) {
+    return unobservedSourceSnapshot({
+      adapterId: 'openclaw',
+      id: 'openclaw-local',
+      label: 'OpenClaw',
+      observedAt,
+    });
+  }
+  const executable = installation.path;
+  const unreached: CommandResult = {
+    answered: true,
+    ok: false,
+    stdout: '',
+    stderr: '',
+  };
   const [versionResult, statusResult, config] = await Promise.all([
     executable
       ? loginShellCommand(shell, sourceCommand(executable, ['--version']))
-      : Promise.resolve({ ok: false, stdout: '', stderr: '' }),
+      : Promise.resolve(unreached),
     executable
       ? loginShellCommand(
           shell,
@@ -1073,7 +1297,7 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
           ]),
           4_500
         )
-      : Promise.resolve({ ok: false, stdout: '', stderr: '' }),
+      : Promise.resolve(unreached),
     readOpenClawConfig(),
   ]);
   const gateway = parseOpenClawGatewayStatus(
@@ -1084,8 +1308,11 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
   const port = config?.port ?? 18789;
   const configured = Boolean(config) || gateway.configValid === true;
   const state = openClawSourceState({
+    installationObserved: true,
     executable: Boolean(executable),
     configured,
+    // A gateway status that never came back says nothing about the gateway.
+    protocolObserved: statusResult.answered,
     protocolReady: gateway.protocolReady,
   });
   const protocolEvidence = provenance(
@@ -1110,11 +1337,14 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
       state === 'ready'
         ? 'OpenClaw accepted an authenticated protocol probe. Fleet control remains behind its adapter, separate from the Terminal composer.'
         : state === 'degraded'
-          ? 'OpenClaw is configured, but its gateway protocol could not be verified.'
+          ? 'OpenClaw is configured, but its gateway did not accept the protocol probe.'
           : state === 'not-installed'
             ? 'OpenClaw is supported, but its local CLI is not installed.'
-            : 'OpenClaw needs a local gateway configuration before Exawatt can connect.',
+            : state === 'unknown'
+              ? 'OpenClaw gateway status is not known yet.'
+              : 'OpenClaw needs a local gateway configuration before Exawatt can connect.',
     observedAt,
+    unobservedProbes: statusResult.answered ? [] : ['gateway'],
     facts: {
       installation: fact(
         executable ? 'ready' : 'not-installed',
@@ -1200,6 +1430,7 @@ function demoSource(): AgentSourceSnapshot {
     summary:
       'Demo Mode exercises the same source-facing fleet concepts without a live harness. Every fact is explicitly simulated.',
     observedAt,
+    unobservedProbes: [],
     facts: {
       installation: fact(
         'simulated',
@@ -1348,25 +1579,64 @@ export async function inspectAgentSources(
   }
 }
 
-export function agentSourceLaunchError(
+/**
+ * The ONLY producer of a launch verdict, and the only place a source's
+ * observed state becomes an operator-facing refusal (BUG-063).
+ *
+ * The pre-launch gate exists to turn a doomed launch into a sentence the
+ * operator can act on. It can only do that for a NEGATIVE WE OBSERVED. When a
+ * probe never answered, we know nothing, and the honest verdict carries no
+ * message at all: `known: false` has no `message` field, so no caller can
+ * publish "could not be verified" about a source nobody finished asking about.
+ *
+ * A missing source is the same case one level up: absence from the snapshot
+ * means it was never looked at, not that it is broken.
+ */
+export function agentSourceLaunchReadiness(
   snapshot: AgentSourceRegistrySnapshot,
   harness: AgentHarness
-): string | null {
+): AgentSourceLaunchReadiness {
   const source = snapshot.sources.find(
     candidate => candidate.harness === harness
   );
-  const label = source?.label ?? agentSourceDeclaration(harness).label;
-  if (!source) {
-    return `${label} status is unavailable. Recheck Settings → Agent Sources before launching.`;
+  if (!source) return { known: false, unobserved: ['installation'] };
+  if (source.launchable) return { known: true, blocked: false };
+  // Coverage is checked BEFORE state, exactly as merged attention coverage is
+  // checked before a marker: a state computed over an incomplete observation
+  // is not a claim about the world.
+  if (source.unobservedProbes.length > 0) {
+    return { known: false, unobserved: source.unobservedProbes };
   }
-  if (source.launchable) return null;
+  if (source.state === 'unknown') {
+    return { known: false, unobserved: [] };
+  }
+  const label = source.label;
   if (source.state === 'not-installed') {
-    return `${label} is not installed. Open Settings → Agent Sources for the installation guide.`;
+    return {
+      known: true,
+      blocked: true,
+      message: `${label} is not installed. Open Settings → Agent Sources for the installation guide.`,
+    };
   }
   if (source.state === 'action-required') {
-    return `${label} requires sign-in. Open Settings → Agent Sources to authenticate and recheck.`;
+    return {
+      known: true,
+      blocked: true,
+      message: `${label} requires sign-in. Open Settings → Agent Sources to authenticate and recheck.`,
+    };
   }
-  return `${label} launch readiness could not be verified (${source.stateLabel.toLowerCase()}). Recheck Settings → Agent Sources.`;
+  if (source.state === 'incompatible') {
+    return {
+      known: true,
+      blocked: true,
+      message: `${label} is older than the version Exawatt supports. Update it, then recheck in Settings → Agent Sources.`,
+    };
+  }
+  return {
+    known: true,
+    blocked: true,
+    message: `${label} is installed, but its checks did not pass. Open Settings → Agent Sources to recheck.`,
+  };
 }
 
 export function sourceOwnedActionCommand(
