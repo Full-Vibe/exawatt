@@ -1,4 +1,4 @@
-import type { OCClient } from '../oc/client';
+import type { OCGatewayClient } from '../oc/client';
 import { TypedEmitter, type CoreEventMap } from '../events/emitter';
 import type { AgentActivity } from '../types/agent';
 import type {
@@ -16,7 +16,7 @@ export class ChatAdapter extends TypedEmitter<CoreEventMap> {
   >();
 
   constructor(
-    private client: OCClient,
+    private client: OCGatewayClient,
     private methods: OCMethods
   ) {
     super();

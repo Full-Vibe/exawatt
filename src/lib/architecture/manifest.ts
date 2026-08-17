@@ -756,7 +756,7 @@ export const architectureManifest = {
           id: 'openclaw-client',
           label: 'OpenClaw Client',
           summary:
-            'Core OpenClaw JSON-RPC client, adapters, and fleet primitives; ENG-010 adds authenticated remote attach without shell-scraping source state.',
+            'Core OpenClaw JSON-RPC client, adapters, and fleet primitives behind an Electron-main credential broker: the renderer receives an opaque, owner-bound, method-allowlisted capability while Gateway secrets, device identity, endpoint choice, and authenticated sockets stay outside it. ENG-010 adds authenticated remote attach without shell-scraping source state.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 295,

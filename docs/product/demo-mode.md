@@ -29,7 +29,13 @@ Naming is domain-specific and singular: **Demo** is the tenant's name;
 fixture corpus. The switcher also shows that shared Organization Workspace as
 an honest, non-activatable preview linking to `/organization`.
 
-The web app (no Electron, no OpenClaw) starts on the same honest Demo Workspace source by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
+The web app (no Electron, no OS-owned Agent Source boundary) always starts on
+the same honest Demo Workspace source, so public demos do not emit live-source
+token probes, auth redirects, or connection errors on page load. A focused
+Electron run may opt into its configured local/LAN OpenClaw source with
+`NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; the authenticated socket and every
+credential remain Electron-main owned. Browsers never receive a token-returning
+fallback route.
 
 ### Retired to eval-only: the mock fleet simulation
 

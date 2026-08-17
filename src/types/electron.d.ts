@@ -735,6 +735,45 @@ export interface ElectronAnalyticsApi {
   onMainProcessEvents: (handler: () => void) => () => void;
 }
 
+export interface ElectronOpenClawCapabilityGrant {
+  capabilityId: string;
+  status: 'connected';
+  grants: {
+    observe: true;
+    chat: true;
+    schedule: true;
+  };
+}
+
+export type ElectronOpenClawEvent =
+  | {
+      capabilityId: string;
+      type: 'connection-status';
+      status: 'connecting' | 'connected' | 'disconnected' | 'error';
+    }
+  | {
+      capabilityId: string;
+      type: 'connection-error';
+      message: string;
+    }
+  | {
+      capabilityId: string;
+      type: 'gateway-event';
+      eventName: 'presence' | 'chat.segment' | 'chat.tool' | 'health';
+      payload: unknown;
+    };
+
+export interface ElectronOpenClawApi {
+  connect: () => Promise<ElectronOpenClawCapabilityGrant>;
+  call: (
+    capabilityId: string,
+    method: string,
+    params: unknown
+  ) => Promise<unknown>;
+  disconnect: (capabilityId: string) => Promise<void>;
+  onEvent: (handler: (event: ElectronOpenClawEvent) => void) => () => void;
+}
+
 export interface ExawattBuildInfo {
   sha: string;
   branch: string;
@@ -898,6 +937,7 @@ declare global {
         off: (channel: string, handler: (...args: unknown[]) => void) => void;
       };
       agentSources?: ElectronAgentSourcesApi;
+      openClaw?: ElectronOpenClawApi;
       operatorStats?: {
         scan: (
           since: string,

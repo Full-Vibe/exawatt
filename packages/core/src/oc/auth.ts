@@ -2,9 +2,20 @@ import * as ed from '@noble/ed25519';
 
 export interface OCGatewayConfig {
   gateway?: {
+    mode?: 'local' | 'remote';
     port?: number;
-    host?: string;
-    auth?: { token?: string };
+    bind?: 'auto' | 'lan' | 'loopback' | 'custom' | 'tailnet';
+    customBindHost?: string;
+    auth?: {
+      mode?: 'none' | 'token' | 'password' | 'trusted-proxy';
+      token?: string;
+      password?: string;
+    };
+    remote?: {
+      url?: string;
+      token?: string;
+      password?: string;
+    };
   };
 }
 

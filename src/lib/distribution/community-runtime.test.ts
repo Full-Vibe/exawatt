@@ -57,8 +57,8 @@ const ENTRYPOINTS: Record<string, Disposition> = {
   'api/feedback/route.ts': 'degrades',
   'api/goal-visuals/route.ts': 'degrades',
   'api/operator-stats/route.ts': 'degrades',
-  // Local-only reads. `api/oc/token` deliberately consults no account at all:
-  // the credential is the machine's, and locality is what authorises it.
+  // Local-only reads. `api/oc/token` deliberately consults no account at all,
+  // but is now a tombstone: OS-local credentials never cross a web response.
   'api/dev-identity/route.ts': 'account-free',
   'api/oc/token/route.ts': 'account-free',
   // Invite redemption runs on the service-role store, which is already
@@ -198,12 +198,11 @@ describe('a community distribution answers every account-backed entrypoint', () 
     expect(response.status).toBe(401);
   });
 
-  it('serves the local gateway read with no account in the picture', async () => {
-    // The credential is the machine's own. Requiring a hosted session for it
-    // was wrong independently of the distribution split.
+  it('retires the local gateway web read with no account in the picture', async () => {
     const token = await import('@/app/api/oc/token/route');
     const response = await token.GET();
-    expect([200, 404]).toContain(response.status);
+    expect(response.status).toBe(410);
+    await expect(response.text()).resolves.not.toMatch(/token|password|ws:/i);
   });
 });
 

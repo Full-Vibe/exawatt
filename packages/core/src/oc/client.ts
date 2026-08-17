@@ -27,11 +27,50 @@ export interface OCClientConfig {
   requestTimeoutMs?: number;
   reconnectDelayMs?: number;
   maxReconnectDelay?: number;
-  clientId?: string;
+  clientId?: OCGatewayClientId;
   clientVersion?: string;
   clientPlatform?: string;
-  clientMode?: string;
+  clientMode?: OCGatewayClientMode;
+  /**
+   * Exact Gateway scopes requested by this client. Keep this narrow: a
+   * shared Gateway secret may be able to grant much more than the surface
+   * embedding this client should receive.
+   */
+  scopes?: readonly OCGatewayOperatorScope[];
 }
+
+/** Values accepted by OpenClaw protocol v3 (2026.6.11). */
+export type OCGatewayClientId =
+  | 'webchat-ui'
+  | 'openclaw-control-ui'
+  | 'openclaw-tui'
+  | 'webchat'
+  | 'cli'
+  | 'gateway-client'
+  | 'openclaw-macos'
+  | 'openclaw-ios'
+  | 'openclaw-android'
+  | 'node-host'
+  | 'test'
+  | 'fingerprint'
+  | 'openclaw-probe';
+
+export type OCGatewayClientMode =
+  | 'webchat'
+  | 'cli'
+  | 'test'
+  | 'ui'
+  | 'backend'
+  | 'node'
+  | 'probe';
+
+export type OCGatewayOperatorScope =
+  | 'operator.read'
+  | 'operator.write'
+  | 'operator.admin'
+  | 'operator.approvals'
+  | 'operator.pairing'
+  | 'operator.talk.secrets';
 
 export type OCConnectionStatus =
   | 'connecting'
@@ -39,12 +78,33 @@ export type OCConnectionStatus =
   | 'disconnected'
   | 'error';
 
+/**
+ * The capability consumed by FleetManager and its adapters. Keeping this
+ * structural lets Electron main own the real authenticated client while the
+ * renderer holds only a bounded IPC capability with the same event/call
+ * shape.
+ */
+export interface OCGatewayClient {
+  call<R = unknown>(method: string, params?: unknown): Promise<R>;
+  onOCEvent(eventName: string, handler: (payload: unknown) => void): void;
+  offOCEvent(eventName: string, handler: (payload: unknown) => void): void;
+  on<E extends keyof CoreEventMap>(
+    event: E,
+    handler: (data: CoreEventMap[E]) => void
+  ): void;
+  off<E extends keyof CoreEventMap>(
+    event: E,
+    handler: (data: CoreEventMap[E]) => void
+  ): void;
+}
+
 export class OCClient extends TypedEmitter<CoreEventMap> {
   private ws: WebSocket | null = null;
   private status: OCConnectionStatus = 'disconnected';
   private pendingRequests = new Map<string, PendingRequest>();
   private requestCounter = 0;
   private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = false;
   private devicePrivateKey: string | null = null;
   private devicePublicKey: string | null = null;
@@ -85,8 +145,16 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
 
   disconnect(): void {
     this.shouldReconnect = false;
-    this.ws?.close();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    const socket = this.ws;
     this.ws = null;
+    socket?.close();
+    for (const [, pending] of this.pendingRequests) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Connection closed'));
+    }
+    this.pendingRequests.clear();
     this._setStatus('disconnected');
   }
 
@@ -156,27 +224,36 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       `[OCClient] Opening WebSocket: ${this.config.url.replace(/token=[^&]*/u, 'token=***')}`
     );
     this._setStatus('connecting');
-    this.ws = new WebSocket(this.config.url);
+    const socket = new WebSocket(this.config.url);
+    this.ws = socket;
 
-    this.ws.onopen = () => {
+    socket.onopen = () => {
+      if (this.ws !== socket) return;
       console.log(
         '[OCClient] WebSocket opened, waiting for connect.challenge...'
       );
     };
 
-    this.ws.onmessage = event => {
+    socket.onmessage = event => {
+      if (this.ws !== socket) return;
       if (typeof event.data !== 'string') {
         return;
       }
       void this._handleMessage(event.data);
     };
 
-    this.ws.onerror = () => {
+    socket.onerror = () => {
+      if (this.ws !== socket) return;
       console.warn('[OCClient] WebSocket error event fired');
       this.emit('connection:error', new Error('WebSocket error'));
     };
 
-    this.ws.onclose = (event?: CloseEvent) => {
+    socket.onclose = (event?: CloseEvent) => {
+      // A disconnect followed immediately by connect may leave the old
+      // socket's close event queued behind the new socket. It cannot change
+      // the new connection's state or schedule a second reconnect.
+      if (this.ws !== socket) return;
+      this.ws = null;
       console.log(
         `[OCClient] WebSocket closed: code=${event?.code ?? 'N/A'} reason="${event?.reason ?? ''}" wasClean=${event?.wasClean ?? false}`
       );
@@ -195,7 +272,10 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
           this.config.maxReconnectDelay ?? 30000
         );
         this.reconnectAttempts++;
-        setTimeout(() => this._openConnection(), delay);
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          if (this.shouldReconnect) this._openConnection();
+        }, delay);
       }
     };
   }
@@ -215,7 +295,12 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     };
 
     if (msg.type !== 'event' || msg.event !== 'tick') {
-      console.log('[OCClient] RX:', JSON.stringify(frame).slice(0, 200));
+      // Frame bodies can contain auth device tokens and source data. Log only
+      // protocol shape; authenticated payloads belong to the client, not the
+      // process log.
+      console.log(
+        `[OCClient] RX: type=${msg.type ?? 'unknown'} name=${msg.event ?? msg.method ?? 'response'}`
+      );
     }
 
     if (msg.type === 'event') {
@@ -263,12 +348,11 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     const clientId = this.config.clientId ?? 'webchat';
     const clientMode = this.config.clientMode ?? 'webchat';
     const role = 'operator';
+    // OpenClaw documents read + write as the ordinary operator client
+    // profile. Admin, approvals, pairing, and secret-reading are opt-in;
+    // inheriting all of them from a shared token is not least privilege.
     const scopes = [
-      'operator.admin',
-      'operator.read',
-      'operator.write',
-      'operator.approvals',
-      'operator.pairing',
+      ...(this.config.scopes ?? ['operator.read', 'operator.write']),
     ];
 
     const payload = buildDeviceAuthPayload({
@@ -324,10 +408,7 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     try {
       console.log('[OCClient] Sending connect request...');
       const helloOk = await this.call<OCHelloOk>('connect', connectParams);
-      console.log(
-        '[OCClient] Received hello-ok:',
-        JSON.stringify(helloOk).slice(0, 200)
-      );
+      console.log('[OCClient] Received hello-ok');
       if (helloOk.auth?.deviceToken) {
         this.deviceToken = helloOk.auth.deviceToken;
       }

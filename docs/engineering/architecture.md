@@ -76,7 +76,17 @@ A separately hashed `desktop-public` renderer-composition manifest enumerates
 the packaged payload so the public-tree-only desktop rule can be inspected at
 the artifact boundary; the hosted web delivery may compose a private route
 overlay. Agent Source WebSockets are separate from service origins and remain
-available to community builds for operator-configured Gateways.
+available to community builds for operator-configured Gateways. Local/LAN
+OpenClaw is an Electron-main capability: main reads the source-owned config,
+keeps the Gateway secret, device key/token, endpoint selection, and
+authenticated WebSocket, then gives one WebContents an opaque
+fleet/chat/schedule grant. The ordinary socket requests only read/write scope;
+the four named cron mutations use a separate lazy admin client, so admin
+authority can never ride through `chat.send`. The bridge rejects generic RPC,
+auth, pairing, approval, config, update, token, and plugin method names and
+validates each permitted payload. Browser builds have no equivalent credential
+route and remain in Demo Mode.
+
 Renderer product-service callers consume only the corresponding versioned
 `services.*` endpoint. Product feedback and operator-stat publication check
 capability absence before creating an account client, reading auth, scheduling
@@ -433,7 +443,9 @@ renderer. Runtime observations remain main-process evidence. This prevents UI
 defaults, source probes, and launch code from becoming competing registries.
 Source-specific CLI/config/protocol inspection stays behind a renderer-safe IPC
 surface; Settings and the Agent composer consume the same normalized
-snapshots. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local records. Local
+snapshots. The separate OpenClaw live transport uses an opaque, owner-bound
+Electron-main capability rather than returning config or credentials to the
+renderer. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local records. Local
 OpenClaw reachability is established only by a successful gateway protocol
 status command, not by config presence or an open TCP port. Demo Mode is a
 built-in record whose facts use simulated provenance. The renderer receives
@@ -680,7 +692,7 @@ Built:
 - Electron shell
 - Supabase auth/data
 - legacy Supabase demo task flow
-- `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
+- `@exawatt/core` OpenClaw JSON-RPC client, Electron-main credential/capability broker, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
 - `@exawatt/core` source-qualified Agent projection kernel (ENG-010 C0): pure,
   fail-closed topology validation, explicit Agent/Project mappings, a versioned
   projection plan/output, source-declared primary-conversation selection, and
