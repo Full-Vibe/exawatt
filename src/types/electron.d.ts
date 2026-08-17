@@ -931,11 +931,6 @@ declare global {
     electron?: {
       isElectron: boolean;
       platform: string;
-      agent?: {
-        invoke: (method: string, ...args: unknown[]) => Promise<unknown>;
-        on: (channel: string, handler: (...args: unknown[]) => void) => void;
-        off: (channel: string, handler: (...args: unknown[]) => void) => void;
-      };
       agentSources?: ElectronAgentSourcesApi;
       openClaw?: ElectronOpenClawApi;
       operatorStats?: {

@@ -48,20 +48,6 @@ const productUpdates = productUpdatesEnabled
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
   platform: process.platform,
-  agent: {
-    invoke: (method: string, ...args: unknown[]) =>
-      ipcRenderer.invoke(`agent:${method}`, ...args),
-    on: (channel: string, handler: (...args: unknown[]) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        ...args: unknown[]
-      ) => handler(...args);
-      ipcRenderer.on(channel, listener);
-    },
-    off: (channel: string, handler: (...args: unknown[]) => void) => {
-      ipcRenderer.removeAllListeners(channel);
-    },
-  },
   agentSources: {
     list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
       ipcRenderer.invoke('agent-sources:list', scope, refresh),

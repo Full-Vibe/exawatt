@@ -223,8 +223,7 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/components/workspace/agent-sources.ts' ||
       file === 'electron/main/agent-sources-ipc.ts' ||
-      file === 'electron/main/pty/agent-models.ts' ||
-      file.startsWith('electron/main/agents/'),
+      file === 'electron/main/pty/agent-models.ts',
   },
   {
     gate: 'eval:electron:lifecycle',
