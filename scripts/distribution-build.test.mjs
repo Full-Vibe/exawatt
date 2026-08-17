@@ -129,3 +129,79 @@ test('official Electron packaging derives identity, protocol, icon, and feed onl
     url: 'https://updates.exawatt.ai/macos/arm64',
   });
 });
+
+test('operator custody is opt-in, fails loudly, and never downgrades', async t => {
+  const { mkdtemp, writeFile, chmod, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const nodePath = await import('node:path');
+  const { resolveDistributionInput, readOfficialCustody } = await import(
+    './lib/distribution-build.mjs'
+  );
+
+  const dir = await mkdtemp(nodePath.join(tmpdir(), 'exa-custody-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const custody = nodePath.join(dir, 'distribution.official.json');
+  const official = JSON.stringify({
+    schemaVersion: 1,
+    brand: {
+      appId: 'ai.exawatt.app',
+      productName: 'Exawatt',
+      protocolScheme: 'exawatt',
+      iconPath: 'electron/resources/icon.icns',
+      updateChannel: 'stable',
+    },
+    account: null,
+    services: {
+      productFeedback: null,
+      operatorStats: null,
+      projects: null,
+      preferences: null,
+      accountData: null,
+    },
+    enrichment: {
+      contextLabels: null,
+      conversationSummaries: null,
+      goalVisuals: null,
+    },
+    analytics: null,
+    updates: null,
+  });
+  await writeFile(custody, official, { mode: 0o600 });
+
+  // An explicit config wins and custody is never consulted.
+  assert.deepEqual(
+    await resolveDistributionInput({
+      EXAWATT_DISTRIBUTION_CONFIG_JSON: official,
+      EXAWATT_DISTRIBUTION_PROFILE: 'official',
+    }),
+    { inputJson: official, source: 'env' }
+  );
+
+  // No profile means community, even though custody exists on this machine.
+  assert.deepEqual(await resolveDistributionInput({}), {
+    inputJson: undefined,
+    source: 'community-default',
+  });
+  assert.deepEqual(
+    await resolveDistributionInput({ EXAWATT_DISTRIBUTION_PROFILE: 'community' }),
+    { inputJson: undefined, source: 'community-default' }
+  );
+
+  // A declared-official build reads custody.
+  assert.equal(await readOfficialCustody(custody), official);
+
+  // Group-readable custody refuses rather than proceeding.
+  await chmod(custody, 0o644);
+  await assert.rejects(() => readOfficialCustody(custody), /group\/world readable/);
+  await chmod(custody, 0o600);
+
+  // Missing custody names the path instead of downgrading to community.
+  const absent = nodePath.join(dir, 'nope.json');
+  await assert.rejects(() => readOfficialCustody(absent), /custody is missing/);
+
+  // An unknown profile is a typo, not a community build.
+  await assert.rejects(
+    () => resolveDistributionInput({ EXAWATT_DISTRIBUTION_PROFILE: 'offical' }),
+    /must be "official" or "community"/
+  );
+});
