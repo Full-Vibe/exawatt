@@ -301,6 +301,27 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-08-16, the operator's 90% Actions alert proved H7 had implemented only
+  cancellation, not the batching its accepted contract already required. The
+  month held 336 Exawatt CI runs and three macOS releases; 96 runs were
+  cancelled, but GitHub still rounds each started job up to a whole minute.
+  Exawatt accounted for $10.508 of the Full-Vibe organization's $12.302 gross
+  Actions usage, and the latest 67-run landing burst alone consumed 289 Linux
+  minutes despite 57 cancellations. The release workflow was not the owner:
+  its three deliberate macOS runs accounted for 22 minutes / $1.364.
+
+  H7's missing half now exists. `master` no longer triggers hosted CI. Every
+  normal `agent:land` integration replaces one common-Git-dir request, and a
+  detached worker advances `refs/heads/ci-batches/master` to the newest
+  integrated SHA only after queue drain, a 60-second quiet window, and a
+  two-hour minimum paid-dispatch interval. At the measured four-to-six-minute
+  duration this bounds automatic CI to twelve runs per day, while PR and
+  manual runs remain available. Same-ref cancellation stays as the last race
+  guard, not the batching mechanism. Local exact-tree checks remain merge
+  authority; hosted Linux remains delayed composition evidence. H7 still owes
+  ten consecutive green completed batches and H11 still owns the 30-landing
+  cost/verdict window.
+
 - 2026-08-04, unit-test throughput was separated into dedicated execution
   regimes instead of one root-level jsdom project. Electron and pure TypeScript
   app tests now run in Node; eight browser-contract `.ts` suites carry an

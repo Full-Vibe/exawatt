@@ -138,6 +138,7 @@
         "scripts/check-asset-provenance.mjs",
         "scripts/check-dependency-licenses.mjs",
         "scripts/check-production-theme-literals.mjs",
+        "scripts/ci-batch-worker.mjs",
         "scripts/discard-electron-snapshot.mjs",
         "scripts/dogfood-worker.mjs",
         "scripts/electron-dev.mjs",

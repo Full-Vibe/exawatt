@@ -3,9 +3,14 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    # ENG-022: normal agent landings coalesce on the local delivery queue.
+    # Its detached CI worker advances only this ref after queue drain; running
+    # the full matrix on every intermediate master push exhausted the included
+    # Actions allowance even though obsolete runs were cancelled.
+    branches: [ci-batches/master]
   pull_request:
     branches: [master, main]
+  workflow_dispatch:
 
 permissions:
   contents: read

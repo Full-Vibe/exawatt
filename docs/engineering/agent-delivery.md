@@ -92,11 +92,11 @@ visible instead of vanishing. Adding a gate is a data edit to `SURFACE_GATES`.
 
 ## Three-stage flow
 
-| Stage     | Parallel or serialized               | Durable identity                                                        | Completion boundary                                                                             |
-| --------- | ------------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Candidate | Parallel in each author's worktree   | committed candidate SHA and immutable `refs/heads/agent-attempts/*` ref | candidate floor passes and a FIFO ticket is admitted                                            |
-| Integrate | FIFO; only the head mutates `master` | ticket number, ownership epoch, current attempt SHA/ref                 | exact current attempt is reachable from `origin/master` and the ticket is terminal `integrated` |
-| Post      | Detached and superseding             | newest requested integrated SHA                                         | signed packaged smoke passes and the app swap records `dogfood_installed`                       |
+| Stage     | Parallel or serialized               | Durable identity                                                        | Completion boundary                                                                                                   |
+| --------- | ------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Candidate | Parallel in each author's worktree   | committed candidate SHA and immutable `refs/heads/agent-attempts/*` ref | candidate floor passes and a FIFO ticket is admitted                                                                  |
+| Integrate | FIFO; only the head mutates `master` | ticket number, ownership epoch, current attempt SHA/ref                 | exact current attempt is reachable from `origin/master` and the ticket is terminal `integrated`                       |
+| Post      | Detached and superseding             | newest requested integrated SHA                                         | hosted CI is dispatched for the latest eligible batch; requested Electron work separately records `dogfood_installed` |
 
 The shared `master` checkout is not in the integration path. After a successful
 remote push, `agent:land` fetches and fast-forwards it only when it is clean and
@@ -141,6 +141,10 @@ All worktrees in one clone resolve the same state root:
 ├── queue/<ticket-id>.json
 ├── ticket-locks/<ticket-id>.lock/
 ├── metrics.jsonl
+├── ci-batch-request.json          # present only while hosted evidence is owed
+├── ci-batch-request.lock/
+├── ci-batch-dispatch.json         # last paid dispatch for cadence control
+├── ci-batch-worker.lock/
 ├── dogfood-request.json          # present only while work remains
 ├── dogfood-request.lock/
 └── dogfood-worker.lock/
@@ -173,7 +177,8 @@ Dead-owner reconciliation fetches `origin/master` before deciding the terminal
 result:
 
 - if the ticket's current attempt is reachable, it records `integrated` exactly
-  once and recreates any requested dogfood work;
+  once, recreates its hosted-CI request, and recreates any requested dogfood
+  work;
 - otherwise it records `failed` and preserves the immutable attempt ref. It
   does not silently discard the code or guess how to integrate an abandoned
   worktree.
@@ -206,8 +211,42 @@ Success output distinguishes:
 - `verified=<checks>`: repository floor plus caller extras that passed;
 - `pushed=<ref>`: the current immutable remote attempt identity;
 - `integrated=<sha>`: the exact SHA now reachable from `origin/master`;
+- `ci=queued|unsupported-remote|queue-failed`: whether the superseding hosted
+  evidence request was accepted; it is not a hosted verdict;
 - `installed=not-requested|queued|queue-failed`: post-integration request state,
   not proof that the app is already installed.
+
+## Batched hosted CI
+
+Every normal GitHub-backed integration atomically replaces one CI request with
+the newest integrated SHA and starts a detached consumer. It does **not** run a
+hosted job from the `master` push. The worker waits until all three conditions
+are true:
+
+- the local delivery queue is drained;
+- no newer integration has replaced the request for 60 seconds;
+- the last paid dispatch is at least two hours old.
+
+The two-hour floor is the budget boundary from ENG-022's measured arithmetic:
+at the observed four-to-six-minute job duration it caps automatic dispatch at
+twelve per day instead of the 78 landings observed on a peak day. There is no
+maximum-wait escape hatch. A continuously busy queue may delay hosted evidence
+because the exact local floor, not GitHub Actions, owns merge authority. An
+urgent operator check remains available through the workflow's manual dispatch.
+
+When eligible, the worker fetches current `origin/master` and advances the
+ordinary fast-forward ref `refs/heads/ci-batches/master` to that exact SHA.
+Only pushes to that ref, pull requests, and manual dispatch trigger
+`.github/workflows/ci.yml`; ordinary `master` pushes do not. The workflow's
+same-ref concurrency still cancels an obsolete batch if a later eligible batch
+overtakes it. A branch ref is used instead of a GitHub API token so the worker
+needs only the Git push authority `agent:land` already proves.
+
+The request is removed only after the batch ref is current. A failed push emits
+`ci_batch_failed` and leaves the request recoverable; the next normal landing
+starts another worker. The guarded `--direct` recovery path intentionally
+bypasses post work, so an operator using it must manually dispatch CI when
+hosted evidence is required.
 
 ## Superseding dogfood
 
@@ -241,16 +280,17 @@ integrated SHA. A landing's `installed=queued` line alone is insufficient.
 
 `metrics.jsonl` is append-only schema version 1. Current event types are:
 
-| Event                                                                                                   | Important fields                                                         |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `floor_check`                                                                                           | candidate/ticket SHA, check ID, candidate/rebase phase, status, duration |
-| `queue_admitted`                                                                                        | ticket ID/number and candidate SHA                                       |
-| `stale_owner`                                                                                           | ticket, live PID, heartbeat age; no takeover occurred                    |
-| `stale_stop`                                                                                            | prior and current bases before an automatic rebase                       |
-| `queue_terminal`                                                                                        | status, queue wait, integrated SHA or failure/recovery detail            |
-| `integration_lock`                                                                                      | final critical-section duration                                          |
-| `dogfood_requested` / `dogfood_started` / `dogfood_superseded` / `dogfood_installed` / `dogfood_failed` | desired SHA, sequence, freshness, supersession, or failure               |
-| `actions_run`                                                                                           | run ID/SHA, conclusion, elapsed billable-minute evidence                 |
+| Event                                                                                                         | Important fields                                                         |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status, duration |
+| `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                       |
+| `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                    |
+| `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                       |
+| `queue_terminal`                                                                                              | status, queue wait, integrated SHA or failure/recovery detail            |
+| `integration_lock`                                                                                            | final critical-section duration                                          |
+| `ci_batch_requested` / `ci_batch_started` / `ci_batch_superseded` / `ci_batch_dispatched` / `ci_batch_failed` | desired/dispatched SHA, sequence, freshness, supersession, or failure    |
+| `dogfood_requested` / `dogfood_started` / `dogfood_superseded` / `dogfood_installed` / `dogfood_failed`       | desired SHA, sequence, freshness, supersession, or failure               |
+| `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                 |
 
 `summarizeDeliveryMetrics` computes integrated and failed counts, queue p50/p95,
 lock p95, stale-stop and floor-failure counts, Actions minutes, and dogfood
@@ -259,11 +299,11 @@ freshness p95. ENG-022 H11—not an individual successful landing—owns the
 batch green, no stale-base conversational loops, p95 queue wait below three
 minutes at comparable load, and lower Actions minutes per integrated commit.
 
-Local delivery and dogfood code emit their events directly. `actions_run` is
-appended by the measurement pass after a hosted run completes because the
-machine-local queue is intentionally not a GitHub Actions dependency. Its
-absence does not change merge authority, but it does mean the H7/H11 cost
-sample is incomplete.
+Local delivery, CI batching, and dogfood code emit their events directly.
+`actions_run` is appended by the measurement pass after a hosted run completes
+because the machine-local queue is intentionally not a GitHub Actions
+dependency. Its absence does not change merge authority, but it does mean the
+H7/H11 cost sample is incomplete.
 
 GitHub Actions is post-integration evidence, never merge authority. Same-ref
 runs cancel obsolete in-progress work. A cancelled intermediate run is expected
@@ -280,6 +320,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Process died during or after push                                | Start or continue another normal landing. Dead-head reconciliation treats the attempt as integrated only if fetch proves it reachable from `origin/master`; otherwise the attempt remains preserved.            |
 | Shared `master` is dirty or stale                                | Leave it alone. Remote integration is authoritative and already succeeded; clean/sync the shared checkout only when its owner can do so safely.                                                                 |
 | Attempt-ref cleanup warns after integration                      | First prove the attempt SHA is reachable from `origin/master`, then delete that exact remote `agent-attempts/*` ref. Never use a broad branch pattern.                                                          |
+| CI batch request remains after a failure                         | Inspect `ci_batch_failed`; a later normal landing restarts the detached worker. For urgent evidence, manually dispatch `CI` at `master`. Do not delete request or cadence state to manufacture a green signal.  |
 | Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                      |
 | A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                        |
 
@@ -313,10 +354,14 @@ verification, or a live owner's ticket.
   rollup calculations.
 - `scripts/lib/delivery-lock.mjs`: final integration and app-target directory
   locks.
+- `scripts/lib/ci-batch.mjs` and `scripts/ci-batch-worker.mjs`:
+  superseding CI request, queue-drain/cadence eligibility, and the dedicated
+  remote batch ref.
 - `scripts/lib/dogfood-queue.mjs`, `scripts/dogfood-worker.mjs`, and
   `scripts/install-dogfood.mjs`: superseding request, detached consumption, and
   verified atomic install.
-- `scripts/agent-land.test.mjs`, `scripts/delivery-queue.test.mjs`,
-  `scripts/delivery-policy.test.mjs`, `scripts/dogfood-queue.test.mjs`, and
-  `scripts/dogfood-delivery.test.mjs`: the regression and stress contract,
-  collected by `pnpm test:agent-delivery`.
+- `scripts/agent-land.test.mjs`, `scripts/ci-batch.test.mjs`,
+  `scripts/delivery-queue.test.mjs`, `scripts/delivery-policy.test.mjs`,
+  `scripts/dogfood-queue.test.mjs`, and `scripts/dogfood-delivery.test.mjs`:
+  the regression and stress contract, collected by
+  `pnpm test:agent-delivery`.
