@@ -1457,7 +1457,10 @@ async function bootstrapCommandSurface(): Promise<void> {
 
   runtime.agentIpc.registerAgentIPC();
   runtime.agentSourcesIpc.registerAgentSourcesIPC();
-  runtime.ptyIpc.registerPtyIPC(recovery.previousRunInterrupted);
+  runtime.ptyIpc.registerPtyIPC(
+    distribution.contract,
+    recovery.previousRunInterrupted
+  );
   runtime.roadmapIpc.registerRoadmapIPC();
   runtime.projectIpc.registerProjectIPC();
   registerAuthIPC();

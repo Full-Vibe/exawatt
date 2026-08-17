@@ -105,6 +105,8 @@ const launchOptions = {
     EXAWATT_TEST: '1',
     EXAWATT_USER_DATA: userData,
     EXAWATT_TEST_HARNESS_BIN: harnessDir,
+    // Poisoned legacy input on purpose. Community distribution must ignore it;
+    // only the resolved contract returned below may enable the fake service.
     EXAWATT_CONTEXT_LABEL_ENDPOINT: endpoint,
     EXAWATT_DEV_URL: `${process.env.EXA_BASE ?? 'http://localhost:7000'}/workspace`,
   },
@@ -119,6 +121,19 @@ try {
       page.on('pageerror', error => pageErrors.push(error.message));
 
       await page.locator('[data-workspace-stage]').waitFor();
+      const contract = await page.evaluate(
+        async () =>
+          (await window.electron.app.getBuildInfo()).distribution.contract
+      );
+      const enrichment = contract.enrichment;
+      const configuredContextEndpoint = enrichment.contextLabels?.url ?? null;
+      if (configuredContextEndpoint && configuredContextEndpoint !== endpoint) {
+        throw new Error(
+          `Context-label eval refuses non-fake configured endpoint ${configuredContextEndpoint}`
+        );
+      }
+      const hostedLabelsConfigured = configuredContextEndpoint === endpoint;
+      const feedbackConfigured = contract.services.productFeedback !== null;
       const signedOutMenu = await app.evaluate(({ Menu }) => {
         const help = Menu.getApplicationMenu()?.items.find(
           item => item.label === 'Help'
@@ -127,9 +142,12 @@ try {
         return { label: feedback?.label, enabled: feedback?.enabled };
       });
       check(
-        'signed-out Help menu names the sign-in requirement and is disabled',
+        feedbackConfigured
+          ? 'signed-out Help menu names the sign-in requirement and is disabled'
+          : 'community contract keeps Help feedback unavailable',
         signedOutMenu.enabled === false &&
-          signedOutMenu.label?.includes('Sign in required')
+          (!feedbackConfigured ||
+            signedOutMenu.label?.includes('Sign in required'))
       );
 
       await page.evaluate(() => {
@@ -140,7 +158,7 @@ try {
         );
       });
       await page.waitForTimeout(100);
-      const signedInMenu = await app.evaluate(({ Menu }) => {
+      const menuAfterTestAuth = await app.evaluate(({ Menu }) => {
         const help = Menu.getApplicationMenu()?.items.find(
           item => item.label === 'Help'
         );
@@ -148,9 +166,13 @@ try {
         return { label: feedback?.label, enabled: feedback?.enabled };
       });
       check(
-        'signed-in Help menu enables Submit Feedback',
-        signedInMenu.enabled === true &&
-          signedInMenu.label === 'Submit Feedback…'
+        feedbackConfigured
+          ? 'signed-in Help menu enables Submit Feedback'
+          : 'community contract ignores the feedback test-auth bridge',
+        feedbackConfigured
+          ? menuAfterTestAuth.enabled === true &&
+              menuAfterTestAuth.label === 'Submit Feedback…'
+          : menuAfterTestAuth.enabled === false
       );
 
       const first = await page.evaluate(async cwd => {
@@ -193,59 +215,75 @@ try {
           ),
         { id: first.id }
       );
-      await page.waitForFunction(async durableId => {
-        const session = (await window.electron.pty.list()).find(
-          item => item.durableSessionId === durableId
-        );
-        return session?.contextSummary === 'Improve agent context summaries';
-      }, first.durableSessionId);
-      check(
-        'submitted pivot replaces the stale reopen-tabs label',
-        requests.some(
-          body =>
-            body.currentLabel === 'Implement cmd+shift+t to reopen tabs' &&
-            body.recentInstructions?.at(-1)?.text ===
-              'Improve agent context summaries'
-        )
-      );
-
-      await page.evaluate(
-        ({ id }) =>
-          window.electron.pty.write(
-            id,
-            'Simulate label service failure\r',
-            true
-          ),
-        { id: first.id }
-      );
-      await page.waitForTimeout(250);
-      const afterFailure = await page.evaluate(
-        async durableId =>
-          (await window.electron.pty.list()).find(
+      if (hostedLabelsConfigured) {
+        await page.waitForFunction(async durableId => {
+          const session = (await window.electron.pty.list()).find(
             item => item.durableSessionId === durableId
-          )?.contextSummary,
-        first.durableSessionId
-      );
-      check(
-        'hosted failure retains the last good label',
-        afterFailure === 'Improve agent context summaries'
-      );
-
-      await page.evaluate(
-        ({ id }) =>
-          window.electron.pty.write(
-            id,
-            'Return to the MVP of Widget Checkout\r',
-            true
-          ),
-        { id: first.id }
-      );
-      await page.waitForFunction(async durableId => {
-        const session = (await window.electron.pty.list()).find(
-          item => item.durableSessionId === durableId
+          );
+          return session?.contextSummary === 'Improve agent context summaries';
+        }, first.durableSessionId);
+        check(
+          'submitted pivot replaces the stale reopen-tabs label',
+          requests.some(
+            body =>
+              body.currentLabel === 'Implement cmd+shift+t to reopen tabs' &&
+              body.recentInstructions?.at(-1)?.text ===
+                'Improve agent context summaries'
+          )
         );
-        return session?.contextSummary === 'MVP of Widget Checkout';
-      }, first.durableSessionId);
+
+        await page.evaluate(
+          ({ id }) =>
+            window.electron.pty.write(
+              id,
+              'Simulate label service failure\r',
+              true
+            ),
+          { id: first.id }
+        );
+        await page.waitForTimeout(250);
+        const afterFailure = await page.evaluate(
+          async durableId =>
+            (await window.electron.pty.list()).find(
+              item => item.durableSessionId === durableId
+            )?.contextSummary,
+          first.durableSessionId
+        );
+        check(
+          'hosted failure retains the last good label',
+          afterFailure === 'Improve agent context summaries'
+        );
+
+        await page.evaluate(
+          ({ id }) =>
+            window.electron.pty.write(
+              id,
+              'Return to the MVP of Widget Checkout\r',
+              true
+            ),
+          { id: first.id }
+        );
+        await page.waitForFunction(async durableId => {
+          const session = (await window.electron.pty.list()).find(
+            item => item.durableSessionId === durableId
+          );
+          return session?.contextSummary === 'MVP of Widget Checkout';
+        }, first.durableSessionId);
+      } else {
+        await page.waitForTimeout(250);
+        const localSummary = await page.evaluate(
+          async durableId =>
+            (await window.electron.pty.list()).find(
+              item => item.durableSessionId === durableId
+            )?.contextSummary,
+          first.durableSessionId
+        );
+        check(
+          'community contract keeps the local label and ignores poisoned endpoint env',
+          localSummary === 'Implement cmd+shift+t to reopen tabs' &&
+            requests.length === 0
+        );
+      }
 
       const attachmentPath =
         '/var/folders/example/T/exawatt-clipboard/screenshot.png';
@@ -271,10 +309,16 @@ try {
       );
       await page.waitForTimeout(250);
       check(
-        'hosted evidence redacts the local image path',
-        requests.some(body =>
-          body.recentInstructions?.some(item => item.text === '[Attachment]')
-        ) && !JSON.stringify(requests).includes(attachmentPath)
+        hostedLabelsConfigured
+          ? 'hosted evidence redacts the local image path'
+          : 'community image launch sends no hosted evidence',
+        hostedLabelsConfigured
+          ? requests.some(body =>
+              body.recentInstructions?.some(
+                item => item.text === '[Attachment]'
+              )
+            ) && !JSON.stringify(requests).includes(attachmentPath)
+          : requests.length === 0
       );
 
       const feedbackPayloads = [];
@@ -343,127 +387,166 @@ try {
       );
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.locator('[data-workspace-stage]').waitFor();
-      // the provider's auth listener mounts in an effect after hydration; a
-      // single early dispatch can be missed, so re-dispatch (idempotent)
-      // until the authenticated controls render
-      await page.waitForFunction(() => {
-        window.dispatchEvent(
-          new CustomEvent('exawatt:test-feedback-auth', {
-            detail: { accessToken: 'test-jwt' },
+      if (feedbackConfigured) {
+        // The provider's auth listener mounts in an effect after hydration; a
+        // single early dispatch can be missed, so re-dispatch (idempotent)
+        // until the authenticated controls render.
+        await page.waitForFunction(() => {
+          window.dispatchEvent(
+            new CustomEvent('exawatt:test-feedback-auth', {
+              detail: { accessToken: 'test-jwt' },
+            })
+          );
+          return !!document.querySelector('[data-context-label-feedback]');
+        });
+
+        const staleTab = page.locator('[data-tab-id="tab-context-b"]');
+        // Feedback controls intentionally ride the active Session only. Select
+        // the stale label before asserting/revising it; merely hovering an
+        // inactive ribbon item cannot reveal controls by product contract.
+        await staleTab.click();
+        const controls = staleTab.locator('[data-context-label-feedback]');
+        await controls.waitFor();
+        await staleTab.hover();
+        const controlsElement = await controls.elementHandle();
+        await page
+          .waitForFunction(
+            element => getComputedStyle(element).opacity === '1',
+            controlsElement,
+            { timeout: 2_000 }
+          )
+          .catch(() => {});
+        check(
+          'authenticated context controls reveal on tab hover',
+          (await controls.count()) === 1 &&
+            (await controls.evaluate(
+              element => getComputedStyle(element).opacity
+            )) === '1'
+        );
+        // Programmatic click: at eval window widths the hover-revealed close ×
+        // overlaps this control's hit target (ribbon layout, not under test).
+        await staleTab
+          .getByRole('button', {
+            name: /Improve context label: Fix auth redirect loop/,
           })
+          .dispatchEvent('click');
+        const correction = page.getByLabel('Better context');
+        await correction.fill('Improve agent context summaries');
+        await correction.press('Enter');
+        // An accepted correction closes the popover (stopped chips no longer
+        // render their title — D42 review round — so the durable-store
+        // round-trip is observed through the accepted send itself).
+        await page.waitForFunction(
+          () => !document.querySelector('[data-context-label-feedback-popover]')
         );
-        return !!document.querySelector('[data-context-label-feedback]');
-      });
-
-      const staleTab = page.locator('[data-tab-id="tab-context-b"]');
-      const controls = staleTab.locator('[data-context-label-feedback]');
-      await controls.waitFor();
-      await staleTab.hover();
-      const controlsElement = await controls.elementHandle();
-      await page
-        .waitForFunction(
-          element => getComputedStyle(element).opacity === '1',
-          controlsElement,
-          { timeout: 2_000 }
-        )
-        .catch(() => {});
-      check(
-        'authenticated context controls reveal on tab hover',
-        (await controls.count()) === 1 &&
-          (await controls.evaluate(
-            element => getComputedStyle(element).opacity
-          )) === '1'
-      );
-      // programmatic click: at eval window widths the hover-revealed close ×
-      // overlaps this control's hit target (ribbon layout, not under test)
-      await staleTab
-        .getByRole('button', {
-          name: /Improve context label: Fix auth redirect loop/,
-        })
-        .dispatchEvent('click');
-      const correction = page.getByLabel('Better context');
-      await correction.fill('Improve agent context summaries');
-      await correction.press('Enter');
-      // an accepted correction closes the popover (stopped chips no longer
-      // render their title — D42 review round — so the durable-store
-      // round-trip is observed through the accepted send itself)
-      await page.waitForFunction(
-        () => !document.querySelector('[data-context-label-feedback-popover]')
-      );
-      check(
-        'exact correction updates immediately and uploads label evidence',
-        feedbackPayloads.some(
-          payload =>
-            payload.kind === 'context_label' &&
-            payload.sentiment === -1 &&
-            payload.message === 'Improve agent context summaries'
-        )
-      );
-
-      await app.evaluate(({ BrowserWindow }) => {
-        BrowserWindow.getAllWindows()[0].webContents.send(
-          'menu:command',
-          'submit-feedback'
+        check(
+          'exact correction updates immediately and uploads label evidence',
+          feedbackPayloads.some(
+            payload =>
+              payload.kind === 'context_label' &&
+              payload.sentiment === -1 &&
+              payload.message === 'Improve agent context summaries'
+          )
         );
-      });
-      const dialog = page.getByRole('dialog', { name: 'Submit feedback' });
-      await dialog.waitFor();
-      await dialog
-        .getByLabel('What should we know?')
-        .fill('The label should pivot when the Session changes purpose.');
-      await dialog.getByRole('button', { name: 'Capture this window' }).click();
-      await page.getByAltText('Feedback attachment preview').waitFor();
-      await page.screenshot({
-        path: join(screenshotDir, 'general-feedback-dialog.png'),
-      });
-      await dialog.getByRole('button', { name: 'Send feedback' }).click();
-      await page.waitForFunction(
-        () => !document.querySelector('[role="dialog"]')
-      );
-      check(
-        'general feedback submits text, context, and an explicit screenshot',
-        feedbackPayloads.some(
-          payload =>
-            payload.kind === 'general' &&
-            payload.attachment?.dataUrl?.startsWith('data:image/jpeg;base64,')
-        )
-      );
 
-      // ENG-025 queued fixes: ⌘⇧F summons the quick-capture bar, the bar is
-      // an opaque HUD panel (not page bleed-through), and its payload stamps
-      // the app version and build metadata.
-      await page.keyboard.press('Meta+Shift+KeyF');
-      const quickBar = page.getByRole('dialog', { name: 'Quick feedback' });
-      await quickBar.waitFor();
-      const barBackground = await quickBar.evaluate(
-        element => getComputedStyle(element).backgroundColor
-      );
-      check(
-        'quick-capture bar renders the opaque HUD panel background',
-        barBackground === 'rgb(11, 18, 32)'
-      );
-      await page.screenshot({
-        path: join(screenshotDir, 'quick-capture-bar.png'),
-      });
-      await quickBar
-        .getByLabel('Feedback')
-        .fill('Quick capture stays opaque over the workspace');
-      await quickBar.getByLabel('Feedback').press('Enter');
-      await page.waitForFunction(
-        () => !document.querySelector('[aria-label="Quick feedback"]')
-      );
-      // optimistic close: the submit fetch lands just after dismissal
-      await page.waitForTimeout(300);
-      const quickPayload = feedbackPayloads.find(
-        payload => payload.surface === 'quick-capture'
-      );
-      check(
-        'quick-capture payload stamps app version, sha, and build metadata',
-        typeof quickPayload?.appVersion === 'string' &&
-          quickPayload.appVersion.length > 0 &&
-          quickPayload.buildSha === 'development' &&
-          quickPayload.context?.buildDelivery === 'dogfood'
-      );
+        await app.evaluate(({ BrowserWindow }) => {
+          BrowserWindow.getAllWindows()[0].webContents.send(
+            'menu:command',
+            'submit-feedback'
+          );
+        });
+        const dialog = page.getByRole('dialog', { name: 'Submit feedback' });
+        await dialog.waitFor();
+        await dialog
+          .getByLabel('What should we know?')
+          .fill('The label should pivot when the Session changes purpose.');
+        await dialog
+          .getByRole('button', { name: 'Capture this window' })
+          .click();
+        await page.getByAltText('Feedback attachment preview').waitFor();
+        await page.screenshot({
+          path: join(screenshotDir, 'general-feedback-dialog.png'),
+        });
+        await dialog.getByRole('button', { name: 'Send feedback' }).click();
+        await page.waitForFunction(
+          () => !document.querySelector('[role="dialog"]')
+        );
+        check(
+          'general feedback submits text, context, and an explicit screenshot',
+          feedbackPayloads.some(
+            payload =>
+              payload.kind === 'general' &&
+              payload.attachment?.dataUrl?.startsWith('data:image/jpeg;base64,')
+          )
+        );
+
+        // ENG-025 queued fixes: ⌘⇧F summons the quick-capture bar, the bar is
+        // an opaque HUD panel (not page bleed-through), and its payload stamps
+        // the app version and build metadata.
+        await page.keyboard.press('Meta+Shift+KeyF');
+        const quickBar = page.getByRole('dialog', { name: 'Quick feedback' });
+        await quickBar.waitFor();
+        const barColors = await quickBar.evaluate(element => {
+          const probe = document.createElement('div');
+          probe.style.color = getComputedStyle(
+            document.documentElement
+          ).getPropertyValue('--exa-hud-panel');
+          document.body.append(probe);
+          const panel = getComputedStyle(probe).color;
+          probe.remove();
+          return {
+            background: getComputedStyle(element).backgroundColor,
+            panel,
+          };
+        });
+        check(
+          'quick-capture bar renders the active theme opaque HUD panel background',
+          barColors.background === barColors.panel
+        );
+        await page.screenshot({
+          path: join(screenshotDir, 'quick-capture-bar.png'),
+        });
+        await quickBar
+          .getByLabel('Feedback')
+          .fill('Quick capture stays opaque over the workspace');
+        await quickBar.getByLabel('Feedback').press('Enter');
+        await page.waitForFunction(
+          () => !document.querySelector('[aria-label="Quick feedback"]')
+        );
+        // optimistic close: the submit fetch lands just after dismissal
+        await page.waitForTimeout(300);
+        const quickPayload = feedbackPayloads.find(
+          payload => payload.surface === 'quick-capture'
+        );
+        check(
+          'quick-capture payload stamps app version, sha, and build metadata',
+          typeof quickPayload?.appVersion === 'string' &&
+            quickPayload.appVersion.length > 0 &&
+            quickPayload.buildSha === 'development' &&
+            quickPayload.context?.buildDelivery === 'dogfood'
+        );
+      } else {
+        check(
+          'community build renders no hosted context-feedback controls',
+          (await page.locator('[data-context-label-feedback]').count()) === 0
+        );
+        const acceptedCorrection = await page.evaluate(
+          ({ durableSessionId, label }) =>
+            window.electron.pty.correctContext(durableSessionId, label),
+          {
+            durableSessionId: 'persisted-context-b',
+            label: 'Improve agent context summaries',
+          }
+        );
+        check(
+          'community build keeps operator corrections local and available',
+          acceptedCorrection === 'Improve agent context summaries' &&
+            feedbackPayloads.length === 0
+        );
+        // Let the context event reach renderer state and its debounced
+        // workspace persistence before the full relaunch proof below.
+        await page.waitForTimeout(600);
+      }
 
       check(
         'renderer emitted no uncaught page errors',

@@ -1,8 +1,31 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV1,
+} from '@exawatt/core/distribution';
 
-const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
+const { getSession, distributionState } = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  distributionState: { current: null as unknown },
+}));
+
+const OFFICIAL_GOAL_VISUAL_DISTRIBUTION = {
+  ...COMMUNITY_DISTRIBUTION,
+  account: {
+    supabaseUrl: 'https://account.example.test',
+    supabaseAnonKey: 'public-test-key',
+    recoveryOrigin: 'https://app.example.test',
+  },
+  enrichment: {
+    ...COMMUNITY_DISTRIBUTION.enrichment,
+    goalVisuals: {
+      url: 'https://services.example.test/v1/goal-visuals',
+      protocolVersion: 1,
+    },
+  },
+} satisfies DistributionContractV1;
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -10,11 +33,17 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
+vi.mock('@/lib/distribution/resolved', () => ({
+  resolvedDistribution: () => distributionState.current,
+}));
+
 import GoalVisualBenchPage from './page';
 
 describe('Agent tile visual language bench', () => {
   beforeEach(() => {
+    getSession.mockReset();
     getSession.mockResolvedValue({ data: { session: null } });
+    distributionState.current = OFFICIAL_GOAL_VISUAL_DISTRIBUTION;
   });
 
   afterEach(() => {
@@ -61,6 +90,24 @@ describe('Agent tile visual language bench', () => {
     ).toBeVisible();
   });
 
+  it('keeps deterministic studies local when the build has no visual service', async () => {
+    distributionState.current = COMMUNITY_DISTRIBUTION;
+    const fetchMock = vi.fn(async () => {
+      throw new Error('community visual study attempted network I/O');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <TooltipProvider>
+        <GoalVisualBenchPage />
+      </TooltipProvider>
+    );
+
+    expect(await screen.findByText(/Deterministic fallbacks/)).toBeVisible();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('loads 21 fixed studies through the authenticated hosted boundary', async () => {
     getSession.mockResolvedValue({
       data: { session: { access_token: 'bench-token' } },
@@ -87,7 +134,7 @@ describe('Agent tile visual language bench', () => {
     expect(await screen.findByText(/21 studies ready/)).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(21);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/goal-visuals',
+      'https://services.example.test/v1/goal-visuals',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({

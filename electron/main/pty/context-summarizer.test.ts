@@ -13,6 +13,33 @@ import {
   __resetMainAnalyticsForTests,
   drainMainAnalyticsEvents,
 } from '../analytics-bridge';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV1,
+} from '@exawatt/core/distribution';
+
+const OFFICIAL_ENRICHMENT_DISTRIBUTION = {
+  ...COMMUNITY_DISTRIBUTION,
+  account: {
+    supabaseUrl: 'https://account.example.test',
+    supabaseAnonKey: 'public-test-key',
+    recoveryOrigin: 'https://app.example.test',
+  },
+  enrichment: {
+    contextLabels: {
+      url: 'https://services.example.test/v1/context-labels',
+      protocolVersion: 1,
+    },
+    conversationSummaries: {
+      url: 'https://services.example.test/v1/conversation-summaries',
+      protocolVersion: 1,
+    },
+    goalVisuals: {
+      url: 'https://services.example.test/v1/goal-visuals',
+      protocolVersion: 1,
+    },
+  },
+} satisfies DistributionContractV1;
 
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();
@@ -439,6 +466,81 @@ describe('hosted Session context ownership', () => {
   });
 });
 
+describe('distribution-owned enrichment capability', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps local labels and deterministic visuals without auth or fetch in community builds', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('community enrichment attempted network I/O');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const manager = new FakeManager();
+    const service = new ContextSummarizer({
+      distribution: COMMUNITY_DISTRIBUTION,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+
+    service.setAccessToken('token-that-must-not-enable-a-capability');
+    service.seedFromTask('session-1', 'Keep community enrichment local');
+    service.noteInput('live-1', 'Evidence that must stay on this device\r');
+    service.correct('session-1', 'Local deterministic goal');
+    await flush();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(service.getSummary('session-1')).toBe('Local deterministic goal');
+    expect(service.getGoalVisual('session-1')).toMatchObject({
+      identityKey: expect.stringMatching(/^fallback:[a-f0-9]{32}$/),
+      revision: 1,
+      state: 'fallback',
+      dataUrl: null,
+    });
+    service.stop();
+  });
+
+  it('uses the exact official context-label and goal-visual endpoints', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/context-labels')) {
+        return new Response(
+          JSON.stringify({
+            label: 'Configured service boundary',
+            relationship: 'new_context',
+            confidence: 0.98,
+          })
+        );
+      }
+      if (url.endsWith('/goal-visuals')) {
+        return new Response(
+          JSON.stringify({
+            identityKey: 'configured-goal-identity',
+            dataUrl: 'data:image/jpeg;base64,YWJj',
+          })
+        );
+      }
+      throw new Error(`unexpected enrichment URL ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const manager = new FakeManager();
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setAccessToken('official-token');
+    service.noteInput('live-1', 'Use the configured service boundary\r');
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      'https://services.example.test/v1/context-labels',
+      'https://services.example.test/v1/goal-visuals',
+    ]);
+    expect(service.getGoalVisual('session-1')).toMatchObject({
+      identityKey: 'configured-goal-identity',
+      state: 'ready',
+    });
+    service.stop();
+  });
+});
+
 /**
  * ENG-030 OS1.5. Decision `0031` requires an independent user control that
  * *prevents hosted feature calls* — not one that merely stores a boolean. Each
@@ -682,7 +784,10 @@ describe('main-process hosted-call failures are counted', () => {
   it('queues the HTTP status when the context-label endpoint refuses', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 503 }));
     vi.stubGlobal('fetch', fetchMock);
-    const service = new ContextSummarizer({ retryBaseMs: 60_000 });
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+      retryBaseMs: 60_000,
+    });
     service.attach(manager as unknown as PtySessionManager);
     service.setAccessToken('jwt');
     service.noteInput('live-1', 'Improve the stale tab summary\r');
@@ -704,7 +809,10 @@ describe('main-process hosted-call failures are counted', () => {
       throw new TypeError('fetch failed');
     });
     vi.stubGlobal('fetch', fetchMock);
-    const service = new ContextSummarizer({ retryBaseMs: 60_000 });
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+      retryBaseMs: 60_000,
+    });
     service.attach(manager as unknown as PtySessionManager);
     service.setAccessToken('jwt');
     service.noteInput('live-1', 'Improve the stale tab summary\r');
@@ -724,7 +832,10 @@ describe('main-process hosted-call failures are counted', () => {
   it('never counts context labels the operator switched off', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 503 }));
     vi.stubGlobal('fetch', fetchMock);
-    const service = new ContextSummarizer({ retryBaseMs: 60_000 });
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+      retryBaseMs: 60_000,
+    });
     service.attach(manager as unknown as PtySessionManager);
     service.setContextLabelsEnabled(false);
     service.setAccessToken('jwt');
@@ -739,6 +850,7 @@ describe('main-process hosted-call failures are counted', () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 500 }));
     vi.stubGlobal('fetch', fetchMock);
     const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
       generateLabel: async () => ({
         label: 'Improve agent context summaries',
         relationship: 'new_context' as const,
@@ -766,6 +878,7 @@ describe('main-process hosted-call failures are counted', () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 500 }));
     vi.stubGlobal('fetch', fetchMock);
     const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
       generateLabel: async () => ({
         label: 'Improve agent context summaries',
         relationship: 'new_context' as const,

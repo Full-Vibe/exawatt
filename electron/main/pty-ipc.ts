@@ -10,7 +10,7 @@ import {
   inspectAgentSources,
   inspectOpencodeLaunchEnvironment,
 } from './pty/agent-source-registry';
-import { contextSummarizer, type GoalVisual } from './pty/context-summarizer';
+import { ContextSummarizer, type GoalVisual } from './pty/context-summarizer';
 import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
@@ -61,6 +61,9 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows } from './window-broadcast';
+import type { DistributionContractV1 } from '@exawatt/core/distribution';
+
+let activeContextSummarizer: ContextSummarizer | null = null;
 
 // Engines and their model lists change on the order of days, but the composer
 // re-probed all of them on every entry (ENG-016 D49). The cache is installed at
@@ -75,7 +78,12 @@ setAgentModelCatalogCache(
  * `pty:*`; output/exit stream to every window via `pty:data` / `pty:exit`
  * (single-window app today; cheap to scope per-window later).
  */
-export function registerPtyIPC(previousRunInterrupted = false): void {
+export function registerPtyIPC(
+  distribution: DistributionContractV1,
+  previousRunInterrupted = false
+): void {
+  const contextSummarizer = new ContextSummarizer({ distribution });
+  activeContextSummarizer = contextSummarizer;
   const broadcast = (channel: string, payload: unknown) => {
     broadcastToWindows(BrowserWindow.getAllWindows(), channel, payload);
   };
@@ -96,6 +104,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   );
   reapTimer.unref?.();
   const conversationCatalog = new RecentConversationCatalog({
+    distribution,
     cacheFile: path.join(
       app.getPath('userData'),
       'conversation-summary-cache.json'
@@ -942,7 +951,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
 
 /** app-quit cleanup: never leave orphan shells behind */
 export async function disposePty(): Promise<void> {
-  contextSummarizer.stop();
+  activeContextSummarizer?.stop();
+  activeContextSummarizer = null;
   attentionMonitor.stop();
   await cleanupClipboardImages();
 }

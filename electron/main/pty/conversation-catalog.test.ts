@@ -19,6 +19,26 @@ import {
   drainMainAnalyticsEvents,
 } from '../analytics-bridge';
 import { encodeGrokCwdDirname } from '@exawatt/core';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV1,
+} from '@exawatt/core/distribution';
+
+const OFFICIAL_SUMMARY_DISTRIBUTION = {
+  ...COMMUNITY_DISTRIBUTION,
+  account: {
+    supabaseUrl: 'https://account.example.test',
+    supabaseAnonKey: 'public-test-key',
+    recoveryOrigin: 'https://app.example.test',
+  },
+  enrichment: {
+    ...COMMUNITY_DISTRIBUTION.enrichment,
+    conversationSummaries: {
+      url: 'https://example.test/summarize',
+      protocolVersion: 1,
+    },
+  },
+} satisfies DistributionContractV1;
 
 const roots: string[] = [];
 
@@ -216,10 +236,10 @@ describe('RecentConversationCatalog', () => {
         )
     );
     const catalog = new RecentConversationCatalog({
+      distribution: OFFICIAL_SUMMARY_DISTRIBUTION,
       adapters: [adapter],
       cacheFile,
       fetch: fetchMock as typeof fetch,
-      summaryEndpoint: 'https://example.test/summarize',
     });
 
     const rows = await catalog.enrich('/project', 'signed-in-token');
@@ -237,6 +257,42 @@ describe('RecentConversationCatalog', () => {
     await expect(catalog.list('/project')).resolves.toMatchObject([
       { title: 'Cortex Intake Refactor' },
     ]);
+  });
+
+  it('returns the local catalog before auth when summaries are not configured', async () => {
+    const draft: ConversationDraft = {
+      id: 'community-provider-id',
+      harness: 'codex',
+      cwd: '/project',
+      startedAt: 1,
+      updatedAt: 2,
+      title: 'Local provider title',
+      description: 'Local provider title',
+      titleSource: 'fallback',
+      needsSummary: true,
+      providerSessionId: 'community-provider-id',
+      continuation: { kind: 'provider' },
+      fingerprint: '2:100',
+      summaryInput: ['Private local prompt'],
+      providerIdentity: 'community-provider-id',
+      correlationKey: 'codex:private local prompt',
+    };
+    const fetchMock = vi.fn(async () => {
+      throw new Error('community summaries attempted network I/O');
+    });
+    const catalog = new RecentConversationCatalog({
+      distribution: COMMUNITY_DISTRIBUTION,
+      adapters: [{ harnesses: ['codex'], list: async () => [draft] }],
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await expect(catalog.enrich('/project', '')).resolves.toMatchObject([
+      {
+        title: 'Local provider title',
+        needsSummary: true,
+      },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   // ENG-030 OS1.5 / decision `0031`: the Settings switch must PREVENT the
@@ -291,9 +347,9 @@ describe('RecentConversationCatalog', () => {
 
     hosted = false;
     catalog.invalidate();
-    await expect(
-      catalog.enrich('/project', 'signed-in-token')
-    ).rejects.toThrow(/disabled in Settings/);
+    await expect(catalog.enrich('/project', 'signed-in-token')).rejects.toThrow(
+      /disabled in Settings/
+    );
     expect(fetchMock).toHaveBeenCalledOnce();
 
     // The private cache written while it was on survives, and the local list
@@ -338,9 +394,9 @@ describe('RecentConversationCatalog', () => {
       hostedSummariesEnabled: () => hosted,
     });
 
-    await expect(
-      catalog.enrich('/project', 'signed-in-token')
-    ).rejects.toThrow('503');
+    await expect(catalog.enrich('/project', 'signed-in-token')).rejects.toThrow(
+      '503'
+    );
     expect(drainMainAnalyticsEvents()).toEqual([
       {
         name: 'hosted_call_failed',
@@ -352,17 +408,17 @@ describe('RecentConversationCatalog', () => {
 
     hosted = false;
     catalog.invalidate();
-    await expect(
-      catalog.enrich('/project', 'signed-in-token')
-    ).rejects.toThrow(/disabled in Settings/);
+    await expect(catalog.enrich('/project', 'signed-in-token')).rejects.toThrow(
+      /disabled in Settings/
+    );
     expect(drainMainAnalyticsEvents()).toEqual([]);
 
     hosted = true;
     fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
     catalog.invalidate();
-    await expect(
-      catalog.enrich('/project', 'signed-in-token')
-    ).rejects.toThrow('fetch failed');
+    await expect(catalog.enrich('/project', 'signed-in-token')).rejects.toThrow(
+      'fetch failed'
+    );
     expect(drainMainAnalyticsEvents()).toEqual([
       {
         name: 'hosted_call_failed',
@@ -886,10 +942,15 @@ describe('GrokConversationAdapter (ENG-003 S4)', () => {
   it('reads the source summary without spawning the CLI', async () => {
     const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
     const cwd = await temporaryRoot('exawatt-grok-project-');
-    await seedSession(sessionsRoot, cwd, '018f1111-2222-4333-8444-555566667777', {
-      generated_title: 'Wire the launcher ribbon',
-      last_active_at: '2026-08-13T10:30:00Z',
-    });
+    await seedSession(
+      sessionsRoot,
+      cwd,
+      '018f1111-2222-4333-8444-555566667777',
+      {
+        generated_title: 'Wire the launcher ribbon',
+        last_active_at: '2026-08-13T10:30:00Z',
+      }
+    );
     const rows = await new GrokConversationAdapter(sessionsRoot).list(cwd);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -906,20 +967,35 @@ describe('GrokConversationAdapter (ENG-003 S4)', () => {
   it('hides the source own children and its hidden rows', async () => {
     const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
     const cwd = await temporaryRoot('exawatt-grok-project-');
-    await seedSession(sessionsRoot, cwd, '018f0000-0000-4000-8000-000000000001', {
-      generated_title: 'Operator session',
-    });
+    await seedSession(
+      sessionsRoot,
+      cwd,
+      '018f0000-0000-4000-8000-000000000001',
+      {
+        generated_title: 'Operator session',
+      }
+    );
     // A subagent is the source's own child, not a conversation the operator
     // started; offering it as a resume target would put another Agent's
     // transcript in a tab.
-    await seedSession(sessionsRoot, cwd, '018f0000-0000-4000-8000-000000000002', {
-      generated_title: 'Subagent run',
-      session_kind: 'subagent',
-    });
-    await seedSession(sessionsRoot, cwd, '018f0000-0000-4000-8000-000000000003', {
-      generated_title: 'Hidden by the source',
-      hidden: true,
-    });
+    await seedSession(
+      sessionsRoot,
+      cwd,
+      '018f0000-0000-4000-8000-000000000002',
+      {
+        generated_title: 'Subagent run',
+        session_kind: 'subagent',
+      }
+    );
+    await seedSession(
+      sessionsRoot,
+      cwd,
+      '018f0000-0000-4000-8000-000000000003',
+      {
+        generated_title: 'Hidden by the source',
+        hidden: true,
+      }
+    );
     const rows = await new GrokConversationAdapter(sessionsRoot).list(cwd);
     expect(rows.map(row => row.title)).toEqual(['Operator session']);
   });
@@ -974,11 +1050,15 @@ describe('parseGrokSessionSummary', () => {
     expect(parseGrokSessionSummary('{ not json', 'id', '/work')).toBeNull();
     expect(
       parseGrokSessionSummary(
-        JSON.stringify({ info: { id: '018f1111-2222-4333-8444-555566667777' } }),
+        JSON.stringify({
+          info: { id: '018f1111-2222-4333-8444-555566667777' },
+        }),
         '018f1111-2222-4333-8444-555566667777',
         null
       )
     ).toBeNull();
-    expect(parseGrokSessionSummary(JSON.stringify({}), 'short', '/work')).toBeNull();
+    expect(
+      parseGrokSessionSummary(JSON.stringify({}), 'short', '/work')
+    ).toBeNull();
   });
 });

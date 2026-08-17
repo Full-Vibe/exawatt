@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { ArrowRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createClient } from '@/lib/supabase/client';
 import type { RecentConversation } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';
@@ -110,6 +111,7 @@ export const RecentConversations = forwardRef<
       !active ||
       hidden ||
       !rows.some(row => row.needsSummary) ||
+      !resolvedDistribution().enrichment.conversationSummaries ||
       !window.electron?.pty?.enrichRecentConversations ||
       enrichmentAttemptRef.current === projectDir
     ) {
