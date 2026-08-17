@@ -515,7 +515,7 @@ export default function HudGallery() {
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}
               >
-                Open the hero board idle study →
+                Open the hero board study →
               </a>{' '}
               <a
                 href="/hud-gallery/fold-close"

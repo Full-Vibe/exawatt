@@ -19,6 +19,12 @@
  * - **The stamp is inside the frame.** Demo data stays labelled demo data and
  *   the synthetic tier stays labelled synthetic, in the asset, so a cropped
  *   screenshot of the hero is still honest.
+ * - **The board names itself.** `HeroBoardOverlay` is a DOM sibling of the
+ *   canvas, not a layer inside it: Project names, the five-signal legend, the
+ *   fleet counts, and every Agent hit target are real elements, so they stay
+ *   crisp at any DPR and stay in the accessibility tree. The fixed chrome
+ *   renders on the poster path too, so the reduced-motion and mobile
+ *   substitutions read the same and shift nothing.
  */
 
 import dynamic from 'next/dynamic';
@@ -40,7 +46,8 @@ import {
   HERO_DEFAULT_THEME,
   type HeroThemeKey,
 } from './hero-board-theme';
-import type { HeroIdleOptionId } from './idle-options';
+import { createHeroAnnotationBridge } from './hero-board-annotations';
+import { HeroBoardOverlay } from './hero-board-overlay';
 
 const HeroBoardScene = dynamic(
   () => import('./hero-board-scene').then(module => module.HeroBoardScene),
@@ -75,11 +82,10 @@ function useNarrowViewport(): boolean {
 }
 
 export interface HeroBoardProps {
-  option: HeroIdleOptionId;
   themeKey?: HeroThemeKey;
   className?: string;
-  /** Scroll progress 0..1 for the scroll option. Written by the owner through
-   *  a ref so nothing re-renders React at scroll frequency. */
+  /** Scroll progress 0..1, driving the altitude pull. Written by the owner
+   *  through a ref so nothing re-renders React at scroll frequency. */
   progressRef?: RefObject<number>;
   /** Study override: force the poster path, or force the live canvas frozen. */
   force?: 'auto' | 'live' | 'frozen' | 'poster';
@@ -92,7 +98,6 @@ export interface HeroBoardProps {
 }
 
 export function HeroBoard({
-  option,
   themeKey = HERO_DEFAULT_THEME,
   className,
   progressRef,
@@ -111,6 +116,16 @@ export function HeroBoard({
   const [visible, setVisible] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
   const [painted, setPainted] = useState(false);
+  // Semantic selection only. Hover identity lives inside the overlay; neither
+  // renders React at pointer or frame rate.
+  const [selectedUnit, setSelectedUnit] = useState(-1);
+  const bridge = useRef(
+    createHeroAnnotationBridge(
+      HERO_BOARD_CAPTURE.zones.length,
+      HERO_BOARD_CAPTURE.units.length
+    )
+  );
+  const getBridge = useCallback(() => bridge.current, []);
 
   useEffect(() => {
     const element = frame.current;
@@ -147,7 +162,6 @@ export function HeroBoard({
       ref={frame}
       className={`relative isolate h-full w-full overflow-hidden ${className ?? ''}`}
       data-hero-board
-      data-hero-board-option={option}
       data-hero-board-mode={mode}
       data-hero-board-animating={animating ? 'true' : 'false'}
       data-hero-board-canvas-count={mode === 'live' ? 1 : 0}
@@ -171,7 +185,6 @@ export function HeroBoard({
           data-hero-board-painted={painted ? 'true' : 'false'}
         >
           <HeroBoardScene
-            option={option}
             theme={theme}
             capture={HERO_BOARD_CAPTURE}
             animating={animating}
@@ -179,29 +192,29 @@ export function HeroBoard({
             statusChanges={statusChanges}
             progressRef={progressRef ?? fallbackProgress}
             preserveDrawingBuffer={preserveDrawingBuffer}
+            getBridge={getBridge}
             onReady={handleReady}
             onCreated={onCreated}
           />
         </div>
       )}
 
+      <HeroBoardOverlay
+        capture={HERO_BOARD_CAPTURE}
+        theme={theme}
+        getBridge={getBridge}
+        projected={mode === 'live'}
+        selected={selectedUnit}
+        onSelect={setSelectedUnit}
+      />
+
       <p
-        className="pointer-events-none absolute bottom-2 left-3 z-10 font-mono text-chrome-micro uppercase tracking-[0.14em]"
+        className="pointer-events-none absolute bottom-2 left-3 z-20 font-mono text-chrome-micro tracking-[0.14em] uppercase"
         style={{ color: theme.labelMuted }}
         data-hero-board-stamp
       >
         {HERO_BOARD_CAPTURE.source.stamp}
       </p>
-
-      {option === 'orbit' && mode === 'live' ? (
-        <p
-          className="pointer-events-none absolute top-2 right-3 z-10 rounded-full border px-2 py-0.5 font-mono text-chrome-micro"
-          style={{ color: theme.labelMuted, borderColor: theme.grid }}
-          data-hero-board-orbit-hint
-        >
-          Press and drag to orbit
-        </p>
-      ) : null}
     </div>
   );
 }

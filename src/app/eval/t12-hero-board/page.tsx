@@ -3,15 +3,15 @@
 /**
  * t12-hero-board — the marketing hero board (ENG-031 W2).
  *
- * The three idle options over the frozen Demo Workspace capture, in a
- * deterministic full-viewport rig. Drives three checks that cannot be made from
- * a screenshot alone: the whole board is three draw calls, the demand frameloop
- * parks when nothing is animating, and the reduced-motion path drops the canvas
- * count to zero.
+ * The board over the frozen Demo Workspace capture, in a deterministic
+ * full-viewport rig. Drives three checks that cannot be made from a screenshot
+ * alone: the whole board is three draw calls, the demand frameloop parks when
+ * nothing is animating, and the reduced-motion path drops the canvas count to
+ * zero.
  *
- * `?option=planted|scroll|orbit` · `?force=auto|frozen|poster` ·
- * `?theme=classic|night|air` · `?protocol=0` · `?changes=0`.
- * `window.__HERO_PROGRESS__(p)` drives the scroll option without a scroll.
+ * `?force=auto|frozen|poster` · `?theme=classic|night|air` · `?protocol=0` ·
+ * `?changes=0`. `window.__HERO_PROGRESS__(p)` drives the altitude pull without
+ * a scroll.
  */
 
 import { Suspense, useCallback, useRef } from 'react';
@@ -19,7 +19,6 @@ import { useSearchParams } from 'next/navigation';
 import type { RootState } from '@react-three/fiber';
 import type { WebGLRenderer } from 'three';
 import { HeroBoard } from '@/components/site/hero-board/hero-board';
-import type { HeroIdleOptionId } from '@/components/site/hero-board/idle-options';
 import {
   HERO_THEMES,
   type HeroThemeKey,
@@ -38,12 +37,9 @@ export interface HeroEvalSample extends IdleFrameDelta {
   frame: number;
 }
 
-const OPTIONS: HeroIdleOptionId[] = ['planted', 'scroll', 'orbit'];
-
 function Rig() {
   const params = useSearchParams();
   const progress = useRef(0);
-  const option = params.get('option');
   const theme = params.get('theme');
   const force = params.get('force');
 
@@ -79,11 +75,6 @@ function Rig() {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <HeroBoard
-        option={
-          OPTIONS.includes(option as HeroIdleOptionId)
-            ? (option as HeroIdleOptionId)
-            : 'planted'
-        }
         themeKey={
           theme && theme in HERO_THEMES ? (theme as HeroThemeKey) : 'classic'
         }

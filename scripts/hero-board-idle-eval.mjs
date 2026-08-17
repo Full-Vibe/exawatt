@@ -3,16 +3,16 @@
  * Hero board idle eval (ENG-031 W2).
  *
  * The homepage hero's budget is a MEASUREMENT, so this measures it instead of
- * asserting it: two frames one second apart, compared per channel, over each
- * of the three idle options. It reads `window.__HERO_MEASURE__`, which the
- * eval route builds from the same module the study displays, so a number here
- * and a number on screen cannot disagree.
+ * asserting it: two frames one second apart, compared per channel. It reads
+ * `window.__HERO_MEASURE__`, which the eval route builds from the same module
+ * the study displays, so a number here and a number on screen cannot disagree.
  *
- * The budget verdict is ADVISORY while the operator is still choosing: option 3
- * is expected to be over, and that is the finding, not a broken build. The
- * script exits non-zero only on structural failures (WebGL errors, draw calls,
- * DPR, frames rendered while parked, a reduced-motion path that still mounts a
- * canvas). When an option ships, promote its budget line to a hard gate here.
+ * The operator chose the scroll-driven board on 2026-08-17, so the at-rest
+ * budget is now a HARD gate: mean delta and changed-pixel share join the
+ * structural checks (WebGL errors, draw calls, DPR, frames rendered while
+ * parked, a reduced-motion path that still mounts a canvas). The number under
+ * scroll is recorded, never gated: that motion is input-driven, and a visitor
+ * scrolling is the whole point.
  *
  * Budget (`docs/engineering/projects/website-overhaul.md` → "The hero board"):
  *   mean per-channel delta < 2/255 · changed pixels < 5%/s · DPR <= 1.5 ·
@@ -45,8 +45,6 @@ const BUDGET = {
   maxDpr: 1.5,
   maxDrawCalls: 4,
 };
-
-const OPTIONS = ['planted', 'scroll', 'orbit'];
 
 const HARD_FAIL = [
   'THREE.WebGLProgram',
@@ -141,37 +139,35 @@ async function main() {
   const results = [];
   let failures = 0;
 
-  for (const option of OPTIONS) {
-    const { page, errors } = await openBoard(browser, `option=${option}`);
+  {
+    const { page, errors } = await openBoard(browser, 'board=1');
     await waitForFirstFrame(page);
     await page.waitForTimeout(1_200);
     const idle = await measureIdle(page);
-    const row = { option, idle, scrolling: null, errors: [] };
+    const row = { option: 'at rest', idle, scrolling: null, errors: [] };
 
-    if (option === 'scroll') {
-      // The budget is an IDLE budget, so the resting number is the one that
-      // counts. The driven number is recorded because a visitor scrolling is
-      // the option's entire point, and it must not be hidden.
-      await page.evaluate(() => window.__HERO_MEASURE__());
-      const driven = [];
-      for (let step = 0; step < 6; step += 1) {
-        await page.evaluate(value => {
-          window.__HERO_PROGRESS__(value);
-        }, step / 5);
-        await page.waitForTimeout(1_000);
-        const reading = await page.evaluate(() => window.__HERO_MEASURE__());
-        if (reading) driven.push(reading);
-      }
-      if (driven.length) {
-        row.scrolling = {
-          meanChannelDelta:
-            driven.reduce((sum, r) => sum + r.meanChannelDelta, 0) /
-            driven.length,
-          changedPixelShare:
-            driven.reduce((sum, r) => sum + r.changedPixelShare, 0) /
-            driven.length,
-        };
-      }
+    // The budget is an IDLE budget, so the resting number is the one that
+    // gates. The driven number is recorded because a visitor scrolling is the
+    // board's entire point, and it must not be hidden.
+    await page.evaluate(() => window.__HERO_MEASURE__());
+    const driven = [];
+    for (let step = 0; step < 6; step += 1) {
+      await page.evaluate(value => {
+        window.__HERO_PROGRESS__(value);
+      }, step / 5);
+      await page.waitForTimeout(1_000);
+      const reading = await page.evaluate(() => window.__HERO_MEASURE__());
+      if (reading) driven.push(reading);
+    }
+    if (driven.length) {
+      row.scrolling = {
+        meanChannelDelta:
+          driven.reduce((sum, r) => sum + r.meanChannelDelta, 0) /
+          driven.length,
+        changedPixelShare:
+          driven.reduce((sum, r) => sum + r.changedPixelShare, 0) /
+          driven.length,
+      };
     }
 
     row.errors = errors.filter(text =>
@@ -182,21 +178,26 @@ async function main() {
     else {
       const verdict = grade(idle);
       row.verdict = verdict;
-      // Structural only. The idle budget is reported, not gated, until the
-      // operator picks an option.
-      if (!verdict.dprOk || !verdict.drawCallsOk) failures += 1;
+      // The chosen board is gated on its own budget, not just on structure.
+      if (
+        !verdict.dprOk ||
+        !verdict.drawCallsOk ||
+        !verdict.meanOk ||
+        !verdict.shareOk
+      )
+        failures += 1;
     }
     results.push(row);
     await page.close();
   }
 
-  // Attribution: where the planted option's idle budget actually goes. The
-  // D40 rule that only Active moves is product canon, and it is also the
-  // single largest line item on the hero's budget, so it is measured apart.
+  // Attribution: where the at-rest budget actually goes. The D40 rule that
+  // only Active moves is product canon, and it is also the single largest line
+  // item on the hero's budget, so it is measured apart.
   for (const [label, query] of [
-    ['no-turn', 'option=planted&protocol=0'],
-    ['no-changes', 'option=planted&changes=0'],
-    ['still', 'option=planted&protocol=0&changes=0'],
+    ['no-turn', 'protocol=0'],
+    ['no-changes', 'changes=0'],
+    ['still', 'protocol=0&changes=0'],
   ]) {
     const { page } = await openBoard(browser, query);
     await waitForFirstFrame(page);
@@ -213,7 +214,7 @@ async function main() {
 
   // Parked: a frozen board must render zero frames after its first paint.
   {
-    const { page } = await openBoard(browser, 'option=planted&force=frozen');
+    const { page } = await openBoard(browser, 'force=frozen');
     await waitForFirstFrame(page);
     await page.waitForTimeout(500);
     const before = await page.evaluate(
@@ -233,7 +234,7 @@ async function main() {
   {
     const page = await browser.newPage({ viewport: VIEWPORT });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.goto(`${EXA_BASE}/eval/t12-hero-board?option=planted`, {
+    await page.goto(`${EXA_BASE}/eval/t12-hero-board`, {
       waitUntil: 'load',
       timeout: 60_000,
     });
@@ -263,17 +264,30 @@ async function main() {
   }
 
   if (WRITE_POSTER) {
-    const { page } = await openBoard(browser, 'option=planted&force=frozen', {
+    const { page } = await openBoard(browser, 'force=frozen', {
       deviceScaleFactor: 1.5,
       viewport: POSTER_VIEWPORT,
     });
     await waitForFirstFrame(page);
     await page.waitForTimeout(1_200);
     mkdirSync(dirname(POSTER_PATH), { recursive: true });
-    // The CANVAS only. The demo/synthetic stamp is part of the hero frame and
-    // renders over the poster too, so baking it in would double it.
+    // The BOARD FRAME, minus anything that renders live on top of the poster.
+    // The Project labels are part of the composition and must be in the
+    // substitute, or a reduced-motion visitor gets unnamed circles; the stamp,
+    // the counts, and the legend render over the poster, so baking them in
+    // would double them. The site header is hidden because an element
+    // screenshot of a box taller than the viewport otherwise captures it
+    // (it baked the app chrome into the first poster W2 shipped).
+    await page.addStyleTag({
+      content:
+        '#site-header{display:none!important}' +
+        // The dev server's issue indicator is a portal on top of everything.
+        'nextjs-portal{display:none!important}' +
+        '[data-hero-overlay-fixed],[data-hero-board-stamp]{display:none!important}',
+    });
+    await page.waitForTimeout(400);
     const buffer = await page
-      .locator('[data-hero-board] canvas')
+      .locator('[data-hero-board]')
       .screenshot({ type: 'jpeg', quality: 82 });
     writeFileSync(POSTER_PATH, buffer);
     results.push({
@@ -295,7 +309,7 @@ async function main() {
     if (row.idle) {
       const { idle, verdict } = row;
       console.log(
-        `${row.option.padEnd(8)} meanΔ ${idle.meanChannelDelta.toFixed(3).padStart(6)}  ` +
+        `${row.option.padEnd(10)} meanΔ ${idle.meanChannelDelta.toFixed(3).padStart(6)}  ` +
           `changed ${(idle.changedPixelShare * 100).toFixed(2).padStart(6)}%  ` +
           `calls ${String(idle.drawCalls).padStart(2)}  dpr ${idle.dpr.toFixed(2)}  ` +
           `fps ${idle.framesPerSecond.toFixed(0).padStart(3)}  ` +
@@ -303,11 +317,11 @@ async function main() {
       );
       if (row.scrolling)
         console.log(
-          `${''.padEnd(8)} under scroll: meanΔ ${row.scrolling.meanChannelDelta.toFixed(3)}  changed ${(row.scrolling.changedPixelShare * 100).toFixed(2)}%`
+          `${''.padEnd(10)} under scroll: meanΔ ${row.scrolling.meanChannelDelta.toFixed(3)}  changed ${(row.scrolling.changedPixelShare * 100).toFixed(2)}%`
         );
       if (row.errors.length) console.log('  errors:', row.errors);
     } else {
-      console.log(`${row.option.padEnd(8)} ${JSON.stringify(row)}`);
+      console.log(`${row.option.padEnd(10)} ${JSON.stringify(row)}`);
     }
   }
   console.log(

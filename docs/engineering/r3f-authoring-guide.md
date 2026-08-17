@@ -65,13 +65,27 @@ Current boundaries:
   `fleet/spatial/agent-field/agent-field-surface.tsx` retired at ENG-032 T5.
 - **Marketing hero board**
   `src/components/site/hero-board/hero-board-scene.tsx`, framed by
-  `hero-board.tsx` — the ENG-031 W2 homepage hero over ONE frozen capture of
-  the Demo Workspace. Three draw calls (ground, zones, one `InstancedMesh` for
-  all units), `antialias: false` with analytic `fwidth` coverage in the mark
-  shader, DPR capped at 1.5, no postprocessing, and a demand loop that renders
-  zero frames while parked. It is the one R3F surface with a MEASURED idle
-  budget: `pnpm eval:hero-board` compares two frames a second apart per
-  channel. Rigs: `/eval/t12-hero-board` and `/hud-gallery/hero-board`.
+  `hero-board.tsx` and annotated by `hero-board-overlay.tsx` — the ENG-031 W2
+  homepage hero over ONE frozen capture of the Demo Workspace. Three draw calls
+  (ground, zones, one `InstancedMesh` for all units), `antialias: false` with
+  analytic `fwidth` coverage in the mark shader, DPR capped at 1.5, no
+  postprocessing, and a demand loop that renders zero frames while parked. ONE
+  camera behaviour: planted at rest, page scroll drives Fleet to Team to Agent
+  with distance in log space. It is the one R3F surface with a MEASURED idle
+  budget, and that budget is a hard gate: `pnpm eval:hero-board` compares two
+  frames a second apart per channel. Rigs: `/eval/t12-hero-board` and
+  `/hud-gallery/hero-board`.
+  **Its annotation layer is the reference implementation of the DOM/WebGL
+  split.** `hero-board-annotations.ts` is a mutable bridge the scene writes and
+  the overlay reads: the scene projects world anchors into CSS pixels once per
+  rendered frame; the overlay mutates `style.transform` on nodes it already
+  owns and keeps React state for semantic identity only (hovered unit, selected
+  unit, the capped set of units that own a hit target). Interactivity is DOM
+  hit targets, not raycasting, so the instanced field keeps `raycast` disabled
+  and stays keyboard-reachable. Copy that pattern before reaching for in-scene
+  text or a per-pointer raycast. Note the compiler constraint it forced: React
+  forbids mutating a prop object, so the bridge travels as an accessor
+  (`HeroBridgeAccess`) and every writer takes a local reference from it.
 - **Gallery R3F studies** `src/components/hud/webgl/scenes.tsx` and the retained
   keyswitch study — isolated workbench canvases under `/hud-gallery`. Ortho
   px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px, centered), with `frameloop`

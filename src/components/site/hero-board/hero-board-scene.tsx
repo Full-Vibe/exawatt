@@ -3,9 +3,14 @@
 /**
  * The marketing hero board (ENG-031 W2).
  *
- * One frozen capture of the Demo Workspace, rendered as three draw calls, with
- * three idle behaviours the operator picks between. Read
+ * One frozen capture of the Demo Workspace, rendered as three draw calls. Read
  * `docs/engineering/r3f-authoring-guide.md` before editing.
+ *
+ * ONE behaviour (operator, 2026-08-17): planted at rest, and the page scroll
+ * drives the altitude pull from Fleet to Team to Agent. The ambient orbit was
+ * deleted, not demoted — it destroyed the readable layout that is the whole
+ * claim. All text and all interactivity live in the DOM overlay next door;
+ * this file projects the anchors it needs into `HeroAnnotationBridge`.
  *
  * The budget this file exists to hold (`projects/website-overhaul.md` → "The
  * hero board" → "Measured budget"):
@@ -27,9 +32,9 @@
  * - No postprocessing. Bloom is the heaviest import in the stack and the board
  *   is complete without it.
  *
- * Interaction: the wheel is bound to `ACTION.NONE` in every option, so the hero
- * can never eat a page scroll. Only the orbit option binds a drag at all, and
- * that drag is rotate-only: no dolly, no truck, so the framing cannot be lost.
+ * Interaction: every camera-controls binding is `ACTION.NONE`. The hero can
+ * never eat a page scroll and can never be dragged out of its framing; the
+ * only input that moves this camera is the page's own scroll position.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -46,15 +51,8 @@ import {
 } from '@/components/status-light/protocol';
 import type { HeroBoardCapture } from './capture-types';
 import { HERO_STATUS_ORDER } from './capture-types';
-import {
-  BREATH_CYCLE_SECONDS,
-  BREATH_DEGREES,
-  IDLE_BUDGET,
-  ORBIT_DEGREES_PER_SECOND,
-  ORBIT_RESUME_DELAY_SECONDS,
-  STATUS_CHANGES_PER_SECOND,
-  type HeroIdleOptionId,
-} from './idle-options';
+import { IDLE_BUDGET, STATUS_CHANGES_PER_SECOND } from './hero-board-budget';
+import type { HeroAnchor, HeroBridgeAccess } from './hero-board-annotations';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -63,12 +61,15 @@ const DEG = Math.PI / 180;
  *  the strict R3F types both type `raycast` as a function. */
 const noopRaycast = () => null;
 
-/** The planted three-quarter view. Every option starts here. */
+/** The planted three-quarter view. The board rests here and returns here. */
 const BASE_AZIMUTH = -12 * DEG;
 const BASE_POLAR = 40 * DEG;
 
-/** How tightly each altitude frames its bounding sphere. Below 1 crops in. */
-const FRAMING_TIGHTNESS = { fleet: 0.66, team: 0.86, agent: 0.95 } as const;
+/** How tightly each altitude frames its bounding sphere. Below 1 crops in.
+ *  Fleet opened out from 0.66 once the Projects were named (2026-08-17): a
+ *  crop that carries scale is worth having, a crop that cuts two Project
+ *  labels off the bottom edge is not. */
+const FRAMING_TIGHTNESS = { fleet: 0.74, team: 0.86, agent: 0.95 } as const;
 
 const MARK_SCALE = 1.7;
 const STATUS_TRANSITION_SECONDS = 0.85;
@@ -312,22 +313,25 @@ function HeroUnits({
   animating,
   statusProtocolMotion,
   statusChanges,
+  getBridge,
 }: {
   theme: SpatialThemeSnapshot;
   capture: HeroBoardCapture;
   animating: boolean;
   statusProtocolMotion: boolean;
   statusChanges: boolean;
+  getBridge: HeroBridgeAccess;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
   const center = useMemo(() => boardCenter(capture), [capture]);
   const count = capture.units.length;
 
-  /** Live status per instance, mirrored in JS so a change reads its own
-   *  predecessor without a GPU read-back. A ref, because the scheduler mutates
-   *  it every time a unit changes state. */
-  const statusIndex = useRef<Uint8Array>(new Uint8Array(0));
+  // Live status per instance is mirrored in JS so a change reads its own
+  // predecessor without a GPU read-back. It lives on the annotation bridge
+  // because the hover card has to read the CURRENT status, not the captured
+  // one: an agent whose state changes while you are looking at it is the point
+  // of the board.
 
   const geometry = useMemo(() => {
     const next = new THREE.PlaneGeometry(1, 1);
@@ -388,8 +392,9 @@ function HeroUnits({
     const changeAt = geometry.getAttribute(
       'aChangeAt'
     ) as THREE.InstancedBufferAttribute;
-    statusIndex.current = Uint8Array.from(capture.units, unit => unit.status);
+    const statuses = getBridge().statuses;
     capture.units.forEach((unit, index) => {
+      statuses[index] = unit.status;
       scratch.position.set(unit.x - center.x, 0.03, unit.y - center.y);
       scratch.scale.setScalar(unit.size * MARK_SCALE);
       scratch.updateMatrix();
@@ -408,19 +413,20 @@ function HeroUnits({
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
-  }, [capture, center, geometry]);
+  }, [capture, center, geometry, getBridge]);
 
   const elapsed = useRef(0);
   const pending = useRef(0);
   const random = useMemo(() => mulberry32(0x11ada7), []);
 
   function changeOneUnit(): void {
+    const bridge = getBridge();
     const index = Math.floor(random() * count);
-    const from = statusIndex.current[index]!;
+    const from = bridge.statuses[index]!;
     const options = STATUS_TRANSITIONS[from]!;
     const next = options[Math.floor(random() * options.length)]!;
     if (next === from) return;
-    statusIndex.current[index] = next;
+    bridge.statuses[index] = next;
     const markFrom = geometry.getAttribute(
       'aMarkFrom'
     ) as THREE.InstancedBufferAttribute;
@@ -446,6 +452,8 @@ function HeroUnits({
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
+    // The overlay only re-renders when the unit it is showing changed.
+    bridge.onStatusChange?.(index);
   }
 
   useFrame((state: RootState, delta: number) => {
@@ -586,17 +594,18 @@ interface Keyframe {
 }
 
 function HeroCameraRig({
-  option,
   capture,
   animating,
   progressRef,
+  getBridge,
 }: {
-  option: HeroIdleOptionId;
   capture: HeroBoardCapture;
   animating: boolean;
   progressRef: RefObject<number>;
+  getBridge: HeroBridgeAccess;
 }) {
   const controls = useRef<CameraControlsImpl>(null);
+  const camera = useThree(state => state.camera);
   const size = useThree(state => state.size);
   const invalidate = useThree(state => state.invalidate);
   const framings = useMemo(() => heroBoardFramings(capture), [capture]);
@@ -604,32 +613,47 @@ function HeroCameraRig({
     framings.map(() => ({ target: new THREE.Vector3(), distance: 1 }))
   );
   const scratchTarget = useRef(new THREE.Vector3());
-  const elapsed = useRef(0);
   const progress = useRef(0);
-  const lastInteraction = useRef(-Infinity);
   const ready = useRef(false);
 
-  // Input policy. The wheel is NONE everywhere: a hero that eats page scroll is
-  // scroll-jacking, and the research found zero of it across all 16 sites.
+  /** World anchors, hoisted: nothing allocates inside the frame loop. */
+  const anchors = useMemo(() => {
+    const center = boardCenter(capture);
+    return {
+      zones: capture.zones.map(
+        zone => new THREE.Vector3(zone.x - center.x, 0.02, zone.y - center.y)
+      ),
+      zoneRadius: capture.zones.map(zone => zone.radius),
+      units: capture.units.map(
+        unit => new THREE.Vector3(unit.x - center.x, 0.03, unit.y - center.y)
+      ),
+      unitRadius: capture.units.map(unit => (unit.size * MARK_SCALE) / 2),
+    };
+  }, [capture]);
+  const projected = useRef(new THREE.Vector3());
+  const offset = useRef(new THREE.Vector3());
+  const right = useRef(new THREE.Vector3());
+
+  // Input policy. EVERY binding is NONE: a hero that eats page scroll is
+  // scroll-jacking (the research found zero of it across all 16 sites), and a
+  // hero that can be dragged loses the readable layout that is the claim.
   useEffect(() => {
     const rig = controls.current;
     if (!rig) return;
     const { ACTION } = CameraControlsImpl;
-    const orbit = option === 'orbit';
-    rig.mouseButtons.left = orbit ? ACTION.ROTATE : ACTION.NONE;
+    rig.mouseButtons.left = ACTION.NONE;
     rig.mouseButtons.middle = ACTION.NONE;
     rig.mouseButtons.right = ACTION.NONE;
     rig.mouseButtons.wheel = ACTION.NONE;
-    rig.touches.one = orbit ? ACTION.TOUCH_ROTATE : ACTION.NONE;
+    rig.touches.one = ACTION.NONE;
     rig.touches.two = ACTION.NONE;
     rig.touches.three = ACTION.NONE;
     rig.smoothTime = 0.4;
-    rig.draggingSmoothTime = 0.13;
     rig.minPolarAngle = 24 * DEG;
     rig.maxPolarAngle = 74 * DEG;
     rig.minDistance = 4;
     rig.maxDistance = 4000;
-  }, [option]);
+  }, []);
 
   const applyProgress = useCallback((value: number): void => {
     const rig = controls.current;
@@ -643,8 +667,70 @@ function HeroCameraRig({
     const target = scratchTarget.current.lerpVectors(a.target, b.target, eased);
     rig.rotateTo(BASE_AZIMUTH, BASE_POLAR, false);
     rig.moveTo(target.x, target.y, target.z, false);
+    // Distance is a RATIO, so it interpolates in log space (guide rule 4c):
+    // the Fleet-to-Agent journey spans more than an order of magnitude and a
+    // linear lerp would hide the first half of the pull.
     rig.dollyTo(a.distance * (b.distance / a.distance) ** eased, false);
   }, []);
+
+  /** Project one world point into CSS pixels inside the frame. */
+  const project = useCallback(
+    (point: THREE.Vector3, worldRadius: number, out: HeroAnchor): void => {
+      const half = { w: size.width / 2, h: size.height / 2 };
+      const ndc = projected.current.copy(point).project(camera);
+      const behind = ndc.z > 1;
+      out.x = (ndc.x + 1) * half.w;
+      out.y = (1 - ndc.y) * half.h;
+      out.onScreen =
+        !behind &&
+        ndc.x > -1.3 &&
+        ndc.x < 1.3 &&
+        ndc.y > -1.3 &&
+        ndc.y < 1.3 &&
+        Number.isFinite(out.x) &&
+        Number.isFinite(out.y);
+      if (worldRadius > 0) {
+        const edge = offset.current
+          .copy(point)
+          .addScaledVector(right.current, worldRadius)
+          .project(camera);
+        out.radius = Math.abs(edge.x - ndc.x) * half.w;
+      } else {
+        out.radius = 0;
+      }
+    },
+    [camera, size.width, size.height]
+  );
+
+  /** One projection pass, run at the end of every rendered frame. Bounded:
+   *  ten zone centres, 173 unit centres, and an exact on-screen radius only
+   *  for the handful of units that currently own a DOM node. */
+  const projectAll = useCallback((): void => {
+    const bridge = getBridge();
+    // The renderer inverts the camera matrix at draw time, which is after this
+    // runs, so do it here: a label one frame behind its mark is visible.
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    right.current.setFromMatrixColumn(camera.matrixWorld, 0);
+    bridge.width = size.width;
+    bridge.height = size.height;
+    for (let index = 0; index < anchors.zones.length; index += 1) {
+      project(
+        anchors.zones[index]!,
+        anchors.zoneRadius[index]!,
+        bridge.zones[index]!
+      );
+    }
+    for (let index = 0; index < anchors.units.length; index += 1) {
+      project(anchors.units[index]!, 0, bridge.units[index]!);
+    }
+    for (const index of bridge.tracked) {
+      const anchor = bridge.units[index];
+      if (!anchor) continue;
+      project(anchors.units[index]!, anchors.unitRadius[index]!, anchor);
+    }
+    bridge.onProject?.();
+  }, [anchors, getBridge, camera, project, size.width, size.height]);
 
   // Framings are recomputed whenever the viewport changes, because
   // getDistanceToFitSphere reads the live fov and aspect.
@@ -666,32 +752,15 @@ function HeroCameraRig({
     applyProgress(0);
     ready.current = true;
     progress.current = 0;
+    getBridge().progress = 0;
     invalidate();
-  }, [applyProgress, framings, size.width, size.height, invalidate]);
+  }, [applyProgress, getBridge, framings, size.width, size.height, invalidate]);
 
   useFrame((state: RootState, delta: number) => {
     const rig = controls.current;
-    if (!rig || !ready.current || !animating) return;
-    const step = Math.min(delta, 0.05);
-    elapsed.current += step;
-
-    if (option === 'planted') {
-      rig.rotateTo(
-        BASE_AZIMUTH +
-          BREATH_DEGREES.azimuth *
-            DEG *
-            Math.sin((TAU * elapsed.current) / BREATH_CYCLE_SECONDS.azimuth),
-        BASE_POLAR +
-          BREATH_DEGREES.polar *
-            DEG *
-            Math.sin((TAU * elapsed.current) / BREATH_CYCLE_SECONDS.polar),
-        false
-      );
-      state.invalidate();
-      return;
-    }
-
-    if (option === 'scroll') {
+    if (!rig || !ready.current) return;
+    if (animating) {
+      const step = Math.min(delta, 0.05);
       const target = THREE.MathUtils.clamp(progressRef.current ?? 0, 0, 1);
       progress.current = THREE.MathUtils.damp(
         progress.current,
@@ -700,24 +769,15 @@ function HeroCameraRig({
         step
       );
       applyProgress(progress.current);
+      getBridge().progress = progress.current;
+      // camera-controls writes the camera on its own update() at priority -1,
+      // which is next frame. Flush it now so the marks and their labels are
+      // one composition rather than two a frame apart.
+      rig.update(0);
       // Park when the camera has caught up with the scroll position.
       if (Math.abs(progress.current - target) > 0.0004) state.invalidate();
-      return;
     }
-
-    // orbit
-    if (rig.currentAction !== CameraControlsImpl.ACTION.NONE) {
-      lastInteraction.current = elapsed.current;
-      state.invalidate();
-      return;
-    }
-    if (
-      elapsed.current - lastInteraction.current >
-      ORBIT_RESUME_DELAY_SECONDS
-    ) {
-      rig.rotate(ORBIT_DEGREES_PER_SECOND * DEG * step, 0, false);
-    }
-    state.invalidate();
+    projectAll();
   });
 
   return <CameraControls ref={controls} makeDefault />;
@@ -738,7 +798,6 @@ function FirstFrame({ onReady }: { onReady: () => void }) {
 }
 
 export interface HeroBoardSceneProps {
-  option: HeroIdleOptionId;
   theme: SpatialThemeSnapshot;
   capture: HeroBoardCapture;
   /** False when frozen (reduced motion or poster capture) or parked (offscreen,
@@ -751,12 +810,14 @@ export interface HeroBoardSceneProps {
   progressRef: RefObject<number>;
   /** Measurement and poster capture only: lets the study read pixels back. */
   preserveDrawingBuffer?: boolean;
+  /** The seam to the DOM annotation layer: the scene writes projected anchors
+   *  and live statuses, the overlay reads them. */
+  getBridge: HeroBridgeAccess;
   onReady?: () => void;
   onCreated?: (state: RootState) => void;
 }
 
 export function HeroBoardScene({
-  option,
   theme,
   capture,
   animating,
@@ -764,6 +825,7 @@ export function HeroBoardScene({
   statusChanges = true,
   progressRef,
   preserveDrawingBuffer = false,
+  getBridge,
   onReady,
   onCreated,
 }: HeroBoardSceneProps) {
@@ -790,12 +852,13 @@ export function HeroBoardScene({
         animating={animating}
         statusProtocolMotion={statusProtocolMotion}
         statusChanges={statusChanges}
+        getBridge={getBridge}
       />
       <HeroCameraRig
-        option={option}
         capture={capture}
         animating={animating}
         progressRef={progressRef}
+        getBridge={getBridge}
       />
       {onReady ? <FirstFrame onReady={onReady} /> : null}
     </Canvas>

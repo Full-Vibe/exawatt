@@ -4,7 +4,7 @@ import {
   compareFrames,
   gradeIdleDelta,
 } from './idle-measure';
-import { IDLE_BUDGET } from './idle-options';
+import { IDLE_BUDGET } from './hero-board-budget';
 
 function frame(pixels: number[][]): Uint8ClampedArray {
   const data = new Uint8ClampedArray(pixels.length * 4);
