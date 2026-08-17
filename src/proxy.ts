@@ -58,6 +58,12 @@ const PUBLIC_PREFIXES = [
   '/eval',
   '/privacy',
   '/terms',
+  // Crawler-facing metadata routes (`src/app/robots.ts`, `src/app/sitemap.ts`).
+  // A robots.txt behind an auth redirect is a robots.txt no crawler ever
+  // reads, and the noindex directives it coordinates with are what keep app
+  // chrome out of search results. Neither route reads user data.
+  '/robots.txt',
+  '/sitemap.xml',
   // Public desktop download (decision 0021, 2026-08-14 amendment). Reachable
   // signed out by design: someone taking the app has no account yet, and
   // bouncing them to /sign-in would both break the flow and contradict the
