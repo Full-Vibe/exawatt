@@ -903,7 +903,6 @@ export async function applyCompanyOverlayInPlace({ root, profile }) {
     profile,
     overlay: 'present',
     manifestPath: COMPANY_OVERLAY_MANIFEST,
-    appliedAt: null,
     applied: applied.sort((a, b) => a.target.localeCompare(b.target)),
     removed,
   };
