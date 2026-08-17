@@ -8,6 +8,7 @@ import {
   recordHostedCallHttpFailure,
   recordHostedCallTransportFailure,
 } from '../analytics-bridge';
+import { SessionScopedState } from './session-scoped-state';
 
 /**
  * ENG-021 E1 context owner.
@@ -309,34 +310,41 @@ export function consumeOperatorInput(
 
 export class ContextSummarizer extends EventEmitter {
   private manager: PtySessionManager | null = null;
-  private summaries = new Map<string, string>();
-  private summarySources = new Map<
-    string,
+  /**
+   * Everything below keyed by a durable Session id is created through this
+   * owner, which `attach` binds to `PtySessionManager`'s `session-forgotten`
+   * event. Declaring one here is what frees it; there is no per-map delete site
+   * to forget. The PTY-keyed maps further down are a different identity space
+   * and stay bound to `exit` through `dropRuntime`.
+   */
+  private readonly sessionScoped = new SessionScopedState();
+  private summaries = this.sessionScoped.map<string>();
+  private summarySources = this.sessionScoped.map<
     'provisional' | 'accepted' | 'operator' | 'restored'
   >();
-  private initialInstructions = new Map<string, string>();
-  private instructions = new Map<
-    string,
-    Array<{ text: string; submittedAt: number }>
-  >();
-  private inputBuffers = new Map<string, string>();
-  private inputVersions = new Map<string, number>();
-  private labelVersions = new Map<string, number>();
-  private labelInFlight = new Set<string>();
-  private labelPending = new Set<string>();
-  private labelFailures = new Map<string, number>();
-  private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private initialInstructions = this.sessionScoped.map<string>();
+  private instructions =
+    this.sessionScoped.map<Array<{ text: string; submittedAt: number }>>();
+  private labelVersions = this.sessionScoped.map<number>();
+  private labelInFlight = this.sessionScoped.set();
+  private labelPending = this.sessionScoped.set();
+  private labelFailures = this.sessionScoped.map<number>();
+  private retryTimers = this.sessionScoped.map<ReturnType<typeof setTimeout>>(
+    timer => clearTimeout(timer)
+  );
+  private goalVisuals = this.sessionScoped.map<GoalVisual>();
+  private goalVisualPending = this.sessionScoped.map<PendingGoalVisual>();
+  private goalVisualInFlight = this.sessionScoped.set();
+  private goalVisualRetryTimers = this.sessionScoped.map<
+    ReturnType<typeof setTimeout>
+  >(timer => clearTimeout(timer));
   private accessToken: string | null = null;
   private contextLabelsEnabled = true;
-  private goalVisuals = new Map<string, GoalVisual>();
   private goalVisualsEnabled = true;
-  private goalVisualPending = new Map<string, PendingGoalVisual>();
-  private goalVisualInFlight = new Set<string>();
-  private goalVisualRetryTimers = new Map<
-    string,
-    ReturnType<typeof setTimeout>
-  >();
 
+  /** PTY-keyed: one live process, released by `dropRuntime` on `exit`. */
+  private inputBuffers = new Map<string, string>();
+  private inputVersions = new Map<string, number>();
   private checkpoints = new Map<string, VisitCheckpoint>();
   private focusedId: string | null = null;
   private windowFocused = false;
@@ -386,7 +394,14 @@ export class ContextSummarizer extends EventEmitter {
 
   attach(manager: PtySessionManager): void {
     this.manager = manager;
+    // Two identity spaces, two hooks. `exit` ends one PTY process; the Session
+    // it belonged to may run again under a new one, so only PTY-keyed state
+    // goes here.
     manager.on('exit', (id: string) => this.dropRuntime(id));
+    // `session-forgotten` ends the Session itself — closed, archived, killed,
+    // or reaped by the ledger. One bind releases every Session-keyed store,
+    // including any added later.
+    this.sessionScoped.bind(manager);
   }
 
   /** Compatibility lifecycle: labels are event-driven, so no sweep timer. */
@@ -708,6 +723,13 @@ export class ContextSummarizer extends EventEmitter {
       });
     } catch (error) {
       if (!this.contextLabelsEnabled) return;
+      // Forgotten while this call was in flight. `session-forgotten` released
+      // the version counter with everything else, so there is no Session left
+      // to retry for; without this the failure path would re-add pending state
+      // and arm a retry timer for a Session that no longer exists. The success
+      // path needs no equivalent guard: its existing staleness check compares
+      // against a version that release has already dropped.
+      if (!this.labelVersions.has(durableId)) return;
       this.labelPending.add(durableId);
       const failures = (this.labelFailures.get(durableId) ?? 0) + 1;
       this.labelFailures.set(durableId, failures);
@@ -1019,6 +1041,12 @@ export class ContextSummarizer extends EventEmitter {
     }
   }
 
+  /**
+   * One PTY process ended. Only PTY-keyed state goes here — the Session may
+   * well run again under a new process id, and its label, goal visual and
+   * instruction evidence must survive that. Session-keyed release is
+   * `session-forgotten`, wired in `attach`.
+   */
   private dropRuntime(id: string): void {
     this.inputBuffers.delete(id);
     this.inputVersions.delete(id);

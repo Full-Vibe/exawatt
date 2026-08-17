@@ -74,6 +74,7 @@ such without first revalidating their fixture and owner:
 - `palette-projects-eval.mjs`
 - `registry-e2e-eval.mjs`
 - `roadmap-rail-eval.mjs`
+- `session-lifecycle-leak-probe.mjs`
 - `terminal-cost-probe.mjs`
 - `transcript-replay-probe.mjs`
 
