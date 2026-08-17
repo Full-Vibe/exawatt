@@ -4,8 +4,9 @@
  * the altitude rail (Agent · Team · Fleet) is present on every Electron
  * surface, go-chords cover all three altitudes, the retired legacy demo trio
  * stays gone, ⌘[/⌘] traverse history while chrome owns focus, and ⌘K is
- * project-first (recents survive, add-project exists, signed-out state is
- * visible). Requires the dev server (`pnpm dev`) and a compiled Electron
+ * project-first (recents survive, add-project exists, Community does not
+ * misreport local persistence as a failed sign-in). Requires the dev server
+ * (`pnpm dev`) and a compiled Electron
  * main (`pnpm electron:compile`).
  */
 import { mkdtempSync, mkdirSync } from 'node:fs';
@@ -291,7 +292,7 @@ await withElectronApp(
   check('fleet surface has no legacy /fleet link', backLink === 0);
   await page.screenshot({ path: join(OUT, 'fleet-no-backlink.png') });
 
-  // project-first ⌘K: spine vocabulary, no legacy group, add-project, signed-out row
+  // project-first ⌘K: spine vocabulary, no legacy group, local-capable Projects
   await page.keyboard.press('Control+Meta+1');
   await page.waitForTimeout(800);
   await page.keyboard.press('Meta+KeyK');
@@ -310,8 +311,8 @@ await withElectronApp(
   );
   check('palette has Add project row', paletteText.includes('Add project'));
   check(
-    'palette shows signed-out Projects state',
-    paletteText.includes('Sign in to sync Projects')
+    'palette keeps Community Projects local without a sign-in error',
+    !paletteText.includes('Sign in to sync Projects')
   );
   await page.screenshot({ path: join(OUT, 'palette-project-first.png') });
 

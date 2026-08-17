@@ -16,10 +16,7 @@ import {
   chordEngine,
   defaultShortcuts,
 } from '@/lib/shortcuts';
-import {
-  getKeyboardShortcuts,
-  updateKeyboardShortcuts,
-} from '@/app/actions/preferences';
+import { createShortcutPreferenceSource } from '@/lib/shortcuts/preference-source';
 import { CommandPalette } from './command-palette';
 import { ShortcutHelpModal } from './shortcut-help-modal';
 import { ChordIndicator } from './chord-indicator';
@@ -177,6 +174,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const tenancy = useOptionalWorkspaceTenancy();
   const personalTenantActive =
     (tenancy?.activeWorkspace.kind ?? 'personal') === 'personal';
+  const preferenceSource = useMemo(createShortcutPreferenceSource, []);
 
   // Track when modals close to prevent Enter key from double-triggering
   const modalClosedAtRef = useRef<number>(0);
@@ -185,7 +183,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   useEffect(() => {
     async function loadPreferences() {
       try {
-        const overrides = await getKeyboardShortcuts();
+        const overrides = await preferenceSource.load();
         shortcutRegistry.loadOverrides(overrides);
       } catch (error) {
         console.error('Failed to load keyboard shortcuts:', error);
@@ -193,7 +191,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       setInitialized(true);
     }
     loadPreferences();
-  }, []);
+  }, [preferenceSource]);
 
   // Subscribe before descendant passive effects publish their initial catalog.
   useLayoutEffect(() => {
@@ -592,8 +590,8 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
   const saveOverrides = useCallback(async () => {
     const overrides = shortcutRegistry.getOverrides();
-    await updateKeyboardShortcuts(overrides);
-  }, []);
+    await preferenceSource.save(overrides);
+  }, [preferenceSource]);
 
   const handleOpenHelpModal = useCallback(() => {
     setHelpModalOpen(true);

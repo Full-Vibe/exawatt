@@ -1,10 +1,12 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { createOptionalServerClient } from '@/lib/supabase/server';
 import type { ShortcutOverride } from '@/types/shortcuts';
 
 export async function getKeyboardShortcuts(): Promise<ShortcutOverride[]> {
-  const supabase = await createClient();
+  const supabase = await createOptionalServerClient(resolvedDistribution());
+  if (!supabase) return [];
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -34,7 +36,13 @@ export async function getKeyboardShortcuts(): Promise<ShortcutOverride[]> {
 export async function updateKeyboardShortcuts(
   overrides: ShortcutOverride[]
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient();
+  const supabase = await createOptionalServerClient(resolvedDistribution());
+  if (!supabase) {
+    return {
+      success: false,
+      error: 'Account preference sync is not configured in this build.',
+    };
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -43,16 +51,14 @@ export async function updateKeyboardShortcuts(
     return { success: false, error: 'Not authenticated' };
   }
 
-  const { error } = await supabase
-    .from('user_preferences')
-    .upsert(
-      {
-        user_id: user.id,
-        keyboard_shortcuts: overrides,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    );
+  const { error } = await supabase.from('user_preferences').upsert(
+    {
+      user_id: user.id,
+      keyboard_shortcuts: overrides,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' }
+  );
 
   if (error) {
     console.error('Error updating keyboard shortcuts:', error);
@@ -62,8 +68,17 @@ export async function updateKeyboardShortcuts(
   return { success: true };
 }
 
-export async function resetKeyboardShortcuts(): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient();
+export async function resetKeyboardShortcuts(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const supabase = await createOptionalServerClient(resolvedDistribution());
+  if (!supabase) {
+    return {
+      success: false,
+      error: 'Account preference sync is not configured in this build.',
+    };
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();

@@ -612,7 +612,7 @@ export const architectureManifest = {
           id: 'fleet-provider',
           label: 'Fleet Provider',
           summary:
-            'React provider and hooks for UI-facing fleet state plus the source Project catalog, refreshed by authoritative workspace changes.',
+            'React provider and hooks for UI-facing fleet state plus the source Project catalog, refreshed by authoritative workspace changes. The durable Project registry uses a source-neutral DTO: configured accounts retain hosted sync while Community persists to its distribution-isolated local namespace.',
           layer: 'coordination',
           status: 'implemented',
           x: 342,
