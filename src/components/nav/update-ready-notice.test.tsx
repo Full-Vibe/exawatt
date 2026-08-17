@@ -4,14 +4,23 @@ import type { ProductUpdateStatus } from '@/types/electron';
 import {
   COMMUNITY_DISTRIBUTION,
   COMMUNITY_IDENTITY,
+  resolveDistributionIdentity,
 } from '@exawatt/core/distribution';
 import { UpdateReadyNotice } from './update-ready-notice';
 
 let emitStatus: ((status: ProductUpdateStatus) => void) | undefined;
 const UPDATE_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
+  brand: {
+    appId: 'dev.example.orbit',
+    productName: 'Orbit',
+    protocolScheme: 'orbit',
+    iconPath: 'electron/resources/orbit.icns',
+    updateChannel: 'stable',
+  },
   updates: { feedUrl: 'https://updates.example.test/macos' },
 } as const;
+const UPDATE_IDENTITY = resolveDistributionIdentity(UPDATE_DISTRIBUTION);
 
 afterEach(() => {
   delete window.electron;
@@ -37,7 +46,7 @@ function installApi(productUpdates = true) {
             ? UPDATE_DISTRIBUTION
             : COMMUNITY_DISTRIBUTION,
           digest: 'test-distribution',
-          identity: COMMUNITY_IDENTITY,
+          identity: productUpdates ? UPDATE_IDENTITY : COMMUNITY_IDENTITY,
           capabilities: {
             updates: productUpdates,
             updateIpcChannels: productUpdates
@@ -91,9 +100,10 @@ function installApi(productUpdates = true) {
 }
 
 describe('UpdateReadyNotice', () => {
-  it('degrades to no product-update UI when the capability is absent', () => {
+  it('degrades to no product-update UI when the capability is absent', async () => {
     installApi(false);
     const { container } = render(<UpdateReadyNotice />);
+    await act(async () => undefined);
     expect(container).toBeEmptyDOMElement();
     expect(emitStatus).toBeUndefined();
   });
@@ -139,7 +149,7 @@ describe('UpdateReadyNotice', () => {
     );
     expect(
       screen.getByText(
-        'Update failed, so Exawatt 1.0.0 stays installed. network unavailable'
+        'Update failed, so Orbit 1.0.0 stays installed. network unavailable'
       )
     ).toBeInTheDocument();
   });
@@ -163,7 +173,7 @@ describe('UpdateReadyNotice', () => {
     );
     expect(
       screen.getByText(
-        'Update failed, so Exawatt 1.0.0 stays installed. No reason was reported.'
+        'Update failed, so Orbit 1.0.0 stays installed. No reason was reported.'
       )
     ).toBeInTheDocument();
   });

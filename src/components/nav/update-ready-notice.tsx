@@ -5,6 +5,7 @@ import { RefreshCw, X } from 'lucide-react';
 import type { ProductUpdateStatus } from '@/types/electron';
 
 export function UpdateReadyNotice() {
+  const [productName, setProductName] = useState('Exawatt');
   const [installedSha, setInstalledSha] = useState<string | null>(null);
   const [status, setStatus] = useState<ProductUpdateStatus | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -17,6 +18,10 @@ export function UpdateReadyNotice() {
   useEffect(() => {
     const api = window.electron?.app;
     if (!api) return;
+    void api
+      .getBuildInfo()
+      .then(info => setProductName(info.distribution.identity.productName))
+      .catch(() => undefined);
     const updates = api.updates;
     if (updates) {
       void updates
@@ -58,20 +63,20 @@ export function UpdateReadyNotice() {
       ? 'Saving Session state…'
       : shutdown.phase === 'stopping'
         ? `Stopping ${shutdown.agents} ${shutdown.agents === 1 ? 'agent' : 'agents'}${shutdown.shells > 0 ? ` and ${shutdown.shells} ${shutdown.shells === 1 ? 'shell' : 'shells'}` : ''}…`
-        : 'Closing Exawatt…'
+        : `Closing ${productName}…`
     : installedSha
       ? 'New local build installed. Restart when convenient.'
       : status?.phase === 'checking'
         ? 'Checking for updates…'
         : status?.phase === 'available'
-          ? `Exawatt ${status.availableVersion} is available.`
+          ? `${productName} ${status.availableVersion} is available.`
           : status?.phase === 'downloading'
-            ? `Downloading Exawatt ${status.availableVersion} · ${Math.round(status.percent ?? 0)}%`
+            ? `Downloading ${productName} ${status.availableVersion} · ${Math.round(status.percent ?? 0)}%`
             : status?.phase === 'downloaded'
-              ? `Exawatt ${status.availableVersion} is ready to install.`
+              ? `${productName} ${status.availableVersion} is ready to install.`
               : // the reason is the whole value of this line: without it a
                 // stuck user can only report "it failed" (ENG-030 OS1.6)
-                `Update failed, so Exawatt ${status?.currentVersion} stays installed. ${status?.error ?? 'No reason was reported.'}`;
+                `Update failed, so ${productName} ${status?.currentVersion} stays installed. ${status?.error ?? 'No reason was reported.'}`;
 
   return (
     <div className="exa-material-overlay fixed bottom-8 left-1/2 z-[100] flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center gap-3 border border-[var(--exa-foundation-border-strong)] px-3 py-2 text-xs text-[var(--exa-foundation-text)] shadow-lg">

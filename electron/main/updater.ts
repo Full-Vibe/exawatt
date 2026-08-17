@@ -95,6 +95,7 @@ function describeError(error: unknown): Record<string, unknown> {
 }
 
 export function registerProductUpdater(
+  feedUrl: string,
   countLiveSessions: () => number,
   restartForUpdate: () => Promise<boolean>
 ): void {
@@ -105,6 +106,11 @@ export function registerProductUpdater(
   const logPath = path.join(app.getPath('userData'), 'logs', 'updater.jsonl');
   record = createDiagnosticsLog(logPath);
   status = { ...status, logPath };
+
+  // The resolved distribution is the runtime authority as well as the
+  // builder authority. This prevents a copied or stale app-update.yml from
+  // silently sending an otherwise valid distribution to a different feed.
+  autoUpdater.setFeedURL(feedUrl);
 
   // electron-updater's own chatter is the only place the real reason for a
   // failed download or a refused Squirrel install appears. Forward all of it.
@@ -229,6 +235,7 @@ export function installProductUpdate(): void {
  */
 export async function checkForUpdatesFromMenu(): Promise<void> {
   await runCheck('menu');
+  const productName = app.name;
   const detailSuffix = status.logPath
     ? `\n\nDiagnostics: ${status.logPath}`
     : '';
@@ -239,8 +246,8 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     // its update channel, so the way forward is a fresh download.
     const detail =
       status.disabledReason === 'no-feed-config'
-        ? `Exawatt ${status.currentVersion} was packaged without an update channel, so it cannot check for new versions. Download the current release from exawatt.ai/download and replace this copy.${detailSuffix}`
-        : `This copy of Exawatt ${status.currentVersion} was installed directly rather than from a signed release, so it has no update channel. Install the latest release to turn automatic updates on.`;
+        ? `${productName} ${status.currentVersion} was packaged without an update channel, so it cannot check for new versions. Download the current release from your distributor and replace this copy.${detailSuffix}`
+        : `This copy of ${productName} ${status.currentVersion} was installed directly rather than from a signed release, so it has no update channel. Install the latest signed release to turn automatic updates on.`;
     await dialog.showMessageBox({
       type: status.disabledReason === 'no-feed-config' ? 'warning' : 'info',
       message: 'Automatic updates are off for this build.',
@@ -252,7 +259,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
   if (status.phase === 'error') {
     await dialog.showMessageBox({
       type: 'warning',
-      message: `Exawatt ${status.currentVersion} could not update.`,
+      message: `${productName} ${status.currentVersion} could not update.`,
       detail: `${status.error ?? 'No reason was reported.'}${detailSuffix}`,
       buttons: ['OK'],
     });
@@ -261,7 +268,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
   if (status.phase === 'downloaded') {
     await dialog.showMessageBox({
       type: 'info',
-      message: `Exawatt ${status.availableVersion} is ready to install.`,
+      message: `${productName} ${status.availableVersion} is ready to install.`,
       detail: 'Restart to finish updating.',
       buttons: ['OK'],
     });
@@ -270,15 +277,15 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
   if (status.phase === 'available' || status.phase === 'downloading') {
     await dialog.showMessageBox({
       type: 'info',
-      message: `Downloading Exawatt ${status.availableVersion}.`,
-      detail: 'Exawatt will offer to restart when the download finishes.',
+      message: `Downloading ${productName} ${status.availableVersion}.`,
+      detail: `${productName} will offer to restart when the download finishes.`,
       buttons: ['OK'],
     });
     return;
   }
   await dialog.showMessageBox({
     type: 'info',
-    message: `Exawatt ${status.currentVersion} is up to date.`,
+    message: `${productName} ${status.currentVersion} is up to date.`,
     detail: `Latest available version: ${status.availableVersion ?? status.currentVersion}.`,
     buttons: ['OK'],
   });

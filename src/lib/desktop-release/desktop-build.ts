@@ -8,8 +8,8 @@
  * parser into the runtime dependency set.
  */
 
-export const DESKTOP_UPDATE_CHANNEL_URL =
-  'https://numfrucdnnksxbnfftpa.supabase.co/storage/v1/object/public/desktop-updates/macos/arm64';
+import type { DistributionContractV1 } from '@exawatt/core/distribution';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 export interface DesktopBuild {
   version: string;
@@ -27,7 +27,14 @@ interface FeedFile {
   size: number | null;
 }
 
-export function parseLatestMacFeed(text: string): DesktopBuild | null {
+function feedObjectUrl(feedUrl: string, name: string): string {
+  return `${feedUrl.replace(/\/+$/, '')}/${encodeURIComponent(name)}`;
+}
+
+export function parseLatestMacFeed(
+  text: string,
+  feedUrl: string
+): DesktopBuild | null {
   const version = /^version:\s*(\S+)\s*$/m.exec(text)?.[1];
   if (!version) return null;
   const releaseDate = /^releaseDate:\s*'?([^'\r\n]+?)'?\s*$/m.exec(text)?.[1];
@@ -62,21 +69,24 @@ export function parseLatestMacFeed(text: string): DesktopBuild | null {
     version,
     releaseDate: releaseDate ?? null,
     fileName: dmg.url,
-    downloadUrl: `${DESKTOP_UPDATE_CHANNEL_URL}/${encodeURIComponent(dmg.url)}`,
+    downloadUrl: feedObjectUrl(feedUrl, dmg.url),
     size: dmg.size,
   };
 }
 
 export async function fetchDesktopBuild(
+  distribution: DistributionContractV1 = resolvedDistribution(),
   fetchImpl: typeof fetch = fetch
 ): Promise<DesktopBuild | null> {
+  const feedUrl = distribution.updates?.feedUrl;
+  if (!feedUrl) return null;
   try {
-    const response = await fetchImpl(
-      `${DESKTOP_UPDATE_CHANNEL_URL}/latest-mac.yml`,
-      { signal: AbortSignal.timeout(8_000), cache: 'no-store' }
-    );
+    const response = await fetchImpl(feedObjectUrl(feedUrl, 'latest-mac.yml'), {
+      signal: AbortSignal.timeout(8_000),
+      cache: 'no-store',
+    });
     if (!response.ok) return null;
-    return parseLatestMacFeed(await response.text());
+    return parseLatestMacFeed(await response.text(), feedUrl);
   } catch {
     return null;
   }

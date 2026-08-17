@@ -11,19 +11,15 @@ import type { DistributionContractV1 } from '@exawatt/core/distribution';
  * requested and completed on the stable hosted origin, and the operator
  * returns to the desktop app to sign in with the new password.
  */
-export const HOSTED_ORIGIN = 'https://www.exawatt.ai';
-
 export const FORGOT_PASSWORD_PATH = '/auth/forgot-password';
 export const UPDATE_PASSWORD_PATH = '/auth/update-password';
-
-export const HOSTED_FORGOT_PASSWORD_URL = `${HOSTED_ORIGIN}${FORGOT_PASSWORD_PATH}`;
 
 export interface HostedAuthTargets {
   forgotPasswordUrl: string;
   recoveryOrigin: string;
 }
 
-/** Nullable distribution-aware seam. WP2b migrates the legacy constant user. */
+/** A build without account transport has no hosted-auth target at all. */
 export function resolveHostedAuthTargets(
   distribution: DistributionContractV1
 ): HostedAuthTargets | null {
