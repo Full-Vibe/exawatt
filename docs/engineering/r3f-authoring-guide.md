@@ -63,6 +63,15 @@ Current boundaries:
   retained for `/eval/t3-spatial-sparse` and `/eval/t4-agent-station`, not as a
   second production `/fleet/spatial` wrapper. The obsolete
   `fleet/spatial/agent-field/agent-field-surface.tsx` retired at ENG-032 T5.
+- **Marketing hero board**
+  `src/components/site/hero-board/hero-board-scene.tsx`, framed by
+  `hero-board.tsx` — the ENG-031 W2 homepage hero over ONE frozen capture of
+  the Demo Workspace. Three draw calls (ground, zones, one `InstancedMesh` for
+  all units), `antialias: false` with analytic `fwidth` coverage in the mark
+  shader, DPR capped at 1.5, no postprocessing, and a demand loop that renders
+  zero frames while parked. It is the one R3F surface with a MEASURED idle
+  budget: `pnpm eval:hero-board` compares two frames a second apart per
+  channel. Rigs: `/eval/t12-hero-board` and `/hud-gallery/hero-board`.
 - **Gallery R3F studies** `src/components/hud/webgl/scenes.tsx` and the retained
   keyswitch study — isolated workbench canvases under `/hud-gallery`. Ortho
   px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px, centered), with `frameloop`

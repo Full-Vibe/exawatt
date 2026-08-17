@@ -72,6 +72,14 @@ const TASKS = [
     settleMs: 1_200,
   },
   {
+    id: 't12-hero-board',
+    name: 'Marketing hero board (frozen Demo Workspace capture)',
+    // Ground + project zones + all 173 agent units = three draw calls, flat,
+    // with one of tolerance. The whole point of the hero's budget.
+    drawCallMax: 4,
+    settleMs: 900,
+  },
+  {
     id: 't10-board-scale',
     name: 'Demo-scale board (1k population field)',
     // The whole 1,000-agent population renders as one InstancedMesh. Max

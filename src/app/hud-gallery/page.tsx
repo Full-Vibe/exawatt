@@ -511,6 +511,13 @@ export default function HudGallery() {
                 Open the Fleet board study →
               </a>{' '}
               <a
+                href="/hud-gallery/hero-board"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the hero board idle study →
+              </a>{' '}
+              <a
                 href="/hud-gallery/usage-directions"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}
