@@ -115,5 +115,5 @@ const builderConfig = JSON.parse(
 );
 assertPackedApp(
   path.join(root, 'release', 'mac-arm64', `${builderConfig.productName}.app`),
-  { root }
+  { root, builderConfig }
 );
