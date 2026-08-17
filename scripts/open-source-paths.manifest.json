@@ -156,6 +156,7 @@
         "scripts/qa-browser-doctor.mjs",
         "scripts/qa-browser-smoke.mjs",
         "scripts/r3f-eval/**",
+        "scripts/session-lifecycle-leak-probe.mjs",
         "scripts/sign-renderer-archive.cjs",
         "scripts/terminal-cost-probe.mjs",
         "scripts/transcript-replay-probe.mjs",

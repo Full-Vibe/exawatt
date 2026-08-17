@@ -24,6 +24,7 @@ const INTENTIONAL_NON_PACKAGE_FILES = new Set([
   'registry-e2e-eval.mjs',
   'release-after-pack.cjs',
   'roadmap-rail-eval.mjs',
+  'session-lifecycle-leak-probe.mjs',
   'sign-renderer-archive.cjs',
   'terminal-cost-probe.mjs',
   'transcript-replay-probe.mjs',

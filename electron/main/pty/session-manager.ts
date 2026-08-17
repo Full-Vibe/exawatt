@@ -926,18 +926,49 @@ export class PtySessionManager extends EventEmitter {
     await this.flushHistory();
   }
 
+  /**
+   * The Session-forgotten boundary (BUG-025).
+   *
+   * A PTY exit is NOT a Session ending: a Session outlives many PTY processes
+   * and can be forgotten long after its last one died. `exit` therefore cannot
+   * bound anything keyed by the durable Session id, and for a long time nothing
+   * else could either — `deleteSession`/`purgeHistory` deleted history and
+   * identity and told no other subscriber. Every Session-keyed store in main
+   * (labels, goal visuals, instruction evidence, retry state) grew for the
+   * process lifetime as a result.
+   *
+   * `session-forgotten` is that missing event. It means: main no longer holds
+   * a runtime record for this durable Session id, so every store keyed by it
+   * must release its slice. It fires whether or not this process ever ran a PTY
+   * for the Session — a rehydrated tab whose label and goal visual were
+   * restored from the layout has main-side state and no runtime record, and
+   * closing it must free that too.
+   *
+   * It is deliberately NOT emitted by `stopAll`, which parks running Sessions
+   * for rehydration on the next launch. Parked is remembered, not forgotten.
+   *
+   * `SessionScopedState` in `session-scoped-state.ts` is the subscriber side.
+   */
+  private forgetSession(durableSessionId: string): void {
+    this.emit('session-forgotten', durableSessionId);
+  }
+
   /** Drop an EXITED session's runtime record (D23 archive): without this,
    *  rehydration would reconstruct the deliberately-closed tab from the
    *  leftover record. Disk history is untouched — the ledger owns it. */
   forgetExited(durableSessionId: string): void {
-    const found = Array.from(this.sessions.entries()).find(
-      ([, session]) =>
+    const live = Array.from(this.sessions.values()).some(
+      session =>
         session.info.durableSessionId === durableSessionId &&
-        session.info.exited
+        !session.info.exited
     );
-    if (!found) return;
-    this.sessions.delete(found[0]);
+    if (live) return;
+    const found = Array.from(this.sessions.entries()).find(
+      ([, session]) => session.info.durableSessionId === durableSessionId
+    );
+    if (found) this.sessions.delete(found[0]);
     this.scrollback.delete(durableSessionId);
+    this.forgetSession(durableSessionId);
   }
 
   /** Delete a session's retained data (D23 ledger reap) — never a live one. */
@@ -949,6 +980,7 @@ export class PtySessionManager extends EventEmitter {
     );
     if (live) return;
     this.scrollback.delete(durableSessionId);
+    this.forgetSession(durableSessionId);
     await Promise.all([
       this.history?.delete(durableSessionId),
       this.identities?.delete(durableSessionId),
@@ -966,6 +998,7 @@ export class PtySessionManager extends EventEmitter {
     this.sessions.delete(id);
     this.cleanupHarnessWiring(id);
     this.scrollback.delete(s.info.durableSessionId);
+    this.forgetSession(s.info.durableSessionId);
     await Promise.all([
       this.history?.delete(s.info.durableSessionId),
       this.identities?.delete(s.info.durableSessionId),
@@ -981,6 +1014,7 @@ export class PtySessionManager extends EventEmitter {
       return;
     }
     this.scrollback.delete(durableSessionId);
+    this.forgetSession(durableSessionId);
     await Promise.all([
       this.history?.delete(durableSessionId),
       this.identities?.delete(durableSessionId),

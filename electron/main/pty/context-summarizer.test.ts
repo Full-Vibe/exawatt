@@ -791,7 +791,9 @@ describe('main-process hosted-call failures are counted', () => {
  * in-flight output discarded, `EXAWATT_SUMMARIES=0` still an override.
  */
 describe('the re-entry recap is independently controllable', () => {
-  function recapRig(summarize?: (prompt: string, maxChars: number) => Promise<string | null>) {
+  function recapRig(
+    summarize?: (prompt: string, maxChars: number) => Promise<string | null>
+  ) {
     const state = { now: 100_000 };
     const manager = new FakeManager();
     const summarizeFn = vi.fn(
@@ -938,5 +940,133 @@ describe('re-entry recap remains a separate delta feature', () => {
     const prompt = summarize.mock.calls[0][0] as string;
     expect(prompt).toContain('new tests passed');
     expect(prompt).not.toContain('old output');
+  });
+});
+
+/**
+ * BUG-025. Main has two identity spaces and, until `session-forgotten`, one
+ * lifecycle hook bound to the wrong one. The generic residue check below is
+ * the part that matters long-term: it fails for ANY Session-keyed store that
+ * outlives a forgotten Session, including one added years from now, so the
+ * cheapest way to keep it green is to declare the store through
+ * `SessionScopedState` rather than as a bare `Map`.
+ */
+function sessionKeyedResidue(
+  owner: object,
+  durableSessionId: string
+): string[] {
+  return Object.entries(owner)
+    .filter(
+      ([, value]) =>
+        (value instanceof Map || value instanceof Set) &&
+        value.has(durableSessionId)
+    )
+    .map(([name]) => name);
+}
+
+describe('a forgotten Session leaves nothing behind in main', () => {
+  let manager: FakeManager;
+  let generateLabel: ReturnType<typeof vi.fn>;
+  let generateGoalVisual: ReturnType<typeof vi.fn>;
+  let service: ContextSummarizer;
+  // A real goal visual is a ~265 KB JPEG data URL; this is the same shape.
+  const jpeg = `data:image/jpeg;base64,${'YWJj'.repeat(16)}`;
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    generateLabel = vi.fn(async () => ({
+      label: 'Improve agent context summaries',
+      relationship: 'new_context' as const,
+      confidence: 0.95,
+    }));
+    generateGoalVisual = vi.fn(async () => ({
+      identityKey: 'goal-identity',
+      dataUrl: jpeg,
+    }));
+    service = new ContextSummarizer({
+      generateLabel,
+      generateGoalVisual,
+      retryBaseMs: 1,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+  });
+
+  it('releases every Session-keyed store, including ones added later', async () => {
+    service.setAccessToken('jwt');
+    service.seedFromTask('session-1', 'Implement reopen closed tab');
+    service.noteInput('live-1', 'Also fix the stale subtitle\r');
+    await vi.waitFor(() =>
+      expect(service.getGoalVisual('session-1')?.state).toBe('ready')
+    );
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+    expect(sessionKeyedResidue(service, 'session-1').length).toBeGreaterThan(0);
+
+    manager.emit('session-forgotten', 'session-1');
+
+    expect(service.getSummary('session-1')).toBeNull();
+    expect(service.getGoalVisual('session-1')).toBeNull();
+    expect(sessionKeyedResidue(service, 'session-1')).toEqual([]);
+  });
+
+  it('keeps a still-running PTY out of the Session release path', async () => {
+    service.setAccessToken('jwt');
+    service.seedFromTask('session-1', 'Implement reopen closed tab');
+    await vi.waitFor(() =>
+      expect(service.getGoalVisual('session-1')?.state).toBe('ready')
+    );
+    // One PTY process ended; the Session can run again under a new one.
+    manager.emit('exit', 'live-1');
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+    expect(service.getGoalVisual('session-1')?.state).toBe('ready');
+  });
+
+  it('does not let an in-flight label failure resurrect a forgotten Session', async () => {
+    vi.useFakeTimers();
+    try {
+      let failFirst!: (error: Error) => void;
+      generateLabel.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failFirst = reject;
+          })
+      );
+      service.setAccessToken('jwt');
+      service.seedFromTask('session-1', 'Implement reopen closed tab');
+      await vi.waitFor(() => expect(generateLabel).toHaveBeenCalledOnce());
+      manager.emit('session-forgotten', 'session-1');
+      failFirst(new Error('offline'));
+      await flush();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flush();
+      expect(generateLabel).toHaveBeenCalledOnce();
+      expect(sessionKeyedResidue(service, 'session-1')).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let an in-flight visual response resurrect a forgotten Session', async () => {
+    let resolveVisual!: (value: {
+      identityKey: string;
+      dataUrl: string;
+    }) => void;
+    generateGoalVisual.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveVisual = resolve;
+        })
+    );
+    service.setAccessToken('jwt');
+    service.seedFromTask('session-1', 'Implement reopen closed tab');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    manager.emit('session-forgotten', 'session-1');
+    resolveVisual({ identityKey: 'late-goal', dataUrl: jpeg });
+    await flush();
+    expect(service.getGoalVisual('session-1')).toBeNull();
+    expect(sessionKeyedResidue(service, 'session-1')).toEqual([]);
   });
 });
