@@ -1386,6 +1386,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     runtimeReady,
   ]);
   ptySessions = runtime.sessionManager.ptySessions;
+  ptySessions.setProductName(distributionIdentity.productName);
   disposePty = runtime.ptyIpc.disposePty;
   disposeRoadmapWatchers = runtime.roadmapWatcher.disposeRoadmapWatchers;
   if (productUpdatesEnabled) {
