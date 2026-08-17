@@ -59,6 +59,7 @@ human-facing package command:
 | `distribution.official.example.json` | placeholder-only official distribution test/build fixture |
 | `ci-batch-worker.mjs`                | detached queue-drain hosted-CI dispatcher                 |
 | `dogfood-worker.mjs`                 | detached dogfood queue worker                             |
+| `gitleaks.toml`                      | public-repository secret-scan workflow configuration      |
 | `macos-atomic-swap.c`                | native helper compiled by `lib/macos-atomic-swap.mjs`     |
 | `open-source-paths.manifest.json`    | fail-closed publication path classifier                   |
 | `prepare-release-metadata.mjs`       | macOS release workflow                                    |

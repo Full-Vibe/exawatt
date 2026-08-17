@@ -5,7 +5,7 @@ const base = {
   kind: 'bug',
   message: 'The tab label is stale after a topic pivot.',
   surface: 'workspace-tab-strip',
-  idempotencyKey: '123e4567-e89b-42d3-a456-426614174000',
+  idempotencyKey: '11111111-2222-4333-8444-555555555555',
 };
 
 describe('product-feedback contract', () => {

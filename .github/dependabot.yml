@@ -1,0 +1,39 @@
+version: 2
+
+# Cadence is a budget decision, not a preference. Every Dependabot pull request
+# runs the full CI job, and the org Actions allowance is $15/month with a hard
+# stop (AGENTS.md), which is also why `ci.yml` only runs post-merge from the
+# coalesced `ci-batches/master` ref. Monthly + grouped minor/patch keeps the bot
+# to a handful of runs. Revisit the cadence in WP4b, once the public repository
+# exists and its Actions minutes are free.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+      time: '10:00'
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 3
+    groups:
+      production-minor-and-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-minor-and-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  # Every workflow pins its actions to an immutable commit, so this ecosystem
+  # is what keeps those pins current instead of frozen.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+      time: '10:30'
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 2

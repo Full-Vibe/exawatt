@@ -1,0 +1,58 @@
+name: Secret Scan
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    # The public repository starts from the curated seed, so scanning its
+    # complete history is a real claim. The private source repository keeps its
+    # pre-publication history and scans it once in WP5b instead of turning old
+    # synthetic fixtures into a permanent public allowlist.
+    #
+    # gitleaks is installed from a checksum-pinned release rather than through
+    # `gitleaks/gitleaks-action`, whose organization use requires a license key
+    # — a repository secret a fork would never receive.
+    if: github.event.repository.visibility == 'public'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install checksum-pinned gitleaks
+        shell: bash
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          destination="$RUNNER_TEMP/$archive"
+          curl --fail --location --retry 3 --silent --show-error \
+            --output "$destination" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$destination" \
+            | sha256sum --check --status
+          tar -xzf "$destination" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan complete public history
+        run: >-
+          "$RUNNER_TEMP/gitleaks" git
+          --config scripts/gitleaks.toml
+          --redact
+          --no-banner
+          --exit-code 1
+          .

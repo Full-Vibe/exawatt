@@ -1,0 +1,10 @@
+title = "Exawatt public-source secret scanning"
+
+# Extend gitleaks' maintained defaults rather than replacing them: a replacement
+# silently drops every rule added upstream after this file was written.
+#
+# Do not broad-allow fixture paths here. Secret-shaped fixtures in this
+# repository are assembled at runtime from parts instead, so a real secret
+# committed beside one still fails the gate.
+[extend]
+useDefault = true

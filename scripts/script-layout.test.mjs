@@ -16,6 +16,7 @@ const INTENTIONAL_NON_PACKAGE_FILES = new Set([
   'distribution.official.example.json',
   'dogfood-worker.mjs',
   'fathom-transcript.mjs',
+  'gitleaks.toml',
   'macos-atomic-swap.c',
   'open-source-paths.manifest.json',
   'pace-opportunity-shot.mjs',

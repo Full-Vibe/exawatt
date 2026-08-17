@@ -49,6 +49,17 @@
       "exclude": []
     },
     {
+      "id": "public-repository-security-automation",
+      "classification": "PUBLIC",
+      "include": [
+        ".github/dependabot.yml",
+        ".github/workflows/codeql.yml",
+        ".github/workflows/dependency-review.yml",
+        ".github/workflows/gitleaks.yml"
+      ],
+      "exclude": []
+    },
+    {
       "id": "repository-agent-public",
       "classification": "PUBLIC",
       "include": [
@@ -146,6 +157,7 @@
         "scripts/generate-agent-source-declarations.mjs",
         "scripts/generate-app-icon.mjs",
         "scripts/generate-themes.mjs",
+        "scripts/gitleaks.toml",
         "scripts/macos-atomic-swap.c",
         "scripts/open-source-paths.mjs",
         "scripts/pace-opportunity-shot.mjs",
@@ -155,6 +167,7 @@
         "scripts/prepare-electron-renderer.mjs",
         "scripts/production-audit-baseline.json",
         "scripts/production-dependency-audit.mjs",
+        "scripts/publication-check.mjs",
         "scripts/public-content-scan.mjs",
         "scripts/qa-browser-doctor.mjs",
         "scripts/qa-browser-smoke.mjs",

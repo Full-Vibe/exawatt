@@ -219,6 +219,18 @@ test('post-merge CI runs only from the coalesced batch ref and cancels an obsole
     workflow,
     /name: Check open-source path classification\s+run: pnpm open-source:paths:check/
   );
+
+  // ENG-030 WP5a: a fork receives no repository secrets, so the run a
+  // contributor gets and the run we get have to be the same run. The deeper
+  // workflow properties are asserted in `github-workflows.test.mjs`; these
+  // three stay here because this file is what an agent edits when it changes
+  // CI, and losing them silently is the failure worth catching at the door.
+  assert.doesNotMatch(workflow, /\$\{\{\s*secrets\./);
+  assert.doesNotMatch(workflow, /^\s*pull_request_target:/m);
+  assert.match(
+    workflow,
+    /name: Compile Electron main\s+run: pnpm electron:compile/
+  );
 });
 
 // ── Surface gates (D51). The repository owns 31 eval gates and the floor

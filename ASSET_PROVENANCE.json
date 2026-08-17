@@ -39,7 +39,7 @@
       "path": "public/images/hero-board-poster.jpg",
       "status": "included",
       "kind": "generated Demo Workspace poster",
-      "sha256": "f594af25f57516744587b8fe507f0e4072c5ad07414520072da17b1f5a4759f9",
+      "sha256": "98bcc2bc39cdbccb57f4a8d51cb19ab5b3cb8230c63f88c25219cae55ef3bb58",
       "origin": "Generated from Exawatt's synthetic Demo Workspace hero-board capture by EXA_BASE=<worktree-server> pnpm eval:hero-board -- --poster. The generator and regeneration contract live in scripts/hero-board-idle-eval.mjs and docs/engineering/projects/website-overhaul.md.",
       "distributionBasis": "First-party generated asset derived only from repository code and synthetic Demo Mode fixtures; distributed under the repository license."
     },

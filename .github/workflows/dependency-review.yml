@@ -1,0 +1,24 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    # Evaluates only the pull-request delta, so a known baseline finding cannot
+    # hide a newly introduced high-severity dependency. The dependency graph it
+    # reads is free on public repositories and paid on private ones, so the job
+    # skips itself until ENG-030 flips visibility.
+    if: github.event.repository.visibility == 'public'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Reject newly introduced high-severity vulnerabilities
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
