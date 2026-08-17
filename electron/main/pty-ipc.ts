@@ -6,7 +6,7 @@ import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
 import { listAgentModels, setAgentModelCatalogCache } from './pty/agent-models';
 import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
 import {
-  agentSourceLaunchError,
+  agentSourceLaunchReadiness,
   inspectAgentSources,
   inspectOpencodeLaunchEnvironment,
 } from './pty/agent-source-registry';
@@ -318,17 +318,25 @@ export function registerPtyIPC(
     try {
       if (options.harness !== 'shell') {
         const shellPath = await defaultShell();
-        const readiness = await inspectAgentSources(shellPath, 'launch', false);
-        const launchError = agentSourceLaunchError(readiness, options.harness);
-        const source = readiness.sources.find(
+        const registry = await inspectAgentSources(shellPath, 'launch', false);
+        const readiness = agentSourceLaunchReadiness(registry, options.harness);
+        const source = registry.sources.find(
           candidate => candidate.harness === options.harness
         );
         const homeOnlyOpencodeSeamError =
           options.harness === 'opencode' &&
           source?.facts.reachability.value ===
             'Launch configuration seam occupied';
-        if (launchError && !homeOnlyOpencodeSeamError) {
-          throw new Error(launchError);
+        // Only an OBSERVED negative refuses a launch (BUG-063). When a probe
+        // never answered, the launch attempt is itself the better probe and
+        // the harness speaks for itself in the pane, which is what the
+        // operator got by clicking Resume a second time.
+        if (
+          readiness.known &&
+          readiness.blocked &&
+          !homeOnlyOpencodeSeamError
+        ) {
+          throw new Error(readiness.message);
         }
         if (options.harness === 'opencode') {
           const launchCwd =
@@ -342,11 +350,8 @@ export function registerPtyIPC(
               'OpenCode launch cannot replace the non-empty OPENCODE_CONFIG_CONTENT value active in this workspace. Remove it from the workspace shell environment and try again.'
             );
           }
-          if (launchEnvironment === 'unknown') {
-            throw new Error(
-              'OpenCode launch readiness could not verify OPENCODE_CONFIG_CONTENT in this workspace. Check the workspace shell environment and try again.'
-            );
-          }
+          // 'unknown' means the seam check never came back. Same rule: an
+          // unanswered probe does not refuse the launch.
         }
       }
       const session = await ptySessions.create(options);

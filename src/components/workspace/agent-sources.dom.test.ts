@@ -42,6 +42,8 @@ describe('renderer Agent Source boundary', () => {
     const registry = fallbackAgentSourceRegistry('launch');
     registry.sources = registry.sources.map(source => ({
       ...source,
+      state: 'action-required' as const,
+      unobservedProbes: [],
       launchable: source.harness === 'codex',
     }));
     expect(
@@ -54,6 +56,46 @@ describe('renderer Agent Source boundary', () => {
         '/repo',
         registry
       )
-    ).toBe('codex');
+    ).toEqual({ kind: 'launchable', source: 'codex' });
+  });
+
+  // BUG-063. "No Agent Source is ready. Configure one in Agent Sources." is a
+  // claim about the machine. On a cold start nothing has answered yet, and
+  // sending the operator to configure a source he already has is the same
+  // defect the main process shipped as "could not be verified (degraded)".
+  it('does not report an unprobed registry as nothing being ready', () => {
+    const registry = fallbackAgentSourceRegistry('launch');
+    const choice = recommendLaunchableAgentSource(
+      {
+        projectLastUsed: { '/repo': 'claude' },
+        sourceRecency: {},
+        projectPermissionModes: {},
+      },
+      '/repo',
+      registry
+    );
+    expect(choice.kind).toBe('unproven');
+    expect(choice.kind !== 'none' && choice.source).toBe('claude');
+  });
+
+  it('says nothing is ready only once every source has been observed', () => {
+    const registry = fallbackAgentSourceRegistry('launch');
+    registry.sources = registry.sources.map(source => ({
+      ...source,
+      state: 'not-installed' as const,
+      unobservedProbes: [],
+      launchable: false,
+    }));
+    expect(
+      recommendLaunchableAgentSource(
+        {
+          projectLastUsed: {},
+          sourceRecency: {},
+          projectPermissionModes: {},
+        },
+        '/repo',
+        registry
+      )
+    ).toEqual({ kind: 'none' });
   });
 });
