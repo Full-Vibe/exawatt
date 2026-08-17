@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { localLogAssurance, type ConsumptionSample } from '@exawatt/core';
 import { scanLocalOperatorStats } from './operator-stats-ipc';
 
+// This suite runs in Node, so importing the real `electron` package would run
+// its installer shim: it reads `node_modules/electron/path.txt`, and when that
+// file is briefly absent — which it is every time a sibling agent worktree
+// re-links Electron — it tries to DOWNLOAD Electron and then throws "Electron
+// failed to install correctly". Nothing here wants the binary's path, only the
+// pure logic under test, so the module is stood down rather than resolved
+// (BUG-057). The four suites that need `app` already mock it with a body.
+vi.mock('electron', () => ({}));
+
 const SINCE = '2026-08-16T18:00:00.000Z';
 
 function sample(

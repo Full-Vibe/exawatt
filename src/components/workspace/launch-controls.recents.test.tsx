@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +6,7 @@ import {
   composerReady,
   installComposerTestHarness,
   renderComposer,
+  settled,
 } from './launch-controls.test-support';
 
 describe('Agent composer · recent conversations', () => {
@@ -36,7 +37,7 @@ describe('Agent composer · recent conversations', () => {
         onLaunch={onLaunch}
       />
     );
-    await waitFor(() =>
+    await settled(() =>
       expect(screen.getByText(conversation.id)).toBeInTheDocument()
     );
     await composerReady();
@@ -50,7 +51,7 @@ describe('Agent composer · recent conversations', () => {
     ).toHaveFocus();
     fireEvent.click(document.activeElement!);
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'claude',
         dir: '/project',
@@ -89,12 +90,14 @@ describe('Agent composer · recent conversations', () => {
 
     await composerReady();
     fireEvent.click(
-      await screen.findByRole('button', {
-        name: `Resume ${conversation.title} in Codex`,
-      })
+      await settled(() =>
+        screen.getByRole('button', {
+          name: `Resume ${conversation.title} in Codex`,
+        })
+      )
     );
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'codex',
         dir: '/project',
@@ -137,13 +140,15 @@ describe('Agent composer · recent conversations', () => {
       />
     );
 
-    const reopen = await screen.findByRole('button', {
-      name: `Reopen ${conversation.title} in Exawatt`,
-    });
-    await waitFor(() => expect(reopen).not.toBeDisabled());
+    const reopen = await settled(() =>
+      screen.getByRole('button', {
+        name: `Reopen ${conversation.title} in Exawatt`,
+      })
+    );
+    await settled(() => expect(reopen).not.toBeDisabled());
     fireEvent.click(reopen);
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onReopenConversation).toHaveBeenCalledWith('durable-session-id')
     );
     expect(onLaunch).not.toHaveBeenCalled();
@@ -180,13 +185,15 @@ describe('Agent composer · recent conversations', () => {
       />
     );
 
-    const resume = await screen.findByRole('button', {
-      name: `Resume ${conversation.title} in Codex`,
-    });
-    await waitFor(() => expect(resume).not.toBeDisabled());
+    const resume = await settled(() =>
+      screen.getByRole('button', {
+        name: `Resume ${conversation.title} in Codex`,
+      })
+    );
+    await settled(() => expect(resume).not.toBeDisabled());
     fireEvent.click(resume);
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'codex',
         dir: conversation.cwd,
@@ -217,7 +224,7 @@ describe('Agent composer · recent conversations', () => {
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {
       target: { value: '' },
     });
-    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    await settled(() => expect(list).toHaveBeenCalledTimes(1));
   });
 
   it('renders every Project recent and traverses the full list with arrows', async () => {
@@ -245,7 +252,7 @@ describe('Agent composer · recent conversations', () => {
       />
     );
 
-    await screen.findByText('recent-provider-id-11');
+    await settled(() => screen.getByText('recent-provider-id-11'));
     expect(screen.queryByText(/View all/i)).not.toBeInTheDocument();
     const filter = screen.getByLabelText('Filter recent conversations');
     expect(filter).toBeInTheDocument();
@@ -317,11 +324,13 @@ describe('Agent composer · recent conversations', () => {
         onLaunch={onLaunch}
       />
     );
-    const fresh = await screen.findByRole('button', {
-      name: `Start fresh from ${conversation.title}`,
-    });
+    const fresh = await settled(() =>
+      screen.getByRole('button', {
+        name: `Start fresh from ${conversation.title}`,
+      })
+    );
     fireEvent.click(fresh);
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           harness: 'codex',

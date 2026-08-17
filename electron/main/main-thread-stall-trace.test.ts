@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { transientAllocation } from './cost.test-support';
 import { createDiagnosticsLog } from './diagnostics-log';
 import {
   MainThreadStallTrace,
@@ -287,28 +288,39 @@ describe('it can never run away', () => {
 });
 
 describe('steady-state cost', () => {
-  it('costs nothing measurable when nothing is wrong', () => {
+  it('does no work worth measuring when nothing is wrong', () => {
     // The whole steady state is: one timer callback per sample doing a
-    // subtraction, and a Map write/delete per IPC call. Both are asserted
-    // against a budget far above the measured cost so this cannot flake, while
-    // still failing loudly if the sampler ever grows real work.
+    // subtraction, and a Map write/delete per IPC call. The sampler must not
+    // grow real work — capturing a stack, snapshotting the open Map, or
+    // formatting a message per sample would all make the trace cost more than
+    // the stalls it exists to find.
+    //
+    // Read as bytes rather than as the nanoseconds it used to be. Every shape
+    // that regression can take builds something per call, so allocation states
+    // the claim directly, and unlike a nanosecond budget it is the same number
+    // whether or not three other agent worktrees own the cores (BUG-057).
     const trace = new MainThreadStallTrace({ record: () => {} });
     installMainThreadStallTrace(trace);
 
     const SAMPLES = 200_000;
-    const sampleStart = process.hrtime.bigint();
-    for (let i = 0; i < SAMPLES; i += 1) trace.sample();
-    const perSampleNs = Number(process.hrtime.bigint() - sampleStart) / SAMPLES;
+    const sampling = transientAllocation(() => {
+      for (let i = 0; i < SAMPLES; i += 1) trace.sample();
+    });
 
     const CALLS = 200_000;
-    const callStart = process.hrtime.bigint();
-    for (let i = 0; i < CALLS; i += 1) {
-      endMainThreadActivity(beginMainThreadActivity('pty:list'));
-    }
-    const perCallNs = Number(process.hrtime.bigint() - callStart) / CALLS;
+    const calling = transientAllocation(() => {
+      for (let i = 0; i < CALLS; i += 1) {
+        endMainThreadActivity(beginMainThreadActivity('pty:list'));
+      }
+    });
 
-    expect(perSampleNs).toBeLessThan(2_000);
-    expect(perCallNs).toBeLessThan(5_000);
+    // A subtraction allocates nothing at all; the budget is slack for the
+    // worker's own background garbage, not a per-sample allowance.
+    expect(sampling.bytes).toBeLessThan(SAMPLES * 2);
+    // One short-lived Map entry per call, measured at ~330 bytes and budgeted
+    // at four times that. A sampler that captured a stack per call would be
+    // several kilobytes and would not fit under it.
+    expect(calling.bytes).toBeLessThan(CALLS * 1_024);
   });
 });
 
@@ -333,10 +345,21 @@ describe('against a real blocked event loop', () => {
     endMainThreadActivity(token);
     await new Promise(resolve => setTimeout(resolve, 60));
 
+    // A host running several agent worktrees at once starves this process
+    // before the busy-wait too, and that starvation is itself a stall the
+    // trace correctly reports — so the FIRST recorded stall is not reliably
+    // the one this test caused (BUG-057). The claim is that the trace names
+    // the work that was open across a block, so find the stall that spans the
+    // block and read it. A trace that stopped attributing work still fails,
+    // because then no stall names it at all.
     const stalls = events.filter(e => e.event === 'main.stall');
     expect(stalls.length).toBeGreaterThanOrEqual(1);
-    expect(stalls[0].fields.stallMs as number).toBeGreaterThan(200);
-    const during = stalls[0].fields.during as Array<{ label: string }>;
-    expect(during.map(entry => entry.label)).toContain('pty:create');
+    const attributed = stalls.filter(stall =>
+      (stall.fields.during as Array<{ label: string }>).some(
+        entry => entry.label === 'pty:create'
+      )
+    );
+    expect(attributed).toHaveLength(1);
+    expect(attributed[0].fields.stallMs as number).toBeGreaterThan(200);
   });
 });

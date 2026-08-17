@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentModelCatalog } from '@/types/electron';
@@ -16,6 +16,7 @@ import {
   openSetupDrawer,
   readyAgentSourceRegistry,
   renderComposer,
+  settled,
 } from './launch-controls.test-support';
 
 describe('Agent composer · sources and policy', () => {
@@ -48,7 +49,7 @@ describe('Agent composer · sources and policy', () => {
     });
     fireEvent.click(codexOption);
 
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Engine')).toHaveTextContent('Codex')
     );
     await expectSelectedSetup(/GPT-5\.6-Sol/);
@@ -72,11 +73,13 @@ describe('Agent composer · sources and policy', () => {
     const drawer = screen.getByRole('button', {
       name: 'Adjust engine, model, thinking, permission',
     });
-    await waitFor(() => expect(drawer).not.toBeDisabled());
+    await settled(() => expect(drawer).not.toBeDisabled());
     fireEvent.click(drawer);
-    const modelTrigger = await screen.findByRole('button', {
-      name: 'Model: GPT-5.6-Sol',
-    });
+    const modelTrigger = await settled(() =>
+      screen.getByRole('button', {
+        name: 'Model: GPT-5.6-Sol',
+      })
+    );
     const effortTrigger = screen.getByRole('button', {
       name: 'Thinking: Extra high',
     });
@@ -90,11 +93,11 @@ describe('Agent composer · sources and policy', () => {
         name: /GPT-5\.6-Terra.*Balanced coding model/i,
       })
     );
-    await waitFor(() =>
+    await settled(() =>
       expect(modelTrigger).toHaveAccessibleName('Model: GPT-5.6-Terra')
     );
     expect(modelTrigger).toHaveTextContent('GPT-5.6-Terra');
-    await waitFor(() =>
+    await settled(() =>
       expect(effortTrigger).toHaveAccessibleName('Thinking: Medium')
     );
 
@@ -104,12 +107,12 @@ describe('Agent composer · sources and policy', () => {
         name: /Max.*Maximum reasoning/i,
       })
     );
-    await waitFor(() =>
+    await settled(() =>
       expect(effortTrigger).toHaveAccessibleName('Thinking: Max')
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           harness: 'codex',
@@ -162,21 +165,25 @@ describe('Agent composer · sources and policy', () => {
     const drawer = screen.getByRole('button', {
       name: 'Adjust engine, model, thinking, permission',
     });
-    await waitFor(() => expect(drawer).not.toBeDisabled());
+    await settled(() => expect(drawer).not.toBeDisabled());
     fireEvent.click(drawer);
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Model: Account default' })
+      await settled(() =>
+        screen.getByRole('button', { name: 'Model: Account default' })
+      )
     );
-    const modelAction = await screen.findByRole('button', {
-      name: 'Choose in Claude Code',
-    });
+    const modelAction = await settled(() =>
+      screen.getByRole('button', {
+        name: 'Choose in Claude Code',
+      })
+    );
     fireEvent.click(modelAction);
-    await waitFor(() =>
+    await settled(() =>
       expect(sourceAction).toHaveBeenCalledWith('claude', 'choose-model')
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({ model: undefined, effort: undefined })
       )
@@ -212,10 +219,12 @@ describe('Agent composer · sources and policy', () => {
       />
     );
 
-    const openCode = await screen.findByRole('radio', {
-      name: /OpenCode/i,
-    });
-    await waitFor(() =>
+    const openCode = await settled(() =>
+      screen.getByRole('radio', {
+        name: /OpenCode/i,
+      })
+    );
+    await settled(() =>
       expect(openCode).toHaveAttribute('aria-checked', 'true')
     );
     expect(openCode).toHaveTextContent('Choose a model');
@@ -230,16 +239,20 @@ describe('Agent composer · sources and policy', () => {
       })
     );
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Model: Choose a model' })
+      await settled(() =>
+        screen.getByRole('button', { name: 'Model: Choose a model' })
+      )
     );
     fireEvent.click(
-      await screen.findByRole('option', { name: /Kimi K3.*OpenRouter/i })
+      await settled(() =>
+        screen.getByRole('option', { name: /Kimi K3.*OpenRouter/i })
+      )
     );
     const start = screen.getByRole('button', { name: 'Start' });
-    await waitFor(() => expect(start).not.toBeDisabled());
+    await settled(() => expect(start).not.toBeDisabled());
     fireEvent.click(start);
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           harness: 'opencode',
@@ -264,7 +277,7 @@ describe('Agent composer · sources and policy', () => {
     );
 
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Terra')
     );
     expect(onDraftChange).toHaveBeenCalledWith({
@@ -301,13 +314,13 @@ describe('Agent composer · sources and policy', () => {
     // engine control that survives that state, and the reported draft is what
     // the composer would hand back — which is the thing that must not be
     // overwritten by a catalog that lands late.
-    await screen.findByText(
-      /No Claude Code, Codex, or OpenCode conversations found/
+    await settled(() =>
+      screen.getByText(/No Claude Code, Codex, or OpenCode conversations found/)
     );
     // The engine order only exists once the other sources have published their
     // catalogs, and nothing on screen announces that while the row is still
     // placeholders — so press the chord until the composer reports the move.
-    await waitFor(() => {
+    await settled(() => {
       fireEvent.keyDown(
         screen.getByLabelText('Initial task for the new Agent'),
         { key: 'ArrowUp', altKey: true }
@@ -346,7 +359,7 @@ describe('Agent composer · sources and policy', () => {
       />
     );
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
 
@@ -356,11 +369,11 @@ describe('Agent composer · sources and policy', () => {
       );
     });
 
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Engine')).toHaveTextContent('Codex')
     );
     expect(launcherAxis('Permission')).toHaveTextContent('Auto-review');
-    await waitFor(() =>
+    await settled(() =>
       expect(
         screen.getByLabelText('Initial task for the new Agent')
       ).toHaveFocus()

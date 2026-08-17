@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { transientAllocationAsync } from '../cost.test-support';
 import { SessionHistoryStore } from './session-history-store';
 import { TranscriptWindow } from './transcript-window';
 
@@ -357,24 +358,28 @@ describe('journal replay cost', () => {
     return (seed + tail).slice(-WINDOW);
   }
 
-  it('replays in time proportional to journal bytes, not records x window', async () => {
+  it('replays at a cost proportional to journal bytes, not records x window', async () => {
     const { root, value } = await store();
     await value.initialize();
     const bytes = 100_000;
     const expectedFew = await journal(root, 'few', 50, bytes / 50);
     const expectedMany = await journal(root, 'many', 4_000, bytes / 4_000);
 
-    const beforeFew = performance.now();
-    expect((await value.load('few')).text).toBe(expectedFew);
-    const few = performance.now() - beforeFew;
-
-    const beforeMany = performance.now();
-    expect((await value.load('many')).text).toBe(expectedMany);
-    const many = performance.now() - beforeMany;
+    const few = await transientAllocationAsync(async () => {
+      expect((await value.load('few')).text).toBe(expectedFew);
+    });
+    const many = await transientAllocationAsync(async () => {
+      expect((await value.load('many')).text).toBe(expectedMany);
+    });
 
     // Same delta bytes, 80x the records. The string representation copied the
-    // 2 MB window per record, so `many` cost ~8 GB against `few`'s ~100 MB and
-    // this ratio was ~80. Anything near 1 means replay follows the bytes.
-    expect(many).toBeLessThan(Math.max(few * 8, 400));
+    // 2 MB window per record, so `many` allocated ~8 GB against `few`'s ~100 MB
+    // and this ratio was ~80. Anything near 1 means replay follows the bytes.
+    //
+    // Read as garbage rather than as milliseconds: the ratio of two durations
+    // measured minutes apart on a host running several agent worktrees says as
+    // much about which of them got the cores as about this code (BUG-057).
+    // Allocation volume is the same signal and is indifferent to contention.
+    expect(many.bytes).toBeLessThan(Math.max(few.bytes * 8, 32_000_000));
   }, 120_000);
 });

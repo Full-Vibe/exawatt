@@ -1,16 +1,17 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ExawattSettings } from '@/types/electron';
 import {
   AgentComposer,
-  FOCUS_AGENT_COMPOSER_EVENT,
   chooseLauncherAxis,
   composerReady,
+  FOCUS_AGENT_COMPOSER_EVENT,
   installComposerTestHarness,
   launcherAxis,
   openSetupDrawer,
   renderComposer,
+  settled,
   setupDrawerHandle,
   startButton,
 } from './launch-controls.test-support';
@@ -30,7 +31,7 @@ describe('Agent composer · launching', () => {
     );
 
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('Claude Fable 5 · 1M')
     );
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {
@@ -45,7 +46,7 @@ describe('Agent composer · launching', () => {
     expect(start).toHaveFocus();
     fireEvent.click(start);
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'claude',
         dir: '/project',
@@ -62,7 +63,7 @@ describe('Agent composer · launching', () => {
       'claude',
       expect.any(Number)
     );
-    await waitFor(() =>
+    await settled(() =>
       expect(setAgentPermissionMode).toHaveBeenCalledWith(
         '/project',
         'claude',
@@ -91,10 +92,10 @@ describe('Agent composer · launching', () => {
     const catalog = screen.getByRole('button', {
       name: 'All engines and models',
     });
-    await waitFor(() => expect(catalog).not.toBeDisabled());
+    await settled(() => expect(catalog).not.toBeDisabled());
     fireEvent.click(catalog);
     fireEvent.click(screen.getByRole('button', { name: 'Shell in Project' }));
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'shell',
         dir: '/project',
@@ -120,7 +121,7 @@ describe('Agent composer · launching', () => {
       );
     });
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'shell',
         dir: '/project',
@@ -143,7 +144,7 @@ describe('Agent composer · launching', () => {
     });
     fireEvent.click(startButton());
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'claude',
         dir: '/project',
@@ -177,17 +178,17 @@ describe('Agent composer · launching', () => {
     );
 
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
     await chooseLauncherAxis('Engine', /^Codex/);
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
     expect(launcherAxis('Permission')).toHaveTextContent('Auto-review');
     fireEvent.click(startButton());
 
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           harness: 'codex',
@@ -196,10 +197,14 @@ describe('Agent composer · launching', () => {
         })
       )
     );
-    expect(setAgentPermissionMode).toHaveBeenCalledWith(
-      '/project',
-      'codex',
-      'auto'
+    // Persisting the policy is its own async step after the launch resolves,
+    // so it is waited for rather than read off the same turn.
+    await settled(() =>
+      expect(setAgentPermissionMode).toHaveBeenCalledWith(
+        '/project',
+        'codex',
+        'auto'
+      )
     );
   });
 
@@ -238,13 +243,13 @@ describe('Agent composer · launching', () => {
 
     // Permission resolution and the readiness gate are distinct state
     // updates. Wait for the user-visible control contract, not its first paint.
-    await waitFor(() => expect(startButton()).not.toBeDisabled());
+    await settled(() => expect(startButton()).not.toBeDisabled());
     expect(onLaunch).not.toHaveBeenCalled();
 
     // The restored policy is the one that launches — asserted through the
     // launch itself rather than a chip, because the launch is the contract.
     fireEvent.click(startButton());
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({ permissionMode: 'prompt' })
       )
@@ -265,12 +270,12 @@ describe('Agent composer · launching', () => {
     );
 
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
 
     fireEvent.click(startButton());
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({ permissionMode: 'prompt' })
       )
@@ -289,7 +294,7 @@ describe('Agent composer · launching', () => {
     );
 
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
   });
@@ -304,12 +309,12 @@ describe('Agent composer · launching', () => {
       />
     );
     await openSetupDrawer();
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('Claude Fable 5 · 1M')
     );
 
     await chooseLauncherAxis('Permission', /Auto-review/);
-    await waitFor(() =>
+    await settled(() =>
       expect(setAgentPermissionMode).toHaveBeenCalledWith(
         '/project',
         'claude',
@@ -318,12 +323,12 @@ describe('Agent composer · launching', () => {
     );
 
     await chooseLauncherAxis('Engine', /^Codex/);
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
     expect(launcherAxis('Permission')).toHaveTextContent('YOLO');
     await chooseLauncherAxis('Permission', /Ask first/);
-    await waitFor(() =>
+    await settled(() =>
       expect(setAgentPermissionMode).toHaveBeenCalledWith(
         '/project',
         'codex',
@@ -332,12 +337,12 @@ describe('Agent composer · launching', () => {
     );
 
     await chooseLauncherAxis('Engine', /^Claude Code/);
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('Claude Fable 5 · 1M')
     );
     expect(launcherAxis('Permission')).toHaveTextContent('Auto-review');
     await chooseLauncherAxis('Engine', /^Codex/);
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
     expect(launcherAxis('Permission')).toHaveTextContent('Ask first');

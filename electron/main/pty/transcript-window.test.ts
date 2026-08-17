@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { transientAllocation } from '../cost.test-support';
 import { TranscriptWindow } from './transcript-window';
 
 /** The string representation this replaced, kept as the oracle for parity. */
@@ -101,17 +102,20 @@ describe('TranscriptWindow', () => {
     expect(window.text()).toBe('9abc');
   });
 
-  it('appends in time proportional to the delta, not the window', () => {
+  it('appends at a cost proportional to the delta, not the window', () => {
     const limit = 2_000_000;
     const window = new TranscriptWindow(limit);
     window.seed('y'.repeat(limit));
-    const started = performance.now();
-    for (let index = 0; index < 20_000; index += 1) window.append('delta ');
-    const elapsed = performance.now() - started;
+    const { bytes } = transientAllocation(() => {
+      for (let index = 0; index < 20_000; index += 1) window.append('delta ');
+    });
     expect(window.length).toBe(limit);
     // The string representation copied the full window on every append once it
-    // was saturated: 20,000 x 2,000,000 characters, tens of seconds. Anything
-    // under a second here can only be O(delta).
-    expect(elapsed).toBeLessThan(1_000);
+    // was saturated: 20,000 x 2,000,000 characters, ~40 GB of garbage and tens
+    // of seconds. The deque touches one chunk boundary per append, so it
+    // produces a few times the window and no more however many appends land.
+    // Stated as bytes rather than as the second it used to be measured in:
+    // wall clock here read the host's contention, not this class (BUG-057).
+    expect(bytes).toBeLessThan(limit * 2 * 100);
   });
 });
