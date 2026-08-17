@@ -50,6 +50,21 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
+The desktop artifact's **runtime payload is a declaration, not a copy**
+(BUG-030). electron-builder ships `dist-electron/**/*` and excludes
+`node_modules/**/*`, so the packed main process can require only what a
+packaging step stages under `dist-electron/node_modules` first. That set is
+declared in `scripts/lib/electron-runtime-deps.mjs` as the production dependency
+closure of `RUNTIME_PACKAGES`, staged flat: a package's nested `node_modules` is
+the workspace's install layout and never payload, and prebuilt native binaries
+for a platform this build does not target are unreachable by construction. The
+snapshot exists only during packaging — `electron:compile` discards it so no
+development launch can resolve through a stale copy (incident `0012`) — and
+`assertRuntimePayload` in `scripts/release-package.mjs` refuses an artifact whose
+staged tree drifts from the declaration in either direction. Before it was
+declared, the tree was a dereferencing copy of workspace directories and every
+user downloaded the TypeScript compiler inside the code signature.
+
 ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.4
 provide strict versioned Classic/Air/Night definitions, a deterministic
 validator/generator, one pure resolver, device-local Electron/web preference

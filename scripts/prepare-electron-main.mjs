@@ -2,11 +2,27 @@
 // snapshot and stamp the build. Runs immediately before electron-builder in
 // every packaging flow; `electron:compile` discards what it writes, so no dev
 // launch ever inherits it (see `lib/electron-runtime-deps.mjs`, BUG-016).
-import { writeFile } from 'node:fs/promises';
+//
+// What it stages is the declared production dependency closure and nothing
+// else (BUG-030). The size printed below is the payload every user downloads
+// and every update transfers, so it belongs in the build log.
+import { readdir, stat, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { stageRuntimeDependencies } from './lib/electron-runtime-deps.mjs';
+import {
+  snapshotRoot,
+  stageRuntimeDependencies,
+} from './lib/electron-runtime-deps.mjs';
+
+async function payloadBytes(directory) {
+  let total = 0;
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const child = path.join(directory, entry.name);
+    total += entry.isDirectory() ? await payloadBytes(child) : (await stat(child)).size;
+  }
+  return total;
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -47,4 +63,8 @@ await writeFile(
   )}\n`
 );
 
-console.log(`[electron-main] staged ${staged.size} runtime packages`);
+const bytes = await payloadBytes(snapshotRoot(root));
+console.log(
+  `[electron-main] staged ${staged.size} runtime packages, ` +
+    `${(bytes / 1024 / 1024).toFixed(1)} MB`
+);
