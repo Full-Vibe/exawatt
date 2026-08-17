@@ -17,6 +17,7 @@ import {
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { useElectronAuth } from '@/hooks/use-electron-auth';
+import { AccountNotConfiguredCard } from '@/components/auth/account-not-configured-card';
 
 type AccountClient = NonNullable<ReturnType<typeof createOptionalClient>>;
 
@@ -25,24 +26,8 @@ export default function SignUpPage() {
   // Demanding the client unconditionally threw while Next prerendered this
   // page, which failed every community build (BUG-042).
   const supabase = createOptionalClient(resolvedDistribution());
-  if (!supabase) return <AccountsUnavailable />;
+  if (!supabase) return <AccountNotConfiguredCard />;
   return <SignUpForm supabase={supabase} />;
-}
-
-function AccountsUnavailable() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Accounts are not available</CardTitle>
-          <CardDescription>
-            This build has no Exawatt account service. Everything runs locally
-            on your machine.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    </div>
-  );
 }
 
 function SignUpForm({ supabase }: { supabase: AccountClient }) {
@@ -128,9 +113,7 @@ function SignUpForm({ supabase }: { supabase: AccountClient }) {
                 Must be at least 6 characters
               </p>
             </div>
-            {error && (
-              <div className="text-sm text-destructive">{error}</div>
-            )}
+            {error && <div className="text-sm text-destructive">{error}</div>}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Creating account...' : 'Sign Up'}
             </Button>
@@ -158,7 +141,10 @@ function SignUpForm({ supabase }: { supabase: AccountClient }) {
         <CardFooter className="flex justify-center">
           <p className="text-sm text-muted-foreground">
             Already have an account?{' '}
-            <Link href="/sign-in" className="cursor-pointer underline hover:text-primary">
+            <Link
+              href="/sign-in"
+              className="cursor-pointer underline hover:text-primary"
+            >
               Sign in
             </Link>
           </p>

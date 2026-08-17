@@ -93,7 +93,10 @@ configured account temporarily preserves the hosted adapter until the private
 service relocation. Keyboard shortcut overrides follow the same boundary:
 account-backed builds retain sync, and Community stores the validated override
 set in its isolated browser namespace. Local Agent Sources and Demo Mode do not
-depend on either capability.
+depend on either capability. Browser admin affordances consume a versioned,
+server-derived capability DTO containing only the decision and display data
+they need; operator identities, allowlists, table names, and database types stay
+behind the private service boundary and never enter `NEXT_PUBLIC_*` state.
 
 ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.4
 provide strict versioned Classic/Air/Night definitions, a deterministic

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { SiteHeaderNav } from './site-header-nav';
 
 interface HeaderAuthState {
@@ -20,20 +21,15 @@ interface HeaderAuthState {
  * updates on real auth events.
  */
 export function SiteHeader() {
+  const distribution = resolvedDistribution();
+  const accountAvailable = distribution.account !== null;
   const [auth, setAuth] = useState<HeaderAuthState>({
     isAuthenticated: false,
   });
 
   useEffect(() => {
-    // A missing/misconfigured Supabase env must degrade to signed-out chrome,
-    // never crash the root layout.
-    let supabase: ReturnType<typeof createClient>;
-    try {
-      supabase = createClient();
-    } catch (error) {
-      console.warn('[exawatt] auth unavailable for header:', error);
-      return;
-    }
+    const supabase = createOptionalClient(distribution);
+    if (!supabase) return;
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
         const user = session?.user;
@@ -45,13 +41,14 @@ export function SiteHeader() {
       }
     );
     return () => subscription.subscription.unsubscribe();
-  }, []);
+  }, [distribution]);
 
   return (
     <SiteHeaderNav
       isAuthenticated={auth.isAuthenticated}
       userName={auth.userName}
       userEmail={auth.userEmail}
+      accountAvailable={accountAvailable}
     />
   );
 }

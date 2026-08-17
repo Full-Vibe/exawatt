@@ -9,7 +9,8 @@
  * NODE_ENV so it is inert in production builds; renders nothing.
  */
 import { useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 interface TestSession {
   access_token: string;
@@ -23,7 +24,8 @@ export function TestAuthBridge() {
       window as unknown as { __EXAWATT_TEST_SESSION?: TestSession }
     ).__EXAWATT_TEST_SESSION;
     if (!session?.access_token) return;
-    void createClient().auth.setSession(session);
+    const supabase = createOptionalClient(resolvedDistribution());
+    if (supabase) void supabase.auth.setSession(session);
   }, []);
   return null;
 }

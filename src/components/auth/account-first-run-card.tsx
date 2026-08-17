@@ -26,7 +26,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { isAppRoute } from '@/components/nav/surfaces';
 import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 
@@ -90,12 +91,8 @@ export function AccountFirstRunCard() {
   }, []);
 
   useEffect(() => {
-    let supabase: ReturnType<typeof createClient>;
-    try {
-      supabase = createClient();
-    } catch {
-      // a missing or misconfigured Supabase env means there is no account to
-      // invite anyone to; stay silent
+    const supabase = createOptionalClient(resolvedDistribution());
+    if (!supabase) {
       setAuth('unavailable');
       return;
     }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { SettingRow, SettingsGroup } from './settings-controls';
 
 /**
@@ -33,8 +34,11 @@ export function DiagnosticsSettings() {
       // point of this path is that it works when other things do not.
       let signedIn = false;
       try {
-        const { data } = await createClient().auth.getSession();
-        signedIn = Boolean(data.session);
+        const supabase = createOptionalClient(resolvedDistribution());
+        if (supabase) {
+          const { data } = await supabase.auth.getSession();
+          signedIn = Boolean(data.session);
+        }
       } catch {
         signedIn = false;
       }

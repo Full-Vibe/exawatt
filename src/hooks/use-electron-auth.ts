@@ -4,15 +4,17 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { analyticsSurface, captureAnalyticsEvent } from '@/lib/analytics';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 export function useElectronAuth(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient | null,
   callbacks: {
     onError: (message: string) => void;
     onLoadingChange: (loading: boolean) => void;
   }
 ) {
   const router = useRouter();
+  const account = resolvedDistribution().account;
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
 
@@ -59,17 +61,15 @@ export function useElectronAuth(
   }, [router]);
 
   const signInWithGoogle = async () => {
+    if (!supabase || !account) {
+      throw new Error('Authentication is not configured in this build.');
+    }
     const isElectron = !!window.electron?.isElectron;
 
     if (isElectron && window.electron?.auth) {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !supabaseAnonKey) {
-        throw new Error('Authentication is not configured.');
-      }
       await window.electron.auth.startGoogle({
-        supabaseUrl,
-        supabaseAnonKey,
+        supabaseUrl: account.supabaseUrl,
+        supabaseAnonKey: account.supabaseAnonKey,
         redirectTo: `${window.location.origin}/auth/electron-callback`,
       });
     } else {

@@ -99,4 +99,18 @@ describe('SiteHeaderNav account menu', () => {
     ).toBeVisible();
     expect(screen.queryByRole('menuitem', { name: 'Sign in' })).toBeNull();
   });
+
+  it('keeps the desktop menu useful while naming absent accounts', async () => {
+    render(<SiteHeaderNav isAuthenticated={false} accountAvailable={false} />);
+
+    openAccountMenu();
+
+    expect(
+      await screen.findByRole('menuitem', {
+        name: 'Accounts unavailable in this build',
+      })
+    ).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByRole('menuitem', { name: 'Sign in' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeVisible();
+  });
 });

@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { isAdminEmail } from '@/lib/auth/admin';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { parseFeedbackTriageCapability } from '@/lib/feedback/capability-contract';
 import { FEEDBACK_SUBMITTED_EVENT } from './quick-feedback-events';
 
 /**
@@ -11,8 +12,8 @@ import { FEEDBACK_SUBMITTED_EVENT } from './quick-feedback-events';
  * Triage is an operator-lane concept, so this counts for operator accounts
  * only and returns null for everyone else — a non-operator was previously
  * shown a "N filed thoughts awaiting triage" line about a queue they cannot
- * act on. RLS scopes the query to the signed-in user's own rows, and for the
- * operator those rows ARE the operator lane, so the count stays exact.
+ * act on. The configured service derives capability server-side; no operator
+ * identity allowlist enters the renderer bundle.
  *
  * Returns null while unknown (signed out, not the operator, offline, query
  * failure) — surfaces render nothing rather than a wrong zero. Refreshes
@@ -25,7 +26,17 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
     let cancelled = false;
     const sample = async () => {
       try {
-        const supabase = createClient();
+        const distribution = resolvedDistribution();
+        const endpoint = distribution.services.productFeedback;
+        if (!endpoint) {
+          if (!cancelled) setCount(null);
+          return;
+        }
+        const supabase = createOptionalClient(distribution);
+        if (!supabase) {
+          if (!cancelled) setCount(null);
+          return;
+        }
         // Signed out ⇒ no query: an unauthenticated REST call is a
         // guaranteed 401 the browser logs as a console error on every
         // surface that mounts this hook.
@@ -34,18 +45,23 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
           if (!cancelled) setCount(null);
           return;
         }
-        // Non-operator ⇒ no count and no line. The suggestions lane
-        // (ENG-025 F3) is never drained to canon, so its filer has nothing
-        // to act on and is owed no triage vocabulary.
-        if (!isAdminEmail(sessionData.session.user?.email)) {
+        const response = await fetch(endpoint.url, {
+          method: 'GET',
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+        });
+        if (!response.ok) {
           if (!cancelled) setCount(null);
           return;
         }
-        const { count: value, error } = await supabase
-          .from('product_feedback')
-          .select('*', { count: 'exact', head: true })
-          .is('triaged_at', null);
-        if (!cancelled) setCount(error ? null : (value ?? null));
+        const capability = parseFeedbackTriageCapability(await response.json());
+        if (!cancelled) {
+          setCount(
+            capability?.canTriage ? (capability.untriagedCount ?? null) : null
+          );
+        }
       } catch {
         if (!cancelled) setCount(null);
       }
