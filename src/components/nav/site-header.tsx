@@ -5,6 +5,7 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { SiteHeaderNav } from './site-header-nav';
+import { resolveDistributionIdentity } from '@exawatt/core/distribution';
 
 interface HeaderAuthState {
   isAuthenticated: boolean;
@@ -23,6 +24,7 @@ interface HeaderAuthState {
 export function SiteHeader() {
   const distribution = resolvedDistribution();
   const accountAvailable = distribution.account !== null;
+  const identity = resolveDistributionIdentity(distribution);
   const [auth, setAuth] = useState<HeaderAuthState>({
     isAuthenticated: false,
   });
@@ -45,6 +47,8 @@ export function SiteHeader() {
 
   return (
     <SiteHeaderNav
+      productName={identity.productName}
+      iconSrc={identity.iconPath ? '/icon.png' : null}
       isAuthenticated={auth.isAuthenticated}
       userName={auth.userName}
       userEmail={auth.userEmail}

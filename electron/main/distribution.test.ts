@@ -8,6 +8,7 @@ import {
   assertDistributionAgreement,
   assertRendererCompositionAgreement,
   distributionChildEnvironment,
+  distributionDataPathOverrides,
   distributionIpcCapabilities,
   resolveDistribution,
 } from './distribution';
@@ -66,6 +67,40 @@ describe('Electron distribution mirror', () => {
     expect(child.NEXT_PUBLIC_POSTHOG_HOST).toBeUndefined();
     expect(child.NEXT_PUBLIC_ANALYTICS_DISABLED).toBeUndefined();
     expect(child.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON).toBe(canonical);
+  });
+
+  it('isolates community state/cache without relocating a branded install', () => {
+    const defaults = {
+      userData: '/Users/test/Library/Application Support/Exawatt Community',
+      sessionData: '/Users/test/Library/Application Support/Exawatt Community',
+    };
+    expect(
+      distributionDataPathOverrides(COMMUNITY_DISTRIBUTION, defaults)
+    ).toEqual({
+      userData:
+        '/Users/test/Library/Application Support/ai.exawatt.community',
+      sessionData:
+        '/Users/test/Library/Application Support/ai.exawatt.community.cache',
+    });
+    expect(
+      distributionDataPathOverrides(
+        {
+          ...COMMUNITY_DISTRIBUTION,
+          brand: {
+            appId: 'ai.example.agent-console',
+            productName: 'Agent Console',
+            protocolScheme: 'agent-console',
+            iconPath: 'assets/agent-console.icns',
+            updateChannel: 'stable',
+          },
+        },
+        {
+          userData: '/Users/test/Library/Application Support/Agent Console',
+          sessionData:
+            '/Users/test/Library/Application Support/Agent Console',
+        }
+      )
+    ).toEqual({});
   });
 
   it('binds the renderer composition manifest to build-info', () => {

@@ -47,6 +47,34 @@ vi.mock('@/app/actions/projects', () => ({
 afterEach(cleanup);
 
 describe('SiteHeaderNav leaderboard link', () => {
+  it('renders the community name without the official icon', () => {
+    render(
+      <SiteHeaderNav
+        productName="Exawatt Community"
+        iconSrc={null}
+        isAuthenticated={false}
+      />
+    );
+
+    const brand = screen.getByRole('link', { name: 'Exawatt Community' });
+    expect(brand).toBeVisible();
+    expect(brand.querySelector('img')).toBeNull();
+  });
+
+  it('renders a configured distribution name and icon', () => {
+    render(
+      <SiteHeaderNav
+        productName="Acme Agent Console"
+        iconSrc="/icon.png"
+        isAuthenticated={false}
+      />
+    );
+
+    const brand = screen.getByRole('link', { name: 'Acme Agent Console' });
+    expect(brand).toBeVisible();
+    expect(brand.querySelector('img')).not.toBeNull();
+  });
+
   it('shows Leaderboard beside Architecture', () => {
     render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
 

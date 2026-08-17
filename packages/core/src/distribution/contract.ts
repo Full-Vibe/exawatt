@@ -149,6 +149,20 @@ function nonEmptyString(value: unknown, path: string): string {
   return value.trim();
 }
 
+function productName(value: unknown): string {
+  const parsed = nonEmptyString(value, 'brand.productName');
+  if (
+    parsed === '.' ||
+    parsed === '..' ||
+    /[\/\\:\u0000-\u001f]/.test(parsed)
+  ) {
+    throw new TypeError(
+      'Invalid distribution config: brand.productName must be a safe application filename'
+    );
+  }
+  return parsed;
+}
+
 function nullableEndpointRef(
   value: unknown,
   path: string
@@ -242,7 +256,7 @@ function brand(value: unknown): DistributionBrandV1 | null {
   }
   return Object.freeze({
     appId,
-    productName: nonEmptyString(parsed.productName, 'brand.productName'),
+    productName: productName(parsed.productName),
     protocolScheme,
     iconPath,
     updateChannel: nonEmptyString(parsed.updateChannel, 'brand.updateChannel'),

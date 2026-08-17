@@ -129,6 +129,13 @@ describe('distribution contract', () => {
     ],
     ['unsupported version', { ...OFFICIAL, schemaVersion: 2 }],
     [
+      'unsafe product filename',
+      {
+        ...OFFICIAL,
+        brand: { ...OFFICIAL.brand, productName: '../Exawatt' },
+      },
+    ],
+    [
       'partial account',
       { ...OFFICIAL, account: { supabaseUrl: 'https://x.test' } },
     ],

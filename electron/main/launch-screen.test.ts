@@ -27,4 +27,19 @@ describe('launch screen', () => {
     expect(html).toContain('--ink: #18211D');
     expect(html).toContain('--signal: #087F6E');
   });
+
+  it('renders the resolved distribution name without allowing HTML injection', () => {
+    const html = decodeURIComponent(
+      launchScreenUrl(
+        THEME_BOOTSTRAP_REGISTRY['exawatt-classic-dark'],
+        'Acme <Agents>'
+      ).split(',')[1]
+    );
+    expect(html).toContain('<title>Acme &lt;Agents&gt; — Starting</title>');
+    expect(html).toContain('<h1>ACME &lt;AGENTS&gt;</h1>');
+    expect(html).not.toContain('<Agents>');
+    expect(html).toContain(
+      'stage.label || "Starting Acme \\u003cAgents>"'
+    );
+  });
 });

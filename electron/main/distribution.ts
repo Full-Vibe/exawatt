@@ -133,6 +133,30 @@ export function distributionIpcCapabilities(contract: DistributionContractV1) {
   } as const;
 }
 
+/**
+ * Official/branded installs keep Electron's product-name-derived data path so
+ * an app-id cutover never strands existing operator state. The unbranded
+ * community build moves both mutable state and Chromium cache to its stable
+ * app-id namespace, which lets it coexist with the official app.
+ */
+export function distributionDataPathOverrides(
+  contract: DistributionContractV1,
+  current: { userData: string; sessionData: string }
+): { userData?: string; sessionData?: string } {
+  if (contract.brand) return {};
+  const identity = resolveDistributionIdentity(contract);
+  return {
+    userData: path.join(
+      path.dirname(current.userData),
+      identity.stateNamespace
+    ),
+    sessionData: path.join(
+      path.dirname(current.sessionData),
+      `${identity.cacheNamespace}.cache`
+    ),
+  };
+}
+
 export function distributionChildEnvironment(
   resolved: ResolvedDistribution,
   ambient: NodeJS.ProcessEnv

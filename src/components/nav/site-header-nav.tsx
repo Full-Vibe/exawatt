@@ -219,6 +219,8 @@ function HeaderHistoryControls() {
 }
 
 interface SiteHeaderNavProps {
+  productName?: string;
+  iconSrc?: string | null;
   isAuthenticated: boolean;
   userName?: string;
   userEmail?: string;
@@ -226,6 +228,8 @@ interface SiteHeaderNavProps {
 }
 
 export function SiteHeaderNav({
+  productName = 'Exawatt Community',
+  iconSrc = null,
   isAuthenticated,
   userName,
   userEmail,
@@ -276,14 +280,16 @@ export function SiteHeaderNav({
             data-chrome-brand
             className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-chrome-title! font-semibold"
           >
-            <Image
-              src="/icon.png"
-              alt=""
-              width={16}
-              height={16}
-              className="h-4 w-4"
-            />
-            Exawatt
+            {iconSrc ? (
+              <Image
+                src={iconSrc}
+                alt=""
+                width={16}
+                height={16}
+                className="h-4 w-4"
+              />
+            ) : null}
+            {productName}
           </span>
         ) : (
           <Button
@@ -301,14 +307,16 @@ export function SiteHeaderNav({
               data-chrome-brand
               className="gap-2 text-chrome-title! font-semibold"
             >
-              <Image
-                src="/icon.png"
-                alt=""
-                width={16}
-                height={16}
-                className="h-4 w-4"
-              />
-              Exawatt
+              {iconSrc ? (
+                <Image
+                  src={iconSrc}
+                  alt=""
+                  width={16}
+                  height={16}
+                  className="h-4 w-4"
+                />
+              ) : null}
+              {productName}
             </Link>
           </Button>
         )}

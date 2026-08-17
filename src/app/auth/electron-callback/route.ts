@@ -9,10 +9,17 @@ import {
   isAuthLinkSuccess,
   type AuthLinkOutcome,
 } from '@/components/auth/callback-failures';
+import { resolveDistributionIdentity } from '@exawatt/core/distribution';
+
+interface ElectronCallbackIdentity {
+  productName: string;
+  protocolScheme: string | null;
+}
 
 /**
  * Desktop landing route: the system browser ends here, and the desktop app
- * gets the result over the `exawatt://` deep link.
+ * gets the result over the protocol owned by this distribution. Community
+ * builds own no protocol and therefore expose no desktop callback relay.
  *
  * A GitHub link attempt that Supabase refuses comes back with NO CODE — only
  * `?error=…&error_description=…`. The first version answered that with a 400
@@ -28,6 +35,9 @@ import {
 
 export function handleElectronCallback(
   request: Request,
+  identity: ElectronCallbackIdentity = resolveDistributionIdentity(
+    resolvedDistribution()
+  ),
   logFailure: (outcome: AuthLinkOutcome, detail: string) => void = (
     outcome,
     detail
@@ -41,12 +51,21 @@ export function handleElectronCallback(
   accountConfigured: boolean = distributionCapabilities(resolvedDistribution())
     .account
 ): Response {
-  // No account service means no identity provider sent anyone here, and no
-  // `exawatt://` handler is registered to receive the relay either (BUG-044).
-  // A page that says "returning to Exawatt" would be describing a journey that
-  // cannot complete.
-  if (!accountConfigured) return new NextResponse(null, { status: 404 });
-
+  // Without both an account service and a protocol handler, no identity
+  // provider can complete a desktop round trip. Never manufacture the
+  // official protocol for Community or a partially configured downstream.
+  if (!accountConfigured || !identity.protocolScheme) {
+    return new NextResponse(
+      errorHTML(
+        'Desktop authentication is not configured in this build.',
+        identity.productName
+      ),
+      {
+        status: 404,
+        headers: { 'Content-Type': 'text/html' },
+      }
+    );
+  }
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
 
@@ -54,17 +73,23 @@ export function handleElectronCallback(
     // Don't exchange the code here — the PKCE code verifier lives in the
     // Electron main process.  Relay the code back via deep link so the app
     // can exchange it itself.
-    return relay(`exawatt://auth/callback?code=${encodeURIComponent(code)}`);
+    return relay(
+      `${identity.protocolScheme}://auth/callback?code=${encodeURIComponent(code)}`,
+      identity.productName
+    );
   }
 
   const linking =
     authCallbackIntent(requestUrl.searchParams.get(AUTH_INTENT_PARAM)) ===
     'link';
   if (!linking) {
-    return new NextResponse(errorHTML('Missing authorization code.'), {
-      status: 400,
-      headers: { 'Content-Type': 'text/html' },
-    });
+    return new NextResponse(
+      errorHTML('Missing authorization code.', identity.productName),
+      {
+        status: 400,
+        headers: { 'Content-Type': 'text/html' },
+      }
+    );
   }
 
   const providerError =
@@ -80,27 +105,46 @@ export function handleElectronCallback(
     logFailure(outcome, providerError ?? 'callback carried no result');
   }
 
-  return relay(`exawatt://auth/callback?${AUTH_LINK_PARAM}=${outcome}`);
+  return relay(
+    `${identity.protocolScheme}://auth/callback?${AUTH_LINK_PARAM}=${outcome}`,
+    identity.productName
+  );
 }
 
 export async function GET(request: Request): Promise<Response> {
   return handleElectronCallback(request);
 }
 
-function relay(deepLinkUrl: string): NextResponse {
-  return new NextResponse(redirectHTML(deepLinkUrl), {
+function relay(deepLinkUrl: string, productName: string): NextResponse {
+  return new NextResponse(redirectHTML(deepLinkUrl, productName), {
     status: 200,
     headers: { 'Content-Type': 'text/html' },
   });
 }
 
-function redirectHTML(deepLinkUrl: string): string {
+function escapeHTML(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    character =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character]!
+  );
+}
+
+function redirectHTML(deepLinkUrl: string, productName: string): string {
+  const escapedProductName = escapeHTML(productName);
+  const escapedDeepLinkUrl = escapeHTML(deepLinkUrl);
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Returning to Exawatt...</title>
-  <meta http-equiv="refresh" content="0;url=${deepLinkUrl}">
+  <title>Returning to ${escapedProductName}...</title>
+  <meta http-equiv="refresh" content="0;url=${escapedDeepLinkUrl}">
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -119,8 +163,8 @@ function redirectHTML(deepLinkUrl: string): string {
 </head>
 <body>
   <div class="container">
-    <h2>Returning to Exawatt...</h2>
-    <p>If the app doesn&rsquo;t open automatically, <a href="${deepLinkUrl}">click here</a>.</p>
+    <h2>Returning to ${escapedProductName}...</h2>
+    <p>If the app doesn&rsquo;t open automatically, <a href="${escapedDeepLinkUrl}">click here</a>.</p>
     <p class="muted">You can close this tab.</p>
   </div>
   <script>window.location.href = ${JSON.stringify(deepLinkUrl)};</script>
@@ -128,12 +172,12 @@ function redirectHTML(deepLinkUrl: string): string {
 </html>`;
 }
 
-function errorHTML(message: string): string {
+function errorHTML(message: string, productName: string): string {
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Authentication Error</title>
+  <title>${escapeHTML(productName)} — Authentication Error</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;

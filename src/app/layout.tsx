@@ -14,6 +14,8 @@ import { WorkspaceTenancyProvider } from '@/lib/tenancy/tenancy-provider';
 import { AppearanceProvider } from '@/components/appearance/appearance-provider';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { APPEARANCE_BOOTSTRAP_SCRIPT } from '@/lib/appearance/bootstrap-script';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { resolveDistributionIdentity } from '@exawatt/core/distribution';
 
 const exo2 = localFont({
   src: './fonts/Exo2-Variable-Latin.woff2',
@@ -41,11 +43,18 @@ const geistSans = localFont({
   display: 'swap',
 });
 
+const distributionIdentity = resolveDistributionIdentity(
+  resolvedDistribution()
+);
+
 export const metadata: Metadata = {
   // per-surface titles (ENG-016 D9): segment layouts set a plain title and
   // this template suffixes the app name, so the window switcher, ⌘Tab, and
   // history can tell surfaces apart
-  title: { default: 'Exawatt', template: '%s — Exawatt' },
+  title: {
+    default: distributionIdentity.productName,
+    template: `%s — ${distributionIdentity.productName}`,
+  },
   description: 'Power your AI agents',
 };
 
