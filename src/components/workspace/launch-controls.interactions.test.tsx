@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentModelCatalog } from '@/types/electron';
@@ -12,6 +12,7 @@ import {
   launcherAxis,
   openSetupDrawer,
   renderComposer,
+  settled,
   setupDrawerHandle,
 } from './launch-controls.test-support';
 
@@ -42,7 +43,7 @@ describe('Agent composer · interactions and drafts', () => {
     expect(startingButton).toHaveAttribute('aria-busy', 'true');
     rejectLaunch?.(new Error('IPC unavailable'));
 
-    await waitFor(() =>
+    await settled(() =>
       expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled()
     );
   });
@@ -68,7 +69,7 @@ describe('Agent composer · interactions and drafts', () => {
     await composerReady();
     await openSetupDrawer();
     await chooseLauncherAxis('Engine', /^Codex/);
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
     expect(onDraftIntent).toHaveBeenCalledWith(
@@ -89,14 +90,14 @@ describe('Agent composer · interactions and drafts', () => {
       />
     );
 
-    await waitFor(() =>
+    await settled(() =>
       expect(launcherAxis('Engine')).toHaveTextContent('Codex')
     );
     expect(setupDrawerHandle()).toHaveAttribute('aria-expanded', 'true');
     expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol');
-    expect(
-      screen.getByLabelText('Initial task for the new Agent')
-    ).toHaveValue('');
+    expect(screen.getByLabelText('Initial task for the new Agent')).toHaveValue(
+      ''
+    );
   });
 
   it('focuses the goal field on mount (D21/D24)', async () => {
@@ -107,7 +108,7 @@ describe('Agent composer · interactions and drafts', () => {
         onLaunch={vi.fn(async () => true)}
       />
     );
-    await waitFor(() =>
+    await settled(() =>
       expect(
         screen.getByLabelText('Initial task for the new Agent')
       ).toHaveFocus()
@@ -133,13 +134,13 @@ describe('Agent composer · interactions and drafts', () => {
     // Models are still detecting on purpose: the launcher has NOT settled, so
     // the setup drawer stays shut while Start already accepts a bare Enter on
     // the recommended source.
-    await waitFor(() =>
+    await settled(() =>
       expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled()
     );
     fireEvent.keyDown(screen.getByLabelText('Initial task for the new Agent'), {
       key: 'Enter',
     });
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           harness: 'claude',
@@ -166,8 +167,10 @@ describe('Agent composer · interactions and drafts', () => {
     );
     await composerReady();
     await expectSelectedSetup(/Claude Fable 5/);
-    await screen.findByText(
-      'No Claude Code, Codex, or OpenCode conversations found for this Project.'
+    await settled(() =>
+      screen.getByText(
+        'No Claude Code, Codex, or OpenCode conversations found for this Project.'
+      )
     );
     const task = screen.getByLabelText('Initial task for the new Agent');
     const selected = (name: RegExp) =>
@@ -210,7 +213,7 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.keyDown(task, { key: 'Enter', isComposing: true });
     expect(onLaunch).not.toHaveBeenCalled();
     fireEvent.keyDown(task, { key: 'Enter' });
-    await waitFor(() => expect(onLaunch).toHaveBeenCalledTimes(1));
+    await settled(() => expect(onLaunch).toHaveBeenCalledTimes(1));
   });
 
   it('restores a saved draft task on mount and survives the preferences load (D28)', async () => {
@@ -241,8 +244,10 @@ describe('Agent composer · interactions and drafts', () => {
     );
     await composerReady();
     await expectSelectedSetup(/Claude Fable 5/);
-    await screen.findByText(
-      'No Claude Code, Codex, or OpenCode conversations found for this Project.'
+    await settled(() =>
+      screen.getByText(
+        'No Claude Code, Codex, or OpenCode conversations found for this Project.'
+      )
     );
     const task = screen.getByLabelText('Initial task for the new Agent');
     fireEvent.change(task, { target: { value: 'Refactor the intake flow' } });
@@ -253,7 +258,7 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.change(task, { target: { value: '' } });
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
-    await waitFor(() =>
+    await settled(() =>
       expect(onDraftChange).toHaveBeenCalledWith(
         expect.objectContaining({
           draftSource: 'codex',
@@ -261,8 +266,10 @@ describe('Agent composer · interactions and drafts', () => {
         })
       )
     );
-    await screen.findByText(
-      'No Claude Code, Codex, or OpenCode conversations found for this Project.'
+    await settled(() =>
+      screen.getByText(
+        'No Claude Code, Codex, or OpenCode conversations found for this Project.'
+      )
     );
   });
 
@@ -316,10 +323,12 @@ describe('Agent composer · interactions and drafts', () => {
     // permissions can become ready first; clicking a disabled button is a
     // no-op, so wait for the interaction boundary rather than the unrelated
     // permission boundary (D52: a flaky check stops being trusted).
-    await waitFor(() => expect(catalogButton).not.toBeDisabled());
+    await settled(() => expect(catalogButton).not.toBeDisabled());
     fireEvent.click(catalogButton);
     expect(
-      await screen.findByRole('checkbox', { name: 'New git worktree' })
+      await settled(() =>
+        screen.getByRole('checkbox', { name: 'New git worktree' })
+      )
     ).toBeChecked();
     expect(
       screen.getByLabelText('Branch name for the new worktree')
@@ -340,7 +349,7 @@ describe('Agent composer · interactions and drafts', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
-    await waitFor(() =>
+    await settled(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           worktreeBranch: 'agent/revised-branch',
@@ -361,7 +370,7 @@ describe('Agent composer · interactions and drafts', () => {
         onLaunch={vi.fn(async () => true)}
       />
     );
-    await waitFor(() =>
+    await settled(() =>
       expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
     );
     const surface = container.textContent ?? '';

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, vi } from 'vitest';
 
 import { fallbackAgentSourceRegistry } from './agent-sources';
@@ -35,8 +35,51 @@ export function setupDrawerHandle(): HTMLElement {
   });
 }
 
+/** How many event-loop turns the composer may take to settle. Its readiness
+ *  chain is saved preferences → source registry → model catalog, each gating
+ *  the next, so it needs tens of turns and never hundreds. */
+const SETTLE_TURNS = 200;
+
+/**
+ * Read the composer once it has settled, and return what was read (BUG-057).
+ *
+ * These tests used Testing Library's `waitFor`, whose deadline is 1000ms of
+ * WALL CLOCK. Nothing the composer does takes time: it awaits mocked bridge
+ * promises and re-renders. What it needs is event-loop TURNS. On a host
+ * running several agent worktrees at once those turns arrive after the
+ * deadline has already passed, so this family failed on machine load rather
+ * than on behaviour — the only suite files that did, because the composer's
+ * readiness chain is the longest in the renderer.
+ *
+ * So wait for the turns instead of for a duration: drain React's work and the
+ * task queues, re-read, and give up after a bounded number of turns. A
+ * composer that genuinely never settles still fails, with the real assertion
+ * error and no slower than before. It just cannot fail because the machine
+ * was busy.
+ */
+export async function settled<T>(read: () => T): Promise<T> {
+  for (let turn = 0; turn < SETTLE_TURNS; turn += 1) {
+    try {
+      return read();
+    } catch {
+      // Microtask turns are nearly free and drain the bridge mocks; a
+      // macrotask boundary every eighth turn releases anything genuinely
+      // queued on a timer or animation frame.
+      await act(async () => {
+        if (turn % 8 === 7) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        } else {
+          await Promise.resolve();
+        }
+      });
+    }
+  }
+  // Out of turns: raise the real assertion error, not a timeout.
+  return read();
+}
+
 export async function composerReady() {
-  await waitFor(() => expect(setupDrawerHandle()).not.toBeDisabled());
+  await settled(() => expect(setupDrawerHandle()).not.toBeDisabled());
 }
 
 export type LauncherAxisLabel = 'Engine' | 'Model' | 'Thinking' | 'Permission';
@@ -54,7 +97,7 @@ export async function openSetupDrawer() {
   if (handle.getAttribute('aria-expanded') !== 'true') {
     fireEvent.click(handle);
   }
-  await waitFor(() => expect(launcherAxis('Engine')).toBeInTheDocument());
+  await settled(() => expect(launcherAxis('Engine')).toBeInTheDocument());
 }
 
 /** Choose an option on a drawer axis by its visible label. */
@@ -64,7 +107,9 @@ export async function chooseLauncherAxis(
 ) {
   await openSetupDrawer();
   fireEvent.click(launcherAxis(label));
-  fireEvent.click(await screen.findByRole('option', { name: optionName }));
+  fireEvent.click(
+    await settled(() => screen.getByRole('option', { name: optionName }))
+  );
 }
 
 /** Start the Agent the launcher currently describes. */
@@ -82,7 +127,7 @@ export function selectedSetup(): HTMLElement {
 }
 
 export async function expectSelectedSetup(pattern: RegExp) {
-  await waitFor(() =>
+  await settled(() =>
     expect(selectedSetup().getAttribute('aria-label') ?? '').toMatch(pattern)
   );
 }

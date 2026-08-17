@@ -84,11 +84,54 @@ async function writeFastPnpm(directory) {
   };
 }
 
-async function waitFor(predicate, timeoutMs = 5_000) {
-  const startedAt = Date.now();
+/** A landing that has printed nothing for this long is stuck, not slow. */
+const NO_PROGRESS_MS = 60_000;
+
+/**
+ * Wait for a landing child to print something, bounded by the child's PROGRESS
+ * rather than by total elapsed time (BUG-057).
+ *
+ * This used to give up after five seconds of wall clock. Nothing here is a
+ * performance claim: the child spawns git and node several times, and on a host
+ * running several agent worktrees at once those spawns take longer than five
+ * seconds for reasons that have nothing to do with delivery, so the test failed
+ * on machine load. Total elapsed time was never the signal.
+ *
+ * Two things genuinely mean "this will never happen", and both are watched: the
+ * child exiting without having printed it, and the child going completely
+ * silent. A lander that is merely slow keeps emitting floor progress, so it is
+ * never mistaken for a stuck one however long the host takes.
+ */
+async function waitFor(predicate, run) {
+  let exited = false;
+  run?.completion.then(
+    () => {
+      exited = true;
+    },
+    () => {
+      exited = true;
+    }
+  );
+  let seen = run?.output().length ?? 0;
+  let progressedAt = Date.now();
   while (!predicate()) {
-    if (Date.now() - startedAt > timeoutMs) {
-      throw new Error('Timed out waiting for child process output.');
+    if (exited) {
+      throw new Error(
+        `The landing exited before it printed what the test waited for:\n${run?.output() ?? ''}`
+      );
+    }
+    const output = run?.output() ?? '';
+    // Not a budget on the code under test: this watchdog separates a stuck
+    // child from a slow one, and it measures SILENCE rather than work done.
+    // eslint-disable-next-line no-restricted-syntax
+    const silentForMs = Date.now() - progressedAt;
+    if (output.length !== seen) {
+      seen = output.length;
+      progressedAt = Date.now();
+    } else if (silentForMs > NO_PROGRESS_MS) {
+      throw new Error(
+        `The landing printed nothing for ${NO_PROGRESS_MS}ms and never reached what the test waited for:\n${output}`
+      );
     }
     await new Promise(resolve => setTimeout(resolve, 25));
   }
@@ -189,10 +232,12 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
       agent,
       fastFloorEnv
     );
-    await waitFor(() =>
+    await waitFor(
+      () =>
+        landing
+          .output()
+          .includes('waiting for the active master delivery transaction'),
       landing
-        .output()
-        .includes('waiting for the active master delivery transaction')
     );
     assert.equal(
       await git(main, 'rev-parse', 'HEAD'),
@@ -281,9 +326,9 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
     const fastFloorEnv = await writeFastPnpm(directory);
 
     first = runStreaming(process.execPath, [script], firstPath, fastFloorEnv);
-    await waitFor(() => first.output().includes('admitted ticket 1'));
+    await waitFor(() => first.output().includes('admitted ticket 1'), first);
     second = runStreaming(process.execPath, [script], secondPath, fastFloorEnv);
-    await waitFor(() => second.output().includes('admitted ticket 2'));
+    await waitFor(() => second.output().includes('admitted ticket 2'), second);
     await deliveryLock.release();
     deliveryLock = null;
 

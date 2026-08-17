@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { transientAllocation } from '../cost.test-support';
 import { transcriptLines } from './transcript-lines';
 
 const ESC = '\x1b';
@@ -112,19 +113,41 @@ describe('transcriptLines (BUG-013)', () => {
 });
 
 // A transcript renderer that is itself slow would just move the incident.
-// This is a floor, not a benchmark: it fails on an accidental O(n²), which
-// is what slicing the remainder at every escape byte would have been.
+// This is a floor, not a benchmark: it fails on an accidental O(n²), which is
+// what rebuilding the remainder rather than reading it in place would be.
+//
+// It used to say that as "4 MB in under a second", which read the host's spare
+// CPU as much as this function: the render costs ~600ms of a quiet machine, so
+// four agent worktrees sharing twelve cores failed it on load alone (BUG-057).
+// The property was never the second. It is that the work per character stays
+// FLAT as the stream grows, and transient allocation states that directly and
+// does not move with contention.
 describe('transcriptLines cost', () => {
-  it('renders a 4MB redraw-heavy stream well under a frame budget', () => {
+  function redrawHeavyStream(chars: number): string {
     let raw = '';
-    while (raw.length < 4_000_000) {
+    while (raw.length < chars) {
       raw += `\r\x1b[K\x1b[36m⠋\x1b[0m working ${raw.length}`;
       if (raw.length % 7 < 40) raw += '\r\x1b[Kcommitted a line\n';
     }
-    const started = Date.now();
-    const { lines } = transcriptLines(raw, { maxLines: 2_000 });
-    const elapsed = Date.now() - started;
-    expect(lines.length).toBeGreaterThan(0);
-    expect(elapsed).toBeLessThan(1_000);
-  });
+    return raw;
+  }
+
+  /** Measured at ~30 bytes per character rendered, across an 8x size range.
+   *  Doubled, so ordinary drift is silent and a growing per-character cost —
+   *  the only shape a quadratic can take — is not. */
+  const ALLOCATION_PER_CHARACTER = 64;
+
+  it.each([250_000, 1_000_000])(
+    'allocates in proportion to the %i characters it renders, not to their square',
+    chars => {
+      const raw = redrawHeavyStream(chars);
+      const { value, bytes } = transientAllocation(() =>
+        transcriptLines(raw, { maxLines: 2_000 })
+      );
+      expect(value.lines.length).toBeGreaterThan(0);
+      // Asserted at both scales on purpose: a per-character ceiling that holds
+      // at 250k and again at 1M is the statement that the ratio is constant.
+      expect(bytes / raw.length).toBeLessThan(ALLOCATION_PER_CHARACTER);
+    }
+  );
 });

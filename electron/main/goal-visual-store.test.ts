@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -12,6 +12,15 @@ import {
   setGoalVisualStore,
 } from './goal-visual-store';
 import type { GoalVisual } from './pty/context-summarizer';
+
+// This suite runs in Node, so importing the real `electron` package would run
+// its installer shim: it reads `node_modules/electron/path.txt`, and when that
+// file is briefly absent — which it is every time a sibling agent worktree
+// re-links Electron — it tries to DOWNLOAD Electron and then throws "Electron
+// failed to install correctly". Nothing here wants the binary's path, only the
+// pure logic under test, so the module is stood down rather than resolved
+// (BUG-057). The four suites that need `app` already mock it with a body.
+vi.mock('electron', () => ({}));
 
 /**
  * BUG-031 — the layout is a small-object record and must stay one.
