@@ -194,6 +194,26 @@ async function main() {
   // Attribution: where the at-rest budget actually goes. The D40 rule that
   // only Active moves is product canon, and it is also the single largest line
   // item on the hero's budget, so it is measured apart.
+  // The pinned sequence's RESTING state is a highlighted one (W4), so the
+  // budget is measured there too rather than assumed from the plain board.
+  {
+    const { page } = await openBoard(browser, 'highlight=needs-you');
+    await waitForFirstFrame(page);
+    await page.waitForTimeout(1_200);
+    const idle = await measureIdle(page);
+    const verdict = idle ? grade(idle) : null;
+    results.push({ option: 'highlighted', idle, verdict, errors: [] });
+    if (!idle) failures += 1;
+    else if (
+      !verdict.dprOk ||
+      !verdict.drawCallsOk ||
+      !verdict.meanOk ||
+      !verdict.shareOk
+    )
+      failures += 1;
+    await page.close();
+  }
+
   for (const [label, query] of [
     ['no-turn', 'protocol=0'],
     ['no-changes', 'changes=0'],

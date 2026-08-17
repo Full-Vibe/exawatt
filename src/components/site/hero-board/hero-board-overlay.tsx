@@ -41,6 +41,7 @@ import {
 import type { StatusLightState } from '@/components/status-light/protocol';
 import type { HeroBoardCapture } from './capture-types';
 import { HERO_STATUS_ORDER } from './capture-types';
+import type { HeroHighlight } from './hero-board-highlight';
 import {
   AGENT_AFFORDANCE_PROGRESS,
   AGENT_TRACK_INTERVAL_MS,
@@ -48,6 +49,24 @@ import {
   AGENT_TRACK_MIN_RADIUS_PX,
   type HeroBridgeAccess,
 } from './hero-board-annotations';
+
+/**
+ * What a receded Project label keeps. Higher than the marks' own floor: a name
+ * you can still read is what keeps the rest of the board legible as context
+ * rather than as blur, and the emphasis is carried by the marks.
+ */
+const LABEL_DIM = 0.28;
+
+/** A Project label is gone this close to the frame edge, and full strength by
+ *  the second number. A chip is about 140px wide, so a centre inside the first
+ *  figure is already half outside the frame. */
+const LABEL_EDGE_HIDE_PX = 40;
+const LABEL_EDGE_FADE_PX = 160;
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
 
 /** The five signals, loudest first, exactly as the product names them. */
 const LEGEND: StatusLightState[] = [
@@ -75,6 +94,12 @@ export interface HeroBoardOverlayProps {
    *  fixed chrome renders and the anchored labels do not. Same box either
    *  way, so the substitution costs no layout shift. */
   projected: boolean;
+  /**
+   * What the board is emphasizing (ENG-031 W4). The DOM labels recede on the
+   * same eased curve the marks do, off the same array, so the annotation layer
+   * and the WebGL layer never disagree about what the page is pointing at.
+   */
+  highlight: HeroHighlight;
   selected: number;
   onSelect: (index: number) => void;
 }
@@ -84,6 +109,7 @@ export function HeroBoardOverlay({
   theme,
   getBridge,
   projected,
+  highlight,
   selected,
   onSelect,
 }: HeroBoardOverlayProps) {
@@ -97,9 +123,12 @@ export function HeroBoardOverlay({
   const cardNode = useRef<HTMLDivElement>(null);
   const focus = useRef(-1);
 
-  // The card follows whichever unit is under the pointer, or the selected one
-  // when the pointer is elsewhere. Selection is what survives a mouse leaving.
-  const shown = hovered >= 0 ? hovered : selected;
+  // The card follows whichever unit is under the pointer, then the selected
+  // one, then the Agent the active panel is describing. Selection is what
+  // survives a mouse leaving; the highlight's own subject is what makes the
+  // closest altitude legible with no pointer in the room at all.
+  const shown =
+    hovered >= 0 ? hovered : selected >= 0 ? selected : highlight.subject.unit;
   const shownRef = useRef(shown);
   shownRef.current = shown;
 
@@ -125,7 +154,16 @@ export function HeroBoardOverlay({
       node.style.transform = `translate3d(${Math.round(anchor.x)}px, ${Math.round(
         anchor.y - lift
       )}px, 0) translate(-50%, -100%)`;
-      node.style.opacity = '1';
+      // The label recedes with its zone, off the eased value the scene writes.
+      // No CSS transition here on purpose: the value is ALREADY eased, and a
+      // transition chasing a per-frame target only adds lag it never resolves.
+      const focus = bridge.zoneFocus[index] ?? 1;
+      // And it fades out at the frame edge rather than being sliced by it. A
+      // name cut mid-word against a hard vertical edge reads as a rendering
+      // bug, not as a crop, because the ground is the same on both sides.
+      const margin = Math.min(anchor.x, bridge.width - anchor.x);
+      const edge = smoothstep(LABEL_EDGE_HIDE_PX, LABEL_EDGE_FADE_PX, margin);
+      node.style.opacity = String((LABEL_DIM + (1 - LABEL_DIM) * focus) * edge);
     }
     for (const [index, node] of unitNodes.current) {
       const anchor = bridge.units[index];
@@ -141,7 +179,8 @@ export function HeroBoardOverlay({
       node.style.transform = `translate3d(${Math.round(anchor.x)}px, ${Math.round(
         anchor.y
       )}px, 0) translate(-50%, -50%)`;
-      node.style.opacity = '1';
+      const focus = bridge.unitFocus[index] ?? 1;
+      node.style.opacity = String(0.3 + 0.7 * focus);
       node.style.pointerEvents = 'auto';
     }
     const card = cardNode.current;
@@ -318,7 +357,9 @@ export function HeroBoardOverlay({
 
       {/* Colour means state, in the product's own five-signal vocabulary. */}
       <ul
-        className="absolute right-3 bottom-2 flex flex-wrap justify-end gap-x-3 gap-y-1"
+        // On a phone the legend and the honesty stamp share the bottom rail and
+        // collide, so the legend steps up a line until there is room for both.
+        className="absolute right-3 bottom-7 flex flex-wrap justify-end gap-x-3 gap-y-1 sm:bottom-2"
         style={{ color: chrome.muted }}
         data-hero-overlay-fixed
         data-hero-overlay-legend
@@ -355,8 +396,8 @@ export function HeroBoardOverlay({
                 if (node) zoneNodes.current.set(index, node);
                 else zoneNodes.current.delete(index);
               }}
-              className="absolute top-0 left-0 flex flex-col items-center gap-1 whitespace-nowrap transition-opacity duration-200"
-              style={{ opacity: 0, willChange: 'transform' }}
+              className="absolute top-0 left-0 flex flex-col items-center gap-1 whitespace-nowrap"
+              style={{ opacity: 0, willChange: 'transform, opacity' }}
               data-hero-zone-label={zone.label}
             >
               <span

@@ -47,6 +47,10 @@ import {
   type HeroThemeKey,
 } from './hero-board-theme';
 import { createHeroAnnotationBridge } from './hero-board-annotations';
+import {
+  resolveHeroHighlight,
+  type HeroHighlightId,
+} from './hero-board-highlight';
 import { HeroBoardOverlay } from './hero-board-overlay';
 
 const HeroBoardScene = dynamic(
@@ -87,6 +91,12 @@ export interface HeroBoardProps {
   /** Scroll progress 0..1, driving the altitude pull. Written by the owner
    *  through a ref so nothing re-renders React at scroll frequency. */
   progressRef?: RefObject<number>;
+  /**
+   * What the board emphasizes, and therefore what the panel beside it is
+   * talking about (ENG-031 W4). Defaults to the whole fleet, which is the
+   * fold's state and the state at rest.
+   */
+  highlight?: HeroHighlightId;
   /** Study override: force the poster path, or force the live canvas frozen. */
   force?: 'auto' | 'live' | 'frozen' | 'poster';
   /** Study and eval only. Reading pixels back needs the drawing buffer kept. */
@@ -101,6 +111,7 @@ export function HeroBoard({
   themeKey = HERO_DEFAULT_THEME,
   className,
   progressRef,
+  highlight = 'whole-fleet',
   force = 'auto',
   preserveDrawingBuffer = false,
   statusProtocolMotion = true,
@@ -126,6 +137,18 @@ export function HeroBoard({
     )
   );
   const getBridge = useCallback(() => bridge.current, []);
+
+  // Resolved once per highlight, from the frozen capture, and written into the
+  // bridge so the WebGL layer and the DOM layer recede together off one answer.
+  const resolved = useMemo(
+    () => resolveHeroHighlight(HERO_BOARD_CAPTURE, highlight),
+    [highlight]
+  );
+  useEffect(() => {
+    const current = bridge.current;
+    current.zoneFocus.set(resolved.zones);
+    current.unitFocus.set(resolved.units);
+  }, [resolved]);
 
   useEffect(() => {
     const element = frame.current;
@@ -191,6 +214,7 @@ export function HeroBoard({
             statusProtocolMotion={statusProtocolMotion}
             statusChanges={statusChanges}
             progressRef={progressRef ?? fallbackProgress}
+            highlight={resolved}
             preserveDrawingBuffer={preserveDrawingBuffer}
             getBridge={getBridge}
             onReady={handleReady}
@@ -204,6 +228,7 @@ export function HeroBoard({
         theme={theme}
         getBridge={getBridge}
         projected={mode === 'live'}
+        highlight={resolved}
         selected={selectedUnit}
         onSelect={setSelectedUnit}
       />

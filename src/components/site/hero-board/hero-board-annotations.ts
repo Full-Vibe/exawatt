@@ -37,6 +37,15 @@ export interface HeroAnnotationBridge {
   statuses: Uint8Array;
   /** Damped altitude progress: 0 Fleet, 0.5 Team, 1 Agent. */
   progress: number;
+  /**
+   * Highlight emphasis, 1 leads and 0 recedes, index-aligned with the capture.
+   * Resolved once per highlight by `hero-board-highlight.ts`, then kept
+   * truthful by the scene for status-derived highlights. The overlay reads it
+   * per frame to dim the labels that are not the subject, so the DOM and the
+   * WebGL layers recede together.
+   */
+  zoneFocus: Float32Array;
+  unitFocus: Float32Array;
   /** Frame size in CSS pixels. */
   width: number;
   height: number;
@@ -73,6 +82,8 @@ export function createHeroAnnotationBridge(
     units: Array.from({ length: unitCount }, anchor),
     statuses: new Uint8Array(unitCount),
     progress: 0,
+    zoneFocus: new Float32Array(zoneCount).fill(1),
+    unitFocus: new Float32Array(unitCount).fill(1),
     width: 0,
     height: 0,
     tracked: [],

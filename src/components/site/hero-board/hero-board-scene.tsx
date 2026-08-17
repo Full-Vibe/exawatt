@@ -53,6 +53,13 @@ import type { HeroBoardCapture } from './capture-types';
 import { HERO_STATUS_ORDER } from './capture-types';
 import { IDLE_BUDGET, STATUS_CHANGES_PER_SECOND } from './hero-board-budget';
 import type { HeroAnchor, HeroBridgeAccess } from './hero-board-annotations';
+import {
+  HERO_DIM,
+  HERO_ZONE_DIM,
+  heroStatusNeedsHuman,
+  type HeroHighlight,
+} from './hero-board-highlight';
+import { heroBoardSubjects } from './hero-board-subjects';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -73,6 +80,19 @@ const FRAMING_TIGHTNESS = { fleet: 0.74, team: 0.86, agent: 0.95 } as const;
 
 const MARK_SCALE = 1.7;
 const STATUS_TRANSITION_SECONDS = 0.85;
+
+/**
+ * How long the board takes to move its emphasis from one panel's subject to
+ * the next (ENG-031 W4).
+ *
+ * This is a SEMANTIC transition, not a follow, so it gets one duration and one
+ * ease that leaves and arrives at rest, and every layer samples the same
+ * progress (guide rule 4b): the zone fills, the unit marks, and the DOM labels
+ * all run 0 to 1 over this many seconds from the same event. `damp` would be
+ * wrong here twice over, because it starts at maximum velocity and because two
+ * layers at two lambdas would arrive at different times.
+ */
+const FOCUS_TRANSITION_SECONDS = 0.7;
 
 /**
  * The maximum zoom depth (operator, 2026-08-17: "Bind the scroll to a maximum
@@ -150,19 +170,14 @@ export function heroBoardFramings(
   const fleetRadius =
     Math.hypot(capture.bounds.width, capture.bounds.height) / 2;
 
-  let teamIndex = 0;
-  for (let index = 0; index < capture.zones.length; index += 1) {
-    if (capture.zones[index]!.agentCount > capture.zones[teamIndex]!.agentCount)
-      teamIndex = index;
-  }
-  const zone = capture.zones[teamIndex]!;
+  // The Project and the Agent the camera flies to are the SAME two the panels
+  // name and the highlight emphasizes, so the copy and the camera cannot
+  // disagree. One decision, in `hero-board-subjects.ts`.
+  const subjects = heroBoardSubjects(capture);
+  const zone = capture.zones[subjects.teamZone]!;
   const team = new THREE.Vector3(zone.x - center.x, 0, zone.y - center.y);
 
-  const needsYou = HERO_STATUS_ORDER.indexOf('blocked');
-  const agentUnit =
-    capture.units.find(
-      unit => unit.zone === teamIndex && unit.status === needsYou
-    ) ?? capture.units.find(unit => unit.zone === teamIndex)!;
+  const agentUnit = capture.units[subjects.agentUnit]!;
   const agent = new THREE.Vector3(
     agentUnit.x - center.x,
     0,
@@ -250,24 +265,36 @@ function HeroGround({
 function HeroZones({
   theme,
   capture,
+  highlight,
+  animating,
+  getBridge,
 }: {
   theme: SpatialThemeSnapshot;
   capture: HeroBoardCapture;
+  highlight: HeroHighlight;
+  animating: boolean;
+  getBridge: HeroBridgeAccess;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const center = useMemo(() => boardCenter(capture), [capture]);
+  const count = capture.zones.length;
 
   const geometry = useMemo(() => {
     const next = new THREE.PlaneGeometry(1, 1);
     next.rotateX(-Math.PI / 2);
+    next.setAttribute(
+      'aFocus',
+      new THREE.InstancedBufferAttribute(new Float32Array(count).fill(1), 1)
+    );
     return next;
-  }, []);
+  }, [count]);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   const uniforms = useMemo(
     () => ({
       uZone: { value: new THREE.Color(theme.zone) },
       uRim: { value: new THREE.Color(theme.grid) },
+      uDim: { value: HERO_ZONE_DIM },
     }),
     [theme]
   );
@@ -285,10 +312,53 @@ function HeroZones({
     mesh.current.computeBoundingSphere();
   }, [capture, center]);
 
+  // Ten instances, so the emphasis transition is eased in JS and written into
+  // one attribute. No allocation per frame, and the loop parks the moment it
+  // arrives; the units next door stay on the GPU because there are 173 of them
+  // and the brief forbids per-frame JavaScript over the field.
+  const from = useRef(new Float32Array(count).fill(1));
+  const to = useRef(new Float32Array(count).fill(1));
+  const elapsed = useRef(FOCUS_TRANSITION_SECONDS);
+
+  useEffect(() => {
+    const attribute = geometry.getAttribute(
+      'aFocus'
+    ) as THREE.InstancedBufferAttribute;
+    for (let index = 0; index < count; index += 1) {
+      from.current[index] = attribute.getX(index);
+      to.current[index] = highlight.zones[index] ?? 1;
+    }
+    elapsed.current = 0;
+  }, [geometry, highlight, count]);
+
+  useFrame((state: RootState, delta: number) => {
+    if (!animating || elapsed.current >= FOCUS_TRANSITION_SECONDS) return;
+    elapsed.current = Math.min(
+      FOCUS_TRANSITION_SECONDS,
+      elapsed.current + Math.min(delta, 0.05)
+    );
+    const t = elapsed.current / FOCUS_TRANSITION_SECONDS;
+    const eased = t * t * (3 - 2 * t);
+    const attribute = geometry.getAttribute(
+      'aFocus'
+    ) as THREE.InstancedBufferAttribute;
+    const bridge = getBridge();
+    for (let index = 0; index < count; index += 1) {
+      const value =
+        from.current[index]! +
+        (to.current[index]! - from.current[index]!) * eased;
+      attribute.setX(index, value);
+      // The DOM labels recede on the same curve, read per frame by the overlay.
+      bridge.zoneFocus[index] = value;
+    }
+    attribute.needsUpdate = true;
+    state.invalidate();
+  });
+
   return (
     <instancedMesh
       ref={mesh}
-      args={[geometry, undefined, capture.zones.length]}
+      args={[geometry, undefined, count]}
       frustumCulled={false}
       raycast={noopRaycast}
       renderOrder={1}
@@ -298,23 +368,28 @@ function HeroZones({
         transparent
         depthWrite={false}
         vertexShader={`
+          attribute float aFocus;
           varying vec2 vUv;
+          varying float vFocus;
           void main() {
             vUv = uv - 0.5;
+            vFocus = aFocus;
             gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
           }
         `}
         fragmentShader={`
           uniform vec3 uZone;
           uniform vec3 uRim;
+          uniform float uDim;
           varying vec2 vUv;
+          varying float vFocus;
           void main() {
             float d = length(vUv) * 2.0;
             float w = fwidth(d);
             float disc = 1.0 - smoothstep(1.0 - w, 1.0 + w, d);
             float rim = 1.0 - smoothstep(0.0, w * 1.6, abs(d - 1.0 + w));
             vec3 color = mix(uZone, uRim, rim * 0.85);
-            float alpha = max(disc * 0.92, rim * 0.9);
+            float alpha = max(disc * 0.92, rim * 0.9) * mix(uDim, 1.0, vFocus);
             if (alpha < 0.004) discard;
             gl_FragColor = vec4(color, alpha);
             #include <colorspace_fragment>
@@ -340,6 +415,7 @@ function HeroUnits({
   animating,
   statusProtocolMotion,
   statusChanges,
+  highlight,
   getBridge,
 }: {
   theme: SpatialThemeSnapshot;
@@ -347,6 +423,7 @@ function HeroUnits({
   animating: boolean;
   statusProtocolMotion: boolean;
   statusChanges: boolean;
+  highlight: HeroHighlight;
   getBridge: HeroBridgeAccess;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
@@ -383,6 +460,23 @@ function HeroUnits({
       'aChangeAt',
       new THREE.InstancedBufferAttribute(new Float32Array(count), 1)
     );
+    // Highlight emphasis rides its own per-instance transition clock rather
+    // than a single uniform, because two things retrigger it: a panel change
+    // moves every unit at once, and a status turn moves ONE unit whenever the
+    // active highlight is derived from live status. A shared uniform would
+    // restart all 173 for one agent's change.
+    next.setAttribute(
+      'aFocusFrom',
+      new THREE.InstancedBufferAttribute(new Float32Array(count).fill(1), 1)
+    );
+    next.setAttribute(
+      'aFocusTo',
+      new THREE.InstancedBufferAttribute(new Float32Array(count).fill(1), 1)
+    );
+    next.setAttribute(
+      'aFocusAt',
+      new THREE.InstancedBufferAttribute(new Float32Array(count).fill(-1000), 1)
+    );
     return next;
   }, [count]);
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -396,6 +490,8 @@ function HeroUnits({
       uTime: { value: 0 },
       uSpin: { value: 0 },
       uTransition: { value: STATUS_TRANSITION_SECONDS },
+      uFocusTransition: { value: FOCUS_TRANSITION_SECONDS },
+      uDim: { value: HERO_DIM },
       uStatusColor: { value: colors },
     };
   }, [theme]);
@@ -445,6 +541,76 @@ function HeroUnits({
   const elapsed = useRef(0);
   const pending = useRef(0);
   const random = useMemo(() => mulberry32(0x11ada7), []);
+  const followsStatus = useRef(highlight.followsStatus);
+  followsStatus.current = highlight.followsStatus;
+
+  /** Emphasis this unit should be at, now, under the active highlight. */
+  const focusTargetFor = useCallback(
+    (index: number, status: number): number => {
+      if (!followsStatus.current) return highlight.units[index] ?? 1;
+      // Status-derived emphasis reads the LIVE status, not the captured one:
+      // the scheduler turns agents while a visitor reads, and a highlight
+      // frozen at capture time would keep a finished agent lit as waiting.
+      return heroStatusNeedsHuman(status) ? 1 : 0;
+    },
+    [highlight]
+  );
+
+  /** Start one unit's emphasis transition from wherever it currently is. */
+  const retargetFocus = useCallback(
+    (index: number, target: number): void => {
+      const focusFrom = geometry.getAttribute(
+        'aFocusFrom'
+      ) as THREE.InstancedBufferAttribute;
+      const focusTo = geometry.getAttribute(
+        'aFocusTo'
+      ) as THREE.InstancedBufferAttribute;
+      const focusAt = geometry.getAttribute(
+        'aFocusAt'
+      ) as THREE.InstancedBufferAttribute;
+      const t = Math.min(
+        1,
+        Math.max(
+          0,
+          (elapsed.current - focusAt.getX(index)) / FOCUS_TRANSITION_SECONDS
+        )
+      );
+      const eased = t * t * (3 - 2 * t);
+      const current =
+        focusFrom.getX(index) +
+        (focusTo.getX(index) - focusFrom.getX(index)) * eased;
+      focusFrom.setX(index, current);
+      focusTo.setX(index, target);
+      focusAt.setX(index, elapsed.current);
+      focusFrom.needsUpdate = true;
+      focusTo.needsUpdate = true;
+      focusAt.needsUpdate = true;
+      getBridge().unitFocus[index] = target;
+    },
+    [geometry, getBridge]
+  );
+
+  // A panel change moves every unit at once, on ONE clock, so every mark and
+  // every label arrives together (guide rule 4b).
+  const invalidate = useThree(state => state.invalidate);
+  useEffect(() => {
+    const statuses = getBridge().statuses;
+    for (let index = 0; index < count; index += 1) {
+      retargetFocus(
+        index,
+        focusTargetFor(index, statuses[index] ?? capture.units[index]!.status)
+      );
+    }
+    invalidate();
+  }, [
+    capture,
+    count,
+    focusTargetFor,
+    getBridge,
+    invalidate,
+    retargetFocus,
+    highlight,
+  ]);
 
   function changeOneUnit(): void {
     const bridge = getBridge();
@@ -479,6 +645,11 @@ function HeroUnits({
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
+    if (followsStatus.current) {
+      // The emphasis rides the same turn the colour does, so an agent that
+      // stops needing a human fades out of the highlight instead of popping.
+      retargetFocus(index, focusTargetFor(index, next));
+    }
     // The overlay only re-renders when the unit it is showing changed.
     bridge.onStatusChange?.(index);
   }
@@ -521,13 +692,19 @@ function HeroUnits({
           attribute float aStatusFrom;
           attribute float aStatusTo;
           attribute float aChangeAt;
+          attribute float aFocusFrom;
+          attribute float aFocusTo;
+          attribute float aFocusAt;
           uniform float uTime;
           uniform float uTransition;
+          uniform float uFocusTransition;
+          uniform float uDim;
           uniform vec3 uStatusColor[6];
           varying vec2 vUv;
           varying vec3 vColor;
           varying float vMark;
           varying float vFlash;
+          varying float vFocus;
           void main() {
             vUv = uv - 0.5;
             float t = clamp((uTime - aChangeAt) / uTransition, 0.0, 1.0);
@@ -541,6 +718,12 @@ function HeroUnits({
             // A brightness envelope, not a scale: the mark's footprint is
             // constant, so a state change never nudges the board's geometry.
             vFlash = sin(t * 3.14159265) * (1.0 - step(0.999, t));
+            // Highlight emphasis, on its own clock. A receded mark keeps uDim
+            // of its alpha: the fleet is still there and still running, and a
+            // board that empties itself to make a point makes a false one.
+            float ft = clamp((uTime - aFocusAt) / uFocusTransition, 0.0, 1.0);
+            float focus = mix(aFocusFrom, aFocusTo, smoothstep(0.0, 1.0, ft));
+            vFocus = mix(uDim, 1.0, focus);
             gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
           }
         `}
@@ -550,6 +733,7 @@ function HeroUnits({
           varying vec3 vColor;
           varying float vMark;
           varying float vFlash;
+          varying float vFocus;
 
           float sdSegment(vec2 p, vec2 a, vec2 b, float r) {
             vec2 pa = p - a;
@@ -596,7 +780,7 @@ function HeroUnits({
 
             // Analytic coverage: this is the shader paying back antialias:false.
             float coverage = 1.0 - smoothstep(-fwidth(sdf), fwidth(sdf), sdf);
-            float alpha = coverage * weight;
+            float alpha = coverage * weight * vFocus;
             if (alpha < 0.004) discard;
             gl_FragColor = vec4(vColor * (1.0 + vFlash * 0.45), alpha);
             #include <colorspace_fragment>
@@ -865,6 +1049,9 @@ export interface HeroBoardSceneProps {
   statusChanges?: boolean;
   /** Scroll progress 0..1, written by a rAF-coalesced listener, never state. */
   progressRef: RefObject<number>;
+  /** What the board emphasizes. Semantic, so it is a prop and not a ref: it
+   *  changes a handful of times over a whole sequence, never per frame. */
+  highlight: HeroHighlight;
   /** Measurement and poster capture only: lets the study read pixels back. */
   preserveDrawingBuffer?: boolean;
   /** The seam to the DOM annotation layer: the scene writes projected anchors
@@ -881,6 +1068,7 @@ export function HeroBoardScene({
   statusProtocolMotion = true,
   statusChanges = true,
   progressRef,
+  highlight,
   preserveDrawingBuffer = false,
   getBridge,
   onReady,
@@ -902,13 +1090,20 @@ export function HeroBoardScene({
     >
       <color attach="background" args={[theme.canvas]} />
       <HeroGround theme={theme} capture={capture} />
-      <HeroZones theme={theme} capture={capture} />
+      <HeroZones
+        theme={theme}
+        capture={capture}
+        highlight={highlight}
+        animating={animating}
+        getBridge={getBridge}
+      />
       <HeroUnits
         theme={theme}
         capture={capture}
         animating={animating}
         statusProtocolMotion={statusProtocolMotion}
         statusChanges={statusChanges}
+        highlight={highlight}
         getBridge={getBridge}
       />
       <HeroCameraRig

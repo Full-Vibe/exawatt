@@ -319,6 +319,27 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-08-17 — ENG-031 W4 pinned board sequence. No new type, colour, or
+  spacing rung; the panel heading is the existing 18px `section` rung and the
+  panel body is `text-xl`/`text-2xl` from the marketing register. Three
+  mechanical rules recorded, all learned from defects. (1) **Motion state that
+  a media query must be able to override travels as a CSS custom property, not
+  as an inline style.** An inline `opacity` outranks `motion-reduce:opacity-100`
+  and `max-md:opacity-100`, so a scroll-driven fade left a phone with two
+  invisible panels. Write a `--panel-opacity` custom property and let the
+  matching arbitrary-value opacity utility read it. (Watch what you write in
+  prose, too: Tailwind v4 scans this documentation, so an ELLIDED class name in
+  a doc becomes a real, broken rule in the stylesheet. Spell arbitrary values
+  out in full or do not spell them at all.) (2) **An element that unpins stays `relative`, never `static`.** An
+  absolutely positioned child of a static parent resolves against the nearest
+  positioned ancestor instead, which silently promotes a background to
+  full-section size. (3) **Two media-query variants on the same property is a
+  bet on Tailwind's variant order.** Stack them into one rule
+  (`md:motion-safe:left-[32%]`) so exactly one rule can match. Plus one
+  rendering rule for anchored DOM over a canvas: **an anchored label fades out
+  near the frame edge rather than being clipped by it**, because a name sliced
+  mid-word against a hard edge reads as a bug and not as a crop when the ground
+  is the same on both sides.
 - 2026-08-17 — ENG-031 W2c hero board labels. **A name that carries a surface
   is not a micro-label.** The marketing board's Project names shipped at 10px
   `font-mono` with tracking, which is the chrome-micro rung; the operator read
