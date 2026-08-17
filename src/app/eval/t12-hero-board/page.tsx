@@ -10,8 +10,13 @@
  * zero.
  *
  * `?force=auto|frozen|poster` · `?theme=classic|night|air` · `?protocol=0` ·
- * `?changes=0`. `window.__HERO_PROGRESS__(p)` drives the altitude pull without
- * a scroll.
+ * `?changes=0` · `?highlight=whole-fleet|needs-you|one-project|one-agent`.
+ * `window.__HERO_PROGRESS__(p)` drives the altitude pull without a scroll.
+ *
+ * The highlight matters to the budget, not only to the look: the pinned
+ * sequence's RESTING state is a highlighted one (ENG-031 W4), so the eval
+ * measures that state rather than assuming an unhighlighted board stands in
+ * for it.
  */
 
 import { Suspense, useCallback, useRef } from 'react';
@@ -19,6 +24,7 @@ import { useSearchParams } from 'next/navigation';
 import type { RootState } from '@react-three/fiber';
 import type { WebGLRenderer } from 'three';
 import { HeroBoard } from '@/components/site/hero-board/hero-board';
+import type { HeroHighlightId } from '@/components/site/hero-board/hero-board-highlight';
 import {
   HERO_THEMES,
   type HeroThemeKey,
@@ -42,6 +48,7 @@ function Rig() {
   const progress = useRef(0);
   const theme = params.get('theme');
   const force = params.get('force');
+  const highlight = params.get('highlight');
 
   const onCreated = useCallback((state: RootState) => {
     (window as unknown as { __EVAL_GL__?: WebGLRenderer }).__EVAL_GL__ =
@@ -79,6 +86,7 @@ function Rig() {
           theme && theme in HERO_THEMES ? (theme as HeroThemeKey) : 'classic'
         }
         force={force === 'frozen' || force === 'poster' ? force : 'auto'}
+        highlight={(highlight as HeroHighlightId | null) ?? 'whole-fleet'}
         progressRef={progress}
         preserveDrawingBuffer
         statusProtocolMotion={params.get('protocol') !== '0'}

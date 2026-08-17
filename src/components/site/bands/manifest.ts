@@ -36,6 +36,20 @@
  * - section headings stay small and the closing band is the largest type on
  *   the page.
  *
+ * AMENDED 2026-08-17 (ENG-031 W4, operator): THE ALTITUDE BANDS RUN FLEET TO
+ * AGENT, not agent to fleet. The brief declared a pull-BACK, from one agent
+ * out to the fleet, because it read the altitude ladder as a cinematic device
+ * on its own. The operator's direction for the pinned board settled the
+ * question the other way: "keep THIS as a persistent graphic which changes as
+ * you scroll". The thing he was looking at is the fold's Fleet board, so the
+ * sequence has to continue that picture rather than cut away from it and start
+ * over on one agent. Reading down is now a dive: every project, one project,
+ * one agent, ending concrete immediately above the closing CTA, which is also
+ * where the standing what-and-why test wants it. `altitude-fleet` keeps the
+ * longest hold, so the brief's other constraint on this run is untouched. This
+ * reorder is a data edit in this file, which is the band system doing exactly
+ * what it was built for.
+ *
  * KNOWN GAP, deliberately recorded rather than papered over: the nine core
  * bands' copy ceilings sum to roughly 470 words, which clears the 450-word
  * floor Conductor proves works but sits well under the 1,200 to 1,700 words
@@ -67,6 +81,10 @@ export type BandStatus = 'shipped' | 'reserved';
 export type BandMedium =
   | 'type'
   | 'board'
+  /** Drives the ONE pinned board. A consecutive run of these renders as a
+   *  single sticky sequence: the bands supply the panels and their order, and
+   *  the board is the medium they drive. See `pinned-board-sequence.tsx`. */
+  | 'pinned-board'
   | 'product-motion'
   | 'portrait'
   | 'logos'
@@ -82,6 +100,23 @@ export type BandHeadingRole = 'none' | 'headline' | 'section' | 'closing';
 
 /** The altitude ladder is the narrative (decision 0023 names the altitudes). */
 export type BandAltitude = 'agent' | 'team' | 'fleet';
+
+/**
+ * What the pinned board EMPHASIZES while this band is the active panel
+ * (operator, 2026-08-17: the explanations "highlight elements or map to
+ * elements that are highlighted in the graphic").
+ *
+ * A band declares the emphasis SEMANTICALLY and never by name. "The Project
+ * with the most Agents" is stable across a regenerated capture; "Battery
+ * Dispatch" is not, and a manifest that named it would be authoring fixture
+ * data. `hero-board-highlight.ts` resolves these against the capture and hands
+ * back the subject's real name for the panel to print.
+ */
+export type BandBoardHighlight =
+  | 'whole-fleet'
+  | 'needs-you'
+  | 'one-project'
+  | 'one-agent';
 
 export interface CopyBudget {
   /** words; omitted where the band has no floor */
@@ -104,6 +139,13 @@ export interface HomepageBand {
    * band does not move it. The ordered non-null anchors ARE the pull-back.
    */
   altitudeAnchor: BandAltitude | null;
+  /**
+   * What the pinned board emphasizes while this band is the active panel.
+   * Required on every `pinned-board` band and null everywhere else: a panel
+   * that drives the board without saying what it is pointing at is exactly the
+   * "state change alone" the operator ruled insufficient.
+   */
+  boardHighlight: BandBoardHighlight | null;
   /** viewport heights; one idea per screen holds this to 1.0 to 1.4 */
   screens: number;
   status: BandStatus;
@@ -137,6 +179,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     medium: 'board',
     // The opening crop the pull-back starts from. W2 owns the camera itself.
     altitudeAnchor: 'fleet',
+    boardHighlight: null,
     screens: 1,
     status: 'shipped',
   },
@@ -148,6 +191,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 15, max: 20 },
     medium: 'portrait',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil: 'W3 lands a real named operator who agreed to be quoted.',
@@ -160,46 +204,57 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 25, max: 35 },
     medium: 'type',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil:
       'W3 writes the fold and close first; the thesis is sized against them.',
   },
+  // THE PINNED RUN. These three are ONE graphic and three panels, not three
+  // captures (operator, 2026-08-17). They are ordered Fleet, Team, Agent, which
+  // REVERSES the brief's original agent-to-fleet order; see the amendment note
+  // at the top of this file. `medium: 'pinned-board'` is what makes them a run.
+  {
+    id: 'altitude-fleet',
+    job: 'Every project at once, and only the agents that need a human are loud.',
+    headingRole: 'section',
+    heading: 'Every project',
+    copyBudget: { min: 20, max: 25 },
+    medium: 'pinned-board',
+    altitudeAnchor: 'fleet',
+    boardHighlight: 'needs-you',
+    screens: 1.4,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the pinned sequence at /hud-gallery/altitude-scroll.',
+  },
+  {
+    id: 'altitude-team',
+    job: 'One project, with every agent inside it still named.',
+    headingRole: 'section',
+    heading: 'One project',
+    copyBudget: { min: 20, max: 25 },
+    medium: 'pinned-board',
+    altitudeAnchor: 'team',
+    boardHighlight: 'one-project',
+    screens: 1.2,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the pinned sequence at /hud-gallery/altitude-scroll.',
+  },
   {
     id: 'altitude-agent',
     job: 'One agent, and the status you can trust.',
     headingRole: 'section',
-    heading: null,
+    heading: 'One agent',
     copyBudget: { min: 20, max: 25 },
-    medium: 'product-motion',
+    medium: 'pinned-board',
     altitudeAnchor: 'agent',
+    boardHighlight: 'one-agent',
     screens: 1.2,
     status: 'reserved',
-    reservedUntil: 'W4 needs the W2 capture rig.',
-  },
-  {
-    id: 'altitude-team',
-    job: 'Dozens at once, and where your attention is routed.',
-    headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 20, max: 25 },
-    medium: 'product-motion',
-    altitudeAnchor: 'team',
-    screens: 1.2,
-    status: 'reserved',
-    reservedUntil: 'W4 needs the W2 capture rig.',
-  },
-  {
-    id: 'altitude-fleet',
-    job: 'Thousands. The longest hold on the page.',
-    headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 20, max: 25 },
-    medium: 'board',
-    altitudeAnchor: 'fleet',
-    screens: 1.4,
-    status: 'reserved',
-    reservedUntil: 'W4 needs the W2 capture rig.',
+    reservedUntil:
+      'The operator accepts the pinned sequence at /hud-gallery/altitude-scroll.',
   },
   {
     id: 'observability',
@@ -209,6 +264,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 20, max: 40 },
     medium: 'product-motion',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil:
@@ -222,6 +278,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 40, max: 60 },
     medium: 'logos',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1.2,
     status: 'reserved',
     reservedUntil: 'W5 needs ENG-003 S4 so the source list is truthful.',
@@ -234,6 +291,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 40, max: 80 },
     medium: 'type',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil:
@@ -247,6 +305,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 40, max: 70 },
     medium: 'cards',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil:
@@ -260,6 +319,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 30, max: 60 },
     medium: 'type',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil:
@@ -273,6 +333,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 30, max: 60 },
     medium: 'ledger',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1.2,
     status: 'reserved',
     reservedUntil: 'A real per-agent ledger exists to publish.',
@@ -285,6 +346,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 150, max: 250 },
     medium: 'cards',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1.4,
     status: 'reserved',
     reservedUntil: 'W5 has named operators who agreed and a dated changelog.',
@@ -297,6 +359,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { max: 10 },
     medium: 'type',
     altitudeAnchor: null,
+    boardHighlight: null,
     screens: 1,
     status: 'reserved',
     // W3 BUILT IT; the operator has not picked the line yet. The band, the
@@ -326,6 +389,40 @@ export function reservedBands(): HomepageBand[] {
 
 export function anchorsHeroCamera(band: HomepageBand): boolean {
   return band.altitudeAnchor !== null;
+}
+
+/** The bands that drive the ONE pinned board, in page order. */
+export function pinnedBoardBands(
+  bands: HomepageBand[] = HOMEPAGE_BANDS
+): HomepageBand[] {
+  return bands.filter(band => band.medium === 'pinned-board');
+}
+
+/**
+ * The page as the composer walks it: bands in order, with each consecutive run
+ * of `pinned-board` bands collected into ONE entry.
+ *
+ * This is what makes "one persistent graphic, several explanations" structural
+ * rather than a component's private opinion. A pinned run is not three bands
+ * that each mount a board; it is one board and three panels, and the page
+ * cannot express it any other way.
+ */
+export type BandRun =
+  | { kind: 'band'; band: HomepageBand }
+  | { kind: 'pinned-board'; bands: HomepageBand[] };
+
+export function bandRuns(bands: HomepageBand[]): BandRun[] {
+  const runs: BandRun[] = [];
+  for (const band of bands) {
+    if (band.medium !== 'pinned-board') {
+      runs.push({ kind: 'band', band });
+      continue;
+    }
+    const previous = runs[runs.length - 1];
+    if (previous?.kind === 'pinned-board') previous.bands.push(band);
+    else runs.push({ kind: 'pinned-board', bands: [band] });
+  }
+  return runs;
 }
 
 /**
