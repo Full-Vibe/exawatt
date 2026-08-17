@@ -9,7 +9,10 @@ import {
 } from '@/components/operator-stats/format';
 import { PublishPanel } from '@/components/operator-stats/publish-panel';
 import styles from '@/components/operator-stats/operator-stats.module.css';
-import { readLeaderboard } from '@/lib/operator-stats/public';
+import {
+  publicArenaConfigured,
+  readLeaderboard,
+} from '@/lib/operator-stats/public';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,12 +115,18 @@ export default async function LeaderboardPage({
   const query = await searchParams;
   const metric = axisFrom(query.metric);
   const window = windowFrom(query.window);
+  // Three distinct facts, and this surface used to publish two of them as one
+  // sentence (BUG-048, incident `0017`): a build with no arena, an arena that
+  // cannot be reached right now, and a board with nobody on it yet.
+  const configured = publicArenaConfigured();
   let rows: Awaited<ReturnType<typeof readLeaderboard>> = [];
   let unavailable = false;
-  try {
-    rows = await readLeaderboard(metric, window);
-  } catch {
-    unavailable = true;
+  if (configured) {
+    try {
+      rows = await readLeaderboard(metric, window);
+    } catch {
+      unavailable = true;
+    }
   }
   const activeAxis = AXES.find(axis => axis.id === metric)!;
 
@@ -167,17 +176,23 @@ export default async function LeaderboardPage({
           </div>
         </nav>
 
-        {unavailable ? (
-          <div className={styles.empty}>
+        {!configured ? (
+          <div className={styles.empty} data-board-state="unconfigured">
+            {/* The panel below says where local usage stays; this line owns the
+                rankings and nothing else. */}
+            Rankings are not configured in this build.
+          </div>
+        ) : unavailable ? (
+          <div className={styles.empty} data-board-state="unavailable">
             Rankings are temporarily unavailable. Your local agent work is
             unaffected.
           </div>
         ) : rows.length === 0 ? (
-          <div className={styles.empty}>
+          <div className={styles.empty} data-board-state="empty">
             The board is open. The first operator to publish takes #1.
           </div>
         ) : (
-          <table className={styles.table}>
+          <table className={styles.table} data-board-state="ranked">
             <thead>
               <tr>
                 <th scope="col">Rank</th>
