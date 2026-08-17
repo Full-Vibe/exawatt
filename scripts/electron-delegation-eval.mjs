@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Delegation visibility eval (ENG-023 D1).
+ * Delegation visibility eval (ENG-023 D1 / D5).
  *
  * Exercises the WHOLE pipeline in the real Electron app: Exawatt writes a
  * settings file for the launch, the harness reads it, posts its own lifecycle
@@ -22,7 +22,9 @@ import {
   openFixtureSession,
 } from './lib/harness-event-fixture.mjs';
 
-const fixture = createHarnessFixture('exawatt-delegation');
+const fixture = createHarnessFixture('exawatt-delegation', {
+  codexProtocol: true,
+});
 const { root, project } = fixture;
 
 const failures = [];
@@ -160,9 +162,9 @@ try {
       check(
         'the child prompt never crosses IPC at all',
         !(await page.evaluate(async () =>
-          JSON.stringify(
-            (await window.electron?.pty?.list()) ?? []
-          ).includes('PRIVATE_PROMPT_BODY')
+          JSON.stringify((await window.electron?.pty?.list()) ?? []).includes(
+            'PRIVATE_PROMPT_BODY'
+          )
         ))
       );
       await page.keyboard.press('Escape');
@@ -207,19 +209,92 @@ try {
       );
       check('a child report body never reaches a surface', !leaked);
 
-      // --- a source that reports nothing shows nothing ------------------
+      // --- Codex's owned protocol drives the same three altitudes --------
       await page.keyboard.press('Meta+KeyT');
       await page.locator('[data-agent-composer]').waitFor();
       await startAgentFromLauncher(page, { engine: 'Codex' });
+      const codex = await until(
+        async () =>
+          (await sessions()).find(
+            s =>
+              s.harness === 'codex' &&
+              s.harnessSessionId === fixture.codex.rootId
+          ),
+        'Codex session identity'
+      );
+      const codexDots = page.locator('[data-delegation]').first();
       await until(
-        async () => (await sessions()).find(s => s.harness === 'codex'),
-        'Codex session'
+        async () => (await codexDots.getAttribute('data-delegation')) === '2',
+        'two source-reported Codex children'
       );
-      await page.waitForTimeout(2_500);
       check(
-        'a source with no delegation capability renders nothing at all',
-        (await page.locator('[data-delegation]').count()) === 0
+        'Codex protocol reports an exact two-child Agent census',
+        (await codexDots.getAttribute('data-delegation')) === '2'
       );
+
+      await page.keyboard.press('Control+Meta+2');
+      const codexRail = page
+        .locator('[data-session-delegation-rail]')
+        .filter({ hasText: 'map release' });
+      await codexRail.waitFor();
+      const codexRailText = await codexRail.textContent();
+      check(
+        'Team renders source-owned Codex child labels',
+        codexRailText.includes('map release') &&
+          codexRailText.includes('audit ci')
+      );
+
+      await page.keyboard.press('Escape');
+      await codexRail.waitFor({ state: 'detached' });
+      await page.locator('[data-command-altitude-level="spatial"]').click();
+      await page.locator('[data-spatial-board]').waitFor();
+      await page.locator('[data-board-zone]').first().click();
+      await page.locator('[data-board-agent]').first().waitFor();
+      await until(
+        async () =>
+          (await page.locator('[data-board-delegation-unit]').count()) === 2,
+        'two Codex Fleet child units'
+      );
+      check(
+        'Fleet renders two Codex children through the shared view model',
+        (await page.locator('[data-board-delegation-unit]').count()) === 2
+      );
+
+      const sendCodex = async command =>
+        page.evaluate(
+          async ({ id, data }) => window.electron?.pty?.write(id, data),
+          { id: codex.id, data: `${command}\r` }
+        );
+      await sendCodex(`finish ${fixture.codex.childIds[0]}`);
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === codex.id)?.delegation?.children
+            .length === 1,
+        'one Codex child to complete'
+      );
+      check('Codex child completion correlates by exact thread ID', true);
+
+      await sendCodex('protocol-down');
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === codex.id)?.delegation == null,
+        'Codex protocol loss to withdraw the observation'
+      );
+      const afterProtocolLoss = (await sessions()).find(s => s.id === codex.id);
+      check(
+        'protocol loss fails to absent without a synthetic result',
+        afterProtocolLoss?.delegation == null &&
+          afterProtocolLoss?.attention?.kind !== 'turn-end'
+      );
+
+      await sendCodex('protocol-up');
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === codex.id)?.delegation?.children
+            .length === 1,
+        'Codex reconnect snapshot'
+      );
+      check('Codex reconnect resnapshots authoritative descendants', true);
 
       await page.screenshot({
         path: join(root, 'delegation.png'),
@@ -242,4 +317,4 @@ if (!completed || failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log('PASS delegation visibility (ENG-023 D1)');
+console.log('PASS delegation visibility (ENG-023 D1 / D5)');

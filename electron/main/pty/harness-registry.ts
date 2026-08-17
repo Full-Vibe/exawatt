@@ -49,7 +49,7 @@ export interface HarnessLaunchAgentBinding {
  * empty count or a broken affordance.
  */
 export type DelegationCapability =
-  | { observable: true; mechanism: 'settings-hooks' }
+  | { observable: true; mechanism: 'settings-hooks' | 'protocol' }
   | { observable: false; reason: string };
 
 export interface HarnessLaunchDescriptor {
@@ -189,14 +189,10 @@ const descriptors = {
       authOwner: 'Codex',
     },
     allocatesFreshSessionId: false,
-    // Codex has no Agent/Task tool, and ENG-008 E0 measured zero delegated
-    // records across its whole local corpus. Its hooks are also trust-gated
-    // (`trusted_hash` in config.toml), so Exawatt must not inject silently
-    // even once there is something to report.
-    delegation: {
-      observable: false,
-      reason: 'Codex does not report delegated work',
-    },
+    // The PTY byte stream remains delegation-blind. A separate read-side
+    // app-server adapter version/shape-probes Codex's owned thread protocol
+    // and fails to absent when that protocol cannot be observed.
+    delegation: { observable: true, mechanism: 'protocol' },
     permissionFlags: workspaceReviewFlags,
     modelInvocation: (invocation, quotedModel) =>
       `${invocation} --model ${quotedModel}`,

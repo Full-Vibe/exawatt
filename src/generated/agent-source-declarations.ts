@@ -44,7 +44,7 @@ export const AGENT_SOURCE_DECLARATIONS = [
       modelSelection: 'live-catalog',
       effortSelection: 'live-catalog',
       permissionModes: ['prompt', 'auto', 'unrestricted'],
-      delegationObservation: 'Codex does not report delegated work',
+      delegationObservation: 'Codex app-server parent/child lifecycle',
       enforcementOwner: 'Codex',
     },
   },

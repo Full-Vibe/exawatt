@@ -381,6 +381,15 @@ or responsive behavior. The verified 2026-07-22 trace and supported alternatives
 are recorded in the
 [Agent Terminal Workspace project history](projects/agent-terminal-workspace.md#dogfood-investigation-codex-browser-capability-boundary-2026-07-22).
 
+Codex delegation uses a separate read-side boundary without taking ownership
+of that PTY Session. Electron version- and shape-probes the installed Codex
+app-server, correlates the Session's exact provider thread ID to source-owned
+descendant IDs, and translates reported lifecycle into the shared delegation
+model. Reconnect replaces the observation from a fresh descendant snapshot.
+An unavailable or incompatible protocol withdraws the observation to absent;
+files, worktrees, process trees, and terminal text are never delegation
+evidence.
+
 #### Agent Source registry and connection truth
 
 Settings consumes a source-agnostic Agent Source registry rather than reading
@@ -660,6 +669,11 @@ Built:
   transport noise: output may establish working before a turn settles, while a
   quiet/BEL boundary latches finished until guaranteed operator engagement.
   Shells remain output-driven because they have no Agent turn contract
+- source-reported delegation behind the same Electron-main projection: Claude
+  Code contributes push hooks and Codex contributes a read-side app-server
+  protocol snapshot. Both drive exact child identities through the shared
+  Agent, Team, and Fleet view model; loss of a protocol observation is absent,
+  never an inferred empty team or a synthetic child completion
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a lightweight task + Launch
   Configuration ribbon + Start composer. Its selected configuration carries an

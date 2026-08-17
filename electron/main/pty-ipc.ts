@@ -15,6 +15,7 @@ import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
 import { delegationMonitor } from './harness-events/delegation-monitor';
+import { codexDelegationObserver } from './harness-events/codex-app-server';
 import type { HarnessEvent } from './harness-events/delegation-state';
 import {
   ClosedSessionLedger,
@@ -172,11 +173,12 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // stream it here, so "the team is working" stops depending on byte
   // quiescence. A source without the capability simply never publishes.
   delegationMonitor.attach(harnessEventChannel, ptySessions);
+  codexDelegationObserver.attach(ptySessions, delegationMonitor);
   // One reported-truth source for every inference guard. The monitor
   // subscribes to the record, not to a boolean, so a new reported fact
   // (D4's operator gate) corrects inference without a second wire.
   attentionMonitor.setReportedTurnSource(id => delegationMonitor.get(id));
-  harnessEventChannel.on('event', (id: string, event: HarnessEvent) => {
+  delegationMonitor.on('harness-event', (id: string, event: HarnessEvent) => {
     // A reported turn boundary is stronger evidence than inferred quiescence,
     // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
     // CHILD opens by returning its result: no keystroke precedes it, so

@@ -29,6 +29,11 @@ interface ManagerLike {
   on(event: 'exit', handler: (id: string) => void): void;
 }
 
+export interface DelegationReportSink {
+  report(sessionId: string, event: HarnessEvent): void;
+  clearReportedChildren(sessionId: string): void;
+}
+
 /** Bounds the dropped-session memory; ids are per-launch UUIDs, never
  *  reused, so this only needs to cover plausibly-in-flight stragglers. */
 const DROPPED_CAP = 256;
@@ -48,9 +53,20 @@ export class DelegationMonitor extends EventEmitter {
   private dropped = new Set<string>();
 
   attach(channel: ChannelLike, manager?: ManagerLike): void {
-    channel.on('event', (sessionId, event) => this.apply(sessionId, event));
+    channel.on('event', (sessionId, event) => this.report(sessionId, event));
     // A dead process reports nothing further; its children cannot outlive it.
     manager?.on('exit', (id: string) => this.drop(id));
+  }
+
+  /**
+   * Source-owned events enter one shared path whether they arrive from push
+   * hooks or a protocol adapter. Secondary truth consumers subscribe here,
+   * after the reducer is current, instead of binding to one transport.
+   */
+  report(sessionId: string, event: HarnessEvent): void {
+    if (this.dropped.has(sessionId)) return;
+    this.apply(sessionId, event);
+    this.emit('harness-event', sessionId, event);
   }
 
   apply(sessionId: string, event: HarnessEvent): void {
@@ -115,6 +131,23 @@ export class DelegationMonitor extends EventEmitter {
   /** "The team is working" — outstanding delegated children. */
   isBusy(sessionId: string): boolean {
     return delegationBusy(this.state.get(sessionId));
+  }
+
+  /**
+   * Withdraw an unavailable adapter's observation without claiming that any
+   * child completed. Protocol loss must degrade to absent, never synthesize a
+   * ready-result attention event.
+   */
+  clearReportedChildren(sessionId: string): void {
+    const before = this.state.get(sessionId);
+    if (!before || before.children.length === 0) return;
+    this.state.set(sessionId, { ...before, children: [] });
+    const projected = this.projection(sessionId);
+    this.emit(
+      'delegation',
+      sessionId,
+      delegationIsLive(projected) ? projected : null
+    );
   }
 
   /**

@@ -134,6 +134,8 @@ export type HarnessEvent =
       kind: 'child-start';
       childId: string;
       agentType: string | null;
+      /** Exact source-owned label when a protocol correlates it by child ID. */
+      description?: string | null;
       at: number;
     }
   | { kind: 'child-end'; childId: string };
@@ -332,7 +334,7 @@ export function applyHarnessEvent(
           {
             id: event.childId,
             agentType: event.agentType,
-            description: adopted?.description ?? null,
+            description: event.description ?? adopted?.description ?? null,
             startedAt: event.at,
           },
         ],

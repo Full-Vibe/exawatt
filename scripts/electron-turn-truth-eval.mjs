@@ -102,12 +102,12 @@ try {
         'Codex session'
       );
       check(
-        'an unreporting source carries no turn report at all',
+        'an unavailable protocol carries no turn report at all',
         codex.delegation == null
       );
       await page.waitForTimeout(2_000);
       check(
-        'an unreporting source shows no delegation affordance',
+        'an unavailable protocol shows no delegation affordance',
         (await page.locator('[data-delegation]').count()) === 0
       );
 
