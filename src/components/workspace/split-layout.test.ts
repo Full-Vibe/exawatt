@@ -6,7 +6,12 @@
  * pane, a stopped tab, the ⌘T draft page, or the empty-Project composer.
  */
 import { describe, expect, it } from 'vitest';
-import { nextPin, resolveStageLayout, tabIsPinnable } from './split-layout';
+import {
+  nextPin,
+  resolveComposerSlot,
+  resolveStageLayout,
+  tabIsPinnable,
+} from './split-layout';
 import type { WorkspaceTab } from './use-workspace-state';
 
 const tab = (id: string, over: Partial<WorkspaceTab> = {}): WorkspaceTab => ({
@@ -256,5 +261,155 @@ describe('resolveStageLayout', () => {
     });
     expect(layout.split).toBe(false);
     expect(layout.layoutFor('pin')).toBe('full');
+  });
+});
+
+describe('resolveComposerSlot (BUG-041: the composer keeps its identity)', () => {
+  const stageFor = (options: {
+    entries: ReturnType<typeof entry>[];
+    activeTabId: string | null;
+    emptyProjectStage: boolean;
+    pinnedTabId?: string | null;
+  }) =>
+    resolveStageLayout({
+      entries: options.entries,
+      activeTabId: options.activeTabId,
+      emptyProjectStage: options.emptyProjectStage,
+      pinnedTabId: options.pinnedTabId ?? null,
+      companionTabId: null,
+    });
+
+  const slotFor = (options: {
+    entries: ReturnType<typeof entry>[];
+    activeTabId: string | null;
+    emptyProjectStage: boolean;
+    pinnedTabId?: string | null;
+    draftDiscards?: number;
+  }) =>
+    resolveComposerSlot({
+      entries: options.entries,
+      stage: stageFor(options),
+      activeProjectDir: '/project',
+      draftDiscards: options.draftDiscards ?? 0,
+    });
+
+  /**
+   * The regression. Materialising the draft tab used to move the composer to a
+   * different render site, which remounted it and closed the setup drawer the
+   * operator was standing in. One identity across that moment is what keeps
+   * React reconciling in place, so an identity that changes here IS the bug.
+   */
+  it('does not change identity when the first draft intent creates the tab', () => {
+    const before = slotFor({
+      entries: [],
+      activeTabId: null,
+      emptyProjectStage: true,
+    });
+    const after = slotFor({
+      entries: [entry(draft('draft-1'))],
+      activeTabId: 'draft-1',
+      emptyProjectStage: false,
+    });
+    expect(before?.tab).toBeNull();
+    expect(before?.layout).toBe('full');
+    expect(after?.tab?.id).toBe('draft-1');
+    expect(after?.layout).toBe('full');
+    expect(after?.key).toBe(before?.key);
+  });
+
+  it('keeps that identity through a ⌘T draft the operator never launched', () => {
+    const empty = slotFor({
+      entries: [],
+      activeTabId: null,
+      emptyProjectStage: true,
+    });
+    const summoned = slotFor({
+      entries: [entry(draft('draft-9'))],
+      activeTabId: 'draft-9',
+      emptyProjectStage: false,
+    });
+    expect(summoned?.key).toBe(empty?.key);
+  });
+
+  it('gives the composer a NEW identity once a draft is discarded', () => {
+    const before = slotFor({
+      entries: [entry(draft('draft-1'))],
+      activeTabId: 'draft-1',
+      emptyProjectStage: false,
+    });
+    const afterDiscard = slotFor({
+      entries: [],
+      activeTabId: null,
+      emptyProjectStage: true,
+      draftDiscards: 1,
+    });
+    expect(afterDiscard?.key).not.toBe(before?.key);
+  });
+
+  it('gives each Project its own composer', () => {
+    const here = resolveComposerSlot({
+      entries: [],
+      stage: stageFor({
+        entries: [],
+        activeTabId: null,
+        emptyProjectStage: true,
+      }),
+      activeProjectDir: '/project',
+      draftDiscards: 0,
+    });
+    const there = resolveComposerSlot({
+      entries: [],
+      stage: stageFor({
+        entries: [],
+        activeTabId: null,
+        emptyProjectStage: true,
+      }),
+      activeProjectDir: '/other',
+      draftDiscards: 0,
+    });
+    expect(there?.key).not.toBe(here?.key);
+  });
+
+  it('drives the left side of a split and keeps its identity there too', () => {
+    const empty = slotFor({
+      entries: [entry(tab('watched'))],
+      activeTabId: null,
+      emptyProjectStage: true,
+      pinnedTabId: 'watched',
+    });
+    const withDraft = slotFor({
+      entries: [entry(tab('watched')), entry(draft('draft-2'))],
+      activeTabId: 'draft-2',
+      emptyProjectStage: false,
+      pinnedTabId: 'watched',
+    });
+    expect(empty?.layout).toBe('left');
+    expect(withDraft?.layout).toBe('left');
+    expect(withDraft?.key).toBe(empty?.key);
+  });
+
+  it('renders no composer when a Session holds the stage', () => {
+    expect(
+      slotFor({
+        entries: [entry(tab('a'))],
+        activeTabId: 'a',
+        emptyProjectStage: false,
+      })
+    ).toBeNull();
+  });
+
+  it('renders no composer without an open Project', () => {
+    expect(
+      resolveComposerSlot({
+        entries: [],
+        stage: stageFor({
+          entries: [],
+          activeTabId: null,
+          emptyProjectStage: false,
+        }),
+        activeProjectDir: null,
+        draftDiscards: 0,
+      })
+    ).toBeNull();
   });
 });

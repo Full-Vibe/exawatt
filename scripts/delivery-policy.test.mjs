@@ -317,16 +317,22 @@ test('several gated surfaces in one change owe each gate once', () => {
     'src/components/workspace/project-ribbon-motion.ts',
     'src/components/workspace/launcher/agent-launcher.tsx',
   ]);
+  // The launcher owes FOUR gates since BUG-041 lifted the quarantine on the
+  // two Electron ones. That is the point of the row: a quarantined gate is a
+  // surface with less evidence than it looks, and `agent-launcher.tsx` had
+  // exactly that until the drawer stopped closing on its own first axis.
   assert.deepEqual(missing.map(entry => entry.gate).sort(), [
+    'eval:electron:idempotency',
+    'eval:electron:lifecycle',
     'eval:workspace:launcher',
     'eval:workspace:ribbon:bench',
   ]);
 });
 
-// Quarantine is the mechanism for a gate whose own script is red. Both of the
-// first two were repaired the same week they were found, so nothing is
-// quarantined today — the rule stays tested so the next red gate is announced
-// rather than deleted.
+// Quarantine is the mechanism for a gate whose own script is red. Every one so
+// far has been repaired within days of being found — BUG-041 took the last two
+// out — so nothing is quarantined today. The rule stays tested so the next red
+// gate is announced rather than deleted.
 test('a repaired gate is enforced again, not quarantined', () => {
   const files = ['src/components/nav/nav-history.ts'];
   // BUG-035: the back stack owes BOTH. `eval:navigation` walks the altitude

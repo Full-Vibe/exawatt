@@ -417,9 +417,18 @@ try {
   const firstAgentTab = finalWorkspace.projects
     .flatMap(project => project.tabs)
     .find(tab => tab.harness !== 'shell');
+  // Through the boundary the renderer actually has. `retainedHistory` returns
+  // the whole transcript and lives in MAIN on purpose (BUG-012, incident
+  // 0008): opening a paused Agent used to JSON-parse megabytes across IPC and
+  // freeze the app, so the preload publishes `retainedTranscript`, already
+  // rendered and bounded. This eval kept calling the removed name and died on
+  // `retainedHistory is not a function` at its last step.
   const retained = await page.evaluate(
     async durableId =>
-      (await window.electron?.pty?.retainedHistory(durableId))?.text ?? '',
+      (
+        (await window.electron?.pty?.retainedTranscript(durableId, 5_000))
+          ?.lines ?? []
+      ).join('\n'),
     firstAgentTab.durableSessionId
   );
   for (let generation = 1; generation <= GENERATIONS; generation++) {

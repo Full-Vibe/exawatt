@@ -676,6 +676,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** split view (S2): this tab renders beside the active one ("watch one,
    *  drive one"); null = no split */
   const [pinnedTabId, setPinnedTabId] = useState<string | null>(null);
+  /**
+   * How many drafts have been thrown away (BUG-041).
+   *
+   * The empty-Project composer and the draft tab that continues it are ONE
+   * React element, so materialising that tab must not remount the surface the
+   * operator is mid-gesture in. That continuity has to end somewhere, and a
+   * DISCARDED draft is the only place it should: the composer that replaces a
+   * thrown-away draft is a new one and must not inherit its task or its setup.
+   *
+   * Deliberately a count, not a Record keyed by Project. Only the active
+   * Project's composer is ever mounted, and a draft can only be closed from
+   * the Project it belongs to, so a per-Project key would buy precision no
+   * reachable interaction can observe — while making this hook hold a
+   * `Record<string, …>` that is not keyed by a Session identity, which is the
+   * one thing `session-scope.test.tsx` asks it never to do (BUG-037).
+   */
+  const [draftDiscards, setDraftDiscards] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [resumeBatchProgress, setResumeBatchProgress] =
     useState<ResumeBatchProgress | null>(null);
@@ -2005,6 +2022,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (tab.lifecycle === 'draft') {
           // ⌘T ⌘W is a friction-free no-op — nothing exists yet
           removeTabFromLayout(tabId);
+          // …and the empty-Project composer that takes its place is a NEW
+          // draft, not the one just discarded (BUG-041).
+          setDraftDiscards(current => current + 1);
           return { kind: 'discarded' };
         }
         const goal = summariesRef.current[tab.durableSessionId] ?? null;
@@ -2843,6 +2863,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     error,
     resumeBatchProgress,
     closedSessionCount,
+    draftDiscards,
     setError,
     dismissReentryRecap,
     ready,

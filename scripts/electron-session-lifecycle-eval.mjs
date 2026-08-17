@@ -337,8 +337,16 @@ try {
   const ready = page.getByRole('region', { name: 'Saved Agent recovery' });
   await ready.waitFor();
   await page.getByText('Shell', { exact: true }).last().click();
+  // A paused Session shows a RECORD, not a replayed terminal (BUG-013,
+  // incident 0008), and an unreadable transcript SAYS so rather than swapping
+  // in an empty pane. The pre-record pane's 'Retained history unavailable'
+  // line has not existed in the product since; this eval was still waiting
+  // 25s for it.
+  const transcriptButton = page.locator('[data-show-transcript]');
+  await transcriptButton.waitFor();
+  await transcriptButton.click();
   await page
-    .getByText('Retained history unavailable', { exact: true })
+    .getByText('Saved history could not be read.', { exact: true })
     .waitFor();
   await page.screenshot({ path: join(screenshots, 'restored-1400x900.png') });
   await page.setViewportSize({ width: 800, height: 600 });

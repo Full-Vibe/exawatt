@@ -112,3 +112,61 @@ export function resolveStageLayout(options: {
 
   return { pinned, driven, split, stagePane, layoutFor };
 }
+
+export interface ComposerSlot {
+  /** The draft tab hosting the composer, or null before one exists. */
+  tab: WorkspaceTab | null;
+  dir: string;
+  layout: PaneLayout;
+  /**
+   * The composer's React identity. STABLE across the moment a draft intent
+   * materialises the draft tab, which is the whole point: see below.
+   */
+  key: string;
+}
+
+/**
+ * Where the new-Agent composer renders, and — the load-bearing part — WHO it
+ * is while it renders there (BUG-041).
+ *
+ * The composer an empty Project shows and the composer a ⌘T draft tab shows
+ * are the same surface at two moments of one gesture: the operator's first
+ * draft intent is what materialises the tab. Resolving them as two render
+ * sites made that materialisation a REMOUNT, so adjusting the first axis of a
+ * setup closed the drawer holding it, dropped the settled engine catalog, and
+ * took the caret with it. One slot, one identity, and React reconciles it in
+ * place instead — nothing has to be carried across a hand-off that no longer
+ * tears anything down.
+ *
+ * The identity ends only where the draft does. `draftDiscards` counts the
+ * drafts the operator has thrown away, so the composer that replaces a
+ * discarded draft is a NEW one and cannot inherit its task or its setup.
+ */
+export function resolveComposerSlot(options: {
+  entries: StageTabRef[];
+  stage: StageLayout;
+  activeProjectDir: string | null;
+  draftDiscards: number;
+}): ComposerSlot | null {
+  const { entries, stage, activeProjectDir, draftDiscards } = options;
+  const draft =
+    entries.find(
+      entry =>
+        entry.tab.lifecycle === 'draft' &&
+        stage.layoutFor(entry.tab.id) !== 'hidden'
+    ) ?? null;
+  const dir = draft
+    ? draft.dir
+    : stage.stagePane !== 'hidden'
+      ? activeProjectDir
+      : null;
+  if (dir === null) return null;
+  const layout = draft ? stage.layoutFor(draft.tab.id) : stage.stagePane;
+  if (layout === 'hidden') return null;
+  return {
+    tab: draft?.tab ?? null,
+    dir,
+    layout,
+    key: `composer:${dir}#${draftDiscards}`,
+  };
+}
