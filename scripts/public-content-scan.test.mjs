@@ -28,6 +28,7 @@ function png(...chunks) {
 
 test('generic text checks reject real identities and accept fixture vocabulary', () => {
   const unapprovedEmail = ['person', 'company.dev'].join('@');
+  const nonIconImageAddress = ['poster', '2x.png'].join('@');
   const unapprovedHome = ['/Users', 'specific-name', 'project'].join('/');
   const findings = findTextFindings(
     `${unapprovedEmail}\n${unapprovedHome}`,
@@ -44,6 +45,7 @@ test('generic text checks reject real identities and accept fixture vocabulary',
         'agent@example.com',
         'agent@source.test',
         'i@izs.me',
+        'icon_16x16@2x.png',
         'privacy@exawatt.ai',
         'git@github.com:example/repository.git',
         '/Users/tester/project',
@@ -52,6 +54,13 @@ test('generic text checks reject real identities and accept fixture vocabulary',
       'clean-fixture.txt'
     ),
     []
+  );
+
+  assert.deepEqual(
+    findTextFindings(nonIconImageAddress, 'unsafe-image-name.txt').map(
+      entry => entry.rule
+    ),
+    ['unapproved-email']
   );
 });
 

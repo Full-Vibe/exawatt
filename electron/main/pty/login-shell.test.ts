@@ -72,7 +72,7 @@ describe('startup files never execute inside a Project', () => {
   it('spawns a commanded shell in scratch and enters the Project after', () => {
     const plan = planLoginShell('/opt/homebrew/bin/fish', {
       command: 'claude --resume x',
-      directory: '/Users/jake/Code/exawatt',
+      directory: '/Users/tester/Code/exawatt',
       scratchDir: SCRATCH,
     });
     expect(plan.cwd).toBe(SCRATCH);
@@ -80,7 +80,7 @@ describe('startup files never execute inside a Project', () => {
     expect(plan.args).toEqual([
       '-l',
       '-c',
-      "cd -- '/Users/jake/Code/exawatt' || exit 1\nclaude --resume x",
+      "cd -- '/Users/tester/Code/exawatt' || exit 1\nclaude --resume x",
     ]);
   });
 
@@ -88,12 +88,16 @@ describe('startup files never execute inside a Project', () => {
     // `-C` is documented to evaluate "after reading the configuration", so it
     // is the only post-startup entry point an interactive shell offers.
     const plan = planLoginShell('/opt/homebrew/bin/fish', {
-      directory: '/Users/jake/Code/exawatt',
+      directory: '/Users/tester/Code/exawatt',
       scratchDir: SCRATCH,
     });
     expect(plan.cwd).toBe(SCRATCH);
     expect(plan.startupIsolated).toBe(true);
-    expect(plan.args).toEqual(['-l', '-C', "cd -- '/Users/jake/Code/exawatt'"]);
+    expect(plan.args).toEqual([
+      '-l',
+      '-C',
+      "cd -- '/Users/tester/Code/exawatt'",
+    ]);
   });
 
   it('says so honestly when a family offers no post-startup entry', () => {
@@ -101,10 +105,10 @@ describe('startup files never execute inside a Project', () => {
     // interactive login shell still starts in the Project. The plan reports it
     // rather than pretending otherwise.
     const plan = planLoginShell('/bin/zsh', {
-      directory: '/Users/jake/Code/exawatt',
+      directory: '/Users/tester/Code/exawatt',
       scratchDir: SCRATCH,
     });
-    expect(plan.cwd).toBe('/Users/jake/Code/exawatt');
+    expect(plan.cwd).toBe('/Users/tester/Code/exawatt');
     expect(plan.startupIsolated).toBe(false);
   });
 

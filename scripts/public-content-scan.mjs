@@ -78,6 +78,10 @@ function finding(file, rule, message, source, offset = 0) {
 
 export function isApprovedEmail(address) {
   const normalized = address.toLowerCase();
+  // Apple iconsets require literal names such as icon_16x16@2x.png. Keep the
+  // exception exact so an arbitrary image-like or unapproved address still
+  // enters the publication findings.
+  if (/^icon_(\d+)x\1@2x\.png$/u.test(normalized)) return true;
   if (APPROVED_PUBLIC_EMAILS.has(normalized)) return true;
   const domain = normalized.slice(normalized.lastIndexOf('@') + 1);
   if (RESERVED_EMAIL_DOMAINS.has(domain)) return true;
