@@ -10,6 +10,11 @@ vi.mock('next/navigation', () => ({
 }));
 
 import { TabStrip } from './tab-strip';
+import {
+  fleetAttention,
+  mergeFleetAttention,
+  NO_FLEET_ATTENTION,
+} from './session-status';
 import type { CloneSessionTarget } from './session-clone';
 import type { SessionAttentionSignal } from './status-glyphs';
 import { DELEGATION_DOT_CAP } from './session-status';
@@ -96,7 +101,7 @@ function strip({
           activeDir="/repo"
           pinnedTabId={null}
           summaries={summaries}
-          attention={attention}
+          attention={mergeFleetAttention(fleetAttention('pty', attention))}
           activity={activity}
           engaged={engaged}
           delegation={nextDelegation}
@@ -286,7 +291,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
           activeDir="/repo"
           pinnedTabId={null}
           summaries={{}}
-          attention={{}}
+          attention={NO_FLEET_ATTENTION}
           activity={{}}
           engaged={{}}
           onTogglePinTab={vi.fn()}

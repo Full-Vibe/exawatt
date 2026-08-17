@@ -47,21 +47,174 @@ export function mergeSessionAttentionSignals(
   );
 }
 
-/** Compose independent attention producers by Session identity. Keeping this
- * next to signal precedence prevents render and navigation surfaces from
- * accidentally reintroducing object-spread/last-writer semantics. */
-export function mergeSessionAttentionMaps(
-  ...sources: Array<Readonly<Record<string, SessionAttentionSignal>>>
+/**
+ * A producer must declare WHAT IT LOOKED AT (BUG-026).
+ *
+ * Attention is composed from independent producers, and a merged map that
+ * carries only signals cannot tell "this Session is fine" apart from "the
+ * producer that would know never looked at it". That gap shipped: PTY
+ * attention was fleet-wide, roadmap attention was computed from the ACTIVE
+ * Project's lens alone, and both were merged into one map the tab strip, the
+ * Project dot and the ⌘J queue read as complete. A Session blocked on a
+ * roadmap item in any other Project wore no marker and ⌘J would not visit it
+ * — until the operator happened to stand in that Project, when it appeared.
+ *
+ * `fleet` means the producer watches every live Session in every open
+ * Project. `sessions` names exactly the Sessions it can speak for; everything
+ * else it is ASKED about comes back unknown, never quiet.
+ */
+export type AttentionScope =
+  | { readonly kind: 'fleet' }
+  | { readonly kind: 'sessions'; readonly sessionIds: ReadonlySet<string> };
+
+export interface AttentionSource {
+  /** producer name; an unknown answer names the producers that were blind */
+  readonly id: string;
+  readonly scope: AttentionScope;
+  readonly signals: Readonly<Record<string, SessionAttentionSignal>>;
+}
+
+/** A producer whose lens covers the whole fleet. Only these compose into the
+ *  complete map a fleet-wide surface is allowed to paint from. */
+export interface FleetAttentionSource extends AttentionSource {
+  readonly scope: { readonly kind: 'fleet' };
+}
+
+/** Declare a fleet-wide producer. Writing this is the claim: this map has an
+ *  entry for every live Session that needs one, wherever the operator is. */
+export function fleetAttention(
+  id: string,
+  signals: Readonly<Record<string, SessionAttentionSignal>>
+): FleetAttentionSource {
+  return { id, scope: { kind: 'fleet' }, signals };
+}
+
+/** Declare a narrow producer: it can only answer for the Sessions it names. */
+export function scopedAttention(
+  id: string,
+  signals: Readonly<Record<string, SessionAttentionSignal>>,
+  sessionIds: Iterable<string>
+): AttentionSource {
+  return {
+    id,
+    scope: { kind: 'sessions', sessionIds: new Set(sessionIds) },
+    signals,
+  };
+}
+
+declare const FLEET_ATTENTION: unique symbol;
+
+/**
+ * A signal map proven complete: every producer behind it covers every
+ * Session. Only `mergeFleetAttention` mints one, so a map you may index
+ * directly is a map whose silence means "quiet", not "unwatched".
+ */
+export type FleetAttentionSignals = Readonly<
+  Record<string, SessionAttentionSignal>
+> & {
+  readonly [FLEET_ATTENTION]: 'fleet';
+};
+
+/** Partial knowledge deliberately has no record form: you must interrogate it
+ *  through `attentionAt` and handle the unknown answer. */
+export interface SessionAttentionView {
+  readonly signals: Readonly<Record<string, SessionAttentionSignal>>;
+  /** the INTERSECTION of the sources' scopes (see `mergeAttention`) */
+  readonly scope: AttentionScope;
+  readonly sources: readonly AttentionSource[];
+}
+
+export type AttentionKnowledge =
+  | {
+      readonly known: true;
+      readonly signal: SessionAttentionSignal | undefined;
+    }
+  /** at least one producer never looked at this Session */
+  | { readonly known: false; readonly unseenBy: readonly string[] };
+
+function mergedSignals(
+  sources: readonly AttentionSource[]
 ): Record<string, SessionAttentionSignal> {
-  const sessionIds = new Set(sources.flatMap(source => Object.keys(source)));
+  const sessionIds = new Set(
+    sources.flatMap(source => Object.keys(source.signals))
+  );
   const merged: Record<string, SessionAttentionSignal> = {};
   for (const sessionId of sessionIds) {
     const signal = mergeSessionAttentionSignals(
-      ...sources.map(source => source[sessionId])
+      ...sources.map(source => source.signals[sessionId])
     );
     if (signal) merged[sessionId] = signal;
   }
   return merged;
+}
+
+/**
+ * Compose independent producers by Session identity, keeping signal
+ * precedence (never object-spread/last-writer) AND their coverage.
+ *
+ * Coverage is the INTERSECTION of the sources' scopes, because attention is a
+ * disjunction: for a Session to read quiet, EVERY producer must have looked
+ * at it. One narrow producer therefore narrows the whole view — which is
+ * precisely what the pre-BUG-026 merge did silently, and now cannot.
+ */
+export function mergeAttention(
+  ...sources: AttentionSource[]
+): SessionAttentionView {
+  const narrow = sources
+    .map(source => source.scope)
+    .filter(
+      (scope): scope is { kind: 'sessions'; sessionIds: ReadonlySet<string> } =>
+        scope.kind === 'sessions'
+    );
+  const scope: AttentionScope =
+    narrow.length === 0
+      ? { kind: 'fleet' }
+      : {
+          kind: 'sessions',
+          sessionIds: narrow.reduce<Set<string>>(
+            (covered, source) =>
+              new Set([...covered].filter(id => source.sessionIds.has(id))),
+            new Set(narrow[0].sessionIds)
+          ),
+        };
+  return { signals: mergedSignals(sources), scope, sources };
+}
+
+/**
+ * The merge every fleet-wide surface consumes. It accepts only producers that
+ * declared a fleet lens, so a future producer with a narrow one cannot reach
+ * the tab strip, the Project dot or ⌘J without saying so — and saying so
+ * stops compiling here.
+ */
+export function mergeFleetAttention(
+  ...sources: FleetAttentionSource[]
+): FleetAttentionSignals {
+  return mergedSignals(sources) as FleetAttentionSignals;
+}
+
+/**
+ * The empty complete map: every producer looked, nobody needs the operator.
+ * Surfaces and fixtures with no attention wiring at all say this instead of
+ * casting a bare object, so "no signals" stays distinguishable from "no
+ * producer" even in a fixture.
+ */
+export const NO_FLEET_ATTENTION: FleetAttentionSignals = mergeFleetAttention();
+
+/** Ask a possibly-partial view about one Session. Outside its coverage the
+ *  answer is unknown and names the producers that never looked. */
+export function attentionAt(
+  view: SessionAttentionView,
+  sessionId: string
+): AttentionKnowledge {
+  const unseenBy = view.sources
+    .filter(
+      source =>
+        source.scope.kind === 'sessions' &&
+        !source.scope.sessionIds.has(sessionId)
+    )
+    .map(source => source.id);
+  if (unseenBy.length > 0) return { known: false, unseenBy };
+  return { known: true, signal: view.signals[sessionId] };
 }
 
 /**
@@ -85,6 +238,10 @@ export function mergeSessionAttentionMaps(
  * surface that paints or navigates attention calls it rather than restating
  * it. `live` is the caller's `tabIsLive(tab)`; keeping it a plain boolean is
  * what lets this module stay render-free and free of workspace types.
+ *
+ * The map is a `FleetAttentionSignals` (BUG-026): one rule over an incomplete
+ * map still lies, so the rule only accepts a map whose producers all cover
+ * the fleet.
  */
 export interface AttentionCandidate {
   sessionId: string | null;
@@ -93,7 +250,7 @@ export interface AttentionCandidate {
 
 export function paintsAttention(
   candidate: AttentionCandidate,
-  attention: Readonly<Record<string, SessionAttentionSignal>>
+  attention: FleetAttentionSignals
 ): boolean {
   if (!candidate.sessionId || !candidate.live) return false;
   return attentionNeedsOperator(attention[candidate.sessionId]);
@@ -106,7 +263,7 @@ export function paintsAttention(
  */
 export function attentionJumpQueue(
   candidates: readonly AttentionCandidate[],
-  attention: Readonly<Record<string, SessionAttentionSignal>>,
+  attention: FleetAttentionSignals,
   activeSessionId: string | null
 ): string[] {
   const painted = new Set<string>();
@@ -122,7 +279,7 @@ export function attentionJumpQueue(
 
 /** One ordering function feeds both command availability and navigation. */
 export function orderedAttentionTargets(
-  attention: Record<string, SessionAttentionSignal>,
+  attention: FleetAttentionSignals,
   activeSessionId: string | null
 ): string[] {
   return Object.entries(attention)

@@ -48,6 +48,8 @@ import {
 import {
   orderedAttentionTargets,
   attentionNeedsOperator,
+  fleetAttention,
+  mergeFleetAttention,
 } from '@/components/workspace/session-status';
 import type {
   Project,
@@ -125,7 +127,12 @@ export function DemoWorkspaceClient() {
   const [projects, setProjects] = useState(() => demoShellProjects());
   const [closedTabs, setClosedTabs] = useState<ClosedDemoTab[]>([]);
   const summaries = useMemo(() => demoShellSummaries(), []);
-  const attention = useMemo(() => demoShellAttention(), []);
+  // Demo Mode's attention channel covers the whole demo fleet, exactly as
+  // main's PTY channel covers the real one; it says so for the same reason.
+  const attention = useMemo(
+    () => mergeFleetAttention(fleetAttention('demo', demoShellAttention())),
+    []
+  );
   const activity = useMemo(() => demoShellActivity(), []);
   const engaged = useMemo(() => demoShellEngaged(), []);
   const delegation = useMemo(() => demoShellDelegation(), []);

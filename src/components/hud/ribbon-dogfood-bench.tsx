@@ -30,7 +30,11 @@ import type {
   Project,
   WorkspaceTab,
 } from '@/components/workspace/use-workspace-state';
-import type { SessionAttentionSignal } from '@/components/workspace/session-status';
+import {
+  fleetAttention,
+  mergeFleetAttention,
+  type SessionAttentionSignal,
+} from '@/components/workspace/session-status';
 import type { SessionDelegation } from '@/types/electron';
 
 const COLORS = [
@@ -234,6 +238,12 @@ export function RibbonDogfoodBench() {
   const [attention, setAttention] = useState<
     Record<string, SessionAttentionSignal>
   >({});
+  // The bench drives the REAL strip, so it declares its fixture the same way
+  // the workspace declares main's PTY channel: a complete fleet map.
+  const benchAttention = useMemo(
+    () => mergeFleetAttention(fleetAttention('ribbon-bench', attention)),
+    [attention]
+  );
   const [activity, setActivity] = useState<Record<string, boolean>>({});
   const [visibilityRows, setVisibilityRows] = useState<VisibilityRow[]>([]);
   const [resizeLog, setResizeLog] = useState<
@@ -473,7 +483,7 @@ export function RibbonDogfoodBench() {
                 activeDir={activeDir}
                 pinnedTabId={null}
                 summaries={summaries}
-                attention={attention}
+                attention={benchAttention}
                 activity={activity}
                 engaged={engaged}
                 delegation={BENCH_DELEGATION}

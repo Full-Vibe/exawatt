@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionDelegation } from '@/types/electron';
 import { deriveProjectRibbonSignal } from './project-ribbon-signal';
+import { fleetAttention, mergeFleetAttention } from './session-status';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 
 function tab(id: string, lifecycle: WorkspaceTab['lifecycle'] = 'running') {
@@ -41,7 +42,9 @@ function signal(
   return deriveProjectRibbonSignal({
     project,
     summaries: overrides.summaries ?? {},
-    attention: overrides.attention ?? {},
+    attention: mergeFleetAttention(
+      fleetAttention('test', overrides.attention ?? {})
+    ),
     activity: overrides.activity ?? {},
     engaged: overrides.engaged ?? {},
     delegation: overrides.delegation ?? {},

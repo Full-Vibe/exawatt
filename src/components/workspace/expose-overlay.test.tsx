@@ -10,6 +10,7 @@ import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { ExposeOverlay } from './expose-overlay';
+import { NO_FLEET_ATTENTION } from './session-status';
 import type { Project } from './use-workspace-state';
 
 const { loadGoalVisualPreference, saveGoalVisualPreference } = vi.hoisted(
@@ -112,7 +113,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -137,7 +138,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         goalVisuals={{
           'durable-b': {
             identityKey: 'workspace:one:goal:investor-demo',
@@ -175,7 +176,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         initiativeByTab={{
           'tab-b': {
             id: 'init-demo',
@@ -204,7 +205,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={onPick}
         onClose={vi.fn()}
@@ -221,7 +222,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         delegation={{
           'session-b': {
             ownTurn: 'available',
@@ -294,7 +295,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={[...projects, emptyProject]}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId={null}
         activeProjectDir="/empty"
         onPick={vi.fn()}
@@ -320,7 +321,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-b"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -359,7 +360,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -402,7 +403,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -439,7 +440,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={onPick}
         onClose={vi.fn()}
@@ -503,7 +504,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={created}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activity={{ 'session-n1': true }}
         activeTabId="n1"
         onPick={vi.fn()}
@@ -541,7 +542,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activity={{}}
         activeTabId="tab-a"
         onPick={vi.fn()}
@@ -562,7 +563,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activity={{ 'session-b': true }}
         activeTabId="tab-a"
         onPick={vi.fn()}
@@ -586,7 +587,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onResumeTab={onResumeTab}
@@ -614,7 +615,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onResumeTab={onResumeTab}
@@ -639,7 +640,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onSelectionChange={onSelectionChange}
@@ -672,7 +673,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -686,7 +687,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-b"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -703,7 +704,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={onPick}
         onClose={onClose}
@@ -729,7 +730,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onClose={onClose}
@@ -750,7 +751,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={projects}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-a"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -782,7 +783,7 @@ describe('Sessions overview', () => {
         <ExposeOverlay
           projects={projects}
           summaries={{}}
-          attention={{}}
+          attention={NO_FLEET_ATTENTION}
           activeTabId="tab-a"
           onPick={vi.fn()}
           onClose={vi.fn()}
@@ -818,7 +819,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={[untitled]}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-untitled"
         onPick={vi.fn()}
         onClose={vi.fn()}
@@ -874,7 +875,7 @@ describe('Sessions overview', () => {
       <ExposeOverlay
         projects={[draftProject]}
         summaries={{}}
-        attention={{}}
+        attention={NO_FLEET_ATTENTION}
         activeTabId="tab-d"
         onPick={vi.fn()}
         onClose={vi.fn()}

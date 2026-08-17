@@ -16,19 +16,20 @@
  * Pure; no hooks. Callers memoize with their own dependency lists.
  */
 import type { SessionLink } from '@exawatt/core';
+import type { RoadmapAttentionSession } from '@exawatt/ui-model';
 import type { RoadmapSessionDescriptor } from '@/components/roadmap/use-project-roadmap';
 import {
   paintsAttention,
   sessionLensTurnState,
   sessionTurnFacts,
-  type SessionAttentionSignal,
+  type FleetAttentionSignals,
   type SessionTurnSources,
 } from './session-status';
 import { tabIsLive, type WorkspaceTab } from './use-workspace-state';
 
 export function projectRoadmapSessions(
   tabs: readonly WorkspaceTab[] | undefined,
-  attention: Readonly<Record<string, SessionAttentionSignal>>,
+  attention: FleetAttentionSignals,
   sources: SessionTurnSources
 ): RoadmapSessionDescriptor[] {
   return (tabs ?? [])
@@ -50,6 +51,34 @@ export function projectRoadmapSessions(
         facts: sessionTurnFacts(t, sources),
         attention: attention[t.sessionId as string],
       }),
+    }));
+}
+
+/**
+ * The FLEET attention producer's projection of one Project's live Sessions
+ * (BUG-026). Every open Project is projected this way, not just the active
+ * one, so the marker, the Project dot and ⌘J agree wherever the operator is
+ * standing.
+ *
+ * Deliberately narrower than `projectRoadmapSessions`: no turn facts and no
+ * attention. Whether an item is blocked has nothing to do with whether bytes
+ * are moving, and depending on those channels here would recompute every
+ * Project's roadmap links on every PTY tick.
+ */
+export function projectRoadmapAttentionSessions(
+  tabs: readonly WorkspaceTab[] | undefined,
+  summaries: Record<string, string>
+): RoadmapAttentionSession[] {
+  return (tabs ?? [])
+    .filter(t => t.sessionId && tabIsLive(t))
+    .map(t => ({
+      sessionId: t.sessionId as string,
+      tabId: t.id,
+      title: t.title,
+      cwd: t.cwd,
+      contextSummary: summaries[t.durableSessionId] ?? null,
+      initialTask: t.initialTask,
+      declaredItemId: t.roadmapItemId,
     }));
 }
 

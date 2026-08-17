@@ -31,7 +31,7 @@ import {
   sessionLensTurnState,
   sessionTurnFacts,
 } from './status-glyphs';
-import type { SessionAttentionSignal } from './status-glyphs';
+import type { FleetAttentionSignals } from './status-glyphs';
 import {
   sessionCurrentStateCopy,
   sessionDisplayCopy,
@@ -155,7 +155,7 @@ export function ExposeOverlay({
   projects: Project[];
   summaries: Record<string, string>;
   /** presence-only (S8 merges roadmap-derived entries) */
-  attention: Record<string, SessionAttentionSignal>;
+  attention: FleetAttentionSignals;
   /** sessions actively producing output, keyed by sessionId (D18) */
   activity?: Record<string, boolean>;
   /** sessions ever given work, keyed by sessionId (D22) */

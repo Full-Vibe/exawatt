@@ -277,6 +277,26 @@ lab is back to the real strip + rail against fixture states.
 
 ## Progress log (second arc)
 
+- 2026-08-16, S8 attention goes fleet-wide (BUG-026, narrative in
+  `daily-driver-adoption.md`): S8 shipped roadmap attention derived from the
+  ACTIVE Project's lens, so a blocked Session with an agent attached painted a
+  marker and joined ⌘J only while the operator stood in that Project — the
+  defect this doc's 2026-07-11 review already recorded as deferred
+  ("cross-project roadmap attention needs a multi-project lens (future)").
+  Closed. `useFleetRoadmapAttention` now derives blocked Sessions across every
+  OPEN Project from `deriveFleetRoadmapBlocked`, at one read per Project per
+  Project-set change / focus / that Project's own file-change broadcast,
+  parsing only when mtime moves. It links git-free (declared id, worktree
+  path, title, context, task): branch and commit evidence cost a process per
+  Session and stay the active Project lens's DISPLAY enrichment, because a
+  signal that exists only where you are standing is the bug. `since` pins are
+  no longer pruned against one view (`pinRoadmapBlockedSince`), so the
+  oldest-first walk survives Project switches. The hook is also the sole owner
+  of roadmap file watching — `useProjectRoadmap` listens to the broadcast and
+  no longer watches/unwatches, since two owners of one per-directory watcher
+  blind each other. `orderedRoadmapJumpTargets` is deleted: ⌘J has walked the
+  merged attention queue since D51.
+
 - 2026-07-20, S12 landed (operator: "roadmap only visible in Sessions — the
   zoomed-out view"): the lens re-homed to the Sessions altitude. The rail is
   a permanent docked panel in the Sessions overlay, scoped to the overview's

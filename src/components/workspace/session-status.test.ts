@@ -6,8 +6,13 @@ import {
   delegationCopy,
   delegationElapsedLabel,
   delegationRailRows,
-  mergeSessionAttentionMaps,
+  attentionAt,
+  fleetAttention,
+  mergeAttention,
+  mergeFleetAttention,
   mergeSessionAttentionSignals,
+  NO_FLEET_ATTENTION,
+  scopedAttention,
   orderedAttentionTargets,
   SESSION_GLYPH_COPY,
   sessionDelegationBusy,
@@ -70,9 +75,11 @@ describe('sessionStatusLightState', () => {
       )
     ).toEqual({ kind: 'bell', since: 30 });
     expect(
-      mergeSessionAttentionMaps(
-        { shared: { kind: 'turn-end', since: 20 } },
-        { shared: { kind: 'roadmap-blocked', since: 10 } }
+      mergeFleetAttention(
+        fleetAttention('pty', { shared: { kind: 'turn-end', since: 20 } }),
+        fleetAttention('roadmap', {
+          shared: { kind: 'roadmap-blocked', since: 10 },
+        })
       )
     ).toEqual({ shared: { kind: 'roadmap-blocked', since: 10 } });
   });
@@ -80,12 +87,14 @@ describe('sessionStatusLightState', () => {
   it('orders only visible operator targets and skips the active Session', () => {
     expect(
       orderedAttentionTargets(
-        {
-          result: { kind: 'turn-end', since: 1 },
-          active: { kind: 'bell', since: 2 },
-          later: { kind: 'roadmap-blocked', since: 4 },
-          earlier: { kind: 'bell', since: 3 },
-        },
+        mergeFleetAttention(
+          fleetAttention('pty', {
+            result: { kind: 'turn-end', since: 1 },
+            active: { kind: 'bell', since: 2 },
+            later: { kind: 'roadmap-blocked', since: 4 },
+            earlier: { kind: 'bell', since: 3 },
+          })
+        ),
         'active'
       )
     ).toEqual(['earlier', 'later']);
@@ -347,9 +356,13 @@ describe('delegation elapsed labels', () => {
 describe('attention eligibility is one rule (BUG-009)', () => {
   const bell = { kind: 'bell' as const, since: 10 };
   const older = { kind: 'bell' as const, since: 1 };
+  /** One producer, and it covers the fleet — the tests below are about
+   *  eligibility, not coverage (that contract lives in its own block). */
+  const fleet = (signals: Record<string, SessionAttentionSignal>) =>
+    mergeFleetAttention(fleetAttention('pty', signals));
 
   it('paints exactly what the queue will visit', () => {
-    const attention = { 's1': bell };
+    const attention = fleet({ 's1': bell });
     const live = { sessionId: 's1', live: true };
     const dead = { sessionId: 's1', live: false };
     expect(paintsAttention(live, attention)).toBe(true);
@@ -360,14 +373,14 @@ describe('attention eligibility is one rule (BUG-009)', () => {
 
   it('reaches a marked Session whose process already exited', () => {
     // the exact shape of the regression: adopted, still `live`, exit code set
-    const attention = { 's1': bell };
+    const attention = fleet({ 's1': bell });
     expect(
       attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
     ).toEqual(['s1']);
   });
 
   it('never navigates to a Session carrying no visible marker', () => {
-    const attention = { 's1': bell };
+    const attention = fleet({ 's1': bell });
     // s2 has no signal at all; s3 is not live
     const queue = attentionJumpQueue(
       [
@@ -382,7 +395,7 @@ describe('attention eligibility is one rule (BUG-009)', () => {
   });
 
   it('keeps the oldest-first order and skips where you already are', () => {
-    const attention = { 's1': bell, 's2': older };
+    const attention = fleet({ 's1': bell, 's2': older });
     const candidates = [
       { sessionId: 's1', live: true },
       { sessionId: 's2', live: true },
@@ -395,14 +408,75 @@ describe('attention eligibility is one rule (BUG-009)', () => {
   });
 
   it('a finished turn is a result to read, not an operator gate', () => {
-    const attention = { 's1': { kind: 'turn-end' as const, since: 1 } };
+    const attention = fleet({ 's1': { kind: 'turn-end' as const, since: 1 } });
     expect(
       attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
     ).toEqual([]);
   });
 
   it('ignores a candidate with no session id', () => {
-    expect(paintsAttention({ sessionId: null, live: true }, {})).toBe(false);
+    expect(
+      paintsAttention({ sessionId: null, live: true }, NO_FLEET_ATTENTION)
+    ).toBe(false);
+  });
+});
+
+// ── BUG-026: one shared rule fed an INCOMPLETE map still lies. PTY attention
+// was fleet-wide, roadmap attention was the active Project's lens only, and
+// the merge could not express the difference — so a Session blocked in
+// another Project came back from the map indistinguishable from a quiet one.
+describe('a producer declares its scope (BUG-026)', () => {
+  const blocked = { kind: 'roadmap-blocked' as const, since: 10 };
+  // "the operator is standing in Project B": a producer that only looked at
+  // B's Sessions. `a1` lives in Project A and is blocked, unseen.
+  const narrow = scopedAttention('roadmap', { b1: blocked }, ['b1']);
+  const pty = fleetAttention('pty', {});
+
+  it('answers unknown outside a source scope, never quiet', () => {
+    const view = mergeAttention(pty, narrow);
+    expect(attentionAt(view, 'b1')).toEqual({ known: true, signal: blocked });
+    expect(attentionAt(view, 'a1')).toEqual({
+      known: false,
+      unseenBy: ['roadmap'],
+    });
+  });
+
+  it('narrows the whole view: one blind producer blinds the merge', () => {
+    const view = mergeAttention(pty, narrow);
+    expect(view.scope).toEqual({ kind: 'sessions', sessionIds: new Set(['b1']) });
+    // and coverage is the INTERSECTION, not the union
+    const other = scopedAttention('other', {}, ['b1', 'c1']);
+    expect(mergeAttention(narrow, other).scope).toEqual({
+      kind: 'sessions',
+      sessionIds: new Set(['b1']),
+    });
+  });
+
+  it('cannot be merged as if it were complete', () => {
+    // The whole prevention, in one line: a narrow producer has no way into
+    // the map the strip, the Project dot and ⌘J paint from.
+    // @ts-expect-error a scoped producer is not a fleet producer
+    mergeFleetAttention(pty, narrow);
+    // ...and a partial merge has no record form, so it cannot be handed to a
+    // fleet-wide surface either.
+    const view = mergeAttention(pty, narrow);
+    // @ts-expect-error a partial view is not a proven-complete signal map
+    paintsAttention({ sessionId: 'a1', live: true }, view);
+    // @ts-expect-error same for the jump queue
+    attentionJumpQueue([{ sessionId: 'a1', live: true }], view, null);
+  });
+
+  it('stays complete when every producer covers the fleet', () => {
+    const view = mergeAttention(pty, fleetAttention('roadmap', { b1: blocked }));
+    expect(view.scope).toEqual({ kind: 'fleet' });
+    expect(attentionAt(view, 'a1')).toEqual({ known: true, signal: undefined });
+    const signals = mergeFleetAttention(
+      pty,
+      fleetAttention('roadmap', { b1: blocked })
+    );
+    expect(attentionJumpQueue([{ sessionId: 'b1', live: true }], signals, null)).toEqual(
+      ['b1']
+    );
   });
 });
 

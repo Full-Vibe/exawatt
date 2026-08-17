@@ -42,6 +42,9 @@ import type { SessionDelegation } from '@/types/electron';
 // state model itself stays usable from render-free mapping code.
 export {
   attentionNeedsOperator,
+  fleetAttention,
+  mergeFleetAttention,
+  NO_FLEET_ATTENTION,
   ATTENTION_GLYPH_COPY,
   DELEGATION_DOT_CAP,
   delegationCopy,
@@ -57,6 +60,7 @@ export {
   sessionTurnFacts,
 } from './session-status';
 export type {
+  FleetAttentionSignals,
   SessionAttentionSignal,
   SessionGlyphState,
   SessionTurnFacts,

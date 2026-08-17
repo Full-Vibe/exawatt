@@ -86,9 +86,9 @@ import {
   useProjectRoadmap,
   type RoadmapSessionDescriptor,
 } from '@/components/roadmap/use-project-roadmap';
+import { useFleetRoadmapAttention } from '@/components/roadmap/use-fleet-roadmap-attention';
 import {
   findRoadmapSessionChip,
-  deriveRoadmapBlockedSessions,
   type RoadmapItemView,
 } from '@exawatt/ui-model';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
@@ -115,12 +115,14 @@ import {
 import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
 import {
   projectDeclaredLinks,
+  projectRoadmapAttentionSessions,
   projectRoadmapSessions,
 } from './roadmap-lens-input';
 import {
   attentionJumpQueue,
   attentionNeedsOperator,
-  mergeSessionAttentionMaps,
+  fleetAttention,
+  mergeFleetAttention,
   sessionGlyphState,
   sessionLensTurnState,
   sessionTurnFacts,
@@ -659,15 +661,22 @@ export function WorkspaceClient() {
   // items by inference (S3); the same view feeds the rail and the
   // context-bar reciprocal chip. One projection shared with the Team
   // altitude (roadmap-lens-input.ts) so the two cannot drift.
+  // PTY attention is fleet-wide: main reports a bell or a turn boundary for
+  // every live Session, not only the focused Project's. Declaring that is
+  // what lets the merge below tell a quiet Session from an unwatched one.
+  const ptyAttention = useMemo(
+    () => mergeFleetAttention(fleetAttention('pty', attention)),
+    [attention]
+  );
   const roadmapSessions = useMemo(
     () =>
-      projectRoadmapSessions(activeProject?.tabs, attention, {
+      projectRoadmapSessions(activeProject?.tabs, ptyAttention, {
         activity,
         engaged,
         summaries,
         delegation,
       }),
-    [activeProject, activity, attention, delegation, engaged, summaries]
+    [activeProject, activity, ptyAttention, delegation, engaged, summaries]
   );
   const declaredLinks = useMemo(
     () => projectDeclaredLinks(activeProject?.tabs, activeProject?.dir ?? ''),
@@ -702,29 +711,25 @@ export function WorkspaceClient() {
       : null;
 
   // roadmap-derived attention (S8): blocked items with agents attached join
-  // the SAME needs-you truth as terminal bells — badges and ⌘J, one pipeline.
-  // `since` is pinned on first sight so the ⌘J oldest-first order is stable.
-  const roadmapBlockedSince = useRef(new Map<string, number>());
-  const roadmapAttention = useMemo(() => {
-    const out: Record<string, { kind: 'roadmap-blocked'; since: number }> = {};
-    const blocked = deriveRoadmapBlockedSessions(roadmapView);
-    const seen = new Set<string>();
-    for (const entry of blocked) {
-      seen.add(entry.sessionId);
-      const since =
-        roadmapBlockedSince.current.get(entry.sessionId) ?? Date.now();
-      roadmapBlockedSince.current.set(entry.sessionId, since);
-      out[entry.sessionId] = { kind: 'roadmap-blocked', since };
-    }
-    for (const key of [...roadmapBlockedSince.current.keys()]) {
-      if (!seen.has(key)) roadmapBlockedSince.current.delete(key);
-    }
-    return out;
-  }, [roadmapView]);
+  // the SAME needs-you truth as terminal bells — markers and ⌘J, one
+  // pipeline. It is derived across EVERY open Project (BUG-026): it used to
+  // be read off the active Project's lens and merged into a map three
+  // fleet-wide surfaces trusted as complete, so a Project you were not
+  // standing in reported clean and ⌘J skipped it.
+  const roadmapAttentionProjects = useMemo(
+    () =>
+      projects.map(project => ({
+        dir: project.dir,
+        sessions: projectRoadmapAttentionSessions(project.tabs, summaries),
+      })),
+    [projects, summaries]
+  );
+  const roadmapAttention = useFleetRoadmapAttention(roadmapAttentionProjects);
   // Attention sources compose. A quiet harness result must never mask an
-  // independent roadmap block for the same Session.
+  // independent roadmap block for the same Session, and neither producer may
+  // narrow what the fleet-wide surfaces below are allowed to read.
   const mergedAttention = useMemo(
-    () => mergeSessionAttentionMaps(attention, roadmapAttention),
+    () => mergeFleetAttention(fleetAttention('pty', attention), roadmapAttention),
     [attention, roadmapAttention]
   );
   // Eligibility is the SAME rule the surfaces paint with (D51). It used to be
