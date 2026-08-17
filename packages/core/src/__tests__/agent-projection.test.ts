@@ -129,7 +129,7 @@ describe('agent topology projection (ENG-010 C0)', () => {
     ).toEqual([{ name: 'Priya', state: 'retired' }]);
   });
 
-  it('keeps two coworkers distinct when one Gateway exposes both', () => {
+  it('pins the authored two-Gateway topology and keeps Tyler distinct despite repeated bare native ids', () => {
     const result = successful(
       projectAgentTopology(
         CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES,
@@ -142,11 +142,82 @@ describe('agent topology projection (ENG-010 C0)', () => {
     const scout = result.projection.agents.find(
       agent => agent.displayName === 'Scout'
     )!;
+    const tyler = result.projection.agents.find(
+      agent => agent.displayName === 'Tyler'
+    )!;
+
+    expect(CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES).toHaveLength(2);
+    expect(
+      CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES.map(snapshot => ({
+        source: snapshot.configuredSourceId,
+        gateway: snapshot.gatewayId,
+        coworkers: snapshot.agents.map(agent => ({
+          name: agent.displayName,
+          state: agent.discoveryState,
+        })),
+      }))
+    ).toEqual([
+      {
+        source: 'fixture-openclaw-source-a',
+        gateway: 'fixture-openclaw-gateway-a',
+        coworkers: [
+          { name: 'Marcus', state: 'configured' },
+          { name: 'Scout', state: 'configured' },
+        ],
+      },
+      {
+        source: 'fixture-openclaw-source-b',
+        gateway: 'fixture-openclaw-gateway-b',
+        coworkers: [
+          { name: 'Tyler', state: 'configured' },
+          { name: 'Priya', state: 'retired' },
+        ],
+      },
+    ]);
 
     expect(marcus.configuredSourceId).toBe(scout.configuredSourceId);
     expect(marcus.gatewayId).toBe(scout.gatewayId);
     expect(marcus.id).not.toBe(scout.id);
     expect(marcus.nativeAgentId).not.toBe(scout.nativeAgentId);
+    expect(marcus.nativeAgentId).toBe('primary');
+    expect(tyler.nativeAgentId).toBe('primary');
+    expect(marcus.primaryConversation?.nativeContextId).toBe(
+      'agent:primary:main'
+    );
+    expect(tyler.primaryConversation?.nativeContextId).toBe(
+      'agent:primary:main'
+    );
+    expect(marcus.configuredSourceId).not.toBe(tyler.configuredSourceId);
+    expect(marcus.gatewayId).not.toBe(tyler.gatewayId);
+    expect(marcus.id).not.toBe(tyler.id);
+  });
+
+  it('can explicitly project retired Priya without erasing her source state', () => {
+    const priyaMapping = {
+      configuredSourceId: 'fixture-openclaw-source-b',
+      nativeAgentId: 'legacy',
+      exawattAgentId: 'fixture-agent-priya',
+      projectId: 'fixture-project-reddit-priya',
+      displayNameOverride: null,
+    } as const;
+    const result = successful(
+      projectAgentTopology(
+        CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES,
+        plan([...CONNECTED_OPENCLAW_PROJECTION_PLAN.mappings, priyaMapping])
+      )
+    );
+    const priya = result.projection.agents.find(
+      agent => agent.displayName === 'Priya'
+    );
+
+    expect(priya).toMatchObject({
+      id: 'fixture-agent-priya',
+      configuredSourceId: 'fixture-openclaw-source-b',
+      nativeAgentId: 'legacy',
+      discoveryState: 'retired',
+      projectId: 'fixture-project-reddit-priya',
+    });
+    expect(result.projection.unprojectedAgents).toEqual([]);
   });
 
   it('qualifies repeated native Agent and context ids without delimiter collisions', () => {
@@ -197,6 +268,28 @@ describe('agent topology projection (ENG-010 C0)', () => {
       ).size
     ).toBe(2);
   });
+
+  it.each(['observed', 'declared', 'simulated'] as const)(
+    'projects %s evidence through the same source-neutral kernel',
+    evidenceBasis => {
+      const source = {
+        ...topology(
+          `source-evidence-${evidenceBasis}`,
+          [agent(`source-evidence-${evidenceBasis}`, 'worker', 'Worker')],
+          [context(`source-evidence-${evidenceBasis}`, 'worker', 'main')]
+        ),
+        evidenceBasis,
+      } satisfies AgentSourceTopologySnapshot;
+      const result = successful(
+        projectAgentTopology(
+          [source],
+          plan([mapping(source.configuredSourceId, 'worker')])
+        )
+      );
+
+      expect(result.projection.agents[0]!.evidenceBasis).toBe(evidenceBasis);
+    }
+  );
 
   it('uses the declared primary conversation even when subordinate work is newer', () => {
     const source = topology(
@@ -326,6 +419,26 @@ describe('agent topology projection (ENG-010 C0)', () => {
     expect(issueCodes(result)).toContain('multiple-primary-conversations');
   });
 
+  it('rejects ambiguous primary conversations before an Agent is selected for projection', () => {
+    const sourceId = 'source-unprojected-duplicate-primary';
+    const result = projectAgentTopology(
+      [
+        topology(
+          sourceId,
+          [agent(sourceId, 'retired-worker')],
+          [
+            context(sourceId, 'retired-worker', 'main-a'),
+            context(sourceId, 'retired-worker', 'main-b'),
+          ]
+        ),
+      ],
+      plan([])
+    );
+
+    expect(result.ok).toBe(false);
+    expect(issueCodes(result)).toContain('multiple-primary-conversations');
+  });
+
   it.each([
     {
       label: 'native Agent identity',
@@ -358,6 +471,36 @@ describe('agent topology projection (ENG-010 C0)', () => {
     );
     expect(result.ok).toBe(false);
     expect(issueCodes(result)).toContain(code);
+  });
+
+  it('fails closed on duplicate configured sources and duplicate source-Agent mappings', () => {
+    const snapshot = topology(
+      'source-duplicate-boundary',
+      [agent('source-duplicate-boundary', 'worker')],
+      [context('source-duplicate-boundary', 'worker', 'main')]
+    );
+    const sourceMapping = mapping('source-duplicate-boundary', 'worker');
+
+    const duplicateSourceResult = projectAgentTopology(
+      [snapshot, clone(snapshot)],
+      plan([sourceMapping])
+    );
+    const duplicateMappingResult = projectAgentTopology(
+      [snapshot],
+      plan([
+        sourceMapping,
+        {
+          ...sourceMapping,
+          exawattAgentId: 'exa-second-projection',
+          projectId: 'project-second-projection',
+        },
+      ])
+    );
+
+    expect(duplicateSourceResult.ok).toBe(false);
+    expect(issueCodes(duplicateSourceResult)).toContain('duplicate-source');
+    expect(duplicateMappingResult.ok).toBe(false);
+    expect(issueCodes(duplicateMappingResult)).toContain('duplicate-mapping');
   });
 
   it('fails closed when two source Agents map to one Exawatt Agent id', () => {
@@ -479,6 +622,51 @@ describe('agent topology projection (ENG-010 C0)', () => {
     ).toContain('cross-agent-parent');
   });
 
+  it.each([
+    {
+      label: 'self-parenting',
+      contexts: [
+        context('source-cyclic-self', 'worker', 'main', {
+          parent: {
+            configuredSourceId: 'source-cyclic-self',
+            nativeAgentId: 'worker',
+            nativeContextId: 'main',
+          },
+        }),
+      ],
+      sourceId: 'source-cyclic-self',
+    },
+    {
+      label: 'a multi-context cycle',
+      contexts: [
+        context('source-cyclic-pair', 'worker', 'a', {
+          parent: {
+            configuredSourceId: 'source-cyclic-pair',
+            nativeAgentId: 'worker',
+            nativeContextId: 'b',
+          },
+        }),
+        context('source-cyclic-pair', 'worker', 'b', {
+          roles: [],
+          parent: {
+            configuredSourceId: 'source-cyclic-pair',
+            nativeAgentId: 'worker',
+            nativeContextId: 'a',
+          },
+        }),
+      ],
+      sourceId: 'source-cyclic-pair',
+    },
+  ])('fails closed on $label context lineage', ({ contexts, sourceId }) => {
+    const result = projectAgentTopology(
+      [topology(sourceId, [agent(sourceId, 'worker')], contexts)],
+      plan([mapping(sourceId, 'worker')])
+    );
+
+    expect(result.ok).toBe(false);
+    expect(issueCodes(result)).toContain('cyclic-context-lineage');
+  });
+
   it('fails closed on an unsupported projection version', () => {
     const unsupported = {
       ...CONNECTED_OPENCLAW_PROJECTION_PLAN,
@@ -579,6 +767,37 @@ describe('agent topology projection (ENG-010 C0)', () => {
     }
   });
 
+  it.each([
+    {
+      label: 'a BigInt context id',
+      malformedId: BigInt(1),
+    },
+    {
+      label: 'a circular-object context id',
+      malformedId: (() => {
+        const value: { self?: unknown } = {};
+        value.self = value;
+        return value;
+      })(),
+    },
+  ])('fails closed instead of throwing on $label', ({ malformedId }) => {
+    const sourceId = 'source-malformed-context-id';
+    const malformedContext = {
+      ...context(sourceId, 'worker', 'main'),
+      nativeContextId: malformedId,
+    } as unknown as SourceContextRecord;
+    let result: AgentProjectionResult | undefined;
+
+    expect(() => {
+      result = projectAgentTopology(
+        [topology(sourceId, [agent(sourceId, 'worker')], [malformedContext])],
+        plan([mapping(sourceId, 'worker')])
+      );
+    }).not.toThrow();
+    expect(result!.ok).toBe(false);
+    expect(issueCodes(result!)).toContain('invalid-context');
+  });
+
   it('rejects an adapter id outside the declared Agent Source contract', () => {
     const snapshot = {
       ...topology(
@@ -595,6 +814,35 @@ describe('agent topology projection (ENG-010 C0)', () => {
 
     expect(result.ok).toBe(false);
     expect(issueCodes(result)).toContain('invalid-source');
+  });
+
+  it('does not propagate unknown source, Agent, context, or mapping fields across the projection boundary', () => {
+    const sourceId = 'source-allowlisted-copy';
+    const sourceAgent = {
+      ...agent(sourceId, 'worker', 'Worker'),
+      endpointSentinel: 'sentinel-agent-endpoint-value',
+    } as unknown as SourceAgentRecord;
+    const sourceContext = {
+      ...context(sourceId, 'worker', 'main'),
+      credentialSentinel: 'sentinel-context-credential-value',
+    } as unknown as SourceContextRecord;
+    const source = {
+      ...topology(sourceId, [sourceAgent], [sourceContext]),
+      connectionSentinel: 'sentinel-source-connection-value',
+    } as unknown as AgentSourceTopologySnapshot;
+    const sourceMapping = {
+      ...mapping(sourceId, 'worker'),
+      privateKeySentinel: 'sentinel-mapping-private-key-value',
+    } as unknown as AgentProjectionPlanV1['mappings'][number];
+
+    const result = successful(
+      projectAgentTopology([source], plan([sourceMapping]))
+    );
+    const serialized = JSON.stringify(result);
+
+    expect(result.issues).toEqual([]);
+    expect(serialized).not.toContain('Sentinel');
+    expect(serialized).not.toContain('sentinel-');
   });
 
   it('applies display-name and Project remaps without mutating source truth or its plan', () => {
@@ -678,45 +926,86 @@ describe('agent topology projection (ENG-010 C0)', () => {
     expect(projectAgentTopology(reordered, reorderedPlan)).toEqual(baseline);
   });
 
-  it('keeps the dogfood fixture free of connection and operator payload material', () => {
+  it('keeps the authored fixture inside an explicit public-safe schema and value boundary', () => {
     const fixture = {
       snapshots: CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES,
       plan: CONNECTED_OPENCLAW_PROJECTION_PLAN,
     };
-    const keys: string[] = [];
+    const allowedKeys = new Set([
+      'snapshots',
+      'plan',
+      'configuredSourceId',
+      'adapterId',
+      'placement',
+      'gatewayId',
+      'observedAt',
+      'evidenceBasis',
+      'agents',
+      'contexts',
+      'nativeAgentId',
+      'displayName',
+      'discoveryState',
+      'nativeContextId',
+      'kind',
+      'nativeKind',
+      'roles',
+      'parent',
+      'nativeRunId',
+      'createdAt',
+      'lastActiveAt',
+      'projectionVersion',
+      'mappings',
+      'exawattAgentId',
+      'projectId',
+      'displayNameOverride',
+    ]);
+    const keys = new Set<string>();
+    const stringValues: string[] = [];
     const visit = (value: unknown): void => {
       if (Array.isArray(value)) {
         value.forEach(visit);
         return;
       }
+      if (typeof value === 'string') {
+        stringValues.push(value);
+        return;
+      }
       if (!value || typeof value !== 'object') return;
       for (const [key, child] of Object.entries(value)) {
-        keys.push(key.toLowerCase().replaceAll('-', '').replaceAll('_', ''));
+        keys.add(key);
         visit(child);
       }
     };
     visit(fixture);
 
-    for (const forbidden of [
-      'endpoint',
-      'ip',
-      'credential',
-      'secret',
-      'password',
-      'token',
-      'path',
-      'prompt',
-      'schedule',
-    ]) {
-      expect(
-        keys.filter(key => key.includes(forbidden)),
-        forbidden
-      ).toEqual([]);
+    for (const key of keys) {
+      expect(allowedKeys.has(key), `unexpected fixture field: ${key}`).toBe(
+        true
+      );
     }
 
-    const serialized = JSON.stringify(fixture);
-    expect(serialized).not.toMatch(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
-    expect(serialized).not.toMatch(/(?:[a-f\d]{1,4}:){2,}[a-f\d]{0,4}/i);
-    expect(serialized).not.toMatch(/(?:\/Users\/|~\/\.|ssh-|@|\.com\b)/i);
+    const serializedValues = JSON.stringify(stringValues);
+    const forbiddenValues: ReadonlyArray<readonly [string, RegExp]> = [
+      ['URL', /\b(?:https?|wss?|ssh):\/\//i],
+      ['domain', /\b(?:[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?\.)+[a-z]{2,63}\b/i],
+      [
+        'host-and-port endpoint',
+        /\b(?:localhost|[a-z][a-z\d-]*|(?:\d{1,3}\.){3}\d{1,3}):\d{2,5}\b/i,
+      ],
+      ['IPv4 address', /\b(?:\d{1,3}\.){3}\d{1,3}\b/],
+      ['IPv6 address', /\b(?:[a-f\d]{1,4}:){2,}[a-f\d]{0,4}\b/i],
+      ['PEM material', /-----BEGIN [A-Z ]+-----/],
+      ['filesystem path', /(?:\/Users\/|\/home\/|\/root\/|~\/\.?|[a-z]:\\)/i],
+      ['SSH key material', /\b(?:ssh-(?:rsa|ed25519)|sk-ssh-)\b/i],
+      [
+        'credential material',
+        /\b(?:bearer\s+|api[_-]?key|password|passwd|secret|access[_-]?token)\b/i,
+      ],
+      ['user-qualified endpoint', /\b[^\s"']+@[^\s"']+\b/],
+    ];
+
+    for (const [label, pattern] of forbiddenValues) {
+      expect(serializedValues, label).not.toMatch(pattern);
+    }
   });
 });

@@ -5,11 +5,13 @@ import {
 } from '../agent-projection';
 
 /**
- * Public-safe simulation of the first ENG-010 topology.
+ * Public-safe, authored simulation based only on the operator-confirmed
+ * conceptual shape of the first ENG-010 topology: two Gateways, the active
+ * coworkers Marcus, Scout, and Tyler, plus retired Priya.
  *
- * All source, Gateway, context, run, Agent, and Project identifiers are
- * invented. The fixture intentionally contains no connection material,
- * source payloads, or facts copied from a live installation.
+ * Every technical identifier, timestamp, context/run lineage relationship,
+ * and payload value is invented. Nothing here was copied from a live
+ * installation, endpoint, credential, filesystem, or source payload.
  */
 const FIXTURE_OBSERVED_AT = 1_800_000_000_000;
 const MINUTE_MS = 60_000;

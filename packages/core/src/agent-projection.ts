@@ -1,7 +1,61 @@
-import type {
-  AgentSourceAdapterId,
-  AgentSourceEvidenceBasis,
+import {
+  AGENT_SOURCE_ADAPTER_IDS,
+  AGENT_SOURCE_EVIDENCE_BASES,
+  type AgentSourceAdapterId,
+  type AgentSourceEvidenceBasis,
 } from './agent-sources';
+
+/** Runtime vocabularies are also the source of their compile-time unions. */
+export const AGENT_SOURCE_PLACEMENTS = [
+  'local',
+  'customer-hosted',
+  'exawatt-hosted',
+] as const;
+export type AgentSourcePlacement = (typeof AGENT_SOURCE_PLACEMENTS)[number];
+
+export const SOURCE_AGENT_DISCOVERY_STATES = [
+  'configured',
+  'retired',
+  'unknown',
+] as const;
+export type SourceAgentDiscoveryState =
+  (typeof SOURCE_AGENT_DISCOVERY_STATES)[number];
+
+export const SOURCE_CONTEXT_KINDS = [
+  'main',
+  'channel',
+  'cron',
+  'helper',
+  'spawned',
+  'other',
+] as const;
+export type SourceContextKind = (typeof SOURCE_CONTEXT_KINDS)[number];
+
+export const SOURCE_CONTEXT_ROLES = ['primary-conversation'] as const;
+export type SourceContextRole = (typeof SOURCE_CONTEXT_ROLES)[number];
+
+/*
+ * Sets make untrusted boundary checks cheap; their values come only from the
+ * exported tuples above, so runtime validation cannot drift from the unions.
+ */
+const AGENT_SOURCE_ADAPTER_ID_SET: ReadonlySet<string> = new Set(
+  AGENT_SOURCE_ADAPTER_IDS
+);
+const AGENT_SOURCE_EVIDENCE_BASIS_SET: ReadonlySet<string> = new Set(
+  AGENT_SOURCE_EVIDENCE_BASES
+);
+const AGENT_SOURCE_PLACEMENT_SET: ReadonlySet<string> = new Set(
+  AGENT_SOURCE_PLACEMENTS
+);
+const SOURCE_AGENT_DISCOVERY_STATE_SET: ReadonlySet<string> = new Set(
+  SOURCE_AGENT_DISCOVERY_STATES
+);
+const SOURCE_CONTEXT_KIND_SET: ReadonlySet<string> = new Set(
+  SOURCE_CONTEXT_KINDS
+);
+const SOURCE_CONTEXT_ROLE_SET: ReadonlySet<string> = new Set(
+  SOURCE_CONTEXT_ROLES
+);
 
 /**
  * Source-neutral Agent projection (ENG-010 C0).
@@ -12,23 +66,6 @@ import type {
  */
 
 export const AGENT_PROJECTION_VERSION = 1 as const;
-
-export type AgentSourcePlacement =
-  | 'local'
-  | 'customer-hosted'
-  | 'exawatt-hosted';
-
-export type SourceAgentDiscoveryState = 'configured' | 'retired' | 'unknown';
-
-export type SourceContextKind =
-  | 'main'
-  | 'channel'
-  | 'cron'
-  | 'helper'
-  | 'spawned'
-  | 'other';
-
-export type SourceContextRole = 'primary-conversation';
 
 export interface SourceAgentRef {
   configuredSourceId: string;
@@ -116,6 +153,7 @@ export type AgentProjectionIssueCode =
   | 'cross-source-parent'
   | 'cross-agent-parent'
   | 'orphan-parent-context'
+  | 'cyclic-context-lineage'
   | 'multiple-primary-conversations'
   | 'primary-conversation-missing'
   | 'invalid-mapping'
@@ -145,40 +183,6 @@ export type AgentProjectionResult =
 
 const MAX_ID_LENGTH = 4096;
 const MAX_LABEL_LENGTH = 512;
-const SOURCE_AGENT_DISCOVERY_STATES = new Set<SourceAgentDiscoveryState>([
-  'configured',
-  'retired',
-  'unknown',
-]);
-const SOURCE_CONTEXT_KINDS = new Set<SourceContextKind>([
-  'main',
-  'channel',
-  'cron',
-  'helper',
-  'spawned',
-  'other',
-]);
-const SOURCE_CONTEXT_ROLES = new Set<SourceContextRole>([
-  'primary-conversation',
-]);
-const EVIDENCE_BASES = new Set<AgentSourceEvidenceBasis>([
-  'observed',
-  'declared',
-  'simulated',
-]);
-const AGENT_SOURCE_ADAPTER_IDS = new Set<AgentSourceAdapterId>([
-  'claude',
-  'codex',
-  'opencode',
-  'grok',
-  'openclaw',
-  'demo',
-]);
-const PLACEMENTS = new Set<AgentSourcePlacement>([
-  'local',
-  'customer-hosted',
-  'exawatt-hosted',
-]);
 
 /** Collision-safe, deterministic key for one source-native Agent. */
 export function sourceAgentKey(ref: SourceAgentRef): string {
@@ -250,15 +254,104 @@ function sortedIssues(
 }
 
 function copyAgent(agent: SourceAgentRecord): SourceAgentRecord {
-  return { ...agent };
+  return {
+    configuredSourceId: agent.configuredSourceId,
+    nativeAgentId: agent.nativeAgentId,
+    displayName: agent.displayName,
+    discoveryState: agent.discoveryState,
+  };
+}
+
+function copyContextRef(ref: SourceContextRef): SourceContextRef {
+  return {
+    configuredSourceId: ref.configuredSourceId,
+    nativeAgentId: ref.nativeAgentId,
+    nativeContextId: ref.nativeContextId,
+  };
 }
 
 function copyContext(context: SourceContextRecord): SourceContextRecord {
   return {
-    ...context,
-    parent: context.parent ? { ...context.parent } : null,
+    configuredSourceId: context.configuredSourceId,
+    nativeAgentId: context.nativeAgentId,
+    nativeContextId: context.nativeContextId,
+    kind: context.kind,
+    nativeKind: context.nativeKind,
+    parent: context.parent ? copyContextRef(context.parent) : null,
     roles: [...context.roles],
+    nativeRunId: context.nativeRunId,
+    ...(context.createdAt === undefined
+      ? {}
+      : { createdAt: context.createdAt }),
+    ...(context.lastActiveAt === undefined
+      ? {}
+      : { lastActiveAt: context.lastActiveAt }),
   };
+}
+
+function copyMapping(mapping: AgentProjectionMapping): AgentProjectionMapping {
+  return {
+    configuredSourceId: mapping.configuredSourceId,
+    nativeAgentId: mapping.nativeAgentId,
+    exawattAgentId: mapping.exawattAgentId,
+    projectId: mapping.projectId,
+    displayNameOverride: mapping.displayNameOverride,
+  };
+}
+
+/**
+ * Find cycles in the valid same-source, same-Agent parent graph. Each context
+ * has at most one parent, so an iterative walk remains safe for deep lineage.
+ */
+function contextLineageCycles(
+  contexts: ReadonlyMap<string, SourceContextRecord>
+): string[][] {
+  const processed = new Set<string>();
+  const cycles: string[][] = [];
+  const keys = [...contexts.keys()].sort(compareText);
+
+  for (const startKey of keys) {
+    if (processed.has(startKey)) continue;
+
+    const path: string[] = [];
+    const positionByKey = new Map<string, number>();
+    let currentKey: string | null = startKey;
+
+    while (
+      currentKey !== null &&
+      !processed.has(currentKey) &&
+      !positionByKey.has(currentKey)
+    ) {
+      positionByKey.set(currentKey, path.length);
+      path.push(currentKey);
+
+      const current = contexts.get(currentKey);
+      const parent = current?.parent;
+      if (
+        !current ||
+        !parent ||
+        parent.configuredSourceId !== current.configuredSourceId ||
+        parent.nativeAgentId !== current.nativeAgentId
+      ) {
+        currentKey = null;
+        break;
+      }
+
+      const parentKey = sourceContextKey(parent);
+      currentKey = contexts.has(parentKey) ? parentKey : null;
+    }
+
+    if (currentKey !== null) {
+      const cycleStart = positionByKey.get(currentKey);
+      if (cycleStart !== undefined) {
+        cycles.push(path.slice(cycleStart).sort(compareText));
+      }
+    }
+
+    for (const key of path) processed.add(key);
+  }
+
+  return cycles.sort((left, right) => compareText(left[0]!, right[0]!));
 }
 
 /**
@@ -283,7 +376,7 @@ export function projectAgentTopology(
         'error',
         'unsupported-projection-version',
         'plan.projectionVersion',
-        `Unsupported Agent projection version: ${String(projectionVersion)}`
+        `Agent projection version must be ${AGENT_PROJECTION_VERSION}.`
       )
     );
   }
@@ -306,19 +399,7 @@ export function projectAgentTopology(
       )
     );
   }
-  const orderedSnapshots = snapshotValues
-    .map((snapshot, index) => ({ snapshot, index }))
-    .sort((left, right) => {
-      const leftId = isRecord(left.snapshot)
-        ? String(left.snapshot.configuredSourceId ?? '')
-        : '';
-      const rightId = isRecord(right.snapshot)
-        ? String(right.snapshot.configuredSourceId ?? '')
-        : '';
-      return compareText(leftId, rightId) || left.index - right.index;
-    });
-
-  for (const { snapshot: candidateSnapshot, index } of orderedSnapshots) {
+  for (const [index, candidateSnapshot] of snapshotValues.entries()) {
     if (!isRecord(candidateSnapshot)) {
       issues.push(
         issue(
@@ -330,20 +411,21 @@ export function projectAgentTopology(
       );
       continue;
     }
-    const snapshot =
-      candidateSnapshot as unknown as AgentSourceTopologySnapshot;
-    const sourcePath = validText(snapshot.configuredSourceId)
-      ? `sources.${snapshot.configuredSourceId}`
+    const sourcePath = validText(candidateSnapshot.configuredSourceId)
+      ? `sources.${candidateSnapshot.configuredSourceId}`
       : `sources.${index}`;
     const sourceValid =
-      validText(snapshot.configuredSourceId) &&
-      AGENT_SOURCE_ADAPTER_IDS.has(snapshot.adapterId) &&
-      PLACEMENTS.has(snapshot.placement) &&
-      validText(snapshot.gatewayId) &&
-      EVIDENCE_BASES.has(snapshot.evidenceBasis) &&
-      validTimestamp(snapshot.observedAt) &&
-      Array.isArray(snapshot.agents) &&
-      Array.isArray(snapshot.contexts);
+      validText(candidateSnapshot.configuredSourceId) &&
+      typeof candidateSnapshot.adapterId === 'string' &&
+      AGENT_SOURCE_ADAPTER_ID_SET.has(candidateSnapshot.adapterId) &&
+      typeof candidateSnapshot.placement === 'string' &&
+      AGENT_SOURCE_PLACEMENT_SET.has(candidateSnapshot.placement) &&
+      validText(candidateSnapshot.gatewayId) &&
+      typeof candidateSnapshot.evidenceBasis === 'string' &&
+      AGENT_SOURCE_EVIDENCE_BASIS_SET.has(candidateSnapshot.evidenceBasis) &&
+      validTimestamp(candidateSnapshot.observedAt) &&
+      Array.isArray(candidateSnapshot.agents) &&
+      Array.isArray(candidateSnapshot.contexts);
     if (!sourceValid) {
       issues.push(
         issue(
@@ -355,6 +437,8 @@ export function projectAgentTopology(
       );
       continue;
     }
+    const snapshot =
+      candidateSnapshot as unknown as AgentSourceTopologySnapshot;
     if (sourceIds.has(snapshot.configuredSourceId)) {
       issues.push(
         issue(
@@ -370,23 +454,10 @@ export function projectAgentTopology(
       sourceById.set(snapshot.configuredSourceId, snapshot);
     }
 
-    const sourceAgents = Array.isArray(snapshot.agents) ? snapshot.agents : [];
-    const sourceContexts = Array.isArray(snapshot.contexts)
-      ? snapshot.contexts
-      : [];
+    const sourceAgents: readonly unknown[] = snapshot.agents;
+    const sourceContexts: readonly unknown[] = snapshot.contexts;
 
-    const orderedAgents = sourceAgents
-      .map((agent, index) => ({ agent, index }))
-      .sort((left, right) => {
-        const leftKey = isRecord(left.agent)
-          ? `${String(left.agent.configuredSourceId ?? '')}\0${String(left.agent.nativeAgentId ?? '')}`
-          : '';
-        const rightKey = isRecord(right.agent)
-          ? `${String(right.agent.configuredSourceId ?? '')}\0${String(right.agent.nativeAgentId ?? '')}`
-          : '';
-        return compareText(leftKey, rightKey) || left.index - right.index;
-      });
-    for (const { agent: candidateAgent, index } of orderedAgents) {
+    for (const [index, candidateAgent] of sourceAgents.entries()) {
       if (!isRecord(candidateAgent)) {
         issues.push(
           issue(
@@ -398,12 +469,12 @@ export function projectAgentTopology(
         );
         continue;
       }
-      const agent = candidateAgent as unknown as SourceAgentRecord;
       const agentValid =
-        agent.configuredSourceId === snapshot.configuredSourceId &&
-        validText(agent.nativeAgentId) &&
-        validText(agent.displayName, MAX_LABEL_LENGTH) &&
-        SOURCE_AGENT_DISCOVERY_STATES.has(agent.discoveryState);
+        candidateAgent.configuredSourceId === snapshot.configuredSourceId &&
+        validText(candidateAgent.nativeAgentId) &&
+        validText(candidateAgent.displayName, MAX_LABEL_LENGTH) &&
+        typeof candidateAgent.discoveryState === 'string' &&
+        SOURCE_AGENT_DISCOVERY_STATE_SET.has(candidateAgent.discoveryState);
       if (!agentValid) {
         issues.push(
           issue(
@@ -415,6 +486,7 @@ export function projectAgentTopology(
         );
         continue;
       }
+      const agent = candidateAgent as unknown as SourceAgentRecord;
       const key = sourceAgentKey(agent);
       const agentPath = `agents.${key}`;
       if (agentByKey.has(key)) {
@@ -431,18 +503,7 @@ export function projectAgentTopology(
       }
     }
 
-    const orderedContexts = sourceContexts
-      .map((context, index) => ({ context, index }))
-      .sort((left, right) => {
-        const leftKey = isRecord(left.context)
-          ? `${String(left.context.configuredSourceId ?? '')}\0${String(left.context.nativeAgentId ?? '')}\0${String(left.context.nativeContextId ?? '')}`
-          : '';
-        const rightKey = isRecord(right.context)
-          ? `${String(right.context.configuredSourceId ?? '')}\0${String(right.context.nativeAgentId ?? '')}\0${String(right.context.nativeContextId ?? '')}`
-          : '';
-        return compareText(leftKey, rightKey) || left.index - right.index;
-      });
-    for (const { context: candidateContext, index } of orderedContexts) {
+    for (const [index, candidateContext] of sourceContexts.entries()) {
       if (!isRecord(candidateContext)) {
         issues.push(
           issue(
@@ -454,45 +515,46 @@ export function projectAgentTopology(
         );
         continue;
       }
-      const context = candidateContext as unknown as SourceContextRecord;
-      const key = sourceContextKey(context);
-      const contextPath = `contexts.${key}`;
-      const roles: readonly unknown[] = Array.isArray(context.roles)
-        ? context.roles
+      const roles: readonly unknown[] = Array.isArray(candidateContext.roles)
+        ? candidateContext.roles
         : [];
       const uniqueRoles = new Set(roles);
       const parentValid =
-        context.parent === null || validContextRef(context.parent);
+        candidateContext.parent === null ||
+        validContextRef(candidateContext.parent);
       const contextValid =
-        context.configuredSourceId === snapshot.configuredSourceId &&
-        validText(context.nativeAgentId) &&
-        validText(context.nativeContextId) &&
-        SOURCE_CONTEXT_KINDS.has(context.kind) &&
-        validText(context.nativeKind, MAX_LABEL_LENGTH) &&
-        Array.isArray(context.roles) &&
+        candidateContext.configuredSourceId === snapshot.configuredSourceId &&
+        validText(candidateContext.nativeAgentId) &&
+        validText(candidateContext.nativeContextId) &&
+        typeof candidateContext.kind === 'string' &&
+        SOURCE_CONTEXT_KIND_SET.has(candidateContext.kind) &&
+        validText(candidateContext.nativeKind, MAX_LABEL_LENGTH) &&
+        Array.isArray(candidateContext.roles) &&
         uniqueRoles.size === roles.length &&
         roles.every(
-          role =>
-            typeof role === 'string' &&
-            SOURCE_CONTEXT_ROLES.has(role as SourceContextRole)
+          role => typeof role === 'string' && SOURCE_CONTEXT_ROLE_SET.has(role)
         ) &&
         parentValid &&
-        (context.nativeRunId === null || validText(context.nativeRunId)) &&
-        (context.createdAt === undefined ||
-          validTimestamp(context.createdAt)) &&
-        (context.lastActiveAt === undefined ||
-          validTimestamp(context.lastActiveAt));
+        (candidateContext.nativeRunId === null ||
+          validText(candidateContext.nativeRunId)) &&
+        (candidateContext.createdAt === undefined ||
+          validTimestamp(candidateContext.createdAt)) &&
+        (candidateContext.lastActiveAt === undefined ||
+          validTimestamp(candidateContext.lastActiveAt));
       if (!contextValid) {
         issues.push(
           issue(
             'error',
             'invalid-context',
-            contextPath,
+            `${sourcePath}.contexts.${index}`,
             'Source context identity, kind, roles, or timestamps are invalid.'
           )
         );
         continue;
       }
+      const context = candidateContext as unknown as SourceContextRecord;
+      const key = sourceContextKey(context);
+      const contextPath = `contexts.${key}`;
       if (contextByKey.has(key)) {
         issues.push(
           issue(
@@ -552,6 +614,20 @@ export function projectAgentTopology(
     }
   }
 
+  for (const cycle of contextLineageCycles(contextByKey)) {
+    const representativeKey = cycle[0]!;
+    issues.push(
+      issue(
+        'error',
+        'cyclic-context-lineage',
+        `contexts.${representativeKey}.parent`,
+        cycle.length === 1
+          ? 'Context lineage cannot make a context its own parent.'
+          : `Context lineage contains a cycle across ${cycle.length} contexts.`
+      )
+    );
+  }
+
   const mappingByAgentKey = new Map<string, AgentProjectionMapping>();
   const exawattAgentIds = new Set<string>();
   const mappingValues: readonly unknown[] =
@@ -566,19 +642,7 @@ export function projectAgentTopology(
       )
     );
   }
-  const orderedMappings = mappingValues
-    .map((mapping, index) => ({ mapping, index }))
-    .sort((left, right) => {
-      const leftKey = isRecord(left.mapping)
-        ? `${String(left.mapping.configuredSourceId ?? '')}\0${String(left.mapping.nativeAgentId ?? '')}\0${String(left.mapping.exawattAgentId ?? '')}`
-        : '';
-      const rightKey = isRecord(right.mapping)
-        ? `${String(right.mapping.configuredSourceId ?? '')}\0${String(right.mapping.nativeAgentId ?? '')}\0${String(right.mapping.exawattAgentId ?? '')}`
-        : '';
-      return compareText(leftKey, rightKey) || left.index - right.index;
-    });
-
-  for (const { mapping: candidateMapping, index } of orderedMappings) {
+  for (const [index, candidateMapping] of mappingValues.entries()) {
     if (!isRecord(candidateMapping)) {
       issues.push(
         issue(
@@ -590,14 +654,13 @@ export function projectAgentTopology(
       );
       continue;
     }
-    const mapping = candidateMapping as unknown as AgentProjectionMapping;
     const mappingValid =
-      validText(mapping.configuredSourceId) &&
-      validText(mapping.nativeAgentId) &&
-      validText(mapping.exawattAgentId) &&
-      validText(mapping.projectId) &&
-      (mapping.displayNameOverride === null ||
-        validText(mapping.displayNameOverride, MAX_LABEL_LENGTH));
+      validText(candidateMapping.configuredSourceId) &&
+      validText(candidateMapping.nativeAgentId) &&
+      validText(candidateMapping.exawattAgentId) &&
+      validText(candidateMapping.projectId) &&
+      (candidateMapping.displayNameOverride === null ||
+        validText(candidateMapping.displayNameOverride, MAX_LABEL_LENGTH));
     if (!mappingValid) {
       issues.push(
         issue(
@@ -609,6 +672,7 @@ export function projectAgentTopology(
       );
       continue;
     }
+    const mapping = candidateMapping as unknown as AgentProjectionMapping;
     const key = sourceAgentKey(mapping);
     const mappingPath = `mappings.${key}`;
     if (mappingByAgentKey.has(key)) {
@@ -621,7 +685,7 @@ export function projectAgentTopology(
         )
       );
     } else {
-      mappingByAgentKey.set(key, { ...mapping });
+      mappingByAgentKey.set(key, copyMapping(mapping));
     }
     if (exawattAgentIds.has(mapping.exawattAgentId)) {
       issues.push(
@@ -659,6 +723,21 @@ export function projectAgentTopology(
       compareText(sourceContextKey(left), sourceContextKey(right))
     );
   }
+  for (const [key, contexts] of contextsByAgent) {
+    const primaryContextCount = contexts.filter(context =>
+      context.roles.includes('primary-conversation')
+    ).length;
+    if (primaryContextCount > 1) {
+      issues.push(
+        issue(
+          'error',
+          'multiple-primary-conversations',
+          `agents.${key}.primaryConversation`,
+          'Source Agent declares more than one primary conversation.'
+        )
+      );
+    }
+  }
 
   const projectedAgents: ProjectedAgent[] = [];
   for (const [key, mapping] of [...mappingByAgentKey.entries()].sort(
@@ -671,16 +750,7 @@ export function projectAgentTopology(
     const primaryContexts = contexts.filter(context =>
       context.roles.includes('primary-conversation')
     );
-    if (primaryContexts.length > 1) {
-      issues.push(
-        issue(
-          'error',
-          'multiple-primary-conversations',
-          `agents.${key}.primaryConversation`,
-          'Source Agent declares more than one primary conversation.'
-        )
-      );
-    } else if (primaryContexts.length === 0) {
+    if (primaryContexts.length === 0) {
       issues.push(
         issue(
           'warning',

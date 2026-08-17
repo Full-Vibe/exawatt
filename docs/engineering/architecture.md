@@ -453,17 +453,24 @@ The projection boundary is additive and versioned:
 ```
 
 ENG-010 C0 implements this as the exported `@exawatt/core` Agent projection
-kernel in `packages/core/src/agent-projection.ts`. Its boundary is pure: a
-versioned set of source-qualified topology snapshots plus explicit mappings in,
-and either a deterministic coworker projection with diagnostics or fail-closed
-structural errors out. It owns no transport, persistence, credential access, or
-UI policy. `observed`, `declared`, and `simulated` evidence use the same
-contract, so Demo and Live adapters do not fork the projection semantics.
+kernel in `packages/core/src/agent-projection.ts`. Its pure boundary accepts
+source-qualified topology snapshots plus an explicit projection plan and
+returns either a deterministic coworker projection with diagnostics or
+fail-closed structural errors. The plan and output carry the projection
+version; snapshots and individual mapping records do not. The kernel owns no
+transport, persistence, credential access, or UI policy. It accepts
+`observed`, `declared`, and `simulated` through one evidence-basis contract;
+Demo and Live adapters have not integrated it yet, so end-to-end Demo/Live
+parity remains later acceptance rather than a C0 claim.
 
-The source snapshot separately retains native Agent and Session/context IDs,
-kinds, lineage, primary-conversation roles, timestamps, optional durable replay
-positions, and assurance. A mapping edit changes only Exawatt. Detach never
-deletes or edits a remote Agent, workspace, history, automation, or credential.
+The C0 topology snapshot retains native Agent and Session/context IDs, kinds,
+lineage, primary-conversation roles, timestamps, placement, Gateway identity,
+observation time, and one snapshot-level evidence basis. It deliberately owns
+neither a transport cursor nor persisted connection state. C1's broader source
+and connection snapshots add freshness and assurance facts plus an optional
+durable replay position only when an adapter can substantiate one. A mapping
+edit changes only Exawatt. Detach never deletes or edits a remote Agent,
+workspace, history, automation, or credential.
 A configured source may expose several Agents; a Gateway is not automatically
 a Project. Initial attach suggests one editable Project per imported Agent and
 permits explicit existing/shared mappings.
@@ -638,10 +645,11 @@ Built:
 - Supabase auth/data
 - legacy Supabase demo task flow
 - `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
-- `@exawatt/core` source-qualified, versioned Agent projection kernel (ENG-010
-  C0): pure topology validation and explicit Agent/Project mapping with
-  source-declared primary-conversation selection and simulated/Live evidence
-  parity; no remote transport or UI
+- `@exawatt/core` source-qualified Agent projection kernel (ENG-010 C0): pure,
+  fail-closed topology validation, explicit Agent/Project mappings, a versioned
+  projection plan/output, source-declared primary-conversation selection, and
+  one `observed`/`declared`/`simulated` evidence-basis input contract; no
+  Demo/Live adapter integration, remote transport, or UI
 - Workspace tenancy (ENG-027): Personal and Demo are `available` tenants behind the account-menu switcher; the Voltaic Grid Systems shared tenant is a non-activatable `preview` Workspace linking to `/organization`. **Demo** is the tenant identity and **Voltaic Grid Systems** is the separately modeled organization its fixtures portray. The Demo source runs the authored Voltaic fleet, pane content sources (transcripts / honest session records, never a PTY), demo ⌘K rows, Initiative projections, and the Voltaic consumption corpus through the production surfaces
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the

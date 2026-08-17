@@ -7,15 +7,24 @@
  * successful probe.
  */
 
-export type AgentHarness = 'claude' | 'codex' | 'opencode' | 'grok';
+export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'grok'] as const;
+export type AgentHarness = (typeof AGENT_HARNESSES)[number];
 export type PtyHarness = 'shell' | AgentHarness;
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
-export type AgentSourceAdapterId = AgentHarness | 'openclaw' | 'demo';
-export type AgentSourceCatalogId =
-  | AgentSourceAdapterId
-  | 'hosted-openclaw'
-  | 'custom';
+export const AGENT_SOURCE_ADAPTER_IDS = [
+  ...AGENT_HARNESSES,
+  'openclaw',
+  'demo',
+] as const;
+export type AgentSourceAdapterId = (typeof AGENT_SOURCE_ADAPTER_IDS)[number];
+
+export const AGENT_SOURCE_CATALOG_IDS = [
+  ...AGENT_SOURCE_ADAPTER_IDS,
+  'hosted-openclaw',
+  'custom',
+] as const;
+export type AgentSourceCatalogId = (typeof AGENT_SOURCE_CATALOG_IDS)[number];
 
 export type AgentSourceState =
   | 'ready'
@@ -37,7 +46,13 @@ export type AgentSourceFactState =
   | 'unknown'
   | 'simulated';
 
-export type AgentSourceEvidenceBasis = 'observed' | 'declared' | 'simulated';
+export const AGENT_SOURCE_EVIDENCE_BASES = [
+  'observed',
+  'declared',
+  'simulated',
+] as const;
+export type AgentSourceEvidenceBasis =
+  (typeof AGENT_SOURCE_EVIDENCE_BASES)[number];
 
 export interface AgentSourceProvenance {
   kind:
