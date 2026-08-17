@@ -516,7 +516,17 @@ export function SettingsClient() {
 
       {/* Edit Shortcut Dialog */}
       <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className="sm:max-w-md"
+          primaryAction={{
+            // The capture box swallows every keystroke while it is focused, so
+            // the chord reaches this action from the rest of the dialog — and a
+            // combo pressed INTO the box is still recorded, never a save.
+            label: saving ? 'Saving…' : 'Save',
+            run: () => saveShortcut(),
+            disabled: recordedKeys.length === 0 || !!bindingError || saving,
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Edit Shortcut</DialogTitle>
             <DialogDescription>
@@ -569,12 +579,6 @@ export function SettingsClient() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingId(null)}>
               Cancel
-            </Button>
-            <Button
-              onClick={saveShortcut}
-              disabled={recordedKeys.length === 0 || !!bindingError || saving}
-            >
-              {saving ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

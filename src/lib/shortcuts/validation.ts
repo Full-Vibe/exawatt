@@ -69,14 +69,14 @@ export function validateShortcutBinding(
   if (shortcut.bindingPolicy !== 'universal-command') return null;
 
   if (isChord(keys)) {
-    return 'Universal navigation uses one key combination, not a chord.';
+    return 'This command uses one key combination, not a chord.';
   }
 
   const primaryModifier = platform === 'darwin' ? 'meta' : 'ctrl';
   if (!keys.modifiers?.includes(primaryModifier)) {
     return platform === 'darwin'
-      ? 'Universal navigation must include ⌘ so it works from Terminal and text fields.'
-      : 'Universal navigation must include Ctrl so it works from Terminal and text fields.';
+      ? 'This command must include ⌘ so it works from Terminal and text fields.'
+      : 'This command must include Ctrl so it works from Terminal and text fields.';
   }
 
   return null;

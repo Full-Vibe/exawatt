@@ -233,6 +233,31 @@ Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not rec
 
 ---
 
+## Dialogs
+
+A dialog's primary action states the chord that presses it, on the button's own
+face (BUG-049; the ⌘W close confirm's `Close ⏎` is the precedent, D27).
+
+- **Declare it, do not compose it.** `DialogContent` requires `primaryAction`:
+  the action, or `{ none: '<written reason>' }`. `DialogFooter` renders the
+  declared action as its last child, which is macOS default-button placement
+  (rightmost, Cancel to its left). A dialog with bespoke chrome keeps its own
+  button and puts `DialogPrimaryActionHint` inside it.
+- **⌘⏎ is the chord**, from the `dialog-primary-action` manifest verb — one
+  rebindable verb for every dialog, never a per-form keydown handler. It is ⌘⏎
+  rather than ⏎ because a dialog's own text field owns Return; a confirm with
+  no text field keeps ⏎ and says `⏎`.
+- **The hint is not a reveal.** It renders unconditionally, from the registry
+  with the manifest default standing in before overrides load, so it is present
+  from the first paint and never moves the button it sits on.
+- **Register while open, not while mounted.** A provider-level `<Dialog>`
+  renders its content element whether or not it is open; the primary action
+  publishes from inside the Radix content, so a closed dialog owns no chord.
+- Chord glyph register: `font-mono text-chrome-micro`, dimmed against the
+  button's own foreground. No `kbd` chrome inside a filled button.
+
+---
+
 ## `/hud-gallery` audit — G0 decisions (G1 executes)
 
 The gallery has been the de facto design system. With this document as the written source of truth, the gallery survives only as the **live workbench that renders the system** (roadmap ENG-036; operator 2026-08-02). Decisions per route/section, from a full audit of `src/app/hud-gallery`:
@@ -319,6 +344,18 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-08-17 — **Dialogs** section added (BUG-049). Not a new rung so much as a
+  missing one: the system said which Button recipe a primary action wears and
+  nothing about whether it could be pressed. The operator found the gap from
+  the outside ("how can I send feedback using the keyboard?"). Two rules
+  generalise past dialogs. (1) **A hint that states a chord must render
+  unconditionally.** Reading it from an async source and rendering nothing
+  meanwhile is a reveal, and a reveal on a button moves the button. Fall back
+  to the declared default so the space is occupied from the first paint. (2) **A
+  reserved control keeps its box.** The same change hid `Focus active terminal`
+  where there is no terminal but kept it laid out, because it is the tallest
+  thing in the workspace chrome row and removing it outright would have traded
+  a 41px jolt for a 4px one.
 - 2026-08-17 — ENG-031 W4 pinned board sequence. No new type, colour, or
   spacing rung; the panel heading is the existing 18px `section` rung and the
   panel body is `text-xl`/`text-2xl` from the marketing register. Three

@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogHeader,
+  DialogPrimaryActionHint,
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
@@ -262,6 +263,20 @@ export function ProjectOpener({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-project-opener
+        primaryAction={
+          // Import review is the one mode with a single action the dialog is
+          // for. Browsing is a chooser: each row IS its own action, and a
+          // default over a list of Projects could only pick one arbitrarily.
+          candidates
+            ? {
+                label: `Import ${selected.size || ''}`.trim(),
+                run: () => void finishImport(),
+                disabled: selected.size === 0,
+              }
+            : {
+                none: 'Browsing is a chooser rather than a form: every row is its own action, and a default button over a list of Projects would have to pick one of them arbitrarily.',
+              }
+        }
         onCloseAutoFocus={event => {
           if (!nativePickerActive.current) return;
           event.preventDefault();
@@ -373,7 +388,7 @@ export function ProjectOpener({
                 type="button"
                 disabled={selected.size === 0}
                 onClick={() => void finishImport()}
-                className="h-8 rounded border px-3 font-mono text-xs outline-none disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="flex h-8 items-center gap-1.5 rounded border px-3 font-mono text-xs outline-none disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{
                   color: HUD.text,
                   borderColor: withThemeAlpha(HUD.cyan, 0.45),
@@ -381,6 +396,7 @@ export function ProjectOpener({
                 }}
               >
                 Import {selected.size || ''}
+                <DialogPrimaryActionHint />
               </button>
             </div>
           </div>

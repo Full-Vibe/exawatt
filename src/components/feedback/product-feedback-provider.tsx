@@ -511,7 +511,22 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         open={open}
         onOpenChange={next => status !== 'submitting' && setOpen(next)}
       >
-        <DialogContent className="max-w-xl border-hud-cyan/20 bg-hud-panel p-0 text-foreground shadow-2xl">
+        <DialogContent
+          className="max-w-xl border-hud-cyan/20 bg-hud-panel p-0 text-foreground shadow-2xl"
+          primaryAction={{
+            label: (
+              <>
+                {status === 'submitting' && (
+                  <LoaderCircle className="size-4 animate-spin" />
+                )}
+                Send feedback
+              </>
+            ),
+            ariaLabel: 'Send feedback',
+            run: () => void sendGeneral(),
+            disabled: status === 'submitting' || status === 'sent',
+          }}
+        >
           <div className="border-b border-hud-cyan/20 px-6 py-5">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
@@ -650,16 +665,6 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
               disabled={status === 'submitting'}
             >
               Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void sendGeneral()}
-              disabled={status === 'submitting' || status === 'sent'}
-            >
-              {status === 'submitting' && (
-                <LoaderCircle className="size-4 animate-spin" />
-              )}
-              Send feedback
             </Button>
           </DialogFooter>
         </DialogContent>

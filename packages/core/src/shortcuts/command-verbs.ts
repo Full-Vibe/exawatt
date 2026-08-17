@@ -375,6 +375,39 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
       section: 'go',
     },
   },
+  // The contract one layer in (BUG-049). D44/D57 gave every verb the product
+  // OFFERS a chord, a palette row and a menu item. A dialog's primary action
+  // is a verb too, and the Submit feedback dialog shipped with neither a chord
+  // nor a hint — its Send button was reachable by mouse alone, and the ⌘W
+  // close confirm's `Close ⏎` was the only place in the product where a
+  // dialog's default action stated itself.
+  //
+  // ONE verb rather than one per dialog: the target is always "the dialog in
+  // front of you", which is exactly what `modal-open` names. `dialog.tsx`
+  // holds the open dialogs' declared primary actions and runs the top one, so
+  // a new dialog inherits the chord by declaring what its primary action IS —
+  // and `DialogContent`'s type refuses to compile until it does.
+  //
+  // ⌘⏎ rather than ⏎ because a dialog's own text field owns ⏎ (the feedback
+  // textarea is multi-line on purpose), and `universal-command` keeps it that
+  // way: `shouldIgnoreShortcutEvent` lets a combo through a focused textarea
+  // only when it carries ⌘, so a rebind that drops the modifier would take
+  // the operator's Return key away inside every dialog.
+  {
+    id: 'dialog-primary-action',
+    label: 'Confirm the open dialog',
+    description: "Run the open dialog's primary action from the keyboard",
+    keys: { key: 'Enter', modifiers: ['meta'] },
+    category: 'actions',
+    contexts: ['modal-open'],
+    bindingPolicy: 'universal-command',
+    palette: null,
+    paletteDiscoverability:
+      'This verb has no target until a dialog is open, and the palette is itself a dialog, so its row could only ever press the palette. The dialog that owns the action publishes the chord on its own primary button.',
+    menu: null,
+    menuDiscoverability:
+      'A menu bar addresses the application, not the sheet in front of it; macOS publishes a dialog default action on the button face, which is where this chord is printed and where the operator is already looking.',
+  },
   {
     id: 'workspace-roadmap',
     label: 'Roadmap',

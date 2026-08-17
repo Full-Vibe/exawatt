@@ -55,6 +55,9 @@ const CommandDialog = ({
     <Dialog {...props}>
       <DialogContent
         className="overflow-hidden p-0"
+        primaryAction={{
+          none: 'A palette has no single action of its own: ⏎ runs the highlighted row, which is cmdk’s own contract and the reason the operator is typing here at all.',
+        }}
         onOpenAutoFocus={() => {
           const activeElement = document.activeElement;
           restoreFocusRef.current =
