@@ -83,6 +83,18 @@ capability absence before creating an account client, reading auth, scheduling
 or scanning, and fetching; community renders an explicit unavailable state
 instead of misreporting the absent service as signed out or failed.
 
+Account transport is an explicit nullable adapter at every renderer and server
+call site. When `account` is absent, auth surfaces report that the capability is
+not configured instead of treating Community as a failed sign-out, and no auth
+client is constructed. Product state does not inherit the account database as
+its public contract: the Project registry exposes a source-neutral DTO and
+persists to the distribution's state namespace locally in Community, while a
+configured account temporarily preserves the hosted adapter until the private
+service relocation. Keyboard shortcut overrides follow the same boundary:
+account-backed builds retain sync, and Community stores the validated override
+set in its isolated browser namespace. Local Agent Sources and Demo Mode do not
+depend on either capability.
+
 ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.4
 provide strict versioned Classic/Air/Night definitions, a deterministic
 validator/generator, one pure resolver, device-local Electron/web preference
@@ -623,12 +635,12 @@ a stated bound (age, count, or bytes) and a named owner for eviction, enforced
 where the value is written rather than where it is read. Decision `0039` holds
 the rule and the three defects that produced it.
 
-| store | shape | bound | eviction owner |
-| --- | --- | --- | --- |
-| `workspace.json` | small-object layout: ids, titles, cwds, lifecycle, drafts | no large field may live here at all | — |
-| `goal-visuals/` | content-addressed side store, keyed by `GoalVisual.identityKey` | 64 entries / 48 MB | the workspace save path, which is the only place that knows the referenced set |
-| `consumption-scan/log-v1.jsonl` | append log compacted from live state | samples: 14 days behind the newest sample, widened to cover an active Operator-profile publication anchor, clamped at 400 days; observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write |
-| `agent-model-catalogs.json` | one row per `(engine, shell, cwd)` | 48 rows, 14 days, and a row whose `cwd` no longer exists | `AgentModelCatalogCache.write`, plus one sweep on load |
+| store                           | shape                                                           | bound                                                                                                                                                                                                   | eviction owner                                                                 |
+| ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `workspace.json`                | small-object layout: ids, titles, cwds, lifecycle, drafts       | no large field may live here at all                                                                                                                                                                     | —                                                                              |
+| `goal-visuals/`                 | content-addressed side store, keyed by `GoalVisual.identityKey` | 64 entries / 48 MB                                                                                                                                                                                      | the workspace save path, which is the only place that knows the referenced set |
+| `consumption-scan/log-v1.jsonl` | append log compacted from live state                            | samples: 14 days behind the newest sample, widened to cover an active Operator-profile publication anchor, clamped at 400 days; observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write           |
+| `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                | `AgentModelCatalogCache.write`, plus one sweep on load                         |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written
@@ -804,7 +816,7 @@ Built:
   shell, which means executing arbitrary user startup code. The owner holds
   both contracts that were previously re-derived per call site: per-shell login
   argv (tcsh rejects a combined `-l -c`; PowerShell spells it `-Login
-  -Command`), and the rule that startup files never execute inside a Project —
+-Command`), and the rule that startup files never execute inside a Project —
   the shell starts in an app-owned scratch directory and enters the Project
   only afterwards, so a side effect of the operator's dotfiles cannot land in
   his repository (incident `0006`);
