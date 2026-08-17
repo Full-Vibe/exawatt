@@ -138,17 +138,17 @@ export function distributionChildEnvironment(
   ambient: NodeJS.ProcessEnv
 ): NodeJS.ProcessEnv {
   const account = resolved.contract.account;
-  const analytics = resolved.contract.analytics;
+  const forwarded = { ...ambient };
+  delete forwarded.NEXT_PUBLIC_POSTHOG_KEY;
+  delete forwarded.NEXT_PUBLIC_POSTHOG_HOST;
+  delete forwarded.NEXT_PUBLIC_ANALYTICS_DISABLED;
   return {
-    ...ambient,
+    ...forwarded,
     EXAWATT_RESOLVED_DISTRIBUTION_JSON: resolved.canonical,
     EXAWATT_RESOLVED_DISTRIBUTION_SHA256: resolved.digest,
     NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON: resolved.canonical,
     NEXT_PUBLIC_EXAWATT_DISTRIBUTION_SHA256: resolved.digest,
     NEXT_PUBLIC_SUPABASE_URL: account?.supabaseUrl ?? '',
     NEXT_PUBLIC_SUPABASE_ANON_KEY: account?.supabaseAnonKey ?? '',
-    NEXT_PUBLIC_POSTHOG_KEY: analytics?.projectKey ?? '',
-    NEXT_PUBLIC_POSTHOG_HOST: analytics?.ingestOrigin ?? '',
-    NEXT_PUBLIC_ANALYTICS_DISABLED: analytics ? 'false' : 'true',
   };
 }

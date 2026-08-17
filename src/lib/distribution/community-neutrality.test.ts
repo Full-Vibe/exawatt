@@ -39,7 +39,7 @@ describe('community distribution neutrality', () => {
     expect(
       resolveDistributionAnalyticsDecision(
         COMMUNITY_DISTRIBUTION,
-        { isElectron: true, optedOut: false },
+        { optedOut: false },
         'production'
       )
     ).toEqual({ enabled: false, reason: 'no_distribution_config' });
@@ -53,7 +53,8 @@ describe('community distribution neutrality', () => {
     try {
       expect(createOptionalClient(COMMUNITY_DISTRIBUTION)).toBeNull();
     } finally {
-      if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (originalUrl === undefined)
+        delete process.env.NEXT_PUBLIC_SUPABASE_URL;
       else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
       if (originalKey === undefined)
         delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
