@@ -23,6 +23,7 @@ import {
   distributionDigest,
   selectDistributionContract,
 } from './distribution-build.mjs';
+import { readAsarFile } from './asar.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -207,6 +208,42 @@ export function assertPackagedContract(appPath, expectedDigest) {
         'or point EXAWATT_APP_PATH at the package this contract produced.'
     );
   }
+}
+
+/** Read the source identity embedded in the packaged Electron main process. */
+export function readPackagedBuildInfo(appPath) {
+  const archive = path.join(appPath, 'Contents', 'Resources', 'app.asar');
+  let buildInfo;
+  try {
+    buildInfo = JSON.parse(
+      readAsarFile(archive, 'dist-electron/build-info.json').toString('utf8')
+    );
+  } catch (error) {
+    throw new Error(`${appPath} has no valid packaged build-info.json`, {
+      cause: error,
+    });
+  }
+  if (
+    !buildInfo ||
+    typeof buildInfo !== 'object' ||
+    typeof buildInfo.sha !== 'string' ||
+    buildInfo.sha.trim().length === 0
+  ) {
+    throw new Error(`${appPath} carries no source SHA in packaged build-info`);
+  }
+  return buildInfo;
+}
+
+/** Refuse a package built from a different source tree. */
+export function assertPackagedSource(appPath, expectedSha) {
+  const buildInfo = readPackagedBuildInfo(appPath);
+  if (buildInfo.sha !== expectedSha) {
+    throw new Error(
+      `${appPath} was built from source ${buildInfo.sha}, but this gate expects ` +
+        `${expectedSha}. Rebuild the package or supply the exact expected SHA.`
+    );
+  }
+  return buildInfo;
 }
 
 /** The executable path, for the evals that only need somewhere to launch. */
