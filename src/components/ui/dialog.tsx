@@ -33,7 +33,8 @@ interface DialogPrimaryActionScope {
   /** Set by whichever descendant printed the chord, so a declared action that
    *  advertises nothing is caught in development rather than in the hands of
    *  the operator who cannot find it. */
-  published: { current: boolean }
+  /** Call from the hint's commit phase. A context value may not be mutated. */
+  publish: () => void
 }
 
 const DialogPrimaryActionContext =
@@ -126,9 +127,15 @@ function DialogPrimaryActionScopeProvider({
   const spec = isDialogPrimaryAction(declaration) ? declaration : null
   useDialogPrimaryActionSlot(spec)
   const published = React.useRef(false)
+  // The provider owns the ref and exposes a stable callback. Handing the ref
+  // itself through context and mutating it downstream is what
+  // `react-hooks/immutability` rejects, in render or in an effect.
+  const publish = React.useCallback(() => {
+    published.current = true
+  }, [])
   const scope = React.useMemo<DialogPrimaryActionScope>(
-    () => ({ declaration, published }),
-    [declaration]
+    () => ({ declaration, publish }),
+    [declaration, publish]
   )
   React.useEffect(() => {
     if (process.env.NODE_ENV === "production" || !spec || published.current) {
@@ -242,7 +249,14 @@ function DialogPrimaryActionHint({
 }) {
   const scope = React.useContext(DialogPrimaryActionContext)
   const keys = useDialogPrimaryActionKeys()
-  if (scope) scope.published.current = true
+  // Publish in the commit phase rather than during render. A render React
+  // discards must not claim the chord was shown, and mutating a ref while
+  // rendering is what `react-hooks/immutability` rejects. Child effects run
+  // before parent effects, so this still lands before the provider's
+  // dev-only check reads it.
+  React.useEffect(() => {
+    scope?.publish()
+  }, [scope])
   if (!scope || !isDialogPrimaryAction(scope.declaration)) return null
   return (
     <span
