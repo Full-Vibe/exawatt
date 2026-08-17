@@ -118,7 +118,12 @@ work.
 
 ### Dogfood topology
 
-- Gateway A exposes active configured Agents Marcus and Scout.
+- Gateway A exposes active configured Agents Scout and the Reddit Agent. The
+  brief calls the latter "Marcus" throughout, but Marcus is the Reddit persona
+  it posts under, not the coworker's name (corrected 2026-08-17). Its
+  configured source name is a lowercase role slug; Exawatt shows that by default
+  and the operator may rename it. Read every "Marcus" below as "the Reddit
+  Agent".
 - Gateway B exposes active configured Agent Tyler.
 - Priya exists only as retired/dormant history and is not imported into the
   active roster unless the operator explicitly chooses it from source detail.
@@ -586,8 +591,13 @@ device by name and can revoke it, so custody is visible on the source side.
 
 **Topology, as observed.** Gateway A configures two Agents. One has its
 identity name set and is the default; the other has no identity name on the
-box at all, so the "Marcus" the operator uses is an Exawatt display-name
-override, never something to read from the source. That Agent's 75 retained
+box, only a lowercase role slug as its configured name. The operator corrected
+the brief here: "Marcus" is the Reddit persona that Agent posts under, a
+property of its work, not the coworker's name. So the brief's "Marcus" is a
+persona, the source's own configured name is what Exawatt shows by default,
+and the operator may rename it in Exawatt. A persona is never promoted to
+Agent identity, and the coworker is not named after its server either, since
+placement is not identity. That Agent's 75 retained
 Sessions decompose as one `main`, one cron context, one spawned subagent, and
 72 arbitrarily named helper contexts, so context-kind classification must key
 on the Session key's second segment (`main`, `cron`, `subagent`, otherwise
