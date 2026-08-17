@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -14,6 +15,11 @@ function distributionCore() {
       { cause: error }
     );
   }
+}
+
+export function distributionCoreParse(json) {
+  const { parseDistributionContractJson } = distributionCore();
+  return parseDistributionContractJson(json);
 }
 
 export function distributionDigest(canonical) {
@@ -36,6 +42,86 @@ export function distributionArtifactPaths(root) {
  * which have to know which package the current shell's contract would produce
  * (BUG-043) — asks this instead of keeping a second copy of the answer.
  */
+/**
+ * Operator-local custody for the official contract.
+ *
+ * Lives OUTSIDE every checkout on purpose. A path inside the repository would
+ * be one `git add` from publication, would be re-pulled or clobbered by
+ * `pnpm env:pull`, and would have to be classified by Gate A. A home-directory
+ * file is shared by every worktree the operator owns, survives environment
+ * refreshes, and cannot be committed by any agent.
+ *
+ * Vercel Development deliberately does NOT carry the official contract
+ * (incident `0017`): an agent worktree must not inherit official custody. This
+ * file is the operator's own third consumer, and it is read ONLY when a build
+ * explicitly declares itself official.
+ */
+export const OFFICIAL_CUSTODY_FILE = path.join(
+  homedir(),
+  '.exawatt',
+  'distribution.official.json'
+);
+
+export const DISTRIBUTION_PROFILE_ENV = 'EXAWATT_DISTRIBUTION_PROFILE';
+export const DISTRIBUTION_CONFIG_ENV = 'EXAWATT_DISTRIBUTION_CONFIG_JSON';
+
+/**
+ * Read operator custody. Never a fallback: only an explicit
+ * `EXAWATT_DISTRIBUTION_PROFILE=official` reaches here.
+ *
+ * Silence is the failure mode this guards against. Incident `0017` shipped a
+ * community website for eighteen hours because an absent input downgraded
+ * instead of refusing, so every failure below throws with the path named.
+ */
+export async function readOfficialCustody(file = OFFICIAL_CUSTODY_FILE) {
+  let details;
+  try {
+    details = await stat(file);
+  } catch {
+    throw new Error(
+      `Official distribution custody is missing: ${file}\n` +
+        'Write the validated schema-v1 official contract there with mode 0600, ' +
+        'or build without EXAWATT_DISTRIBUTION_PROFILE=official for a community build.'
+    );
+  }
+  if (!details.isFile()) {
+    throw new Error(`Official distribution custody is not a file: ${file}`);
+  }
+  // Group/other bits set means another local account can read the contract.
+  if ((details.mode & 0o077) !== 0) {
+    throw new Error(
+      `Official distribution custody ${file} is group/world readable; run: chmod 600 ${file}`
+    );
+  }
+  return readFile(file, 'utf8');
+}
+
+/**
+ * The single resolver every build path shares.
+ *
+ * Order is deliberate, and the amendment of 2026-08-17 is the reason: an
+ * absent input may default to community ONLY where community is a legitimate
+ * artifact. A target that must be official declares itself, and a declared
+ * official build that cannot find its contract FAILS rather than downgrading.
+ */
+export async function resolveDistributionInput(env = process.env) {
+  const explicit = env[DISTRIBUTION_CONFIG_ENV];
+  if (explicit !== undefined) return { inputJson: explicit, source: 'env' };
+  const profile = env[DISTRIBUTION_PROFILE_ENV];
+  if (profile === undefined || profile === 'community') {
+    return { inputJson: undefined, source: 'community-default' };
+  }
+  if (profile !== 'official') {
+    throw new Error(
+      `${DISTRIBUTION_PROFILE_ENV} must be "official" or "community"; received ${JSON.stringify(profile)}`
+    );
+  }
+  return {
+    inputJson: await readOfficialCustody(),
+    source: 'operator-custody',
+  };
+}
+
 export function selectDistributionContract(inputJson) {
   const { COMMUNITY_DISTRIBUTION, parseDistributionContractJson } =
     distributionCore();

@@ -195,24 +195,6 @@
       "reason": "public-safe agent instructions"
     },
     {
-      "path": "README.md",
-      "classification": "PUBLIC",
-      "reason": "public project entrypoint"
-    },
-    {
-      "path": "package.json",
-      "classification": "PUBLIC",
-      "reason": "public scripts and package metadata"
-    },
-    {
-      "path": "pnpm-lock.yaml",
-      "classification": "PUBLIC",
-      "reason": "package-manager output regenerated from the public package graph",
-      "contentPolicy": {
-        "allowThirdPartyEmailMetadata": true
-      }
-    },
-    {
       "path": "LICENSES/third-party/sanitize-filename-1.6.3.txt",
       "classification": "PUBLIC",
       "reason": "verified upstream third-party license text",
@@ -221,14 +203,9 @@
       }
     },
     {
-      "path": "electron-builder.dogfood.yml",
+      "path": "README.md",
       "classification": "PUBLIC",
-      "reason": "generic contributor dogfood build"
-    },
-    {
-      "path": "electron-builder.yml",
-      "classification": "PUBLIC",
-      "reason": "community defaults with official identity supplied by overlay"
+      "reason": "public project entrypoint"
     },
     {
       "path": "docs/README.md",
@@ -316,6 +293,29 @@
       "reason": "public-safe research pointer"
     },
     {
+      "path": "electron-builder.dogfood.yml",
+      "classification": "PUBLIC",
+      "reason": "generic contributor dogfood build"
+    },
+    {
+      "path": "electron-builder.yml",
+      "classification": "PUBLIC",
+      "reason": "community defaults with official identity supplied by overlay"
+    },
+    {
+      "path": "package.json",
+      "classification": "PUBLIC",
+      "reason": "public scripts and package metadata"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "classification": "PUBLIC",
+      "reason": "package-manager output regenerated from the public package graph",
+      "contentPolicy": {
+        "allowThirdPartyEmailMetadata": true
+      }
+    },
+    {
       "path": "scripts/app-update-config.test.mjs",
       "classification": "PUBLIC",
       "reason": "generic update contract without official release assertions"
@@ -331,6 +331,11 @@
       "reason": "pins the public agent contract"
     },
     {
+      "path": "scripts/distribution.official.example.json",
+      "classification": "PUBLIC",
+      "reason": "placeholder-only official distribution overlay example"
+    },
+    {
       "path": "scripts/dogfood-delivery.test.mjs",
       "classification": "PUBLIC",
       "reason": "distribution-neutral dogfood fixtures"
@@ -339,11 +344,6 @@
       "path": "scripts/electron-code-identity-eval.mjs",
       "classification": "PUBLIC",
       "reason": "explicit distribution identity input"
-    },
-    {
-      "path": "scripts/distribution.official.example.json",
-      "classification": "PUBLIC",
-      "reason": "placeholder-only official distribution overlay example"
     },
     {
       "path": "scripts/install-dogfood.mjs",
@@ -371,14 +371,14 @@
       "reason": "distribution-neutral signing fixtures"
     },
     {
-      "path": "scripts/packaged-app.test.mjs",
-      "classification": "PUBLIC",
-      "reason": "distribution-neutral package resolution fixtures"
-    },
-    {
       "path": "scripts/open-source-paths.manifest.json",
       "classification": "PUBLIC",
       "reason": "public-safe projection omits private path vocabulary"
+    },
+    {
+      "path": "scripts/packaged-app.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-neutral package resolution fixtures"
     }
   ],
   "recipes": {}
