@@ -184,6 +184,34 @@ export const SURFACE_GATES = [
       file === 'electron/main/pty/agent-models.ts' ||
       file.startsWith('electron/main/agents/'),
   },
+  {
+    gate: 'eval:electron:lifecycle',
+    why: 'the launcher composer is the only way to start a Session, and the whole PTY lifecycle — cancel, quit, corrupt history, restore, resume, crash — hangs off what it starts',
+    // Routed for the FIRST time here. Nothing in this map named it, so no
+    // change to the launcher or the session lifecycle has ever been made to
+    // run it — the BUG-010/011/014 disease, one more instance, and the reason
+    // its first real packaged run since BUG-036 found a live defect.
+    //
+    // Quarantined against BUG-041: from a Project with no tabs, changing the
+    // Engine axis closes the setup drawer holding it, because the first draft
+    // intent materialises the draft tab and the workspace swaps AgentComposer
+    // to a different render site, remounting it. Proven in dev with a negative
+    // control, so this is neither the packaged build nor the fixture probes.
+    quarantined: 'BUG-041',
+    match: file =>
+      file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
+      file === 'src/components/workspace/launcher/setup-detail.tsx' ||
+      file === 'electron/main/pty/session-manager.ts',
+  },
+  {
+    gate: 'eval:electron:idempotency',
+    why: 'rehydration must adopt each Session exactly once, and it starts them through the same launcher driver',
+    // Same driver, same fixtures, same first-axis defect; see BUG-041.
+    quarantined: 'BUG-041',
+    match: file =>
+      file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
+      file === 'electron/main/pty/session-manager.ts',
+  },
 ];
 
 /**
