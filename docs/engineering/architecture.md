@@ -72,6 +72,12 @@ analytics, protocol, branded icon, or update capability. The resolved canonical
 JSON and SHA-256 digest feed Next explicitly, are mirrored beside Electron
 build-info, and are passed after ambient env to the packaged loopback child.
 Main refuses disagreement among its mirror, the renderer digest, and build-info.
+A resolved product identity is also the single owner of the bundle and
+executable paths, launch/header/metadata name, native lifecycle name, protocol,
+and the `appId`-derived state and cache namespaces. Community therefore
+registers no OAuth callback scheme and can coexist with the official app rather
+than replacing its bundle or state; a branded distributor receives only the
+scheme its contract declares.
 A separately hashed `desktop-public` renderer-composition manifest enumerates
 the packaged payload so the public-tree-only desktop rule can be inspected at
 the artifact boundary; the hosted web delivery may compose a private route
@@ -92,6 +98,14 @@ Renderer product-service callers consume only the corresponding versioned
 capability absence before creating an account client, reading auth, scheduling
 or scanning, and fetching; community renders an explicit unavailable state
 instead of misreporting the absent service as signed out or failed.
+
+Official release and company dogfood are stricter consumers of the same
+boundary: they refuse an absent or unbranded JSON contract before building,
+resolve product/bundle paths through `scripts/lib/packaged-app.mjs`, and assert
+the packaged distribution digest plus the contract's required update feed.
+The release workflow reads the JSON only from private secret custody and
+packages with the contract-projected builder config; the public/manual dogfood
+tooling remains distribution-generic.
 
 Account transport is an explicit nullable adapter at every renderer and server
 call site. When `account` is absent, auth surfaces report that the capability is

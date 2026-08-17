@@ -7,11 +7,6 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const developerIdPrefix = 'Developer ID Application:';
-// The dogfood artifact is an official distribution build. Keep this identity
-// aligned with decision 0036's official overlay so installation rejects both
-// community builds and artifacts carrying the retired pre-open-source id.
-export const EXPECTED_DOGFOOD_IDENTIFIER = 'ai.exawatt.desktop';
-export const EXPECTED_DOGFOOD_TEAM_IDENTIFIER = '5G5A77XLHZ';
 
 export function parseCodeSigningIdentities(output) {
   return output
@@ -34,15 +29,18 @@ export function teamIdentifierFromIdentityName(name) {
 export function selectDeveloperIdIdentity(
   identities,
   requestedFingerprint,
-  expectedTeamIdentifier = EXPECTED_DOGFOOD_TEAM_IDENTIFIER
+  expectedTeamIdentifier
 ) {
   const candidates = identities.filter(identity =>
     identity.name.startsWith(developerIdPrefix)
   );
-  const expectedCandidates = candidates.filter(
-    identity =>
-      teamIdentifierFromIdentityName(identity.name) === expectedTeamIdentifier
-  );
+  const eligible = expectedTeamIdentifier
+    ? candidates.filter(
+        identity =>
+          teamIdentifierFromIdentityName(identity.name) ===
+          expectedTeamIdentifier
+      )
+    : candidates;
 
   if (requestedFingerprint) {
     if (!/^[0-9a-f]{40}$/i.test(requestedFingerprint)) {
@@ -63,29 +61,35 @@ export function selectDeveloperIdIdentity(
     const selectedTeamIdentifier = teamIdentifierFromIdentityName(
       selected.name
     );
-    if (selectedTeamIdentifier !== expectedTeamIdentifier) {
+    if (
+      expectedTeamIdentifier &&
+      selectedTeamIdentifier !== expectedTeamIdentifier
+    ) {
       throw new Error(
-        `EXAWATT_DOGFOOD_SIGN_IDENTITY belongs to Team ${selectedTeamIdentifier ?? '(unknown)'}; Exawatt dogfood builds require Team ${expectedTeamIdentifier}.`
+        `EXAWATT_DOGFOOD_SIGN_IDENTITY belongs to Team ${selectedTeamIdentifier ?? '(unknown)'}; this distribution requires Team ${expectedTeamIdentifier}.`
       );
     }
     return selected;
   }
 
-  if (expectedCandidates.length === 0) {
+  if (eligible.length === 0) {
     throw new Error(
-      `No valid Developer ID Application identity for Exawatt Team ${expectedTeamIdentifier} is available. Import the existing Exawatt Developer ID certificate and private key into the login Keychain, then rerun the dogfood install.`
+      expectedTeamIdentifier
+        ? `No valid Developer ID Application identity for Team ${expectedTeamIdentifier} is available. Import that distributor's Developer ID certificate and private key, then rerun the dogfood install.`
+        : 'No valid Developer ID Application identity is available. Import a distribution signing certificate and private key, then rerun the dogfood install.'
     );
   }
-  if (expectedCandidates.length > 1) {
+  if (eligible.length > 1) {
     throw new Error(
-      `Multiple Developer ID Application identities for Exawatt Team ${expectedTeamIdentifier} are available. Set EXAWATT_DOGFOOD_SIGN_IDENTITY to the exact 40-character SHA-1 fingerprint returned by \`security find-identity -v -p codesigning\`.`
+      `Multiple Developer ID Application identities${expectedTeamIdentifier ? ` for Team ${expectedTeamIdentifier}` : ''} are available. Set EXAWATT_DOGFOOD_SIGN_IDENTITY to the exact 40-character SHA-1 fingerprint returned by \`security find-identity -v -p codesigning\`.`
     );
   }
-  return expectedCandidates[0];
+  return eligible[0];
 }
 
 export async function resolveDeveloperIdIdentity({
   requestedFingerprint = process.env.EXAWATT_DOGFOOD_SIGN_IDENTITY,
+  expectedTeamIdentifier = process.env.EXAWATT_EXPECTED_TEAM_IDENTIFIER,
 } = {}) {
   if (process.platform !== 'darwin') {
     throw new Error('Stable dogfood signing is supported only on macOS.');
@@ -99,7 +103,7 @@ export async function resolveDeveloperIdIdentity({
   return selectDeveloperIdIdentity(
     parseCodeSigningIdentities(stdout),
     requestedFingerprint,
-    EXPECTED_DOGFOOD_TEAM_IDENTIFIER
+    expectedTeamIdentifier
   );
 }
 
@@ -303,10 +307,7 @@ async function verifyRendererArchive(rendererArchive, expectedTeamIdentifier) {
 
 export async function evaluateAppCodeIdentity(
   appPath,
-  {
-    expectedIdentifier = EXPECTED_DOGFOOD_IDENTIFIER,
-    expectedTeamIdentifier = EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
-  } = {}
+  { expectedIdentifier, expectedTeamIdentifier } = {}
 ) {
   if (process.platform !== 'darwin') {
     throw new Error('The macOS code-identity evaluator requires macOS.');

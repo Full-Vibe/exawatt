@@ -27,7 +27,14 @@ import {
 const require = createRequire(import.meta.url);
 
 /** electron-builder's macOS output directory for the only arch this repo ships. */
-const MAC_OUTPUT_DIR = path.join('release', 'mac-arm64');
+export const MAC_OUTPUT_DIR = path.join('release', 'mac-arm64');
+
+export function packagedBuilderConfigPath(
+  root = process.cwd(),
+  profile = 'base'
+) {
+  return path.join(root, '.exawatt-build', `electron-builder.${profile}.json`);
+}
 
 /**
  * @param {{ root?: string, appPathOverride?: string | undefined }} [options]
@@ -55,19 +62,20 @@ export async function resolvePackagedApp({
     digest: distributionDigest(serializeDistributionContract(contract)),
   };
   const identity = resolveDistributionIdentity(prepared.contract);
-  const builtAppPath = path.join(
-    root,
+  const relativeAppPath = path.join(
     MAC_OUTPUT_DIR,
     `${identity.productName}.app`
   );
   // electron-builder names the mac executable after productName, which is also
   // what `app.setName(distributionIdentity.productName)` reports at runtime.
-  const builtExecutablePath = path.join(
-    builtAppPath,
+  const relativeExecutablePath = path.join(
+    relativeAppPath,
     'Contents',
     'MacOS',
     identity.productName
   );
+  const builtAppPath = path.join(root, relativeAppPath);
+  const builtExecutablePath = path.join(root, relativeExecutablePath);
   const executablePath = appPathOverride
     ? path.resolve(appPathOverride)
     : builtExecutablePath;
@@ -78,9 +86,87 @@ export async function resolvePackagedApp({
     identity,
     appPath,
     executablePath,
+    relativeAppPath,
+    relativeExecutablePath,
     /** The contract is the only thing that decides this (`main.ts`). */
     productUpdatesEnabled: prepared.contract.updates !== null,
   };
+}
+
+/**
+ * Release and operator dogfood are official-distribution custody paths. They
+ * must never inherit the public community fallback merely because their
+ * private configuration was absent from the shell.
+ */
+export async function requireOfficialPackagedApp({
+  root = process.cwd(),
+  appPathOverride = process.env.EXAWATT_APP_PATH,
+  inputJson = process.env.EXAWATT_DISTRIBUTION_CONFIG_JSON,
+  purpose = 'Official distribution',
+} = {}) {
+  if (typeof inputJson !== 'string' || inputJson.trim().length === 0) {
+    throw new Error(
+      `${purpose} requires EXAWATT_DISTRIBUTION_CONFIG_JSON. ` +
+        'GitHub Releases must read it from the repository secret with that name; ' +
+        'local dogfood reads the same variable from the linked .env.local or the shell.'
+    );
+  }
+  const packaged = await resolvePackagedApp({
+    root,
+    appPathOverride,
+    inputJson,
+  });
+  if (packaged.contract.brand === null) {
+    throw new Error(`${purpose} requires a branded distribution contract.`);
+  }
+  if (packaged.contract.updates === null) {
+    throw new Error(
+      `${purpose} requires an official update feed in distribution.updates.`
+    );
+  }
+  return packaged;
+}
+
+/** Read the exact projected builder input and prove it matches the contract. */
+export function readPackagedBuilderConfig(
+  packaged,
+  { root = process.cwd(), profile = 'base' } = {}
+) {
+  const configPath = packagedBuilderConfigPath(root, profile);
+  let config;
+  try {
+    config = JSON.parse(readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Resolved ${profile} builder config is missing or invalid at ${configPath}; ` +
+        `prepare that profile from the distribution contract first.`,
+      { cause: error }
+    );
+  }
+  if (
+    config.appId !== packaged.identity.appId ||
+    config.productName !== packaged.identity.productName
+  ) {
+    throw new Error(
+      `Resolved ${profile} builder identity ${config.productName} (${config.appId}) ` +
+        `does not match the dispatched distribution ${packaged.identity.productName} ` +
+        `(${packaged.identity.appId}).`
+    );
+  }
+  const publish = Array.isArray(config.publish)
+    ? config.publish[0]
+    : config.publish;
+  const expectedFeed = packaged.contract.updates?.feedUrl;
+  if (
+    expectedFeed &&
+    (publish?.provider !== 'generic' || publish?.url !== expectedFeed)
+  ) {
+    throw new Error(
+      `Resolved ${profile} builder feed ${publish?.url ?? '(absent)'} does not ` +
+        `match the dispatched distribution feed ${expectedFeed}.`
+    );
+  }
+  return config;
 }
 
 /** `<name>.app/Contents/MacOS/<name>` → `<name>.app`, and a bundle path unchanged. */

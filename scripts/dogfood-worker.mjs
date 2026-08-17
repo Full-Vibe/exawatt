@@ -2,6 +2,7 @@
 
 import {
   acquireDogfoodWorker,
+  dogfoodLogPath,
   runDogfoodWorker,
 } from './lib/dogfood-queue.mjs';
 import { appendDeliveryMetric } from './lib/delivery-state.mjs';
@@ -17,9 +18,11 @@ try {
   ) {
     await appendDeliveryMetric(root, 'dogfood_failed', {
       message: error instanceof Error ? error.message : String(error),
+      logPath: process.env.EXAWATT_DOGFOOD_LOG ?? (await dogfoodLogPath(root)),
     }).catch(() => {});
     console.error(
-      `[dogfood-worker] ${error instanceof Error ? error.message : error}`
+      `[dogfood-worker] ${error instanceof Error ? error.message : error}. ` +
+        `Full log: ${process.env.EXAWATT_DOGFOOD_LOG ?? (await dogfoodLogPath(root))}`
     );
     process.exitCode = 1;
   }

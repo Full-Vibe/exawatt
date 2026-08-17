@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  EXPECTED_DOGFOOD_IDENTIFIER,
-  EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
   assertStableDeveloperIdSignature,
   hasStableSignerIdentity,
   parseCodesignDetails,
@@ -13,18 +11,16 @@ import {
   teamIdentifierFromIdentityName,
 } from './lib/macos-code-signing.mjs';
 
-test('dogfood signing requires the official distribution identity', () => {
-  assert.equal(EXPECTED_DOGFOOD_IDENTIFIER, 'ai.exawatt.desktop');
-});
+const TEST_TEAM = '5G5A77XLHZ';
 
 const developerId = {
   fingerprint: 'A'.repeat(40),
-  name: `Developer ID Application: Example Org (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})`,
+  name: `Developer ID Application: Example Org (${TEST_TEAM})`,
 };
 
 test('parses valid security identities without treating summary lines as identities', () => {
   const output = [
-    `  1) ${'B'.repeat(40)} "Apple Development: Example (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})"`,
+    `  1) ${'B'.repeat(40)} "Apple Development: Example (${TEST_TEAM})"`,
     `  2) ${developerId.fingerprint} "${developerId.name}"`,
     '     2 valid identities found',
   ].join('\n');
@@ -32,7 +28,7 @@ test('parses valid security identities without treating summary lines as identit
   assert.deepEqual(parseCodeSigningIdentities(output), [
     {
       fingerprint: 'B'.repeat(40),
-      name: `Apple Development: Example (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})`,
+      name: `Apple Development: Example (${TEST_TEAM})`,
     },
     developerId,
   ]);
@@ -43,22 +39,19 @@ test('selects the only Developer ID Application identity and derives its team', 
     selectDeveloperIdIdentity([
       {
         fingerprint: 'B'.repeat(40),
-        name: `Apple Development: Example (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})`,
+        name: `Apple Development: Example (${TEST_TEAM})`,
       },
       developerId,
     ]),
     developerId
   );
-  assert.equal(
-    teamIdentifierFromIdentityName(developerId.name),
-    EXPECTED_DOGFOOD_TEAM_IDENTIFIER
-  );
+  assert.equal(teamIdentifierFromIdentityName(developerId.name), TEST_TEAM);
 });
 
 test('requires an exact fingerprint when Developer ID identities are ambiguous', () => {
   const second = {
     fingerprint: 'C'.repeat(40),
-    name: `Developer ID Application: Renewed Example Org (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})`,
+    name: `Developer ID Application: Renewed Example Org (${TEST_TEAM})`,
   };
   assert.throws(
     () => selectDeveloperIdIdentity([developerId, second]),
@@ -73,18 +66,16 @@ test('requires an exact fingerprint when Developer ID identities are ambiguous',
   );
 });
 
-test('never substitutes a sole Developer ID identity from another Team', () => {
+test('uses any distributor by default and enforces an explicitly pinned Team', () => {
   const otherTeam = {
     fingerprint: 'C'.repeat(40),
     name: 'Developer ID Application: Other Org (OTHERID123)',
   };
+  assert.equal(selectDeveloperIdIdentity([otherTeam]), otherTeam);
   assert.throws(
-    () => selectDeveloperIdIdentity([otherTeam]),
-    new RegExp(`Exawatt Team ${EXPECTED_DOGFOOD_TEAM_IDENTIFIER}`)
-  );
-  assert.throws(
-    () => selectDeveloperIdIdentity([otherTeam], otherTeam.fingerprint),
-    new RegExp(`require Team ${EXPECTED_DOGFOOD_TEAM_IDENTIFIER}`)
+    () =>
+      selectDeveloperIdIdentity([otherTeam], otherTeam.fingerprint, TEST_TEAM),
+    new RegExp(`requires Team ${TEST_TEAM}`)
   );
 });
 
@@ -94,10 +85,10 @@ test('fails concretely when no Developer ID Application identity exists', () => 
       selectDeveloperIdIdentity([
         {
           fingerprint: 'B'.repeat(40),
-          name: `Apple Development: Example (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})`,
+          name: `Apple Development: Example (${TEST_TEAM})`,
         },
       ]),
-    /Import the existing Exawatt Developer ID certificate/
+    /Import a distribution signing certificate/
   );
 });
 
@@ -105,9 +96,9 @@ test('parses and accepts a stable Developer ID code signature', () => {
   const signature = parseCodesignDetails(
     [
       'Identifier=com.exawatt.app',
-      `Authority=Developer ID Application: Example Org (${EXPECTED_DOGFOOD_TEAM_IDENTIFIER})`,
+      `Authority=Developer ID Application: Example Org (${TEST_TEAM})`,
       'Authority=Developer ID Certification Authority',
-      `TeamIdentifier=${EXPECTED_DOGFOOD_TEAM_IDENTIFIER}`,
+      `TeamIdentifier=${TEST_TEAM}`,
       'CDHash=1234',
       'Timestamp=Jul 19, 2026 at 1:00:00 AM',
       'Runtime Version=26.4.0',
@@ -117,7 +108,7 @@ test('parses and accepts a stable Developer ID code signature', () => {
   assert.doesNotThrow(() =>
     assertStableDeveloperIdSignature(signature, {
       expectedIdentifier: 'com.exawatt.app',
-      expectedTeamIdentifier: EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
+      expectedTeamIdentifier: TEST_TEAM,
     })
   );
 });
@@ -145,16 +136,16 @@ test('rejects ad-hoc and cross-team nested signatures', () => {
           runtimeVersion: '26.4.0',
           authorities: [developerId.name],
         },
-        { expectedTeamIdentifier: EXPECTED_DOGFOOD_TEAM_IDENTIFIER }
+        { expectedTeamIdentifier: TEST_TEAM }
       ),
-    new RegExp(`expected ${EXPECTED_DOGFOOD_TEAM_IDENTIFIER}`)
+    new RegExp(`expected ${TEST_TEAM}`)
   );
 });
 
 test('rejects signatures without a timestamp or hardened runtime', () => {
   const base = {
     identifier: 'com.exawatt.app',
-    teamIdentifier: EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
+    teamIdentifier: TEST_TEAM,
     signature: null,
     cdHash: '1234',
     timestamp: 'Jul 19, 2026 at 1:00:00 AM',
