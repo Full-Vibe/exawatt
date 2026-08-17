@@ -10,7 +10,28 @@ export interface StartupStage {
 
 export type LaunchAppearance = NativeAppearanceBootstrap;
 
-const html = (appearance: LaunchAppearance) => String.raw`<!doctype html>
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    character =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character]!
+  );
+}
+
+const html = (appearance: LaunchAppearance, productName: string) => {
+  const escapedProductName = escapeHtml(productName);
+  const escapedDisplayName = escapeHtml(productName.toLocaleUpperCase('en-US'));
+  const startupFallback = JSON.stringify(`Starting ${productName}`).replace(
+    /</g,
+    '\\u003c'
+  );
+  return String.raw`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -20,7 +41,7 @@ const html = (appearance: LaunchAppearance) => String.raw`<!doctype html>
     />
     <meta name="color-scheme" content="${appearance.colorScheme}" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Exawatt — Starting</title>
+    <title>${escapedProductName} — Starting</title>
     <style>
       :root {
         color-scheme: ${appearance.colorScheme};
@@ -200,14 +221,14 @@ const html = (appearance: LaunchAppearance) => String.raw`<!doctype html>
   <body data-exawatt-launch data-failed="false">
     <main class="shell" role="status" aria-live="polite" aria-atomic="true">
       <header class="masthead">
-        <span><strong>Exawatt</strong> / Local command layer</span>
+        <span><strong>${escapedProductName}</strong> / Local command layer</span>
         <span>Boot sequence 01</span>
       </header>
 
       <section class="core" aria-hidden="true">
         <div class="mark"><span></span><span></span><span></span><span></span><span></span></div>
         <div class="identity">
-          <h1>EXAWATT</h1>
+          <h1>${escapedDisplayName}</h1>
           <p>Agent command surface</p>
         </div>
       </section>
@@ -233,7 +254,7 @@ const html = (appearance: LaunchAppearance) => String.raw`<!doctype html>
         const percent = document.getElementById('startup-percent');
         window.exawattSetStartupStage = stage => {
           const value = Math.max(0, Math.min(1, Number(stage.progress) || 0));
-          label.textContent = String(stage.label || 'Starting Exawatt');
+          label.textContent = String(stage.label || ${startupFallback});
           detail.textContent = String(stage.detail || '');
           progress.style.transform = 'scaleX(' + value + ')';
           percent.textContent = String(Math.round(value * 100)).padStart(2, '0');
@@ -243,11 +264,15 @@ const html = (appearance: LaunchAppearance) => String.raw`<!doctype html>
     </script>
   </body>
 </html>`;
+};
 
 export function launchScreenUrl(
   appearance: LaunchAppearance = THEME_BOOTSTRAP_REGISTRY[
     'exawatt-classic-dark'
-  ]
+  ],
+  productName = 'Exawatt Community'
 ): string {
-  return `data:text/html;charset=UTF-8,${encodeURIComponent(html(appearance))}`;
+  return `data:text/html;charset=UTF-8,${encodeURIComponent(
+    html(appearance, productName)
+  )}`;
 }

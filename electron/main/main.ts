@@ -99,6 +99,7 @@ import {
 import {
   assertRendererCompositionAgreement,
   distributionChildEnvironment,
+  distributionDataPathOverrides,
   distributionIpcCapabilities,
   loadDevelopmentDistribution,
   loadPackagedDistribution,
@@ -285,24 +286,15 @@ const protocolScheme = distributionIdentity.protocolScheme;
 const productUpdateFeedUrl = distribution.contract.updates?.feedUrl ?? null;
 const productUpdatesEnabled = productUpdateFeedUrl !== null;
 app.setName(distributionIdentity.productName);
-// Preserve the established official install's state location. A source build
-// gets an app-id-derived namespace so it can never mutate official state or
-// reuse its extracted renderer cache.
-if (!distribution.contract.brand && !process.env.EXAWATT_USER_DATA) {
-  app.setPath(
-    'userData',
-    path.join(
-      path.dirname(app.getPath('userData')),
-      distributionIdentity.stateNamespace
-    )
-  );
-  app.setPath(
-    'sessionData',
-    path.join(
-      path.dirname(app.getPath('sessionData')),
-      `${distributionIdentity.cacheNamespace}.cache`
-    )
-  );
+// Preserve the established official install's data path. Community uses its
+// app-id namespace and can never mutate official state or renderer caches.
+if (!process.env.EXAWATT_USER_DATA) {
+  const overrides = distributionDataPathOverrides(distribution.contract, {
+    userData: app.getPath('userData'),
+    sessionData: app.getPath('sessionData'),
+  });
+  if (overrides.userData) app.setPath('userData', overrides.userData);
+  if (overrides.sessionData) app.setPath('sessionData', overrides.sessionData);
 }
 if (!isDev) {
   const compositionRoot = path.join(process.resourcesPath, 'renderer');
@@ -1630,7 +1622,10 @@ app.whenReady().then(() => {
     ? bootstrapCommandSurface()
     : null;
   const appearance = applyNativeAppearance();
-  createWindow(launchScreenUrl(appearance.bootstrap), appearance);
+  createWindow(
+    launchScreenUrl(appearance.bootstrap, distributionIdentity.productName),
+    appearance
+  );
   commandSurface ??= bootstrapCommandSurface();
 
   app.on('activate', () => {
@@ -1640,7 +1635,10 @@ app.whenReady().then(() => {
       createWindow(
         startupComplete
           ? workspaceUrl()
-          : launchScreenUrl(nextAppearance.bootstrap),
+          : launchScreenUrl(
+              nextAppearance.bootstrap,
+              distributionIdentity.productName
+            ),
         nextAppearance
       );
     }

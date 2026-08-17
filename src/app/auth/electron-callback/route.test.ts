@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { AUTH_LINK_OUTCOMES } from '@/components/auth/callback-failures';
 import { handleElectronCallback } from './route';
 
+const officialIdentity = {
+  productName: 'Exawatt',
+  protocolScheme: 'exawatt',
+};
+
 function callback(query: string): Request {
   return new Request(`https://app.test/auth/electron-callback${query}`);
 }
@@ -10,14 +15,14 @@ function callback(query: string): Request {
  *  community answer is asserted on its own in the runtime-degradation suite. */
 function relayed(
   request: Request,
-  logFailure?: Parameters<typeof handleElectronCallback>[1]
+  logFailure?: Parameters<typeof handleElectronCallback>[2]
 ): Response {
-  return handleElectronCallback(request, logFailure, true);
+  return handleElectronCallback(request, officialIdentity, logFailure, true);
 }
 
 async function deepLink(response: Response): Promise<URL> {
   const body = await response.text();
-  const match = body.match(/href="(exawatt:\/\/[^"]+)"/);
+  const match = body.match(/href="([a-z][a-z0-9+.-]*:\/\/[^"]+)"/);
   expect(match, 'no deep link in the relay page').toBeTruthy();
   return new URL(match![1]);
 }
@@ -103,5 +108,38 @@ describe('a sign-in callback is unchanged', () => {
     await expect(response.text()).resolves.toContain(
       'Missing authorization code.'
     );
+  });
+});
+
+describe('distribution-owned callback identity', () => {
+  it('supports a downstream distributor without claiming exawatt://', async () => {
+    const response = handleElectronCallback(
+      callback('?code=downstream'),
+      {
+        productName: 'Acme Agent Console',
+        protocolScheme: 'acme-agents',
+      },
+      undefined,
+      true
+    );
+
+    const body = await response.clone().text();
+    const link = await deepLink(response);
+    expect(link.protocol).toBe('acme-agents:');
+    expect(link.searchParams.get('code')).toBe('downstream');
+    expect(body).not.toContain('exawatt://');
+    expect(body).toContain('Returning to Acme Agent Console');
+  });
+
+  it('does not emit a desktop deep link for the community build', async () => {
+    const response = handleElectronCallback(callback('?code=ignored'), {
+      productName: 'Exawatt Community',
+      protocolScheme: null,
+    });
+
+    expect(response.status).toBe(404);
+    const body = await response.text();
+    expect(body).toContain('Desktop authentication is not configured');
+    expect(body).not.toMatch(/[a-z][a-z0-9+.-]*:\/\/auth\/callback/);
   });
 });
