@@ -31,7 +31,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
 | `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in) | Own-account feature (re-entry recap) | On | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0` |
-| Electron main → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On | Settings → Privacy → Claude plan usage |
+| Signed Exawatt Chromium network stack → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On in installed builds; off in routine development | Settings → Privacy → Claude plan usage; focused unpackaged integration testing only: `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` |
 | `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
 | `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
 | Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
@@ -359,7 +359,11 @@ OAuth token Claude Code already stores in the macOS Keychain
 - **Purpose**: the Claude session/weekly rows in the Usage meter and `/usage`
   page — plan truth local files definitively lack.
 - **Default**: on (the operator-pulled feature; own-account default-on per
-  decision `0031`'s disclosure contract).
+  decision `0031`'s disclosure contract) in an installed build. Routine
+  unpackaged development and eval launches keep the remote read disabled:
+  Electron's downloaded development runtime is ad-hoc signed on macOS, so it
+  cannot present Little Snitch with Exawatt's durable Developer ID. A focused
+  integration run may opt in with `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1`.
 - **Off**: Settings → Privacy → **Claude plan usage**
   (`claudePlanWindows.enabled`), enforced at the boundary: off constructs no
   request and the meter shows Claude as unmetered again. Exawatt never
@@ -367,6 +371,10 @@ OAuth token Claude Code already stores in the macOS Keychain
   at all.
 - **Cadence**: at most one request per ~5 minutes, and only while the app is
   open with a consumption surface alive.
+- **Transport identity**: installed builds issue the request through
+  `electron.net.fetch`, the same Chromium network boundary used by desktop
+  authentication. The packaged app and helper are Developer ID signed as
+  Exawatt; the request does not use Node's global `fetch`.
 
 Everything else is local: `/api/oc/token` reads the OpenClaw gateway token off
 disk and returns a `127.0.0.1` address; `/api/dev-identity` exists only in
@@ -396,7 +404,8 @@ development.
   electron/main/consumption/claude-plan-account.test.ts`. The tests pin the
   single host, refused redirects, the never-send-expired-token rule, the
   token's absence from persisted state and the served view, and every failure
-  mode degrading to absence.
+  mode degrading to absence. They also pin the installed-vs-unpackaged runtime
+  boundary and prove a settings write cannot open the disabled dev path.
 - End to end: run a production build with the network inspector open, or watch
   the app's outbound connections in a firewall tool. The desktop app should
   show `exawatt.ai`, — when signed in and using hosted features — the Supabase

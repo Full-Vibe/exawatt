@@ -59,6 +59,20 @@ export const CLAUDE_OAUTH_BETA_HEADER = 'oauth-2025-04-20';
 /** Keychain item Claude Code stores its own OAuth credential under. */
 export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
 
+/**
+ * Credentialed account reads belong to an installed, signed app identity.
+ * Unpackaged Electron is ad-hoc signed on macOS, so every Electron revision
+ * presents Little Snitch with a different CDHash. A focused developer may
+ * opt in explicitly when exercising this exact integration; routine dev and
+ * eval launches stay local.
+ */
+export function isClaudePlanRemoteReadAllowed(options: {
+  packaged: boolean;
+  developmentOptIn?: string;
+}): boolean {
+  return options.packaged || options.developmentOptIn === '1';
+}
+
 const STATE_FILE = 'claude-plan.json';
 const DEFAULT_MIN_FETCH_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_JITTER_MS = 45_000;
@@ -382,6 +396,11 @@ export interface ClaudePlanAccountOptions {
   stateDir: string;
   /** Seeded from settings; `setEnabled` applies the toggle live. */
   enabled: boolean;
+  /**
+   * Immutable runtime capability. False for unsigned development copies so a
+   * settings write cannot accidentally open this credentialed network path.
+   */
+  remoteReadAllowed?: boolean;
   fetchFn?: typeof fetch;
   readCredential?: () => Promise<ClaudeOauthCredential | null>;
   now?: () => number;
@@ -407,8 +426,9 @@ export class ClaudePlanAccountService {
   private readonly minFetchIntervalMs: number;
   private readonly jitterMs: number;
   private readonly timeoutMs: number;
+  private readonly remoteReadAllowed: boolean;
 
-  private enabled: boolean;
+  private preferenceEnabled: boolean;
   private windows: PlanWindow[] = [];
   private observations = new WindowObservationAccumulator();
   private spend: ProviderPlanSpend | null = null;
@@ -423,7 +443,8 @@ export class ClaudePlanAccountService {
 
   constructor(options: ClaudePlanAccountOptions) {
     this.stateDir = options.stateDir;
-    this.enabled = options.enabled;
+    this.preferenceEnabled = options.enabled;
+    this.remoteReadAllowed = options.remoteReadAllowed ?? true;
     this.fetchFn = options.fetchFn ?? fetch;
     this.readCredential = options.readCredential ?? readClaudeCredential;
     this.now = options.now ?? Date.now;
@@ -432,6 +453,10 @@ export class ClaudePlanAccountService {
     this.jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.loadPersisted();
+  }
+
+  private get enabled(): boolean {
+    return this.preferenceEnabled && this.remoteReadAllowed;
   }
 
   /** Current state, synchronously. Disabled serves ABSENCE — no windows,
@@ -488,10 +513,10 @@ export class ClaudePlanAccountService {
   /** The settings toggle, applied before it is announced: off serves absence
    *  on the very next view and no further request is constructed. */
   setEnabled(enabled: boolean): void {
-    if (this.enabled === enabled) return;
-    this.enabled = enabled;
+    if (this.preferenceEnabled === enabled) return;
+    this.preferenceEnabled = enabled;
     this.bump();
-    if (enabled) this.maybeRefresh();
+    if (this.enabled) this.maybeRefresh();
   }
 
   onUpdated(listener: () => void): () => void {

@@ -17,6 +17,7 @@ import { planWindowKey } from '@exawatt/core';
 import {
   CLAUDE_USAGE_ENDPOINT,
   ClaudePlanAccountService,
+  isClaudePlanRemoteReadAllowed,
   parseClaudeUsage,
   readClaudeCredential,
   type ClaudeOauthCredential,
@@ -86,6 +87,21 @@ const USAGE_RESPONSE = {
 } as const;
 
 const OBSERVED_AT = '2026-08-11T21:00:00.000Z';
+
+describe('Claude plan runtime network boundary', () => {
+  it('allows installed builds and keeps routine unpackaged launches local', () => {
+    expect(isClaudePlanRemoteReadAllowed({ packaged: true })).toBe(true);
+    expect(isClaudePlanRemoteReadAllowed({ packaged: false })).toBe(false);
+    expect(isClaudePlanRemoteReadAllowed({
+      packaged: false,
+      developmentOptIn: '1',
+    })).toBe(true);
+    expect(isClaudePlanRemoteReadAllowed({
+      packaged: false,
+      developmentOptIn: 'true',
+    })).toBe(false);
+  });
+});
 
 /* ------------------------------------------------------------------ */
 /* adapter                                                             */
@@ -245,11 +261,13 @@ describe('ClaudePlanAccountService', () => {
     fetchFn?: typeof fetch;
     readCredential?: () => Promise<ClaudeOauthCredential | null>;
     enabled?: boolean;
+    remoteReadAllowed?: boolean;
     minFetchIntervalMs?: number;
   } = {}) =>
     new ClaudePlanAccountService({
       stateDir,
       enabled: over.enabled ?? true,
+      remoteReadAllowed: over.remoteReadAllowed,
       fetchFn: (over.fetchFn ?? okFetch()) as typeof fetch,
       readCredential: over.readCredential ?? (async () => credential()),
       now: () => nowMs,
@@ -362,6 +380,25 @@ describe('ClaudePlanAccountService', () => {
     svc.setEnabled(true);
     await svc.maybeRefresh();
     expect(svc.view().windows).toHaveLength(3);
+  });
+
+  it('an unsigned runtime cannot be opened by changing the setting', async () => {
+    const fetchFn = okFetch();
+    const readCredential = vi.fn(async () => credential());
+    const svc = service({
+      fetchFn: fetchFn as unknown as typeof fetch,
+      readCredential,
+      remoteReadAllowed: false,
+    });
+
+    await svc.maybeRefresh();
+    svc.setEnabled(false);
+    svc.setEnabled(true);
+    await svc.maybeRefresh();
+
+    expect(readCredential).not.toHaveBeenCalled();
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(svc.view().account.status).toBe('disabled');
   });
 
   it('switching off mid-life hides the windows on the very next view', async () => {
