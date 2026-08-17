@@ -299,7 +299,13 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     altitudeAnchor: null,
     screens: 1,
     status: 'reserved',
-    reservedUntil: 'W3 owns the closing line and the download requirement.',
+    // W3 BUILT IT; the operator has not picked the line yet. The band, the
+    // 72px rung, the closing copy and the repeated button are all real and
+    // switchable at `/hud-gallery/fold-close`. Flipping this to `shipped` and
+    // registering `CloseBand` is what puts it on the homepage, and that lands
+    // with the fold variant the operator chooses, in one commit.
+    reservedUntil:
+      'The operator picks a W3 fold and close variant at /hud-gallery/fold-close.',
   },
 ];
 
@@ -347,4 +353,28 @@ export function pageCopyCeiling(
 /** Words in a rendered band, for asserting a band against its budget. */
 export function countWords(text: string): number {
   return text.trim().split(/\s+/u).filter(Boolean).length;
+}
+
+/**
+ * A rendered band's READING COPY, in words (ENG-031 W3).
+ *
+ * `copyBudget` is a ceiling on what a reader reads: kickers, headings and
+ * prose. Conversion affordances are excluded, and marked in the DOM with
+ * `data-band-affordance` so the exclusion is explicit rather than assumed.
+ *
+ * That is how the 16-site cohort was counted. Linear measures 19 words above
+ * the fold with two buttons on screen, and the closing constraint is stated as
+ * "10 words or fewer, AND repeats the fold's buttons" — the buttons are
+ * additive by the constraint's own wording. The affordance has its own
+ * measured rule instead: the download names the OS and states its requirement
+ * at the button.
+ */
+export function bandCopyWords(root: Element): number {
+  const clone = root.cloneNode(true) as Element;
+  for (const affordance of Array.from(
+    clone.querySelectorAll('[data-band-affordance]')
+  )) {
+    affordance.remove();
+  }
+  return countWords(clone.textContent ?? '');
 }

@@ -356,5 +356,13 @@ export function isMarketingRoute(pathname: string): boolean {
  * chrome follows the surface rather than the app appearance so navigation
  * between them never exposes a mismatched light frame. */
 export function usesDarkPublicChrome(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/architecture');
+  return (
+    pathname === '/' ||
+    pathname.startsWith('/architecture') ||
+    // The ENG-031 W3 fold study renders the real fold band, which bleeds up
+    // under this header. Judging the copy against a light frame it will never
+    // ship with would be judging the wrong page. It stays footerless, because
+    // internal previews are not marketing routes.
+    pathname === '/hud-gallery/fold-close'
+  );
 }

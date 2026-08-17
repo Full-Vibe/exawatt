@@ -319,6 +319,29 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-08-17 — ENG-031 W3 fold and close. **The `site-closing` rung is now
+  RENDERED, and measured.** All four copy variants compute the closing line to
+  exactly 72px / 72px / weight 700 at 1440x900 and 390x844, DPR 2, which is 4x
+  the 18px `section` rung and mid-window of the measured 3x-to-7x band; the
+  fold headline measures 60px, the subhead 20px, the kicker 16px, and the
+  download requirement 12px mono. Every one of those still resolves
+  `-apple-system`, so the ENG-032 T5.3 public-exhibition typography boundary
+  survives the new components. Three rules recorded, no new rung. (1) **A
+  sentence is never set in mono.** Mono is reserved for tracked micro-labels at
+  11px and below, the HUD label idiom. The fold's vision kicker was first built
+  at 12px Geist Mono and read as a code comment; it is now 14/16px in the
+  reading face. Mono keeps the download requirement, which is a machine fact
+  and not a sentence. (2) **The marketing fold's primary CTA is white on the
+  authored dark ground**, not `--primary`. The marketing site runs one fixed
+  register and does not inherit an app token that moves with the theme
+  contract. It is flat, hit-testable, keyboard-focusable DOM, never a mesh.
+  (3) **A band's copy budget counts reading copy.** `bandCopyWords()` excludes
+  any subtree marked `data-band-affordance`, which is how the reference cohort
+  was measured and what the closing constraint states outright ("10 words or
+  fewer, and repeats the fold's buttons"). Conversion affordances are governed
+  by their own rule instead: the download names the OS and states its
+  requirement at the button.
+
 - 2026-08-16 — ENG-031 W1 homepage band system
   (`src/components/site/bands/`). **The marketing register gains one rung
   above `text-4xl`: `site-closing` at 72px.** The 16-site measurement that
