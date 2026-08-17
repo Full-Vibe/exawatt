@@ -16,6 +16,7 @@ import { createReadStream } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import { readCompositionState } from './lib/company-composition.mjs';
 import { assertRendererArchiveServes } from './lib/renderer-archive.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -54,6 +55,17 @@ const [preparedDistributionDigest, builtDistributionDigest] = await Promise.all(
 if (preparedDistributionDigest.trim() !== builtDistributionDigest.trim()) {
   throw new Error(
     `Renderer distribution mismatch: prepared ${preparedDistributionDigest.trim()}, Next ${builtDistributionDigest.trim()}`
+  );
+}
+
+// The other direction of the same boundary (ENG-030 WP3). A desktop artifact is
+// sealed here, so this is the last moment a hosted-web composition can be
+// refused before company server code reaches a signed bundle and every user's
+// update download.
+const overlayComposition = await readCompositionState(root);
+if (overlayComposition && overlayComposition.profile === 'official-web') {
+  throw new Error(
+    `Renderer was built as an official-web composition (${overlayComposition.applied.length} hosted overlay file(s)); a desktop build must declare EXAWATT_COMPOSITION_PROFILE=official-desktop.`
   );
 }
 

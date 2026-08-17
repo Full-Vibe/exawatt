@@ -64,3 +64,6 @@ release/
 
 # Local tool state (omo)
 .omo/
+
+# deterministic private/public composition output
+.company-build/

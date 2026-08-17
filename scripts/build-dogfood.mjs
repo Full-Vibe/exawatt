@@ -72,7 +72,11 @@ console.log(
 
 await assertImmutableSource();
 
-await run('pnpm', ['build']);
+// A desktop artifact is never a hosted composition: the company overlay's
+// hosted routes must not reach an installed application (ENG-030 WP3).
+await run('pnpm', ['build'], {
+  EXAWATT_COMPOSITION_PROFILE: 'official-desktop',
+});
 await run('pnpm', ['electron:prepare-renderer']);
 await run('pnpm', ['electron:compile']);
 await run('pnpm', [
