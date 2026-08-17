@@ -68,8 +68,16 @@ import {
   resolveHeroHighlight,
   type HeroHighlightId,
 } from '@/components/site/hero-board/hero-board-highlight';
+import {
+  resolveHeroLens,
+  type HeroLensId,
+} from '@/components/site/hero-board/hero-board-lens';
 import { HERO_BOARD_CAPTURE } from '@/components/site/hero-board/capture';
-import { spatialColorWithAlpha } from '@/components/fleet/spatial/spatial-theme';
+import {
+  spatialColorWithAlpha,
+  type SpatialThemeSnapshot,
+} from '@/components/fleet/spatial/spatial-theme';
+import { cn } from '@/lib/utils';
 import { altitudePanel } from './altitude-copy';
 import { BandHeading } from './band-section';
 import type { HomepageBand } from './manifest';
@@ -137,6 +145,10 @@ export function PinnedBoardSequence({
 
   const highlightId: HeroHighlightId =
     bands[active]?.boardHighlight ?? 'whole-fleet';
+  // The LENS is the second thing a panel drives (ENG-031 W8) and it is
+  // deliberately independent of the highlight: one says what a mark means, the
+  // other says which marks lead.
+  const lensId: HeroLensId = bands[active]?.boardLens ?? 'status';
 
   // The camera choreography is DERIVED from the same band list that supplies
   // the panels, so a reordered or added panel moves the camera with it and
@@ -240,6 +252,7 @@ export function PinnedBoardSequence({
             progressRef={progress}
             ladder={ladder}
             highlight={highlightId}
+            lens={lensId}
           />
         </div>
         {/* A short scrim across the seam only. The reading column sits on bare
@@ -251,12 +264,19 @@ export function PinnedBoardSequence({
           style={{
             background: narrow
               ? // On a phone the reading column sits over the board's lower
-                // third, so the seam is horizontal and the board keeps its top
-                // two thirds completely unobstructed.
-                `linear-gradient(to top, ${ground} 0%, ${ground} 22%, ${spatialColorWithAlpha(
+                // half, so the seam is horizontal and the board keeps its top
+                // unobstructed. W8 pushed the opaque edge from 22% to 55%:
+                // once the panels carry mechanisms as well as a claim they are
+                // half a screen tall, and a heading crossing an anchored
+                // Project label at full strength is the one thing a demo
+                // surface may not do. The seam belongs in ONE fixed layer and
+                // never on the panels themselves, because several panels are
+                // positioned at once and their scrims would stack into an
+                // opaque floor.
+                `linear-gradient(to top, ${ground} 0%, ${ground} 28%, ${spatialColorWithAlpha(
                   ground,
-                  0.72
-                )} 34%, ${spatialColorWithAlpha(ground, 0)} 46%)`
+                  0.55
+                )} 42%, ${spatialColorWithAlpha(ground, 0)} 56%)`
               : `linear-gradient(to right, ${ground} 0%, ${ground} 27%, ${spatialColorWithAlpha(
                   ground,
                   0.55
@@ -281,6 +301,7 @@ export function PinnedBoardSequence({
             unpinned={unpinned}
             theme={{ label: theme.label, muted: theme.labelMuted }}
             accent={theme.status['needs-you']}
+            snapshot={theme}
             register={(node: HTMLElement | null) => {
               if (node) panelNodes.current.set(index, node);
               else panelNodes.current.delete(index);
@@ -298,6 +319,7 @@ function PinnedPanel({
   active,
   unpinned,
   theme,
+  snapshot,
   accent,
   register,
 }: {
@@ -306,6 +328,8 @@ function PinnedPanel({
   active: boolean;
   unpinned: boolean;
   theme: { label: string; muted: string };
+  /** The whole resolved snapshot, which the lens needs for its palette. */
+  snapshot: SpatialThemeSnapshot;
   accent: string;
   register: (node: HTMLElement | null) => void;
 }) {
@@ -322,6 +346,17 @@ function PinnedPanel({
       ).subject,
     [band.boardHighlight]
   );
+  // Resolved per panel rather than per active panel, for the same reason the
+  // subject is: unpinned, several panels are on screen at once, and a legend
+  // that named the ACTIVE lens would label the wrong colours on all but one.
+  const lens = useMemo(
+    () => resolveHeroLens(HERO_BOARD_CAPTURE, band.boardLens ?? 'status', snapshot),
+    [band.boardLens, snapshot]
+  );
+  // The whole-fleet line is identical on every panel that does not narrow the
+  // board, so it is spent on the scale claim and on the panels that do.
+  const showSubject =
+    band.boardHighlight !== 'whole-fleet' || band.id === 'altitude-fleet';
   const style = {
     '--panel-screens': band.screens,
     // The pinned pass owns this after first paint. It starts at the first
@@ -345,15 +380,50 @@ function PinnedPanel({
           panel keeps the copy over the board's lower third for the whole hold,
           with no JavaScript and no second layout. Desktop is centred and does
           not need it. */}
-      <div className="pointer-events-none w-full max-w-[28rem] px-6 sm:px-10 max-md:sticky max-md:bottom-4 lg:pl-16">
+      <div
+        className="pointer-events-none relative w-full max-w-[30rem] px-5 sm:px-10 max-md:sticky max-md:bottom-3 lg:max-w-[34rem] lg:pl-16"
+        data-pinned-panel-column
+      >
+        {/* THE PHONE'S SEAM TRAVELS WITH THE COLUMN.
+            A panel is bottom-pinned for the first half of its life and then
+            rides up and out, which is ordinary scrollytelling. What is not
+            ordinary is a panel heading crossing an anchored Project label
+            while both are at full strength, and a FIXED seam cannot follow the
+            copy that far. So the fixed seam in the pinned layer covers the
+            bottom quarter, where the column always is, and this one covers the
+            column itself wherever it happens to be. It carries the panel's own
+            presence, so it fades exactly as its copy does; two of them overlap
+            for one crossfade and land around three quarters opaque, which is
+            the moment the board has least to say anyway. Desktop needs none of
+            this: the board starts at 32% and the column never crosses it. */}
+        <div
+          aria-hidden
+          className="absolute inset-x-0 -bottom-8 top-0 md:hidden"
+          style={{
+            background: `linear-gradient(to top, ${snapshot.canvas} 0%, ${snapshot.canvas} 88%, ${spatialColorWithAlpha(
+              snapshot.canvas,
+              0
+            )} 100%)`,
+          }}
+          data-pinned-panel-scrim
+        />
         <BandHeading
           band={band}
           className="tracking-tight"
           style={{ color: theme.muted }}
           data-pinned-panel-heading
         />
+        {/* A panel that carries mechanisms leads with a SMALLER claim. One
+            idea per screen is a height constraint as much as a copy one, and
+            at the full claim size a three-card panel ran past the fold edge on
+            a 900px laptop and cut its own last line off. */}
         <p
-          className="mt-2.5 text-lg leading-snug font-medium text-balance sm:text-2xl sm:leading-snug"
+          className={cn(
+            'mt-2.5 font-medium text-pretty',
+            copy?.cards?.length
+              ? 'text-[15px] leading-snug sm:text-lg sm:leading-snug lg:text-xl lg:leading-snug'
+              : 'text-lg leading-snug sm:text-xl sm:leading-snug lg:text-2xl lg:leading-snug'
+          )}
           style={{ color: theme.label }}
           data-pinned-panel-copy
         >
@@ -363,7 +433,11 @@ function PinnedPanel({
             </span>
           ))}
         </p>
-        {subject ? (
+        {/* The board's own numbers, read off the capture, never typed. On a
+            panel whose emphasis is the whole fleet this would be the same
+            line four times over, so it is spent where it says something new:
+            the scale claim and every panel that narrows the board. */}
+        {showSubject ? (
           <p
             className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1"
             data-pinned-panel-subject
@@ -382,6 +456,108 @@ function PinnedPanel({
             >
               {subject.detail}
             </span>
+          </p>
+        ) : null}
+        {/* THE LENS LEGEND. Printed only when the lens is actually re-reading
+            the board: a legend for colours the board is not using is worse
+            than no legend, which is why `active` is a property of the resolved
+            lens rather than of the band. The status lens prints nothing here,
+            because the board's own five-signal legend is already in frame. */}
+        {lens.active && lens.legend.length ? (
+          <div className="mt-4 flex flex-col gap-1.5" data-pinned-panel-legend>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              {lens.legendKind === 'ramp' ? (
+                <span className="flex items-center gap-2">
+                  <span
+                    className="text-chrome-label"
+                    style={{ color: theme.muted }}
+                  >
+                    {lens.legend[0]?.label}
+                  </span>
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-24 rounded-full"
+                    style={{
+                      background: `linear-gradient(to right, ${lens.colors
+                        .slice(0, 5)
+                        .join(', ')})`,
+                    }}
+                  />
+                  <span
+                    className="text-chrome-label"
+                    style={{ color: theme.muted }}
+                  >
+                    {lens.legend[1]?.label}
+                  </span>
+                </span>
+              ) : (
+                lens.legend.map(channel => (
+                  <span
+                    className="flex items-center gap-1.5"
+                    key={channel.label}
+                  >
+                    <span
+                      aria-hidden
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: channel.color }}
+                    />
+                    <span
+                      className="text-chrome-label"
+                      style={{ color: theme.label }}
+                    >
+                      {channel.label}
+                    </span>
+                  </span>
+                ))
+              )}
+            </div>
+            {lens.caption ? (
+              <p
+                className="text-chrome-label"
+                style={{ color: theme.muted }}
+                data-pinned-panel-lens-caption
+              >
+                {lens.caption}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {/* The mechanisms that make the claim checkable, on the panel rather
+            than on a chapter one screen further down (W8). Three is the
+            working ceiling: a fourth card starts covering the evidence it is
+            about, and on a phone the column already sits over the board's
+            lower third. Type steps down hard from the claim so the panel
+            still reads as one idea. */}
+        {copy?.cards?.length ? (
+          <ul
+            className="mt-3.5 flex flex-col gap-2 sm:mt-4 sm:gap-2.5"
+            data-pinned-panel-cards
+          >
+            {copy.cards.map(card => (
+              <li className="flex flex-col gap-0.5" key={card.title}>
+                <span
+                  className="text-[13px] font-semibold sm:text-sm lg:text-base"
+                  style={{ color: theme.label }}
+                >
+                  {card.title}
+                </span>
+                <span
+                  className="text-[12px] leading-snug sm:text-[13px] sm:leading-snug lg:text-sm lg:leading-snug"
+                  style={{ color: theme.muted }}
+                >
+                  {card.body}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {copy?.coda ? (
+          <p
+            className="mt-3 text-[11px] leading-snug sm:mt-4 sm:text-xs lg:text-sm"
+            style={{ color: theme.muted }}
+            data-pinned-panel-coda
+          >
+            {copy.coda}
           </p>
         ) : null}
       </div>

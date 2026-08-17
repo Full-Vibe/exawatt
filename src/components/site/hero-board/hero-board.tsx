@@ -60,6 +60,7 @@ import {
   resolveHeroHighlight,
   type HeroHighlightId,
 } from './hero-board-highlight';
+import { resolveHeroLens, type HeroLensId } from './hero-board-lens';
 import type { HeroAltitude } from './hero-board-scene';
 import { HeroBoardOverlay } from './hero-board-overlay';
 
@@ -113,6 +114,13 @@ export interface HeroBoardProps {
    * fold's state and the state at rest.
    */
   highlight?: HeroHighlightId;
+  /**
+   * What the board is COLOURED BY (ENG-031 W8). Independent of the highlight:
+   * a lens says what a mark means, a highlight says which marks lead. Defaults
+   * to the product's own five status signals, which is the fold's state and
+   * the state at rest.
+   */
+  lens?: HeroLensId;
   /** Study override: force the poster path, or force the live canvas frozen. */
   force?: 'auto' | 'live' | 'frozen' | 'poster';
   /** Study and eval only. Reading pixels back needs the drawing buffer kept. */
@@ -129,6 +137,7 @@ export function HeroBoard({
   progressRef,
   ladder,
   highlight = 'whole-fleet',
+  lens = 'status',
   force = 'auto',
   preserveDrawingBuffer = false,
   statusProtocolMotion = true,
@@ -165,6 +174,14 @@ export function HeroBoard({
     current.zoneFocus.set(resolved.zones);
     current.unitFocus.set(resolved.units);
   }, [resolved]);
+
+  // Resolved the same way and for the same reason: off the frozen capture and
+  // the resolved theme, so the palette the board paints and the legend the
+  // panel prints can never be two different answers.
+  const resolvedLens = useMemo(
+    () => resolveHeroLens(HERO_BOARD_CAPTURE, lens, theme),
+    [lens, theme]
+  );
 
   useEffect(() => {
     const element = frame.current;
@@ -233,6 +250,7 @@ export function HeroBoard({
             progressRef={progressRef ?? fallbackProgress}
             ladder={ladder}
             highlight={resolved}
+            lens={resolvedLens}
             preserveDrawingBuffer={preserveDrawingBuffer}
             getBridge={getBridge}
             onReady={handleReady}

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { metadata } from './page';
-import { HomepageNarrativeStudy } from '@/app/hud-gallery/homepage-narrative/study';
-import V2Page from './page';
+import V2Page, { metadata } from './page';
+import { HomeBands } from '@/components/site/bands/band-stack';
 
 /**
- * `/v2` is the review address for the next homepage (ENG-031 W5). Two
+ * `/v2` is the review address for the next homepage (ENG-031 W5, W8). Three
  * properties have to hold or it stops being safe to hand out.
  */
 describe('the review homepage at /v2', () => {
@@ -14,11 +13,16 @@ describe('the review homepage at /v2', () => {
     expect(metadata.robots).toEqual({ index: false, follow: false });
   });
 
-  it('renders the SAME component as the gallery study, chrome off', () => {
-    // One page, two addresses. If this ever forked, the thing the operator
-    // reviewed and the thing he sends people would drift apart.
+  it('replaces the stale meta description with the fold it actually leads with', () => {
+    expect(metadata.description).not.toContain('Power your AI agents');
+    expect(metadata.description).toContain('command interface');
+  });
+
+  it('renders the SAME composer as the homepage, on the proposed arrangement', () => {
+    // One page, two arrangements. If this ever forked into its own component,
+    // the thing the operator reviews and the thing that ships would drift.
     const element = V2Page();
-    expect(element.type).toBe(HomepageNarrativeStudy);
-    expect(element.props).toEqual({ chrome: false });
+    expect(element.type).toBe(HomeBands);
+    expect(element.props).toEqual({ arrangement: 'proposed' });
   });
 });

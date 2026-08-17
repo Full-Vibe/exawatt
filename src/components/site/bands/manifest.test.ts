@@ -9,9 +9,13 @@ import {
   bandRuns,
   countWords,
   heroCameraAnchors,
+  HOMEPAGE_ARRANGEMENT,
+  arrangementBands,
   pageCopyCeiling,
+  pageScreens,
   pinnedAltitudeLadder,
   pinnedBoardBands,
+  proposedBands,
   reservedBands,
   shippedBands,
 } from './manifest';
@@ -63,15 +67,6 @@ describe('homepage band contract', () => {
 
   it('keeps the closing band at ten words or fewer', () => {
     expect(bandById('close').copyBudget.max).toBeLessThanOrEqual(10);
-  });
-
-  it('declares page copy inside the measured band, at BOTH ends', () => {
-    // W1 recorded the gap and could only assert the ceiling, because the nine
-    // core bands summed to about 474 words: premium, and under the floor a
-    // page has to clear to be communicative as well. W5's narrative copy is
-    // what closes it, so the floor is now enforced rather than noted.
-    expect(pageCopyCeiling()).toBeGreaterThanOrEqual(PAGE_COPY_BUDGET.min);
-    expect(pageCopyCeiling()).toBeLessThanOrEqual(PAGE_COPY_BUDGET.max);
   });
 
   it('requires a reserved band to say what earns it, and a shipped band not to', () => {
@@ -131,99 +126,139 @@ describe('homepage band ordering', () => {
   it('derives the altitude ladder from the band order, fleet in to agent', () => {
     // AMENDED 2026-08-17 (W4): the ladder is a DIVE, not a pull-back. The
     // operator asked to keep the fold's own board as a persistent graphic that
-    // changes as you scroll, and the fold's board is the Fleet. Cutting from
-    // the Fleet to one agent and starting over would be a different picture.
+    // changes as you scroll, and the fold's board is the Fleet.
+    //
+    // AMENDED again (W8): the board enters at section two and STAYS. So the
+    // ladder holds at the fleet framing for the claim and the attention beat,
+    // dives once to a single agent, opens all the way back out for delegation,
+    // and stays out while the three lens panels re-read the same fleet from a
+    // different property of the same marks.
     const anchors = heroCameraAnchors();
 
     expect(anchors.map(anchor => anchor.id)).toEqual([
       'fold',
       'altitude-fleet',
       'altitude-attention',
-      'altitude-team',
       'altitude-agent',
       'altitude-delegation',
-    ]);
-    // The fold opens on the cropped board and the sequence continues it. Two
-    // properties of the W5 ladder are deliberate and would look like bugs
-    // without this note: the first two panels SHARE an altitude, so the camera
-    // holds while the board makes the argument, and the last one REVERSES, so
-    // the run ends opening back out into the trajectory the fold promised.
-    expect(anchors.slice(1).map(anchor => anchor.altitude)).toEqual([
-      'fleet',
-      'fleet',
-      'team',
-      'agent',
-      'fleet',
+      'any-lab',
+      'cost',
+      'trust',
     ]);
     expect(pinnedAltitudeLadder()).toEqual([
       'fleet',
       'fleet',
-      'team',
       'agent',
+      'fleet',
+      'fleet',
+      'fleet',
       'fleet',
     ]);
     expect(anchorsHeroCamera(bandById('proof'))).toBe(false);
+    expect(anchorsHeroCamera(bandById('close'))).toBe(false);
   });
 
   it('places every reserved band in the slot it would occupy', () => {
     const order = HOMEPAGE_BANDS.map(band => band.id);
 
-    // `observability` sits directly behind the run: the truthful status claim
-    // is a claim about colours the reader has just watched change.
-    expect(order.indexOf('observability')).toBe(
-      order.indexOf('altitude-delegation') + 1
-    );
-    // The foil is named BEFORE the board, which is what makes the board read
-    // as evidence rather than as a product tour.
+    // The foil is named BEFORE the scale claim, and after W8 it is named as
+    // the LEDE of the first panel over the board. The row still sits ahead of
+    // it, so promoting it back to its own screen is a status edit.
     expect(order.indexOf('thesis')).toBeLessThan(
       order.indexOf('altitude-fleet')
     );
-    expect(order.indexOf('open-source')).toBeGreaterThan(
-      order.indexOf('any-lab')
-    );
-    for (const id of ['trust', 'security', 'cost'] as const) {
-      expect(order.indexOf(id), id).toBeGreaterThan(order.indexOf('any-lab'));
+    // Provenance, spend and ownership run after the board has established what
+    // it is, and all three finish before the dated list.
+    for (const id of ['any-lab', 'cost', 'trust'] as const) {
+      expect(order.indexOf(id), id).toBeGreaterThan(
+        order.indexOf('altitude-delegation')
+      );
       expect(order.indexOf(id), id).toBeLessThan(order.indexOf('proof'));
     }
+    // `observability` merged into the attention panel and `altitude-team` into
+    // the dive. Each row keeps the slot it would take back.
+    expect(order.indexOf('observability')).toBeGreaterThan(
+      order.indexOf('altitude-delegation')
+    );
+    expect(order.indexOf('altitude-team')).toBeLessThan(
+      order.indexOf('altitude-agent')
+    );
+  });
+
+  it('renders materially fewer, shorter sections than the W5 arc', () => {
+    // The operator's W8 verdict was about HEIGHT, so height is asserted rather
+    // than intended: "/homepage-narrative has way too much height, too many
+    // sections". W5 rendered fourteen bands over about 16.6 screens.
+    expect(proposedBands().length).toBeLessThanOrEqual(11);
+    expect(pageScreens()).toBeLessThan(12);
+    // And most of the page is ONE graphic rather than a stack of stops.
+    expect(pinnedBoardBands().length).toBeGreaterThanOrEqual(
+      proposedBands().length - 4
+    );
   });
 });
 
 describe('the pinned board run', () => {
-  it('declares the run as an argument: scale, attention, depth, delegation', () => {
+  it('declares the run as an argument, and the board never leaves it', () => {
     const pinned = pinnedBoardBands();
 
     expect(pinned.map(band => band.id)).toEqual([
       'altitude-fleet',
       'altitude-attention',
-      'altitude-team',
       'altitude-agent',
       'altitude-delegation',
+      'any-lab',
+      'cost',
+      'trust',
     ]);
     expect(pinned.map(band => band.boardHighlight)).toEqual([
       'whole-fleet',
       'needs-you',
-      'one-project',
       'one-agent',
       'delegation',
+      'whole-fleet',
+      'whole-fleet',
+      'whole-fleet',
+    ]);
+    // The LENS is what makes the last three panels different pictures of the
+    // same fleet rather than the same picture three times.
+    expect(pinned.map(band => band.boardLens)).toEqual([
+      'status',
+      'status',
+      'status',
+      'status',
+      'source',
+      'burn',
+      'permission',
     ]);
   });
 
-  it('makes every pinned band say what it points at, and no other band', () => {
+  it('makes every pinned band say what it points at and what it colours by, and no other band', () => {
     // "Highlighting is the point; a state change alone is not enough."
     for (const band of HOMEPAGE_BANDS) {
       if (band.medium === 'pinned-board') {
         expect(band.boardHighlight, band.id).toBeTruthy();
+        expect(band.boardLens, band.id).toBeTruthy();
         expect(band.altitudeAnchor, band.id).toBeTruthy();
         expect(band.heading, band.id).toBeTruthy();
       } else {
         expect(band.boardHighlight, band.id).toBeNull();
+        expect(band.boardLens, band.id).toBeNull();
       }
     }
   });
 
-  it('gives every pinned band a distinct emphasis', () => {
-    const highlights = pinnedBoardBands().map(band => band.boardHighlight);
-    expect(new Set(highlights).size).toBe(highlights.length);
+  it('never shows the same board twice in a row', () => {
+    // A panel that leaves the camera, the emphasis AND the colouring exactly
+    // where the previous panel left them is a second screen of the same
+    // picture, which is the height the operator asked us to take out.
+    const pinned = pinnedBoardBands();
+    const state = pinned.map(
+      band => `${band.altitudeAnchor}/${band.boardLens}/${band.boardHighlight}`
+    );
+    for (let index = 1; index < state.length; index += 1) {
+      expect(state[index], pinned[index]!.id).not.toBe(state[index - 1]);
+    }
   });
 
   it('keeps every panel to one idea per screen', () => {
@@ -234,16 +269,20 @@ describe('the pinned board run', () => {
   });
 
   it('collects consecutive pinned bands into ONE entry for the page', () => {
-    const runs = bandRuns(HOMEPAGE_BANDS);
+    const bands = proposedBands();
+    const runs = bandRuns(bands);
     const pinned = runs.filter(run => run.kind === 'pinned-board');
 
     expect(pinned).toHaveLength(1);
     expect(
       pinned[0]!.kind === 'pinned-board' ? pinned[0]!.bands.map(b => b.id) : []
     ).toEqual(pinnedBoardBands().map(band => band.id));
-    // Everything else still walks the page one band at a time.
+    // The run starts at SECTION TWO, immediately after the fold (operator,
+    // W8), and everything before and after it walks one band at a time.
+    expect(runs[0]!.kind === 'band' ? runs[0]!.band.id : '').toBe('fold');
+    expect(runs[1]!.kind).toBe('pinned-board');
     expect(runs.filter(run => run.kind === 'band')).toHaveLength(
-      HOMEPAGE_BANDS.length - pinnedBoardBands().length
+      bands.length - pinnedBoardBands().length
     );
   });
 
@@ -254,6 +293,28 @@ describe('the pinned board run', () => {
         : [run.band.id]
     );
     expect(flattened).toEqual(HOMEPAGE_BANDS.map(band => band.id));
+  });
+});
+
+describe('the two arrangements', () => {
+  it('keeps `/` on the shipped fold and `/v2` on the whole arc', () => {
+    expect(shippedBands().map(band => band.id)).toEqual(['fold']);
+    expect(proposedBands().map(band => band.id)).toContain('close');
+    expect(arrangementBands('shipped')).toEqual(shippedBands());
+    expect(arrangementBands('proposed')).toEqual(proposedBands());
+  });
+
+  it('promotes the proposal with ONE value', () => {
+    // The whole point of the constant: `/` follows it, the fold's interior
+    // follows it, and the W6 site chrome follows it. Nothing else has to move.
+    expect(arrangementBands(HOMEPAGE_ARRANGEMENT)).toEqual(
+      HOMEPAGE_ARRANGEMENT === 'proposed' ? proposedBands() : shippedBands()
+    );
+  });
+
+  it('declares the page copy inside the measured band, at BOTH ends', () => {
+    expect(pageCopyCeiling()).toBeGreaterThanOrEqual(PAGE_COPY_BUDGET.min);
+    expect(pageCopyCeiling()).toBeLessThanOrEqual(PAGE_COPY_BUDGET.max);
   });
 });
 

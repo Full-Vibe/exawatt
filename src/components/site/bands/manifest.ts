@@ -12,19 +12,21 @@
  * and every consumer derives from it. `src/app/page.tsx` renders this array
  * and holds no page structure of its own.
  *
- * A band declares six things, all from the brief:
+ * A band declares:
  * - `id`             stable address; also the in-page anchor
  * - `job`            the single job it does for a cold reader
  * - `heading`        its copy, plus the `headingRole` that sizes it
  * - `copyBudget`     measured word ceiling, footer excluded
  * - `medium`         what carries the idea
- * - `altitudeAnchor` whether it moves the hero camera, and where to
+ * - `altitudeAnchor` whether it moves the board camera, and where to
+ * - `boardLens`      what the board COLOURS BY while the band is on screen
+ * - `boardHighlight` what the board EMPHASIZES while the band is on screen
  * - `screens`        viewport heights it occupies (one idea per screen)
- * - `status`         shipped, or reserved and therefore not rendered
+ * - `status`         shipped, proposed, or reserved
  *
  * ADDING OR PROMOTING A BAND
  * 1. add or edit the row here, in the position it occupies on the page;
- * 2. flip `status` to `shipped` and drop `reservedUntil`;
+ * 2. move `status` up the ladder and drop `reservedUntil`;
  * 3. write its component and register it in `registry.tsx` (the registry is
  *    keyed by every `BandId`, so the compiler will ask for the entry).
  * The page is untouched.
@@ -38,50 +40,55 @@
  *
  * AMENDED 2026-08-17 (ENG-031 W4, operator): THE ALTITUDE BANDS RUN FLEET TO
  * AGENT, not agent to fleet, and they are ONE pinned graphic rather than three
- * bands. The brief declared a pull-BACK because it read the altitude ladder as
- * a cinematic device on its own. The operator's direction settled it the other
- * way: "keep THIS as a persistent graphic which changes as you scroll". The
- * thing he was looking at is the fold's Fleet board, so the sequence continues
- * that picture instead of cutting away and starting over on one agent.
+ * bands. The operator's direction settled it: "keep THIS as a persistent
+ * graphic which changes as you scroll". The thing he was looking at is the
+ * fold's Fleet board, so the sequence continues that picture instead of
+ * cutting away and starting over on one agent.
  *
- * AMENDED 2026-08-17 (ENG-031 W5): THE ORDER IS NOW AN ARGUMENT, NOT AN
- * ARCHITECTURE TOUR. The operator's verdict on the shipped sequence was that
- * it "needs us to think through the narrative at a very high-level and build
- * the story as the user scrolls down". The diagnosis that produced this
- * revision: the panels DESCRIBED the view instead of making a claim the board
- * is evidence for, and Fleet/Team/Agent is the order of our own architecture,
- * which a stranger has no reason to care about. Four changes fall out of it.
+ * AMENDED 2026-08-17 (ENG-031 W5): THE ORDER IS AN ARGUMENT, NOT AN
+ * ARCHITECTURE TOUR. `thesis` names the FOIL before the board arrives, so the
+ * board is evidence rather than a caption; the panels stopped describing the
+ * view and started making claims the board proves.
  *
- * 1. `thesis` moves ahead of the board and NAMES THE FOIL, so the board
- *    arrives as evidence for an argument already in the reader's head. It is
- *    the one abstract paragraph the reference cohort allows.
- * 2. `altitude-attention` is a NEW panel. Scale and attention are two ideas
- *    and the measured constraint is one idea per screen, so they get one
- *    screen each. They share an altitude on purpose: the camera holds still
- *    and the BOARD changes, which is the single most persuasive beat available
- *    and the only one no competitor can screenshot.
- * 3. `altitude-delegation` is a NEW panel and the only anchor in the run that
- *    reverses. The page dives for four beats and opens back out for the fifth,
- *    so the sequence ends by expanding into the trajectory the fold promised
- *    rather than by bottoming out on one mark.
- * 4. `observability` moved UP, directly behind the run, because the truthful
- *    status claim is a claim about the colours the reader has just watched
- *    change. Asserted in the abstract it is an adjective; asserted one screen
- *    after the board it is the mechanism behind something already seen.
+ * AMENDED 2026-08-17 (ENG-031 W8, operator, and this is the shape the page
+ * holds now): THE BOARD IS THE PAGE, AND EVERY PANEL IS A LENS ON IT.
  *
- * WHERE THE BOARD HANDS OFF. The pinned run carries WHAT IT IS and HOW IT
- * HOLDS (scale, attention, depth, delegation). Everything after it is about
- * PROVENANCE AND OWNERSHIP, which is not spatial: whose agents (`any-lab`),
- * what they spend (`cost`), whose machine (`trust`), whose code
- * (`open-source`), and who is shipping it (`proof`). Forcing those onto the
- * board would be a diagram of a sentence.
+ * > "Yeah /homepage-narrative has way too much height, too many sections. Also
+ * > can you move the interactive thing to the second section, right after the
+ * > fold? I don't see why we shouldn't keep it onscreen to help communicate
+ * > some of the other points too, like security, spend, etc. ... E.g., the
+ * > colour section clearly would benefit with that copy appearing alongside
+ * > the actual product fleet board - why take it away"
  *
- * THE COPY GAP W1 RECORDED IS CLOSED. The nine core bands' ceilings summed to
- * about 474 words, well under the 1,200 to 1,700 the 16-site study recommends
- * for a page that is both premium and communicative. Real reading copy in the
- * differentiator bands and a dated `proof` list close it without padding;
- * `pageCopyCeiling()` now lands inside `PAGE_COPY_BUDGET` and a test asserts
- * both ends rather than only the ceiling.
+ * Four changes fall out of it, each visible in the rows below.
+ *
+ * 1. **The board enters at section two and never leaves until the argument is
+ *    over.** `thesis` is the first PANEL over the board rather than a screen
+ *    of type before it. The claim still lands before the evidence, which is
+ *    what W5 was protecting; it just lands on the same screen the evidence is
+ *    already on.
+ * 2. **Provenance and ownership are spatial after all.** W5 concluded that
+ *    `any-lab`, `cost` and `trust` "are not spatial" and handed them to
+ *    ordinary bands. That was wrong on the facts: a harness is a property of
+ *    every mark, burn is a property of every mark, and a permission choice is
+ *    a property of every mark. They are pinned panels now, each driving a
+ *    LENS.
+ * 3. **Merged, not deleted.** `observability` is the claim behind the colours
+ *    the reader is watching change, so it merged into `altitude-attention`
+ *    rather than following it one screen later. `altitude-team` merged into
+ *    `altitude-agent`: one dive, not two. `open-source` moved to the footer
+ *    column W6 owns, which is where the research put it in the first place.
+ * 4. **Height came down.** Fourteen rendered bands and about 16.6 screens
+ *    became eleven and about 12 screens, and eight of those eleven are one
+ *    continuous graphic rather than eight separate stops.
+ *
+ * THE LENS SEAM. `boardLens` is the extension point the operator asked for:
+ * "we can gradually build our actual product surface into that and make a
+ * homepage version more illustrative over time." A lens says what the marks
+ * are COLOURED BY; a highlight says which marks LEAD. They are independent on
+ * purpose, so a future panel can, for example, colour by burn while
+ * emphasizing one Project. Adding a lens is one id, one resolver branch, and
+ * one legend: never a change to a band component or to the page.
  */
 
 export type BandId =
@@ -102,8 +109,15 @@ export type BandId =
   | 'proof'
   | 'close';
 
-/** Reserved bands declare their slot and render nothing. */
-export type BandStatus = 'shipped' | 'reserved';
+/**
+ * How close a band is to the live homepage.
+ *
+ * - `shipped`  renders at `/`.
+ * - `proposed` renders at `/v2`, the review address, and at `/` the moment
+ *   `HOMEPAGE_ARRANGEMENT` flips. Written, reviewable, and one word away.
+ * - `reserved` renders nowhere and says what would earn it.
+ */
+export type BandStatus = 'shipped' | 'proposed' | 'reserved';
 
 /** What carries the band's idea. */
 export type BandMedium =
@@ -128,6 +142,26 @@ export type BandHeadingRole = 'none' | 'headline' | 'section' | 'closing';
 
 /** The altitude ladder is the narrative (decision 0023 names the altitudes). */
 export type BandAltitude = 'agent' | 'team' | 'fleet';
+
+/**
+ * What the pinned board COLOURS BY while this band is the active panel
+ * (ENG-031 W8, operator).
+ *
+ * This is the seam the operator asked for when he said the board should stay
+ * onscreen "to help communicate some of the other points too, like security,
+ * spend". A lens re-reads the SAME fleet through a different property of the
+ * same marks, so the argument is proved by the picture instead of illustrated
+ * beside it.
+ *
+ * - `status`     the product's own five signals. The board's resting state.
+ * - `source`     which harness runs each Agent. Real, from the capture.
+ * - `burn`       model-weighted consumption per Agent (ENG-008 E3). Real.
+ * - `permission` the per-Agent approval choice. DECLARED, NOT YET RESOLVED:
+ *   the demo fixture carries no permission mode, and inventing one on a trust
+ *   surface is exactly the failure `marketing.md` records. It falls back to
+ *   `status` until the fixture carries the field.
+ */
+export type BandBoardLens = 'status' | 'source' | 'burn' | 'permission';
 
 /**
  * What the pinned board EMPHASIZES while this band is the active panel
@@ -164,15 +198,20 @@ export interface HomepageBand {
   copyBudget: CopyBudget;
   medium: BandMedium;
   /**
-   * Where the hero camera sits while this band is on screen. `null` means the
-   * band does not move it. The ordered non-null anchors ARE the pull-back.
+   * Where the board camera sits while this band is on screen. `null` means the
+   * band does not move it.
    */
   altitudeAnchor: BandAltitude | null;
   /**
-   * What the pinned board emphasizes while this band is the active panel.
-   * Required on every `pinned-board` band and null everywhere else: a panel
-   * that drives the board without saying what it is pointing at is exactly the
-   * "state change alone" the operator ruled insufficient.
+   * What the board colours by while this band is the active panel. Required on
+   * every `pinned-board` band and null everywhere else.
+   */
+  boardLens: BandBoardLens | null;
+  /**
+   * What the board emphasizes while this band is the active panel. Required on
+   * every `pinned-board` band and null everywhere else: a panel that drives the
+   * board without saying what it is pointing at is exactly the "state change
+   * alone" the operator ruled insufficient.
    */
   boardHighlight: BandBoardHighlight | null;
   /** viewport heights; one idea per screen holds this to 1.0 to 1.4 */
@@ -186,10 +225,26 @@ export interface HomepageBand {
 export const BAND_SCREENS_MIN = 1;
 export const BAND_SCREENS_MAX = 1.4;
 
-/** Total page copy, footer excluded. 450 is the proven floor; 534 is the
- *  cautionary middle; 1,200 to 1,700 is premium and communicative at once. */
+/**
+ * Total page copy, footer excluded.
+ *
+ * 450 is the proven floor (Conductor); 534 is the cautionary middle (Warp,
+ * vague and unclear at once); 1,200 to 1,700 was measured for a page that is
+ * premium and communicative at once.
+ *
+ * AMENDED 2026-08-17 (W8). The floor drops to 900 and the reason is
+ * structural rather than editorial. The 1,200 figure was measured across
+ * pages where each HOW chapter is its OWN screen and has to re-establish its
+ * own context in prose. This page merges the chapters onto one persistent
+ * board and gives each of them a lens, so the picture carries what those
+ * pages spend words on. The purpose of a floor is that the page not be vague,
+ * and the operator's instruction was that it not be tall. Specificity, not
+ * volume, is what satisfies the first; the second is measured in screens.
+ * Padding back to 1,200 would be exactly the failure the floor exists to
+ * prevent.
+ */
 export const PAGE_COPY_BUDGET: Required<CopyBudget> = {
-  min: 1_200,
+  min: 900,
   max: 1_700,
 };
 
@@ -208,6 +263,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     medium: 'board',
     // The opening crop the dive starts from, and the seat the reader is put in.
     altitudeAnchor: 'fleet',
+    boardLens: null,
     boardHighlight: null,
     screens: 1,
     status: 'shipped',
@@ -220,174 +276,188 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 15, max: 20 },
     medium: 'portrait',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
     // W5 reassigned this band's JOB to `proof` rather than leaving the slot to
     // block the page: borrowed credibility is the one thing the launch does
-    // not have, and inventing a quote is not an option. The slot stays because
-    // the first real named operator belongs here, above the fold's argument.
+    // not have, and inventing a quote is not an option.
     reservedUntil:
       'A named operator agrees to be quoted. `proof` carries the credibility until then.',
   },
+  // THE PINNED RUN. It starts HERE, at section two, and holds until the
+  // argument is over (operator, W8: "move the interactive thing to the second
+  // section, right after the fold ... I don't see why we shouldn't keep it
+  // onscreen to help communicate some of the other points too").
   {
     id: 'thesis',
-    job: 'WHY. The one abstract paragraph on the page, and the only place the foil is named.',
-    headingRole: 'none',
-    heading: null,
-    copyBudget: { min: 40, max: 60 },
+    job: 'WHY. The claim and the foil, said over the board rather than one screen before it.',
+    headingRole: 'section',
+    heading: 'Your tools were built for one agent',
+    copyBudget: { min: 40, max: 70 },
     medium: 'type',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
+    // W5 gave the claim its own screen so it landed before the evidence. W8
+    // keeps the ORDER and drops the SCREEN: `THESIS_LINES` is the lede of the
+    // first panel over the board, so the reader meets the foil while looking
+    // at the counter-example. Two screens that showed the identical board are
+    // one screen now, and the row stays because the argument may earn its own
+    // screen back if the page ever gets quieter.
     reservedUntil:
-      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
+      'The foil needs a screen of its own. It opens the first pinned panel today.',
   },
-  // THE PINNED RUN. ONE board and five panels, not five captures (operator,
-  // 2026-08-17). Ordered as an ARGUMENT rather than as an architecture tour
-  // (W5): scale, then attention, then depth, then delegation. The camera dives
-  // for four beats and opens back out for the fifth, so the sequence ends
-  // expanding into the trajectory the fold promised.
   {
     id: 'altitude-fleet',
-    job: 'SCALE. Every project at once, and the board still fits on one screen.',
+    job: 'WHY, then SCALE. Name the foil, then answer it with every project at once.',
     headingRole: 'section',
-    heading: 'Every project at once',
-    copyBudget: { min: 20, max: 36 },
+    // D's rejected h1 line, which W3b said deserved a later band. This is it.
+    heading: 'Your tools were built for one agent',
+    copyBudget: { min: 60, max: 110 },
     medium: 'pinned-board',
     altitudeAnchor: 'fleet',
+    boardLens: 'status',
     boardHighlight: 'whole-fleet',
     screens: 1.2,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+    status: 'proposed',
   },
   {
     id: 'altitude-attention',
-    job: 'ATTENTION. The camera holds and the board recedes to the agents waiting on a person.',
+    job: 'ATTENTION. The board recedes to the agents waiting on a person, and says why the colour is trustworthy.',
     headingRole: 'section',
     heading: 'Only what needs you',
-    copyBudget: { min: 20, max: 36 },
+    copyBudget: { min: 60, max: 140 },
     medium: 'pinned-board',
     // The SAME altitude as the panel before it, deliberately. The argument is
     // made by the board changing under a still camera, which is the one beat
     // on the page a competitor cannot screenshot.
     altitudeAnchor: 'fleet',
+    boardLens: 'status',
     boardHighlight: 'needs-you',
-    screens: 1.4,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+    screens: 1.2,
+    status: 'proposed',
+    // W8 MERGED `observability` into this panel. The truthful-status claim is
+    // a claim about the colours the reader is watching change, and the
+    // operator named this exact case: "the colour section clearly would
+    // benefit with that copy appearing alongside the actual product fleet
+    // board - why take it away".
   },
   {
     id: 'altitude-team',
-    job: 'CONTINUITY. One project, still the same board, and every agent in it still an individual.',
+    job: 'CONTINUITY. One project, closer in, every agent in it still an individual.',
     headingRole: 'section',
     heading: 'One project',
     copyBudget: { min: 20, max: 32 },
     medium: 'pinned-board',
     altitudeAnchor: 'team',
+    boardLens: 'status',
     boardHighlight: 'one-project',
     screens: 1,
     status: 'reserved',
+    // W8: one dive, not two. The camera passing THROUGH the team framing on
+    // its way to one agent says everything this panel said, and it says it
+    // without a stop. The row stays so the stop can come back as a data edit
+    // if the dive ever reads too fast.
     reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+      'The dive from fleet to one agent reads too fast without a stop at the project framing.',
   },
   {
     id: 'altitude-agent',
-    job: 'DEPTH. One agent, its real work, and a status that changes while you read it.',
+    job: 'DEPTH. Into one project and down to one agent, with a status that changes while you read it.',
     headingRole: 'section',
-    heading: 'One agent',
-    copyBudget: { min: 20, max: 38 },
+    heading: 'Down to one agent',
+    copyBudget: { min: 20, max: 60 },
     medium: 'pinned-board',
     altitudeAnchor: 'agent',
+    boardLens: 'status',
     boardHighlight: 'one-agent',
-    screens: 1.2,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+    screens: 1,
+    status: 'proposed',
   },
   {
     id: 'altitude-delegation',
     job: 'TRAJECTORY. Agents run agents, so the camera opens back out while the fleet blooms.',
     headingRole: 'section',
     heading: 'Agents run agents',
-    copyBudget: { min: 20, max: 40 },
+    copyBudget: { min: 20, max: 60 },
     medium: 'pinned-board',
     // Back OUT to the FLEET framing, which is the only anchor in the run that
-    // reverses, and it reverses all the way. Two reasons, one of them a defect
-    // this fixed: at the team framing only three delegating parents were in
-    // frame while the panel's own subject line said sixteen, so the picture
-    // undercut the sentence. And the mechanism by which ten becomes ten
-    // thousand is the last thing the board says, so the page should end
-    // opening out rather than staying in close.
+    // reverses, and it reverses all the way: the mechanism by which ten
+    // becomes ten thousand is the last thing the board says at this altitude,
+    // so the sequence opens out rather than bottoming out on one mark.
     altitudeAnchor: 'fleet',
+    boardLens: 'status',
     boardHighlight: 'delegation',
-    screens: 1.2,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'any-lab',
+    job: 'PROVENANCE. Whose agents these are, coloured by the harness that runs each one.',
+    headingRole: 'section',
+    heading: 'Agents from any lab',
+    copyBudget: { min: 80, max: 170 },
+    // W8 promoted this from a card chapter to a LENS. A harness is a property
+    // of every mark on the board, so the claim proves itself the moment the
+    // fleet recolours by source.
+    medium: 'pinned-board',
+    altitudeAnchor: 'fleet',
+    boardLens: 'source',
+    boardHighlight: 'whole-fleet',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'cost',
+    job: 'SPEND. What the fleet is burning, read off the same marks.',
+    headingRole: 'section',
+    heading: 'What it spent, beside what it did',
+    copyBudget: { min: 60, max: 150 },
+    medium: 'pinned-board',
+    altitudeAnchor: 'fleet',
+    boardLens: 'burn',
+    boardHighlight: 'whole-fleet',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'trust',
+    job: 'OWNERSHIP. Whose machine this runs on, and the switch attached to every outbound thing.',
+    headingRole: 'section',
+    heading: 'Your machine, your keys, your repo',
+    copyBudget: { min: 80, max: 170 },
+    medium: 'pinned-board',
+    altitudeAnchor: 'fleet',
+    // Declared `permission` and resolved as `status` until the fixture carries
+    // a per-Agent approval mode. Declaring the intent in the manifest and
+    // resolving it honestly in the lens is the whole point of the seam.
+    boardLens: 'permission',
+    boardHighlight: 'whole-fleet',
+    screens: 1,
+    status: 'proposed',
   },
   {
     id: 'observability',
-    job: 'The truthful status claim, stated as five mechanisms rather than an adjective.',
+    job: 'The truthful status claim, stated as mechanisms rather than an adjective.',
     headingRole: 'section',
     heading: 'The lights tell the truth',
     copyBudget: { min: 80, max: 180 },
     medium: 'cards',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
     screens: 1.2,
     status: 'reserved',
-    // The gate this band carried since W1 ("the mechanism can be shown, not
-    // asserted") is MET: reported-outranks-inferred, gate-not-guess, the
-    // delegating parent that never reads done, stale-turn reclaim, and
-    // absent-is-never-zero are all shipped behaviour with named owners.
+    // W8 MERGED this into `altitude-attention`. Its copy is not lost: the
+    // mechanisms are the cards on that panel, said one screen earlier and
+    // beside the colours they are about. The row stays because the mechanism
+    // list may outgrow a panel.
     reservedUntil:
-      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
-  },
-  {
-    id: 'any-lab',
-    job: 'Vendor neutrality as a differentiator, proved by the launcher rather than asserted.',
-    headingRole: 'section',
-    heading: 'Agents from any lab',
-    copyBudget: { min: 80, max: 200 },
-    medium: 'logos',
-    altitudeAnchor: null,
-    boardHighlight: null,
-    screens: 1.4,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
-  },
-  {
-    id: 'cost',
-    job: 'What a fleet spends, read off your own disk, with the modelled half labelled.',
-    headingRole: 'section',
-    heading: 'What it spent, beside what it did',
-    copyBudget: { min: 60, max: 160 },
-    medium: 'ledger',
-    altitudeAnchor: null,
-    boardHighlight: null,
-    screens: 1.2,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
-  },
-  {
-    id: 'trust',
-    job: 'What runs on your machine, and the switch attached to every outbound thing.',
-    headingRole: 'section',
-    heading: 'Your machine, your keys, your repo',
-    copyBudget: { min: 80, max: 210 },
-    medium: 'cards',
-    altitudeAnchor: null,
-    boardHighlight: null,
-    screens: 1.4,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
+      'The truthful-status mechanisms outgrow the `altitude-attention` panel and need their own screen.',
   },
   {
     id: 'open-source',
@@ -397,11 +467,16 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 60, max: 130 },
     medium: 'type',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
+    // W8 moved this to the FOOTER column, which is where the research put it:
+    // open source belongs as a band and a footer column, never the headline,
+    // and the page had one screen too many. `site-footer.tsx` states the split
+    // once, plainly.
     reservedUntil:
-      'ENG-030 makes the repository public. Research is explicit that this belongs in a band and the footer, never the headline.',
+      'The two-license split needs more than the footer column states. It is stated once in `site-footer.tsx` today.',
   },
   {
     id: 'security',
@@ -411,15 +486,14 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 30, max: 60 },
     medium: 'type',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
-    // W5 decided this WAITS, and the reason is a copy rule rather than a
-    // missing feature. The honest security story today is the provider's
-    // boundary plus the per-Agent permission choice, and that is already a
-    // control the reader has, so it lives in `trust` as a control instead of
-    // here as a section about a boundary Exawatt does not yet own. A band
-    // whose whole subject is a deficiency promotes the deficiency.
+    // The honest security story today is the provider's boundary plus the
+    // per-Agent permission choice, and that is a control the reader has, so it
+    // lives in `trust` as a control. A band whose whole subject is a
+    // deficiency promotes the deficiency.
     reservedUntil:
       'Exawatt mediates a high-impact action itself. Until then the honest half lives in `trust`.',
   },
@@ -431,11 +505,10 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { min: 150, max: 280 },
     medium: 'cards',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
-    screens: 1.4,
-    status: 'reserved',
-    reservedUntil:
-      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
+    screens: 1.2,
+    status: 'proposed',
   },
   {
     id: 'close',
@@ -445,25 +518,56 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { max: 10 },
     medium: 'type',
     altitudeAnchor: null,
+    boardLens: null,
     boardHighlight: null,
     screens: 1,
-    status: 'reserved',
-    reservedUntil:
-      'The operator picks a fold and close variant at /hud-gallery/fold-close.',
+    status: 'proposed',
   },
 ];
+
+/**
+ * WHICH ARRANGEMENT THE HOMEPAGE RENDERS, and the one-line switch that
+ * promotes the proposal (ENG-031 W8).
+ *
+ * `shipped`  — `/` renders only bands at `status: 'shipped'`. Today that is
+ *              the fold, exactly as it has rendered since W1.
+ * `proposed` — `/` renders the whole assembled arc, which is what `/v2` shows
+ *              today.
+ *
+ * CHANGING THIS ONE VALUE IS THE PROMOTION. It moves the arc onto `/`, swaps
+ * the fold's interior to `FoldHero`, and switches the site chrome to the W6
+ * nav and footer, because all three derive from it. `/v2` then retires: it is
+ * a review address, and leaving a second copy of the homepage at a memorable
+ * URL is how a stale front door happens.
+ */
+export type HomepageArrangement = 'shipped' | 'proposed';
+
+export const HOMEPAGE_ARRANGEMENT: HomepageArrangement = 'shipped';
 
 export function bandById(id: BandId): HomepageBand {
   // ids are a closed union, so a miss is a programming error, not a state.
   return HOMEPAGE_BANDS.find(band => band.id === id)!;
 }
 
-/** The bands the page actually renders, in page order. */
+/** The bands `/` renders today, in page order. */
 export function shippedBands(): HomepageBand[] {
   return HOMEPAGE_BANDS.filter(band => band.status === 'shipped');
 }
 
-/** Declared slots with no content yet. They render nothing. */
+/** The whole assembled arc: what `/v2` renders, and what `/` renders the
+ *  moment `HOMEPAGE_ARRANGEMENT` flips. */
+export function proposedBands(): HomepageBand[] {
+  return HOMEPAGE_BANDS.filter(band => band.status !== 'reserved');
+}
+
+/** The bands an arrangement renders, in page order. */
+export function arrangementBands(
+  arrangement: HomepageArrangement = HOMEPAGE_ARRANGEMENT
+): HomepageBand[] {
+  return arrangement === 'proposed' ? proposedBands() : shippedBands();
+}
+
+/** Declared slots with no content on the page. They render nothing. */
 export function reservedBands(): HomepageBand[] {
   return HOMEPAGE_BANDS.filter(band => band.status === 'reserved');
 }
@@ -474,7 +578,7 @@ export function anchorsHeroCamera(band: HomepageBand): boolean {
 
 /** The bands that drive the ONE pinned board, in page order. */
 export function pinnedBoardBands(
-  bands: HomepageBand[] = HOMEPAGE_BANDS
+  bands: HomepageBand[] = proposedBands()
 ): HomepageBand[] {
   return bands.filter(band => band.medium === 'pinned-board');
 }
@@ -487,15 +591,14 @@ export function pinnedBoardBands(
  * given a different altitude as a data edit. Two properties of the current
  * ladder are deliberate and would be invisible if the scene owned it:
  *
- * - two consecutive panels may share an altitude (`altitude-fleet` and
- *   `altitude-attention`), which makes the camera hold while the board itself
- *   makes the argument;
- * - the ladder is NOT monotonic. `altitude-delegation` returns to the team
- *   framing, so the sequence opens back out at the end instead of bottoming
- *   out on one mark.
+ * - consecutive panels may share an altitude, which makes the camera hold
+ *   while the board itself makes the argument;
+ * - the ladder is NOT monotonic. It dives to one agent and opens back out for
+ *   delegation and for the three lens panels, so the sequence ends on the
+ *   whole fleet rather than bottoming out on one mark.
  */
 export function pinnedAltitudeLadder(
-  bands: HomepageBand[] = HOMEPAGE_BANDS
+  bands: HomepageBand[] = proposedBands()
 ): BandAltitude[] {
   return pinnedBoardBands(bands).map(band => band.altitudeAnchor ?? 'fleet');
 }
@@ -505,8 +608,8 @@ export function pinnedAltitudeLadder(
  * of `pinned-board` bands collected into ONE entry.
  *
  * This is what makes "one persistent graphic, several explanations" structural
- * rather than a component's private opinion. A pinned run is not three bands
- * that each mount a board; it is one board and three panels, and the page
+ * rather than a component's private opinion. A pinned run is not eight bands
+ * that each mount a board; it is one board and eight panels, and the page
  * cannot express it any other way.
  */
 export type BandRun =
@@ -529,24 +632,30 @@ export function bandRuns(bands: HomepageBand[]): BandRun[] {
 
 /**
  * The camera choreography, derived rather than authored twice: the ordered
- * altitude anchors are the pull-back the hero board follows. W2 consumes this
- * instead of hardcoding a second copy of the sequence.
+ * altitude anchors are the journey the board follows.
  */
-export function heroCameraAnchors(): {
+export function heroCameraAnchors(
+  bands: HomepageBand[] = proposedBands()
+): {
   id: BandId;
   altitude: BandAltitude;
 }[] {
-  return HOMEPAGE_BANDS.filter(anchorsHeroCamera).map(band => ({
+  return bands.filter(anchorsHeroCamera).map(band => ({
     id: band.id,
     altitude: band.altitudeAnchor!,
   }));
 }
 
-/** Worst-case word count if every declared band spent its whole budget. */
+/** Worst-case word count if every rendered band spent its whole budget. */
 export function pageCopyCeiling(
-  bands: HomepageBand[] = HOMEPAGE_BANDS
+  bands: HomepageBand[] = proposedBands()
 ): number {
   return bands.reduce((total, band) => total + band.copyBudget.max, 0);
+}
+
+/** Total viewport heights the rendered page occupies. */
+export function pageScreens(bands: HomepageBand[] = proposedBands()): number {
+  return bands.reduce((total, band) => total + band.screens, 0);
 }
 
 /** Words in a rendered band, for asserting a band against its budget. */
