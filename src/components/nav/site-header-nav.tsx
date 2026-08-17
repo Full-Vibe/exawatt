@@ -38,7 +38,14 @@ import {
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 import { ALTITUDE_ICONS, CommandAltitudeNav } from './command-altitude-nav';
-import { APP_SURFACES, isAppRoute, usesDarkPublicChrome } from './surfaces';
+import {
+  APP_SURFACES,
+  isAppRoute,
+  usesDarkPublicChrome,
+  usesProposedSiteChrome,
+} from './surfaces';
+import { SITE_NAV_LINKS } from '@/components/site/site-links';
+import { SiteNavDownload } from '@/components/site/site-nav-download';
 import {
   AMBIENT_CHROME_METER_ENABLED,
   AmbientChromeMeter,
@@ -224,6 +231,11 @@ export function SiteHeaderNav({
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
   const darkPublicChrome = usesDarkPublicChrome(pathname ?? '');
+  // ENG-031 W6: the proposed homepage carries its own nav. Architecture and
+  // Leaderboard drop to the footer, and `Download for Mac` is the ONLY button,
+  // because persistent conversion lives in the sticky header and the measured
+  // cohort spends between three and six CTAs on a whole page.
+  const proposedChrome = usesProposedSiteChrome(pathname ?? '');
   const isLeaderboard =
     pathname?.startsWith('/leaderboard') ||
     pathname?.startsWith('/operator/') ||
@@ -323,31 +335,63 @@ export function SiteHeaderNav({
         {activeWorkspace && activeWorkspace.kind !== 'personal' && (
           <WorkspaceIdentityChip workspace={activeWorkspace} />
         )}
-        {!isArchitecture && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link
-              href="/architecture"
-              aria-label="Architecture"
-              title="Architecture"
-              className="text-chrome-title!"
-            >
-              <Network className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Architecture</span>
-            </Link>
-          </Button>
-        )}
-        {!isLeaderboard && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link
-              href="/leaderboard"
-              aria-label="Leaderboard"
-              title="Leaderboard"
-              className="text-chrome-title!"
-            >
-              <Trophy className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Leaderboard</span>
-            </Link>
-          </Button>
+        {proposedChrome ? (
+          <>
+            {/* The secondary links step aside on a phone. 390px holds the
+                brand and ONE button, and the button is the one that converts;
+                a nav that wraps or clips is worse than a nav with two fewer
+                links, and both destinations are still in the footer. */}
+            {SITE_NAV_LINKS.map(link => (
+              <Button
+                key={link.label}
+                variant="ghost"
+                size="sm"
+                asChild
+                className="hidden sm:inline-flex"
+              >
+                <Link
+                  href={link.href}
+                  className="text-chrome-title!"
+                  {...(link.external
+                    ? { target: '_blank', rel: 'noreferrer' }
+                    : {})}
+                  data-site-nav-link={link.label}
+                >
+                  {link.label}
+                </Link>
+              </Button>
+            ))}
+            <SiteNavDownload />
+          </>
+        ) : (
+          <>
+            {!isArchitecture && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link
+                  href="/architecture"
+                  aria-label="Architecture"
+                  title="Architecture"
+                  className="text-chrome-title!"
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Architecture</span>
+                </Link>
+              </Button>
+            )}
+            {!isLeaderboard && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link
+                  href="/leaderboard"
+                  aria-label="Leaderboard"
+                  title="Leaderboard"
+                  className="text-chrome-title!"
+                >
+                  <Trophy className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Leaderboard</span>
+                </Link>
+              </Button>
+            )}
+          </>
         )}
         {/* authenticated web app surfaces only — in Electron the altitude
             rail owns this destination */}

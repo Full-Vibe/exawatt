@@ -56,6 +56,8 @@ export const HERO_BOARD_CAPTURE: HeroBoardCapture = {
   source: ${JSON.stringify(capture.source)},
   bounds: ${JSON.stringify(capture.bounds)},
   counts: ${JSON.stringify(capture.counts)},
+  sources: ${JSON.stringify(capture.sources)},
+  burnMax: ${JSON.stringify(capture.burnMax)},
   zones: ZONES,
   units: UNITS,
   delegations: DELEGATIONS,
@@ -64,6 +66,36 @@ export const HERO_BOARD_CAPTURE: HeroBoardCapture = {
 }
 
 describe('hero board capture', () => {
+  it('carries a harness and a burn figure on every unit (ENG-031 W8)', () => {
+    // The `source` and `burn` LENSES are only honest if every mark answers
+    // them. A nameless harness or a zero burn on a fixture Agent that authors
+    // full usage is a broken join, not a state, and the lens would quietly
+    // colour the whole fleet one channel.
+    const capture = buildHeroBoardCapture();
+    expect(capture.sources.length).toBeGreaterThan(1);
+    for (const source of capture.sources) {
+      expect(source.label).toBeTruthy();
+      // The harness colour is the LAUNCHER's own, from
+      // `contracts/agent-sources.json`. A missing one would silently paint a
+      // whole harness in the fallback grey.
+      expect(source.color, source.label).toMatch(/^#[0-9a-fA-F]{6}$/u);
+    }
+    for (const unit of capture.units) {
+      expect(capture.sources[unit.source], unit.name).toBeTruthy();
+      expect(unit.burn, unit.name).toBeGreaterThan(0);
+      expect(unit.burn, unit.name).toBeLessThanOrEqual(1);
+    }
+    expect(capture.burnMax).toBeGreaterThan(0);
+    // Both harnesses in the fixture actually appear on the board, or the lens
+    // shows one colour and the panel claims neutrality.
+    for (let index = 0; index < capture.sources.length; index += 1) {
+      expect(
+        capture.units.some(unit => unit.source === index),
+        capture.sources[index]?.label
+      ).toBe(true);
+    }
+  });
+
   it('keeps the ordinal contract with the production board', () => {
     expect([...HERO_STATUS_ORDER]).toEqual([...POPULATION_STATUS_ORDER]);
   });

@@ -181,18 +181,41 @@ describe('pinned board sequence', () => {
       container.querySelectorAll('[data-pinned-panel-subject-label]')
     ).map(node => node.textContent);
 
-    expect(subjects).toHaveLength(bands.length);
-    expect(new Set(subjects).size).toBe(bands.length);
-    // The attention panel is the one that has to print the needs-you count,
-    // and it is the second panel now that scale gets its own screen.
-    expect(subjects[1]).toContain('need you');
-    for (const panel of Array.from(
-      container.querySelectorAll('[data-pinned-panel]')
-    )) {
+    // W8: a panel prints the subject where it says something NEW. The three
+    // lens panels re-read the whole fleet, so the whole-fleet line would be
+    // the same sentence four times over; they print a lens legend instead.
+    const naming = bands.filter(
+      band =>
+        band.boardHighlight !== 'whole-fleet' || band.id === 'altitude-fleet'
+    );
+    expect(subjects).toHaveLength(naming.length);
+    expect(new Set(subjects).size).toBe(naming.length);
+    expect(subjects.join(' ')).toContain('need you');
+    for (const band of naming) {
+      const panel = container.querySelector(
+        `[data-pinned-panel="${band.id}"]`
+      )!;
       expect(
         panel.querySelector('[data-pinned-panel-subject]'),
-        panel.getAttribute('data-pinned-panel') ?? ''
+        band.id
       ).not.toBeNull();
+    }
+  });
+
+  it('prints a lens legend only where the lens actually re-reads the board', () => {
+    // A legend for colours the board is not using is worse than no legend, so
+    // `permission` renders as status and prints nothing until the capture
+    // carries an approval mode.
+    const { container } = render(<PinnedBoardSequence bands={bands} />);
+    for (const band of bands) {
+      const panel = container.querySelector(
+        `[data-pinned-panel="${band.id}"]`
+      )!;
+      const legend = panel.querySelector('[data-pinned-panel-legend]');
+      const resolvable = band.boardLens === 'source' || band.boardLens === 'burn';
+      expect(Boolean(legend), `${band.id} / ${band.boardLens}`).toBe(
+        resolvable
+      );
     }
   });
 

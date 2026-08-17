@@ -1,53 +1,71 @@
 import type { ComponentType } from 'react';
-import { ChapterBand } from './chapter-band';
 import { CloseBand } from './close-band';
-import { FoldBand } from './fold-band';
+import { FoldBand, ProposedFoldBand } from './fold-band';
 import { ProofBand } from './proof-band';
-import { ThesisBand } from './thesis-band';
-import type { BandId, HomepageBand } from './manifest';
+import type { BandId, HomepageArrangement, HomepageBand } from './manifest';
 
 export type BandComponent = ComponentType<{ band: HomepageBand }>;
 
 /**
- * Band id to band component (ENG-031 W1, extended W5).
+ * Band id to band component (ENG-031 W1, extended W5, narrowed W8).
  *
  * Keyed by every `BandId`, so adding a band to the manifest makes the compiler
  * ask for its entry here.
  *
- * `null` MEANS "NOTHING IS WRITTEN YET", not "reserved". After W5 those are
- * two different states and the difference matters:
+ * `null` MEANS "THIS BAND HAS NO COMPONENT OF ITS OWN", and after W8 there are
+ * three honest reasons for it:
  *
- * - a band with `null` here has no copy and no component. `voice` and
- *   `security` are the two, and each says in the manifest what would have to
- *   be true for anyone to write it.
- * - a band with a component here and `status: 'reserved'` in the manifest is
- *   WRITTEN AND REVIEWABLE, parked one word away from the page. Everything in
- *   the narrative pass is in this state on purpose: the copy is the operator's
- *   call, and `/hud-gallery/homepage-narrative` is where he reads it. Shipping
- *   it is flipping `status`, in the manifest, with no code change at all.
+ * - a `pinned-board` band never has one, because a run of them is ONE board
+ *   and several panels. `bandRuns()` collects the run and `band-stack.tsx`
+ *   renders `PinnedBoardSequence` over it. Eight rows are in this state now,
+ *   which is the whole middle of the page.
+ * - a band whose copy moved somewhere else: `observability` into the
+ *   attention panel, `open-source` into the footer column.
+ * - a band nobody has written: `voice` and `security`, each of which says in
+ *   the manifest what would have to be true for anyone to write it.
  *
- * ONE KIND OF BAND IS NEVER REGISTERED HERE (ENG-031 W4): a `pinned-board`
- * band has no component of its own, because a run of them is ONE board and
- * several panels rather than several bands that each mount a board.
- * `bandRuns()` collects the run and `band-stack.tsx` renders
- * `PinnedBoardSequence` over it. Their entries stay `null` forever, and that
- * is the honest value.
+ * `ChapterBand` and `ThesisBand` were RETIRED by W8: every chapter is a panel
+ * over the board now, so their layout lives in `pinned-board-sequence.tsx` and
+ * their copy still lives in `narrative-copy.ts`, read through
+ * `altitude-copy.ts`.
  */
 export const BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
   fold: FoldBand,
   voice: null,
-  thesis: ThesisBand,
+  thesis: null,
   'altitude-fleet': null,
   'altitude-attention': null,
   'altitude-team': null,
   'altitude-agent': null,
   'altitude-delegation': null,
-  observability: ChapterBand,
-  'any-lab': ChapterBand,
-  cost: ChapterBand,
-  trust: ChapterBand,
-  'open-source': ChapterBand,
+  observability: null,
+  'any-lab': null,
+  cost: null,
+  trust: null,
+  'open-source': null,
   security: null,
   proof: ProofBand,
   close: CloseBand,
 };
+
+/**
+ * The ONE band that renders differently in the two arrangements.
+ *
+ * `/` still renders the pre-W3 hero inside the fold, because the shipped page
+ * is the thing the proposal is being compared against and it must not move
+ * under the comparison. `/v2` renders `FoldHero`, which is the fold as
+ * proposed. Everything else is identical by construction, which is what keeps
+ * the reviewed page and the shipped page from becoming two pages.
+ */
+const PROPOSED_BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
+  ...BAND_COMPONENTS,
+  fold: ProposedFoldBand,
+};
+
+export function arrangementComponents(
+  arrangement: HomepageArrangement
+): Record<BandId, BandComponent | null> {
+  return arrangement === 'proposed'
+    ? PROPOSED_BAND_COMPONENTS
+    : BAND_COMPONENTS;
+}

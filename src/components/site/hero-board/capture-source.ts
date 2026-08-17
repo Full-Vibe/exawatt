@@ -26,6 +26,7 @@ import {
   type FleetState,
 } from '@exawatt/core';
 import { selectSpatialBoardLayout } from '@exawatt/ui-model';
+import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
 import {
   HERO_STATUS_ORDER,
   type HeroBoardCapture,
@@ -65,8 +66,47 @@ export function demoWorkspaceFleetState(): FleetState {
  * versioned data on a fixed clock, and the board layout is a pure selector, so
  * two runs on two machines produce byte-identical output.
  */
+/**
+ * Harness id to the label and the colour the PRODUCT already uses (ENG-031
+ * W8). The `source` lens colours the board by this, so the marketing board and
+ * the launcher name the same harness the same way and in the same colour.
+ * `ConsumptionSourceId` is the consumption spelling; `adapterId` is the
+ * launcher's. They differ for exactly one entry.
+ */
+const SOURCE_ADAPTER: Record<string, string> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  grok: 'grok',
+};
+
+export function heroSourceLabel(sourceId: string): string {
+  const adapterId = SOURCE_ADAPTER[sourceId] ?? sourceId;
+  return (
+    AGENT_SOURCE_DECLARATIONS.find(entry => entry.adapterId === adapterId)
+      ?.label ?? sourceId
+  );
+}
+
+export function heroSourceColor(sourceId: string): string {
+  const adapterId = SOURCE_ADAPTER[sourceId] ?? sourceId;
+  return (
+    AGENT_SOURCE_DECLARATIONS.find(entry => entry.adapterId === adapterId)
+      ?.color ?? '#8B8B8B'
+  );
+}
+
 export function buildHeroBoardCapture(): HeroBoardCapture {
   const state = demoWorkspaceFleetState();
+  // The harness that runs each Agent is fixture data on the DEMO agent, not on
+  // the mapped `ExawattAgent`, so the raw fleet is read once for the join.
+  // Burn comes through the mapped Agent, because `normalizedTokens` is core's
+  // own E3 compute proxy and the site must not re-derive it.
+  const sourceByAgentId = new Map(
+    demoFleetAgents('scale', { nowMs: DEMO_WORKSPACE_NOW_MS }).map(
+      agent => [agent.id, agent.source] as const
+    )
+  );
+  const sourceIds = Array.from(new Set(sourceByAgentId.values())).sort();
   const layout = selectSpatialBoardLayout(state, {
     projects: demoWorkspaceProjectCatalog(),
   });
@@ -89,15 +129,28 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
   // six-word context label — the same two strings the product's own board
   // shows. Carrying them into the capture is what lets a marketing viewer read
   // a real identity off a real unit instead of a coloured dot.
-  const units: HeroBoardUnit[] = layout.pieces.map(piece => ({
-    x: round(piece.x),
-    y: round(piece.y),
-    size: round(piece.size),
-    status: HERO_STATUS_ORDER.indexOf(piece.status),
-    zone: zoneIndexById.get(piece.projectId) ?? 0,
-    name: piece.summary,
-    doing: piece.label,
-  }));
+  const units: HeroBoardUnit[] = layout.pieces.map(piece => {
+    const sourceId = piece.agentId
+      ? sourceByAgentId.get(piece.agentId)
+      : undefined;
+    return {
+      x: round(piece.x),
+      y: round(piece.y),
+      size: round(piece.size),
+      status: HERO_STATUS_ORDER.indexOf(piece.status),
+      zone: zoneIndexById.get(piece.projectId) ?? 0,
+      name: piece.summary,
+      doing: piece.label,
+      source: sourceId === undefined ? 0 : sourceIds.indexOf(sourceId),
+      // THE PRODUCT'S OWN BURN LENS FIGURE, not a second derivation.
+      // `burnIntensity` is what the Operations Board colours its own burn lens
+      // by (ENG-008): each Agent's weighted consumption against the hottest
+      // reporting Agent on the board. Recomputing it here would be two burn
+      // lenses that could disagree, and the whole point of the marketing board
+      // is that it is the product's board.
+      burn: round(piece.burnIntensity ?? 0),
+    };
+  });
 
   // Delegated children, straight out of the board model's own policy
   // (`selectSpatialDelegationUnits`, ENG-004 V3.4). Their coordinates, sizes,
@@ -162,6 +215,14 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
         0
       ),
     },
+    sources: sourceIds.map(id => ({
+      label: heroSourceLabel(id),
+      color: heroSourceColor(id),
+    })),
+    // `burnIntensity` is already normalized against the hottest reporting
+    // Agent, so the ceiling is 1 by construction. Carried anyway, because a
+    // capture that never reaches it says so.
+    burnMax: units.reduce((most, unit) => Math.max(most, unit.burn), 0),
     zones,
     units,
     delegations,

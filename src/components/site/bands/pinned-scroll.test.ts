@@ -99,11 +99,17 @@ describe('pinned scroll geometry', () => {
   it('runs the real manifest sequence, holding once and reversing once', () => {
     const bands = pinnedBoardBands();
     const anchors = panelAnchors(bands.map(band => band.screens));
+    // W8: seven panels over one board. The camera holds at the fleet framing
+    // for the claim and the attention beat, dives once to a single agent,
+    // opens all the way back out for delegation, and then STAYS out while the
+    // three lens panels re-read the same fleet.
     expect(bands.map(band => band.altitudeAnchor)).toEqual([
       'fleet',
       'fleet',
-      'team',
       'agent',
+      'fleet',
+      'fleet',
+      'fleet',
       'fleet',
     ]);
     // Progress is still monotonic even though the ALTITUDE is not. The scroll

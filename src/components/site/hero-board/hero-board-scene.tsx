@@ -59,6 +59,7 @@ import {
   heroStatusNeedsHuman,
   type HeroHighlight,
 } from './hero-board-highlight';
+import type { HeroLens } from './hero-board-lens';
 import { heroBoardSubjects } from './hero-board-subjects';
 
 const TAU = Math.PI * 2;
@@ -472,6 +473,17 @@ function HeroZones({
  *  population field uses. */
 const MARK_BY_STATUS = [3, 4, 1, 1, 0, 2] as const;
 
+/**
+ * The mark every unit takes while a non-status LENS is on (ENG-031 W8).
+ *
+ * Mark SHAPE is a second status channel: a blocked agent is a different glyph
+ * from an idle one, which is what keeps the board readable without colour.
+ * Under a burn or source lens the colour no longer means status, so leaving
+ * the shape meaning status would put two different claims on one mark. Every
+ * unit takes the plain mark and the lens owns the reading.
+ */
+const LENS_MARK = 0;
+
 function HeroUnits({
   theme,
   capture,
@@ -479,6 +491,7 @@ function HeroUnits({
   statusProtocolMotion,
   statusChanges,
   highlight,
+  lens,
   getBridge,
 }: {
   theme: SpatialThemeSnapshot;
@@ -487,6 +500,7 @@ function HeroUnits({
   statusProtocolMotion: boolean;
   statusChanges: boolean;
   highlight: HeroHighlight;
+  lens: HeroLens;
   getBridge: HeroBridgeAccess;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
@@ -544,11 +558,14 @@ function HeroUnits({
   }, [count]);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  // The palette, as plain strings, so the uniform effect and the mount memo
+  // read exactly one source.
+  const lensColors = lens.colors;
   const uniforms = useMemo(() => {
-    const colors = HERO_STATUS_ORDER.map(
-      status =>
-        new THREE.Color(theme.status[statusLightStateForAgentStatus(status)])
-    );
+    // Seeded from the lens the board mounts with. A lens change after mount
+    // writes into this same array rather than rebuilding the material, so the
+    // whole mechanism costs one uniform write and never a recompile.
+    const colors = lensColors.map(color => new THREE.Color(color));
     return {
       uTime: { value: 0 },
       uSpin: { value: 0 },
@@ -557,6 +574,10 @@ function HeroUnits({
       uDim: { value: HERO_DIM },
       uStatusColor: { value: colors },
     };
+    // Mount-time seed only. `lensColors` is deliberately not a dependency:
+    // rebuilding the uniform object would rebuild the material, and the effect
+    // below writes the palette in place instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);
 
   // Seed instance matrices and the per-instance status attributes once.
@@ -675,6 +696,63 @@ function HeroUnits({
     highlight,
   ]);
 
+  /**
+   * THE LENS, applied (ENG-031 W8).
+   *
+   * A lens is a per-instance palette ordinal and a six-colour uniform, which
+   * are exactly the two things status colour already was. So switching lens is
+   * one uniform write and one pass over the ordinals: three draw calls
+   * unchanged, no per-frame JavaScript, no material recompile, and the fleet
+   * rides the SAME transition clock a status turn rides, so it crossfades into
+   * its new meaning instead of cutting.
+   *
+   * Returning to the status lens hands the ordinals back to the LIVE statuses
+   * on the bridge rather than to the captured ones, because the scheduler has
+   * been turning agents the whole time the other lens was up.
+   */
+  const lensRef = useRef(lens);
+  lensRef.current = lens;
+  useEffect(() => {
+    const material_ = material.current;
+    if (!material_) return;
+    const palette = material_.uniforms.uStatusColor!.value as THREE.Color[];
+    lens.colors.forEach((color, index) => palette[index]?.set(color));
+
+    const markFrom = geometry.getAttribute(
+      'aMarkFrom'
+    ) as THREE.InstancedBufferAttribute;
+    const markTo = geometry.getAttribute(
+      'aMarkTo'
+    ) as THREE.InstancedBufferAttribute;
+    const statusFrom = geometry.getAttribute(
+      'aStatusFrom'
+    ) as THREE.InstancedBufferAttribute;
+    const statusTo = geometry.getAttribute(
+      'aStatusTo'
+    ) as THREE.InstancedBufferAttribute;
+    const changeAt = geometry.getAttribute(
+      'aChangeAt'
+    ) as THREE.InstancedBufferAttribute;
+    const statuses = getBridge().statuses;
+
+    for (let index = 0; index < count; index += 1) {
+      const status = statuses[index] ?? capture.units[index]!.status;
+      const ordinal = lens.channel ? (lens.channel[index] ?? 0) : status;
+      const mark = lens.channel ? LENS_MARK : MARK_BY_STATUS[status]!;
+      markFrom.setX(index, markTo.getX(index));
+      statusFrom.setX(index, statusTo.getX(index));
+      markTo.setX(index, mark);
+      statusTo.setX(index, ordinal);
+      changeAt.setX(index, elapsed.current);
+    }
+    markFrom.needsUpdate = true;
+    markTo.needsUpdate = true;
+    statusFrom.needsUpdate = true;
+    statusTo.needsUpdate = true;
+    changeAt.needsUpdate = true;
+    invalidate();
+  }, [capture, count, geometry, getBridge, invalidate, lens]);
+
   function changeOneUnit(): void {
     const bridge = getBridge();
     const index = Math.floor(random() * count);
@@ -683,6 +761,18 @@ function HeroUnits({
     const next = options[Math.floor(random() * options.length)]!;
     if (next === from) return;
     bridge.statuses[index] = next;
+    // Under a non-status lens the colour and the mark mean something else, so
+    // a turn must not repaint them. The TRUTH still moves: the bridge carries
+    // the live status, so the hover card and the needs-you emphasis stay
+    // correct, and returning to the status lens paints the fleet as it is now
+    // rather than as it was when the lens came on.
+    if (lensRef.current.channel !== null) {
+      if (followsStatus.current) {
+        retargetFocus(index, focusTargetFor(index, next));
+      }
+      bridge.onStatusChange?.(index);
+      return;
+    }
     const markFrom = geometry.getAttribute(
       'aMarkFrom'
     ) as THREE.InstancedBufferAttribute;
@@ -1379,6 +1469,10 @@ export interface HeroBoardSceneProps {
   /** What the board emphasizes. Semantic, so it is a prop and not a ref: it
    *  changes a handful of times over a whole sequence, never per frame. */
   highlight: HeroHighlight;
+  /** What the board is coloured BY. Same cadence as the highlight, and
+   *  independent of it: a lens says what a mark means, a highlight says which
+   *  marks lead. */
+  lens: HeroLens;
   /** Measurement and poster capture only: lets the study read pixels back. */
   preserveDrawingBuffer?: boolean;
   /** The seam to the DOM annotation layer: the scene writes projected anchors
@@ -1397,6 +1491,7 @@ export function HeroBoardScene({
   progressRef,
   ladder = HERO_DEFAULT_LADDER,
   highlight,
+  lens,
   preserveDrawingBuffer = false,
   getBridge,
   onReady,
@@ -1432,6 +1527,7 @@ export function HeroBoardScene({
         statusProtocolMotion={statusProtocolMotion}
         statusChanges={statusChanges}
         highlight={highlight}
+        lens={lens}
         getBridge={getBridge}
       />
       <HeroDelegations

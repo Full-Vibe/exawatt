@@ -35,6 +35,19 @@ export interface HeroBoardUnit {
   name: string;
   /** The six-word context label (ENG-016 D33): what this Agent is doing. */
   doing: string;
+  /**
+   * Which harness runs this Agent. An index into `HeroBoardCapture.sources`
+   * rather than a string, because 173 repeated strings is 173 repeated strings
+   * in a first-paint-critical bundle, and because the lens needs an ordinal.
+   */
+  source: number;
+  /**
+   * Model-size-weighted token total for this Agent, delegated runs included
+   * (ENG-008 E3, `packages/core/src/consumption/model-weights.ts`). This is the
+   * compute proxy the product itself uses, NOT dollars: money is modelled from
+   * a price table and the board is not the place to model it.
+   */
+  burn: number;
 }
 
 /**
@@ -61,6 +74,12 @@ export interface HeroBoardDelegation {
   type: string | null;
   /** Exact Agents an overflow lobe stands for; 0 on an individual child. */
   overflow: number;
+}
+
+/** One harness on the board: what the launcher calls it, in its own colour. */
+export interface HeroBoardSource {
+  label: string;
+  color: string;
 }
 
 export interface HeroBoardZone {
@@ -95,6 +114,22 @@ export interface HeroBoardCapture {
      *  census rather than as one mark. */
     delegated: number;
   };
+  /**
+   * The harnesses on this board, in the ordinal order `HeroBoardUnit.source`
+   * indexes (ENG-031 W8). The `source` LENS colours the fleet by this, which
+   * is how vendor neutrality proves itself instead of being asserted: every
+   * mark on the board is already running under one of these.
+   *
+   * The COLOUR travels in the capture rather than being resolved at render
+   * time, because it comes from `contracts/agent-sources.json` through the
+   * launcher's own declarations and the resolver that reads them also reaches
+   * the demo fixture. Nothing in `capture-source.ts` may enter the browser
+   * bundle.
+   */
+  sources: HeroBoardSource[];
+  /** The highest per-Agent burn in the capture, so a lens can normalize
+   *  without walking the units on the client. */
+  burnMax: number;
   zones: HeroBoardZone[];
   units: HeroBoardUnit[];
   delegations: HeroBoardDelegation[];

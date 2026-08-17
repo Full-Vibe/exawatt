@@ -290,6 +290,17 @@ body {
   color: white !important;
 }
 
+/* The rule above exists so GHOST chrome stays legible on the authored dark
+   ground. A FILLED conversion control owns its own contrast: the proposed
+   nav's `Download for Mac` is white-on-black by design (one fixed register,
+   ENG-031 W6), and inheriting the ghost colour painted its label white on a
+   white pill. More specific and equally important, so it wins in both
+   directions. */
+#site-header[data-public-dark-chrome='true'] [data-site-nav-download],
+#site-header[data-public-dark-chrome='true'] [data-site-nav-download] a {
+  color: black !important;
+}
+
 #site-header[data-public-dark-chrome='true'] .bg-muted {
   background: rgba(255, 255, 255, 0.15) !important;
 }
