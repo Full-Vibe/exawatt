@@ -24,7 +24,11 @@ import {
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LAYOUT_CLASS, TerminalPane } from './terminal-pane';
-import { resolveStageLayout, tabIsPinnable } from './split-layout';
+import {
+  resolveComposerSlot,
+  resolveStageLayout,
+  tabIsPinnable,
+} from './split-layout';
 import {
   acceptTerminalSettings,
   loadTerminalFont,
@@ -322,6 +326,7 @@ export function WorkspaceClient() {
     error,
     resumeBatchProgress,
     closedSessionCount,
+    draftDiscards,
     setError,
     dismissReentryRecap,
     launch,
@@ -1511,6 +1516,19 @@ export function WorkspaceClient() {
     activeProject && exitingProjectDirs.has(activeProject.dir)
   );
 
+  // ONE new-Agent surface, ONE React element (BUG-041) — see
+  // `resolveComposerSlot`, which owns the rule and its identity.
+  const composerSlot = resolveComposerSlot({
+    entries: allTabs,
+    stage,
+    activeProjectDir: activeProject?.dir ?? null,
+    draftDiscards,
+  });
+  const composerProject = composerSlot
+    ? (projects.find(project => project.dir === composerSlot.dir) ?? null)
+    : null;
+  const composerTab = composerSlot?.tab ?? null;
+
   return (
     <div
       className="relative flex h-full flex-col"
@@ -1659,6 +1677,17 @@ export function WorkspaceClient() {
           ENG-015 S3 reflow rule. On narrow windows the rail overlays. */}
         <div className="relative flex min-h-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* BUG-041 follow-up, deliberately NOT taken here: this row is
+                what still MOVES when the first draft intent materialises the
+                tab. It renders only with an active tab, so the composer drops
+                37px the moment the draft exists — measured, one frame, no
+                state lost. A draft has no Session to describe either (no
+                goal, no roadmap chip, a path the Project already is, a
+                Focus-terminal button with no terminal), so the row arguably
+                does not belong on the new-tab page at all. But that is a
+                design change to a shipped surface, and `eval:workspace:chrome`
+                measures this row's type standing on exactly that draft — so
+                it is shaped in a design pass, not decided inside a bug fix. */}
             {activeTab && (
               <div
                 data-active-session-context
@@ -1819,6 +1848,9 @@ export function WorkspaceClient() {
                         );
                       }
                       if (layout === 'hidden') return null;
+                      // a draft's pane IS the composer, and the composer is
+                      // the single slot below (BUG-041)
+                      if (tab.lifecycle === 'draft') return null;
                       const project = projects.find(p => p.dir === dir);
                       if (!project) return null;
                       return (
@@ -1839,37 +1871,7 @@ export function WorkspaceClient() {
                               : undefined
                           }
                         >
-                          {tab.lifecycle === 'draft' ? (
-                            // the new-tab page (D24): the pane IS the composer
-                            <ComposerViewport>
-                              <AgentComposer
-                                projectDir={project.dir}
-                                projectName={project.name}
-                                initialSource={tab.draftSource ?? undefined}
-                                initialTask={tab.draftTask ?? undefined}
-                                initialModel={tab.draftModel ?? undefined}
-                                initialEffort={tab.draftEffort ?? undefined}
-                                initialWorktree={tab.draftWorktree}
-                                initialBranch={tab.draftBranch ?? undefined}
-                                initialRoadmapItemId={
-                                  tab.draftRoadmapItemId ?? undefined
-                                }
-                                roadmapItems={launchRoadmapItems}
-                                onLaunch={opts =>
-                                  launch({ ...opts, reuseTabId: tab.id })
-                                }
-                                onReopenConversation={durableSessionId =>
-                                  reopenClosedSession(durableSessionId, tab.id)
-                                }
-                                onDraftChange={patch =>
-                                  updateDraft(tab.id, patch)
-                                }
-                                onDraftIntent={patch =>
-                                  updateDraft(tab.id, patch)
-                                }
-                              />
-                            </ComposerViewport>
-                          ) : tab.resumeState === 'resuming' ? (
+                          {tab.resumeState === 'resuming' ? (
                             <p
                               className="absolute inset-0 flex items-center justify-center text-sm"
                               style={{ color: HUD.textDim }}
@@ -1892,33 +1894,69 @@ export function WorkspaceClient() {
                         </div>
                       );
                     })}
-                  {/* empty-Project composer: the driven side of a split
-                    when something is pinned (D26), full alone otherwise */}
-                  {stage.stagePane !== 'hidden' && (
+                  {/* the new-Agent surface: the ⌘T draft tab's pane once one
+                    exists, the empty Project's stage before that, and the
+                    driven side of a split when something is pinned (D26).
+                    ONE element across all three, keyed by the draft it is
+                    composing, so the tab materialising under the operator's
+                    hands reconciles instead of remounting (BUG-041). */}
+                  {composerSlot && composerProject && (
                     <div
-                      data-pane={stage.stagePane}
+                      key={composerSlot.key}
+                      data-pane={composerSlot.layout}
                       data-empty-project-exiting={
-                        activeProjectExiting || undefined
+                        (!composerTab && activeProjectExiting) || undefined
                       }
-                      className={`${LAYOUT_CLASS[stage.stagePane]} origin-left transition-[transform,opacity] duration-[240ms] [transition-timing-function:cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none ${
-                        activeProjectExiting
+                      className={`${LAYOUT_CLASS[composerSlot.layout]} origin-left transition-[transform,opacity] duration-[240ms] [transition-timing-function:cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none ${
+                        !composerTab && activeProjectExiting
                           ? 'pointer-events-none scale-x-0 opacity-0'
                           : ''
                       }`}
+                      onMouseDown={
+                        composerTab && composerTab.id !== activeTab?.id
+                          ? () => selectTab(composerProject.dir, composerTab.id)
+                          : undefined
+                      }
                     >
                       <ComposerViewport>
                         <AgentComposer
-                          projectDir={activeProject.dir}
-                          projectName={activeProject.name}
+                          projectDir={composerProject.dir}
+                          projectName={composerProject.name}
+                          initialSource={composerTab?.draftSource ?? undefined}
+                          initialTask={composerTab?.draftTask ?? undefined}
+                          initialModel={composerTab?.draftModel ?? undefined}
+                          initialEffort={composerTab?.draftEffort ?? undefined}
+                          initialWorktree={composerTab?.draftWorktree}
+                          initialBranch={composerTab?.draftBranch ?? undefined}
+                          initialRoadmapItemId={
+                            composerTab?.draftRoadmapItemId ?? undefined
+                          }
                           roadmapItems={launchRoadmapItems}
-                          onLaunch={launch}
-                          onReopenConversation={reopenClosedSession}
+                          onLaunch={opts =>
+                            launch(
+                              composerTab
+                                ? { ...opts, reuseTabId: composerTab.id }
+                                : opts
+                            )
+                          }
+                          onReopenConversation={durableSessionId =>
+                            reopenClosedSession(
+                              durableSessionId,
+                              composerTab?.id
+                            )
+                          }
                           onUserInteraction={() =>
-                            retainProject(activeProject.dir)
+                            retainProject(composerProject.dir)
                           }
-                          onDraftIntent={patch =>
-                            createDraftTab(activeProject.dir, patch)
+                          onDraftChange={
+                            composerTab
+                              ? patch => updateDraft(composerTab.id, patch)
+                              : undefined
                           }
+                          onDraftIntent={patch => {
+                            if (composerTab) updateDraft(composerTab.id, patch);
+                            else createDraftTab(composerProject.dir, patch);
+                          }}
                         />
                       </ComposerViewport>
                     </div>

@@ -39,6 +39,48 @@ export const FIXTURE_CLAUDE_AUTH_JSON = JSON.stringify({
 export const FIXTURE_CODEX_MODEL_ID = 'fixture-codex-sol';
 export const FIXTURE_CODEX_MODEL_LABEL = 'Fixture Codex Sol';
 
+export const FIXTURE_CLAUDE_MODEL_ID = 'fixture-claude-sol';
+export const FIXTURE_CLAUDE_MODEL_LABEL = 'Fixture Claude Sol';
+
+/**
+ * The SDK `initialize` control response Claude Code's catalog probe reads
+ * (`readClaudeModelOptions` → `parseClaudeModelCatalog`), which the product
+ * asks for as `claude --safe-mode --input-format stream-json … -p`.
+ *
+ * A fixture that does not answer it is not merely silent: `--safe-mode` is
+ * `$1`, so the invocation falls straight through into the fixture's LAUNCH
+ * behaviour, blocks on stdin, and lives until the product's 20s deadline kills
+ * it. That is one leaked process per catalog read — the same failure the
+ * `--version` note above describes, one probe further in, and it is what made
+ * `eval:electron:lifecycle` report five dead processes after a CANCELLED quit
+ * had left every Session running (BUG-041's landing).
+ */
+export const FIXTURE_CLAUDE_CATALOG_JSON = JSON.stringify({
+  type: 'control_response',
+  response: {
+    subtype: 'success',
+    request_id: 'exawatt-model-catalog',
+    response: {
+      models: [
+        {
+          value: 'default',
+          displayName: 'Account default',
+          description: 'Claude Code chooses the recommended model.',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high'],
+        },
+        {
+          value: FIXTURE_CLAUDE_MODEL_ID,
+          displayName: FIXTURE_CLAUDE_MODEL_LABEL,
+          description: 'Fixture model published by the eval Claude CLI.',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high'],
+        },
+      ],
+    },
+  },
+});
+
 /** One model with three efforts: enough for the catalog to be LIVE and for
  *  effort selection to have something to select, without pretending to be a
  *  vendor catalog. Shape is `codex debug models`, parsed by
@@ -67,6 +109,7 @@ export function claudeProbeSh() {
   return [
     `if [ "$1" = "--version" ]; then printf '${FIXTURE_CLAUDE_VERSION}\\n'; exit 0; fi`,
     `if [ "$1" = "auth" ]; then printf '%s\\n' '${FIXTURE_CLAUDE_AUTH_JSON}'; exit 0; fi`,
+    `if [ "$1" = "--safe-mode" ]; then printf '%s\\n' '${FIXTURE_CLAUDE_CATALOG_JSON}'; exit 0; fi`,
     `if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi`,
   ].join('\n');
 }
@@ -77,6 +120,10 @@ export function codexProbeSh() {
     `if [ "$1" = "--version" ]; then printf '${FIXTURE_CODEX_VERSION}\\n'; exit 0; fi`,
     `if [ "$1" = "login" ]; then printf 'Logged in as fixture@example.com\\n'; exit 0; fi`,
     `if [ "$1" = "debug" ] && [ "$2" = "models" ]; then printf '%s\\n' '${FIXTURE_CODEX_CATALOG_JSON}'; exit 0; fi`,
+    // `codex app-server --stdio` is a SERVER handshake, not a launch. A
+    // fixture that is not one has to decline and exit; falling through means
+    // it blocks on stdin as if it were a Session and leaks a process.
+    `if [ "$1" = "app-server" ]; then exit 0; fi`,
   ].join('\n');
 }
 
@@ -91,6 +138,10 @@ export function claudeProbeJs() {
     `  }`,
     `  if (probeArgv[0] === 'auth') {`,
     `    process.stdout.write(${JSON.stringify(`${FIXTURE_CLAUDE_AUTH_JSON}\n`)});`,
+    `    process.exit(0);`,
+    `  }`,
+    `  if (probeArgv[0] === '--safe-mode') {`,
+    `    process.stdout.write(${JSON.stringify(`${FIXTURE_CLAUDE_CATALOG_JSON}\n`)});`,
     `    process.exit(0);`,
     `  }`,
     `  if (probeArgv.includes('-p')) process.exit(0);`,
@@ -115,6 +166,7 @@ export function codexProbeJs() {
     `    process.stdout.write(${JSON.stringify(`${FIXTURE_CODEX_CATALOG_JSON}\n`)});`,
     `    process.exit(0);`,
     `  }`,
+    `  if (probeArgv[0] === 'app-server') process.exit(0);`,
     `}`,
   ].join('\n');
 }

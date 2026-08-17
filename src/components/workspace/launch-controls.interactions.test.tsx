@@ -4,11 +4,15 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentModelCatalog } from '@/types/electron';
 import {
   AgentComposer,
+  chooseLauncherAxis,
   CLAUDE_MODEL_CATALOG,
   composerReady,
   expectSelectedSetup,
   installComposerTestHarness,
+  launcherAxis,
+  openSetupDrawer,
   renderComposer,
+  setupDrawerHandle,
 } from './launch-controls.test-support';
 
 describe('Agent composer · interactions and drafts', () => {
@@ -41,6 +45,58 @@ describe('Agent composer · interactions and drafts', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled()
     );
+  });
+
+  /**
+   * BUG-041, the composer half. The workspace answers the first draft intent
+   * by materialising the draft tab, which hands this composer the draft's
+   * seeds IN PLACE — one element, reconciled, never remounted. The drawer the
+   * operator is standing in has to survive that, seeds and all; it used to
+   * close because the hand-off was a remount, and it must not start closing
+   * again because some later effect resets on `initialSource` arriving.
+   */
+  it('keeps the open drawer and the chosen axis when the draft tab takes over the composer', async () => {
+    const onDraftIntent = vi.fn();
+    const view = renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={vi.fn(async () => true)}
+        onDraftIntent={onDraftIntent}
+      />
+    );
+    await composerReady();
+    await openSetupDrawer();
+    await chooseLauncherAxis('Engine', /^Codex/);
+    await waitFor(() =>
+      expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
+    );
+    expect(onDraftIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ draftSource: 'codex', draftTouched: true })
+    );
+    expect(setupDrawerHandle()).toHaveAttribute('aria-expanded', 'true');
+
+    view.rerender(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialSource="codex"
+        initialModel="gpt-5.6-sol"
+        initialEffort="low"
+        onLaunch={vi.fn(async () => true)}
+        onDraftChange={vi.fn()}
+        onDraftIntent={vi.fn()}
+      />
+    );
+
+    await waitFor(() =>
+      expect(launcherAxis('Engine')).toHaveTextContent('Codex')
+    );
+    expect(setupDrawerHandle()).toHaveAttribute('aria-expanded', 'true');
+    expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol');
+    expect(
+      screen.getByLabelText('Initial task for the new Agent')
+    ).toHaveValue('');
   });
 
   it('focuses the goal field on mount (D21/D24)', async () => {

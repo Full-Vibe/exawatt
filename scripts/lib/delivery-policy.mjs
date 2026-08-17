@@ -207,22 +207,30 @@ export const SURFACE_GATES = [
     // run it — the BUG-010/011/014 disease, one more instance, and the reason
     // its first real packaged run since BUG-036 found a live defect.
     //
-    // Quarantined against BUG-041: from a Project with no tabs, changing the
-    // Engine axis closes the setup drawer holding it, because the first draft
-    // intent materialises the draft tab and the workspace swaps AgentComposer
-    // to a different render site, remounting it. Proven in dev with a negative
-    // control, so this is neither the packaged build nor the fixture probes.
-    quarantined: 'BUG-041',
+    // It was born quarantined against BUG-041, whose defect it found on that
+    // first run: from a Project with no tabs, changing the Engine axis closed
+    // the setup drawer holding it. The cause was one render site too many —
+    // `workspace-client` swapped AgentComposer between the empty-Project stage
+    // and the draft pane, so materialising the tab REMOUNTED it. There is one
+    // composer slot now (`resolveComposerSlot`), the gate is green, and the
+    // quarantine is lifted.
+    //
+    // `workspace-client.tsx` joins the map for the same reason BUG-035 put
+    // `nav-history.ts` on the spine gate: the file that actually broke was not
+    // named here, so the change that broke it never had to run the eval that
+    // catches it. The composer's render site is part of "the only way to start
+    // a Session", whatever component the launcher itself lives in.
     match: file =>
       file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
       file === 'src/components/workspace/launcher/setup-detail.tsx' ||
+      file === 'src/components/workspace/workspace-client.tsx' ||
       file === 'electron/main/pty/session-manager.ts',
   },
   {
     gate: 'eval:electron:idempotency',
     why: 'rehydration must adopt each Session exactly once, and it starts them through the same launcher driver',
-    // Same driver, same fixtures, same first-axis defect; see BUG-041.
-    quarantined: 'BUG-041',
+    // Same driver, same fixtures, same first-axis defect; BUG-041 repaired it
+    // in `workspace-client` and this gate is enforced again.
     match: file =>
       file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
       file === 'electron/main/pty/session-manager.ts',
