@@ -190,19 +190,7 @@
       "include": [
         "src/**"
       ],
-      "exclude": [
-        "src/app/admin/invites/**",
-        "src/app/api/context-labels/**",
-        "src/app/api/conversations/summarize/**",
-        "src/app/api/feedback/**",
-        "src/app/api/goal-visuals/**",
-        "src/app/api/operator-stats/**",
-        "src/lib/auth/**",
-        "src/lib/goal-visuals/server*",
-        "src/lib/invites/server-client.ts",
-        "src/lib/invites/service*",
-        "src/lib/invites/store.ts"
-      ]
+      "exclude": []
     }
   ],
   "exceptions": [
@@ -383,11 +371,6 @@
       "reason": "explicit distribution identity input"
     },
     {
-      "path": "scripts/feedback-lanes.test.mjs",
-      "classification": "PUBLIC",
-      "reason": "public capability-gated feedback workflow"
-    },
-    {
       "path": "scripts/install-dogfood.mjs",
       "classification": "PUBLIC",
       "reason": "distribution-driven public dogfood installer"
@@ -396,11 +379,6 @@
       "path": "scripts/lib/dogfood-install-transaction.mjs",
       "classification": "PUBLIC",
       "reason": "distribution-neutral installation transaction"
-    },
-    {
-      "path": "scripts/lib/feedback-lanes.mjs",
-      "classification": "PUBLIC",
-      "reason": "public capability-gated feedback workflow"
     },
     {
       "path": "scripts/lib/macos-code-signing.mjs",
@@ -428,11 +406,6 @@
       "reason": "distribution-neutral package resolution fixtures"
     },
     {
-      "path": "src/app/download/page.tsx",
-      "classification": "PUBLIC",
-      "reason": "public launch download page"
-    },
-    {
       "path": "src/app/icon.png",
       "classification": "PUBLIC",
       "reason": "community application icon"
@@ -446,16 +419,6 @@
       "path": "src/app/terms/page.tsx",
       "classification": "PUBLIC",
       "reason": "public legal page without private service custody"
-    },
-    {
-      "path": "src/lib/auth/admin.test.ts",
-      "classification": "PUBLIC",
-      "reason": "public capability contract without operator identity"
-    },
-    {
-      "path": "src/lib/auth/admin.ts",
-      "classification": "PUBLIC",
-      "reason": "public capability contract without operator identity"
     }
   ],
   "recipes": {}

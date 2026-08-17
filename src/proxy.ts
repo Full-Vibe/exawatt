@@ -20,6 +20,14 @@ const PUBLIC_PREFIXES = [
   // Electron authenticates these bounded endpoints with a bearer token. Each
   // route validates it directly; cookie middleware would reject the desktop
   // request before that validation can happen.
+  //
+  // These prefixes, and `/download` below, name routes the COMPANY OVERLAY
+  // supplies (ENG-030 WP3): a public checkout has no implementation behind
+  // them and Next answers 404, while an `official-web` composition serves
+  // them. The exemption is stated here rather than derived from the resolved
+  // contract on purpose — a prefix that goes missing puts the auth gate in
+  // front of a bearer-authenticated hosted route, which is an outage; a prefix
+  // with no route behind it costs nothing.
   '/api/conversations',
   '/api/context-labels',
   '/api/feedback',
