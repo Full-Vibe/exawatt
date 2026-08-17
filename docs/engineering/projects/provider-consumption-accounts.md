@@ -91,7 +91,11 @@ ENG-009's relations).
   request on Exawatt's signed Chromium network boundary; routine unpackaged
   launches cannot make the remote read. The immutable runtime capability is
   separate from the mutable Privacy preference, so a settings write cannot
-  reopen an unsigned development path.
+  reopen an unsigned development path. `app.isPackaged` is the current
+  pre-split proxy for that capability. ENG-030 OS4 replaces it with
+  `ownAccount.claudePlanUsage` from the distribution contract: community
+  defaults absent, while a distributor with a stable signed package may
+  declare `stable-signed`.
 - `electron/main/consumption/provider-plan-composite.ts` — implements the
   scanner's `ConsumptionScannerLike` seam over both sources: merges
   `planWindows` (`origin: 'provider-account'`), `windowObservations`,
@@ -139,6 +143,9 @@ launches are local by default because the downloaded Electron runtime is
 ad-hoc signed on macOS; focused integration testing requires the explicit
 `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` opt-in. This keeps normal product work from
 creating a new firewall identity every time the Electron dependency changes.
+After OS4, "installed" is insufficient by itself: automatic refresh also
+requires the distribution's stable-signed capability, so an ad-hoc packaged
+community build remains local by default.
 
 ### The off switch
 

@@ -3,7 +3,9 @@
 
 Date: 2026-08-10
 Status: accepted — implementation is ENG-030 OS2–OS6; amended 2026-08-11:
-counsel review is trigger-deferred, not a publication gate (see Amendment)
+counsel review is trigger-deferred, not a publication gate (see Amendment);
+amended 2026-08-16: automatic own-account network reads require a
+distribution-declared stable signing identity
 
 ## Context
 
@@ -174,6 +176,17 @@ The private official-distribution pipeline pins an exact public commit and
 supplies official branding, endpoint configuration, analytics configuration,
 Apple signing/notarization, and the update channel. Official binaries remain
 source-correspondent to the public application revision.
+
+Packaging alone is not evidence of a durable network identity. A local
+community package can be ad-hoc signed even though Electron reports it as
+packaged, and an automatic credentialed read from that artifact recreates the
+firewall-approval churn recorded in incident `0011`. The distribution contract
+therefore also declares whether the distributor supplies a stable signed
+identity for Exawatt-owned own-account traffic. The community default declares
+none; the official overlay declares the capability alongside signing custody;
+a downstream distributor may declare it for its own stable signed build. This
+field controls local behavior only. It is never proof of officiality or
+authorization to use an Exawatt service.
 
 Every distributable desktop build carries the public
 `ReleaseProvenanceV1` contract. It records the application version, exact
