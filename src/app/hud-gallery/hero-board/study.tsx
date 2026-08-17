@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import type { RootState } from '@react-three/fiber';
 import {
   HeroBoard,
@@ -396,10 +397,15 @@ function OptionStage({
 /* ------------------------------------------------------------------ */
 
 export function HeroBoardStudy() {
-  const [state, setState] = useState<StudyState>(DEFAULTS);
-  useEffect(() => {
-    setState(readState(window.location.search));
-  }, []);
+  // Derived from the URL, not held in local state: the controls are <Link>s,
+  // so a client-side navigation must re-render the study. Reading the search
+  // string once in an effect left the address bar changing while the page
+  // stood still.
+  const searchParams = useSearchParams();
+  const state = useMemo<StudyState>(
+    () => readState(searchParams.toString()),
+    [searchParams]
+  );
 
   const stages = useMemo<HeroIdleOptionId[]>(
     () =>
