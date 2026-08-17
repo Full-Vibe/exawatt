@@ -488,7 +488,10 @@ export function TabStrip({
           node.scrollLeft
         );
     const previous = pinnedNodeRef.current;
-    if (previous && (!sticky || previous.dataset.ribbonProjectHeader !== sticky.dir)) {
+    if (
+      previous &&
+      (!sticky || previous.dataset.ribbonProjectHeader !== sticky.dir)
+    ) {
       previous.style.removeProperty('--exa-ribbon-pin');
       pinnedNodeRef.current = null;
     }
@@ -498,11 +501,11 @@ export function TabStrip({
     }
     const cached = pinnedNodeRef.current;
     const header =
-      cached && cached.isConnected ? cached : (
-        node.querySelector<HTMLElement>(
-          `[data-ribbon-project-header="${CSS.escape(sticky.dir)}"]`
-        )
-      );
+      cached && cached.isConnected
+        ? cached
+        : node.querySelector<HTMLElement>(
+            `[data-ribbon-project-header="${CSS.escape(sticky.dir)}"]`
+          );
     if (header) {
       const target = layoutRef.current.targets.get(`project:${sticky.dir}`);
       const pin = target
@@ -1573,6 +1576,16 @@ export function TabStrip({
                 data-project-parent={project.dir}
                 data-tab-id={tab.id}
                 data-tab-harness={tab.harness}
+                // The tab's STATE, next to its identity. `New agent` is the
+                // designed fallback COPY for any Session with no operator
+                // title and no context label yet (`sessionDisplayCopy`), so a
+                // live Agent and an unlaunched draft read identically in the
+                // chrome — deliberately, because Agent Source already has its
+                // glyph. Anything that needs to tell them apart has to read
+                // the lifecycle, and until this attribute existed the only
+                // thing exposed was the copy, so an evaluator counted a
+                // running Session as an unconsumed draft (BUG-038).
+                data-tab-lifecycle={tab.lifecycle}
                 data-tab-condensed={condensed || undefined}
                 data-durable-session-id={tab.durableSessionId}
                 data-active={on || undefined}

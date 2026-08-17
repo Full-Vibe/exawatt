@@ -149,11 +149,11 @@ export const SURFACE_GATES = [
     why: 'the roadmap lens is the Sessions altitude and its declare-at-launch path crosses the launcher',
     // The eval existed with NO package command at all, so no change could
     // declare it and nothing ever ran it (BUG-014). It is `eval:roadmap:rail`
-    // now, and the surface it protects owes it. Born quarantined only because
-    // it was born with no command: the FIRST run found a live regression in
-    // the designed empty state (BUG-040), which the same eval reproduces
-    // against an unmodified master tree.
-    quarantined: 'BUG-040',
+    // now, and the surface it protects owes it. Born quarantined against
+    // BUG-040 because its first run reported the designed empty state as
+    // regressed; the empty state was healthy and the eval was reading a
+    // DIFFERENT Project's rail, so the quarantine is lifted and the gate is
+    // enforced. Every rail read now names the Project it is about.
     match: file =>
       file.startsWith('src/components/roadmap/') ||
       file.startsWith('electron/main/roadmap/'),
@@ -161,7 +161,11 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:recents',
     why: 'the recent-conversation browser is the only route back into an exact provider Session',
-    quarantined: 'BUG-038',
+    // Quarantined against BUG-038 because its last check reported a draft
+    // surviving an exact resume. No draft survived: the check identified a
+    // draft by its rendered copy, and `New agent` is the designed fallback
+    // identity for any untitled Session, live or draft. Tabs state their
+    // lifecycle now and the gate is enforced.
     match: file =>
       file === 'src/components/workspace/recent-conversations.tsx' ||
       file === 'electron/main/pty/conversation-catalog.ts',
@@ -169,7 +173,11 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:agent-sources',
     why: 'the Agent Source registry decides which engines exist, whether they are launchable, and what models they publish',
-    quarantined: 'BUG-039',
+    // Quarantined against BUG-039 because a launch verb summoned no composer.
+    // Two product defects, both repaired: a launch moved the operator to
+    // main's realpath of the working directory instead of to the Project group
+    // holding the tab, and Grok classified a concrete model id as an account
+    // default, which told the composer to omit the flag it was displaying.
     match: file =>
       file === 'src/components/workspace/agent-sources.ts' ||
       file === 'electron/main/agent-sources-ipc.ts' ||

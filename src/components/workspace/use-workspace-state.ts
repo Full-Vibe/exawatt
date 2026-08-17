@@ -1689,6 +1689,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         // Asked BEFORE the tab lands, so the answer is about where the
         // operator stands and never about a position this launch just changed.
         const mayMove = claim.stillCurrent();
+        // WHERE the Session landed, which is a Project group and not a path
+        // string. Reusing a draft places the tab in the group that already
+        // holds it, by tab identity; `launchedSession.projectDir` is MAIN's
+        // view of the working directory, and the two are not the same name for
+        // the same place. An exact provider resume launches in the directory
+        // the provider's own history recorded, which the conversation catalog
+        // realpaths — so on macOS a Project opened as `/var/…` comes back as
+        // `/private/var/…`. Moving the operator to that string set `activeDir`
+        // to a key no Project group has: `activeProject` went null, the ribbon
+        // lost its Project, and the next launch verb opened the Project opener
+        // instead of a composer, which reads as a verb that silently does
+        // nothing (BUG-039). Go to the TAB; ask the layout where it is.
+        const landedIn = opts.reuseTabId
+          ? (stateRef.current.projects.find(group =>
+              group.tabs.some(tab => tab.id === opts.reuseTabId)
+            ) ?? null)
+          : null;
+        const landedDir = landedIn?.dir ?? launchedSession.projectDir;
         if (opts.reuseTabId) {
           // the draft becomes the live tab in place — same id, same spot
           const tab = tabFromPtySession(
@@ -1715,14 +1733,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             statedTask || opts.initialPrompt?.trim() || null
           );
         }
-        if (mayMove) moveOperator(launchedSession.projectDir, tabId);
+        if (mayMove) moveOperator(landedDir, tabId);
         // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
         // Project in the durable, synced registry. Best-effort — a registry
         // failure (offline, not signed in) must NEVER stop the operator opening
         // a session, so it runs detached and swallows its own errors.
+        //
+        // The same landed identity: registering main's realpath would mint a
+        // SECOND registry Project for the Project the operator is looking at.
         syncProjectIdentity({
-          rootPath: launchedSession.projectDir,
-          name: launchedSession.projectName,
+          rootPath: landedDir,
+          name: landedIn?.name ?? launchedSession.projectName,
         });
         return true;
       } catch (cause) {

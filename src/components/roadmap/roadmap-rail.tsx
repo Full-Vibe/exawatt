@@ -838,6 +838,15 @@ export function RoadmapRail({
     <div
       ref={rootRef}
       data-roadmap-rail
+      // WHICH Project's plan this is, machine-readably. The header renders the
+      // Project NAME, which is enough for a human and useless to anything that
+      // has to be sure — and the rail follows the SELECTED tile, which the
+      // fleet-wide ⌘J queue can move to another Project at any time. An
+      // evaluator that read `[data-roadmap-rail]` therefore read whatever
+      // Project happened to be in front and could not tell; that is how three
+      // checks reported the empty state as regressed when the empty state was
+      // healthy and the rail was simply scoped elsewhere (BUG-040).
+      data-roadmap-project={projectDir ?? undefined}
       role="complementary"
       aria-label="Project roadmap"
       tabIndex={-1}

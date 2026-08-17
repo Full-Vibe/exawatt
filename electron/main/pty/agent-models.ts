@@ -651,7 +651,17 @@ export function parseGrokModelCatalog(raw: string): AgentModelCatalog {
     harness: 'grok',
     effectiveModel: defaultModel,
     effectiveModelLabel: effective?.label ?? 'Source default',
-    effectiveModelSource: defaultModel ? 'account-default' : 'unavailable',
+    // `grok models` reports a CONCRETE, enumerable model id as its default, so
+    // this is a harness recommendation, not an account default. The distinction
+    // is load-bearing at the launch boundary: `account-default` means "the
+    // account decides and Exawatt holds no id to pin", which is why the
+    // composer omits the model flag for it (Claude's `default` sentinel, or a
+    // source-owned catalog with no id at all). Calling a real model id an
+    // account default made the composer show `Eval Grok 4.5` as the selection
+    // and then launch without `-m`, leaving the source free to pick something
+    // else than the name on screen (BUG-039). Codex classifies the identical
+    // shape as `harness-recommended`; this now matches it.
+    effectiveModelSource: defaultModel ? 'harness-recommended' : 'unavailable',
     effectiveEffort: null,
     effectiveEffortLabel: 'Source default',
     effectiveEffortSource: 'unavailable',

@@ -10,10 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
-import {
-  claudeProbeSh,
-  codexProbeSh,
-} from './lib/harness-probe-fixture.mjs';
+import { claudeProbeSh, codexProbeSh } from './lib/harness-probe-fixture.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'exawatt-recent-conversations-'));
 const userData = join(root, 'userData');
@@ -455,25 +452,30 @@ try {
             !session.exited
         )
       );
+      // A draft is a LIFECYCLE, never a string. `New agent` is the designed
+      // fallback copy for any Session with no operator title and no context
+      // label yet (`sessionDisplayCopy`), so an exact-resumed Claude Code
+      // Session wears it exactly as an unlaunched draft does — which is how
+      // this check counted a live Session as a surviving draft and reported a
+      // consumption failure that never happened (BUG-038). Read
+      // `data-tab-lifecycle`, which survives D42 condensation for the same
+      // reason the aria-label did.
+      const DRAFT_TABS = '[data-tab-id][data-tab-lifecycle="draft"]';
       const migrationSamples = [];
       for (let attempt = 0; attempt < 50; attempt += 1) {
         migrationSamples.push(
-          await page.evaluate(async () => ({
-            closed: ((await window.electron?.pty?.closedSessions()) ?? []).some(
-              entry =>
-                entry.durableSessionId === 'session-project-owned-provider'
-            ),
-            // condensed chips render no title text (D42) — the chrome
-            // button's aria-label survives condensation, textContent does not
-            draftCount: Array.from(
-              document.querySelectorAll('[data-tab-id] button[aria-label]')
-            ).filter(button =>
-              button
-                .getAttribute('aria-label')
-                ?.toLowerCase()
-                .startsWith('new agent')
-            ).length,
-          }))
+          await page.evaluate(
+            async selector => ({
+              closed: (
+                (await window.electron?.pty?.closedSessions()) ?? []
+              ).some(
+                entry =>
+                  entry.durableSessionId === 'session-project-owned-provider'
+              ),
+              draftCount: document.querySelectorAll(selector).length,
+            }),
+            DRAFT_TABS
+          )
         );
         if (
           !migrationSamples.at(-1).closed &&
@@ -483,17 +485,8 @@ try {
         }
         await page.waitForTimeout(100);
       }
-      const migrationState = await page.evaluate(async () => {
-        const draftTabs = Array.from(
-          document.querySelectorAll('[data-tab-id]')
-        ).filter(tab =>
-          Array.from(tab.querySelectorAll('button[aria-label]')).some(button =>
-            button
-              .getAttribute('aria-label')
-              ?.toLowerCase()
-              .startsWith('new agent')
-          )
-        );
+      const migrationState = await page.evaluate(async selector => {
+        const draftTabs = Array.from(document.querySelectorAll(selector));
         return {
           stillClosed: (
             (await window.electron?.pty?.closedSessions()) ?? []
@@ -507,7 +500,7 @@ try {
             text: tab.textContent,
           })),
         };
-      });
+      }, DRAFT_TABS);
       if (migrationState.stillClosed || migrationState.draftTabs !== 0) {
         console.log(
           `[recent-conversations] migration state ${JSON.stringify({ migrationState, migrationSamples })}`

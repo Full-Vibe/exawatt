@@ -462,7 +462,11 @@ describe('parseGrokModelCatalog', () => {
       'grok-code-fast-2',
     ]);
     expect(catalog.effectiveModel).toBe('grok-4.5');
-    expect(catalog.effectiveModelSource).toBe('account-default');
+    // A concrete id the source enumerates is a harness recommendation, the
+    // same classification Codex gets for the same shape. `account-default` is
+    // reserved for "no id to pin", which the composer reads as permission to
+    // omit the model flag entirely (BUG-039).
+    expect(catalog.effectiveModelSource).toBe('harness-recommended');
     expect(catalog.catalogMode).toBe('live-catalog');
     expect(catalog.catalogProvenance).toBe(
       'Installed Grok Build CLI · grok models'

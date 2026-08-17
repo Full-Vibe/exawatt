@@ -7,7 +7,7 @@
 // Run with EXA_BASE pointing at a dev server serving THIS checkout.
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   declareRoadmapItem,
   openShellFromLauncher,
@@ -118,6 +118,27 @@ execSync(
 const bare = mkdtempSync(join(tmpdir(), 'rail-none-'));
 mkdirSync(join(bare, 'src'), { recursive: true });
 
+/**
+ * THIS checkout's Project directory, which is not `process.cwd()` whenever an
+ * agent runs from a worktree: `resolveProject` maps a linked worktree onto its
+ * MAIN repository through `--git-common-dir`, so the rail this eval opens for
+ * itself is scoped to the primary checkout. Ask git the same question the
+ * product asks instead of assuming cwd is the Project.
+ */
+const selfProject = (() => {
+  try {
+    const common = execSync('git rev-parse --git-common-dir', {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    }).trim();
+    return dirname(
+      isAbsolute(common) ? common : resolve(process.cwd(), common)
+    );
+  } catch {
+    return process.cwd();
+  }
+})();
+
 const openProject = (page, dir) =>
   page.evaluate(d => {
     window.dispatchEvent(
@@ -125,10 +146,21 @@ const openProject = (page, dir) =>
     );
   }, dir);
 
-const railText = page =>
-  page.evaluate(
-    () => document.querySelector('[data-roadmap-rail]')?.innerText ?? ''
-  );
+/**
+ * The rail SCOPED to a named Project. Every read names the Project it is
+ * about, because the rail follows the selected tile and the selection is not
+ * this script's to assume: ⌘J is a fleet-wide queue (BUG-026) and moves it
+ * across Projects. Reading a bare `[data-roadmap-rail]` therefore read
+ * whichever plan happened to be in front, which is how the empty-queue case
+ * asserted three times against a DIFFERENT Project's rail and reported the
+ * designed empty state as regressed (BUG-040).
+ */
+const rail = (page, dir) =>
+  page.locator(`[data-roadmap-rail][data-roadmap-project="${dir}"]`);
+const railText = async (page, dir) => {
+  await rail(page, dir).waitFor();
+  return rail(page, dir).innerText();
+};
 
 const shot = async (page, name) => {
   await page.screenshot({ path: join(OUT, `${name}.png`) });
@@ -188,7 +220,7 @@ await withElectronApp(
     // ⌘B from Terminal = Sessions with the rail focused
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
-    await page.locator('[data-roadmap-rail]').waitFor();
+    await rail(page, healthy).waitFor();
     await page.waitForTimeout(700);
     results.cmdBLandsInSessions = inSessions();
     results.cmdBFocusesRail = await railFocused();
@@ -196,17 +228,19 @@ await withElectronApp(
 
     // S7: the header sequence bar renders the whole queue as one line
     results.sequenceBar =
-      (await page.locator('[data-roadmap-sequence]').count()) === 1;
+      (await rail(page, healthy).locator('[data-roadmap-sequence]').count()) ===
+      1;
     results.declaredV2Ready =
-      (await page.locator('[data-roadmap-readiness]').textContent()) ===
-      'Ready · v2';
+      (await rail(page, healthy)
+        .locator('[data-roadmap-readiness]')
+        .textContent()) === 'Ready · v2';
     results.focusExpandsRail =
       Math.round(
-        await page
-          .locator('[data-roadmap-rail]')
-          .evaluate(el => el.getBoundingClientRect().width)
+        await rail(page, healthy).evaluate(
+          el => el.getBoundingClientRect().width
+        )
       ) === 420;
-    const text = await railText(page);
+    const text = await railText(page, healthy);
     results.heroVisible = text.includes('ACME-003');
     results.milestoneReadout = text.includes('Next up:');
     results.blockedBadge = /blocked/i.test(text);
@@ -221,7 +255,7 @@ await withElectronApp(
     // live update (S5): an on-disk edit reparses without any focus change
     appendFileSync(join(healthy, 'ROADMAP.md'), '\n### ACME-013 Live probe\n');
     await page.waitForTimeout(2000);
-    results.liveUpdate = (await railText(page)).includes('10 items');
+    results.liveUpdate = (await railText(page, healthy)).includes('10 items');
     await shot(page, '2-live-update');
 
     // keyboard walk + drill + milestone roving (S7/R2)
@@ -232,7 +266,9 @@ await withElectronApp(
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
     await shot(page, '3-drilled');
-    results.drillShowsDetail = (await railText(page)).includes('Roadmap ·');
+    results.drillShowsDetail = (await railText(page, healthy)).includes(
+      'Roadmap ·'
+    );
     results.progressiveDisclosure =
       (await page.getByText('Scope & criteria').count()) === 1;
     results.launchFromItem =
@@ -250,7 +286,9 @@ await withElectronApp(
     } else {
       await page.getByRole('button', { name: 'Undo' }).click();
       await page.waitForTimeout(400);
-      results.inlineUndo = (await railText(page)).includes('Change undone');
+      results.inlineUndo = (await railText(page, healthy)).includes(
+        'Change undone'
+      );
     }
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(200);
@@ -260,7 +298,9 @@ await withElectronApp(
         .count()) === 1;
     await page.getByRole('button', { name: 'Back to queue' }).click();
     await page.waitForTimeout(300);
-    results.backReturnsToQueue = !(await railText(page)).includes('Roadmap ·');
+    results.backReturnsToQueue = !(await railText(page, healthy)).includes(
+      'Roadmap ·'
+    );
 
     // S12: Escape at queue level leaves rail FOCUS but the rail stays — it
     // is a fixture of the Sessions altitude, not a dismissable panel
@@ -283,7 +323,9 @@ await withElectronApp(
     // shipped group expands
     await page.getByRole('button', { name: /shipped/ }).click();
     await page.waitForTimeout(300);
-    results.shippedExpands = (await railText(page)).includes('ACME-001');
+    results.shippedExpands = (await railText(page, healthy)).includes(
+      'ACME-001'
+    );
     await shot(page, '5-shipped-expanded');
 
     await toTerminal();
@@ -297,21 +339,20 @@ await withElectronApp(
     await page.waitForTimeout(1500);
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
-    await page.locator('[data-roadmap-rail]').waitFor();
+    await rail(page, healthy).waitFor();
     await page.waitForTimeout(600);
-    results.declaredBadge = (await railText(page)).includes('▸1');
+    results.declaredBadge = (await railText(page, healthy)).includes('▸1');
     results.chipRowInQueue =
-      (await page.locator('[data-roadmap-rail] [data-roadmap-chip]').count()) >=
-      1;
+      (await rail(page, healthy).locator('[data-roadmap-chip]').count()) >= 1;
     await page.click('[data-roadmap-row="ACME-007"]');
     await page.waitForTimeout(400);
-    results.declaredChipInDetail = (await railText(page)).includes('Sessions');
-    results.declaredChipSolid = await page.evaluate(() => {
-      const chip = document.querySelector(
-        '[data-roadmap-rail] [data-roadmap-chip]'
-      );
-      return chip ? getComputedStyle(chip).borderStyle === 'solid' : false;
-    });
+    results.declaredChipInDetail = (await railText(page, healthy)).includes(
+      'Sessions'
+    );
+    results.declaredChipSolid = await rail(page, healthy)
+      .locator('[data-roadmap-chip]')
+      .first()
+      .evaluate(el => getComputedStyle(el).borderStyle === 'solid');
     await shot(page, '6-declared-chip');
     await page.keyboard.press('Escape'); // drill → queue
     await toTerminal();
@@ -353,17 +394,30 @@ await withElectronApp(
     await page.keyboard.press('Meta+j');
     await page.waitForTimeout(500);
     results.starvingJumpStaysTerminal = !inSessions();
+    // ⌘J is a FLEET queue (BUG-026), and S8 above left a painted needs-you
+    // Session standing in the HEALTHY fixture, so that jump legitimately
+    // moved the operator into another Project. Starvation still invents no
+    // target of its own — the altitude check above is what this case is
+    // for — but the Project under test is no longer in front. Say so and go
+    // back, instead of assuming the last Project opened is still the
+    // selected one: assuming it is what made the empty state look regressed
+    // for a day (BUG-040).
+    await openProject(page, empty);
+    await page.waitForTimeout(900);
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
-    await page.locator('[data-roadmap-rail]').waitFor();
     await page.waitForTimeout(600);
-    results.emptyQueueHero = (await railText(page)).includes('Queue empty');
+    results.emptyQueueHero = (await railText(page, empty)).includes(
+      'Queue empty'
+    );
     results.detectedRepoViewOnly =
-      (await page.locator('[data-roadmap-readiness]').textContent()) ===
-      'View only · adaptation needed';
+      (await rail(page, empty)
+        .locator('[data-roadmap-readiness]')
+        .textContent()) === 'View only · adaptation needed';
     results.remediationGesture =
-      (await page.getByRole('button', { name: 'Adapt with agent' }).count()) ===
-      1;
+      (await rail(page, empty)
+        .getByRole('button', { name: 'Adapt with agent' })
+        .count()) === 1;
     await shot(page, '7-empty-queue');
 
     // S12: roving the overview selection re-scopes the rail to that tile's
@@ -383,7 +437,9 @@ await withElectronApp(
       healthyBox.y + healthyBox.height / 2
     );
     await page.waitForTimeout(900);
-    results.selectionScopesRail = (await railText(page)).includes('ACME-003');
+    results.selectionScopesRail = (await railText(page, healthy)).includes(
+      'ACME-003'
+    );
     await shot(page, '7b-selection-scoped');
     // park the cursor on neutral background: a stationary mouse over a tile
     // position must not influence later overlay opens
@@ -395,9 +451,9 @@ await withElectronApp(
     await page.waitForTimeout(1500);
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
-    await page.locator('[data-roadmap-rail]').waitFor();
+    await rail(page, bare).waitFor();
     await page.waitForTimeout(800);
-    results.noRoadmapState = (await railText(page)).includes(
+    results.noRoadmapState = (await railText(page, bare)).includes(
       'No roadmap found'
     );
     await shot(page, '8-no-roadmap');
@@ -408,9 +464,11 @@ await withElectronApp(
     await page.waitForTimeout(2500);
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
-    await page.locator('[data-roadmap-rail]').waitFor();
+    await rail(page, selfProject).waitFor();
     await page.waitForTimeout(1200);
-    results.realRepoRenders = (await railText(page)).includes('ENG-');
+    results.realRepoRenders = (await railText(page, selfProject)).includes(
+      'ENG-'
+    );
     await shot(page, '9-exawatt-real');
     await toTerminal();
 
@@ -436,9 +494,9 @@ await withElectronApp(
         '[data-active-session-context] button[title*="open in roadmap"]'
       );
       await page.waitForURL('**view=sessions**');
-      await page.locator('[data-roadmap-rail]').waitFor();
+      await rail(page, gitFix).waitFor();
       await page.waitForTimeout(800);
-      const drillText = await railText(page);
+      const drillText = await railText(page, gitFix);
       results.reciprocalDrill =
         drillText.includes('Roadmap · FIX-042') &&
         drillText.includes('Sessions');
