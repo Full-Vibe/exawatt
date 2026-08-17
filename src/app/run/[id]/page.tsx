@@ -11,7 +11,10 @@ import {
 } from '@/components/operator-stats/format';
 import { ShareButton } from '@/components/operator-stats/share-button';
 import styles from '@/components/operator-stats/operator-stats.module.css';
-import { readRunReceipt } from '@/lib/operator-stats/public';
+import {
+  publicArenaConfigured,
+  readRunReceipt,
+} from '@/lib/operator-stats/public';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +36,9 @@ export async function generateMetadata({
   const { id: rawId } = await params;
   const id = cleanId(rawId);
   if (!id) return { title: 'Run not found' };
+  // "Not found" would be a claim about the record; this build has no arena to
+  // look in (BUG-048).
+  if (!publicArenaConfigured()) return { title: 'Run receipts' };
   const run = await getRun(id);
   if (!run) return { title: 'Run not found' };
   const duration = formatDuration(run.longestHandsOffMs);
@@ -59,6 +65,18 @@ export default async function RunPage({ params }: RunPageProps) {
   const { id: rawId } = await params;
   const id = cleanId(rawId);
   if (!id) notFound();
+  if (!publicArenaConfigured()) {
+    return (
+      <main className={styles.surface}>
+        <div className={`${styles.shell} ${styles.receipt}`}>
+          <div className={styles.empty} data-arena-state="unconfigured">
+            Run receipts are not configured in this build. Local usage stays on
+            this device.
+          </div>
+        </div>
+      </main>
+    );
+  }
   const run = await getRun(id);
   if (!run) notFound();
 

@@ -22,7 +22,12 @@ vi.mock('@/lib/distribution/resolved', () => ({
 
 vi.mock('@supabase/supabase-js', () => ({ createClient }));
 
-import { readLeaderboard, readOperatorProfile, readRunReceipt } from './public';
+import {
+  publicArenaConfigured,
+  readLeaderboard,
+  readOperatorProfile,
+  readRunReceipt,
+} from './public';
 
 describe('public operator reads use the distribution account', () => {
   beforeEach(() => {
@@ -43,6 +48,17 @@ describe('public operator reads use the distribution account', () => {
     await expect(readOperatorProfile('operator')).resolves.toBeNull();
     await expect(readRunReceipt('run-1')).resolves.toBeNull();
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  // Those absence values are indistinguishable from a young board and an
+  // unknown handle, which is exactly what incident `0017` cost. Surfaces ask
+  // this instead of reading the empty answer as product truth.
+  it('reports whether the arena exists in this build at all', () => {
+    expect(publicArenaConfigured()).toBe(true);
+
+    distribution.account = null;
+
+    expect(publicArenaConfigured()).toBe(false);
   });
 
   it('ignores ambient account variables when the contract is configured', async () => {

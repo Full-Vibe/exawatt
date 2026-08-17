@@ -57,6 +57,20 @@ export interface PublicRunReceipt extends PublicOperatorRun {
   avatarUrl: string | null;
 }
 
+/**
+ * Whether this build declares the account the public arena reads through.
+ *
+ * Surfaces must ask, because an absent capability and an absent RECORD are
+ * different facts that the reads below cannot tell apart: no client returns
+ * the same `[]` as a young board and the same `null` as an unknown handle.
+ * Incident `0017` is what a public surface conflating the two costs — the
+ * hosted leaderboard invited visitors to be its first operator for eighteen
+ * hours while the operator it was already ranking read it.
+ */
+export function publicArenaConfigured(): boolean {
+  return resolvedDistribution().account !== null;
+}
+
 function publicClient() {
   const account = resolvedDistribution().account;
   if (!account) return null;

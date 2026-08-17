@@ -11,7 +11,10 @@ import {
   formatTokens,
 } from '@/components/operator-stats/format';
 import styles from '@/components/operator-stats/operator-stats.module.css';
-import { readOperatorProfile } from '@/lib/operator-stats/public';
+import {
+  publicArenaConfigured,
+  readOperatorProfile,
+} from '@/lib/operator-stats/public';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +36,9 @@ export async function generateMetadata({
   const { handle: rawHandle } = await params;
   const handle = cleanHandle(rawHandle);
   if (!handle) return { title: 'Operator not found' };
+  // A build with no arena has not lost this operator, so its tab must not say
+  // so either (BUG-048).
+  if (!publicArenaConfigured()) return { title: 'Operator profiles' };
   const profile = await getProfile(handle);
   if (!profile) return { title: `@${handle}` };
   const description = `${formatAgentHoursLong(
@@ -60,6 +66,20 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
   const { handle: rawHandle } = await params;
   const handle = cleanHandle(rawHandle);
   if (!handle) notFound();
+  // Not a missing operator: a build that carries no public arena at all. `404`
+  // would report the record as gone, which is the conflation BUG-048 repairs.
+  if (!publicArenaConfigured()) {
+    return (
+      <main className={styles.surface}>
+        <div className={styles.shell}>
+          <div className={styles.empty} data-arena-state="unconfigured">
+            Operator profiles are not configured in this build. Local usage
+            stays on this device.
+          </div>
+        </div>
+      </main>
+    );
+  }
   const profile = await getProfile(handle);
   if (!profile) notFound();
 
