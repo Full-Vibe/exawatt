@@ -1390,10 +1390,11 @@ async function bootstrapCommandSurface(): Promise<void> {
     enabled: isClaudePlanWindowsEnabled(loadSettings()),
     // Chromium owns the request in installed builds, so Little Snitch sees
     // Exawatt's stable Developer ID instead of Node or an ad-hoc Electron
-    // helper. Routine unpackaged launches stay local; the narrow override is
-    // reserved for deliberately exercising this exact account integration.
+    // helper. Routine unpackaged and automated test launches stay local; the
+    // narrow override deliberately exercises this exact account integration.
     remoteReadAllowed: isClaudePlanRemoteReadAllowed({
       packaged: app.isPackaged,
+      testMode: isTest,
       developmentOptIn: process.env.EXAWATT_DEV_CLAUDE_PLAN_NETWORK,
     }),
     fetchFn: electronNetworkFetch,
