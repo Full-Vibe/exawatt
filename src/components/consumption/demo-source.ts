@@ -53,7 +53,6 @@ import {
 import type { ClosedCycle } from './meter/meter-model';
 
 export const DEMO_NOW_MS = Date.parse('2026-08-02T15:20:00.000Z');
-export const DEMO_WINDOW_DAYS = 7;
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;

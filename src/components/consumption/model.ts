@@ -391,22 +391,6 @@ export function sourceOwnerLabel(source: ConsumptionSourceView): string {
 /* rollup helpers                                                      */
 /* ------------------------------------------------------------------ */
 
-/** A scope's own (non-delegated) usage, as disjoint display segments. */
-export function ownDisplayUsage(rollup: ConsumptionRollup): DisplayUsage {
-  const total = displayUsage(rollup.totals, rollup.sources);
-  const delegated = displayUsage(rollup.delegated.totals, rollup.sources);
-  return {
-    input: total.input - delegated.input,
-    cacheWrite: total.cacheWrite - delegated.cacheWrite,
-    cacheRead: total.cacheRead - delegated.cacheRead,
-    output: total.output - delegated.output,
-    reasoning:
-      total.reasoning === null
-        ? null
-        : total.reasoning - (delegated.reasoning ?? 0),
-  };
-}
-
 /**
  * Delegated share of a rollup's weighted burn, or null when no source in the
  * rollup can record delegation at all.

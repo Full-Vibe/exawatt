@@ -30,13 +30,6 @@ import {
 
 export type MeterFormId = 'arc' | 'bar' | 'ring' | 'swap';
 
-export const METER_FORM_LABEL: Record<MeterFormId, string> = {
-  arc: 'Arc dial',
-  bar: 'Fraction bar',
-  ring: 'Glyph ring',
-  swap: 'Numeral swap',
-};
-
 export interface MeterFormProps {
   reading: MeterReading | null;
   /** 1 = true chrome scale. The gallery zooms with 3–4. */
