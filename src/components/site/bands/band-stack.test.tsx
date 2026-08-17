@@ -71,7 +71,7 @@ describe('homepage band composition', () => {
     expect(section.tagName).toBe('SECTION');
     expect(section).toHaveAttribute('data-band-medium', fold.medium);
     expect(section).toHaveAttribute('data-band-screens', String(fold.screens));
-    expect(section).toHaveAttribute('data-band-altitude', 'fleet');
+    expect(section).toHaveAttribute('data-band-altitude', fold.altitudeAnchor!);
     expect(section).toHaveStyle({ minHeight: '100vh' });
   });
 

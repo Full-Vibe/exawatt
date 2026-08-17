@@ -140,8 +140,19 @@ export type BandMedium =
  */
 export type BandHeadingRole = 'none' | 'headline' | 'section' | 'closing';
 
-/** The altitude ladder is the narrative (decision 0023 names the altitudes). */
-export type BandAltitude = 'agent' | 'team' | 'fleet';
+/**
+ * The altitude ladder is the narrative (decision 0023 names the altitudes).
+ *
+ * `cluster` is the ONE addition that is not a product altitude, and it says so
+ * (ENG-031 W6b): it is the FLEET altitude cropped, centred on the same point,
+ * close enough that three or four Project clusters fill the frame and an
+ * individual mark is legible. It exists because the fold now shares the
+ * board with the rest of the page, and a fold that opened on the whole fleet
+ * inside a 58% column showed marks two pixels wide. Reading down, the first
+ * move is the crop opening out to the whole fleet, which is the scale claim
+ * made as a camera move instead of as a sentence.
+ */
+export type BandAltitude = 'agent' | 'team' | 'fleet' | 'cluster';
 
 /**
  * What the pinned board COLOURS BY while this band is the active panel
@@ -230,22 +241,27 @@ export const BAND_SCREENS_MAX = 1.4;
  *
  * 450 is the proven floor (Conductor); 534 is the cautionary middle (Warp,
  * vague and unclear at once); 1,200 to 1,700 was measured for a page that is
- * premium and communicative at once.
+ * premium and communicative at once. W8 lowered the floor to 900 because the
+ * chapters share one board and the picture carries what those pages spend
+ * words on.
  *
- * AMENDED 2026-08-17 (W8). The floor drops to 900 and the reason is
- * structural rather than editorial. The 1,200 figure was measured across
- * pages where each HOW chapter is its OWN screen and has to re-establish its
- * own context in prose. This page merges the chapters onto one persistent
- * board and gives each of them a lens, so the picture carries what those
- * pages spend words on. The purpose of a floor is that the page not be vague,
- * and the operator's instruction was that it not be tall. Specificity, not
- * volume, is what satisfies the first; the second is measured in screens.
- * Padding back to 1,200 would be exactly the failure the floor exists to
- * prevent.
+ * AMENDED 2026-08-17 (W6b, operator: "I don't want to read all the text on
+ * that page"). The band is 320 to 520, and the reason is that the measured
+ * cohort's 1,200 figure is a count of words on pages where the ARGUMENT is
+ * made in prose. Here the argument is made by a board that changes, and the
+ * page shipped 1,216 words anyway, which is the cohort's number reached by
+ * writing a documentation page next to a graphic that was already making the
+ * point. Every mechanism list is gone: a mechanism is checkable in the docs
+ * and merely long on a marketing page. What is left is one claim per panel,
+ * in the same register, plus the dated list, which is the one place on the
+ * page where volume is the evidence.
+ *
+ * This is a cut in VOLUME and not in register. The lines the page is known by
+ * are all still on it.
  */
 export const PAGE_COPY_BUDGET: Required<CopyBudget> = {
-  min: 900,
-  max: 1_700,
+  min: 320,
+  max: 520,
 };
 
 /**
@@ -262,9 +278,17 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     copyBudget: { max: 24 },
     medium: 'board',
     // The opening crop the dive starts from, and the seat the reader is put in.
-    altitudeAnchor: 'fleet',
-    boardLens: null,
-    boardHighlight: null,
+    altitudeAnchor: 'cluster',
+    // THE FOLD IS THE FIRST FRAME OF THE GRAPHIC (ENG-031 W6b), which is why
+    // it is the one band outside `medium: 'pinned-board'` that declares a lens
+    // and a highlight. It cannot BE a pinned band, because `/` still renders
+    // it alone and a run of one would put the proposed fold on the shipped
+    // homepage. `bandRuns()` merges it into the run whenever a run follows it,
+    // so the page has exactly one board instance and the "one continuous
+    // board" claim is literally true rather than a crossfade between two
+    // canvases.
+    boardLens: 'status',
+    boardHighlight: 'one-project',
     screens: 1,
     status: 'shipped',
   },
@@ -323,14 +347,23 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     boardLens: 'status',
     boardHighlight: 'whole-fleet',
     screens: 1.2,
-    status: 'proposed',
+    status: 'reserved',
+    // RESERVED 2026-08-17 (W6b, operator): "eight panels to four or five". The
+    // scale claim is the first thing the page DOES now rather than the first
+    // thing it says: the fold opens on a crop and the next panel's camera
+    // pulls out to the whole fleet, so a screen of type explaining that a
+    // fleet fits on one screen was describing a camera move the reader had
+    // just watched. The foil it carried spends at 72px at the close instead,
+    // which is where the brief already puts the world claim.
+    reservedUntil:
+      'The pull-out from the fold no longer reads as the scale claim on its own.',
   },
   {
     id: 'altitude-attention',
     job: 'ATTENTION. The board recedes to the agents waiting on a person, and says why the colour is trustworthy.',
     headingRole: 'section',
     heading: 'Only what needs you',
-    copyBudget: { min: 60, max: 140 },
+    copyBudget: { min: 25, max: 60 },
     medium: 'pinned-board',
     // The SAME altitude as the panel before it, deliberately. The argument is
     // made by the board changing under a still camera, which is the one beat
@@ -370,7 +403,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'DEPTH. Into one project and down to one agent, with a status that changes while you read it.',
     headingRole: 'section',
     heading: 'Down to one agent',
-    copyBudget: { min: 20, max: 60 },
+    copyBudget: { min: 25, max: 55 },
     medium: 'pinned-board',
     altitudeAnchor: 'agent',
     boardLens: 'status',
@@ -383,7 +416,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'TRAJECTORY. Agents run agents, so the camera opens back out while the fleet blooms.',
     headingRole: 'section',
     heading: 'Agents run agents',
-    copyBudget: { min: 20, max: 60 },
+    copyBudget: { min: 20, max: 50 },
     medium: 'pinned-board',
     // Back OUT to the FLEET framing, which is the only anchor in the run that
     // reverses, and it reverses all the way: the mechanism by which ten
@@ -400,7 +433,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'PROVENANCE. Whose agents these are, coloured by the harness that runs each one.',
     headingRole: 'section',
     heading: 'Agents from any lab',
-    copyBudget: { min: 80, max: 170 },
+    copyBudget: { min: 20, max: 50 },
     // W8 promoted this from a card chapter to a LENS. A harness is a property
     // of every mark on the board, so the claim proves itself the moment the
     // fleet recolours by source.
@@ -422,14 +455,21 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     boardLens: 'burn',
     boardHighlight: 'whole-fleet',
     screens: 1,
-    status: 'proposed',
+    status: 'reserved',
+    // RESERVED 2026-08-17 (W6b, operator): "eight panels to four or five",
+    // and this is the panel the named four leave out. Cross-vendor spend is
+    // still the thing nobody else in the category shows, so the LENS stays
+    // built and resolved: promoting the row back is a status edit, not a
+    // rebuild. It comes back on a page that has room for a sixth claim.
+    reservedUntil:
+      'The page has room for a sixth claim. The burn lens is built and resolves today.',
   },
   {
     id: 'trust',
     job: 'OWNERSHIP. Whose machine this runs on, and the switch attached to every outbound thing.',
     headingRole: 'section',
     heading: 'Your machine, your keys, your repo',
-    copyBudget: { min: 80, max: 170 },
+    copyBudget: { min: 20, max: 55 },
     medium: 'pinned-board',
     altitudeAnchor: 'fleet',
     // Declared `permission` and resolved as `status` until the fixture carries
@@ -502,12 +542,12 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'ALIVE. Built by the fleet it commands, and a dated list of what landed.',
     headingRole: 'section',
     heading: 'Built by the fleet it commands',
-    copyBudget: { min: 150, max: 280 },
+    copyBudget: { min: 80, max: 130 },
     medium: 'cards',
     altitudeAnchor: null,
     boardLens: null,
     boardHighlight: null,
-    screens: 1.2,
+    screens: 1,
     status: 'proposed',
   },
   {
@@ -624,8 +664,26 @@ export function bandRuns(bands: HomepageBand[]): BandRun[] {
       continue;
     }
     const previous = runs[runs.length - 1];
-    if (previous?.kind === 'pinned-board') previous.bands.push(band);
-    else runs.push({ kind: 'pinned-board', bands: [band] });
+    if (previous?.kind === 'pinned-board') {
+      previous.bands.push(band);
+      continue;
+    }
+    // THE FOLD JOINS THE GRAPHIC WHEN THE GRAPHIC FOLLOWS IT (ENG-031 W6b).
+    // Before this, `/v2` mounted two `HeroBoard` instances: a full-width one
+    // in the fold and a second one at the top of the run, which produced a
+    // visible seam at 900px, two fleet-count chips, and two legends. One
+    // instance is also what makes the page's own claim true, so the merge is
+    // structural rather than a de-duplication. It is conditional on a run
+    // FOLLOWING, because `/` renders the fold alone and a pinned run of one
+    // would put the proposed fold on the shipped homepage.
+    if (previous?.kind === 'band' && previous.band.id === 'fold') {
+      runs[runs.length - 1] = {
+        kind: 'pinned-board',
+        bands: [previous.band, band],
+      };
+      continue;
+    }
+    runs.push({ kind: 'pinned-board', bands: [band] });
   }
   return runs;
 }
@@ -634,9 +692,7 @@ export function bandRuns(bands: HomepageBand[]): BandRun[] {
  * The camera choreography, derived rather than authored twice: the ordered
  * altitude anchors are the journey the board follows.
  */
-export function heroCameraAnchors(
-  bands: HomepageBand[] = proposedBands()
-): {
+export function heroCameraAnchors(bands: HomepageBand[] = proposedBands()): {
   id: BandId;
   altitude: BandAltitude;
 }[] {

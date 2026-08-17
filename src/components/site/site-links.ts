@@ -68,9 +68,13 @@ export interface SiteFooterColumn {
  */
 export const SITE_FOOTER_COLUMNS: SiteFooterColumn[] = [
   {
+    // NO DOWNLOAD ROW (ENG-031 W6b). `Download for Mac` rendered four times on
+    // one page: the sticky nav, the fold, the close, and here. Persistent
+    // conversion lives in the header by measured rule, and the two ends of the
+    // page are the two moments the constraint allows, so the footer copy of it
+    // was the one that was only there because a footer usually has one.
     heading: 'Product',
     links: [
-      { label: 'Download for Mac', href: '/download' },
       { label: 'Leaderboard', href: '/leaderboard' },
       { label: 'Architecture', href: '/architecture' },
     ],

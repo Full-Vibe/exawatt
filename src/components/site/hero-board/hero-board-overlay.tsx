@@ -63,6 +63,23 @@ const LABEL_DIM = 0.28;
 const LABEL_EDGE_HIDE_PX = 40;
 const LABEL_EDGE_FADE_PX = 160;
 
+/** And the same at the TOP, where the frame's own fleet chip lives. A Project
+ *  label riding up into it printed two lines of chrome through each other on
+ *  a phone, where the frame is short and the labels reach the top edge. The
+ *  window is deliberately NARROW and measured against the label's own top
+ *  rather than its anchor: a wide fade here dimmed the fold's own subject,
+ *  which is the one label on the page that has to be at full strength. */
+const LABEL_TOP_HIDE_PX = 34;
+const LABEL_TOP_FADE_PX = 50;
+/** A Project label's own height, chip plus counts. Constant rather than
+ *  measured: reading it here would force a layout inside the render loop. */
+const LABEL_HEIGHT_PX = 46;
+
+/** The identity card's own width, matching its class, so the flip decision can
+ *  be made without a layout read inside the render loop. */
+const CARD_WIDTH_PX = 240;
+const CARD_MAX_WIDTH_SHARE = 0.62;
+
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
@@ -121,6 +138,7 @@ export function HeroBoardOverlay({
   const zoneNodes = useRef(new Map<number, HTMLElement>());
   const unitNodes = useRef(new Map<number, HTMLElement>());
   const cardNode = useRef<HTMLDivElement>(null);
+  const beaconNode = useRef<HTMLDivElement>(null);
   const focus = useRef(-1);
 
   // The card follows whichever unit is under the pointer, then the selected
@@ -131,6 +149,8 @@ export function HeroBoardOverlay({
     hovered >= 0 ? hovered : selected >= 0 ? selected : highlight.subject.unit;
   const shownRef = useRef(shown);
   shownRef.current = shown;
+  const beaconRef = useRef(highlight.beacon);
+  beaconRef.current = highlight.beacon;
 
   /* -------------------------------------------------------------- */
   /* per-frame positioning: transforms only, never a layout read     */
@@ -163,7 +183,14 @@ export function HeroBoardOverlay({
       // bug, not as a crop, because the ground is the same on both sides.
       const margin = Math.min(anchor.x, bridge.width - anchor.x);
       const edge = smoothstep(LABEL_EDGE_HIDE_PX, LABEL_EDGE_FADE_PX, margin);
-      node.style.opacity = String((LABEL_DIM + (1 - LABEL_DIM) * focus) * edge);
+      const top = smoothstep(
+        LABEL_TOP_HIDE_PX,
+        LABEL_TOP_FADE_PX,
+        anchor.y - lift - LABEL_HEIGHT_PX
+      );
+      node.style.opacity = String(
+        (LABEL_DIM + (1 - LABEL_DIM) * focus) * edge * top
+      );
     }
     for (const [index, node] of unitNodes.current) {
       const anchor = bridge.units[index];
@@ -183,15 +210,36 @@ export function HeroBoardOverlay({
       node.style.opacity = String(0.3 + 0.7 * focus);
       node.style.pointerEvents = 'auto';
     }
+    const beacon = beaconNode.current;
+    if (beacon) {
+      const anchor =
+        beaconRef.current >= 0 ? bridge.units[beaconRef.current] : undefined;
+      if (anchor?.onScreen) {
+        beacon.style.transform = `translate3d(${Math.round(anchor.x)}px, ${Math.round(
+          anchor.y
+        )}px, 0)`;
+        beacon.style.visibility = 'visible';
+      } else {
+        beacon.style.visibility = 'hidden';
+      }
+    }
     const card = cardNode.current;
     const target = shownRef.current;
     if (card && target >= 0) {
       const anchor = bridge.units[target];
       if (anchor?.onScreen) {
-        // Flip from x alone: reading `offsetWidth` here would force a layout
-        // inside the render loop.
-        const flip = anchor.x > bridge.width * 0.58;
+        // Flip when the card would not FIT, not at a fixed share of the frame.
+        // A share works on a wide desktop frame and fails on a 390px phone,
+        // where a unit left of centre still leaves less room than the card
+        // needs and the contract line ran off the right edge. The width is a
+        // constant matching the card's own class, so no layout is read inside
+        // the render loop.
+        const cardWidth = Math.min(
+          CARD_WIDTH_PX,
+          bridge.width * CARD_MAX_WIDTH_SHARE
+        );
         const gap = anchor.radius + 14;
+        const flip = anchor.x + gap + cardWidth > bridge.width - 8;
         card.style.transform = `translate3d(${Math.round(
           anchor.x + (flip ? -gap : gap)
         )}px, ${Math.round(anchor.y)}px, 0) translate(${
@@ -335,9 +383,13 @@ export function HeroBoardOverlay({
       data-hero-overlay
     >
       {/* What the board is, in product state rather than a sentence. */}
+      {/* THE ONE MONO LINE ON THE PAGE (operator, W6b: "mono ONCE, the stat
+          chip"). It carries a panel of its own ground so it reads as chrome
+          over the board rather than as a caption tangled in the Project
+          labels behind it. */}
       <p
-        className="absolute top-2 left-3 font-mono text-chrome-micro tracking-[0.14em] uppercase"
-        style={{ color: chrome.muted }}
+        className="absolute top-2 left-3 rounded-md px-2 py-1 font-mono text-chrome-micro tracking-[0.14em] uppercase"
+        style={{ color: chrome.muted, backgroundColor: chrome.panel }}
         data-hero-overlay-fixed
         data-hero-overlay-counts
       >
@@ -355,19 +407,25 @@ export function HeroBoardOverlay({
         need you
       </p>
 
-      {/* Colour means state, in the product's own five-signal vocabulary. */}
+      {/* Colour means state, in the product's own five-signal vocabulary.
+          It is set in the READING FACE, sentence case (ENG-031 W6b, operator:
+          "kill the uppercase monospace eyebrows everywhere except that chip").
+          Tracked uppercase mono is a machine voice, and these five words are
+          the product's own vocabulary being taught to a person. The legend
+          also stopped wrapping: at 390px five tracked items broke across two
+          lines and orphaned IDLE on its own row. */}
       <ul
         // On a phone the legend and the honesty stamp share the bottom rail and
         // collide, so the legend steps up a line until there is room for both.
-        className="absolute right-3 bottom-7 flex flex-wrap justify-end gap-x-3 gap-y-1 sm:bottom-2"
-        style={{ color: chrome.muted }}
+        className="absolute right-3 bottom-7 flex max-w-[calc(100%-1.5rem)] flex-wrap justify-end gap-x-3 gap-y-1 rounded-md px-2 py-1 sm:bottom-2"
+        style={{ color: chrome.muted, backgroundColor: chrome.panel }}
         data-hero-overlay-fixed
         data-hero-overlay-legend
       >
         {LEGEND.map(state => (
           <li
             key={state}
-            className="flex items-center gap-1.5 font-mono text-chrome-micro tracking-[0.14em] uppercase"
+            className="flex shrink-0 items-center gap-1.5 text-[11px] leading-none whitespace-nowrap sm:text-xs"
           >
             <span
               aria-hidden
@@ -491,6 +549,34 @@ export function HeroBoardOverlay({
             );
           })}
 
+          {/* ONE BREATHING MARK (ENG-031 W6b). The single agent the framed
+              Project is waiting on, haloed in the DOM so the fold has
+              something alive in it without putting a pulse on 173 marks or
+              spending the measured idle budget on the GPU. Reduced motion
+              holds it still; `visibility` rather than `display` so the node is
+              never remounted. */}
+          <div
+            ref={beaconNode}
+            aria-hidden
+            className="absolute top-0 left-0"
+            style={{ visibility: 'hidden', willChange: 'transform' }}
+            data-hero-beacon={
+              highlight.beacon >= 0 ? highlight.beacon : undefined
+            }
+          >
+            {highlight.beacon >= 0 ? (
+              <span
+                className="hero-beacon-breath absolute block size-14 rounded-full"
+                style={{
+                  backgroundColor: spatialColorWithAlpha(
+                    theme.status['needs-you'],
+                    0.55
+                  ),
+                }}
+              />
+            ) : null}
+          </div>
+
           {/* The identity card. One node, moved, never remounted. */}
           <div
             ref={cardNode}
@@ -514,10 +600,7 @@ export function HeroBoardOverlay({
                 >
                   {unit.name}
                 </p>
-                <p
-                  className="mt-0.5 font-mono text-chrome-micro"
-                  style={{ color: chrome.muted }}
-                >
+                <p className="mt-0.5 text-xs" style={{ color: chrome.muted }}>
                   {unitProject}
                 </p>
                 <p
@@ -526,7 +609,7 @@ export function HeroBoardOverlay({
                 >
                   {unit.doing}
                 </p>
-                <p className="mt-1.5 flex items-center gap-1.5 font-mono text-chrome-micro tracking-[0.14em] uppercase">
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs">
                   <span
                     className="inline-block size-1.5 rounded-full"
                     style={{ backgroundColor: theme.status[unitStatus] }}

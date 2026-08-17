@@ -1,8 +1,8 @@
 import type { ComponentType } from 'react';
 import { CloseBand } from './close-band';
-import { FoldBand, ProposedFoldBand } from './fold-band';
+import { FoldBand } from './fold-band';
 import { ProofBand } from './proof-band';
-import type { BandId, HomepageArrangement, HomepageBand } from './manifest';
+import type { BandId, HomepageBand } from './manifest';
 
 export type BandComponent = ComponentType<{ band: HomepageBand }>;
 
@@ -26,8 +26,14 @@ export type BandComponent = ComponentType<{ band: HomepageBand }>;
  *
  * `ChapterBand` and `ThesisBand` were RETIRED by W8: every chapter is a panel
  * over the board now, so their layout lives in `pinned-board-sequence.tsx` and
- * their copy still lives in `narrative-copy.ts`, read through
- * `altitude-copy.ts`.
+ * their copy still lives in `altitude-copy.ts`.
+ *
+ * `fold` KEEPS ITS ENTRY, and it is used by exactly one arrangement (W6b).
+ * `/` renders the pre-W3 hero through `FoldBand`. On the whole arc the fold is
+ * the FIRST PANEL of the pinned run, so `bandRuns()` hands it to
+ * `PinnedBoardSequence` and this entry is never reached: one board instance
+ * for the page is what makes the "one continuous board" claim true, and a
+ * second component mounting a second canvas is exactly what it cost before.
  */
 export const BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
   fold: FoldBand,
@@ -47,25 +53,3 @@ export const BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
   proof: ProofBand,
   close: CloseBand,
 };
-
-/**
- * The ONE band that renders differently in the two arrangements.
- *
- * `/` still renders the pre-W3 hero inside the fold, because the shipped page
- * is the thing the proposal is being compared against and it must not move
- * under the comparison. `/v2` renders `FoldHero`, which is the fold as
- * proposed. Everything else is identical by construction, which is what keeps
- * the reviewed page and the shipped page from becoming two pages.
- */
-const PROPOSED_BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
-  ...BAND_COMPONENTS,
-  fold: ProposedFoldBand,
-};
-
-export function arrangementComponents(
-  arrangement: HomepageArrangement
-): Record<BandId, BandComponent | null> {
-  return arrangement === 'proposed'
-    ? PROPOSED_BAND_COMPONENTS
-    : BAND_COMPONENTS;
-}
