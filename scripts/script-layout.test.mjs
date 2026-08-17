@@ -23,6 +23,7 @@ const INTENTIONAL_NON_PACKAGE_FILES = new Set([
   'publish-supabase-updates.mjs',
   'registry-e2e-eval.mjs',
   'release-after-pack.cjs',
+  'renderer-session-lifecycle-leak-probe.mjs',
   'roadmap-rail-eval.mjs',
   'session-lifecycle-leak-probe.mjs',
   'sign-renderer-archive.cjs',

@@ -23,6 +23,13 @@ import {
   useState,
 } from 'react';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
+import {
+  useSessionScope,
+  useSessionScopeRelease,
+  useSessionScopedIdSet,
+  useSessionScopedMap,
+  useSessionScopedRecord,
+} from './session-scoped-state';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { pickDistinctColor, projectColor } from './project-colors';
 import {
@@ -672,30 +679,42 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [resumeBatchProgress, setResumeBatchProgress] =
     useState<ResumeBatchProgress | null>(null);
   const [ready, setReady] = useState(false);
+  /**
+   * Every store below is keyed by a Session identity and is declared through
+   * ONE owner (BUG-037, the renderer half of main's BUG-025). The owner also
+   * hands back the ref mirror each store needs, and releases all of them at
+   * the single moment the layout stops naming a Session — so a store cannot
+   * be born here without a delete site. See `session-scoped-state.ts`.
+   */
+  const sessionScope = useSessionScope();
   /** goal subtitles keyed by durableSessionId (D21): the goal is durable
    *  Session truth — live updates stream from main, the persisted layout
    *  seeds them back after a restart, stopped tabs keep theirs */
-  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [summaries, setSummaries, summariesRef] =
+    useSessionScopedRecord<string>(sessionScope);
   /** Goal visuals share the same durable-Session identity and source seam. */
-  const [goalVisuals, setGoalVisuals] = useState<Record<string, GoalVisual>>(
-    {}
-  );
+  const [goalVisuals, setGoalVisuals, goalVisualsRef] =
+    useSessionScopedRecord<GoalVisual>(sessionScope);
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
-  const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
+  const [attention, setAttention] =
+    useSessionScopedRecord<PtyAttention>(sessionScope);
   /** sessions actively producing output right now, keyed by sessionId
    *  (D18: running vs waiting must read at a glance; main is truth) */
-  const [activity, setActivity] = useState<Record<string, boolean>>({});
+  const [activity, setActivity, activityRef] =
+    useSessionScopedRecord<boolean>(sessionScope);
   /** sessions ever given work, keyed by sessionId (D22: started vs
    *  unstarted must read at a glance; main is truth — task/resume at
    *  create, first human keystroke, or raised attention) */
-  const [engaged, setEngaged] = useState<Record<string, boolean>>({});
+  const [engaged, setEngaged, engagedRef] =
+    useSessionScopedRecord<boolean>(sessionScope);
   /** harness-reported delegated work, keyed by sessionId (ENG-023). Only
    *  Sessions with children outstanding appear; a missing key means "no
    *  delegated work reported", which covers both a Session with none and a
-   *  source that cannot report it. */
-  const [delegation, setDelegation] = useState<
-    Record<string, SessionDelegation>
-  >({});
+   *  source that cannot report it. The ref mirror is read by the close path,
+   *  which asks about the TURN rather than about bytes: an Agent mid-tool-call
+   *  has quiet activity and an open turn. */
+  const [delegation, setDelegation, delegationRef] =
+    useSessionScopedRecord<SessionDelegation>(sessionScope);
   /** quiet, one-shot S4 catch-up for the session currently being revisited */
   const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(
     null
@@ -712,22 +731,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const recentsRef = useRef<NonNullable<PersistedV6['recentProjects']>>([]);
   const readyRef = useRef(ready);
   readyRef.current = ready;
-  const summariesRef = useRef(summaries);
-  summariesRef.current = summaries;
-  const goalVisualsRef = useRef(goalVisuals);
-  goalVisualsRef.current = goalVisuals;
-  const engagedRef = useRef(engaged);
-  engagedRef.current = engaged;
   /** Clone requests currently spawning, keyed `tabId:targetId`. A ref, not
    *  state: it exists to make a duplicate request a no-op, and re-rendering
-   *  the workspace on it would only add churn. */
+   *  the workspace on it would only add churn. Not Session-keyed, and every
+   *  entry is deleted by the request that added it. */
   const cloningRef = useRef(new Set<string>());
-  const activityRef = useRef(activity);
-  activityRef.current = activity;
-  /** Read by the close path, which asks about the TURN rather than about
-   *  bytes: an Agent mid-tool-call has quiet activity and an open turn. */
-  const delegationRef = useRef(delegation);
-  delegationRef.current = delegation;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
   /** Close/archive work is tracked so browser-style reopen cannot race the
    * optimistic strip removal and read the ledger before the entry lands. */
@@ -735,12 +743,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** Repeated ⌘⇧T requests are a FIFO queue over a LIFO ledger: each request
    * waits for the previous take, then restores the next-newest entry. */
   const reopenLastClosedQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const shutdownTargetsRef = useRef<Set<string>>(new Set());
+  /** Durable Session ids parked by the shutdown checkpoint. */
+  const shutdownTargetsRef = useSessionScopedIdSet(sessionScope);
   /** Identity can arrive before React has committed a newly launched/restored
    * tab. Retain that event by durable Session id instead of dropping it. */
-  const observedIdentitiesRef = useRef<Map<string, string>>(new Map());
+  const observedIdentitiesRef = useSessionScopedMap<string>(sessionScope);
   const { closedSessionCount, beginPendingClose } =
     useClosedSessionCount(ready);
+  // The single release moment: the layout is the renderer's authority on which
+  // Sessions exist, so an identity it has stopped naming is unreachable and is
+  // released here — whatever removed the tab, and in both identity spaces.
+  useSessionScopeRelease(sessionScope, projects);
 
   const syncProjectIdentity = useCallback(
     (ref: { rootPath: string; name: string }) => {
@@ -1472,7 +1485,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }),
       };
     },
-    []
+    [goalVisualsRef, shutdownTargetsRef, summariesRef]
   );
 
   // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
@@ -1513,7 +1526,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         .save(serializeWorkspace())
         .catch(error => console.error('Workspace unmount save failed', error));
     },
-    [serializeWorkspace]
+    [serializeWorkspace, shutdownTargetsRef]
   );
 
   useEffect(() => {
@@ -1557,7 +1570,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       offCheckpoint();
       void appApi.setWorkspaceCheckpointOwner(false);
     };
-  }, [ready, serializeWorkspace]);
+  }, [ready, serializeWorkspace, shutdownTargetsRef]);
 
   // ---- verbs ----
   const launch = useCallback(
@@ -1719,7 +1732,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
     },
-    [addSession, moveOperator, syncProjectIdentity]
+    [addSession, moveOperator, observedIdentitiesRef, syncProjectIdentity]
   );
 
   /**
@@ -1808,7 +1821,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       return cloned;
     },
-    [launch]
+    [engagedRef, launch, summariesRef]
   );
 
   const cloneSession = useCallback(
@@ -2043,7 +2056,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
       return operation;
     },
-    [beginPendingClose, removeTabFromLayout]
+    [
+      activityRef,
+      beginPendingClose,
+      delegationRef,
+      engagedRef,
+      removeTabFromLayout,
+      summariesRef,
+    ]
   );
 
   /** resurrect a soft-closed Session whole: tab, goal, provider identity,
@@ -2138,7 +2158,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (mayMove) moveOperator(entry.projectDir, tab.id);
       return true;
     },
-    [moveOperator]
+    [moveOperator, setSummaries]
   );
 
   const listClosedSessions = useCallback(
@@ -2263,7 +2283,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setError(null);
       return true;
     },
-    [updateTab]
+    [summariesRef, updateTab]
   );
 
   const resumeTabs = useCallback(
@@ -2762,7 +2782,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return next;
       });
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, setAttention]);
 
   useEffect(() => {
     const api = window.electron?.pty;
