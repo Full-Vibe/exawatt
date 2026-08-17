@@ -70,6 +70,17 @@ contextBridge.exposeInMainWorld('electron', {
       action: 'authenticate' | 'choose-model' | 'install-guide'
     ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
+  // Local/LAN OpenClaw credentials and the authenticated WebSocket live in
+  // Electron main. This is an opaque, method-allowlisted capability — never a
+  // token/config reader and never a caller-selected endpoint.
+  openClaw: {
+    connect: () => ipcRenderer.invoke('openclaw:connect'),
+    call: (capabilityId: string, method: string, params: unknown) =>
+      ipcRenderer.invoke('openclaw:call', capabilityId, method, params),
+    disconnect: (capabilityId: string) =>
+      ipcRenderer.invoke('openclaw:disconnect', capabilityId),
+    onEvent: subscribe<unknown>('openclaw:event'),
+  },
   operatorStats: {
     scan: (since: string, timezone: string) =>
       ipcRenderer.invoke('operator-stats:scan', since, timezone),

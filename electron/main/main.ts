@@ -1348,6 +1348,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     import('./run-state'),
     import('./auth-coordinator'),
     import('./auth-diagnostics'),
+    import('./openclaw-gateway-ipc'),
   ]).then(
     ([
       agentIpc,
@@ -1362,6 +1363,7 @@ async function bootstrapCommandSurface(): Promise<void> {
       runState,
       auth,
       authDiagnostics,
+      openClawGatewayIpc,
     ]) => {
       updateStartupScreen({
         progress: 0.36,
@@ -1381,6 +1383,7 @@ async function bootstrapCommandSurface(): Promise<void> {
         runState,
         auth,
         authDiagnostics,
+        openClawGatewayIpc,
       };
     }
   );
@@ -1457,6 +1460,7 @@ async function bootstrapCommandSurface(): Promise<void> {
 
   runtime.agentIpc.registerAgentIPC();
   runtime.agentSourcesIpc.registerAgentSourcesIPC();
+  runtime.openClawGatewayIpc.registerOpenClawGatewayIPC();
   runtime.ptyIpc.registerPtyIPC(
     distribution.contract,
     recovery.previousRunInterrupted

@@ -1,4 +1,4 @@
-import type { OCClient } from './client';
+import type { OCGatewayClient } from './client';
 import type {
   ChatSendParams,
   ChatHistoryResult,
@@ -13,7 +13,7 @@ import type {
 } from './protocol-types';
 
 export class OCMethods {
-  constructor(private client: OCClient) {}
+  constructor(private client: OCGatewayClient) {}
 
   chatSend(text: string, sessionKey?: string): Promise<ChatSendResult> {
     const params: ChatSendParams = { text };

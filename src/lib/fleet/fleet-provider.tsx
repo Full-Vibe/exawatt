@@ -12,7 +12,6 @@ import {
 } from 'react';
 import {
   FleetManager,
-  OCClient,
   OCMethods,
   DemoWorkspaceTransport,
   demoWorkspaceProjectCatalog,
@@ -22,6 +21,7 @@ import {
   type FleetState,
   type FleetMetrics,
   type OCConnectionStatus,
+  type OCGatewayClient,
   type ExawattCronJob,
   type ExawattCronRun,
   type ExawattCronJobCreate,
@@ -38,6 +38,7 @@ import {
 } from '@/components/consumption/live-store';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
+import { ElectronOpenClawClient } from './electron-openclaw-client';
 
 // --- Context ---
 
@@ -96,7 +97,9 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [isConnectingToOC, setIsConnectingToOC] = useState(false);
   const demoTransportRef = useRef<DemoWorkspaceTransport | null>(null);
   const localTransportRef = useRef<LocalSessionsTransport | null>(null);
-  const ocClientRef = useRef<OCClient | null>(null);
+  const ocClientRef = useRef<
+    (OCGatewayClient & { connect(): Promise<void>; disconnect(): void }) | null
+  >(null);
   const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
     'initializing'
   );
@@ -170,6 +173,44 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         if (demoTenantActive) {
           console.log('[Exawatt] Demo Workspace source active');
           startDemoWorkspace();
+          return;
+        }
+
+        const openClawBridge =
+          typeof window !== 'undefined' ? window.electron?.openClaw : undefined;
+        setOcAvailable(Boolean(openClawBridge));
+
+        // A focused desktop run may choose the configured local/LAN Gateway
+        // instead of the normal terminal-session source. The credential and
+        // authenticated socket remain in Electron main; the renderer receives
+        // only a bounded fleet/chat/schedule capability.
+        if (
+          openClawBridge &&
+          process.env.NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC === 'true'
+        ) {
+          const client = new ElectronOpenClawClient(openClawBridge);
+          ocClientRef.current = client;
+          const methods = new OCMethods(client);
+          manager.connect(client, methods);
+          client.on('connection:status', status => {
+            if (!mounted) return;
+            const previous = prevConnectionStatusRef.current;
+            setConnectionStatus(status);
+            if (status === 'disconnected') {
+              pushConnectionToast('Connection lost. Reconnecting...');
+            }
+            if (status === 'connected' && previous === 'disconnected') {
+              pushConnectionToast('Reconnected. State refreshed.');
+            }
+            prevConnectionStatusRef.current = status;
+          });
+          client.on('connection:error', error => {
+            console.warn('[Exawatt] OpenClaw capability error:', error.message);
+          });
+          await client.connect();
+          if (!mounted) return;
+          setIsDemo(false);
+          setIsLocal(false);
           return;
         }
 
@@ -255,81 +296,12 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (process.env.NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC !== 'true') {
-          // Web default: the honest Demo Workspace fleet. The simulated
-          // MockFleetTransport is eval-only since ENG-027 W2 — the simulated
-          // and honest demo sources never coexist on a product surface.
-          console.log('[Exawatt] Demo mode active by default');
-          startDemoWorkspace();
-          return;
-        }
-
-        // Try to get OC token from server-side API
-        const res = await fetch('/api/oc/token');
-        console.log('[Exawatt] /api/oc/token response:', res.status);
-
-        if (res.ok && mounted) {
-          setOcAvailable(true);
-          const { token, host, port } = (await res.json()) as {
-            token: string;
-            host: string;
-            port: number;
-          };
-
-          console.log(
-            `[Exawatt] Connecting to OC gateway: ws://${host}:${port}?token=***`
-          );
-
-          // Connect to real OC Gateway
-          const client = new OCClient({
-            url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
-            token,
-            clientId: 'webchat',
-            clientVersion: '0.0.1',
-            clientPlatform:
-              typeof navigator !== 'undefined' ? navigator.platform : 'web',
-            clientMode: 'webchat',
-          });
-          ocClientRef.current = client;
-
-          const methods = new OCMethods(client);
-          manager.connect(client, methods);
-
-          client.on('connection:status', status => {
-            console.log(`[Exawatt] OCClient status: ${status}`);
-            if (!mounted) return;
-
-            const prevStatus = prevConnectionStatusRef.current;
-            setConnectionStatus(status);
-
-            if (status === 'disconnected') {
-              pushConnectionToast('Connection lost. Reconnecting...');
-            }
-
-            if (status === 'connected' && prevStatus === 'disconnected') {
-              pushConnectionToast('Reconnected. State refreshed.');
-            }
-
-            prevConnectionStatusRef.current = status;
-          });
-
-          client.on('connection:error', (err: Error) => {
-            console.warn('[Exawatt] OCClient error:', err.message);
-          });
-
-          console.log('[Exawatt] Awaiting connect() (waiting for hello-ok)...');
-          await client.connect();
-          console.log('[Exawatt] connect() resolved — real OC mode active');
-          setIsDemo(false);
-        } else {
-          console.log(
-            `[Exawatt] Token API returned ${res.status} — activating demo mode`
-          );
-          // Fall back to the Demo Workspace source
-          if (!mounted) return;
-          ocClientRef.current?.disconnect();
-          startDemoWorkspace();
-        }
+        // A browser has no OS-owned Gateway credential boundary. It always
+        // enters the honest Demo Workspace; local/LAN sources are a desktop
+        // capability and never a token-returning Next route.
+        console.log('[Exawatt] Demo mode active by default');
+        startDemoWorkspace();
+        return;
       } catch (err) {
         console.warn(
           '[Exawatt] Connection failed, activating demo mode:',
@@ -385,26 +357,9 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
     async function retryConnection() {
       try {
-        const res = await fetch('/api/oc/token');
-        if (!res.ok) throw new Error(`Token API returned ${res.status}`);
-
-        const { token, host, port } = (await res.json()) as {
-          token: string;
-          host: string;
-          port: number;
-        };
-        if (cancelled) return;
-
-        const client = new OCClient({
-          url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
-          token,
-          clientId: 'webchat',
-          clientVersion: '0.0.1',
-          clientPlatform:
-            typeof navigator !== 'undefined' ? navigator.platform : 'web',
-          clientMode: 'webchat',
-          requestTimeoutMs: 15000,
-        });
+        const bridge = window.electron?.openClaw;
+        if (!bridge) throw new Error('OpenClaw requires the desktop app');
+        const client = new ElectronOpenClawClient(bridge);
         ocClientRef.current = client;
 
         const methods = new OCMethods(client);
@@ -456,7 +411,13 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }
 
     void retryConnection();
-  }, [isDemo, isConnectingToOC, demoTenantActive, manager, pushConnectionToast]);
+  }, [
+    isDemo,
+    isConnectingToOC,
+    demoTenantActive,
+    manager,
+    pushConnectionToast,
+  ]);
 
   const value = useMemo(
     () => ({

@@ -386,9 +386,13 @@ OAuth token Claude Code already stores in the macOS Keychain
   it only by declaring its own stable signed identity. That declaration is a
   local capability, never Exawatt service authorization.
 
-Everything else is local: `/api/oc/token` reads the OpenClaw gateway token off
-disk and returns a `127.0.0.1` address; `/api/dev-identity` exists only in
-development.
+Everything else is local. The retired `/api/oc/token` route returns `410` and
+never reads config, account state, or credentials. In Electron, main owns the
+OpenClaw config read, token/device identity, endpoint selection, and
+authenticated local/LAN WebSocket. The renderer receives only an opaque,
+WebContents-bound capability for a validated fleet/chat/schedule vocabulary;
+no Gateway credential appears in a URL, Next response, IPC result, or event.
+`/api/dev-identity` exists only in development.
 
 ## 8. What the client does *not* do
 

@@ -1,7 +1,7 @@
 import { TypedEmitter, type CoreEventMap } from '../events/emitter';
 import type { ExawattAgent, AgentActivity } from '../types/agent';
 import type { FleetState, FleetMetrics } from '../types/fleet';
-import type { OCClient } from '../oc/client';
+import type { OCGatewayClient } from '../oc/client';
 import type { OCMethods } from '../oc/methods';
 import { ChatAdapter } from '../adapters/chat-adapter';
 import { FleetAdapter } from '../adapters/fleet-adapter';
@@ -20,7 +20,7 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
   private chatAdapter: ChatAdapter | null = null;
   private methods: OCMethods | null = null;
 
-  connect(client: OCClient, methods: OCMethods): void {
+  connect(client: OCGatewayClient, methods: OCMethods): void {
     this.methods = methods;
     this.fleetAdapter = new FleetAdapter(client, methods);
     this.chatAdapter = new ChatAdapter(client, methods);

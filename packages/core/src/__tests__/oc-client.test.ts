@@ -143,11 +143,8 @@ describe('OCClient', () => {
     expect(connectRequest.params.maxProtocol).toBe(3);
     expect(connectRequest.params.role).toBe('operator');
     expect(connectRequest.params.scopes).toEqual([
-      'operator.admin',
       'operator.read',
       'operator.write',
-      'operator.approvals',
-      'operator.pairing',
     ]);
     expect(connectRequest.params.device.nonce).toBe('nonce-1');
     expect(connectRequest.params.device.signedAt).toEqual(expect.any(Number));
@@ -166,13 +163,7 @@ describe('OCClient', () => {
         clientId: 'webchat',
         clientMode: 'webchat',
         role: 'operator',
-        scopes: [
-          'operator.admin',
-          'operator.read',
-          'operator.write',
-          'operator.approvals',
-          'operator.pairing',
-        ],
+        scopes: ['operator.read', 'operator.write'],
         nonce: 'nonce-1',
       })
     );
@@ -181,6 +172,32 @@ describe('OCClient', () => {
       'signed-payload'
     );
     expect(client.getStatus()).toBe('connected');
+  });
+
+  it('requests privileged scopes only when the embedding boundary opts in', async () => {
+    const client = new OCClient({
+      url: 'ws://127.0.0.1:18789',
+      scopes: ['operator.read', 'operator.admin'],
+    });
+
+    const { connectPromise, socket } = await beginConnect(client);
+    socket.serverSend({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'nonce-privileged', ts: 1111 },
+    });
+    await flush();
+
+    const connectRequest = JSON.parse(socket.sentMessages[0]) as {
+      params: { scopes: string[] };
+    };
+    expect(connectRequest.params.scopes).toEqual([
+      'operator.read',
+      'operator.admin',
+    ]);
+
+    await completeHandshake(socket, { sendChallenge: false });
+    await connectPromise;
   });
 
   it('matches request and response by id', async () => {
@@ -262,6 +279,28 @@ describe('OCClient', () => {
 
     expect(MockWebSocket.instances.length).toBe(2);
     expect(client.getStatus()).toBe('connecting');
+  });
+
+  it('does not let a stale close race disconnect a replacement socket', async () => {
+    vi.useFakeTimers();
+    const client = new OCClient({
+      url: 'ws://127.0.0.1:18789',
+      reconnectDelayMs: 20,
+    });
+    const { connectPromise, socket: firstSocket } = await beginConnect(client);
+    await completeHandshake(firstSocket);
+    await connectPromise;
+
+    client.disconnect();
+    const secondConnect = client.connect();
+    await flush();
+    const secondSocket = MockWebSocket.instances[1]!;
+    await completeHandshake(secondSocket);
+    await secondConnect;
+    await vi.advanceTimersByTimeAsync(30);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(client.getStatus()).toBe('connected');
   });
 
   it('emits expected status transitions', async () => {

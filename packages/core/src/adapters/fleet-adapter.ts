@@ -1,4 +1,4 @@
-import type { OCClient } from '../oc/client';
+import type { OCGatewayClient } from '../oc/client';
 import type { OCMethods } from '../oc/methods';
 import type {
   OCSession,
@@ -12,7 +12,7 @@ export class FleetAdapter {
   private presenceMap = new Map<string, boolean>(); // sessionKey → online
 
   constructor(
-    private client: OCClient,
+    private client: OCGatewayClient,
     private methods: OCMethods
   ) {
     this._subscribeToPresence();
