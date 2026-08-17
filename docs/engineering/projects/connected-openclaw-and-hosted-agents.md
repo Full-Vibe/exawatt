@@ -277,22 +277,24 @@ simulated evidence.
 
 ### User-visible execution ladder
 
-| Step | Engineering result                                     | What the operator gets                                                               |
-| ---- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| C0   | Versioned Agent/context projection and fixtures        | No new surface yet; topology can change later without renaming or migrating the VPSs |
-| C1   | Saved read-only source and Gateway transport           | Exawatt can safely test, remember, diagnose, and reconnect to each Hetzner source    |
-| C2   | Connect flow plus Agent/Team projection                | Marcus, Scout, and Tyler appear as remote coworkers with read-only conversation/work |
-| C3   | Relaunch, outage, rename, detach, and retirement proof | Quit/reopen and transient failures preserve the same coworkers without VPS mutation  |
-| H2   | Capability-declared command path                       | Talk to a coworker; exact controls follow only where OpenClaw proves their effect    |
-| H3   | Exawatt-managed OpenClaw placement                     | Create a hosted coworker without learning a second roster or control surface         |
-| H4   | Explicit clone/move with a transfer manifest           | Move or copy a coworker only after seeing exactly what transfers and what does not   |
+| Step | Engineering result                                      | What the operator gets                                                               |
+| ---- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| C0   | Versioned projection plan/output plus topology fixtures | No new surface yet; topology can change later without renaming or migrating the VPSs |
+| C1   | Saved read-only source and Gateway transport            | Exawatt can safely test, remember, diagnose, and reconnect to each Hetzner source    |
+| C2   | Connect flow plus Agent/Team projection                 | Marcus, Scout, and Tyler appear as remote coworkers with read-only conversation/work |
+| C3   | Relaunch, outage, rename, detach, and retirement proof  | Quit/reopen and transient failures preserve the same coworkers without VPS mutation  |
+| H2   | Capability-declared command path                        | Talk to a coworker; exact controls follow only where OpenClaw proves their effect    |
+| H3   | Exawatt-managed OpenClaw placement                      | Create a hosted coworker without learning a second roster or control surface         |
+| H4   | Explicit clone/move with a transfer manifest            | Move or copy a coworker only after seeing exactly what transfers and what does not   |
 
 ### ENG-010 — connect to existing OpenClaw
 
-- **C0 Projection kernel and redacted fixtures — landed 2026-08-16.** Added
+- **C0 Projection kernel and public-safe authored fixtures — landed
+  2026-08-16.** Added
   source-qualified configured-Agent/context records, the primary-conversation
-  role, projection versioning, and pure mappings for the two-Gateway dogfood
-  topology. No network or UI writes.
+  role, a versioned projection plan/output, and pure mappings for the
+  operator-confirmed two-Gateway conceptual topology. All technical fixture
+  data is invented. No network or UI writes.
 - **C1 Saved remote source and read-only transport — next.** Extend the source
   registry with customer-hosted placement, OS-owned connection material, bounded
   Gateway discovery, capability/freshness truth, authoritative reconnect
@@ -425,14 +427,23 @@ proves the detach/reattach story. H2 starts with conversation and does not take
 on OpenClaw cron mutation, Gateway/VPS lifecycle, or a generic remote Pause
 until the source can prove the halted scope and resumable continuity.
 
-### 2026-08-16 — C0 projection kernel landed
+### 2026-08-16 — C0 projection kernel landed and review-hardened
 
-The pure `@exawatt/core` Agent projection kernel now accepts versioned,
-source-qualified Agent/context snapshots and explicit Agent/Project mappings;
-it returns a deterministic coworker projection without transport, persistence,
-UI, or source mutation. Bare native IDs never cross a configured-source
-boundary, Project and display-name changes remain mapping-only, and malformed,
-duplicate, orphaned, cross-source, or ambiguous topology fails closed.
+The pure `@exawatt/core` Agent projection kernel now accepts source-qualified
+Agent/context snapshots plus an explicit projection plan; the plan and returned
+projection carry the version while snapshots and individual Agent/Project
+mappings do not. It produces a deterministic coworker projection without
+transport, persistence, UI, or source mutation. Bare native IDs never cross a
+configured-source boundary, and Project and display-name changes remain
+mapping-only.
+
+The post-landing review hardened the boundary as a whole rather than adding
+case-specific guards: recognized adapter payload fields are validated before
+identity derivation and return structured issues, unknown fields are stripped at
+the allowlisted copy boundary, every finite vocabulary used by the projection
+boundary has one exhaustive runtime definition, and context lineage must be
+acyclic as well as source-qualified and parent-complete. Malformed, duplicate,
+orphaned, cross-source, cyclic, or ambiguous topology therefore fails closed.
 
 Primary conversation selection uses only the source-declared
 `primary-conversation` role. Newer channel, cron, helper, or spawned work cannot
@@ -440,9 +451,13 @@ replace it; a missing primary returns a warning and `null` instead of a recency
 guess. The public-safe simulated fixtures model two Gateways and the
 Marcus/Scout/Tyler projection, deliberately repeat native Agent and main-context
 IDs across sources, and retain retired Priya without projecting her by default.
-Observed, declared, and simulated evidence share the same kernel, preserving the
-Demo/Live boundary for later adapters.
+The fixture contract now pins that complete topology, allowlists its public
+schema, and rejects endpoint, credential, path, PEM, URL, domain, and IP
+material in field names or values. The kernel accepts observed, declared, and
+simulated evidence through one input contract; Demo and Live adapters remain
+C1-C3 work, so parity is not yet claimed.
 
-Evidence: 19 focused projection contract tests, all 388 `@exawatt/core` tests,
-`@exawatt/core` type-check, formatting, and `git diff --check`. This lands no H1
-acceptance or user-visible remote behavior; C1 remains the first transport slice.
+Evidence: 30 focused projection contract tests, all 435 `@exawatt/core` tests,
+`@exawatt/core` type-check, changed code/project-doc formatting, roadmap
+parsing, and `git diff --check`. This lands no H1 acceptance or user-visible
+remote behavior; C1 remains the first transport slice.
