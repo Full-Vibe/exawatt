@@ -8,6 +8,10 @@ import { runConfiguredService } from './service-client';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolveHostedAuthTargets } from '@/components/auth/hosted-auth';
 import { resolveDistributionAnalyticsDecision } from '@/lib/analytics/config';
+import { handleElectronCallback } from '@/app/auth/electron-callback/route';
+// The packaging projection is plain Node ESM shared with electron-builder, so
+// this gate reads the same answer electron-builder is given.
+import { electronBuilderDistributionConfig } from '../../../scripts/lib/distribution-build.mjs';
 
 describe('community distribution neutrality', () => {
   it('projects no Exawatt service, account, update, or protocol capability', () => {
@@ -43,6 +47,44 @@ describe('community distribution neutrality', () => {
         'production'
       )
     ).toEqual({ enabled: false, reason: 'no_distribution_config' });
+  });
+
+  it('registers no exawatt:// protocol handler and emits no exawatt:// link', async () => {
+    // Registration at package time. `protocols:` becomes Info.plist
+    // CFBundleURLTypes, so an official builder template must not survive the
+    // community projection: a community app that kept the scheme could be
+    // launched by, or could intercept, the official app's deep links.
+    expect(
+      electronBuilderDistributionConfig(
+        {
+          appId: 'ai.exawatt.desktop',
+          productName: 'Exawatt',
+          protocols: [{ name: 'Exawatt', schemes: ['exawatt'] }],
+        },
+        COMMUNITY_DISTRIBUTION
+      ).protocols
+    ).toBeUndefined();
+
+    // Registration at runtime reads the same null: Electron main calls
+    // `setAsDefaultProtocolClient` and listens for `open-url` only when the
+    // resolved contract owns a scheme.
+    expect(
+      resolveDistributionIdentity(COMMUNITY_DISTRIBUTION).protocolScheme
+    ).toBeNull();
+
+    // And the one web surface that could hand a community user an official
+    // deep link refuses, whether or not an account service exists — the
+    // protocol, not the account, is what a returning browser needs.
+    for (const accountConfigured of [false, true]) {
+      const response = handleElectronCallback(
+        new Request('https://app.test/auth/electron-callback?code=community'),
+        resolveDistributionIdentity(COMMUNITY_DISTRIBUTION),
+        undefined,
+        accountConfigured
+      );
+      expect(response.status).toBe(404);
+      expect(await response.text()).not.toContain('exawatt://');
+    }
   });
 
   it('returns null from the new Supabase seam even when legacy env is poisoned', () => {
