@@ -74,6 +74,33 @@ const FRAMING_TIGHTNESS = { fleet: 0.74, team: 0.86, agent: 0.95 } as const;
 const MARK_SCALE = 1.7;
 const STATUS_TRANSITION_SECONDS = 0.85;
 
+/**
+ * The maximum zoom depth (operator, 2026-08-17: "Bind the scroll to a maximum
+ * zoom depth. Right now it gets a little bit too close.").
+ *
+ * Stated as what it protects rather than as a number of world units: ONE Agent
+ * mark never grows past this share of the frame height. Past roughly a tenth
+ * of the frame a mark stops being an agent inside a fleet and becomes a crop
+ * of a circle, its neighbours leave the frame, and the closest altitude reads
+ * as a zoom bug rather than as an altitude. The distance is DERIVED from it
+ * with the live fov, so the cap holds at every viewport instead of being a
+ * magic number tuned against one.
+ *
+ * The interpolation itself is unchanged and stays in log space (guide rule
+ * 4c): this moves the closest keyframe, it does not change how the journey to
+ * it is travelled.
+ */
+const MAX_MARK_FRAME_SHARE = 0.1;
+
+/** The closest the camera may sit, from the frame-share cap above. */
+function maxZoomDistance(camera: THREE.Camera, markWorldSize: number): number {
+  const perspective = camera as THREE.PerspectiveCamera;
+  if (!perspective.isPerspectiveCamera) return 0;
+  const halfFov = THREE.MathUtils.degToRad(perspective.fov) / 2;
+  const span = 2 * Math.tan(halfFov) * MAX_MARK_FRAME_SHARE;
+  return span > 0 ? markWorldSize / span : 0;
+}
+
 /** Plausible next states, so the board's status mix stays stationary and every
  *  change is one the product's own protocol can produce. Indices are
  *  `HERO_STATUS_ORDER`: blocked, error, reviewing, working, idle, complete. */
@@ -651,6 +678,7 @@ function HeroCameraRig({
     rig.smoothTime = 0.4;
     rig.minPolarAngle = 24 * DEG;
     rig.maxPolarAngle = 74 * DEG;
+    // Raised to the zoom cap by the framings effect, which needs the live fov.
     rig.minDistance = 4;
     rig.maxDistance = 4000;
   }, []);
@@ -732,29 +760,58 @@ function HeroCameraRig({
     bridge.onProject?.();
   }, [anchors, getBridge, camera, project, size.width, size.height]);
 
+  /** The largest mark on the board, in world units. The zoom cap is written
+   *  against it so no unit can exceed the frame share. */
+  const markWorldSize = useMemo(
+    () =>
+      capture.units.reduce((largest, unit) => Math.max(largest, unit.size), 0) *
+      MARK_SCALE,
+    [capture]
+  );
+
   // Framings are recomputed whenever the viewport changes, because
   // getDistanceToFitSphere reads the live fov and aspect.
   useEffect(() => {
     const rig = controls.current;
     if (!rig) return;
+    // The floor is a property of the lens, not of the board, so it is computed
+    // once here and applied to every keyframe AND to the rig itself: the
+    // scroll cannot ask for a closer distance, and nothing else can either.
+    const floor = maxZoomDistance(camera, markWorldSize);
+    rig.minDistance = Math.max(4, floor);
     framings.forEach((framing, index) => {
       rig.rotateTo(BASE_AZIMUTH, BASE_POLAR, false);
       rig.moveTo(framing.center.x, framing.center.y, framing.center.z, false);
       rig.dollyTo(
-        rig.getDistanceToFitSphere(framing.radius) * framing.tightness,
+        Math.max(
+          floor,
+          rig.getDistanceToFitSphere(framing.radius) * framing.tightness
+        ),
         false
       );
       rig.getTarget(keyframes.current[index]!.target, true);
-      keyframes.current[index]!.distance = rig
-        .getPosition(scratchTarget.current, true)
-        .distanceTo(keyframes.current[index]!.target);
+      keyframes.current[index]!.distance = Math.max(
+        floor,
+        rig
+          .getPosition(scratchTarget.current, true)
+          .distanceTo(keyframes.current[index]!.target)
+      );
     });
     applyProgress(0);
     ready.current = true;
     progress.current = 0;
     getBridge().progress = 0;
     invalidate();
-  }, [applyProgress, getBridge, framings, size.width, size.height, invalidate]);
+  }, [
+    applyProgress,
+    camera,
+    getBridge,
+    framings,
+    markWorldSize,
+    size.width,
+    size.height,
+    invalidate,
+  ]);
 
   useFrame((state: RootState, delta: number) => {
     const rig = controls.current;

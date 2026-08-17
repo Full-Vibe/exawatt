@@ -1,6 +1,14 @@
 /**
  * Voltaic's Projects (ENG-027 W3).
  *
+ * NAMES ARE THE WORK, NOT THE REPOSITORY (operator, 2026-08-17, reviewing the
+ * marketing board): `dispatch-engine`, `telemetry-ingest` and `voltaic-home`
+ * read "a little bit too geeky" to a stranger, because they are repo slugs
+ * wearing a display name's job. `key` and `dir` stay slugs, because that is
+ * what a checkout and a cross-reference need; `name` is now the plain-English
+ * work a person would say out loud. Every surface that shows a Project to a
+ * human reads `name`; everything that resolves, groups, or links reads `key`.
+ *
  * Ten Projects, majority coding: seven engineering functions carry
  * `readiness: 'live'` because commanding coding agents is what Exawatt ships
  * today; the three non-coding functions (research, marketing, support) are
@@ -18,7 +26,7 @@ const HOME = '~/Code/voltaic';
 export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   {
     key: 'dispatch-engine',
-    name: 'dispatch-engine',
+    name: 'Battery Dispatch',
     dir: `${HOME}/dispatch-engine`,
     color: '#50E6FF',
     function: 'backend',
@@ -29,7 +37,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'grid-api',
-    name: 'grid-api',
+    name: 'Partner API',
     dir: `${HOME}/grid-api`,
     color: '#8AE6A8',
     function: 'backend',
@@ -40,7 +48,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'voltaic-home',
-    name: 'voltaic-home',
+    name: 'Customer App',
     dir: `${HOME}/voltaic-home`,
     color: '#FFC46B',
     function: 'frontend',
@@ -51,7 +59,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'telemetry-ingest',
-    name: 'telemetry-ingest',
+    name: 'Device Telemetry',
     dir: `${HOME}/telemetry-ingest`,
     color: '#B9A6FF',
     function: 'data',
@@ -62,7 +70,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'edge-gateway',
-    name: 'edge-gateway',
+    name: 'Gateway Firmware',
     dir: `${HOME}/edge-gateway`,
     color: '#FF9ECF',
     function: 'firmware',
@@ -73,7 +81,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'partner-portal',
-    name: 'partner-portal',
+    name: 'Installer Portal',
     dir: `${HOME}/partner-portal`,
     color: '#7FD4B8',
     function: 'frontend',
@@ -84,7 +92,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'platform-infra',
-    name: 'platform-infra',
+    name: 'Cloud Platform',
     dir: `${HOME}/platform-infra`,
     color: '#E6D06B',
     function: 'infra',
@@ -95,7 +103,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'market-intel',
-    name: 'market-intel',
+    name: 'Market Research',
     dir: `${HOME}/market-intel`,
     color: '#9BB8FF',
     function: 'research',
@@ -106,7 +114,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'demand-gen',
-    name: 'demand-gen',
+    name: 'Growth Marketing',
     dir: `${HOME}/demand-gen`,
     color: '#FFB08A',
     function: 'marketing',
@@ -117,7 +125,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'support-ops',
-    name: 'support-ops',
+    name: 'Customer Support',
     dir: `${HOME}/support-ops`,
     color: '#C9A6E6',
     function: 'support',

@@ -73,6 +73,23 @@ describe('demo workspace shape (W3)', () => {
     expect(dirs.size).toBe(DEMO_PROJECTS.length);
   });
 
+  it('names the work, not the repository', () => {
+    // operator, 2026-08-17, on the marketing board: `dispatch-engine`,
+    // `telemetry-ingest` and `voltaic-home` read "a little bit too geeky". A
+    // stranger should read work, not repositories. The slug stays on `key` and
+    // `dir`, which is where a checkout and a cross-reference need it.
+    for (const project of DEMO_PROJECTS) {
+      expect(project.name, project.key).not.toBe(project.key);
+      expect(project.name, project.key).not.toMatch(/-/u);
+      expect(project.name, project.key).toMatch(/^[A-Z]/u);
+      expect(project.key, project.key).toMatch(/^[a-z][a-z0-9-]*$/u);
+      expect(project.dir, project.key).toContain(project.key);
+    }
+    expect(new Set(DEMO_PROJECTS.map(p => p.name)).size).toBe(
+      DEMO_PROJECTS.length
+    );
+  });
+
   it('marks exactly the non-coding functions as preview', () => {
     for (const project of DEMO_PROJECTS) {
       expect(project.readiness).toBe(

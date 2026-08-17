@@ -24,6 +24,13 @@ import { bandById, countWords } from './manifest';
  *   command interface for your team's agent fleets. The economy is refactoring
  *   and your tools need to keep up. Download now"
  *
+ * AMENDED 2026-08-17 (operator, on the shipped study): the product sentence is
+ * SINGULAR and drops the possessive. "Exawatt is the command interface for
+ * your agent fleet." One reader, one fleet. "Your team's agent fleets" made a
+ * reader count other people's fleets before they had run one of their own, and
+ * the plural read as a category rather than a thing you operate. Team reach
+ * now comes from the trajectory, not from the possessive.
+ *
  * Four things in it survive every variant below:
  *
  * - TRAJECTORY, NOT LIMITATION. Today to tomorrow. The reader is already
@@ -32,7 +39,9 @@ import { bandById, countWords } from './manifest';
  *   today is not, which resolves the honest-scale constraint the brief spends
  *   pages on without softening the claim.
  * - THE TOOLS ARE THE BOTTLENECK, stated outright.
- * - TEAM SCALE. "your team's agent fleets" reaches past the single operator.
+ * - ONE READER, ONE FLEET. "your agent fleet", singular, no possessive
+ *   (operator, 2026-08-17). The climb from 10 to 10,000 is what reaches past
+ *   the single operator; the product sentence stays addressed to one person.
  * - A DIRECT CTA, and the thesis line integrated into the flow rather than
  *   fighting the headline for the top slot.
  *
@@ -94,7 +103,7 @@ export const FOLD_CLOSE_VARIANTS: FoldCloseVariant[] = [
     name: 'Ten thousand',
     kicker: null,
     headline: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
-    subhead: ["Exawatt is the command interface for your team's agent fleets."],
+    subhead: ['Exawatt is the command interface for your agent fleet.'],
     close: 'The economy is refactoring. Your tools need to keep up.',
     note: 'His draft, tightened to 20. Both halves of the climb at 60px; the thesis and the enemy spend at 72px, right above the button.',
   },
@@ -105,7 +114,7 @@ export const FOLD_CLOSE_VARIANTS: FoldCloseVariant[] = [
     headline: ['Tomorrow you will run 10,000.'],
     subhead: [
       'Your tools need to keep up.',
-      'Exawatt is the command interface for your team.',
+      'Exawatt is the command interface for your fleet.',
     ],
     close: 'The economy is refactoring.',
     note: 'The future number owns the whole h1 and the enemy sits directly under it. The vision line alone at 72px.',
@@ -116,11 +125,11 @@ export const FOLD_CLOSE_VARIANTS: FoldCloseVariant[] = [
     kicker: null,
     headline: ['Today, one agent.', 'Tomorrow, a thousand.'],
     subhead: [
-      "Exawatt is your team's command interface.",
+      'Exawatt is your command interface.',
       'The economy is refactoring and your tools need to keep up.',
     ],
     close: 'Command the fleet you are about to run.',
-    note: 'His sentence and his order, kept whole in the subhead, over the tightest honest pairing. The close is an imperative.',
+    note: 'His thesis sentence, kept whole and in his order, over the tightest honest pairing. The close is an imperative.',
   },
   {
     id: 'd',
@@ -130,9 +139,9 @@ export const FOLD_CLOSE_VARIANTS: FoldCloseVariant[] = [
       'Your tools were built for one agent.',
       'Your team is about to run thousands.',
     ],
-    subhead: ['Exawatt is the command interface for agent fleets.'],
+    subhead: ['Exawatt is the command interface for your agent fleet.'],
     close: 'Today, 10 agents. Tomorrow, 10,000.',
-    note: 'The old tool is named as the foil in the h1 and the team carries the climb. The numbers land at 72px.',
+    note: 'The old tool is named as the foil in the h1 and the team carries the climb there. The numbers land at 72px.',
   },
 ];
 
