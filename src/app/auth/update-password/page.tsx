@@ -9,7 +9,7 @@
  * instead of showing a form that cannot succeed.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,12 +22,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { createClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { createOptionalClient } from '@/lib/supabase/client';
 import { FORGOT_PASSWORD_PATH } from '@/components/auth/hosted-auth';
 
 const MIN_PASSWORD_CHARS = 6;
 
-type Stage = 'checking' | 'ready' | 'expired' | 'done';
+type Stage = 'checking' | 'ready' | 'expired' | 'unavailable' | 'done';
+type AccountClient = NonNullable<ReturnType<typeof createOptionalClient>>;
 
 export default function UpdatePasswordPage() {
   const [stage, setStage] = useState<Stage>('checking');
@@ -35,22 +37,23 @@ export default function UpdatePasswordPage() {
   const [confirmation, setConfirmation] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const clientRef = useRef<AccountClient | null>(null);
 
   useEffect(() => {
     let active = true;
-    let supabase: ReturnType<typeof createClient>;
-    try {
-      supabase = createClient();
-    } catch {
-      setStage('expired');
+    const supabase = createOptionalClient(resolvedDistribution());
+    if (!supabase) {
+      setStage('unavailable');
       return;
     }
+    clientRef.current = supabase;
     void supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
       setStage(data.session ? 'ready' : 'expired');
     });
     return () => {
       active = false;
+      clientRef.current = null;
     };
   }, []);
 
@@ -63,7 +66,11 @@ export default function UpdatePasswordPage() {
     setLoading(true);
     setError(null);
     try {
-      const supabase = createClient();
+      const supabase = clientRef.current;
+      if (!supabase) {
+        setStage('unavailable');
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
         setError(error.message);
@@ -90,11 +97,13 @@ export default function UpdatePasswordPage() {
             {stage === 'done' ? 'Password updated' : 'New password'}
           </CardTitle>
           <CardDescription>
-            {stage === 'expired'
-              ? 'That reset link has expired or was already used.'
-              : stage === 'done'
-                ? 'Sign in with it anywhere Exawatt runs, including the desktop app.'
-                : 'Set the password you will sign in with from now on.'}
+            {stage === 'unavailable'
+              ? 'Password recovery is not configured in this build.'
+              : stage === 'expired'
+                ? 'That reset link has expired or was already used.'
+                : stage === 'done'
+                  ? 'Sign in with it anywhere Exawatt runs, including the desktop app.'
+                  : 'Set the password you will sign in with from now on.'}
           </CardDescription>
         </CardHeader>
         <CardContent>

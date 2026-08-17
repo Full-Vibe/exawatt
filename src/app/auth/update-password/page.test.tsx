@@ -1,21 +1,45 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV1,
+} from '@exawatt/core/distribution';
 import UpdatePasswordPage from './page';
 
-const { getSession, updateUser, session } = vi.hoisted(() => ({
+const CONFIGURED_DISTRIBUTION = {
+  ...COMMUNITY_DISTRIBUTION,
+  account: {
+    supabaseUrl: 'https://accounts.example.test',
+    supabaseAnonKey: 'public-test-key',
+    recoveryOrigin: 'https://app.example.test',
+  },
+} satisfies DistributionContractV1;
+
+const {
+  createOptionalClient,
+  distributionState,
+  getSession,
+  session,
+  updateUser,
+} = vi.hoisted(() => ({
+  distributionState: { current: undefined as unknown },
   session: { current: null as { user: { id: string } } | null },
+  createOptionalClient: vi.fn(),
   getSession: vi.fn(),
   updateUser: vi.fn(async () => ({ error: null })),
 }));
 
-vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    auth: {
-      getSession: async () => ({ data: { session: session.current } }),
-      updateUser,
-    },
-  }),
+vi.mock('@/lib/distribution/resolved', () => ({
+  resolvedDistribution: () => distributionState.current,
 }));
+
+vi.mock('@/lib/supabase/client', () => ({ createOptionalClient }));
 
 async function mount() {
   render(<UpdatePasswordPage />);
@@ -23,9 +47,17 @@ async function mount() {
 }
 
 beforeEach(() => {
+  distributionState.current = CONFIGURED_DISTRIBUTION;
   session.current = { user: { id: 'user-1' } };
-  getSession.mockClear();
+  getSession.mockReset();
+  getSession.mockImplementation(async () => ({
+    data: { session: session.current },
+  }));
   updateUser.mockClear();
+  createOptionalClient.mockReset();
+  createOptionalClient.mockReturnValue({
+    auth: { getSession, updateUser },
+  });
 });
 
 afterEach(cleanup);
@@ -44,6 +76,7 @@ describe('password update', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save password' }));
     });
 
+    expect(createOptionalClient).toHaveBeenCalledWith(CONFIGURED_DISTRIBUTION);
     expect(updateUser).toHaveBeenCalledWith({ password: 'correct horse' });
     expect(screen.getByText('Password updated')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Continue' })).toHaveAttribute(
@@ -83,5 +116,22 @@ describe('password update', () => {
     expect(
       screen.getByRole('link', { name: 'Request a new link' })
     ).toHaveAttribute('href', '/auth/forgot-password');
+  });
+
+  it('does not construct a client when account recovery is absent', async () => {
+    distributionState.current = COMMUNITY_DISTRIBUTION;
+    createOptionalClient.mockReturnValue(null);
+
+    await mount();
+
+    expect(
+      screen.getByText('Password recovery is not configured in this build.')
+    ).toBeVisible();
+    expect(screen.queryByLabelText('New password')).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: 'Request a new link' })
+    ).toBeNull();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
   });
 });

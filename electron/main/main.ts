@@ -282,7 +282,8 @@ const distribution =
   });
 const distributionIdentity = resolveDistributionIdentity(distribution.contract);
 const protocolScheme = distributionIdentity.protocolScheme;
-const productUpdatesEnabled = distribution.contract.updates !== null;
+const productUpdateFeedUrl = distribution.contract.updates?.feedUrl ?? null;
+const productUpdatesEnabled = productUpdateFeedUrl !== null;
 app.setName(distributionIdentity.productName);
 // Preserve the established official install's state location. A source build
 // gets an app-id-derived namespace so it can never mutate official state or
@@ -1540,6 +1541,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   });
   if (productUpdatesEnabled) {
     runtime.updater.registerProductUpdater(
+      productUpdateFeedUrl,
       () => ptySessions.list().filter(session => !session.exited).length,
       () => shutdownCoordinator!.request('update')
     );

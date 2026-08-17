@@ -1,13 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({
-  app: { getVersion: () => '0.1.9', getPath: () => '/tmp' },
-  BrowserWindow: { getAllWindows: () => [] },
-  dialog: { showMessageBox: vi.fn() },
+const { autoUpdater, handleTrusted, showMessageBox } = vi.hoisted(() => ({
+  autoUpdater: {
+    on: vi.fn(),
+    setFeedURL: vi.fn(),
+  },
+  handleTrusted: vi.fn(),
+  showMessageBox: vi.fn(),
 }));
-vi.mock('electron-updater', () => ({ autoUpdater: { on: vi.fn() } }));
 
-const { updaterDisabledReason } = await import('./updater');
+vi.mock('electron', () => ({
+  app: { name: 'Orbit', getVersion: () => '0.1.9', getPath: () => '/tmp' },
+  BrowserWindow: { getAllWindows: () => [] },
+  dialog: { showMessageBox },
+}));
+vi.mock('electron-updater', () => ({ autoUpdater }));
+vi.mock('./ipc-security', () => ({ handleTrusted }));
+vi.mock('./diagnostics-log', () => ({ createDiagnosticsLog: () => vi.fn() }));
+
+const {
+  checkForUpdatesFromMenu,
+  registerProductUpdater,
+  updaterDisabledReason,
+} = await import('./updater');
 
 const LIVE = {
   signedDelivery: true,
@@ -51,5 +66,37 @@ describe('updaterDisabledReason', () => {
     expect(
       updaterDisabledReason({ ...LIVE, testRun: true, hasFeedConfig: false })
     ).toBe('test-run');
+  });
+});
+
+describe('registerProductUpdater', () => {
+  it('binds electron-updater and IPC to the declared distribution feed', () => {
+    registerProductUpdater(
+      'https://updates.example.test/macos',
+      () => 0,
+      async () => true
+    );
+
+    expect(autoUpdater.setFeedURL).toHaveBeenCalledWith(
+      'https://updates.example.test/macos'
+    );
+    expect(autoUpdater.on).toHaveBeenCalledTimes(6);
+    expect(handleTrusted.mock.calls.map(([channel]) => channel)).toEqual([
+      'app:get-update-status',
+      'app:check-for-updates',
+      'app:restart-update',
+    ]);
+  });
+
+  it('uses the resolved application name in native update copy', async () => {
+    showMessageBox.mockClear();
+
+    await checkForUpdatesFromMenu();
+
+    expect(showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.stringContaining('This copy of Orbit 0.1.9'),
+      })
+    );
   });
 });

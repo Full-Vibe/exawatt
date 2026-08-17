@@ -26,13 +26,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { createClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { createOptionalClient } from '@/lib/supabase/client';
 import {
-  HOSTED_FORGOT_PASSWORD_URL,
   passwordResetRedirect,
+  resolveHostedAuthTargets,
 } from '@/components/auth/hosted-auth';
 
 export default function ForgotPasswordPage() {
+  const distribution = resolvedDistribution();
+  const hostedAuth = resolveHostedAuthTargets(distribution);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,9 +50,17 @@ export default function ForgotPasswordPage() {
     setError(null);
 
     try {
-      const supabase = createClient();
+      if (!hostedAuth) {
+        setError('Password recovery is not configured in this build.');
+        return;
+      }
+      const supabase = createOptionalClient(distribution);
+      if (!supabase) {
+        setError('Password recovery is not configured in this build.');
+        return;
+      }
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: passwordResetRedirect(window.location.origin),
+        redirectTo: passwordResetRedirect(hostedAuth.recoveryOrigin),
       });
       if (error) {
         setError(error.message);
@@ -74,20 +85,22 @@ export default function ForgotPasswordPage() {
         <CardHeader>
           <CardTitle>Reset password</CardTitle>
           <CardDescription>
-            {inElectron
-              ? 'Finish in your browser, then sign in here with the new password.'
-              : 'We email a link that lets you set a new password.'}
+            {!hostedAuth
+              ? 'Password recovery is not configured in this build.'
+              : inElectron
+                ? 'Finish in your browser, then sign in here with the new password.'
+                : 'We email a link that lets you set a new password.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {inElectron ? (
+          {!hostedAuth ? null : inElectron ? (
             <Button
               type="button"
               className="w-full"
               data-open-hosted-reset
               onClick={() =>
                 void window.electron?.pty?.openExternal(
-                  HOSTED_FORGOT_PASSWORD_URL
+                  hostedAuth.forgotPasswordUrl
                 )
               }
             >

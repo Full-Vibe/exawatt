@@ -154,6 +154,38 @@ try {
       `Local package recorded the signed release channel: ${JSON.stringify(buildInfo)}`
     );
   }
+  const buildUpdatesEnabled =
+    buildInfo.distribution.capabilities.updates === true;
+  if (buildUpdatesEnabled !== productUpdatesEnabled) {
+    throw new Error(
+      `Build-info update capability disagrees with the packaged contract: ${JSON.stringify({ buildUpdatesEnabled, productUpdatesEnabled })}`
+    );
+  }
+  const hasUpdateMenu = await app.evaluate(({ Menu }) =>
+    Boolean(
+      Menu.getApplicationMenu()?.items.some(item =>
+        item.submenu?.items.some(child => child.label === 'Check for Updates…')
+      )
+    )
+  );
+  if (hasUpdateMenu !== productUpdatesEnabled) {
+    throw new Error(
+      `Native update menu disagrees with the distribution capability: ${JSON.stringify({ hasUpdateMenu, productUpdatesEnabled })}`
+    );
+  }
+  const diagnostics = await page.evaluate(() =>
+    window.electron?.app?.getDiagnosticsReport(false)
+  );
+  if (!productUpdatesEnabled) {
+    const updaterLog = diagnostics.logs.find(
+      log => log.name === 'updater.jsonl'
+    );
+    if (diagnostics.update !== null || updaterLog?.present) {
+      throw new Error(
+        `Capability-absent package initialized updater state: ${JSON.stringify({ update: diagnostics.update, updaterLog })}`
+      );
+    }
+  }
 
   const created = await page.evaluate(async () => {
     return await window.electron?.pty?.create({
@@ -188,7 +220,7 @@ try {
   }
   console.log(
     `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
-      'local renderer + preload + PTY round trip + contract-declared updater ' +
+      'local renderer + capability-shaped preload/menu/diagnostics + PTY round trip + contract-declared updater ' +
       `${productUpdatesEnabled ? 'present' : 'absent'}`
   );
 } finally {
