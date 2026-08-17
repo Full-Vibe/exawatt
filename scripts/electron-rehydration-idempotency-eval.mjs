@@ -31,7 +31,14 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { openShellFromLauncher } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  startAgentFromLauncher,
+} from './lib/electron-eval.mjs';
+import {
+  claudeProbeSh,
+  codexProbeSh,
+} from './lib/harness-probe-fixture.mjs';
 
 const GENERATIONS = Number(process.env.EXAWATT_IDEMPOTENCY_GENERATIONS || 3);
 
@@ -53,7 +60,7 @@ const fakeClaude = join(fakeBin, 'claude');
 writeFileSync(
   fakeClaude,
   `#!/bin/sh
-if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
+${claudeProbeSh()}
 id="unknown"
 prev=""
 for arg in "$@"; do
@@ -71,7 +78,7 @@ const fakeCodex = join(fakeBin, 'codex');
 writeFileSync(
   fakeCodex,
   `#!/bin/sh
-if [ "$1" = "debug" ] && [ "$2" = "models" ]; then exit 0; fi
+${codexProbeSh()}
 id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
 fresh=1
 previous=""
@@ -145,20 +152,8 @@ async function waitFor(page, predicate, label, timeoutMs = 25_000) {
   throw new Error(`Timed out: ${label}`);
 }
 
-async function summonComposer(page) {
-  if ((await page.locator('[data-agent-composer]').count()) > 0) return;
-  const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
-  if ((await toggle.count()) > 0) await toggle.click();
-  else await page.getByRole('button', { name: 'New Agent' }).click();
-  await page.locator('[data-agent-composer]').waitFor();
-}
-
-async function startAgent(page, source, task = '') {
-  await summonComposer(page);
-  await page.getByLabel('Agent Source').click();
-  await page.getByRole('option', { name: source }).click();
-  if (task) await page.getByLabel('Initial task for the new Agent').fill(task);
-  await page.getByRole('button', { name: 'Start' }).click();
+async function startAgent(page, engine, task = '') {
+  await startAgentFromLauncher(page, { engine, task });
 }
 
 function pids() {
@@ -246,7 +241,6 @@ try {
     async () => (await sessions(page)).length === 3,
     'third agent'
   );
-  await summonComposer(page);
   await openShellFromLauncher(page);
   await waitFor(page, async () => (await sessions(page)).length === 4, 'shell');
 

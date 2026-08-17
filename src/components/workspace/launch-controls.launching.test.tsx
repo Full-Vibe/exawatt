@@ -5,8 +5,14 @@ import type { ExawattSettings } from '@/types/electron';
 import {
   AgentComposer,
   FOCUS_AGENT_COMPOSER_EVENT,
+  chooseLauncherAxis,
+  composerReady,
   installComposerTestHarness,
+  launcherAxis,
+  openSetupDrawer,
   renderComposer,
+  setupDrawerHandle,
+  startButton,
 } from './launch-controls.test-support';
 
 describe('Agent composer · launching', () => {
@@ -23,25 +29,21 @@ describe('Agent composer · launching', () => {
       />
     );
 
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
+      expect(launcherAxis('Model')).toHaveTextContent('Claude Fable 5 · 1M')
     );
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {
       target: { value: 'Review the auth flow' },
     });
-    const startButton = screen.getByRole('button', { name: 'Start' });
-    expect(startButton).toHaveAttribute('data-launcher-start');
-    expect(startButton).toHaveAttribute('type', 'submit');
-    expect(startButton).not.toHaveAttribute('data-r3f-keyswitch-control');
-    expect(startButton).not.toHaveAttribute('tabindex', '-1');
-    startButton.focus();
-    expect(startButton).toHaveFocus();
-    fireEvent.click(startButton);
+    const start = startButton();
+    expect(start).toHaveAttribute('data-launcher-start');
+    expect(start).toHaveAttribute('type', 'submit');
+    expect(start).not.toHaveAttribute('data-r3f-keyswitch-control');
+    expect(start).not.toHaveAttribute('tabindex', '-1');
+    start.focus();
+    expect(start).toHaveFocus();
+    fireEvent.click(start);
 
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith({
@@ -135,13 +137,11 @@ describe('Agent composer · launching', () => {
         onLaunch={onLaunch}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
+    await composerReady();
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {
       target: { value: '   ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(startButton());
 
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith({
@@ -176,22 +176,16 @@ describe('Agent composer · launching', () => {
       />
     );
 
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-        'Ask'
-      )
+      expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
-    fireEvent.click(screen.getByLabelText('Agent Source'));
-    fireEvent.click(screen.getByRole('option', { name: 'Codex' }));
+    await chooseLauncherAxis('Engine', /^Codex/);
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'GPT-5.6-Sol'
-      )
+      expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
-    expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-      'Auto'
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(launcherAxis('Permission')).toHaveTextContent('Auto-review');
+    fireEvent.click(startButton());
 
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith(
@@ -226,10 +220,11 @@ describe('Agent composer · launching', () => {
       />
     );
 
-    expect(screen.getByLabelText('Agent Source')).toBeDisabled();
-    expect(screen.getByLabelText('Agent permissions')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
-    expect(screen.getByLabelText('Agent permissions')).toHaveTextContent('···');
+    // An unsettled launcher offers no setup to adjust and no Start to press.
+    // The pre-D49 row said this with a `···` permission chip; D49 says it by
+    // refusing both controls, which is the contract that ships.
+    expect(setupDrawerHandle()).toBeDisabled();
+    expect(startButton()).toBeDisabled();
 
     resolveSettings?.({
       agentSources: {
@@ -241,15 +236,19 @@ describe('Agent composer · launching', () => {
       },
     });
 
-    await waitFor(() => {
-      expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-        'Ask'
-      );
-      // Permission copy and the readiness gate are distinct state updates.
-      // Wait for the user-visible control contract, not only its first paint.
-      expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled();
-    });
+    // Permission resolution and the readiness gate are distinct state
+    // updates. Wait for the user-visible control contract, not its first paint.
+    await waitFor(() => expect(startButton()).not.toBeDisabled());
     expect(onLaunch).not.toHaveBeenCalled();
+
+    // The restored policy is the one that launches — asserted through the
+    // launch itself rather than a chip, because the launch is the contract.
+    fireEvent.click(startButton());
+    await waitFor(() =>
+      expect(onLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({ permissionMode: 'prompt' })
+      )
+    );
   });
 
   it('uses a visible Ask first fallback when saved preferences cannot load', async () => {
@@ -265,17 +264,12 @@ describe('Agent composer · launching', () => {
       />
     );
 
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-        'Ask'
-      )
-    );
-    expect(screen.getByLabelText('Agent permissions')).toHaveAttribute(
-      'title',
-      expect.stringContaining('Saved preferences were unavailable')
+      expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(startButton());
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({ permissionMode: 'prompt' })
@@ -294,14 +288,9 @@ describe('Agent composer · launching', () => {
       />
     );
 
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-        'Ask'
-      )
-    );
-    expect(screen.getByLabelText('Agent permissions')).toHaveAttribute(
-      'title',
-      expect.stringContaining('Saved preferences were unavailable')
+      expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
   });
 
@@ -314,19 +303,12 @@ describe('Agent composer · launching', () => {
         onLaunch={onLaunch}
       />
     );
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
+      expect(launcherAxis('Model')).toHaveTextContent('Claude Fable 5 · 1M')
     );
 
-    fireEvent.click(screen.getByLabelText('Agent permissions'));
-    fireEvent.click(
-      screen.getByRole('option', { name: /Auto-review.*routine work/i })
-    );
+    await chooseLauncherAxis('Permission', /Auto-review/);
     await waitFor(() =>
       expect(setAgentPermissionMode).toHaveBeenCalledWith(
         '/project',
@@ -335,22 +317,12 @@ describe('Agent composer · launching', () => {
       )
     );
 
-    fireEvent.click(screen.getByLabelText('Agent Source'));
-    fireEvent.click(screen.getByRole('option', { name: 'Codex' }));
+    await chooseLauncherAxis('Engine', /^Codex/);
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'GPT-5.6-Sol'
-      )
+      expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
-    expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-      'YOLO'
-    );
-    fireEvent.click(screen.getByLabelText('Agent permissions'));
-    fireEvent.click(
-      screen.getByRole('option', {
-        name: /Ask first.*ask before sensitive actions/i,
-      })
-    );
+    expect(launcherAxis('Permission')).toHaveTextContent('YOLO');
+    await chooseLauncherAxis('Permission', /Ask first/);
     await waitFor(() =>
       expect(setAgentPermissionMode).toHaveBeenCalledWith(
         '/project',
@@ -359,24 +331,16 @@ describe('Agent composer · launching', () => {
       )
     );
 
-    fireEvent.click(screen.getByLabelText('Agent Source'));
-    fireEvent.click(screen.getByRole('option', { name: 'Claude Code' }));
+    await chooseLauncherAxis('Engine', /^Claude Code/);
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
+      expect(launcherAxis('Model')).toHaveTextContent('Claude Fable 5 · 1M')
     );
-    expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-      'Auto'
-    );
-    fireEvent.click(screen.getByLabelText('Agent Source'));
-    fireEvent.click(screen.getByRole('option', { name: 'Codex' }));
+    expect(launcherAxis('Permission')).toHaveTextContent('Auto-review');
+    await chooseLauncherAxis('Engine', /^Codex/);
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'GPT-5.6-Sol'
-      )
+      expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Sol')
     );
-    expect(screen.getByLabelText('Agent permissions')).toHaveTextContent('Ask');
+    expect(launcherAxis('Permission')).toHaveTextContent('Ask first');
     expect(onLaunch).not.toHaveBeenCalled();
   });
 });

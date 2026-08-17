@@ -28,3 +28,20 @@ export function assertNodePtyBuilt(root = process.cwd()) {
     );
   }
 }
+
+/** The compiled Electron main for a DEVELOPMENT launch (`electron .`).
+ *  `package.json`'s `main` points here, so when `dist-electron/main` is absent
+ *  — a wiped or never-compiled `dist-electron`, which happens in a long-lived
+ *  worktree — Electron exits before opening a window and Playwright reports
+ *  only `Process failed to launch!`, naming nothing. That message has cost
+ *  more than one agent a hunt, so name the cause here instead. */
+export function assertCompiledElectronMain(root = process.cwd()) {
+  const main = path.join(root, 'dist-electron', 'main', 'main.js');
+  if (existsSync(main)) return;
+  throw new Error(
+    `The Electron main process is not compiled under ${root} ` +
+      '(dist-electron/main/main.js is missing), so Electron exits before it ' +
+      'opens a window and Playwright reports only "Process failed to ' +
+      'launch!". Run: pnpm electron:compile'
+  );
+}

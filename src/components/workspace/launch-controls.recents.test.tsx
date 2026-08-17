@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   AgentComposer,
+  composerReady,
   installComposerTestHarness,
   renderComposer,
 } from './launch-controls.test-support';
@@ -38,9 +39,7 @@ describe('Agent composer · recent conversations', () => {
     await waitFor(() =>
       expect(screen.getByText(conversation.id)).toBeInTheDocument()
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
+    await composerReady();
 
     const task = screen.getByLabelText('Initial task for the new Agent');
     fireEvent.keyDown(task, { key: 'ArrowDown' });
@@ -88,9 +87,7 @@ describe('Agent composer · recent conversations', () => {
       />
     );
 
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
+    await composerReady();
     fireEvent.click(
       await screen.findByRole('button', {
         name: `Resume ${conversation.title} in Codex`,
@@ -214,9 +211,7 @@ describe('Agent composer · recent conversations', () => {
         onLaunch={vi.fn(async () => true)}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
+    await composerReady();
     expect(list).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {

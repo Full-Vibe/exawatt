@@ -14,7 +14,14 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { openShellFromLauncher } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  startAgentFromLauncher,
+} from './lib/electron-eval.mjs';
+import {
+  claudeProbeSh,
+  codexProbeSh,
+} from './lib/harness-probe-fixture.mjs';
 
 const sourceApp = process.env.EXAWATT_BASE_APP_PATH
   ? resolve(process.env.EXAWATT_BASE_APP_PATH)
@@ -52,7 +59,7 @@ const fakeClaude = join(fakeBin, 'claude');
 writeFileSync(
   fakeClaude,
   `#!/bin/sh
-if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
+${claudeProbeSh()}
 id="unknown"
 prev=""
 for arg in "$@"; do
@@ -70,6 +77,7 @@ const fakeCodex = join(fakeBin, 'codex');
 writeFileSync(
   fakeCodex,
   `#!/bin/sh
+${codexProbeSh()}
 if [ "$1" = "resume" ]; then
   id="$2"
   fresh=0
@@ -232,10 +240,8 @@ async function openProject(page, dir) {
   await page.locator('[data-agent-composer]').waitFor();
 }
 
-async function startAgent(page, source) {
-  await page.getByLabel('Agent Source').click();
-  await page.getByRole('option', { name: source }).click();
-  await page.getByRole('button', { name: 'Start' }).click();
+async function startAgent(page, engine) {
+  await startAgentFromLauncher(page, { engine });
 }
 
 async function openShell(page) {

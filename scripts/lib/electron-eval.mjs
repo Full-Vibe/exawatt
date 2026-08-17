@@ -26,7 +26,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertNodePtyBuilt } from './native-preflight.mjs';
+import {
+  assertCompiledElectronMain,
+  assertNodePtyBuilt,
+} from './native-preflight.mjs';
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 
 /** Kill any orphaned playwright Electron left by a prior SIGKILLed run of THIS
@@ -224,6 +227,10 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     // with the real cause instead of after it, as a paused command engine.
     await assertNoPackagingSnapshot(evalRoot);
   }
+  // The mirror of that check: `electron .` needs the compiled main to exist at
+  // all. Its absence produces a bare "Process failed to launch!" that names
+  // nothing, so a dev launch states the cause before it happens.
+  if (!launchOpts.executablePath) assertCompiledElectronMain(evalRoot);
 
   const attempts = opts.attempts ?? 6;
   return withElectronEvalLock(evalRoot, async () => {
@@ -344,27 +351,180 @@ async function runElectronAttempt({
 }
 
 /**
- * Open a shell Session through the CURRENT launcher contract (ENG-016 D49):
- * the composer's "All engines and models" catalog lists Shell as an explicit
- * Project tool ("Shell in <project>"). The pre-D49 "Open shell in <project>"
- * button this replaced no longer exists in src.
+ * The New Agent launcher's DRIVING CONTRACT, stated once (ENG-016 D49).
  *
- * Expects the Agent composer to be reachable on the page; expands it from the
- * summon toggle when collapsed.
+ * Nine eval scripts used to reach into the composer with their own selectors.
+ * D49 redrew that surface and the scripts rotted one at a time, silently: the
+ * pre-D49 Agent Source `Select` was left in the DOM behind `hidden` instead of
+ * being deleted, so `getByLabel('Agent Source')` kept RESOLVING — to dead UI —
+ * and failed 25 seconds later on visibility, far from the cause (BUG-010,
+ * BUG-011, BUG-014). Every driver an eval needs now lives here, so the next
+ * launcher change breaks ONE helper loudly instead of rotting nine scripts
+ * quietly.
+ *
+ * The product's own hooks are the contract: `[data-agent-composer]`,
+ * `[data-setup-drawer-handle]`, `[data-setup-detail]`, `[data-detail-axis]`,
+ * `[data-option-menu-trigger]`, `[data-all-launch-configurations]`,
+ * `[data-launcher-start]`. An eval that hand-rolls its own selector around
+ * them is the defect this module exists to prevent.
  */
-export async function openShellFromLauncher(page) {
-  if ((await page.locator('[data-agent-composer]').count()) === 0) {
-    await page.locator('[data-composer-toggle][aria-expanded="false"]').click();
-    await page.locator('[data-agent-composer]').waitFor();
-  }
-  // The catalog trigger stays DISABLED until the agent-source registry
-  // answers. On a cold launch that enumeration can outlast a page's default
-  // timeout, which surfaces as an opaque "element is not enabled" click
-  // failure rather than "the registry is still loading".
+
+/** The composer is summoned, not permanent (D18) — expand it when collapsed.
+ *  Matched by its own hook rather than its name: the collapsed toggle does not
+ *  always carry `aria-expanded`, and "New Agent" also matches a TAB called
+ *  "New agent" plus that tab's close button, so a name query is three ways
+ *  ambiguous the moment a draft tab exists. */
+export async function summonComposer(page) {
+  if ((await page.locator('[data-agent-composer]').count()) > 0) return;
+  const toggle = page.locator('[data-composer-toggle]').first();
+  if ((await toggle.count()) > 0) await toggle.click();
+  else
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
+  await page.locator('[data-agent-composer]').waitFor();
+}
+
+/**
+ * Open the launcher's "All engines and models" catalog. D49 made it the home
+ * for every setup outside the recommended row AND for the launch options —
+ * worktree, branch, roadmap item, Name setup… — that used to sit in the second
+ * control row it replaced.
+ */
+export async function openLaunchCatalog(page) {
+  await summonComposer(page);
+  const catalog = page.locator('[data-all-launch-configurations]');
+  if (await catalog.isVisible().catch(() => false)) return catalog;
+  await waitForLauncherToSettle(page);
+  await page.getByRole('button', { name: 'All engines and models' }).click();
+  await catalog.waitFor();
+  return catalog;
+}
+
+/**
+ * Wait for the launcher to stop settling.
+ *
+ * Its controls stay DISABLED until the Agent Source registry answers for every
+ * installed harness. On a cold launch — or a machine running two dozen agent
+ * worktrees — that enumeration outlasts a page's default timeout, and the
+ * failure surfaces as an opaque "element is not enabled" rather than "the
+ * registry is still loading". One explicit, generously bounded wait, in the
+ * one place every launcher driver goes through.
+ */
+export async function waitForLauncherToSettle(page) {
   await page
     .locator('[data-setup-catalog-trigger]:not([disabled])')
     .waitFor({ timeout: 90_000 });
-  await page.getByRole('button', { name: 'All engines and models' }).click();
-  await page.locator('[data-all-launch-configurations]').waitFor();
+}
+
+/**
+ * Open a shell Session through the CURRENT launcher contract: the catalog
+ * lists Shell as an explicit Project tool ("Shell in <project>"). The pre-D49
+ * "Open shell in <project>" button this replaced no longer exists in src.
+ */
+export async function openShellFromLauncher(page) {
+  await openLaunchCatalog(page);
   await page.getByRole('button', { name: /^Shell in / }).click();
+}
+
+/** Declare the roadmap item a launch will work on (ENG-017 S4). The control
+ *  moved into the catalog when D49 deleted the second control row. */
+export async function declareRoadmapItem(page, itemId) {
+  await openLaunchCatalog(page);
+  await page.selectOption(
+    '[data-all-launch-configurations] select[aria-label="Roadmap item this session will work on"]',
+    itemId
+  );
+}
+
+/** Open the setup drawer that ribbons out of the selected chip, where Engine,
+ *  Model, Thinking and Permission live. Idempotent. */
+export async function openSetupDrawer(page) {
+  await summonComposer(page);
+  const open = page.locator('[data-setup-detail][data-open="true"]');
+  if (await open.isVisible().catch(() => false)) return open;
+  // The handle is disabled until the launcher settles on a selectable setup,
+  // so waiting for it to be ENABLED is what keeps an Agent Source registry
+  // problem from surfacing as an unexplained click timeout.
+  await waitForLauncherToSettle(page);
+  await page
+    .locator('[data-setup-drawer-handle]:not([disabled])')
+    .waitFor({ timeout: 90_000 });
+  const handle = page.locator('[data-setup-drawer-handle]');
+  if ((await handle.getAttribute('aria-expanded')) !== 'true') {
+    await handle.click();
+  }
+  await open.waitFor({ state: 'visible' });
+  return open;
+}
+
+/** One drawer axis's OptionMenu trigger. Its accessible name is
+ *  `<Axis>: <selected>`, which is what an assertion should read. */
+export function launcherAxis(page, axisId) {
+  return page.locator(
+    `[data-detail-axis="${axisId}"] [data-option-menu-trigger]`
+  );
+}
+
+/** The label currently selected on an axis, e.g. `Claude Code` for `engine`. */
+export async function launcherAxisValue(page, axisId) {
+  await openSetupDrawer(page);
+  const trigger = launcherAxis(page, axisId);
+  await trigger.waitFor({ state: 'visible' });
+  return (await trigger.innerText()).trim();
+}
+
+/** Choose an option on a drawer axis by its visible label. */
+export async function chooseLauncherAxis(page, axisId, optionName) {
+  await openSetupDrawer(page);
+  const trigger = launcherAxis(page, axisId);
+  await trigger.waitFor({ state: 'visible' });
+  await trigger.click();
+  await page.getByRole('option', { name: optionName }).first().click();
+  await trigger.waitFor({ state: 'visible' });
+}
+
+/** Select the engine a new Agent will run on. Replaces the pre-D49
+ *  `getByLabel('Agent Source')` Select, which D49 left hidden and dead. */
+export function selectLauncherEngine(page, engineLabel) {
+  return chooseLauncherAxis(page, 'engine', engineLabel);
+}
+
+/** The selected setup chip. Its accessible name states the whole setup —
+ *  role, engine, model, variant, vendor, thinking — which is what "the
+ *  composer opened preselected on X" should actually assert. */
+export function selectedLauncherSetup(page) {
+  return page.locator('[data-setup-chip][data-selected]');
+}
+
+/**
+ * Start an Agent through the shipped launcher: pick the engine when one is
+ * named, type the first task when one is given, then Start.
+ *
+ * Start is blocked — with a stated reason — for an engine whose source
+ * publishes no model (D49 finding 13). A fixture harness that answers only
+ * `--version` therefore cannot launch, and that is the product being correct,
+ * not the eval being wrong: the fixture owes the model-catalog probe. See
+ * `scripts/lib/harness-probe-fixture.mjs`. Reporting the stated reason here is
+ * what keeps that from arriving as a bare disabled-button timeout.
+ */
+export async function startAgentFromLauncher(page, options = {}) {
+  const { engine = null, task = '' } = options;
+  await summonComposer(page);
+  if (engine) await selectLauncherEngine(page, engine);
+  if (task) {
+    await page.getByLabel('Initial task for the new Agent').fill(task);
+  }
+  const start = page.locator('[data-launcher-start]');
+  await start.waitFor({ state: 'visible' });
+  if (await start.isDisabled()) {
+    const reason = await page
+      .locator('[data-agent-launcher] [role="status"]')
+      .first()
+      .innerText()
+      .catch(() => '');
+    throw new Error(
+      `The launcher refuses to start${engine ? ` ${engine}` : ''}: ` +
+        `${reason || 'Start is disabled and stated no reason'}`
+    );
+  }
+  await start.click();
 }

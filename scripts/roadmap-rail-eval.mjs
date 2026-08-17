@@ -9,7 +9,9 @@ import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  declareRoadmapItem,
   openShellFromLauncher,
+  summonComposer,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 
@@ -149,14 +151,6 @@ await withElectronApp(
     page.setDefaultTimeout(20_000);
     const results = {};
 
-    const summonComposer = async () => {
-      const composer = page.locator('[data-agent-composer]');
-      if (!(await composer.isVisible().catch(() => false))) {
-        const toggle = page.locator('[data-composer-toggle]');
-        if ((await toggle.count()) > 0) await toggle.click();
-      }
-      await composer.waitFor();
-    };
     const railFocused = () =>
       page.evaluate(
         () => !!document.activeElement?.closest('[data-roadmap-rail]')
@@ -187,7 +181,7 @@ await withElectronApp(
     // healthy fixture
     await openProject(page, healthy);
     await page.waitForTimeout(1800);
-    await summonComposer();
+    await summonComposer(page);
     await openShellFromLauncher(page);
     await page.locator('.xterm-helper-textarea').last().waitFor();
 
@@ -294,15 +288,11 @@ await withElectronApp(
 
     await toTerminal();
 
-    // declare-at-launch (S4): link an item through Agent launch options; the
-    // new Agent shows as a SOLID (declared) chip in the Sessions rail
-    await summonComposer();
-    await page.getByLabel('Agent launch options').click();
-    await page.selectOption(
-      'select[aria-label="Roadmap item this session will work on"]',
-      'ACME-007'
-    );
-    await page.keyboard.press('Escape');
+    // declare-at-launch (S4): link an item in the launcher's "All engines and
+    // models" catalog, where D49 moved the declaration when it deleted the
+    // second control row; the new Agent shows as a SOLID (declared) chip in
+    // the Sessions rail
+    await declareRoadmapItem(page, 'ACME-007');
     await page.getByRole('button', { name: 'Start' }).click();
     await page.waitForTimeout(1500);
     await page.keyboard.press('Meta+b');
@@ -328,13 +318,7 @@ await withElectronApp(
 
     // S8: declare a session on the BLOCKED item — its tab badge goes amber
     // through the same needs-you pipeline as terminal bells
-    await summonComposer();
-    await page.getByLabel('Agent launch options').click();
-    await page.selectOption(
-      'select[aria-label="Roadmap item this session will work on"]',
-      'ACME-009'
-    );
-    await page.keyboard.press('Escape');
+    await declareRoadmapItem(page, 'ACME-009');
     await page.getByRole('button', { name: 'Start' }).click();
     await page.waitForTimeout(1500);
     // A provider can exit before the attention projection settles in the
@@ -363,7 +347,7 @@ await withElectronApp(
     // the explicit route to inspect the queue.
     await openProject(page, empty);
     await page.waitForTimeout(1500);
-    await summonComposer();
+    await summonComposer(page);
     await openShellFromLauncher(page);
     await page.waitForTimeout(1500);
     await page.keyboard.press('Meta+j');
@@ -383,8 +367,21 @@ await withElectronApp(
     await shot(page, '7-empty-queue');
 
     // S12: roving the overview selection re-scopes the rail to that tile's
-    // Project — hover a healthy-fixture tile and the plan follows
-    await page.hover(`[data-expose-project="${healthy}"] [data-expose-tile]`);
+    // Project — move the pointer onto a healthy-fixture tile and the plan
+    // follows. The pointer CLAIMS the selection by moving (FIX-002): a tile
+    // that merely slides under a stationary cursor no longer steals what the
+    // arrow keys selected, so one teleporting `hover()` is not a claim. Enter
+    // the tile, leave, and enter again at a different point — a moving mouse.
+    const healthyTile = page
+      .locator(`[data-expose-project="${healthy}"] [data-expose-tile]`)
+      .first();
+    const healthyBox = await healthyTile.boundingBox();
+    await page.mouse.move(healthyBox.x + 8, healthyBox.y + 8);
+    await page.mouse.move(8, 300);
+    await page.mouse.move(
+      healthyBox.x + healthyBox.width / 2,
+      healthyBox.y + healthyBox.height / 2
+    );
     await page.waitForTimeout(900);
     results.selectionScopesRail = (await railText(page)).includes('ACME-003');
     await shot(page, '7b-selection-scoped');
@@ -421,7 +418,7 @@ await withElectronApp(
     // item id → high-confidence link, chip badge, reciprocal context chip
     await openProject(page, gitFix);
     await page.waitForTimeout(2500);
-    await summonComposer();
+    await summonComposer(page);
     await openShellFromLauncher(page);
     await page.locator('.xterm-helper-textarea').last().waitFor();
     await page.waitForTimeout(1500);

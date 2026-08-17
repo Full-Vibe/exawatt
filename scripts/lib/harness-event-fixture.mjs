@@ -8,6 +8,7 @@
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { claudeProbeJs, codexProbeJs } from './harness-probe-fixture.mjs';
 
 /**
  * Commands the fixture Claude accepts on stdin:
@@ -39,31 +40,13 @@ export function createHarnessFixture(prefix) {
     `#!/usr/bin/env node
 const fs = require('fs');
 const argv = process.argv.slice(2);
-// Answer the Agent Source registry's PROBES and exit. Only an interactive
-// launch holds the process open. Without this every \`claude --version\` and
-// \`auth status\` the registry runs hangs forever, and each eval run LEAKS
-// those processes — observed accumulating across runs and degrading the
-// machine for every later run.
-if (argv.includes('--version')) {
-  process.stdout.write('9.9.9-fixture (Claude Code)\\n');
-  process.exit(0);
-}
-if (argv[0] === 'auth') {
-  // The SHAPE the registry actually parses (\`parseClaudeAuthStatus\`), not a
-  // plausible-looking one: since source truth fails closed, an unparseable
-  // answer reads as "not signed in", the source goes degraded, and Start stays
-  // disabled forever with nothing in the eval output naming why.
-  process.stdout.write(
-    JSON.stringify({
-      loggedIn: true,
-      email: 'fixture@example.com',
-      subscriptionType: 'max',
-      authMethod: 'oauth',
-    }) + '\\n'
-  );
-  process.exit(0);
-}
-if (argv.includes('-p')) process.exit(0);
+// Answer the product's PROBES and exit. Only an interactive launch holds the
+// process open. Without this every \`claude --version\` and \`auth status\` the
+// registry runs hangs forever, and each eval run LEAKS those processes —
+// observed accumulating across runs and degrading the machine for every later
+// run. The answers live in \`harness-probe-fixture.mjs\` so every fixture gives
+// the same ones.
+${claudeProbeJs()}
 const settingsPath = argv[argv.indexOf('--settings') + 1];
 process.stdout.write('FAKE_CLAUDE_SETTINGS:' + (settingsPath || 'NONE') + '\\n');
 let endpoint = null;
@@ -143,19 +126,17 @@ setInterval(() => {}, 1 << 30);
   );
   chmodSync(join(fakeBin, 'claude'), 0o755);
 
-  // Codex reports nothing. Absent must render as absent, never as an empty one.
+  // Codex reports no DELEGATION. Absent must render as absent, never as an
+  // empty one — that is the control these evals need, and it is unchanged.
+  // It does publish a model catalog, because a real Codex CLI does and because
+  // since D49 an engine that publishes none may not start at all: answering
+  // only `--version` made the product refuse the launch, and the refusal was
+  // read as an eval defect for two months (BUG-014).
   writeFileSync(
     join(fakeBin, 'codex'),
     `#!/usr/bin/env node
 const cargv = process.argv.slice(2);
-if (cargv.includes('--version')) {
-  process.stdout.write('codex-cli 9.9.9-fixture\\n');
-  process.exit(0);
-}
-if (cargv[0] === 'login') {
-  process.stdout.write('Logged in as fixture@example.com\\n');
-  process.exit(0);
-}
+${codexProbeJs()}
 process.stdout.write('FAKE_CODEX_ARGS:' + cargv.join(' ') + '\\n');
 // Accepts \`say <text>\` so a test can drive PURE byte inference on a source
 // that reports nothing — the control for the reported path.

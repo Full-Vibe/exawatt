@@ -15,7 +15,11 @@
  */
 import { rmSync } from 'node:fs';
 
-import { withElectronApp, sweepOrphans } from './lib/electron-eval.mjs';
+import {
+  startAgentFromLauncher,
+  sweepOrphans,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 import {
   createHarnessFixture,
   fixtureLaunch,
@@ -92,9 +96,7 @@ try {
       //    which is the case attention exists for.
       await page.keyboard.press('Meta+KeyT');
       await page.locator('[data-agent-composer]').waitFor();
-      await page.getByLabel('Agent Source').click();
-      await page.getByRole('option', { name: 'Codex' }).click();
-      await page.getByRole('button', { name: 'Start' }).click();
+      await startAgentFromLauncher(page, { engine: 'Codex' });
       const codex = await until(
         async () => (await sessions()).find(s => s.harness === 'codex'),
         'Codex session'
