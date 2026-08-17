@@ -14,16 +14,43 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { useElectronAuth } from '@/hooks/use-electron-auth';
 
+type AccountClient = NonNullable<ReturnType<typeof createOptionalClient>>;
+
 export default function SignUpPage() {
+  // A distribution with no account service has nothing to sign up for.
+  // Demanding the client unconditionally threw while Next prerendered this
+  // page, which failed every community build (BUG-042).
+  const supabase = createOptionalClient(resolvedDistribution());
+  if (!supabase) return <AccountsUnavailable />;
+  return <SignUpForm supabase={supabase} />;
+}
+
+function AccountsUnavailable() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Accounts are not available</CardTitle>
+          <CardDescription>
+            This build has no Exawatt account service. Everything runs locally
+            on your machine.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
+function SignUpForm({ supabase }: { supabase: AccountClient }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
   const { signInWithGoogle } = useElectronAuth(supabase, {
     onError: setError,
     onLoadingChange: setLoading,
