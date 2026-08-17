@@ -197,6 +197,11 @@ async function reconcileDeadHead(root, head) {
       integratedSha: recovered.attemptSha,
       recoveredAfterOwnerExit: true,
     });
+    await requestCi(root, recovered.attemptSha).catch(error => {
+      console.warn(
+        `[agent-land] recovered integration ${recovered.id}, but CI could not be queued: ${error.message}`
+      );
+    });
     if (recovered.dogfood) {
       await requestDogfood(root, recovered.attemptSha).catch(error => {
         console.warn(
@@ -243,6 +248,11 @@ async function bestEffortMasterSync(root) {
 async function requestDogfood(root, sourceSha) {
   const dogfoodQueue = await import('./lib/dogfood-queue.mjs');
   await dogfoodQueue.requestDogfoodInstall(root, sourceSha);
+}
+
+async function requestCi(root, sourceSha) {
+  const ciBatch = await import('./lib/ci-batch.mjs');
+  return ciBatch.requestCiBatch(root, sourceSha);
 }
 
 async function directLand(root, branch, options) {
@@ -537,6 +547,16 @@ async function main() {
 
   const integratedSha = ticket.result.integratedSha;
   const masterWorktree = await bestEffortMasterSync(root);
+  let ciState = 'not-requested';
+  try {
+    const ciRequest = await requestCi(root, integratedSha);
+    ciState = ciRequest.status;
+  } catch (error) {
+    ciState = 'queue-failed';
+    console.warn(
+      `[agent-land] integration succeeded, but CI could not be queued: ${error.message}`
+    );
+  }
   let installationState = 'not-requested';
   if (options.dogfood) {
     try {
@@ -561,7 +581,7 @@ async function main() {
   }
 
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} installed=${installationState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}`
   );
   if (masterWorktree) {
     console.log(

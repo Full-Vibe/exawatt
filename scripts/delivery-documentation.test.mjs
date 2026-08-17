@@ -54,6 +54,7 @@ test('the operational reference covers lifecycle, state, policy, recovery, and e
     'scripts/lib/delivery-queue.mjs',
     'scripts/lib/delivery-policy.mjs',
     'scripts/lib/delivery-state.mjs',
+    'scripts/lib/ci-batch.mjs',
     'scripts/lib/dogfood-queue.mjs',
     'scripts/install-dogfood.mjs',
   ]) {
@@ -63,6 +64,8 @@ test('the operational reference covers lifecycle, state, policy, recovery, and e
   assert.match(guide, /EXAWATT_AGENT_LAND_ALLOW_DIRECT=1/);
   assert.match(guide, /fail-closed path classification/);
   assert.match(guide, /public-bound content scan/);
+  assert.match(guide, /refs\/heads\/ci-batches\/master/);
+  assert.match(guide, /two hours/);
   assert.match(guide, /`actions_run`/);
 });
 

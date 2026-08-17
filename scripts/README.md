@@ -52,19 +52,20 @@ multi-file role.
 Some files are invoked by a configuration or another process rather than by a
 human-facing package command:
 
-| File                              | Owner / consumer                                      |
-| --------------------------------- | ----------------------------------------------------- |
-| `agent-stop-check.mjs`            | `.codex/hooks.json` one-shot advisory                 |
-| `app-update-config.cjs`           | release `afterPack` composition                       |
+| File                                 | Owner / consumer                                          |
+| ------------------------------------ | --------------------------------------------------------- |
+| `agent-stop-check.mjs`               | `.codex/hooks.json` one-shot advisory                     |
+| `app-update-config.cjs`              | release `afterPack` composition                           |
 | `distribution.official.example.json` | placeholder-only official distribution test/build fixture |
-| `dogfood-worker.mjs`              | detached dogfood queue worker                         |
-| `macos-atomic-swap.c`             | native helper compiled by `lib/macos-atomic-swap.mjs` |
-| `open-source-paths.manifest.json` | fail-closed publication path classifier               |
-| `prepare-release-metadata.mjs`    | macOS release workflow                                |
-| `production-audit-baseline.json`  | production dependency audit input                     |
-| `publish-supabase-updates.mjs`    | macOS release workflow publisher                      |
-| `release-after-pack.cjs`          | release Electron Builder hook                         |
-| `sign-renderer-archive.cjs`       | dogfood Electron Builder hook                         |
+| `ci-batch-worker.mjs`                | detached queue-drain hosted-CI dispatcher                 |
+| `dogfood-worker.mjs`                 | detached dogfood queue worker                             |
+| `macos-atomic-swap.c`                | native helper compiled by `lib/macos-atomic-swap.mjs`     |
+| `open-source-paths.manifest.json`    | fail-closed publication path classifier                   |
+| `prepare-release-metadata.mjs`       | macOS release workflow                                    |
+| `production-audit-baseline.json`     | production dependency audit input                         |
+| `publish-supabase-updates.mjs`       | macOS release workflow publisher                          |
+| `release-after-pack.cjs`             | release Electron Builder hook                             |
+| `sign-renderer-archive.cjs`          | dogfood Electron Builder hook                             |
 
 The following are deliberately direct-use research, capture, or historical
 diagnostic tools. They are not standing gates and should not be presented as

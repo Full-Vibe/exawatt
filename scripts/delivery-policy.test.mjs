@@ -171,7 +171,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
   assert.equal(checks.at(-1).candidateOnly, undefined);
 });
 
-test('post-merge CI cancels obsolete runs on the same ref', async () => {
+test('post-merge CI runs only from the coalesced batch ref and cancels an obsolete batch', async () => {
   const workflow = await readFile(
     path.join(root, '.github/workflows/ci.yml'),
     'utf8'
@@ -183,6 +183,9 @@ test('post-merge CI cancels obsolete runs on the same ref', async () => {
   );
   assert.match(workflow, /cancel-in-progress: true/);
   assert.match(workflow, /permissions:\s+contents: read/);
+  assert.match(workflow, /branches: \[ci-batches\/master\]/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /push:\s+branches: \[master, main\]/);
   assert.match(
     workflow,
     /name: Check open-source path classification\s+run: pnpm open-source:paths:check/
