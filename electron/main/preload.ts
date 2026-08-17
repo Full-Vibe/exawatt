@@ -236,6 +236,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-hosted-conversation-summaries', enabled),
     setGoalVisualsEnabled: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-goal-visuals', enabled),
+    setKeyboardShortcuts: (overrides: unknown) =>
+      ipcRenderer.invoke('settings:set-keyboard-shortcuts', overrides),
     setReentryRecap: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-reentry-recap', enabled),
     setClaudePlanWindows: (enabled: boolean) =>

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { distributionCapabilities } from '@/lib/distribution/capabilities';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import {
   AUTH_INTENT_PARAM,
   AUTH_LINK_PARAM,
@@ -35,8 +37,16 @@ export function handleElectronCallback(
         ? `[auth/electron-callback] ${outcome}: ${detail}`
         : `[auth/electron-callback] ${outcome}`
     );
-  }
+  },
+  accountConfigured: boolean = distributionCapabilities(resolvedDistribution())
+    .account
 ): Response {
+  // No account service means no identity provider sent anyone here, and no
+  // `exawatt://` handler is registered to receive the relay either (BUG-044).
+  // A page that says "returning to Exawatt" would be describing a journey that
+  // cannot complete.
+  if (!accountConfigured) return new NextResponse(null, { status: 404 });
+
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
 

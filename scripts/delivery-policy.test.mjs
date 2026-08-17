@@ -106,6 +106,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'test:agent-delivery',
     'vitest-related',
     'verify:community-build',
+    'verify:community-runtime',
   ]);
   assert.deepEqual(ids(['scripts/lib/distribution-build.mjs']), [
     'open-source:paths:check',
@@ -135,6 +136,34 @@ test('routable and distribution-seam changes receive the community build', () =>
       readFileSync(path.join(root, 'package.json'), 'utf8')
     ).scripts['verify:community-build'],
     /^env -u EXAWATT_DISTRIBUTION_CONFIG_JSON /
+  );
+});
+
+// BUG-044: the same defect at REQUEST time. A green build still 500s if a
+// server action or route handler demands the account capability, so the
+// runtime entrypoints owe a check the build cannot stand in for.
+test('request-time entrypoints receive the community runtime check', () => {
+  for (const file of [
+    'src/app/actions/preferences.ts',
+    'src/app/api/oc/token/route.ts',
+    'src/app/auth/callback/route.ts',
+    'src/lib/supabase/server.ts',
+    'src/lib/shortcuts/preference-source.ts',
+    'src/lib/distribution/resolved.ts',
+    'packages/core/src/distribution/contract.ts',
+    'scripts/distribution.official.example.json',
+  ]) {
+    assert.ok(
+      ids([file]).includes('verify:community-runtime'),
+      `${file} owes the community runtime check`
+    );
+  }
+  // A shortcut-store edit must not drag in a full `next build`.
+  assert.ok(
+    !ids(['src/lib/shortcuts/preference-source.ts']).includes(
+      'verify:community-build'
+    ),
+    'the runtime check is separate from the build check on purpose'
   );
 });
 

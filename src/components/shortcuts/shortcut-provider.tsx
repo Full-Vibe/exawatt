@@ -16,7 +16,10 @@ import {
   chordEngine,
   defaultShortcuts,
 } from '@/lib/shortcuts';
-import { createShortcutPreferenceSource } from '@/lib/shortcuts/preference-source';
+import {
+  loadShortcutOverrides,
+  saveShortcutOverrides,
+} from '@/lib/shortcuts/preference-source';
 import { CommandPalette } from './command-palette';
 import { ShortcutHelpModal } from './shortcut-help-modal';
 import { ChordIndicator } from './chord-indicator';
@@ -174,24 +177,24 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const tenancy = useOptionalWorkspaceTenancy();
   const personalTenantActive =
     (tenancy?.activeWorkspace.kind ?? 'personal') === 'personal';
-  const preferenceSource = useMemo(createShortcutPreferenceSource, []);
 
   // Track when modals close to prevent Enter key from double-triggering
   const modalClosedAtRef = useRef<number>(0);
 
-  // Load user preferences on mount
+  // Per-device keyboard overrides, read locally (BUG-044). The account, where
+  // one exists, only syncs them — so a distribution without one still starts
+  // on the operator's real bindings instead of silently reverting to defaults.
   useEffect(() => {
     async function loadPreferences() {
       try {
-        const overrides = await preferenceSource.load();
-        shortcutRegistry.loadOverrides(overrides);
+        shortcutRegistry.loadOverrides(await loadShortcutOverrides());
       } catch (error) {
         console.error('Failed to load keyboard shortcuts:', error);
       }
       setInitialized(true);
     }
     loadPreferences();
-  }, [preferenceSource]);
+  }, []);
 
   // Subscribe before descendant passive effects publish their initial catalog.
   useLayoutEffect(() => {
@@ -589,9 +592,8 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   }, []);
 
   const saveOverrides = useCallback(async () => {
-    const overrides = shortcutRegistry.getOverrides();
-    await preferenceSource.save(overrides);
-  }, [preferenceSource]);
+    await saveShortcutOverrides(shortcutRegistry.getOverrides());
+  }, []);
 
   const handleOpenHelpModal = useCallback(() => {
     setHelpModalOpen(true);
