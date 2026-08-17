@@ -868,6 +868,42 @@ least two live children is the runtime acceptance fixture. If the protocol is
 unavailable or incompatible, the adapter declares delegation absent. Worktrees,
 files, process trees, and terminal text remain forbidden evidence.
 
+## D5 implementation — landed 2026-08-16
+
+The Codex PTY remains the interactive Session owner. Electron starts one
+separate read-side `codex app-server --stdio`, requires the installed 0.147+
+protocol, and shape-validates every response it consumes. The Session's exact
+provider thread ID anchors `thread/list`; explicit subagent source kinds are
+required because the protocol's default list excludes spawned descendants.
+Child turns and each immediate parent's subagent activity disambiguate live,
+completed, and explicitly interrupted work at every tree depth.
+
+The adapter reports exact child IDs into the existing `DelegationMonitor` and
+therefore the existing Agent, Team, and Fleet projections. It does not add a
+Codex-only view model or alter Codex's launch argv. A fresh Session lifecycle
+event covers exact resumes whose provider ID exists before spawn; fresh Codex
+Sessions attach through the existing exact-identity event. Reconnect discards
+the cached observation and takes a new descendant snapshot. Unavailable,
+timed-out, old, or malformed protocols withdraw children without emitting
+`child-end`, so protocol loss cannot fabricate a ready-result signal.
+
+Installed-runtime proof preceded implementation. The operator's Codex 0.147.0
+app-server exposed the active TUI's parent and more than two live child threads
+to an independent read-side process. That process reports externally owned live
+turns as `interrupted` with a null completion timestamp; the immediate parent's
+`started` / `interacted` / `interrupted` activity is the exact disambiguator.
+The implementation reads those protocol fields only — never rollout files,
+worktrees, process trees, or terminal text.
+
+Verification on the rebased implementation tree:
+
+- focused related suite: 141 tests;
+- renderer type-check and Electron compile;
+- `eval:electron:delegation`: 23 checks through the running Electron app,
+  including two simultaneous Codex children at Agent, Team, and Fleet,
+  exact-ID completion, protocol loss to absent without a result, and
+  authoritative reconnect resnapshot.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
