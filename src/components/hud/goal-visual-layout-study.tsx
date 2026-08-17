@@ -11,7 +11,7 @@ import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
 } from '@/components/workspace/workspace-theme';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import styles from './goal-visual-layout-study.module.css';
 
@@ -188,14 +188,19 @@ export function GoalVisualLanguageStudy() {
     let cancelled = false;
     const load = async () => {
       try {
-        const endpoint = resolvedDistribution().enrichment.goalVisuals;
+        const distribution = resolvedDistribution();
+        const endpoint = distribution.enrichment.goalVisuals;
         // Capability absence is the community path. Keep every deterministic
         // study mounted and perform neither session lookup nor network I/O.
         if (!endpoint) {
           if (!cancelled) setLoadState('unavailable');
           return;
         }
-        const supabase = createClient();
+        const supabase = createOptionalClient(distribution);
+        if (!supabase) {
+          if (!cancelled) setLoadState('unavailable');
+          return;
+        }
         const {
           data: { session },
         } = await supabase.auth.getSession();

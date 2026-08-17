@@ -129,6 +129,17 @@ describe('/auth/callback exchange outcome', () => {
     );
   });
 
+  it('returns the accountless route as absent before interpreting callback input', async () => {
+    const logFailure = vi.fn();
+    const response = await handleAuthCallback(callback('?code=good'), {
+      createSupabaseClient: async () => null,
+      logFailure,
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('location')).toBeNull();
+    expect(logFailure).not.toHaveBeenCalled();
+  });
 });
 
 describe('the ?error= channel is closed', () => {

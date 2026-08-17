@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { LeaderboardAxis, LeaderboardWindow } from '@exawatt/core';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 export interface PublicLeaderboardRow {
   rank: number;
@@ -57,10 +58,9 @@ export interface PublicRunReceipt extends PublicOperatorRun {
 }
 
 function publicClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, {
+  const account = resolvedDistribution().account;
+  if (!account) return null;
+  return createClient(account.supabaseUrl, account.supabaseAnonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: {
       fetch: (input, init) =>
