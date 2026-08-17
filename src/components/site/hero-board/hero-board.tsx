@@ -38,14 +38,7 @@
 
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { RootState } from '@react-three/fiber';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
@@ -73,31 +66,13 @@ export const HERO_BOARD_POSTER = '/images/hero-board-poster.jpg';
 
 /** The desktop breakpoint, kept as the one place the site's `md:` boundary is
  *  named in JavaScript. It no longer decides live-versus-poster; it decides
- *  LAYOUT, which is the only thing a width should decide. */
+ *  LAYOUT, which is the only thing a width should decide.
+ *
+ *  `useNarrowViewport` retired in W6b: the phone layout is CSS now, so nothing
+ *  waits for a client render to know which shape it is in. */
 export const HERO_BOARD_LIVE_MIN_WIDTH = 768;
 
 export type HeroBoardMode = 'live' | 'poster';
-
-/** Resolved on the FIRST client render, like `usePrefersReducedMotion`, so
- *  layout never changes after paint. Exported because the pinned sequence
- *  needs the same answer for its reading column, which moves under the board
- *  on a phone instead of sitting beside it. */
-export function useNarrowViewport(): boolean {
-  const query = `(max-width: ${HERO_BOARD_LIVE_MIN_WIDTH - 1}px)`;
-  return useSyncExternalStore(
-    onChange => {
-      if (typeof window.matchMedia !== 'function') return () => undefined;
-      const media = window.matchMedia(query);
-      media.addEventListener('change', onChange);
-      return () => media.removeEventListener('change', onChange);
-    },
-    () =>
-      typeof window.matchMedia === 'function'
-        ? window.matchMedia(query).matches
-        : false,
-    () => false
-  );
-}
 
 export interface HeroBoardProps {
   themeKey?: HeroThemeKey;
@@ -269,8 +244,12 @@ export function HeroBoard({
         onSelect={setSelectedUnit}
       />
 
+      {/* The honesty stamp, in the reading face. Mono is spent once on this
+          page, on the fleet chip (operator, W6b); a second tracked uppercase
+          line in the opposite corner made the frame look like a diagnostic
+          readout rather than a product. */}
       <p
-        className="pointer-events-none absolute bottom-2 left-3 z-20 font-mono text-chrome-micro tracking-[0.14em] uppercase"
+        className="pointer-events-none absolute bottom-2 left-3 z-20 text-[11px] leading-none"
         style={{ color: theme.labelMuted }}
         data-hero-board-stamp
       >

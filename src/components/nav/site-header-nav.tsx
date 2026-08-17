@@ -33,6 +33,7 @@ import {
   Trophy,
   Settings,
   MessageSquareWarning,
+  Menu,
   Palette,
   type LucideIcon,
 } from 'lucide-react';
@@ -44,7 +45,10 @@ import {
   usesDarkPublicChrome,
   usesProposedSiteChrome,
 } from './surfaces';
-import { SITE_NAV_LINKS } from '@/components/site/site-links';
+import {
+  SITE_FOOTER_COLUMNS,
+  SITE_NAV_LINKS,
+} from '@/components/site/site-links';
 import { SiteNavDownload } from '@/components/site/site-nav-download';
 import {
   AMBIENT_CHROME_METER_ENABLED,
@@ -337,10 +341,11 @@ export function SiteHeaderNav({
         )}
         {proposedChrome ? (
           <>
-            {/* The secondary links step aside on a phone. 390px holds the
-                brand and ONE button, and the button is the one that converts;
-                a nav that wraps or clips is worse than a nav with two fewer
-                links, and both destinations are still in the footer. */}
+            {/* Wide enough, the secondary links are inline. On a phone they
+                move into a REAL MENU rather than disappearing (ENG-031 W6b,
+                operator: the nav "collapses to logo + Download with Changelog
+                and GitHub simply gone"). The phone is a demo surface, and a
+                destination a visitor cannot reach is not a layout decision. */}
             {SITE_NAV_LINKS.map(link => (
               <Button
                 key={link.label}
@@ -361,6 +366,48 @@ export function SiteHeaderNav({
                 </Link>
               </Button>
             ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Menu"
+                  className="h-8 w-8 sm:hidden"
+                  data-site-nav-menu
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {SITE_NAV_LINKS.map(link => (
+                  <DropdownMenuItem key={link.label} asChild>
+                    <Link
+                      href={link.href}
+                      {...(link.external
+                        ? { target: '_blank', rel: 'noreferrer' }
+                        : {})}
+                      data-site-nav-menu-link={link.label}
+                    >
+                      {link.label}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+                {SITE_FOOTER_COLUMNS.filter(
+                  column => column.heading === 'Product'
+                ).flatMap(column =>
+                  column.links.map(link => (
+                    <DropdownMenuItem key={link.label} asChild>
+                      <Link
+                        href={link.href}
+                        data-site-nav-menu-link={link.label}
+                      >
+                        {link.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <SiteNavDownload />
           </>
         ) : (

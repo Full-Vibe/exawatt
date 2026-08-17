@@ -27,19 +27,30 @@ import {
  *   register and does not inherit the app's `--primary`, which moves with the
  *   theme contract. Highest contrast available, and stable across every theme
  *   the app ships.
- * - THE REQUIREMENT SITS AT THE BUTTON, in mono, never in a footnote.
+ * - THE REQUIREMENT SITS AT THE BUTTON, never in a footnote. It is set in the
+ *   reading face rather than in mono (operator, 2026-08-17: mono is spent ONCE
+ *   on this page, on the board's own fleet chip). A tracked uppercase mono
+ *   line under a conversion button reads as machine output, and the sentence
+ *   it carries is written for a person.
  */
 export function DownloadCta({
   className,
   size = 'fold',
+  align = 'center',
 }: {
   className?: string;
   /** The close repeats the fold's button; only the leading rhythm differs. */
   size?: 'fold' | 'close';
+  /** The fold is a left column now; the close is still centred type. */
+  align?: 'center' | 'start';
 }) {
   return (
     <div
-      className={cn('flex flex-col items-center gap-3', className)}
+      className={cn(
+        'flex flex-col gap-3',
+        align === 'start' ? 'items-start' : 'items-center',
+        className
+      )}
       {...{ [BAND_AFFORDANCE_ATTR]: 'download' }}
     >
       <Button
@@ -53,7 +64,7 @@ export function DownloadCta({
         <Link href={DOWNLOAD_HREF}>{DOWNLOAD_LABEL}</Link>
       </Button>
       <p
-        className="font-mono text-chrome-label text-white/55"
+        className="text-[13px] leading-snug text-white/50"
         data-band-download-requirement
       >
         {DOWNLOAD_REQUIREMENT}

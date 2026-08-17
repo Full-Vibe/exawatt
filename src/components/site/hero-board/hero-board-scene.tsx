@@ -77,7 +77,15 @@ const BASE_POLAR = 40 * DEG;
  *  Fleet opened out from 0.66 once the Projects were named (2026-08-17): a
  *  crop that carries scale is worth having, a crop that cuts two Project
  *  labels off the bottom edge is not. */
-const FRAMING_TIGHTNESS = { fleet: 0.74, team: 0.86, agent: 0.95 } as const;
+const FRAMING_TIGHTNESS = {
+  fleet: 0.74,
+  team: 0.86,
+  agent: 0.95,
+  /** The fold's crop, as a share of the fleet's own bounding sphere. Tuned so
+   *  three to four Project clusters fill a 58%-width column and a single mark
+   *  is still an individual rather than a pixel. */
+  clusterRadius: 0.5,
+} as const;
 
 /**
  * How much harder a PORTRAIT viewport crops (ENG-031 W5, operator: the phone
@@ -197,9 +205,18 @@ export interface HeroBoardFraming {
   tightness: number;
 }
 
-/** The three altitudes the board can hold. Spelled locally rather than
- *  imported from the band manifest so the scene never depends on the site. */
-export type HeroAltitude = 'fleet' | 'team' | 'agent';
+/**
+ * The altitudes the board can hold. Spelled locally rather than imported from
+ * the band manifest so the scene never depends on the site.
+ *
+ * `cluster` is the FLEET framing cropped, on the same centre (ENG-031 W6b). It
+ * is not a product altitude and it does not pretend to be one: it exists so
+ * the fold can open on a board whose individual marks are legible inside a
+ * column that is 58% of the viewport, and so the first scroll move is the crop
+ * opening out to the whole fleet, which is the scale claim made as a camera
+ * move instead of as a screen of type.
+ */
+export type HeroAltitude = 'fleet' | 'cluster' | 'team' | 'agent';
 
 /**
  * The default ladder: Fleet, one real Project, one Agent inside it that needs
@@ -241,6 +258,11 @@ export function heroBoardFramings(
     fleet: {
       center: fleet,
       radius: fleetRadius,
+      tightness: FRAMING_TIGHTNESS.fleet,
+    },
+    cluster: {
+      center: fleet,
+      radius: fleetRadius * FRAMING_TIGHTNESS.clusterRadius,
       tightness: FRAMING_TIGHTNESS.fleet,
     },
     team: {
@@ -905,15 +927,27 @@ function HeroUnits({
             float weight = 1.0;
 
             if (vMark < 0.5) {
-              // Off: a quiet open ring.
+              // Idle: a quiet closed ring, and the only hollow circle in the
+              // set. Nothing inside it, at any size.
               sdf = ring;
               weight = 0.62;
             } else if (vMark < 1.5) {
-              // Active: the ring plus a half fill that turns once per rotation
+              // Working: an OPEN ARC whose gap travels once per rotation
               // period. The only mark that moves, in DOM and here alike.
-              vec2 dir = vec2(cos(uSpin), sin(uSpin));
-              float half_ = max(d - (R + T), -dot(p, dir));
-              sdf = min(ring, half_);
+              //
+              // REDRAWN 2026-08-17 (W6b, operator: it "reads as an eyeball at
+              // hero and mobile scale"). It was a ring with a rotating half
+              // FILL, which is a pupil inside an iris the moment a mark is
+              // bigger than a few pixels, and the fold is where the marks are
+              // biggest. The centre is empty now and stays empty, so the
+              // silhouette is a spinner at 80px and a ring at 4px, and neither
+              // one is a face.
+              float ang = atan(p.y, p.x) - uSpin;
+              float wrapped = atan(sin(ang), cos(ang));
+              // ~104 degrees of gap: enough to read as open at hero scale,
+              // little enough that the mark keeps a circle's weight at fleet
+              // scale, where colour is doing the work.
+              sdf = max(ring, (0.91 - abs(wrapped)) * R);
             } else if (vMark < 2.5) {
               // Result: a check.
               sdf = min(
@@ -921,8 +955,13 @@ function HeroUnits({
                 sdSegment(p, vec2(-0.05, -0.17), vec2(0.24, 0.19), T * 0.92)
               );
             } else if (vMark < 3.5) {
-              // Needs you: a dot inside a ring. Static, never a pulse.
-              sdf = min(ring, d - T * 1.5);
+              // Needs you: a SOLID disc, and the only filled mark in the set.
+              // It was a dot inside a ring, which is the same eye the working
+              // mark was. Solid is also the right claim: the one state that
+              // wants a person is the one state that is not hollow, and a
+              // filled circle survives to two pixels where a concentric pair
+              // turns to mush.
+              sdf = d - (R + T * 0.35);
             } else {
               // Fault: a cross.
               sdf = min(

@@ -91,6 +91,14 @@ export function boardProgressAt(
  * How present panel k is, 0..1, so it can fade in as it arrives and out as it
  * leaves. Symmetric in distance, which is what makes scrolling up read the
  * same as scrolling down.
+ *
+ * `scrolled` is NOT clamped here, and that is the whole repair (ENG-031 W6b).
+ * Clamping it meant the last panel's distance from its own anchor stopped
+ * growing at the end of the travel, so its presence stayed at 1 while the
+ * sequence released and the column carried on up the page, straight under the
+ * sticky header at full strength. Board PROGRESS is still clamped, because the
+ * camera holds at the last altitude; presence is about a column that is still
+ * moving.
  */
 export function panelPresence(
   scrolled: number,
@@ -102,7 +110,8 @@ export function panelPresence(
   const travel = pinnedTravelScreens(screens, sticky);
   const half = (screens[index] ?? 1) / 2 / travel;
   if (half <= 0) return 1;
-  const distance = Math.abs(clamp01(scrolled) - (anchors[index] ?? 0)) / half;
+  const position = Number.isFinite(scrolled) ? scrolled : 0;
+  const distance = Math.abs(position - (anchors[index] ?? 0)) / half;
   // Full strength across the middle of its own screen, gone by its edge.
   return 1 - smoothstep(0.45, 1, distance);
 }

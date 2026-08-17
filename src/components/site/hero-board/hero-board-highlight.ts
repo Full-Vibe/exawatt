@@ -79,6 +79,19 @@ export interface HeroHighlight {
   /** True when unit emphasis is a function of LIVE status, so the scene keeps
    *  it truthful while the scheduler turns agents. */
   followsStatus: boolean;
+  /**
+   * ONE unit that gets a breathing beacon in the DOM overlay, or -1
+   * (ENG-031 W6b).
+   *
+   * The fold needed something alive in it that is not the whole board moving.
+   * The board's own marks may not supply it: the D40 rule is that only Active
+   * turns, and a pulsing needs-you light at density is the "pewpew map" the
+   * brief rules out by name. So exactly one agent, the one the framed Project
+   * is actually waiting on, gets a halo in the annotation layer. It costs the
+   * GPU nothing, it is a DOM element the reduced-motion query can stop, and it
+   * points at a real record rather than decorating the frame.
+   */
+  beacon: number;
   subject: HeroHighlightSubject;
 }
 
@@ -112,6 +125,8 @@ export function resolveHeroHighlight(
       units,
       followsStatus: true,
       delegation: 0,
+      // Every waiting agent is already the only loud thing on the board here.
+      beacon: -1,
       subject: {
         kind: 'fleet',
         label: `${capture.counts.needsYou} agents need you`,
@@ -134,6 +149,9 @@ export function resolveHeroHighlight(
       units,
       followsStatus: false,
       delegation: 0,
+      beacon: capture.units.findIndex(
+        unit => unit.zone === teamZone && heroStatusNeedsHuman(unit.status)
+      ),
       subject: {
         kind: 'project',
         label: zone.label,
@@ -155,6 +173,7 @@ export function resolveHeroHighlight(
       units,
       followsStatus: false,
       delegation: 0,
+      beacon: agentUnit,
       subject: {
         kind: 'agent',
         label: unit.name,
@@ -184,6 +203,7 @@ export function resolveHeroHighlight(
       units,
       followsStatus: false,
       delegation: 1,
+      beacon: -1,
       subject: {
         kind: 'fleet',
         label: `${capture.counts.delegating} agents are running agents`,
@@ -199,6 +219,7 @@ export function resolveHeroHighlight(
     units,
     followsStatus: false,
     delegation: 0,
+    beacon: -1,
     subject: {
       kind: 'fleet',
       label: `${capture.counts.agents} agents`,

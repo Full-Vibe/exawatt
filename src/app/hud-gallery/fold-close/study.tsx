@@ -33,6 +33,7 @@ import {
   type FoldCloseVariantId,
 } from '@/components/site/bands/fold-copy';
 import { FoldHero } from '@/components/site/bands/fold-hero';
+import { SITE_GROUND } from '@/components/site/bands/site-ground';
 import { bandById } from '@/components/site/bands/manifest';
 import { cn } from '@/lib/utils';
 
@@ -70,7 +71,7 @@ export function FoldCloseStudy() {
 
   return (
     <main
-      className="bg-black"
+      style={{ backgroundColor: SITE_GROUND }}
       data-fold-close-study={fold}
       data-public-exhibition-surface="true"
     >

@@ -47,7 +47,9 @@ describe('the fold, rendered', () => {
     const headline = screen.getByRole('heading', { level: 1 });
 
     expect(headline).toHaveAttribute('data-fold-headline');
-    expect(headline.className).toContain('sm:text-6xl');
+    // 56px at the reading width, from the one scale in `band-section.tsx`
+    // (operator, W6b: "display 72/56").
+    expect(headline.className).toContain('lg:text-[3.5rem]');
   });
 
   it('renders the selected variant and nothing from the others', () => {
@@ -92,13 +94,16 @@ describe('the fold, rendered', () => {
     expect(container.querySelectorAll('[data-band-download]')).toHaveLength(1);
   });
 
-  it('keeps public exhibition typography insulated', () => {
+  it('owns no ground, no scrim and no board of its own', () => {
+    // W6b: the fold is the FIRST PANEL of the pinned sequence, which owns all
+    // three, because the page mounts exactly one board. The radial well went
+    // with the centred layout that needed it: nothing is printed over the
+    // object any more, so nothing has to be dimmed to carry type.
     const { container } = render(<FoldHero variant="a" />);
 
-    expect(container.querySelector('[data-fold-hero]')).toHaveAttribute(
-      'data-public-exhibition-surface',
-      'true'
-    );
+    expect(container.querySelector('[data-fold-background]')).toBeNull();
+    expect(container.querySelector('[data-fold-scrim]')).toBeNull();
+    expect(container.querySelector('[data-testid="hero-board"]')).toBeNull();
   });
 });
 
@@ -123,7 +128,7 @@ describe('the closing band, rendered', () => {
 
     // 72px, four times the 18px section rung, inside the measured 3x to 7x
     // window declared by W1 in docs/engineering/design-system.md.
-    expect(line.className).toContain('sm:text-7xl');
+    expect(line.className).toContain('lg:text-[4.5rem]');
     expect(line).toHaveAttribute('data-close-line');
   });
 

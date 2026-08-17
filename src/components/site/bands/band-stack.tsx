@@ -1,4 +1,4 @@
-import { arrangementComponents } from './registry';
+import { BAND_COMPONENTS } from './registry';
 import {
   HOMEPAGE_ARRANGEMENT,
   arrangementBands,
@@ -26,14 +26,16 @@ import { PinnedBoardSequence } from './pinned-board-sequence';
  * address: the review page and the live page are the same code walking the
  * same manifest, and promoting the proposal is flipping
  * `HOMEPAGE_ARRANGEMENT`.
+ *
+ * W6b: the fold JOINS that run whenever a run follows it, which is what makes
+ * the page's own "one continuous board" claim literally true. `/` still gets
+ * the shipped fold as its own band, because nothing follows it there.
  */
 export function HomeBands({
   arrangement = HOMEPAGE_ARRANGEMENT,
 }: {
   arrangement?: HomepageArrangement;
 } = {}) {
-  const components = arrangementComponents(arrangement);
-
   return (
     <main
       data-home-bands
@@ -49,7 +51,7 @@ export function HomeBands({
             />
           );
         }
-        const Band = components[run.band.id];
+        const Band = BAND_COMPONENTS[run.band.id];
         return Band ? <Band band={run.band} key={run.band.id} /> : null;
       })}
     </main>

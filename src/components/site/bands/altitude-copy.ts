@@ -1,47 +1,53 @@
 import { bandById, countWords, type BandId } from './manifest';
-import { THESIS_LINES } from './narrative-copy';
 
 /**
- * The pinned sequence's panels (ENG-031 W4, rewritten W5, widened W8).
+ * The pinned sequence's panels (ENG-031 W4, rewritten W5, widened W8, CUT W6b).
  *
- * ONE graphic, eight explanations. Each panel says what the board is doing
+ * ONE graphic, five explanations. Each panel says what the board is doing
  * WHILE the board does it, and names the thing it is pointing at. The names
  * and the numbers are never written here: `hero-board-highlight.ts` and
  * `hero-board-lens.ts` read them off the frozen capture, so the copy and the
  * picture cannot drift apart, and a regenerated capture can never make a
  * sentence false.
  *
- * WHY THIS FILE GREW (operator, 2026-08-17): "I don't see why we shouldn't
- * keep it onscreen to help communicate some of the other points too, like
- * security, spend, etc. ... the colour section clearly would benefit with that
- * copy appearing alongside the actual product fleet board - why take it away".
- * W5 handed provenance, spend and ownership to card chapters below the board
- * on the reasoning that they "are not spatial". They are: a harness is a
- * property of every mark, burn is a property of every mark, and an approval
- * choice is a property of every mark. Their copy moved here, onto the panels
- * that drive those lenses, and three full screens came off the page.
+ * WHY THIS FILE SHRANK (operator, 2026-08-17): "I don't want to read all the
+ * text on that page." W8 gave every panel a claim AND a trio of sub-headed
+ * mechanisms, and the page reached 1,216 words. The diagnosis is that a
+ * mechanism list is DOCUMENTATION: it is the right thing to write when a
+ * reader has already decided to trust you and wants to check how, and it is
+ * the wrong thing to put beside a graphic that is making the argument by
+ * changing. Every trio is deleted. What each panel keeps is one heading, one
+ * two-sentence claim, and one line of state read off the board itself.
  *
- * THE ARGUMENT, one panel at a time, each one a claim the board is
+ * THE CUT IS VOLUME, NOT REGISTER. Every sentence the page was known by is
+ * still here: "Every colour here is a claim, and a wrong one costs you a
+ * trip", "Never a green check that lies", and the plain-voice product
+ * sentences. Nothing was softened, generalised, or made safer.
+ *
+ * THE PANELS, one claim at a time, each one a claim the board is
  * simultaneously proving:
  *
- * 1. `thesis` WHY. The foil, named: the tools, never the reader. Said over the
- *    counter-example rather than one screen before it.
- * 2. `altitude-fleet` SCALE. A fleet is a thing that fits on one screen, and
- *    it keeps fitting as it grows.
- * 3. `altitude-attention` ATTENTION, and why the colour can be trusted. The
- *    camera holds still; the board recedes to the agents waiting on a person.
- * 4. `altitude-agent` DEPTH. One dive, through the project, down to one agent
- *    whose status changes while it is read.
- * 5. `altitude-delegation` TRAJECTORY. Agents run agents, and the camera opens
+ * 1. `fold` WHAT. Not written here: the fold's own copy is the operator's
+ *    frame in `fold-copy.ts`. It is the first frame of this graphic.
+ * 2. `altitude-attention` ATTENTION. The camera opens out of the fold's crop
+ *    to the whole fleet and the board recedes to the agents waiting on a
+ *    person. The one beat a competitor cannot screenshot.
+ * 3. `altitude-agent` DEPTH. One dive, down to one agent whose status changes
+ *    while it is read. Promoted from fourth to second (operator: it is the
+ *    best frame on the site and it was arriving too late).
+ * 4. `altitude-delegation` TRAJECTORY. Agents run agents, and the camera opens
  *    back out while the constellations bloom.
- * 6. `any-lab` PROVENANCE. The fleet recolours by the harness running each
+ * 5. `any-lab` PROVENANCE. The fleet recolours by the harness running each
  *    agent, so vendor neutrality proves itself.
- * 7. `cost` SPEND. The same marks, read as burn.
- * 8. `trust` OWNERSHIP. Whose machine, whose keys, whose repo.
+ * 6. `trust` OWNERSHIP. Whose machine, whose keys, whose repo.
+ *
+ * `altitude-fleet` and `cost` are RESERVED, each with its reason in
+ * `manifest.ts`. Their lenses and highlights still resolve, so either is a
+ * status edit away from returning.
  *
  * RULES, all inherited and all asserted in `altitude-copy.test.ts`:
  *
- * - each panel's declared `copyBudget`, counted with its heading and cards;
+ * - each panel's declared `copyBudget`, counted with its heading;
  * - no em dashes (operator: "that's an AI smell");
  * - the reader is never the bottleneck; the tools are (`marketing.md`);
  * - never the five words banned from the fold, on the same merits;
@@ -55,74 +61,36 @@ import { THESIS_LINES } from './narrative-copy';
  * below was read out of the code rather than remembered:
  * `electron/main/pty/attention-monitor.ts`,
  * `src/components/workspace/session-status.ts`,
- * `contracts/agent-sources.json`, `packages/core/src/consumption/`, and the
- * `/download` disclosures.
+ * `contracts/agent-sources.json`, and the `/download` disclosures.
  */
-
-/** One checkable mechanism under a panel's claim. States a fact or a control,
- *  never a confession (`marketing.md`, "Disclosure is not apology"). */
-export interface PanelCard {
-  title: string;
-  body: string;
-}
 
 export interface AltitudePanelCopy {
   /** Band id, so the panel and its declaration cannot separate. */
   id: BandId;
   /** The panel's body, one entry per rendered line. */
   copy: string[];
-  /** Up to THREE mechanisms, and three is a hard ceiling rather than a target.
-   *  The panel sits over the board, and on a 390px phone it sits over the
-   *  board's lower half: a fourth card pushed the claim off the top of the
-   *  viewport, which is how a demo surface stops demonstrating anything. */
-  cards?: PanelCard[];
-  /** One quiet line under the cards. */
+  /**
+   * One quiet line under the claim, and the ONLY thing permitted beneath it
+   * (ENG-031 W6b). The `cards` field is gone rather than capped: a sub-headed
+   * trio is documentation, and the page it was on is the page the operator
+   * said he would not read.
+   */
   coda?: string;
 }
 
 export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
   {
-    // THE FOIL, THEN THE ANSWER, in one panel (W8).
-    //
-    // `THESIS_LINES` is the only abstract passage on the page and it exists to
-    // name the foil before the board becomes evidence: without a claim in the
-    // reader's head, every panel afterwards is a caption. W5 spent a whole
-    // screen on it. It does the same job as the lede of the first panel over
-    // the board, and it does it better, because the reader meets "a terminal
-    // tab still holds one agent" while looking at 173 of them at once.
-    id: 'altitude-fleet',
-    copy: [
-      ...THESIS_LINES,
-      'Each mark is one agent on one real assignment. Add a hundred more and it is still one screen.',
-    ],
-  },
-  {
     id: 'altitude-attention',
     copy: [
       'The board tells you where to look, so you never go looking.',
-      'Agents waiting on a person are the only loud thing on it. Every colour here is a claim, and a wrong one costs you a trip.',
+      'Every colour here is a claim, and a wrong one costs you a trip.',
     ],
-    cards: [
-      {
-        title: 'Needs you means a gate',
-        body: 'A question, a permission prompt, or a tool waiting on an answer. Reported by the agent, not guessed from its output.',
-      },
-      {
-        title: 'Finished is not an interruption',
-        body: 'A completed turn is a result you can read later. It never jumps the queue ahead of work that is blocked.',
-      },
-      {
-        title: 'Silence gets corrected',
-        body: 'Interrupt an agent and its harness may never close the turn. Exawatt notices the quiet and stops the light spinning.',
-      },
-    ],
-    coda: 'Reported outranks inferred, in both directions.',
+    coda: 'Reported by the agent, never guessed from its output.',
   },
   {
     id: 'altitude-agent',
     copy: [
-      'Drop into one project and its agents are still individuals, not a count.',
-      'Down to one: a name, the work it is on, and a status that changes while you read it.',
+      'Drop all the way in and an agent is a name, the work it is on, and a status that changes while you read it.',
       'Working, needs you, done. Never a green check that lies.',
     ],
   },
@@ -132,12 +100,6 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
       'Some of these agents are running agents of their own.',
       'The work fans out and comes back under the one that asked for it. This is how ten becomes ten thousand.',
     ],
-    cards: [
-      {
-        title: 'A parent waits for its children',
-        body: 'Work that fanned out keeps reading as working until the last delegated run stops.',
-      },
-    ],
   },
   {
     id: 'any-lab',
@@ -145,65 +107,15 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
       'Every lab will sell you agents. None of them will sell you the seat you command them from.',
       'The same board, coloured by what is running each agent.',
     ],
-    cards: [
-      {
-        title: 'Four harnesses today',
-        body: 'Claude Code, Codex, OpenCode and Grok Build. Launch one, resume it, and watch the subagents it spawns appear underneath it.',
-      },
-      {
-        title: 'OpenClaw lands next',
-        body: 'The adapter lane is open, and one harness across many providers means changing model is not changing your workflow.',
-      },
-      {
-        title: 'Start one in a keystroke',
-        body: 'Press ⌘T and type. Change the whole engine with ⌥ and the arrow keys before you type a word.',
-      },
-    ],
-    coda: 'Bring the plan you already have. Exawatt never asks you for a token balance of its own.',
-  },
-  {
-    id: 'cost',
-    copy: [
-      'A fleet spends whether or not you are watching.',
-      'Same marks, read as burn. Exawatt parses the usage records your harnesses already write to your own disk. Read only, no credentials, no call to a billing API.',
-    ],
-    cards: [
-      {
-        title: 'Per agent, subagents included',
-        body: 'A parent that delegates spends more than it reports, so its delegated runs are counted with it.',
-      },
-      {
-        title: 'One unit across harnesses',
-        body: 'Three harnesses disagree about what an input token even is. Exawatt normalizes them before adding anything up.',
-      },
-      {
-        title: 'Modelled money says so',
-        body: 'A dollar figure is an estimate with its price table printed beside it. Plan credits are read separately and never summed into it.',
-      },
-    ],
-    coda: 'Absent is never zero. A harness that records nothing reads as unmetered, not as free.',
+    coda: 'Bring the plan you already pay for. Exawatt never asks for a balance of its own.',
   },
   {
     id: 'trust',
     copy: [
-      'Every one of these agents runs on your Mac, under your own account, on the keys you already pay for.',
-      'Signing in does not change that arrangement.',
+      'Every one of these agents runs on your Mac, under your account, on your keys.',
+      'Your code, your prompts, and what your agents write never pass through Exawatt.',
     ],
-    cards: [
-      {
-        title: 'Your agents talk to providers directly',
-        body: 'Your code, your prompts, and your agents output never pass through Exawatt.',
-      },
-      {
-        title: 'Every outbound feature has a switch',
-        body: 'Naming and summarizing sessions sends short excerpts with secrets redacted first, and it turns off in Settings under Privacy.',
-      },
-      {
-        title: 'Approval is a per-agent choice',
-        body: 'Agents start with approvals off so a fleet keeps moving. Ask first and Auto review are one choice away, on any agent.',
-      },
-    ],
-    coda: 'Shared project memory is plain git files you already own. Every line here names something you can switch off or take with you.',
+    coda: 'Every outbound feature has a switch in Settings.',
   },
 ];
 
@@ -211,15 +123,12 @@ export function altitudePanel(id: BandId): AltitudePanelCopy | undefined {
   return ALTITUDE_PANELS.find(panel => panel.id === id);
 }
 
-/** Reading words in a panel: its heading, body, cards and coda. */
+/** Reading words in a panel: its heading, claim, and coda. */
 export function panelWords(panel: AltitudePanelCopy): number {
   return countWords(
-    [
-      bandById(panel.id).heading ?? '',
-      ...panel.copy,
-      ...(panel.cards ?? []).flatMap(card => [card.title, card.body]),
-      panel.coda ?? '',
-    ].join(' ')
+    [bandById(panel.id).heading ?? '', ...panel.copy, panel.coda ?? ''].join(
+      ' '
+    )
   );
 }
 
@@ -232,7 +141,6 @@ export function pinnedRunWords(): number {
 export function panelProse(): string {
   return ALTITUDE_PANELS.flatMap(panel => [
     ...panel.copy,
-    ...(panel.cards ?? []).flatMap(card => [card.title, card.body]),
     panel.coda ?? '',
   ]).join(' ');
 }

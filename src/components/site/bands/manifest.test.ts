@@ -133,23 +133,26 @@ describe('homepage band ordering', () => {
     // dives once to a single agent, opens all the way back out for delegation,
     // and stays out while the three lens panels re-read the same fleet from a
     // different property of the same marks.
+    //
+    // AMENDED again (W6b): the fold is the run's FIRST FRAME, so the ladder
+    // starts one rung IN, at the `cluster` crop, and the first scroll move is
+    // the camera opening out to the whole fleet. That pull-out is the scale
+    // claim, made as a camera move rather than as a screen of type, which is
+    // why `altitude-fleet` is reserved.
     const anchors = heroCameraAnchors();
 
     expect(anchors.map(anchor => anchor.id)).toEqual([
       'fold',
-      'altitude-fleet',
       'altitude-attention',
       'altitude-agent',
       'altitude-delegation',
       'any-lab',
-      'cost',
       'trust',
     ]);
+    expect(bandById('fold').altitudeAnchor).toBe('cluster');
     expect(pinnedAltitudeLadder()).toEqual([
       'fleet',
-      'fleet',
       'agent',
-      'fleet',
       'fleet',
       'fleet',
       'fleet',
@@ -183,17 +186,25 @@ describe('homepage band ordering', () => {
     expect(order.indexOf('altitude-team')).toBeLessThan(
       order.indexOf('altitude-agent')
     );
+    // W6b reserved two more, each in the slot it would take back.
+    expect(order.indexOf('altitude-fleet')).toBeLessThan(
+      order.indexOf('altitude-attention')
+    );
+    expect(order.indexOf('cost')).toBeGreaterThan(order.indexOf('any-lab'));
   });
 
   it('renders materially fewer, shorter sections than the W5 arc', () => {
     // The operator's W8 verdict was about HEIGHT, so height is asserted rather
     // than intended: "/homepage-narrative has way too much height, too many
     // sections". W5 rendered fourteen bands over about 16.6 screens.
-    expect(proposedBands().length).toBeLessThanOrEqual(11);
-    expect(pageScreens()).toBeLessThan(12);
+    // W6b: the operator's verdict was the same again, about text this time.
+    // Eight bands over about eight and a half screens, and six of the eight
+    // are one graphic.
+    expect(proposedBands().length).toBeLessThanOrEqual(8);
+    expect(pageScreens()).toBeLessThan(9);
     // And most of the page is ONE graphic rather than a stack of stops.
-    expect(pinnedBoardBands().length).toBeGreaterThanOrEqual(
-      proposedBands().length - 4
+    expect(pinnedBoardBands().length + 1).toBeGreaterThanOrEqual(
+      proposedBands().length - 2
     );
   });
 });
@@ -203,47 +214,49 @@ describe('the pinned board run', () => {
     const pinned = pinnedBoardBands();
 
     expect(pinned.map(band => band.id)).toEqual([
-      'altitude-fleet',
       'altitude-attention',
       'altitude-agent',
       'altitude-delegation',
       'any-lab',
-      'cost',
       'trust',
     ]);
     expect(pinned.map(band => band.boardHighlight)).toEqual([
-      'whole-fleet',
       'needs-you',
       'one-agent',
       'delegation',
       'whole-fleet',
       'whole-fleet',
-      'whole-fleet',
     ]);
-    // The LENS is what makes the last three panels different pictures of the
-    // same fleet rather than the same picture three times.
+    // The LENS is what makes the last two panels different pictures of the
+    // same fleet rather than the same picture twice.
     expect(pinned.map(band => band.boardLens)).toEqual([
       'status',
       'status',
       'status',
-      'status',
       'source',
-      'burn',
       'permission',
     ]);
   });
 
   it('makes every pinned band say what it points at and what it colours by, and no other band', () => {
     // "Highlighting is the point; a state change alone is not enough."
+    //
+    // THE FOLD IS THE ONE EXCEPTION and it is deliberate (W6b): it is the
+    // graphic's first frame but it cannot carry `medium: 'pinned-board'`,
+    // because `/` renders it alone and a run of one would put the proposed
+    // fold on the shipped homepage. It therefore declares a lens and a
+    // highlight while staying `medium: 'board'`.
     for (const band of HOMEPAGE_BANDS) {
-      if (band.medium === 'pinned-board') {
+      if (band.medium === 'pinned-board' || band.id === 'fold') {
         expect(band.boardHighlight, band.id).toBeTruthy();
         expect(band.boardLens, band.id).toBeTruthy();
         expect(band.altitudeAnchor, band.id).toBeTruthy();
-        expect(band.heading, band.id).toBeTruthy();
       } else {
         expect(band.boardHighlight, band.id).toBeNull();
         expect(band.boardLens, band.id).toBeNull();
+      }
+      if (band.medium === 'pinned-board') {
+        expect(band.heading, band.id).toBeTruthy();
       }
     }
   });
@@ -268,7 +281,11 @@ describe('the pinned board run', () => {
     }
   });
 
-  it('collects consecutive pinned bands into ONE entry for the page', () => {
+  it('collects the fold and every pinned band into ONE entry for the page', () => {
+    // W6b: the fold JOINS the run rather than sitting beside it, so the page
+    // mounts exactly ONE board. Before this the fold had its own `HeroBoard`
+    // and the run had a second one, which shipped a visible seam, two fleet
+    // chips and two legends on production.
     const bands = proposedBands();
     const runs = bandRuns(bands);
     const pinned = runs.filter(run => run.kind === 'pinned-board');
@@ -276,14 +293,20 @@ describe('the pinned board run', () => {
     expect(pinned).toHaveLength(1);
     expect(
       pinned[0]!.kind === 'pinned-board' ? pinned[0]!.bands.map(b => b.id) : []
-    ).toEqual(pinnedBoardBands().map(band => band.id));
-    // The run starts at SECTION TWO, immediately after the fold (operator,
-    // W8), and everything before and after it walks one band at a time.
-    expect(runs[0]!.kind === 'band' ? runs[0]!.band.id : '').toBe('fold');
-    expect(runs[1]!.kind).toBe('pinned-board');
+    ).toEqual(['fold', ...pinnedBoardBands().map(band => band.id)]);
+    expect(runs[0]!.kind).toBe('pinned-board');
     expect(runs.filter(run => run.kind === 'band')).toHaveLength(
-      bands.length - pinnedBoardBands().length
+      bands.length - pinnedBoardBands().length - 1
     );
+  });
+
+  it('leaves the shipped fold as its own band, because nothing follows it', () => {
+    // The merge is conditional on a run FOLLOWING the fold. `/` renders the
+    // fold alone, and a pinned run of one would put the proposed fold on the
+    // shipped homepage.
+    const runs = bandRuns(shippedBands());
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.kind === 'band' ? runs[0]!.band.id : '').toBe('fold');
   });
 
   it('preserves manifest order across the grouping', () => {

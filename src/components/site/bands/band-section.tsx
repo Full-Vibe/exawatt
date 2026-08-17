@@ -23,16 +23,27 @@ import type { BandHeadingRole, HomepageBand } from './manifest';
 
 /**
  * Type roles for the page, in one place (design system, marketing rung,
- * amended 2026-08-16 for the closing rung).
+ * amended 2026-08-16 for the closing rung, scaled 2026-08-17 in W6b).
  *
- * `headline` is the fold h1 as shipped. `section` is the 18px section rung.
- * `closing` is 72px, four times the section heading, inside the measured 3x to
- * 7x window and the largest type on the page.
+ * ONE SCALE, STATED (operator: "set a real scale: display 72/56, body 17-18").
+ * `closing` is 72px and is the largest type on the page; `headline` is 56px,
+ * which is where the fold lands now that it shares the frame with the board
+ * instead of being centred over it; `section` stays at the 18px rung, because
+ * the measured constraint is that section headings stay SMALL and loudness is
+ * spent at the end. 72 over 18 is four times, inside the measured 3x to 7x
+ * window.
+ *
+ * The step down from 56 is deliberate rather than fluid: at 44 and 36 the
+ * headline still holds two lines in a 36rem column at the widths this page is
+ * read at, and a `clamp()` would have put the fold at a different size on
+ * every laptop.
  */
 const HEADING_CLASS: Record<Exclude<BandHeadingRole, 'none'>, string> = {
-  headline: 'text-4xl font-bold tracking-tight sm:text-6xl',
+  headline:
+    'text-[2.25rem] leading-[1.06] font-semibold tracking-[-0.02em] sm:text-[2.75rem] lg:text-[3.5rem]',
   section: 'text-lg font-semibold',
-  closing: 'text-5xl font-bold tracking-tight sm:text-7xl',
+  closing:
+    'text-[2.75rem] leading-[1.04] font-semibold tracking-[-0.02em] sm:text-[3.5rem] lg:text-[4.5rem]',
 };
 
 export function BandSection({
