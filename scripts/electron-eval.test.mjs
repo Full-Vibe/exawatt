@@ -9,6 +9,7 @@ import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   writeFileSync,
   realpathSync,
 } from 'node:fs';
@@ -20,8 +21,12 @@ import {
 } from './lib/native-preflight.mjs';
 import { assertDevServerServesTree } from './lib/electron-eval.mjs';
 import {
+  RUNTIME_PACKAGES,
   assertNoPackagingSnapshot,
   discardRuntimeDependencies,
+  isRuntimePayloadPath,
+  packagesAlongPath,
+  resolveRuntimeClosure,
 } from './lib/electron-runtime-deps.mjs';
 
 const listen = handler =>
@@ -153,4 +158,68 @@ test('discarding is idempotent and leaves the compiled main alone', async () => 
   assert.equal(existsSync(join(root, 'dist-electron', 'node_modules')), false);
   assert.ok(existsSync(join(root, 'dist-electron', 'main', 'main.js')));
   await assert.doesNotReject(() => assertNoPackagingSnapshot(root));
+});
+
+/* ------------------------------------------------------------------ */
+/* BUG-030 — what the packaging snapshot is allowed to contain          */
+/* ------------------------------------------------------------------ */
+
+test('a nested node_modules is never runtime payload, at any depth', () => {
+  // How the TypeScript compiler and vitest reached users: the snapshot was a
+  // dereferencing copy, and pnpm links devDependencies here.
+  assert.equal(isRuntimePayloadPath('node_modules'), false);
+  assert.equal(isRuntimePayloadPath('node_modules/typescript/bin/tsc'), false);
+  assert.equal(isRuntimePayloadPath('node_modules/.bin/tsc'), false);
+  // node-gyp writes build stamps under a nested path of the same shape.
+  assert.equal(
+    isRuntimePayloadPath('build/Release/node-addon-api@7.1.1/node_modules/x.stamp'),
+    false
+  );
+  assert.equal(isRuntimePayloadPath('dist-cjs/index.js'), true);
+  assert.equal(isRuntimePayloadPath('lib/node_modules_helper.js'), true);
+});
+
+test('only the target platform prebuilt binaries are runtime payload', () => {
+  assert.equal(
+    isRuntimePayloadPath('prebuilds/darwin-arm64/node.napi.node', 'darwin'),
+    true
+  );
+  assert.equal(
+    isRuntimePayloadPath('prebuilds/darwin-x64/node.napi.node', 'darwin'),
+    true
+  );
+  assert.equal(
+    isRuntimePayloadPath('prebuilds/win32-x64/node.napi.node', 'darwin'),
+    false
+  );
+  assert.equal(isRuntimePayloadPath('build/Release/pty.node', 'darwin'), true);
+});
+
+test('the runtime closure is exactly the declared roots plus production deps', () => {
+  const closure = resolveRuntimeClosure(process.cwd());
+  for (const name of RUNTIME_PACKAGES) assert.ok(closure.has(name), `missing ${name}`);
+  // Everything else in the closure must be reachable through a `dependencies`
+  // edge, so nothing enters the payload by being installed nearby.
+  const reachable = new Set(RUNTIME_PACKAGES);
+  for (const { directory } of closure.values()) {
+    const manifest = JSON.parse(
+      readFileSync(join(directory, 'package.json'), 'utf8')
+    );
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+      reachable.add(dependency);
+    }
+  }
+  for (const name of closure.keys()) assert.ok(reachable.has(name), `stray ${name}`);
+  assert.equal(closure.has('typescript'), false);
+  assert.equal(closure.has('vitest'), false);
+});
+
+test('a bundle path reports every package it passes through', () => {
+  assert.deepEqual(
+    packagesAlongPath(
+      'dist-electron/node_modules/@exawatt/core/node_modules/typescript/bin/tsc'
+    ),
+    ['@exawatt/core', 'typescript']
+  );
+  assert.deepEqual(packagesAlongPath('dist-electron/main/main.js'), []);
 });
