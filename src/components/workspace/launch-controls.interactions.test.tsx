@@ -285,12 +285,15 @@ describe('Agent composer · interactions and drafts', () => {
       expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
     );
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'All engines and models' })
-    );
-    // The catalog mounts on its own schedule; sampling one tick after the
-    // click made this assertion fail roughly one run in three under load
-    // (D52: a check that is flaky is a check that stops being trusted).
+    const catalogButton = screen.getByRole('button', {
+      name: 'All engines and models',
+    });
+    // Settling deliberately disables the catalog trigger. Under suite load,
+    // permissions can become ready first; clicking a disabled button is a
+    // no-op, so wait for the interaction boundary rather than the unrelated
+    // permission boundary (D52: a flaky check stops being trusted).
+    await waitFor(() => expect(catalogButton).not.toBeDisabled());
+    fireEvent.click(catalogButton);
     expect(
       await screen.findByRole('checkbox', { name: 'New git worktree' })
     ).toBeChecked();
