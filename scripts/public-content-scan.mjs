@@ -12,8 +12,14 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// The lookbehind deliberately excludes only characters that continue a
+// local part in real text (alphanumerics, `.`, `_`, `-`, `+`). RFC atext
+// also permits `` ` `` `{|}~` and friends, but in this repository those are
+// code-span and template delimiters, and treating them as address characters
+// made every address written as `\`user@host\`` in a doc comment invisible to
+// this gate (found 2026-08-17 in `src/lib/auth/admin.ts`).
 const EMAIL_PATTERN =
-  /(?<![a-z0-9.!#$%&*+/=?^_`{|}~-])([a-z0-9][a-z0-9.!#$%&'*+/=?^_`{|}~-]*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?![a-z0-9-])/giu;
+  /(?<![a-z0-9._+-])([a-z0-9][a-z0-9.!#$%&'*+/=?^_`{|}~-]*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?![a-z0-9-])/giu;
 const MAC_HOME_PATTERN = /\/Users\/([^/\s"'`\\]+)/gu;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const EXIF_SIGNATURE = Buffer.from([69, 120, 105, 102, 0, 0]);
@@ -123,7 +129,12 @@ export function findTextFindings(
   if (!allowThirdPartyEmailMetadata) {
     for (const match of source.matchAll(EMAIL_PATTERN)) {
       const nextCharacter = source[(match.index ?? 0) + match[0].length];
-      if (match[1].toLowerCase().startsWith('git@') && nextCharacter === ':') {
+      // `git@github.com:org/repo` and `ssh://git@github.com/org/repo` are
+      // remote URLs, not addresses.
+      if (
+        match[1].toLowerCase().startsWith('git@') &&
+        (nextCharacter === ':' || nextCharacter === '/')
+      ) {
         continue;
       }
       if (isApprovedEmail(match[1])) continue;

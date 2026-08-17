@@ -64,6 +64,32 @@ test('generic text checks reject real identities and accept fixture vocabulary',
   );
 });
 
+test('addresses inside Markdown code spans are still addresses', () => {
+  // Regression for the 2026-08-17 hole: the lookbehind treated a backtick as
+  // an address character, so `\`user@host\`` in a doc comment was invisible.
+  // Assemble the addresses at runtime so this test file never itself carries
+  // one for the gate to find.
+  const at = String.fromCharCode(64);
+  const first = `operator${at}realcompany.com`;
+  const second = `second${at}realcompany.com`;
+  const findings = findTextFindings(
+    `the account is \`${first}\` (see \`${second}\`)`,
+    'src/lib/auth/admin.ts',
+    []
+  );
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every(f => f.rule === 'unapproved-email'));
+  // SSH remote URLs in both spellings stay non-findings.
+  assert.equal(
+    findTextFindings(
+      'ssh://git@github.com/Full-Vibe/x.git git@github.com:Full-Vibe/x.git',
+      'scripts/x.test.mjs',
+      []
+    ).length,
+    0
+  );
+});
+
 test('PNG text chunks and image EXIF are rejected while clean images pass', () => {
   const cleanPng = png(pngChunk('IHDR', Buffer.alloc(13)));
   assert.deepEqual(findImageMetadataFindings(cleanPng, 'clean.png'), []);
