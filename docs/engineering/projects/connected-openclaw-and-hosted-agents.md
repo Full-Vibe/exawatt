@@ -150,18 +150,22 @@ Gateway is never silently turned into a Project.
 ### Connect flow
 
 1. Invoke **⌘N → Connect existing Agent…**.
-2. Choose **OpenClaw** and either an existing SSH host alias or a direct
-   supported Gateway endpoint. Exawatt may passively list named SSH aliases and
+2. Choose **OpenClaw** and either an existing SSH host alias or a manually
+   entered server. Exawatt may passively list named SSH aliases and
    source-owned saved remote targets from local configuration, but it never
    probes or connects to one until the operator selects it. Candidate
    enumeration reads only alias/endpoint metadata and never imports secret
    payloads.
-3. Run a bounded connection test and show identity, version, placement,
+3. Open a bounded SSH-forwarded tunnel to the source's loopback Gateway port,
+   resolve the source-owned Gateway credential through that tunnel, and hold it
+   in memory only. Exawatt never persists the Gateway token and never asks the
+   operator to paste one when the server already declares it.
+4. Run a bounded connection test and show identity, version, placement,
    credential owner, and observed capabilities separately.
-4. Discover configured Agents. Preselect active configured Agents; show retired
+5. Discover configured Agents. Preselect active configured Agents; show retired
    or historical identities separately and unchecked.
-5. For each selected Agent, confirm display name and Project mapping.
-6. Save the configured source and versioned projection; open the selected Agent
+6. For each selected Agent, confirm display name and Project mapping.
+7. Save the configured source and versioned projection; open the selected Agent
    without starting, stopping, or modifying remote work.
 
 Failure leaves the partially entered source as an editable draft only when the
@@ -257,10 +261,23 @@ The normalized boundary stores:
 - Exawatt Agent ID, Project mapping, optional name override, and projection
   version.
 
-SSH is a transport/bootstrap choice, not the data model. Prefer the OpenClaw
-Gateway protocol through an authenticated tunnel; do not make remote shell
-scraping the fleet contract. Connection material stays in the OS keychain or
-source-owned SSH configuration and never crosses into renderer state.
+SSH is a transport/bootstrap choice, not the data model. The first mile speaks
+the OpenClaw Gateway protocol through an SSH-forwarded tunnel to the source's
+own loopback Gateway port; remote shell scraping is never the fleet contract.
+
+Connection material has two tiers, and Exawatt holds as little as it can:
+
+- **Server access** is source-owned by default. A configured source that names
+  an SSH alias stores the alias only, and reaching the server uses the
+  operator's existing SSH configuration, agent, and key. Manually entered
+  servers are the fallback for an operator without an alias; only that path
+  writes host/user/key material, and it writes it to the OS keychain.
+- **The Gateway credential is never persisted.** Exawatt resolves the source's
+  own declared Gateway token through the authorized tunnel and holds it in
+  process memory for the life of the connection. Pasting a token is a fallback
+  for a source that does not declare one, not the normal path.
+
+No connection material of either tier crosses into renderer state.
 
 Snapshots are replaceable and idempotent. Reconnect always permits an
 authoritative resnapshot, then merges later events by source and run identity.
@@ -299,6 +316,9 @@ simulated evidence.
   registry with customer-hosted placement, OS-owned connection material, bounded
   Gateway discovery, capability/freshness truth, authoritative reconnect
   snapshots, subscriptions, and optional source-declared replay positions.
+  C1 also carries three decisions taken 2026-08-17: an SSH-alias-first tunnel
+  transport, an in-memory-only Gateway credential, and retirement of the
+  pre-registry single-Gateway path (see the milestone log entry).
 - **C2 Connect flow and coworker projection.** Prototype the cross-surface state
   in `/hud-gallery`, then wire **⌘N → Connect existing Agent…**, explicit
   Project mapping, and read-only Marcus/Scout/Tyler Agent + Team views with a
@@ -461,3 +481,47 @@ Evidence: 30 focused projection contract tests, all 435 `@exawatt/core` tests,
 `@exawatt/core` type-check, changed code/project-doc formatting, roadmap
 parsing, and `git diff --check`. This lands no H1 acceptance or user-visible
 remote behavior; C1 remains the first transport slice.
+
+### 2026-08-17 — C1 transport, credential, and legacy-path decisions
+
+Inspected the operator's real reachability before shaping C1. The Mac's own
+`~/.openclaw` Gateway is a third, local source bound to loopback; it holds no
+remote-host configuration, so the existing operator workflow reaches both VPSs
+over SSH. Named aliases for both servers already exist in the operator's SSH
+configuration, and each server declares its Gateway token by indirection rather
+than inline.
+
+Three decisions follow, and all three were chosen to hold for other operators
+on other providers rather than to fit this one topology:
+
+- **Transport is an SSH-forwarded tunnel to the source's loopback Gateway
+  port.** Anyone running an agent on a VPS already has SSH to it, so no
+  operator has to expose a port, learn an IP, or run a second network
+  component. Direct endpoints remain possible later; they are not the first
+  mile.
+- **Server access is alias-first with manual entry as the fallback.** Connect
+  lists the operator's existing SSH aliases and stores only the chosen alias
+  name. Manual host/user/key entry exists for an operator without an alias and
+  is the only path that writes server access material to the OS keychain.
+- **The Gateway credential is resolved through the authorized tunnel and kept
+  in memory only.** Connecting a server the operator can already reach requires
+  no pasted secret and leaves no new secret at rest.
+
+The read-only gate stays strict: C1 through C3 ship observation, and command
+authority waits for H2 even though the protocol client already has a send path.
+
+The pre-registry single-Gateway path is retired in C1 rather than carried. That
+path was an early scaffold: an environment flag that connected one Gateway read
+from local configuration and presented it _instead of_ the local terminal
+fleet. Its either/or posture directly contradicts the outcome this project
+exists for, which is remote coworkers standing beside local Agents. C1 deletes
+the flag branch and the single-connection assumption in the Gateway config
+reader, and makes the operator's local Gateway one more configured source.
+
+`contracts/agent-sources.json` also stops advertising `hosted-openclaw` as a
+separate coming-soon adapter. Decision `0037` makes placement a fact on a
+configured source, so a remote or managed Gateway is the `openclaw` adapter at
+a different placement, not a second adapter.
+
+No application code changed with these decisions; they refine the C1 packet
+before it is opened.
