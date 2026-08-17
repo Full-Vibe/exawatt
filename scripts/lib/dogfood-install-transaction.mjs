@@ -12,6 +12,11 @@ async function pathExists(candidate) {
 }
 
 export async function recoverLegacyDogfoodSwap({ installDir, target }) {
+  const productName = path.basename(target, '.app');
+  const escapedProductName = productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const legacyBackupPattern = new RegExp(
+    `^\\.${escapedProductName}\\.previous-\\d+\\.app$`
+  );
   const entries = await readdir(installDir, { withFileTypes: true }).catch(
     error => {
       if (error?.code === 'ENOENT') return [];
@@ -21,7 +26,7 @@ export async function recoverLegacyDogfoodSwap({ installDir, target }) {
   const backups = entries
     .filter(
       entry =>
-        entry.isDirectory() && /^\.Exawatt\.previous-\d+\.app$/.test(entry.name)
+        entry.isDirectory() && legacyBackupPattern.test(entry.name)
     )
     .map(entry => path.join(installDir, entry.name));
   const targetExists = await pathExists(target);
@@ -35,7 +40,7 @@ export async function recoverLegacyDogfoodSwap({ installDir, target }) {
   }
   if (!targetExists && backups.length > 1) {
     throw new Error(
-      `Cannot safely recover Exawatt: ${backups.length} legacy backup apps exist in ${installDir}.`
+      `Cannot safely recover ${productName}: ${backups.length} legacy backup apps exist in ${installDir}.`
     );
   }
   if (targetExists) {
@@ -171,7 +176,7 @@ export async function commitStagedApp({
     )
   ) {
     throw new Error(
-      `Refusing to replace ${target}: its stable signer identity does not match the expected Exawatt identity. Remove or relocate that app only if this signer change is intentional.`
+      `Refusing to replace ${target}: its stable signer identity does not match the expected distribution identity. Remove or relocate that app only if this signer change is intentional.`
     );
   }
 

@@ -84,9 +84,15 @@ test('community Electron packaging has neutral identity and no protocol, feed, o
     {
       appId: 'com.exawatt.app',
       productName: 'Exawatt',
+      copyright: 'Copyright © 2024 Exawatt',
       protocols: [{ name: 'Exawatt', schemes: ['exawatt'] }],
       publish: { provider: 'generic', url: 'https://updates.exawatt.ai' },
-      mac: { icon: 'electron/resources/icon.icns' },
+      mac: {
+        icon: 'electron/resources/icon.icns',
+        extendInfo: {
+          NSDocumentsFolderUsageDescription: 'Agents run through Exawatt.',
+        },
+      },
     },
     prepared.contract
   );
@@ -95,6 +101,11 @@ test('community Electron packaging has neutral identity and no protocol, feed, o
   assert.equal(config.protocols, undefined);
   assert.equal(config.publish, undefined);
   assert.equal(config.mac.icon, undefined);
+  assert.equal(config.copyright, 'Copyright © 2024 Exawatt Community');
+  assert.equal(
+    config.mac.extendInfo.NSDocumentsFolderUsageDescription,
+    'Agents run through Exawatt Community.'
+  );
 });
 
 test('official Electron packaging derives identity, protocol, icon, and feed only from the contract', async () => {
