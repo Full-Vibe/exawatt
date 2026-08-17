@@ -80,15 +80,22 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
       radius: round(zone.radius),
       agentCount: zone.agentCount,
       needsAttention: zone.blockedCount > 0,
+      needsYou: zone.statusCounts.blocked + zone.statusCounts.error,
     };
   });
 
+  // `piece.summary` is the Agent's display name and `piece.label` is its
+  // six-word context label — the same two strings the product's own board
+  // shows. Carrying them into the capture is what lets a marketing viewer read
+  // a real identity off a real unit instead of a coloured dot.
   const units: HeroBoardUnit[] = layout.pieces.map(piece => ({
     x: round(piece.x),
     y: round(piece.y),
     size: round(piece.size),
     status: HERO_STATUS_ORDER.indexOf(piece.status),
     zone: zoneIndexById.get(piece.projectId) ?? 0,
+    name: piece.summary,
+    doing: piece.label,
   }));
 
   const statusTotals = HERO_STATUS_ORDER.map(

@@ -30,6 +30,11 @@ export interface HeroBoardUnit {
   size: number;
   status: number;
   zone: number;
+  /** Agent display name, straight from the fixture. The overlay reads it on
+   *  hover, focus, and selection, so a unit is never an anonymous dot. */
+  name: string;
+  /** The six-word context label (ENG-016 D33): what this Agent is doing. */
+  doing: string;
 }
 
 export interface HeroBoardZone {
@@ -39,6 +44,8 @@ export interface HeroBoardZone {
   radius: number;
   agentCount: number;
   needsAttention: boolean;
+  /** Agents in this Project that need a human. Drives the zone label's dot. */
+  needsYou: number;
 }
 
 export interface HeroBoardCapture {
