@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 
 import {
   assertPackagedContract,
+  assertPackagedSource,
   resolvePackagedApp,
 } from './lib/packaged-app.mjs';
 
@@ -29,17 +30,35 @@ async function resolveOrNull() {
 }
 
 let packaged = await resolveOrNull();
+const expectedSourceSha =
+  process.env.EXAWATT_BUILD_SOURCE_SHA ??
+  execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+const appPathOverride = process.env.EXAWATT_APP_PATH;
+
+function packagedTreeError(candidate) {
+  if (!candidate || !existsSync(candidate.executablePath)) {
+    return new Error('no local package');
+  }
+  try {
+    assertPackagedContract(candidate.appPath, candidate.digest);
+    assertPackagedSource(candidate.appPath, expectedSourceSha);
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
+let treeError = packagedTreeError(packaged);
 
 // This is the only Electron eval that needs no dev server, which is what makes
 // it usable as a delivery gate (`SURFACE_GATES`) — but it does need a package,
 // and a fresh agent worktree has none. Build one rather than fail as though the
 // app were broken. BUG-036 shipped a renderer that could not start precisely
 // because the oracle that proves it could not be routed to unattended.
-if (
-  !process.env.EXAWATT_APP_PATH &&
-  (!packaged || !existsSync(packaged.executablePath))
-) {
-  console.log('[packaged-smoke] no local package; building one');
+if (!appPathOverride && treeError) {
+  console.log(
+    `[packaged-smoke] ${treeError.message}; building the exact current tree`
+  );
   execFileSync('pnpm', ['electron:build:dir'], { stdio: 'inherit' });
   // Packaging stages dist-electron/node_modules, and that snapshot sits on the
   // DEVELOPMENT module resolution path (incident 0012). Leaving it behind would
@@ -51,14 +70,17 @@ if (
   // absence can now answer. It resolves the same ambient contract the build just
   // packaged from, so this cannot disagree with the artifact.
   packaged = await resolvePackagedApp();
+  treeError = packagedTreeError(packaged);
 }
 // No package to build (EXAWATT_APP_PATH) and no resolution: surface the real
 // error instead of the null.
 if (!packaged) packaged = await resolvePackagedApp();
+if (treeError) throw treeError;
 
 const executable = packaged.executablePath;
 const { productUpdatesEnabled } = packaged;
 assertPackagedContract(packaged.appPath, packaged.digest);
+assertPackagedSource(packaged.appPath, expectedSourceSha);
 console.log(
   `[packaged-smoke] ${packaged.identity.productName} (${packaged.identity.appId}) ` +
     `distribution ${packaged.digest.slice(0, 12)}; product updates ` +

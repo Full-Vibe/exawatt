@@ -6,8 +6,11 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { prepareDistribution } from './lib/distribution-build.mjs';
+import { encodeAsar } from './lib/asar.mjs';
 import {
   assertPackagedContract,
+  assertPackagedSource,
+  readPackagedBuildInfo,
   resolvePackagedApp,
 } from './lib/packaged-app.mjs';
 
@@ -122,4 +125,24 @@ test('a package built from another contract is refused by digest, not by capabil
     /was built from distribution bbbbbbbbbbbb/
   );
   assert.doesNotThrow(() => assertPackagedContract(app, 'b'.repeat(64)));
+});
+
+test('a stale package is refused by the source SHA embedded in app.asar', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-packaged-source-'));
+  const app = path.join(root, 'Exawatt Community.app');
+  const resources = path.join(app, 'Contents', 'Resources');
+  await mkdir(resources, { recursive: true });
+  await writeFile(
+    path.join(resources, 'app.asar'),
+    encodeAsar({
+      'dist-electron/build-info.json': `${JSON.stringify({ sha: 'source-a' })}\n`,
+    })
+  );
+
+  assert.equal(readPackagedBuildInfo(app).sha, 'source-a');
+  assert.doesNotThrow(() => assertPackagedSource(app, 'source-a'));
+  assert.throws(
+    () => assertPackagedSource(app, 'source-b'),
+    /was built from source source-a.*expects source-b/
+  );
 });

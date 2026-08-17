@@ -72,6 +72,58 @@ export function readAsarFiles(file) {
   return asarFiles(readAsarDirectory(file));
 }
 
+/** Read one packed file from an asar without extracting the archive. */
+export function readAsarFile(file, entryPath) {
+  const segments = entryPath.split('/').filter(Boolean);
+  if (
+    segments.length === 0 ||
+    segments.some(segment => segment === '.' || segment === '..')
+  ) {
+    throw new Error(`Invalid asar entry path: ${entryPath}`);
+  }
+
+  let entry = readAsarDirectory(file);
+  for (const segment of segments) {
+    entry = entry?.files?.[segment];
+    if (!entry) throw new Error(`${file} has no ${entryPath}`);
+  }
+  if (entry.files || entry.unpacked || entry.link) {
+    throw new Error(`${file} entry ${entryPath} is not a packed file`);
+  }
+
+  const offset = Number(entry.offset);
+  const entrySize = Number(entry.size);
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(entrySize) ||
+    entrySize < 0
+  ) {
+    throw new Error(`${file} entry ${entryPath} has invalid bounds`);
+  }
+
+  const archiveSize = statSync(file).size;
+  const fd = openSync(file, 'r');
+  try {
+    const prefix = Buffer.alloc(8);
+    if (readSync(fd, prefix, 0, prefix.length, 0) !== prefix.length) {
+      throw new Error(`${file} has a truncated asar prefix`);
+    }
+    const dataOffset = 8 + prefix.readUInt32LE(4);
+    const position = dataOffset + offset;
+    if (position < dataOffset || position + entrySize > archiveSize) {
+      throw new Error(`${file} entry ${entryPath} exceeds the archive`);
+    }
+    const contents = Buffer.alloc(entrySize);
+    if (readSync(fd, contents, 0, entrySize, position) !== entrySize) {
+      throw new Error(`${file} entry ${entryPath} is truncated`);
+    }
+    return contents;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /**
  * Write an asar archive containing `files` (a map of POSIX path to contents).
  *
