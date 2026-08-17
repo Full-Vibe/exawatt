@@ -36,11 +36,20 @@
  *   nodes it already owns. React state carries ONE thing, the active panel
  *   index, which changes twice over the whole sequence and is what the
  *   highlight is keyed on.
- * - **Reduced motion and small screens are the same DOM, unpinned by CSS.**
- *   The sticky element goes static, the panels return to normal flow, and the
- *   board falls to its poster on its own existing rules. Doing it in CSS
- *   rather than in a JS branch is what makes the layout shift zero: there is
- *   no second tree to swap in after hydration.
+ * - **Reduced motion is unpinned by CSS**, in the SAME DOM. The sticky element
+ *   goes static, the panels return to normal flow, and the board falls to its
+ *   poster on its own existing rules. Doing it in CSS rather than in a JS
+ *   branch is what makes the layout shift zero: there is no second tree to
+ *   swap in after hydration.
+ * - **A phone gets the real sequence** (operator, 2026-08-17: "ensure this
+ *   works well on mobile so I can demonstrate it at conferences... on my phone
+ *   very clearly"). W4 unpinned below `md` and fell to a poster, which turned
+ *   the one thing worth demonstrating into a picture of itself. Mobile now
+ *   pins exactly like the desktop; only the reading column moves, from beside
+ *   the board to over its lower third on a scrim, because a 390px viewport has
+ *   no room for two columns and the explanation still may not cover the thing
+ *   it explains. The board answers legibility by cropping rather than fitting
+ *   (`PORTRAIT_CROP`), which is the brief's own rule for scale.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -83,9 +92,11 @@ const STICKY_CLASS = 'sticky top-12 h-[calc(100svh-3rem)]';
  * Unpinned it stays `relative`, never `static`. The board frame inside it is
  * absolutely positioned, so a static parent hands that frame to the section
  * instead and the poster silently covers the whole sequence, panels included.
+ *
+ * Only REDUCED MOTION unpins now. `max-md:` came off in W5 when the phone
+ * became a demo surface rather than a fallback.
  */
-const UNPINNED_CLASS =
-  'motion-reduce:relative motion-reduce:h-[68svh] max-md:relative max-md:h-[64svh]';
+const UNPINNED_CLASS = 'motion-reduce:relative motion-reduce:h-[68svh]';
 const PANELS_PULLUP_CLASS = '-mt-[calc(100svh-3rem)]';
 
 export interface PinnedBoardSequenceProps {
@@ -102,11 +113,12 @@ export function PinnedBoardSequence({
   className,
 }: PinnedBoardSequenceProps) {
   const reducedMotion = usePrefersReducedMotion();
+  // Narrow no longer unpins; it only decides where the reading column sits.
   const narrow = useNarrowViewport();
-  // The two conditions the CSS unpins on, in JS. When the layout is not
-  // pinned there is no camera to drive and no presence to schedule, so the
-  // listener does not exist rather than running and being overridden.
-  const unpinned = reducedMotion || narrow;
+  // The condition the CSS unpins on, in JS. When the layout is not pinned
+  // there is no camera to drive and no presence to schedule, so the listener
+  // does not exist rather than running and being overridden.
+  const unpinned = reducedMotion;
   const theme = useMemo(() => heroBoardTheme(themeKey), [themeKey]);
 
   const container = useRef<HTMLElement>(null);
@@ -125,6 +137,14 @@ export function PinnedBoardSequence({
 
   const highlightId: HeroHighlightId =
     bands[active]?.boardHighlight ?? 'whole-fleet';
+
+  // The camera choreography is DERIVED from the same band list that supplies
+  // the panels, so a reordered or added panel moves the camera with it and
+  // there is never a second copy of the sequence to keep in step.
+  const ladder = useMemo(
+    () => bands.map(band => band.altitudeAnchor ?? 'fleet'),
+    [bands]
+  );
 
   /**
    * One rAF-coalesced pass. Reads scroll position, writes the board's progress
@@ -193,7 +213,7 @@ export function PinnedBoardSequence({
   return (
     <section
       ref={container}
-      className={`relative w-full min-h-[calc(var(--sequence-screens)*100svh)] motion-reduce:min-h-0 max-md:min-h-0 ${className ?? ''}`}
+      className={`relative w-full min-h-[calc(var(--sequence-screens)*100svh)] motion-reduce:min-h-0 ${className ?? ''}`}
       style={{ ...sequenceStyle, backgroundColor: ground }}
       data-pinned-board-sequence
       data-pinned-panels={bands.length}
@@ -218,6 +238,7 @@ export function PinnedBoardSequence({
           <HeroBoard
             themeKey={themeKey}
             progressRef={progress}
+            ladder={ladder}
             highlight={highlightId}
           />
         </div>
@@ -226,12 +247,20 @@ export function PinnedBoardSequence({
             past it. It is part of the pinned layer, so it does not travel. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 motion-reduce:hidden max-md:hidden"
+          className="pointer-events-none absolute inset-0 motion-reduce:hidden"
           style={{
-            background: `linear-gradient(to right, ${ground} 0%, ${ground} 27%, ${spatialColorWithAlpha(
-              ground,
-              0.55
-            )} 35%, ${spatialColorWithAlpha(ground, 0)} 44%)`,
+            background: narrow
+              ? // On a phone the reading column sits over the board's lower
+                // third, so the seam is horizontal and the board keeps its top
+                // two thirds completely unobstructed.
+                `linear-gradient(to top, ${ground} 0%, ${ground} 22%, ${spatialColorWithAlpha(
+                  ground,
+                  0.72
+                )} 34%, ${spatialColorWithAlpha(ground, 0)} 46%)`
+              : `linear-gradient(to right, ${ground} 0%, ${ground} 27%, ${spatialColorWithAlpha(
+                  ground,
+                  0.55
+                )} 35%, ${spatialColorWithAlpha(ground, 0)} 44%)`,
           }}
           data-pinned-scrim
         />
@@ -240,7 +269,7 @@ export function PinnedBoardSequence({
       {/* The explanations. Real DOM in reading order, scrolling over the board
           on desktop and sitting under it when the sequence is not pinned. */}
       <div
-        className={`relative z-10 ${PANELS_PULLUP_CLASS} motion-reduce:mt-0 max-md:mt-0`}
+        className={`relative z-10 ${PANELS_PULLUP_CLASS} motion-reduce:mt-0`}
         data-pinned-panels-layer
       >
         {bands.map((band, index) => (
@@ -303,7 +332,7 @@ function PinnedPanel({
   return (
     <div
       ref={register}
-      className="flex h-[calc(var(--panel-screens)*100svh)] w-full items-center opacity-[var(--panel-opacity)] motion-reduce:h-auto motion-reduce:py-16 motion-reduce:opacity-100 max-md:h-auto max-md:py-14 max-md:opacity-100"
+      className="flex h-[calc(var(--panel-screens)*100svh)] w-full items-end pb-10 opacity-[var(--panel-opacity)] motion-reduce:h-auto motion-reduce:items-center motion-reduce:py-16 motion-reduce:pb-16 motion-reduce:opacity-100 md:items-center md:pb-0"
       style={style}
       data-pinned-panel={band.id}
       data-pinned-panel-active={active ? 'true' : undefined}
@@ -316,7 +345,7 @@ function PinnedPanel({
           data-pinned-panel-heading
         />
         <p
-          className="mt-3 text-xl leading-snug font-medium text-balance sm:text-2xl sm:leading-snug"
+          className="mt-2.5 text-lg leading-snug font-medium text-balance sm:text-2xl sm:leading-snug"
           style={{ color: theme.label }}
           data-pinned-panel-copy
         >
@@ -328,7 +357,7 @@ function PinnedPanel({
         </p>
         {subject ? (
           <p
-            className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1"
+            className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1"
             data-pinned-panel-subject
           >
             <span

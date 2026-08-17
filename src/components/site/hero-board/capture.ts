@@ -11,6 +11,7 @@
  */
 import type {
   HeroBoardCapture,
+  HeroBoardDelegation,
   HeroBoardUnit,
   HeroBoardZone,
 } from './capture-types';
@@ -207,11 +208,39 @@ const UNITS: HeroBoardUnit[] = [
 ];
 
 // prettier-ignore
+const DELEGATIONS: HeroBoardDelegation[] = [
+  {"x":16.697,"y":13.653,"size":0.81,"parent":5,"tether":{"x1":16.443,"y1":14.18,"x2":16.521,"y2":14.017},"type":"Explore","overflow":0},
+  {"x":15.807,"y":13.653,"size":0.81,"parent":5,"tether":{"x1":16.061,"y1":14.18,"x2":15.983,"y2":14.017},"type":"general-purpose","overflow":0},
+  {"x":45.571,"y":15.603,"size":0.81,"parent":10,"tether":{"x1":45.317,"y1":16.13,"x2":45.395,"y2":15.967},"type":"Explore","overflow":0},
+  {"x":44.681,"y":15.603,"size":0.81,"parent":10,"tether":{"x1":44.935,"y1":16.13,"x2":44.857,"y2":15.967},"type":"general-purpose","overflow":0},
+  {"x":46.252,"y":13.573,"size":0.81,"parent":13,"tether":{"x1":46.252,"y1":14.136,"x2":46.252,"y2":13.978},"type":"Explore","overflow":0},
+  {"x":48.503,"y":13.573,"size":0.81,"parent":25,"tether":{"x1":48.503,"y1":14.136,"x2":48.503,"y2":13.978},"type":"Explore","overflow":0},
+  {"x":72.874,"y":11.623,"size":0.81,"parent":37,"tether":{"x1":72.874,"y1":12.186,"x2":72.874,"y2":12.028},"type":"Explore","overflow":0},
+  {"x":74.445,"y":9.753,"size":0.81,"parent":47,"tether":{"x1":74.191,"y1":10.28,"x2":74.269,"y2":10.117},"type":"Explore","overflow":0},
+  {"x":73.555,"y":9.753,"size":0.81,"parent":47,"tether":{"x1":73.809,"y1":10.28,"x2":73.731,"y2":10.117},"type":"general-purpose","overflow":0},
+  {"x":76.697,"y":9.753,"size":0.81,"parent":49,"tether":{"x1":76.443,"y1":10.28,"x2":76.521,"y2":10.117},"type":"Explore","overflow":0},
+  {"x":75.807,"y":9.753,"size":0.81,"parent":49,"tether":{"x1":76.061,"y1":10.28,"x2":75.983,"y2":10.117},"type":"general-purpose","overflow":0},
+  {"x":15.126,"y":39.623,"size":0.81,"parent":72,"tether":{"x1":15.126,"y1":40.186,"x2":15.126,"y2":40.028},"type":"Explore","overflow":0},
+  {"x":74.445,"y":41.653,"size":0.81,"parent":91,"tether":{"x1":74.191,"y1":42.18,"x2":74.269,"y2":42.017},"type":"Explore","overflow":0},
+  {"x":73.555,"y":41.653,"size":0.81,"parent":91,"tether":{"x1":73.809,"y1":42.18,"x2":73.731,"y2":42.017},"type":"general-purpose","overflow":0},
+  {"x":79.629,"y":43.523,"size":0.81,"parent":111,"tether":{"x1":79.629,"y1":44.086,"x2":79.629,"y2":43.928},"type":"Explore","overflow":0},
+  {"x":106.252,"y":41.573,"size":0.81,"parent":117,"tether":{"x1":106.252,"y1":42.136,"x2":106.252,"y2":41.978},"type":"Explore","overflow":0},
+  {"x":100.623,"y":39.623,"size":0.81,"parent":119,"tether":{"x1":100.623,"y1":40.186,"x2":100.623,"y2":40.028},"type":"Explore","overflow":0},
+  {"x":101.748,"y":37.673,"size":0.81,"parent":121,"tether":{"x1":101.748,"y1":38.236,"x2":101.748,"y2":38.078},"type":"Explore","overflow":0},
+  {"x":106.252,"y":45.473,"size":0.81,"parent":122,"tether":{"x1":106.252,"y1":46.036,"x2":106.252,"y2":45.878},"type":"Explore","overflow":0},
+  {"x":10.623,"y":67.623,"size":0.81,"parent":131,"tether":{"x1":10.623,"y1":68.186,"x2":10.623,"y2":68.028},"type":"Explore","overflow":0},
+  {"x":44.79,"y":69.913,"size":0.81,"parent":149,"tether":{"x1":44.337,"y1":70.293,"x2":44.48,"y2":70.173},"type":"Explore","overflow":0},
+  {"x":44,"y":69.505,"size":0.81,"parent":149,"tether":{"x1":44,"y1":70.136,"x2":44,"y2":69.909},"type":"general-purpose","overflow":0},
+  {"x":43.21,"y":69.914,"size":0.81,"parent":149,"tether":{"x1":43.663,"y1":70.293,"x2":43.52,"y2":70.174},"type":"fork","overflow":0},
+];
+
+// prettier-ignore
 export const HERO_BOARD_CAPTURE: HeroBoardCapture = {
   version: 1,
   source: {"workspace":"Voltaic Grid Systems","demo":true,"synthetic":true,"stamp":"Demo Workspace · synthetic scale tier"},
   bounds: {"x":2.45,"y":2.115,"width":112.363,"height":79.435},
-  counts: {"agents":173,"projects":10,"units":173,"needsYou":25},
+  counts: {"agents":173,"projects":10,"units":173,"needsYou":25,"delegating":16,"delegated":23},
   zones: ZONES,
   units: UNITS,
+  delegations: DELEGATIONS,
 };

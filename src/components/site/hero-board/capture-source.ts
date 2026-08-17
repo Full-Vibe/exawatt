@@ -29,6 +29,7 @@ import { selectSpatialBoardLayout } from '@exawatt/ui-model';
 import {
   HERO_STATUS_ORDER,
   type HeroBoardCapture,
+  type HeroBoardDelegation,
   type HeroBoardUnit,
   type HeroBoardZone,
 } from './capture-types';
@@ -98,6 +99,37 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
     doing: piece.label,
   }));
 
+  // Delegated children, straight out of the board model's own policy
+  // (`selectSpatialDelegationUnits`, ENG-004 V3.4). Their coordinates, sizes,
+  // rosette slots and lineage tethers are the product's, not the site's, so
+  // the marketing board cannot draw a delegation the product would draw
+  // differently. Overflow lobes carry their exact census.
+  const unitIndexByPieceId = new Map(
+    layout.pieces.map((piece, index) => [piece.id, index] as const)
+  );
+  const delegations: HeroBoardDelegation[] = layout.delegationUnits.flatMap(
+    unit => {
+      const parent = unitIndexByPieceId.get(unit.parentPieceId);
+      if (parent === undefined) return [];
+      return [
+        {
+          x: round(unit.x),
+          y: round(unit.y),
+          size: round(unit.size),
+          parent,
+          tether: {
+            x1: round(unit.tether.x1),
+            y1: round(unit.tether.y1),
+            x2: round(unit.tether.x2),
+            y2: round(unit.tether.y2),
+          },
+          type: unit.agentType,
+          overflow: unit.overflowCount,
+        },
+      ];
+    }
+  );
+
   const statusTotals = HERO_STATUS_ORDER.map(
     status =>
       units.filter(unit => HERO_STATUS_ORDER[unit.status] === status).length
@@ -124,8 +156,14 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
       needsYou:
         statusTotals[HERO_STATUS_ORDER.indexOf('blocked')]! +
         statusTotals[HERO_STATUS_ORDER.indexOf('error')]!,
+      delegating: new Set(delegations.map(child => child.parent)).size,
+      delegated: delegations.reduce(
+        (total, child) => total + Math.max(1, child.overflow),
+        0
+      ),
     },
     zones,
     units,
+    delegations,
   };
 }

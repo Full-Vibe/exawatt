@@ -14,8 +14,11 @@ vi.mock('@/lib/motion/use-prefers-reduced-motion', () => ({
   usePrefersReducedMotion: () => true,
 }));
 
-vi.mock('@/app/_hero-bg', () => ({
-  HeroBg: () => <div data-testid="hero-bg" />,
+// The fold's ground is the live board now (W5), and the board is an R3F
+// client chunk. This suite is about the type and the button over it.
+vi.mock('@/components/site/hero-board/hero-board', () => ({
+  HeroBoard: () => <div data-testid="hero-board" />,
+  useNarrowViewport: () => false,
 }));
 
 const FOLD = bandById('fold');

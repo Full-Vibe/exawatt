@@ -532,6 +532,13 @@ export default function HudGallery() {
                 Open the pinned altitude scroll study →
               </a>{' '}
               <a
+                href="/hud-gallery/homepage-narrative"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the homepage narrative, end to end →
+              </a>{' '}
+              <a
                 href="/hud-gallery/usage-directions"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}

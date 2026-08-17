@@ -10,6 +10,7 @@ import {
   countWords,
   heroCameraAnchors,
   pageCopyCeiling,
+  pinnedAltitudeLadder,
   pinnedBoardBands,
   reservedBands,
   shippedBands,
@@ -29,10 +30,21 @@ describe('homepage band contract', () => {
     }
   });
 
-  it('gives the fleet altitude the longest hold on the page', () => {
-    const fleet = bandById('altitude-fleet');
-    for (const band of HOMEPAGE_BANDS) {
-      expect(band.screens).toBeLessThanOrEqual(fleet.screens);
+  it('gives the fleet ALTITUDE the longest hold, across every panel that holds it', () => {
+    // The brief's constraint is about the ALTITUDE, not about one band, and
+    // W5 is what makes the difference visible: `altitude-fleet` and
+    // `altitude-attention` are two panels at the same altitude, so the camera
+    // sits at the Fleet framing for the sum of the two. `altitude-attention`
+    // is individually the longest single hold on the page on purpose, because
+    // the board changing under a still camera is the load-bearing beat.
+    const held = new Map<string, number>();
+    for (const band of pinnedBoardBands()) {
+      const altitude = band.altitudeAnchor!;
+      held.set(altitude, (held.get(altitude) ?? 0) + band.screens);
+    }
+    const fleet = held.get('fleet') ?? 0;
+    for (const [altitude, screens] of held) {
+      expect(screens, altitude).toBeLessThanOrEqual(fleet);
     }
   });
 
@@ -53,7 +65,12 @@ describe('homepage band contract', () => {
     expect(bandById('close').copyBudget.max).toBeLessThanOrEqual(10);
   });
 
-  it('cannot declare more page copy than the measured maximum', () => {
+  it('declares page copy inside the measured band, at BOTH ends', () => {
+    // W1 recorded the gap and could only assert the ceiling, because the nine
+    // core bands summed to about 474 words: premium, and under the floor a
+    // page has to clear to be communicative as well. W5's narrative copy is
+    // what closes it, so the floor is now enforced rather than noted.
+    expect(pageCopyCeiling()).toBeGreaterThanOrEqual(PAGE_COPY_BUDGET.min);
     expect(pageCopyCeiling()).toBeLessThanOrEqual(PAGE_COPY_BUDGET.max);
   });
 
@@ -121,14 +138,29 @@ describe('homepage band ordering', () => {
     expect(anchors.map(anchor => anchor.id)).toEqual([
       'fold',
       'altitude-fleet',
+      'altitude-attention',
       'altitude-team',
       'altitude-agent',
+      'altitude-delegation',
     ]);
-    // the fold opens on the cropped board, and the sequence continues it
+    // The fold opens on the cropped board and the sequence continues it. Two
+    // properties of the W5 ladder are deliberate and would look like bugs
+    // without this note: the first two panels SHARE an altitude, so the camera
+    // holds while the board makes the argument, and the last one REVERSES, so
+    // the run ends opening back out into the trajectory the fold promised.
     expect(anchors.slice(1).map(anchor => anchor.altitude)).toEqual([
+      'fleet',
       'fleet',
       'team',
       'agent',
+      'fleet',
+    ]);
+    expect(pinnedAltitudeLadder()).toEqual([
+      'fleet',
+      'fleet',
+      'team',
+      'agent',
+      'fleet',
     ]);
     expect(anchorsHeroCamera(bandById('proof'))).toBe(false);
   });
@@ -136,8 +168,15 @@ describe('homepage band ordering', () => {
   it('places every reserved band in the slot it would occupy', () => {
     const order = HOMEPAGE_BANDS.map(band => band.id);
 
-    expect(order.indexOf('observability')).toBeGreaterThan(
-      order.indexOf('altitude-agent')
+    // `observability` sits directly behind the run: the truthful status claim
+    // is a claim about colours the reader has just watched change.
+    expect(order.indexOf('observability')).toBe(
+      order.indexOf('altitude-delegation') + 1
+    );
+    // The foil is named BEFORE the board, which is what makes the board read
+    // as evidence rather than as a product tour.
+    expect(order.indexOf('thesis')).toBeLessThan(
+      order.indexOf('altitude-fleet')
     );
     expect(order.indexOf('open-source')).toBeGreaterThan(
       order.indexOf('any-lab')
@@ -150,18 +189,22 @@ describe('homepage band ordering', () => {
 });
 
 describe('the pinned board run', () => {
-  it('declares the three altitudes as one run, in dive order', () => {
+  it('declares the run as an argument: scale, attention, depth, delegation', () => {
     const pinned = pinnedBoardBands();
 
     expect(pinned.map(band => band.id)).toEqual([
       'altitude-fleet',
+      'altitude-attention',
       'altitude-team',
       'altitude-agent',
+      'altitude-delegation',
     ]);
-    expect(pinned.map(band => band.altitudeAnchor)).toEqual([
-      'fleet',
-      'team',
-      'agent',
+    expect(pinned.map(band => band.boardHighlight)).toEqual([
+      'whole-fleet',
+      'needs-you',
+      'one-project',
+      'one-agent',
+      'delegation',
     ]);
   });
 
@@ -183,10 +226,10 @@ describe('the pinned board run', () => {
     expect(new Set(highlights).size).toBe(highlights.length);
   });
 
-  it('keeps the fleet altitude the longest hold, after the reorder', () => {
-    const fleet = bandById('altitude-fleet');
+  it('keeps every panel to one idea per screen', () => {
     for (const band of pinnedBoardBands()) {
-      expect(band.screens, band.id).toBeLessThanOrEqual(fleet.screens);
+      expect(band.screens, band.id).toBeGreaterThanOrEqual(BAND_SCREENS_MIN);
+      expect(band.screens, band.id).toBeLessThanOrEqual(BAND_SCREENS_MAX);
     }
   });
 

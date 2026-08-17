@@ -37,40 +37,68 @@
  *   the page.
  *
  * AMENDED 2026-08-17 (ENG-031 W4, operator): THE ALTITUDE BANDS RUN FLEET TO
- * AGENT, not agent to fleet. The brief declared a pull-BACK, from one agent
- * out to the fleet, because it read the altitude ladder as a cinematic device
- * on its own. The operator's direction for the pinned board settled the
- * question the other way: "keep THIS as a persistent graphic which changes as
- * you scroll". The thing he was looking at is the fold's Fleet board, so the
- * sequence has to continue that picture rather than cut away from it and start
- * over on one agent. Reading down is now a dive: every project, one project,
- * one agent, ending concrete immediately above the closing CTA, which is also
- * where the standing what-and-why test wants it. `altitude-fleet` keeps the
- * longest hold, so the brief's other constraint on this run is untouched. This
- * reorder is a data edit in this file, which is the band system doing exactly
- * what it was built for.
+ * AGENT, not agent to fleet, and they are ONE pinned graphic rather than three
+ * bands. The brief declared a pull-BACK because it read the altitude ladder as
+ * a cinematic device on its own. The operator's direction settled it the other
+ * way: "keep THIS as a persistent graphic which changes as you scroll". The
+ * thing he was looking at is the fold's Fleet board, so the sequence continues
+ * that picture instead of cutting away and starting over on one agent.
  *
- * KNOWN GAP, deliberately recorded rather than papered over: the nine core
- * bands' copy ceilings sum to roughly 470 words, which clears the 450-word
- * floor Conductor proves works but sits well under the 1,200 to 1,700 words
- * the study recommends for a site that is both premium and communicative.
- * Closing it is W3 to W5 copy work plus promoted reserve bands, not a change
- * to this contract. `pageCopyCeiling()` reports the current number.
+ * AMENDED 2026-08-17 (ENG-031 W5): THE ORDER IS NOW AN ARGUMENT, NOT AN
+ * ARCHITECTURE TOUR. The operator's verdict on the shipped sequence was that
+ * it "needs us to think through the narrative at a very high-level and build
+ * the story as the user scrolls down". The diagnosis that produced this
+ * revision: the panels DESCRIBED the view instead of making a claim the board
+ * is evidence for, and Fleet/Team/Agent is the order of our own architecture,
+ * which a stranger has no reason to care about. Four changes fall out of it.
+ *
+ * 1. `thesis` moves ahead of the board and NAMES THE FOIL, so the board
+ *    arrives as evidence for an argument already in the reader's head. It is
+ *    the one abstract paragraph the reference cohort allows.
+ * 2. `altitude-attention` is a NEW panel. Scale and attention are two ideas
+ *    and the measured constraint is one idea per screen, so they get one
+ *    screen each. They share an altitude on purpose: the camera holds still
+ *    and the BOARD changes, which is the single most persuasive beat available
+ *    and the only one no competitor can screenshot.
+ * 3. `altitude-delegation` is a NEW panel and the only anchor in the run that
+ *    reverses. The page dives for four beats and opens back out for the fifth,
+ *    so the sequence ends by expanding into the trajectory the fold promised
+ *    rather than by bottoming out on one mark.
+ * 4. `observability` moved UP, directly behind the run, because the truthful
+ *    status claim is a claim about the colours the reader has just watched
+ *    change. Asserted in the abstract it is an adjective; asserted one screen
+ *    after the board it is the mechanism behind something already seen.
+ *
+ * WHERE THE BOARD HANDS OFF. The pinned run carries WHAT IT IS and HOW IT
+ * HOLDS (scale, attention, depth, delegation). Everything after it is about
+ * PROVENANCE AND OWNERSHIP, which is not spatial: whose agents (`any-lab`),
+ * what they spend (`cost`), whose machine (`trust`), whose code
+ * (`open-source`), and who is shipping it (`proof`). Forcing those onto the
+ * board would be a diagram of a sentence.
+ *
+ * THE COPY GAP W1 RECORDED IS CLOSED. The nine core bands' ceilings summed to
+ * about 474 words, well under the 1,200 to 1,700 the 16-site study recommends
+ * for a page that is both premium and communicative. Real reading copy in the
+ * differentiator bands and a dated `proof` list close it without padding;
+ * `pageCopyCeiling()` now lands inside `PAGE_COPY_BUDGET` and a test asserts
+ * both ends rather than only the ceiling.
  */
 
 export type BandId =
   | 'fold'
   | 'voice'
   | 'thesis'
-  | 'altitude-agent'
-  | 'altitude-team'
   | 'altitude-fleet'
+  | 'altitude-attention'
+  | 'altitude-team'
+  | 'altitude-agent'
+  | 'altitude-delegation'
   | 'observability'
   | 'any-lab'
-  | 'open-source'
-  | 'trust'
-  | 'security'
   | 'cost'
+  | 'trust'
+  | 'open-source'
+  | 'security'
   | 'proof'
   | 'close';
 
@@ -116,7 +144,8 @@ export type BandBoardHighlight =
   | 'whole-fleet'
   | 'needs-you'
   | 'one-project'
-  | 'one-agent';
+  | 'one-agent'
+  | 'delegation';
 
 export interface CopyBudget {
   /** words; omitted where the band has no floor */
@@ -177,7 +206,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     heading: 'Exawatt',
     copyBudget: { max: 24 },
     medium: 'board',
-    // The opening crop the pull-back starts from. W2 owns the camera itself.
+    // The opening crop the dive starts from, and the seat the reader is put in.
     altitudeAnchor: 'fleet',
     boardHighlight: null,
     screens: 1,
@@ -194,101 +223,178 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
-    reservedUntil: 'W3 lands a real named operator who agreed to be quoted.',
+    // W5 reassigned this band's JOB to `proof` rather than leaving the slot to
+    // block the page: borrowed credibility is the one thing the launch does
+    // not have, and inventing a quote is not an option. The slot stays because
+    // the first real named operator belongs here, above the fold's argument.
+    reservedUntil:
+      'A named operator agrees to be quoted. `proof` carries the credibility until then.',
   },
   {
     id: 'thesis',
-    job: 'WHY. The only abstract paragraph on the page, centered and two-tone.',
+    job: 'WHY. The one abstract paragraph on the page, and the only place the foil is named.',
     headingRole: 'none',
     heading: null,
-    copyBudget: { min: 25, max: 35 },
+    copyBudget: { min: 40, max: 60 },
     medium: 'type',
     altitudeAnchor: null,
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
     reservedUntil:
-      'W3 writes the fold and close first; the thesis is sized against them.',
+      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
   },
-  // THE PINNED RUN. These three are ONE graphic and three panels, not three
-  // captures (operator, 2026-08-17). They are ordered Fleet, Team, Agent, which
-  // REVERSES the brief's original agent-to-fleet order; see the amendment note
-  // at the top of this file. `medium: 'pinned-board'` is what makes them a run.
+  // THE PINNED RUN. ONE board and five panels, not five captures (operator,
+  // 2026-08-17). Ordered as an ARGUMENT rather than as an architecture tour
+  // (W5): scale, then attention, then depth, then delegation. The camera dives
+  // for four beats and opens back out for the fifth, so the sequence ends
+  // expanding into the trajectory the fold promised.
   {
     id: 'altitude-fleet',
-    job: 'Every project at once, and only the agents that need a human are loud.',
+    job: 'SCALE. Every project at once, and the board still fits on one screen.',
     headingRole: 'section',
-    heading: 'Every project',
-    copyBudget: { min: 20, max: 25 },
+    heading: 'Every project at once',
+    copyBudget: { min: 20, max: 36 },
     medium: 'pinned-board',
+    altitudeAnchor: 'fleet',
+    boardHighlight: 'whole-fleet',
+    screens: 1.2,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+  },
+  {
+    id: 'altitude-attention',
+    job: 'ATTENTION. The camera holds and the board recedes to the agents waiting on a person.',
+    headingRole: 'section',
+    heading: 'Only what needs you',
+    copyBudget: { min: 20, max: 36 },
+    medium: 'pinned-board',
+    // The SAME altitude as the panel before it, deliberately. The argument is
+    // made by the board changing under a still camera, which is the one beat
+    // on the page a competitor cannot screenshot.
     altitudeAnchor: 'fleet',
     boardHighlight: 'needs-you',
     screens: 1.4,
     status: 'reserved',
     reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/altitude-scroll.',
+      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
   },
   {
     id: 'altitude-team',
-    job: 'One project, with every agent inside it still named.',
+    job: 'CONTINUITY. One project, still the same board, and every agent in it still an individual.',
     headingRole: 'section',
     heading: 'One project',
-    copyBudget: { min: 20, max: 25 },
+    copyBudget: { min: 20, max: 32 },
     medium: 'pinned-board',
     altitudeAnchor: 'team',
     boardHighlight: 'one-project',
-    screens: 1.2,
+    screens: 1,
     status: 'reserved',
     reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/altitude-scroll.',
+      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
   },
   {
     id: 'altitude-agent',
-    job: 'One agent, and the status you can trust.',
+    job: 'DEPTH. One agent, its real work, and a status that changes while you read it.',
     headingRole: 'section',
     heading: 'One agent',
-    copyBudget: { min: 20, max: 25 },
+    copyBudget: { min: 20, max: 38 },
     medium: 'pinned-board',
     altitudeAnchor: 'agent',
     boardHighlight: 'one-agent',
     screens: 1.2,
     status: 'reserved',
     reservedUntil:
-      'The operator accepts the pinned sequence at /hud-gallery/altitude-scroll.',
+      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
+  },
+  {
+    id: 'altitude-delegation',
+    job: 'TRAJECTORY. Agents run agents, so the camera opens back out while the fleet blooms.',
+    headingRole: 'section',
+    heading: 'Agents run agents',
+    copyBudget: { min: 20, max: 40 },
+    medium: 'pinned-board',
+    // Back OUT to the FLEET framing, which is the only anchor in the run that
+    // reverses, and it reverses all the way. Two reasons, one of them a defect
+    // this fixed: at the team framing only three delegating parents were in
+    // frame while the panel's own subject line said sixteen, so the picture
+    // undercut the sentence. And the mechanism by which ten becomes ten
+    // thousand is the last thing the board says, so the page should end
+    // opening out rather than staying in close.
+    altitudeAnchor: 'fleet',
+    boardHighlight: 'delegation',
+    screens: 1.2,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the pinned sequence at /hud-gallery/homepage-narrative.',
   },
   {
     id: 'observability',
-    job: 'The truthful status claim, stated as a mechanism rather than an adjective.',
+    job: 'The truthful status claim, stated as five mechanisms rather than an adjective.',
     headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 20, max: 40 },
-    medium: 'product-motion',
-    altitudeAnchor: null,
-    boardHighlight: null,
-    screens: 1,
-    status: 'reserved',
-    reservedUntil:
-      'The mechanism behind truthful status can be shown, not asserted.',
-  },
-  {
-    id: 'any-lab',
-    job: 'Vendor neutrality as a differentiator.',
-    headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 40, max: 60 },
-    medium: 'logos',
+    heading: 'The lights tell the truth',
+    copyBudget: { min: 80, max: 180 },
+    medium: 'cards',
     altitudeAnchor: null,
     boardHighlight: null,
     screens: 1.2,
     status: 'reserved',
-    reservedUntil: 'W5 needs ENG-003 S4 so the source list is truthful.',
+    // The gate this band carried since W1 ("the mechanism can be shown, not
+    // asserted") is MET: reported-outranks-inferred, gate-not-guess, the
+    // delegating parent that never reads done, stale-turn reclaim, and
+    // absent-is-never-zero are all shipped behaviour with named owners.
+    reservedUntil:
+      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
+  },
+  {
+    id: 'any-lab',
+    job: 'Vendor neutrality as a differentiator, proved by the launcher rather than asserted.',
+    headingRole: 'section',
+    heading: 'Agents from any lab',
+    copyBudget: { min: 80, max: 200 },
+    medium: 'logos',
+    altitudeAnchor: null,
+    boardHighlight: null,
+    screens: 1.4,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
+  },
+  {
+    id: 'cost',
+    job: 'What a fleet spends, read off your own disk, with the modelled half labelled.',
+    headingRole: 'section',
+    heading: 'What it spent, beside what it did',
+    copyBudget: { min: 60, max: 160 },
+    medium: 'ledger',
+    altitudeAnchor: null,
+    boardHighlight: null,
+    screens: 1.2,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
+  },
+  {
+    id: 'trust',
+    job: 'What runs on your machine, and the switch attached to every outbound thing.',
+    headingRole: 'section',
+    heading: 'Your machine, your keys, your repo',
+    copyBudget: { min: 80, max: 210 },
+    medium: 'cards',
+    altitudeAnchor: null,
+    boardHighlight: null,
+    screens: 1.4,
+    status: 'reserved',
+    reservedUntil:
+      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
   },
   {
     id: 'open-source',
     job: 'The AGPL app and the Apache-2.0 spec, in a human voice.',
     headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 40, max: 80 },
+    heading: 'Open source, on purpose',
+    copyBudget: { min: 60, max: 130 },
     medium: 'type',
     altitudeAnchor: null,
     boardHighlight: null,
@@ -298,22 +404,8 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
       'ENG-030 makes the repository public. Research is explicit that this belongs in a band and the footer, never the headline.',
   },
   {
-    id: 'trust',
-    job: 'What runs on your machine, and what you control.',
-    headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 40, max: 70 },
-    medium: 'cards',
-    altitudeAnchor: null,
-    boardHighlight: null,
-    screens: 1,
-    status: 'reserved',
-    reservedUntil:
-      'Every card states a control the user has. State what the product does; never confess a gap.',
-  },
-  {
     id: 'security',
-    job: 'The provider-owned boundary today, graduated enforcement later.',
+    job: 'The provider-owned boundary today, graduated Exawatt enforcement later.',
     headingRole: 'section',
     heading: null,
     copyBudget: { min: 30, max: 60 },
@@ -322,38 +414,32 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
+    // W5 decided this WAITS, and the reason is a copy rule rather than a
+    // missing feature. The honest security story today is the provider's
+    // boundary plus the per-Agent permission choice, and that is already a
+    // control the reader has, so it lives in `trust` as a control instead of
+    // here as a section about a boundary Exawatt does not yet own. A band
+    // whose whole subject is a deficiency promotes the deficiency.
     reservedUntil:
-      'The assurance ladder supports the claim. Claim nothing the product cannot show.',
-  },
-  {
-    id: 'cost',
-    job: 'Real cross-vendor consumption, shown as a ledger rather than a promise.',
-    headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 30, max: 60 },
-    medium: 'ledger',
-    altitudeAnchor: null,
-    boardHighlight: null,
-    screens: 1.2,
-    status: 'reserved',
-    reservedUntil: 'A real per-agent ledger exists to publish.',
+      'Exawatt mediates a high-impact action itself. Until then the honest half lives in `trust`.',
   },
   {
     id: 'proof',
-    job: 'Named operators, then a dated changelog.',
+    job: 'ALIVE. Built by the fleet it commands, and a dated list of what landed.',
     headingRole: 'section',
-    heading: null,
-    copyBudget: { min: 150, max: 250 },
+    heading: 'Built by the fleet it commands',
+    copyBudget: { min: 150, max: 280 },
     medium: 'cards',
     altitudeAnchor: null,
     boardHighlight: null,
     screens: 1.4,
     status: 'reserved',
-    reservedUntil: 'W5 has named operators who agreed and a dated changelog.',
+    reservedUntil:
+      'The operator accepts the narrative at /hud-gallery/homepage-narrative.',
   },
   {
     id: 'close',
-    job: 'Act. The same buttons as the fold, requirement line beneath.',
+    job: 'Act. The same button as the fold, requirement line beneath.',
     headingRole: 'closing',
     heading: null,
     copyBudget: { max: 10 },
@@ -362,13 +448,8 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     boardHighlight: null,
     screens: 1,
     status: 'reserved',
-    // W3 BUILT IT; the operator has not picked the line yet. The band, the
-    // 72px rung, the closing copy and the repeated button are all real and
-    // switchable at `/hud-gallery/fold-close`. Flipping this to `shipped` and
-    // registering `CloseBand` is what puts it on the homepage, and that lands
-    // with the fold variant the operator chooses, in one commit.
     reservedUntil:
-      'The operator picks a W3 fold and close variant at /hud-gallery/fold-close.',
+      'The operator picks a fold and close variant at /hud-gallery/fold-close.',
   },
 ];
 
@@ -396,6 +477,27 @@ export function pinnedBoardBands(
   bands: HomepageBand[] = HOMEPAGE_BANDS
 ): HomepageBand[] {
   return bands.filter(band => band.medium === 'pinned-board');
+}
+
+/**
+ * The altitudes the pinned board travels, in panel order (ENG-031 W5).
+ *
+ * The camera choreography is DERIVED from the bands rather than authored a
+ * second time in the scene, which is what lets a panel be added, reordered, or
+ * given a different altitude as a data edit. Two properties of the current
+ * ladder are deliberate and would be invisible if the scene owned it:
+ *
+ * - two consecutive panels may share an altitude (`altitude-fleet` and
+ *   `altitude-attention`), which makes the camera hold while the board itself
+ *   makes the argument;
+ * - the ladder is NOT monotonic. `altitude-delegation` returns to the team
+ *   framing, so the sequence opens back out at the end instead of bottoming
+ *   out on one mark.
+ */
+export function pinnedAltitudeLadder(
+  bands: HomepageBand[] = HOMEPAGE_BANDS
+): BandAltitude[] {
+  return pinnedBoardBands(bands).map(band => band.altitudeAnchor ?? 'fleet');
 }
 
 /**

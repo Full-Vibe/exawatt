@@ -46,7 +46,38 @@ export function FoldHero({
       data-public-exhibition-surface="true"
     >
       <FoldBackground />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
+      {/* The type sits in a well, and the board reads around it.
+          Palantir's fold is a movie with six words on it, and the failure mode
+          the study names is a picture and a sentence both loud at once. A flat
+          scrim cannot do this job here: the board's Project labels are the
+          brightest thing in the frame and they are near the middle, which is
+          exactly where the headline is. A radial well takes the centre down
+          hard and leaves the board legible at the edges, where its density and
+          its crop are what carry the scale.
+
+          Written as an inline gradient rather than an arbitrary Tailwind
+          class on purpose (incident `0016`): a restored Vercel build cache can
+          serve a stylesheet compiled before a new class name existed, and the
+          fold going unreadable in production is the worst possible instance of
+          that failure. */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(62% 58% at 50% 56%, rgba(0,0,0,0.94) 0%, rgba(0,0,0,0.86) 38%, rgba(0,0,0,0.55) 72%, rgba(0,0,0,0.35) 100%)',
+        }}
+        data-fold-scrim
+      />
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0.25) 70%, rgba(0,0,0,0.8) 100%)',
+        }}
+        data-fold-scrim-vertical
+      />
 
       <BandContent className="home-hero-content gap-6" data-fold-content>
         {/* The kicker is a SENTENCE, so it is set in the reading face. The
@@ -84,7 +115,7 @@ export function FoldHero({
         </div>
 
         <BandCopy
-          className="home-hero-copy max-w-2xl text-base leading-relaxed text-white/75 drop-shadow-md sm:text-xl sm:leading-relaxed"
+          className="home-hero-copy max-w-2xl text-base leading-relaxed text-balance text-white/75 drop-shadow-md sm:text-xl sm:leading-relaxed"
           data-fold-subhead
         >
           {copy.subhead.map(line => (
