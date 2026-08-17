@@ -1516,6 +1516,7 @@ export function CommandPalette({
                         'agent',
                         'new session',
                         'handoff',
+                        target.accessibleLabel,
                         target.source,
                         target.modelId,
                         ...(target.effort ? [target.effort] : []),
@@ -1523,7 +1524,15 @@ export function CommandPalette({
                       onSelect={() => cloneActiveAgent(target)}
                     >
                       <CopyPlus className="mr-2 h-3.5 w-3.5 shrink-0" />
+                      {/* Two setups on one model share a label by design, so
+                          the effort rides beside it exactly as it does on the
+                          launcher chip and the Clone to… menu. */}
                       <span>{target.label}</span>
+                      {target.detail ? (
+                        <span className="ml-2 text-hud-text-dim">
+                          {target.detail}
+                        </span>
+                      ) : null}
                       <CommandShortcut>
                         starts a new Agent with a handoff
                       </CommandShortcut>

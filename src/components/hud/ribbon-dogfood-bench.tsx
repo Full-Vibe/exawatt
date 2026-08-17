@@ -35,6 +35,7 @@ import {
   mergeFleetAttention,
   type SessionAttentionSignal,
 } from '@/components/workspace/session-status';
+import type { CloneSessionTarget } from '@/components/workspace/session-clone';
 import type { SessionDelegation } from '@/types/electron';
 
 const COLORS = [
@@ -130,6 +131,45 @@ const BENCH_DELEGATION: Record<string, SessionDelegation> = {
     ],
   },
 };
+
+/**
+ * Clone to… targets, deliberately including the worst realistic case: a saved
+ * High setup and the engine's own Medium default on the SAME model, so both
+ * rows read `GPT-5.6 Codex`. That pair is what the operator hit — two rows he
+ * could not tell apart, both highlighting at once — and it is the fixture the
+ * bench keeps so the failure stays visible instead of only unit tested.
+ */
+const BENCH_CLONE_TARGETS: readonly CloneSessionTarget[] = [
+  {
+    id: 'agent:codex:gpt-5.6-sol:high',
+    sourceId: 'codex-local',
+    source: 'codex',
+    modelId: 'gpt-5.6-sol',
+    effort: 'high',
+    label: 'GPT-5.6 Codex',
+    detail: 'High',
+    accessibleLabel: 'Codex, GPT-5.6 Codex, High',
+  },
+  {
+    id: 'agent:codex:gpt-5.6-sol:medium',
+    sourceId: 'codex-local',
+    source: 'codex',
+    modelId: 'gpt-5.6-sol',
+    effort: 'medium',
+    label: 'GPT-5.6 Codex',
+    detail: 'Medium',
+    accessibleLabel: 'Codex, GPT-5.6 Codex, Medium',
+  },
+  {
+    id: 'agent:claude:opus-5:null',
+    sourceId: 'claude-local',
+    source: 'claude',
+    modelId: 'claude-opus-5',
+    effort: null,
+    label: 'Opus 5',
+    accessibleLabel: 'Claude Code, Opus 5',
+  },
+];
 
 type TabVisibility = 'visible' | 'overflow-hidden' | 'not-rendered';
 
@@ -487,6 +527,8 @@ export function RibbonDogfoodBench() {
                 activity={activity}
                 engaged={engaged}
                 delegation={BENCH_DELEGATION}
+                cloneTargets={BENCH_CLONE_TARGETS}
+                onCloneTab={() => undefined}
                 feedbackEnabled
                 onRateContext={async () => true}
                 onSelectProject={index => {

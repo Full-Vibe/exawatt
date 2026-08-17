@@ -134,7 +134,21 @@ export function keyboardMenuPoint(element: HTMLElement): {
 }
 
 export interface StripMenuItem {
+  /**
+   * Stable row identity, REQUIRED. Everything the menu keys on — the React
+   * key, the roving tabstop, the highlight — reads this and never the label.
+   *
+   * A menu whose rows were identified by their label could not tell two rows
+   * apart that legitimately read the same: Clone to… on a Codex Session
+   * offered two `GPT-5.6 Codex` setups differing only by reasoning effort,
+   * and moving onto either one highlighted BOTH (operator, 2026-08-17). The
+   * same family as FIX-007's cmdk group-id collision. Identity is data the
+   * caller owns; the menu must never infer it from copy or render order.
+   */
+  id: string;
   label: string;
+  /** Full spoken identity when the visible label is deliberately not unique. */
+  accessibleLabel?: string;
   /** Absent only on `announced` rows, which cannot be operated. */
   onSelect?: () => void;
   danger?: boolean;
@@ -147,8 +161,17 @@ export interface StripMenuItem {
    */
   announcedComing?: string;
   /** Muted right-aligned micro note, e.g. `Coming soon` on a preview-surface
-   *  entry point (the ⌘K preview-row pattern). */
+   *  entry point (the ⌘K preview-row pattern). Readiness neutral, because
+   *  that is the only thing this channel says. */
   note?: string;
+  /**
+   * Right-aligned secondary VALUE, e.g. the reasoning effort behind a Clone
+   * target. Same channel the launcher chip and the configuration ribbon put a
+   * setup's effort on, so it carries `hud-text-dim` and never the readiness
+   * neutral — this row is built, and the grey that says otherwise is spoken
+   * for.
+   */
+  detail?: string;
   /** A compact drill-in keeps secondary target selection inside the same
    * keyboard-complete menu instead of opening a heavyweight dialog. */
   children?: StripMenuItem[];
@@ -194,9 +217,10 @@ export function StripContextMenu({
     ...(path.length > 0 ? [{ key: 'back', item: null }] : []),
     ...visibleItems
       .filter(item => !item.announcedComing)
-      .map(item => ({ key: item.label, item })),
+      .map(item => ({ key: `item:${item.id}`, item })),
   ];
   const activeRowKey = rows[activeIndex]?.key ?? null;
+  const rowKeyOf = (item: StripMenuItem) => `item:${item.id}`;
   const rowIndexOf = (item: StripMenuItem) =>
     rows.findIndex(row => row.item === item);
   const focusRow = (index: number) => {
@@ -349,7 +373,7 @@ export function StripContextMenu({
           // the focus loop skip it; `inert` keeps the promise that it cannot
           // be operated or read as merely disabled.
           <div
-            key={item.label}
+            key={item.id}
             data-readiness="announced"
             title={`Coming soon — ${item.announcedComing}`}
             aria-label={`${item.announcedComing} — coming soon`}
@@ -362,11 +386,12 @@ export function StripContextMenu({
           </div>
         ) : (
           <button
-            key={item.label}
+            key={item.id}
             type="button"
             role="menuitem"
+            aria-label={item.accessibleLabel}
             data-menu-row-index={rowIndexOf(item)}
-            data-menu-active={activeRowKey === item.label || undefined}
+            data-menu-active={activeRowKey === rowKeyOf(item) || undefined}
             tabIndex={activeIndex === rowIndexOf(item) ? 0 : -1}
             onFocus={() => setActiveIndex(rowIndexOf(item))}
             onPointerMove={() => setActiveIndex(rowIndexOf(item))}
@@ -385,17 +410,25 @@ export function StripContextMenu({
             style={{
               color: item.danger ? color : HUD.text,
               background:
-                activeRowKey === item.label
+                activeRowKey === rowKeyOf(item)
                   ? withThemeAlpha(color, 0.18)
                   : 'transparent',
               boxShadow:
-                activeRowKey === item.label
+                activeRowKey === rowKeyOf(item)
                   ? `inset 2px 0 0 ${color}`
                   : undefined,
             }}
           >
             <span className="min-w-0 flex-1">{item.label}</span>
             {item.children?.length ? <span aria-hidden>›</span> : null}
+            {item.detail && (
+              <span
+                className="shrink-0 text-chrome-micro"
+                style={{ color: HUD.textDim }}
+              >
+                {item.detail}
+              </span>
+            )}
             {item.note && (
               <span
                 className="shrink-0 text-chrome-micro"

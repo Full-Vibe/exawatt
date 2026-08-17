@@ -1134,6 +1134,7 @@ export function TabStrip({
                 ...(onNewAgent
                   ? [
                       {
+                        id: 'new-agent',
                         label: 'New agent',
                         focusAfterSelect: 'none' as const,
                         onSelect: () => onNewAgent(project.dir),
@@ -1141,6 +1142,7 @@ export function TabStrip({
                     ]
                   : []),
                 {
+                  id: 'rename-project',
                   label: 'Rename / color…',
                   focusAfterSelect: 'none',
                   onSelect: () =>
@@ -1153,6 +1155,7 @@ export function TabStrip({
                 ...(onRevealPath
                   ? [
                       {
+                        id: 'reveal-project',
                         label: 'Reveal in Finder',
                         onSelect: () => onRevealPath(project.dir),
                       },
@@ -1161,6 +1164,7 @@ export function TabStrip({
                 ...(onCloseProject
                   ? [
                       {
+                        id: 'close-project',
                         label: 'Close project',
                         danger: true,
                         focusAfterSelect: 'none' as const,
@@ -1469,6 +1473,7 @@ export function TabStrip({
             const tabMenuItems: StripMenuItem[] = isDraft
               ? [
                   {
+                    id: 'discard-draft',
                     label: 'Discard',
                     danger: true,
                     onSelect: () => onCloseTab(tab.id),
@@ -1480,6 +1485,7 @@ export function TabStrip({
                   (tab.harnessSessionId || tab.harness === 'shell')
                     ? [
                         {
+                          id: 'resume',
                           label:
                             tab.harness === 'shell'
                               ? 'Start New Shell'
@@ -1489,6 +1495,7 @@ export function TabStrip({
                       ]
                     : []),
                   {
+                    id: 'rename-tab',
                     label: 'Rename…',
                     focusAfterSelect: 'none',
                     onSelect: () =>
@@ -1502,9 +1509,18 @@ export function TabStrip({
                   })
                     ? [
                         {
+                          id: 'clone-to',
                           label: 'Clone to…',
+                          // The SAME setups ⌘T offers, under the same names:
+                          // model on the anchor, engine-reported effort on the
+                          // quiet note. Two setups on one model share a label
+                          // by design, so the row's identity is the Launch
+                          // Configuration id and never the words.
                           children: cloneTargets.map(target => ({
+                            id: target.id,
                             label: target.label,
+                            detail: target.detail,
+                            accessibleLabel: `Clone to ${target.accessibleLabel}`,
                             onSelect: () => onCloneTab(tab.id, target),
                           })),
                         },
@@ -1513,6 +1529,7 @@ export function TabStrip({
                   ...(tabIsPinnable(tab) && onTogglePinTab
                     ? [
                         {
+                          id: 'pin-split',
                           label:
                             tab.id === pinnedTabId
                               ? 'Unpin from split'
@@ -1524,6 +1541,7 @@ export function TabStrip({
                   ...(onRevealPath
                     ? [
                         {
+                          id: 'reveal-tab',
                           label: 'Reveal in Finder',
                           onSelect: () => onRevealPath(tab.cwd),
                         },
@@ -1536,11 +1554,13 @@ export function TabStrip({
                   ...(tab.harness !== 'shell'
                     ? [
                         {
+                          id: 'push-to-cloud',
                           label: 'Push to cloud',
                           announcedComing:
                             'run this Agent on an Exawatt-hosted plan (Cloud)',
                         },
                         {
+                          id: 'cloud',
                           label: 'Cloud',
                           note: 'Coming soon',
                           onSelect: () => router.push('/cloud'),
@@ -1548,6 +1568,7 @@ export function TabStrip({
                       ]
                     : []),
                   {
+                    id: 'close-tab',
                     label: 'Close',
                     danger: true,
                     focusAfterSelect: 'none',

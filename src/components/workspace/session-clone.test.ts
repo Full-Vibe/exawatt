@@ -5,7 +5,12 @@ import {
   tabCanClone,
 } from './session-clone';
 import type { WorkspaceTab } from './use-workspace-state';
-import { fallbackAgentSourceRegistry } from './agent-sources';
+import {
+  fallbackAgentSourceRegistry,
+  launchSourceSnapshots,
+} from './agent-sources';
+import { composeLaunchTargets } from './launch-target-catalog';
+import { createAgentLaunchConfiguration } from '@exawatt/core';
 
 function tab(overrides: Partial<WorkspaceTab> = {}): WorkspaceTab {
   return {
@@ -97,7 +102,107 @@ describe('sessionClonePrompt', () => {
         modelId: 'gpt-5.6-sol',
         effort: 'high',
         label: 'GPT-5.6-Sol',
+        detail: 'High',
+        accessibleLabel: 'Codex, GPT-5.6-Sol, High',
       }),
     ]);
+  });
+
+  // BUG-051: a saved High setup plus the engine's own Medium default are two
+  // real targets on one model, so they share a label. The operator saw them as
+  // two identical rows; what separates them is the effort on `detail` and the
+  // Launch Configuration id, never the words.
+  it('separates two setups that differ only by reasoning effort', () => {
+    const registry = fallbackAgentSourceRegistry('launch');
+    registry.sources = registry.sources.map(source => ({
+      ...source,
+      launchable: source.harness === 'codex',
+    }));
+    const codex = registry.sources.find(source => source.harness === 'codex')!;
+    const saved = createAgentLaunchConfiguration(
+      {
+        sourceId: codex.id,
+        modelId: 'gpt-5.6-sol',
+        effort: 'high',
+        labels: { source: 'Codex', model: 'GPT-5.6 Codex', effort: 'High' },
+      },
+      0
+    );
+
+    const targets = availableSessionCloneTargets(registry, [saved], {
+      codex: {
+        harness: 'codex',
+        effectiveModel: 'gpt-5.6-sol',
+        effectiveModelLabel: 'GPT-5.6 Codex',
+        effectiveModelSource: 'config',
+        effectiveEffort: 'medium',
+        effectiveEffortLabel: 'Medium',
+        effectiveEffortSource: 'config',
+        effortLocked: false,
+        models: [],
+        catalogMode: 'configured-values',
+        catalogProvenance: 'test',
+        observedAt: 1,
+        selectionAction: null,
+      },
+    });
+
+    expect(targets.map(target => target.label)).toEqual([
+      'GPT-5.6 Codex',
+      'GPT-5.6 Codex',
+    ]);
+    expect(targets.map(target => target.detail)).toEqual(['High', 'Medium']);
+    expect(new Set(targets.map(target => target.id)).size).toBe(2);
+    expect(new Set(targets.map(target => target.accessibleLabel)).size).toBe(2);
+  });
+
+  it('offers the composer catalog in the composer order, availability aside', () => {
+    const registry = fallbackAgentSourceRegistry('launch');
+    registry.sources = registry.sources.map(source => ({
+      ...source,
+      launchable: source.harness === 'codex',
+    }));
+    const codex = registry.sources.find(source => source.harness === 'codex')!;
+    const catalogs = {
+      codex: {
+        harness: 'codex' as const,
+        effectiveModel: 'gpt-5.6-sol',
+        effectiveModelLabel: 'GPT-5.6 Codex',
+        effectiveModelSource: 'config' as const,
+        effectiveEffort: 'medium',
+        effectiveEffortLabel: 'Medium',
+        effectiveEffortSource: 'config' as const,
+        effortLocked: false,
+        models: [],
+        catalogMode: 'configured-values' as const,
+        catalogProvenance: 'test',
+        observedAt: 1,
+        selectionAction: null,
+      },
+    };
+    const sources = launchSourceSnapshots(registry);
+    const composed = composeLaunchTargets({
+      ranked: [
+        createAgentLaunchConfiguration(
+          { sourceId: codex.id, modelId: 'gpt-5.6-sol', effort: 'high' },
+          0
+        ),
+      ],
+      sources,
+      catalogs,
+    });
+
+    expect(
+      availableSessionCloneTargets(
+        registry,
+        [
+          createAgentLaunchConfiguration(
+            { sourceId: codex.id, modelId: 'gpt-5.6-sol', effort: 'high' },
+            0
+          ),
+        ],
+        catalogs
+      ).map(target => target.id)
+    ).toEqual(composed.map(target => target.id));
   });
 });
