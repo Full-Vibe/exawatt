@@ -815,7 +815,15 @@ Built:
   the Keychain credential Claude Code already holds (read in place, never
   persisted or refreshed), merges them into the live snapshot as reported
   plan-level capacity behind the same IPC seam, degrades every failure to
-  absence, and carries a default-on own-account privacy switch
+  absence, and carries a default-on own-account privacy switch. Installed
+  Exawatt injects `electron.net.fetch` so the signed Chromium helper owns the
+  request; unpackaged development and automated tests cannot open that path
+  without the narrow explicit integration opt-in. ENG-030 OS4 replaces the
+  temporary `app.isPackaged` capability test with the versioned distribution
+  declaration `ownAccount.claudePlanUsage`: community defaults it absent,
+  while official or downstream distributions may set `stable-signed` beside
+  their signing custody. The declaration controls local automatic traffic and
+  is never service authentication.
 
 Implemented:
 

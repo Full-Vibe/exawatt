@@ -364,6 +364,10 @@ OAuth token Claude Code already stores in the macOS Keychain
   Electron's downloaded development runtime is ad-hoc signed on macOS, so it
   cannot present Little Snitch with Exawatt's durable Developer ID. A focused
   integration run may opt in with `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1`.
+  Until ENG-030 OS4 lands, the runtime capability uses `app.isPackaged`; OS4
+  replaces that temporary proxy with
+  `ownAccount.claudePlanUsage: 'stable-signed' | null` from the distribution
+  contract, because an ad-hoc community artifact can also be packaged.
 - **Off**: Settings → Privacy → **Claude plan usage**
   (`claudePlanWindows.enabled`), enforced at the boundary: off constructs no
   request and the meter shows Claude as unmetered again. Exawatt never
@@ -374,7 +378,10 @@ OAuth token Claude Code already stores in the macOS Keychain
 - **Transport identity**: installed builds issue the request through
   `electron.net.fetch`, the same Chromium network boundary used by desktop
   authentication. The packaged app and helper are Developer ID signed as
-  Exawatt; the request does not use Node's global `fetch`.
+  Exawatt; the request does not use Node's global `fetch`. Under OS4, a
+  community build defaults the automatic read off; a distributor may enable
+  it only by declaring its own stable signed identity. That declaration is a
+  local capability, never Exawatt service authorization.
 
 Everything else is local: `/api/oc/token` reads the OpenClaw gateway token off
 disk and returns a `127.0.0.1` address; `/api/dev-identity` exists only in
@@ -405,7 +412,9 @@ development.
   single host, refused redirects, the never-send-expired-token rule, the
   token's absence from persisted state and the served view, and every failure
   mode degrading to absence. They also pin the installed-vs-unpackaged runtime
-  boundary and prove a settings write cannot open the disabled dev path.
+  boundary and prove a settings write cannot open the disabled dev path. OS4
+  adds the distribution-contract cases: ad-hoc packaged community remains
+  closed, while `stable-signed` exercises the Chromium transport.
 - End to end: run a production build with the network inspector open, or watch
   the app's outbound connections in a firewall tool. The desktop app should
   show `exawatt.ai`, — when signed in and using hosted features — the Supabase
