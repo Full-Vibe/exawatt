@@ -11,7 +11,9 @@ import { runDogfoodWorker } from './lib/dogfood-queue.mjs';
 import { deliveryStateRoot, writeJsonAtomic } from './lib/delivery-state.mjs';
 
 const execFileAsync = promisify(execFile);
-const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const repositoryRoot = path.dirname(
+  path.dirname(fileURLToPath(import.meta.url))
+);
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-dogfood-queue-'));
@@ -90,4 +92,31 @@ test('the installer is detached from the master delivery lock and accepts an imm
   assert.doesNotMatch(source, /acquireDeliveryLock/);
   assert.match(source, /EXAWATT_DOGFOOD_SOURCE_SHA/);
   assert.match(source, /assertStillRequested/);
+});
+
+test('the private package requires official custody and the detached worker preserves its log', async () => {
+  const [queue, worker, packageFile] = await Promise.all([
+    readFile(
+      path.join(repositoryRoot, 'scripts/lib/dogfood-queue.mjs'),
+      'utf8'
+    ),
+    readFile(path.join(repositoryRoot, 'scripts/dogfood-worker.mjs'), 'utf8'),
+    readFile(path.join(repositoryRoot, 'package.json'), 'utf8').then(
+      JSON.parse
+    ),
+  ]);
+  assert.match(queue, /dogfood-worker\.log/);
+  assert.match(worker, /logPath/);
+  assert.match(
+    packageFile.scripts['electron:install-dogfood'],
+    /EXAWATT_REQUIRE_OFFICIAL_DOGFOOD=1/
+  );
+  assert.match(
+    packageFile.scripts['electron:install-dogfood'],
+    /EXAWATT_DOGFOOD_ALLOWED_PREVIOUS_IDENTIFIER=com\.exawatt\.app/
+  );
+  assert.match(
+    packageFile.scripts['electron:install-dogfood'],
+    /--env-file-if-exists=\.env\.local/
+  );
 });

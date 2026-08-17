@@ -10,6 +10,11 @@ import {
   resolveDeveloperIdIdentity,
 } from './lib/macos-code-signing.mjs';
 import { assertPackedApp } from './lib/packed-app-assertions.mjs';
+import {
+  assertPackagedContract,
+  readPackagedBuilderConfig,
+  resolvePackagedApp,
+} from './lib/packaged-app.mjs';
 
 const root = process.cwd();
 const execFileAsync = promisify(execFile);
@@ -21,6 +26,10 @@ async function git(...args) {
 
 const sourceSha =
   process.env.EXAWATT_BUILD_SOURCE_SHA ?? (await git('rev-parse', 'HEAD'));
+const packaged = await resolvePackagedApp({
+  root,
+  appPathOverride: undefined,
+});
 
 async function assertImmutableSource() {
   const currentSha = await git('rev-parse', 'HEAD');
@@ -106,13 +115,9 @@ if (buildInfo.sha !== sourceSha) {
 
 // A dogfood build can be community, official, or downstream. Assert the exact
 // resolved identity, protocol, icon posture, and payload on the real bundle.
-const builderConfig = JSON.parse(
-  await readFile(
-    path.join(root, '.exawatt-build', 'electron-builder.dogfood.json'),
-    'utf8'
-  )
-);
-assertPackedApp(
-  path.join(root, 'release', 'mac-arm64', `${builderConfig.productName}.app`),
-  { root, builderConfig }
-);
+const builderConfig = readPackagedBuilderConfig(packaged, {
+  root,
+  profile: 'dogfood',
+});
+assertPackagedContract(packaged.appPath, packaged.digest);
+assertPackedApp(packaged.appPath, { root, builderConfig });

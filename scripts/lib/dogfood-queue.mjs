@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { access, mkdir, rm } from 'node:fs/promises';
+import { access, chmod, mkdir, open, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,12 @@ async function dogfoodPaths(root) {
     request: path.join(stateRoot, 'dogfood-request.json'),
     requestLock: path.join(stateRoot, 'dogfood-request.lock'),
     workerLock: path.join(stateRoot, 'dogfood-worker.lock'),
+    log: path.join(stateRoot, 'dogfood-worker.log'),
   };
+}
+
+export async function dogfoodLogPath(root) {
+  return (await dogfoodPaths(root)).log;
 }
 
 export async function readDogfoodRequest(root) {
@@ -99,13 +104,26 @@ export async function requestDogfoodInstall(root, sourceSha) {
     workerRoot = root;
     workerScript = path.join(root, 'scripts', 'dogfood-worker.mjs');
   }
-  const worker = spawn(process.execPath, [workerScript], {
-    cwd: workerRoot,
-    detached: true,
-    stdio: 'ignore',
-  });
-  worker.unref();
-  console.log(`[agent-land] dogfood queued for ${sourceSha.slice(0, 12)}`);
+  const log = await open(paths.log, 'a', 0o600);
+  let worker;
+  try {
+    await chmod(paths.log, 0o600);
+    await log.write(
+      `\n[dogfood-worker] queued ${sourceSha} at ${new Date().toISOString()}\n`
+    );
+    worker = spawn(process.execPath, [workerScript], {
+      cwd: workerRoot,
+      detached: true,
+      stdio: ['ignore', log.fd, log.fd],
+      env: { ...process.env, EXAWATT_DOGFOOD_LOG: paths.log },
+    });
+    worker.unref();
+  } finally {
+    await log.close();
+  }
+  console.log(
+    `[agent-land] dogfood queued for ${sourceSha.slice(0, 12)}; log: ${paths.log}`
+  );
   return request;
 }
 
