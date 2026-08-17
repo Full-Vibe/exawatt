@@ -23,12 +23,23 @@ vi.mock('@/components/hud/webgl/keyswitch-study', () => ({
 }));
 
 describe('homepage band composition', () => {
-  it('registers a component for exactly the shipped bands', () => {
-    const registered = HOMEPAGE_BANDS.filter(
-      band => BAND_COMPONENTS[band.id] !== null
-    ).map(band => band.id);
-
-    expect(registered).toEqual(shippedBands().map(band => band.id));
+  it('registers a component for every shipped band', () => {
+    // The converse is deliberately NOT asserted after W5. A registered
+    // component on a `reserved` band means "written and reviewable, parked one
+    // word away from the page", which is the state the whole narrative pass
+    // sits in while the operator reads it at
+    // `/hud-gallery/homepage-narrative`. `null` keeps its stricter meaning:
+    // nothing is written at all.
+    for (const band of shippedBands()) {
+      expect(BAND_COMPONENTS[band.id], band.id).not.toBeNull();
+    }
+    // A pinned band never has a component of its own: a run of them is ONE
+    // board and several panels.
+    for (const band of HOMEPAGE_BANDS) {
+      if (band.medium === 'pinned-board') {
+        expect(BAND_COMPONENTS[band.id], band.id).toBeNull();
+      }
+    }
   });
 
   it('declares reserved bands without rendering them', () => {

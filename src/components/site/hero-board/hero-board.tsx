@@ -9,10 +9,19 @@
  *   WebGL context. The canvas mounts at `opacity-0` and fades in on its first
  *   rendered frame, which keeps it out of the running for LCP.
  * - **Reduced motion drops the canvas to zero** and puts the poster in its
- *   place — same composition, same silhouette, same box, no layout shift.
- *   This is Vercel's pattern and the cleanest in the reference set.
- * - **Mobile is the poster**, not a shrunken board. A 173-unit board is
- *   illegible on a phone at any size.
+ *   place: same composition, same silhouette, same box, no layout shift. This
+ *   is Vercel's pattern and the cleanest in the reference set, and it is an
+ *   accessibility contract rather than a performance one.
+ * - **Mobile runs the live board** (operator, 2026-08-17). W2 shipped the
+ *   poster on phones on the reasoning that a 173-unit board is illegible at
+ *   390px. That is overruled by how the page is actually used: "ensure this
+ *   works well on mobile so I can demonstrate it at conferences and stuff like
+ *   that on my phone very clearly." A demo surface someone holds up to a
+ *   stranger cannot be a still image of the thing being demonstrated. The
+ *   legibility problem is answered where it belongs, in the framing: a
+ *   portrait viewport CROPS instead of fitting, which is the same rule the
+ *   brief already states for conveying scale honestly (density and crop carry
+ *   scale, a counter does not).
  * - **Offscreen and hidden tabs park.** An IntersectionObserver and
  *   `visibilitychange` clear `animating`, and every animating `useFrame` in the
  *   scene stops calling `invalidate()`, so a parked board renders no frames.
@@ -51,6 +60,7 @@ import {
   resolveHeroHighlight,
   type HeroHighlightId,
 } from './hero-board-highlight';
+import type { HeroAltitude } from './hero-board-scene';
 import { HeroBoardOverlay } from './hero-board-overlay';
 
 const HeroBoardScene = dynamic(
@@ -60,16 +70,17 @@ const HeroBoardScene = dynamic(
 
 export const HERO_BOARD_POSTER = '/images/hero-board-poster.jpg';
 
-/** Below this width the board is a poster. The board is dense by design and a
- *  phone cannot carry it; the live board goes behind an explicit tap. */
+/** The desktop breakpoint, kept as the one place the site's `md:` boundary is
+ *  named in JavaScript. It no longer decides live-versus-poster; it decides
+ *  LAYOUT, which is the only thing a width should decide. */
 export const HERO_BOARD_LIVE_MIN_WIDTH = 768;
 
 export type HeroBoardMode = 'live' | 'poster';
 
-/** Resolved on the FIRST client render, like `usePrefersReducedMotion`, so the
- *  poster and the canvas never trade places after paint. Exported because the
- *  pinned sequence takes the same fork: below this width there is no live
- *  board to drive, so there is nothing for a scroll listener to do. */
+/** Resolved on the FIRST client render, like `usePrefersReducedMotion`, so
+ *  layout never changes after paint. Exported because the pinned sequence
+ *  needs the same answer for its reading column, which moves under the board
+ *  on a phone instead of sitting beside it. */
 export function useNarrowViewport(): boolean {
   const query = `(max-width: ${HERO_BOARD_LIVE_MIN_WIDTH - 1}px)`;
   return useSyncExternalStore(
@@ -93,6 +104,9 @@ export interface HeroBoardProps {
   /** Scroll progress 0..1, driving the altitude pull. Written by the owner
    *  through a ref so nothing re-renders React at scroll frequency. */
   progressRef?: RefObject<number>;
+  /** The ordered altitudes the camera travels. Supplied by the page's band
+   *  list so the choreography is never authored a second time here. */
+  ladder?: readonly HeroAltitude[];
   /**
    * What the board emphasizes, and therefore what the panel beside it is
    * talking about (ENG-031 W4). Defaults to the whole fleet, which is the
@@ -113,6 +127,7 @@ export function HeroBoard({
   themeKey = HERO_DEFAULT_THEME,
   className,
   progressRef,
+  ladder,
   highlight = 'whole-fleet',
   force = 'auto',
   preserveDrawingBuffer = false,
@@ -125,7 +140,6 @@ export function HeroBoard({
   const theme = useMemo(() => heroBoardTheme(themeKey), [themeKey]);
   const frame = useRef<HTMLDivElement>(null);
   const fallbackProgress = useRef(0);
-  const narrow = useNarrowViewport();
   const [visible, setVisible] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
   const [painted, setPainted] = useState(false);
@@ -170,8 +184,9 @@ export function HeroBoard({
     return () => document.removeEventListener('visibilitychange', sync);
   }, []);
 
-  const posterOnly =
-    force === 'poster' || (force === 'auto' && (reducedMotion || narrow));
+  // Reduced motion is the ONLY automatic poster path now. A phone gets the
+  // real board; see the note at the top of this file.
+  const posterOnly = force === 'poster' || (force === 'auto' && reducedMotion);
   const mode: HeroBoardMode = posterOnly ? 'poster' : 'live';
   const animating =
     mode === 'live' && force !== 'frozen' && visible && pageVisible;
@@ -216,6 +231,7 @@ export function HeroBoard({
             statusProtocolMotion={statusProtocolMotion}
             statusChanges={statusChanges}
             progressRef={progressRef ?? fallbackProgress}
+            ladder={ladder}
             highlight={resolved}
             preserveDrawingBuffer={preserveDrawingBuffer}
             getBridge={getBridge}

@@ -78,8 +78,44 @@ const BASE_POLAR = 40 * DEG;
  *  labels off the bottom edge is not. */
 const FRAMING_TIGHTNESS = { fleet: 0.74, team: 0.86, agent: 0.95 } as const;
 
+/**
+ * How much harder a PORTRAIT viewport crops (ENG-031 W5, operator: the phone
+ * is a demo surface, not a fallback).
+ *
+ * Fitting a wide board into a tall frame is the wrong instinct: it satisfies
+ * the geometry and produces a postage stamp with two thirds of the screen
+ * empty, which is exactly the "just a pile of icons" failure at a smaller
+ * size. The brief already states the correct rule for conveying scale, and it
+ * is the opposite one: density and crop carry scale, and Palantir's board
+ * bleeds past all four edges of its frame. So on a phone the board fills the
+ * width and runs off the top and bottom, and the marks stay the size a thumb
+ * can actually resolve.
+ */
+const PORTRAIT_CROP = 0.62;
+
 const MARK_SCALE = 1.7;
 const STATUS_TRANSITION_SECONDS = 0.85;
+
+/**
+ * The delegated-child quad, as a multiple of the child's own mark size
+ * (ENG-031 W5).
+ *
+ * The lineage tether and the child mark are drawn in ONE quad and therefore in
+ * one draw call. That is not a micro-optimisation: the board's whole claim is
+ * that a readable operations picture costs three draw calls, and a separate
+ * `LineSegments` for the tethers would have made it five. Measured against the
+ * capture, every tether's parent-side endpoint already falls inside the
+ * child's own mark footprint, so this multiple is headroom rather than a fit.
+ */
+const DELEGATION_QUAD = 2.4;
+
+/** How long the constellations take to bloom out of their parents. Finite and
+ *  damped, arriving at rest (ENG-023 D3c spawn transitions, guide rule 4b). */
+const DELEGATION_BLOOM_SECONDS = 0.9;
+
+/** The share of the bloom spent staggering. A simultaneous pop of 23 marks
+ *  reads as a glitch; a short per-instance offset reads as a fan-out. */
+const DELEGATION_STAGGER = 0.35;
 
 /**
  * How long the board takes to move its emphasis from one panel's subject to
@@ -160,10 +196,26 @@ export interface HeroBoardFraming {
   tightness: number;
 }
 
-/** Fleet, then one real Project, then one Agent inside it that needs a human —
- *  the altitude ladder the page's spine is built on. */
+/** The three altitudes the board can hold. Spelled locally rather than
+ *  imported from the band manifest so the scene never depends on the site. */
+export type HeroAltitude = 'fleet' | 'team' | 'agent';
+
+/**
+ * The default ladder: Fleet, one real Project, one Agent inside it that needs
+ * a human.
+ *
+ * The PAGE overrides it (ENG-031 W5). The pinned run declares its own ordered
+ * altitudes in `manifest.ts`, and two properties of that ladder are invisible
+ * unless the camera is derived from it rather than hardcoded here: two
+ * consecutive panels may share an altitude, which makes the camera hold while
+ * the board itself makes the argument, and the ladder is NOT monotonic,
+ * because the last panel opens back out.
+ */
+export const HERO_DEFAULT_LADDER: HeroAltitude[] = ['fleet', 'team', 'agent'];
+
 export function heroBoardFramings(
-  capture: HeroBoardCapture
+  capture: HeroBoardCapture,
+  ladder: readonly HeroAltitude[] = HERO_DEFAULT_LADDER
 ): HeroBoardFraming[] {
   const center = boardCenter(capture);
   const fleet = new THREE.Vector3(0, 0, 0);
@@ -184,15 +236,26 @@ export function heroBoardFramings(
     agentUnit.y - center.y
   );
 
-  return [
-    { center: fleet, radius: fleetRadius, tightness: FRAMING_TIGHTNESS.fleet },
-    {
+  const byAltitude: Record<HeroAltitude, HeroBoardFraming> = {
+    fleet: {
+      center: fleet,
+      radius: fleetRadius,
+      tightness: FRAMING_TIGHTNESS.fleet,
+    },
+    team: {
       center: team,
       radius: zone.radius * 1.5,
       tightness: FRAMING_TIGHTNESS.team,
     },
-    { center: agent, radius: 4.4, tightness: FRAMING_TIGHTNESS.agent },
-  ];
+    agent: { center: agent, radius: 4.4, tightness: FRAMING_TIGHTNESS.agent },
+  };
+
+  const resolved = (ladder.length > 1 ? ladder : HERO_DEFAULT_LADDER).map(
+    altitude => byAltitude[altitude]
+  );
+  // Vectors are shared between repeated altitudes on purpose: the rig reads
+  // each framing into its own keyframe and never mutates the framing.
+  return resolved;
 }
 
 /* ------------------------------------------------------------------ */
@@ -792,6 +855,250 @@ function HeroUnits({
 }
 
 /* ------------------------------------------------------------------ */
+/* delegated children                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The constellations (ENG-031 W5).
+ *
+ * The operator asked for "an explosion of a few sub-agents" as one of the
+ * scroll phases, and it is the one motion beat on the page that is also a
+ * product differentiator: delegation visibility is ENG-023, and the marks,
+ * their rosette slots, their ratio to the parent, and their lineage tethers
+ * are the board model's OWN output (`selectSpatialDelegationUnits`), carried
+ * into the capture rather than authored here. Nothing on screen is a
+ * choreography of something the product does not do.
+ *
+ * FOUR CONSTRAINTS, each answered in the shader rather than in JavaScript:
+ *
+ * - **One draw call.** Child mark and tether share one quad, so the whole beat
+ *   costs one draw call and only while it is on screen. Below one percent of
+ *   bloom the mesh is invisible and leaves the render list entirely, which is
+ *   what keeps the resting board at the three calls its budget is written
+ *   against.
+ * - **No per-frame JavaScript over the field.** The bloom is one uniform. The
+ *   outward travel is a vertex-shader offset along a per-instance vector, so
+ *   23 children explode out of 16 parents without a matrix write.
+ * - **Finite and damped, arriving at rest** (guide rule 4b). One clock, one
+ *   duration, one ease that leaves and arrives at rest, with a short
+ *   per-instance stagger so a fan-out reads as a fan-out.
+ * - **No sixth status light** (ENG-023 boundary). A child mark is drawn in the
+ *   board's label colour, deliberately outside the five-signal palette the
+ *   legend names, because the capture carries a child's LINEAGE and not its
+ *   state. Inventing a colour for a status we do not have would be exactly the
+ *   overclaim the rest of this board is built to avoid.
+ */
+function HeroDelegations({
+  theme,
+  capture,
+  highlight,
+  animating,
+}: {
+  theme: SpatialThemeSnapshot;
+  capture: HeroBoardCapture;
+  highlight: HeroHighlight;
+  animating: boolean;
+}) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const center = useMemo(() => boardCenter(capture), [capture]);
+  const count = capture.delegations.length;
+
+  const geometry = useMemo(() => {
+    const next = new THREE.PlaneGeometry(1, 1);
+    next.rotateX(-Math.PI / 2);
+    for (const name of ['aParent', 'aTetherA', 'aTetherB']) {
+      next.setAttribute(
+        name,
+        new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2)
+      );
+    }
+    next.setAttribute(
+      'aDelay',
+      new THREE.InstancedBufferAttribute(new Float32Array(count), 1)
+    );
+    return next;
+  }, [count]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const uniforms = useMemo(
+    () => ({
+      uBloom: { value: 0 },
+      uChild: { value: new THREE.Color(theme.label) },
+      uQuad: { value: DELEGATION_QUAD },
+      uStagger: { value: DELEGATION_STAGGER },
+    }),
+    [theme]
+  );
+
+  useEffect(() => {
+    if (!mesh.current || count === 0) return;
+    const scratch = new THREE.Object3D();
+    const parent = geometry.getAttribute(
+      'aParent'
+    ) as THREE.InstancedBufferAttribute;
+    const tetherA = geometry.getAttribute(
+      'aTetherA'
+    ) as THREE.InstancedBufferAttribute;
+    const tetherB = geometry.getAttribute(
+      'aTetherB'
+    ) as THREE.InstancedBufferAttribute;
+    const delay = geometry.getAttribute(
+      'aDelay'
+    ) as THREE.InstancedBufferAttribute;
+
+    capture.delegations.forEach((child, index) => {
+      // An overflow lobe stands for several Agents, so it is drawn larger than
+      // one child. It is the exact census, never a decoration.
+      const quad =
+        child.size *
+        MARK_SCALE *
+        DELEGATION_QUAD *
+        (child.overflow > 0 ? 1.3 : 1);
+      scratch.position.set(child.x - center.x, 0.035, child.y - center.y);
+      scratch.scale.set(quad, 1, quad);
+      scratch.updateMatrix();
+      mesh.current!.setMatrixAt(index, scratch.matrix);
+
+      const owner = capture.units[child.parent];
+      parent.setXY(
+        index,
+        (owner?.x ?? child.x) - child.x,
+        (owner?.y ?? child.y) - child.y
+      );
+      // Tether endpoints in the quad's own normalized space, so the fragment
+      // shader draws lineage without knowing anything about the board.
+      tetherA.setXY(
+        index,
+        (child.tether.x2 - child.x) / quad,
+        (child.tether.y2 - child.y) / quad
+      );
+      tetherB.setXY(
+        index,
+        (child.tether.x1 - child.x) / quad,
+        (child.tether.y1 - child.y) / quad
+      );
+      delay.setX(index, count > 1 ? index / (count - 1) : 0);
+    });
+
+    mesh.current.instanceMatrix.needsUpdate = true;
+    parent.needsUpdate = true;
+    tetherA.needsUpdate = true;
+    tetherB.needsUpdate = true;
+    delay.needsUpdate = true;
+    mesh.current.computeBoundingSphere();
+  }, [capture, center, count, geometry]);
+
+  const from = useRef(0);
+  const to = useRef(0);
+  const elapsed = useRef(DELEGATION_BLOOM_SECONDS);
+
+  useEffect(() => {
+    from.current = material.current?.uniforms.uBloom?.value ?? 0;
+    to.current = highlight.delegation;
+    elapsed.current = 0;
+    // A mesh that is about to bloom has to be in the render list before the
+    // first frame of the bloom, and one that has finished receding leaves it.
+    if (mesh.current && to.current > 0) mesh.current.visible = true;
+  }, [highlight]);
+
+  useFrame((state: RootState, delta: number) => {
+    if (!animating || !material.current) return;
+    if (elapsed.current >= DELEGATION_BLOOM_SECONDS) return;
+    elapsed.current = Math.min(
+      DELEGATION_BLOOM_SECONDS,
+      elapsed.current + Math.min(delta, 0.05)
+    );
+    const t = elapsed.current / DELEGATION_BLOOM_SECONDS;
+    const eased = t * t * (3 - 2 * t);
+    const value = from.current + (to.current - from.current) * eased;
+    material.current.uniforms.uBloom!.value = value;
+    if (mesh.current) mesh.current.visible = value > 0.01;
+    state.invalidate();
+  });
+
+  if (count === 0) return null;
+
+  return (
+    <instancedMesh
+      ref={mesh}
+      args={[geometry, undefined, count]}
+      frustumCulled={false}
+      raycast={noopRaycast}
+      renderOrder={3}
+      visible={false}
+    >
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        transparent
+        depthWrite={false}
+        vertexShader={`
+          attribute vec2 aParent;
+          attribute vec2 aTetherA;
+          attribute vec2 aTetherB;
+          attribute float aDelay;
+          uniform float uBloom;
+          uniform float uStagger;
+          varying vec2 vUv;
+          varying vec2 vTetherA;
+          varying vec2 vTetherB;
+          varying float vBloom;
+          void main() {
+            float span = max(1.0 - uStagger, 0.001);
+            float b = clamp((uBloom - aDelay * uStagger) / span, 0.0, 1.0);
+            float eased = b * b * (3.0 - 2.0 * b);
+            vUv = uv - 0.5;
+            vBloom = eased;
+            vTetherA = aTetherA;
+            // The tether draws outward as the child travels, so lineage grows
+            // with the fan-out instead of appearing at full length.
+            vTetherB = mix(aTetherA, aTetherB, eased);
+            vec4 world = instanceMatrix * vec4(position, 1.0);
+            // At zero bloom the child sits on its parent. The explosion is
+            // this one line, and it costs no JavaScript.
+            world.x += aParent.x * (1.0 - eased);
+            world.z += aParent.y * (1.0 - eased);
+            gl_Position = projectionMatrix * modelViewMatrix * world;
+          }
+        `}
+        fragmentShader={`
+          uniform vec3 uChild;
+          uniform float uQuad;
+          varying vec2 vUv;
+          varying vec2 vTetherA;
+          varying vec2 vTetherB;
+          varying float vBloom;
+
+          float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p - a;
+            vec2 ba = b - a;
+            float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+            return length(pa - ba * h);
+          }
+
+          void main() {
+            float radius = 0.27 / uQuad;
+            float d = length(vUv) - radius;
+            float w = fwidth(d);
+            float mark = 1.0 - smoothstep(-w, w, d);
+
+            float line = sdSegment(vUv, vTetherA, vTetherB) - 0.02 / uQuad;
+            float lw = fwidth(line);
+            float tether = 1.0 - smoothstep(-lw, lw, line);
+
+            float alpha = max(mark * 0.95, tether * 0.6) * vBloom;
+            if (alpha < 0.004) discard;
+            gl_FragColor = vec4(uChild, alpha);
+            #include <colorspace_fragment>
+          }
+        `}
+      />
+    </instancedMesh>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* camera                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -808,18 +1115,23 @@ function HeroCameraRig({
   capture,
   animating,
   progressRef,
+  ladder,
   getBridge,
 }: {
   capture: HeroBoardCapture;
   animating: boolean;
   progressRef: RefObject<number>;
+  ladder: readonly HeroAltitude[];
   getBridge: HeroBridgeAccess;
 }) {
   const controls = useRef<CameraControlsImpl>(null);
   const camera = useThree(state => state.camera);
   const size = useThree(state => state.size);
   const invalidate = useThree(state => state.invalidate);
-  const framings = useMemo(() => heroBoardFramings(capture), [capture]);
+  const framings = useMemo(
+    () => heroBoardFramings(capture, ladder),
+    [capture, ladder]
+  );
   const keyframes = useRef<Keyframe[]>(
     framings.map(() => ({ target: new THREE.Vector3(), distance: 1 }))
   );
@@ -871,8 +1183,14 @@ function HeroCameraRig({
     const rig = controls.current;
     if (!rig) return;
     const clamped = THREE.MathUtils.clamp(value, 0, 1);
-    const segment = clamped < 0.5 ? 0 : 1;
-    const local = segment === 0 ? clamped * 2 : (clamped - 0.5) * 2;
+    // N keyframes, evenly spaced in progress (ENG-031 W5). The two-keyframe
+    // special case this replaced could not express a ladder that holds an
+    // altitude across two panels or reverses at the end, and both are now
+    // properties of the page's own band list.
+    const spans = Math.max(1, keyframes.current.length - 1);
+    const scaled = clamped * spans;
+    const segment = Math.min(spans - 1, Math.floor(scaled));
+    const local = scaled - segment;
     const eased = local * local * (3 - 2 * local);
     const a = keyframes.current[segment]!;
     const b = keyframes.current[segment + 1]!;
@@ -958,18 +1276,25 @@ function HeroCameraRig({
   useEffect(() => {
     const rig = controls.current;
     if (!rig) return;
+    // The keyframe pool follows the ladder's length. A page that adds a panel
+    // is a data edit in `manifest.ts`, so the rig must not assume three.
+    while (keyframes.current.length < framings.length) {
+      keyframes.current.push({ target: new THREE.Vector3(), distance: 1 });
+    }
+    keyframes.current.length = framings.length;
     // The floor is a property of the lens, not of the board, so it is computed
     // once here and applied to every keyframe AND to the rig itself: the
     // scroll cannot ask for a closer distance, and nothing else can either.
     const floor = maxZoomDistance(camera, markWorldSize);
     rig.minDistance = Math.max(4, floor);
+    const crop = size.height > size.width ? PORTRAIT_CROP : 1;
     framings.forEach((framing, index) => {
       rig.rotateTo(BASE_AZIMUTH, BASE_POLAR, false);
       rig.moveTo(framing.center.x, framing.center.y, framing.center.z, false);
       rig.dollyTo(
         Math.max(
           floor,
-          rig.getDistanceToFitSphere(framing.radius) * framing.tightness
+          rig.getDistanceToFitSphere(framing.radius) * framing.tightness * crop
         ),
         false
       );
@@ -1049,6 +1374,8 @@ export interface HeroBoardSceneProps {
   statusChanges?: boolean;
   /** Scroll progress 0..1, written by a rAF-coalesced listener, never state. */
   progressRef: RefObject<number>;
+  /** The ordered altitudes the camera travels, from the page's band list. */
+  ladder?: readonly HeroAltitude[];
   /** What the board emphasizes. Semantic, so it is a prop and not a ref: it
    *  changes a handful of times over a whole sequence, never per frame. */
   highlight: HeroHighlight;
@@ -1068,6 +1395,7 @@ export function HeroBoardScene({
   statusProtocolMotion = true,
   statusChanges = true,
   progressRef,
+  ladder = HERO_DEFAULT_LADDER,
   highlight,
   preserveDrawingBuffer = false,
   getBridge,
@@ -1106,10 +1434,17 @@ export function HeroBoardScene({
         highlight={highlight}
         getBridge={getBridge}
       />
+      <HeroDelegations
+        theme={theme}
+        capture={capture}
+        highlight={highlight}
+        animating={animating}
+      />
       <HeroCameraRig
         capture={capture}
         animating={animating}
         progressRef={progressRef}
+        ladder={ladder}
         getBridge={getBridge}
       />
       {onReady ? <FirstFrame onReady={onReady} /> : null}

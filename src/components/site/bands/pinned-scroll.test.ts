@@ -96,14 +96,25 @@ describe('pinned scroll geometry', () => {
     expect(boardProgressAt(uneven[1]!, uneven)).toBeCloseTo(0.5, 6);
   });
 
-  it('runs the real manifest sequence from fleet to agent', () => {
+  it('runs the real manifest sequence, holding once and reversing once', () => {
     const bands = pinnedBoardBands();
     const anchors = panelAnchors(bands.map(band => band.screens));
     expect(bands.map(band => band.altitudeAnchor)).toEqual([
       'fleet',
+      'fleet',
       'team',
       'agent',
+      'fleet',
     ]);
+    // Progress is still monotonic even though the ALTITUDE is not. The scroll
+    // arithmetic knows nothing about altitudes; it walks panel anchors, and
+    // the camera resolves each anchor to a framing. That separation is what
+    // lets the last panel open back out without touching this file.
+    for (let index = 1; index < anchors.length; index += 1) {
+      expect(boardProgressAt(anchors[index]!, anchors)).toBeGreaterThan(
+        boardProgressAt(anchors[index - 1]!, anchors)
+      );
+    }
     expect(boardProgressAt(anchors[0]!, anchors)).toBeCloseTo(0, 6);
     expect(boardProgressAt(anchors[anchors.length - 1]!, anchors)).toBeCloseTo(
       1,

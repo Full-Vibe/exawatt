@@ -63,9 +63,16 @@ describe('pinned board sequence', () => {
     expect(panels.className).toContain('-mt-[calc(100svh-3rem)]');
   });
 
-  it('unpins for reduced motion and for a phone, in the same DOM', () => {
+  it('unpins for reduced motion ONLY, in the same DOM', () => {
     // One tree, unpinned by CSS. A second tree swapped in after hydration is
     // exactly the layout shift the constraint forbids.
+    //
+    // AMENDED W5 (operator): a phone no longer unpins. "Ensure this works well
+    // on mobile so I can demonstrate it at conferences and stuff like that on
+    // my phone very clearly" makes the phone a DEMO SURFACE, and a demo
+    // surface cannot be a still picture of the thing being demonstrated.
+    // Reduced motion keeps its unpinned path, because that is an accessibility
+    // contract and a separate question from screen width.
     const { container } = render(<PinnedBoardSequence bands={bands} />);
     const board = container.querySelector('[data-pinned-board]')!;
     const panels = container.querySelector('[data-pinned-panels-layer]')!;
@@ -74,16 +81,13 @@ describe('pinned board sequence', () => {
     // `relative`, never `static`: the board frame inside is absolutely
     // positioned, so a static parent hands it to the section and the poster
     // covers the panels.
-    for (const variant of ['motion-reduce:relative', 'max-md:relative']) {
-      expect(board.className).toContain(variant);
-    }
+    expect(board.className).toContain('motion-reduce:relative');
     expect(board.className).not.toContain('motion-reduce:static');
-    for (const variant of ['motion-reduce:mt-0', 'max-md:mt-0']) {
-      expect(panels.className).toContain(variant);
-    }
-    for (const variant of ['motion-reduce:h-auto', 'max-md:h-auto']) {
-      expect(panel.className).toContain(variant);
-    }
+    expect(board.className).not.toContain('max-md:relative');
+    expect(panels.className).toContain('motion-reduce:mt-0');
+    expect(panels.className).not.toContain('max-md:mt-0');
+    expect(panel.className).toContain('motion-reduce:h-auto');
+    expect(panel.className).not.toContain('max-md:h-auto');
   });
 
   it('never takes the scroll away from the reader', () => {
@@ -103,18 +107,22 @@ describe('pinned board sequence', () => {
     add.mockRestore();
   });
 
-  it('binds no scroll listener at all when the layout is not pinned', () => {
-    // Reduced motion and a phone both unpin, and neither has a camera to
-    // drive: the listener does not exist rather than running and being
-    // overridden by a media query.
-    for (const flag of [reducedMotion, narrow]) {
-      flag.value = true;
-      const add = vi.spyOn(window, 'addEventListener');
-      render(<PinnedBoardSequence bands={bands} />);
-      expect(add.mock.calls.some(call => call[0] === 'scroll')).toBe(false);
-      add.mockRestore();
-      flag.value = false;
-    }
+  it('binds no scroll listener when reduced motion unpins the layout', () => {
+    // Unpinned there is no camera to drive: the listener does not exist rather
+    // than running and being overridden by a media query.
+    reducedMotion.value = true;
+    const add = vi.spyOn(window, 'addEventListener');
+    render(<PinnedBoardSequence bands={bands} />);
+    expect(add.mock.calls.some(call => call[0] === 'scroll')).toBe(false);
+    add.mockRestore();
+  });
+
+  it('still drives the board on a phone, because a phone is a demo surface', () => {
+    narrow.value = true;
+    const add = vi.spyOn(window, 'addEventListener');
+    render(<PinnedBoardSequence bands={bands} />);
+    expect(add.mock.calls.some(call => call[0] === 'scroll')).toBe(true);
+    add.mockRestore();
   });
 
   it('lets the unpinned layouts win the panel opacity outright', () => {
@@ -134,12 +142,11 @@ describe('pinned board sequence', () => {
       ).not.toBe('');
       expect(panel.className).toContain('opacity-[var(--panel-opacity)]');
       expect(panel.className).toContain('motion-reduce:opacity-100');
-      expect(panel.className).toContain('max-md:opacity-100');
     }
   });
 
   it('opens every panel where nothing drives them', () => {
-    narrow.value = true;
+    reducedMotion.value = true;
     const { container } = render(<PinnedBoardSequence bands={bands} />);
 
     for (const panel of Array.from(
@@ -166,9 +173,9 @@ describe('pinned board sequence', () => {
   });
 
   it('makes every panel name its OWN subject, from the capture', () => {
-    // Unpinned, all three panels are on screen at once; gating the subject on
-    // "am I the active panel" left two of them anonymous and put the third
-    // panel's name under the first panel's copy.
+    // Unpinned, every panel is on screen at once; gating the subject on "am I
+    // the active panel" left all but one anonymous and put a later panel's
+    // name under the first panel's copy.
     const { container } = render(<PinnedBoardSequence bands={bands} />);
     const subjects = Array.from(
       container.querySelectorAll('[data-pinned-panel-subject-label]')
@@ -176,7 +183,9 @@ describe('pinned board sequence', () => {
 
     expect(subjects).toHaveLength(bands.length);
     expect(new Set(subjects).size).toBe(bands.length);
-    expect(subjects[0]).toContain('need you');
+    // The attention panel is the one that has to print the needs-you count,
+    // and it is the second panel now that scale gets its own screen.
+    expect(subjects[1]).toContain('need you');
     for (const panel of Array.from(
       container.querySelectorAll('[data-pinned-panel]')
     )) {

@@ -37,6 +37,32 @@ export interface HeroBoardUnit {
   doing: string;
 }
 
+/**
+ * One delegated child mark, or one overflow lobe (ENG-031 W5).
+ *
+ * Delegation is real product state, not a marketing invention: ENG-023 D3c and
+ * ENG-004 V3.4 render a parent's children as same-family marks at a fixed
+ * ratio in deterministic rosette slots, with a hairline lineage tether and an
+ * overflow lobe past five. The capture carries the board model's OWN emitted
+ * units (`selectSpatialDelegationUnits`), so the marketing board and the
+ * product board cannot disagree about where a child sits.
+ */
+export interface HeroBoardDelegation {
+  /** Board-model coordinates, same space as `HeroBoardUnit`. */
+  x: number;
+  y: number;
+  size: number;
+  /** Index into `units` of the Agent that spawned it. */
+  parent: number;
+  /** Parent edge to child edge. Lineage only: it implies no message flow,
+   *  status, or command authority (ENG-023 D3c). */
+  tether: { x1: number; y1: number; x2: number; y2: number };
+  /** The child's subagent type, or null on an overflow lobe. */
+  type: string | null;
+  /** Exact Agents an overflow lobe stands for; 0 on an individual child. */
+  overflow: number;
+}
+
 export interface HeroBoardZone {
   label: string;
   x: number;
@@ -63,7 +89,13 @@ export interface HeroBoardCapture {
     projects: number;
     units: number;
     needsYou: number;
+    /** Agents currently running Agents of their own. */
+    delegating: number;
+    /** Delegated runs underneath them, overflow lobes counted at their exact
+     *  census rather than as one mark. */
+    delegated: number;
   };
   zones: HeroBoardZone[];
   units: HeroBoardUnit[];
+  delegations: HeroBoardDelegation[];
 }

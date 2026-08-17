@@ -36,7 +36,9 @@ export type HeroHighlightId =
   /** One Project: the one the Team altitude frames. */
   | 'one-project'
   /** One Agent: the one the closest altitude frames. */
-  | 'one-agent';
+  | 'one-agent'
+  /** Every Agent that is running Agents of its own, and their children. */
+  | 'delegation';
 
 /**
  * What a receded mark keeps. Not zero: the argument is that the fleet is still
@@ -65,6 +67,15 @@ export interface HeroHighlight {
   zones: Float32Array;
   /** 1 leads, 0 recedes. Index-aligned with `capture.units`. */
   units: Float32Array;
+  /**
+   * How present the delegated constellations are, 0..1 (ENG-031 W5).
+   *
+   * A number rather than a flag because the bloom is a TRANSITION: the
+   * children scale out of their parents and their tethers draw, on a finite
+   * damped move that leaves and arrives at rest. Everything else on the board
+   * is a pure function of scroll position, and so is this.
+   */
+  delegation: number;
   /** True when unit emphasis is a function of LIVE status, so the scene keeps
    *  it truthful while the scheduler turns agents. */
   followsStatus: boolean;
@@ -100,6 +111,7 @@ export function resolveHeroHighlight(
       zones,
       units,
       followsStatus: true,
+      delegation: 0,
       subject: {
         kind: 'fleet',
         label: `${capture.counts.needsYou} agents need you`,
@@ -121,6 +133,7 @@ export function resolveHeroHighlight(
       zones,
       units,
       followsStatus: false,
+      delegation: 0,
       subject: {
         kind: 'project',
         label: zone.label,
@@ -141,6 +154,7 @@ export function resolveHeroHighlight(
       zones,
       units,
       followsStatus: false,
+      delegation: 0,
       subject: {
         kind: 'agent',
         label: unit.name,
@@ -150,11 +164,41 @@ export function resolveHeroHighlight(
     };
   }
 
+  if (id === 'delegation') {
+    // Every parent that is running Agents of its own leads, together with the
+    // Projects those parents sit in. Everything else recedes to the same floor
+    // the other highlights use, because the rest of the fleet is still there
+    // and still running: a board that empties itself to make a point is making
+    // a different, false point.
+    const parents = new Set(capture.delegations.map(child => child.parent));
+    units.fill(0);
+    zones.fill(0);
+    for (const index of parents) {
+      units[index] = 1;
+      const zone = capture.units[index]?.zone;
+      if (zone !== undefined) zones[zone] = 1;
+    }
+    return {
+      id,
+      zones,
+      units,
+      followsStatus: false,
+      delegation: 1,
+      subject: {
+        kind: 'fleet',
+        label: `${capture.counts.delegating} agents are running agents`,
+        detail: `${capture.counts.delegated} delegated runs underneath them`,
+        unit: -1,
+      },
+    };
+  }
+
   return {
     id: 'whole-fleet',
     zones,
     units,
     followsStatus: false,
+    delegation: 0,
     subject: {
       kind: 'fleet',
       label: `${capture.counts.agents} agents`,
