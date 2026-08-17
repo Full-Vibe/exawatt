@@ -160,7 +160,12 @@ export function ShortcutHelpModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent
+        className="max-w-lg"
+        primaryAction={{
+          none: 'The cheat sheet is a reference: every row is a verb the operator presses directly, and nothing on it is the one thing this sheet exists to do.',
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
           <DialogDescription>

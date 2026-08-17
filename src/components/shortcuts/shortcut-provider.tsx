@@ -72,6 +72,10 @@ import {
 } from './command-palette-launch-configurations';
 import type { PtyHarness } from '@/types/electron';
 import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
+import {
+  runTopDialogPrimaryAction,
+  useDialogPrimaryActionDepth,
+} from '@/components/ui/dialog-primary-action';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
@@ -180,6 +184,9 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
   // Track when modals close to prevent Enter key from double-triggering
   const modalClosedAtRef = useRef<number>(0);
+  // Open dialogs that declared a primary action (BUG-049). While one is up,
+  // `modal-open` is live and ⌘⏎ presses it; with none, the verb is inert.
+  const dialogPrimaryActions = useDialogPrimaryActionDepth();
 
   // Per-device keyboard overrides, read locally (BUG-044). The account, where
   // one exists, only syncs them — so a distribution without one still starts
@@ -265,6 +272,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             break;
           case 'quick-feedback':
             requestQuickFeedback();
+            break;
+          // The open dialog owns its Return (BUG-049). The target is whichever
+          // dialog declared a primary action most recently, so one verb serves
+          // every dialog and none of them holds its own keydown handler.
+          case 'dialog-primary-action':
+            runTopDialogPrimaryAction();
             break;
           case 'help-modal':
           case 'help-modal-slash':
@@ -537,10 +550,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const contexts: ShortcutCtx[] = [];
 
     if (commandPaletteOpen) contexts.push('command-palette');
-    if (commandPaletteOpen || helpModalOpen) contexts.push('modal-open');
+    if (commandPaletteOpen || helpModalOpen || dialogPrimaryActions > 0) {
+      contexts.push('modal-open');
+    }
 
     shortcutRegistry.setContexts(contexts);
-  }, [commandPaletteOpen, helpModalOpen]);
+  }, [commandPaletteOpen, dialogPrimaryActions, helpModalOpen]);
 
   // Global keyboard listener
   useEffect(() => {

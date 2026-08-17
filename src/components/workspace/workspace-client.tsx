@@ -1529,6 +1529,15 @@ export function WorkspaceClient() {
     : null;
   const composerTab = composerSlot?.tab ?? null;
 
+  // The directory the workspace is standing in (BUG-041 residual). The empty-Project
+  // stage knows it before any tab exists, which is what lets the chrome row
+  // hold its height across the moment a draft intent materialises the tab —
+  // the 37px drop BUG-041 measured and left. A draft's cwd IS the Project's
+  // dir, so the row's text does not change across that hand-off either.
+  const contextPath = activeTab?.cwd ?? composerSlot?.dir ?? null;
+  /** There is a live pane behind the composer/record to send focus to. */
+  const focusableTerminal = !!activeTab && activeTab.lifecycle !== 'draft';
+
   return (
     <div
       className="relative flex h-full flex-col"
@@ -1677,18 +1686,22 @@ export function WorkspaceClient() {
           ENG-015 S3 reflow rule. On narrow windows the rail overlays. */}
         <div className="relative flex min-h-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {/* BUG-041 follow-up, deliberately NOT taken here: this row is
-                what still MOVES when the first draft intent materialises the
-                tab. It renders only with an active tab, so the composer drops
-                37px the moment the draft exists — measured, one frame, no
-                state lost. A draft has no Session to describe either (no
-                goal, no roadmap chip, a path the Project already is, a
-                Focus-terminal button with no terminal), so the row arguably
-                does not belong on the new-tab page at all. But that is a
-                design change to a shipped surface, and `eval:workspace:chrome`
-                measures this row's type standing on exactly that draft — so
-                it is shaped in a design pass, not decided inside a bug fix. */}
-            {activeTab && (
+            {/* BUG-041's residual, taken. This row used to render
+                only with an active tab, so materialising the first draft
+                dropped the composer 41px — and the pane under it by the same
+                41px, resizing every terminal — on the launcher's
+                highest-frequency path. The row now states the DIRECTORY the
+                workspace is
+                standing in, which the empty-Project stage knows before any tab
+                exists: it is there from the moment the Project opens, holds
+                its own height across the hand-off, and gains the Session's
+                goal, roadmap chip and terminal focus when there is a Session
+                to describe. Nothing is removed and nothing moves.
+
+                Height is the load-bearing property here — `min-h-9` on a row
+                above the terminal pane, so a shift resizes every xterm — which
+                is why `eval:workspace:chrome` gates this file. */}
+            {contextPath !== null && (
               <div
                 data-active-session-context
                 className="flex min-h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5"
@@ -1704,13 +1717,13 @@ export function WorkspaceClient() {
                 <span
                   data-active-session-path
                   className="min-w-0 shrink truncate font-mono text-chrome-label"
-                  title={activeTab.cwd}
+                  title={contextPath}
                   tabIndex={0}
                   style={{ color: HUD.textMono }}
                 >
-                  {middleTruncatePath(activeTab.cwd)}
+                  {middleTruncatePath(contextPath)}
                 </span>
-                {activeItemChip && (
+                {activeTab && activeItemChip && (
                   <button
                     type="button"
                     title={`working on ${activeItemChip.item.title} — open in roadmap`}
@@ -1732,36 +1745,46 @@ export function WorkspaceClient() {
                       activeItemChip.item.title}
                   </button>
                 )}
-                {reentryRecap && activeTab.sessionId === reentryRecap.id ? (
-                  <ReentryRecapLine
-                    recap={reentryRecap}
-                    onExpire={dismissReentryRecap}
-                  />
-                ) : (
-                  // durable-Session goal (D21): a stopped tab still answers
-                  // "what was this session driving toward?"
-                  summaries[activeTab.durableSessionId] && (
-                    <span
-                      className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
-                      style={{
-                        color: HUD.textDim,
-                        borderColor: HUD.strokeFaint,
-                      }}
-                    >
-                      {summaries[activeTab.durableSessionId]}
-                    </span>
-                  )
-                )}
+                {activeTab &&
+                  (reentryRecap && activeTab.sessionId === reentryRecap.id ? (
+                    <ReentryRecapLine
+                      recap={reentryRecap}
+                      onExpire={dismissReentryRecap}
+                    />
+                  ) : (
+                    // durable-Session goal (D21): a stopped tab still answers
+                    // "what was this session driving toward?"
+                    summaries[activeTab.durableSessionId] && (
+                      <span
+                        className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
+                        style={{
+                          color: HUD.textDim,
+                          borderColor: HUD.strokeFaint,
+                        }}
+                      >
+                        {summaries[activeTab.durableSessionId]}
+                      </span>
+                    )
+                  ))}
+                {/* Shown only where there is a terminal to focus: a draft's
+                    pane is the composer, so this control had nothing to
+                    address. It keeps its box either way — the button is the
+                    tallest thing in the row, and letting it come and go would
+                    trade the 37px drop for a 4px one. */}
                 <button
                   type="button"
                   aria-label="Focus active terminal"
                   title="Focus active terminal"
+                  aria-hidden={!focusableTerminal}
+                  tabIndex={focusableTerminal ? undefined : -1}
                   onClick={() =>
                     window.dispatchEvent(
                       new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)
                     )
                   }
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan ${
+                    focusableTerminal ? '' : 'invisible pointer-events-none'
+                  }`}
                   style={{ color: HUD.textDim }}
                 >
                   <SquareTerminal className="h-4 w-4" />

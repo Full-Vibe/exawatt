@@ -12,6 +12,7 @@ import {
   type CommandVerbMenuSection,
 } from '@exawatt/core';
 import { STATIC_PALETTE_ROW_IDS } from '@/components/shortcuts/command-palette';
+import { DIALOG_PRIMARY_ACTION_SHORTCUT_ID } from '@/components/ui/dialog-primary-action';
 import {
   LIVE_WORKSPACE_MENU_COMMANDS,
   WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS,
@@ -172,6 +173,43 @@ describe('keyboard surface', () => {
         ].join('+');
       });
     expect(new Set(signatures).size).toBe(signatures.length);
+  });
+});
+
+/**
+ * The dialog surface (BUG-049). `dialog.tsx` is the code that publishes this
+ * verb: it presses the open dialog's declared primary action and prints the
+ * chord on that action's button. Deleting the manifest entry, or moving it out
+ * of `modal-open`, or dropping ⌘ from its binding, each breaks something the
+ * operator can feel — and each fails here.
+ */
+describe('dialog surface', () => {
+  const verb = keyboardCommandVerbs().find(
+    candidate => candidate.id === DIALOG_PRIMARY_ACTION_SHORTCUT_ID
+  );
+
+  it('gives the open dialog’s primary action a rebindable chord', () => {
+    expect(verb, DIALOG_PRIMARY_ACTION_SHORTCUT_ID).toBeDefined();
+    expect(
+      defaultShortcuts.some(
+        shortcut => shortcut.id === DIALOG_PRIMARY_ACTION_SHORTCUT_ID
+      )
+    ).toBe(true);
+  });
+
+  it('scopes it to an open modal, so it is inert everywhere else', () => {
+    expect(verb!.contexts).toEqual(['modal-open']);
+  });
+
+  it('keeps a primary modifier on it, so a dialog’s text field keeps ⏎', () => {
+    // `shouldIgnoreShortcutEvent` lets a combo through a focused textarea only
+    // when it carries ⌘/⌃. Without the policy, a rebind to a bare key would
+    // take Return away inside every dialog that holds a multi-line field.
+    expect(verb!.bindingPolicy).toBe('universal-command');
+    expect(isChordKeys(verb!.keys)).toBe(false);
+    expect((verb!.keys as { modifiers?: string[] }).modifiers).toContain(
+      'meta'
+    );
   });
 });
 

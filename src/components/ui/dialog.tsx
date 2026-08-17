@@ -5,6 +5,60 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { getDefaultShortcut } from "@/lib/shortcuts"
+import {
+  formatShortcutKeys,
+  formatShortcutKeysAria,
+} from "@/lib/shortcuts/format"
+import { useEffectiveShortcut } from "@/components/shortcuts/use-effective-shortcut"
+import {
+  DIALOG_PRIMARY_ACTION_SHORTCUT_ID,
+  isDialogPrimaryAction,
+  useDialogPrimaryActionSlot,
+  type DialogPrimaryActionDeclaration,
+} from "./dialog-primary-action"
+
+/**
+ * A dialog's primary action owes a chord and a visible hint (BUG-049).
+ *
+ * `primaryAction` is REQUIRED and is a union: the action, or `{ none }` plus
+ * a written reason. A dialog therefore cannot be born with an unreachable
+ * Send button — the same shape the command verb manifest uses one layer out.
+ * `DialogFooter` renders the declared action itself, so the button, the chord
+ * and the hint on its face all come from one declaration and cannot disagree.
+ */
+interface DialogPrimaryActionScope {
+  declaration: DialogPrimaryActionDeclaration
+  /** Set by whichever descendant printed the chord, so a declared action that
+   *  advertises nothing is caught in development rather than in the hands of
+   *  the operator who cannot find it. */
+  published: { current: boolean }
+}
+
+const DialogPrimaryActionContext =
+  React.createContext<DialogPrimaryActionScope | null>(null)
+
+/** The manifest's own default, used until the registry has loaded the
+ *  operator's overrides. The hint is therefore on the button from the first
+ *  paint: it never appears late, so it never moves the button under a hand. */
+function dialogPrimaryActionDefaultKeys() {
+  const declared = getDefaultShortcut(DIALOG_PRIMARY_ACTION_SHORTCUT_ID)
+  if (!declared) {
+    throw new Error(
+      `Command verb manifest is missing ${DIALOG_PRIMARY_ACTION_SHORTCUT_ID}`
+    )
+  }
+  return declared.keys
+}
+
+/** The chord the operator has bound, or the manifest default. */
+function useDialogPrimaryActionKeys() {
+  return (
+    useEffectiveShortcut(DIALOG_PRIMARY_ACTION_SHORTCUT_ID) ??
+    dialogPrimaryActionDefaultKeys()
+  )
+}
 
 function Dialog({
   ...props
@@ -46,14 +100,60 @@ function DialogOverlay({
   )
 }
 
+type DialogContentProps = React.ComponentProps<
+  typeof DialogPrimitive.Content
+> & {
+  showCloseButton?: boolean
+  /** REQUIRED (BUG-049): the one action this dialog exists to take, or
+   *  `{ none: '<why not>' }`. */
+  primaryAction: DialogPrimaryActionDeclaration
+}
+
+/**
+ * Rendered INSIDE the Radix content, so it mounts exactly when the dialog is
+ * on screen. Registering the primary action from `DialogContent` itself would
+ * publish it while the dialog is closed — every provider-level `<Dialog>` in
+ * the tree renders its content element whether or not it is open — and ⌘⏎
+ * would then press a Send button nobody can see.
+ */
+function DialogPrimaryActionScopeProvider({
+  declaration,
+  children,
+}: {
+  declaration: DialogPrimaryActionDeclaration
+  children: React.ReactNode
+}) {
+  const spec = isDialogPrimaryAction(declaration) ? declaration : null
+  useDialogPrimaryActionSlot(spec)
+  const published = React.useRef(false)
+  const scope = React.useMemo<DialogPrimaryActionScope>(
+    () => ({ declaration, published }),
+    [declaration]
+  )
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !spec || published.current) {
+      return
+    }
+    console.error(
+      "A dialog declared a primary action and printed no chord. Render it " +
+        "through DialogFooter, or place DialogPrimaryActionHint on the button " +
+        "that runs it."
+    )
+  }, [spec])
+  return (
+    <DialogPrimaryActionContext.Provider value={scope}>
+      {children}
+    </DialogPrimaryActionContext.Provider>
+  )
+}
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  primaryAction,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  showCloseButton?: boolean
-}) {
+}: DialogContentProps) {
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -65,7 +165,9 @@ function DialogContent({
         )}
         {...props}
       >
-        {children}
+        <DialogPrimaryActionScopeProvider declaration={primaryAction}>
+          {children}
+        </DialogPrimaryActionScopeProvider>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
@@ -90,7 +192,74 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
+/**
+ * The dialog's primary button, rendered from the declaration on
+ * `DialogContent` rather than hand-composed per dialog. It prints the chord
+ * that presses it on its own face — the register the ⌘W close confirm
+ * established with `Close ⏎` — so the keyboard path and the button can never
+ * drift apart. macOS default-button placement: last in the footer, rightmost.
+ */
+function DialogPrimaryButton({
+  className,
+  ...props
+}: React.ComponentProps<"button">) {
+  const scope = React.useContext(DialogPrimaryActionContext)
+  const keys = useDialogPrimaryActionKeys()
+  if (!scope || !isDialogPrimaryAction(scope.declaration)) return null
+  const declaration = scope.declaration
+  return (
+    <Button
+      data-slot="dialog-primary-action"
+      type="button"
+      variant={declaration.destructive ? "destructive" : "default"}
+      onClick={declaration.run}
+      disabled={declaration.disabled}
+      aria-label={declaration.ariaLabel}
+      aria-keyshortcuts={formatShortcutKeysAria(keys)}
+      className={className}
+      {...props}
+    >
+      {declaration.label}
+      <DialogPrimaryActionHint />
+    </Button>
+  )
+}
+
+/**
+ * The chord, printed where the action is. A dialog whose primary button is
+ * its own bespoke chrome renders this inside that button instead of taking
+ * `DialogPrimaryButton` whole; either way the glyph comes from the registry,
+ * so a rebind moves it and it can never state a chord that does not work.
+ *
+ * It occupies its space unconditionally — the manifest default stands in
+ * until the operator's overrides load — so it never appears late and never
+ * shifts the button under a hand already moving toward it.
+ */
+function DialogPrimaryActionHint({
+  className,
+}: {
+  className?: string
+}) {
+  const scope = React.useContext(DialogPrimaryActionContext)
+  const keys = useDialogPrimaryActionKeys()
+  if (scope) scope.published.current = true
+  if (!scope || !isDialogPrimaryAction(scope.declaration)) return null
+  return (
+    <span
+      aria-hidden
+      data-slot="dialog-primary-action-hint"
+      className={cn("font-mono text-chrome-micro opacity-75", className)}
+    >
+      {formatShortcutKeys(keys)}
+    </span>
+  )
+}
+
+function DialogFooter({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-footer"
@@ -99,7 +268,10 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
         className
       )}
       {...props}
-    />
+    >
+      {children}
+      <DialogPrimaryButton />
+    </div>
   )
 }
 
@@ -138,6 +310,9 @@ export {
   DialogHeader,
   DialogOverlay,
   DialogPortal,
+  DialogPrimaryActionHint,
+  DialogPrimaryButton,
   DialogTitle,
   DialogTrigger,
 }
+export type { DialogPrimaryActionDeclaration } from "./dialog-primary-action"
