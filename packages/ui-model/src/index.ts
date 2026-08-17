@@ -18,34 +18,6 @@ export * from './roadmap-lens';
 export * from './roadmap-strip';
 export * from './roadmap-attention';
 
-export type FleetSurfaceMode = 'dom' | 'spatial';
-
-export type FleetCommandErrorCode =
-  | 'agent_not_found'
-  | 'source_unavailable'
-  | 'command_rejected'
-  | 'unknown';
-
-export interface FleetCommandError {
-  code: FleetCommandErrorCode;
-  message: string;
-  recoverable: boolean;
-}
-
-export type CommandResult<T = void> =
-  | { ok: true; value: T }
-  | { ok: false; error: FleetCommandError };
-
-export interface FleetCommandActions {
-  selectAgent: (agentId: string | null) => CommandResult;
-  openAgentFocus: (agentId: string) => CommandResult;
-  sendMessage: (agentId: string, text: string) => Promise<CommandResult>;
-  resolveBlocker: (agentId: string, response: string) => Promise<CommandResult>;
-  abortAgent: (agentId: string) => Promise<CommandResult>;
-  runHeartbeat: (jobId: string) => Promise<CommandResult>;
-  connectSource: () => Promise<CommandResult>;
-}
-
 export interface FleetAgentView {
   id: string;
   name: string;

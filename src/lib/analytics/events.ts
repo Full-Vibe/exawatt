@@ -76,7 +76,6 @@ export const EXCEPTION_LEVELS = [
   'info',
   'debug',
 ] as const;
-export type ExceptionLevel = (typeof EXCEPTION_LEVELS)[number];
 
 /* ------------------------------------------------------------------ *
  * Closed enums. Every property a caller can set is one of these.

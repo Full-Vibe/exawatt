@@ -17,10 +17,6 @@ import { cn } from '@/lib/utils';
 import { SetupChip } from './setup-chip';
 import type { LauncherRowState, LauncherSetup } from './launcher-model';
 
-/** How many setups the row shows before the rest live behind ＋. */
-export const MAX_ROW_SETUPS = 4;
-export const MIN_ROW_SETUPS = 2;
-
 /**
  * The skeleton is the real chip.
  *

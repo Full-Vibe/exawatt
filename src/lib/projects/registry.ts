@@ -235,24 +235,6 @@ export async function openRepositoryProject(
   return data as Project;
 }
 
-/** Mark a Project as just opened (bumps recency for the switcher/recents). */
-export async function touchProject(id: string): Promise<void> {
-  const supabase = optionalProjectClient();
-  if (!supabase) {
-    updateLocalProject(id, (project, nowIso) => ({
-      ...project,
-      last_opened_at: nowIso,
-      updated_at: nowIso,
-    }));
-    return;
-  }
-  const { error } = await supabase
-    .from('projects')
-    .update({ last_opened_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throw new Error(error.message);
-}
-
 export async function renameProject(id: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;

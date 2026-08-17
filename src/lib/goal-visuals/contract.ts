@@ -28,13 +28,6 @@ export type GoalVisualErrorCode =
   | 'generation_failed'
   | 'safety_rejected';
 
-export interface GoalVisualErrorResponse {
-  error: {
-    code: GoalVisualErrorCode;
-    message: string;
-  };
-}
-
 function cleanInline(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 }

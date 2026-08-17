@@ -149,20 +149,6 @@ class ProjectDirectoryScope {
   }
 }
 
-/**
- * Project membership is wider than cwd equality: commands can begin in a
- * nested package or linked worktree while still belonging to one canonical
- * Project. Path containment handles ordinary folders; resolveProject handles
- * live git worktrees through their common git directory.
- */
-export async function directoryBelongsToProject(
-  directory: string,
-  projectDirectory: string
-): Promise<boolean> {
-  const scope = await ProjectDirectoryScope.create(projectDirectory);
-  return (await scope.launchDirectory(directory)) !== null;
-}
-
 async function jsonlFiles(directory: string): Promise<string[]> {
   let entries: fs.Dirent[];
   try {

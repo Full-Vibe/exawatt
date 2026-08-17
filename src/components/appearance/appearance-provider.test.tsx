@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 import {
   CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
   DEFAULT_APPEARANCE_PREFERENCES,
-  selectManualTheme,
-} from '@/lib/appearance';
+} from '@/lib/appearance/resolve-appearance';
+import { selectManualTheme } from '@/lib/appearance/selection';
 import { APPEARANCE_MIRROR_STORAGE_KEY } from '@/lib/appearance/preference-source';
 import {
   AppearanceProvider,

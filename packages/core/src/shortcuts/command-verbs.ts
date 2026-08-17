@@ -738,20 +738,9 @@ export const FIXED_SESSION_MENU_COMMANDS = [
   },
 ] as const;
 
-export type FixedSessionMenuCommandId =
-  (typeof FIXED_SESSION_MENU_COMMANDS)[number]['id'];
-
 export const FIXED_SESSION_MENU_COMMAND_IDS: ReadonlySet<string> = new Set(
   FIXED_SESSION_MENU_COMMANDS.map(command => command.id)
 );
-
-/** Every native menu command the app owns: verbs plus the fixed families. */
-export function allMenuAvailabilityCommandIds(): readonly string[] {
-  return [
-    ...availabilityMenuCommandIds(),
-    ...FIXED_SESSION_MENU_COMMANDS.map(command => command.id),
-  ];
-}
 
 /** Menu command id for a launchable Agent Source, shared by both processes. */
 export function agentSourceMenuCommandId(harness: string): string {

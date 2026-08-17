@@ -5,7 +5,6 @@ import {
   createContext,
   useContext,
   useLayoutEffect,
-  useMemo,
   useRef,
   type RefObject,
   type ReactNode,
@@ -22,7 +21,6 @@ import {
   boardTransitionProgress,
   carryBoardFieldPose,
   createBoardTransitionClock,
-  isBoardTransitionActive,
   settleBoardTransition,
   type BoardFieldPose,
   type BoardTransitionClock,
@@ -52,16 +50,6 @@ export function BoardTransitionProvider({ children }: { children: ReactNode }) {
  */
 export function useBoardTransitionClock(): RefObject<BoardTransitionClock> | null {
   return useContext(BoardTransitionContext);
-}
-
-/** Is a semantic transition running right now? For layers that must stand down. */
-export function useBoardTransitionActive(): () => boolean {
-  const clock = useBoardTransitionClock();
-  return useMemo(
-    () => () =>
-      clock ? isBoardTransitionActive(clock.current, performance.now()) : false,
-    [clock]
-  );
 }
 
 /**

@@ -26,21 +26,6 @@ import type { GoalVisual } from './pty/context-summarizer';
 export const MAX_GOAL_VISUALS = 64;
 export const MAX_GOAL_VISUAL_BYTES = 48 * 1024 * 1024;
 
-/** What the layout persists in place of the image. */
-export interface GoalVisualRef {
-  identityKey: string;
-  revision: number;
-  state: GoalVisual['state'];
-}
-
-export function goalVisualRef(visual: GoalVisual): GoalVisualRef {
-  return {
-    identityKey: visual.identityKey,
-    revision: visual.revision,
-    state: visual.state,
-  };
-}
-
 let store: ContentStore | null = null;
 
 export function goalVisualStore(): ContentStore {

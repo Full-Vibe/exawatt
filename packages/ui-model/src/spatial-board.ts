@@ -233,15 +233,6 @@ const STATUS_ORDER: AgentStatus[] = [
   'complete',
 ];
 
-const STATUS_RANK: Record<AgentStatus, number> = {
-  blocked: 0,
-  error: 1,
-  reviewing: 2,
-  working: 3,
-  idle: 4,
-  complete: 5,
-};
-
 function round4(value: number): number {
   return Math.round(value * 10_000) / 10_000;
 }
@@ -1700,13 +1691,4 @@ export function selectSpatialDelegationUnits(
   layout: SpatialBoardLayout
 ): SpatialBoardDelegationUnit[] {
   return layout.delegationUnits;
-}
-
-export function compareSpatialBoardAttention(
-  a: SpatialBoardPiece,
-  b: SpatialBoardPiece
-): number {
-  const statusDelta = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-  if (statusDelta !== 0) return statusDelta;
-  return a.id.localeCompare(b.id);
 }

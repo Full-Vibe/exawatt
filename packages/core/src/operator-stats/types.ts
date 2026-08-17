@@ -138,8 +138,3 @@ export interface RankedOperator extends RankableOperator {
   rank: number;
   value: number;
 }
-
-export const PUBLIC_ASSURANCE_FACETS: readonly AssuranceFacetName[] = [
-  'reported',
-  'observed',
-];

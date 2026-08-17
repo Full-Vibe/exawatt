@@ -56,10 +56,6 @@ export interface AgentLaunchConfiguration {
 export type LaunchTarget =
   | AgentLaunchConfiguration
   | typeof SHELL_LAUNCH_TARGET;
-export type LaunchTargetId =
-  | AgentLaunchConfiguration['id']
-  | typeof SHELL_LAUNCH_TARGET_ID;
-
 export interface LaunchTargetUsage {
   launchCount: number;
   lastLaunchedAt: number;

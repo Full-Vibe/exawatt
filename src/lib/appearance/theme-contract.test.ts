@@ -14,18 +14,20 @@ import {
   validateThemeChannels,
   validateThemeContrast,
 } from '../../../themes/contract.mjs';
+import { contrastRatio } from './color';
+import {
+  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+  DEFAULT_APPEARANCE_PREFERENCES,
+  resolveAppearance,
+} from './resolve-appearance';
 import {
   AIR_THEME_ID,
   CLASSIC_THEME_ID,
-  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
-  contrastRatio,
-  DEFAULT_APPEARANCE_PREFERENCES,
   NIGHT_THEME_ID,
-  resolveAppearance,
   type AppearancePreferencesV1,
   type AppearanceOsSignals,
   type ThemeDefinitionV1,
-} from '.';
+} from './types';
 
 const LIGHT_OS: AppearanceOsSignals = {
   dark: false,

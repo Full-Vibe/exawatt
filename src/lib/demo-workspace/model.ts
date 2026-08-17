@@ -55,10 +55,6 @@ export function demoShellAgents(): DemoFleetAgent[] {
   return demoFleetAgents('base', { nowMs: DEMO_SHELL_NOW_MS });
 }
 
-export function demoShellAgentById(id: string): DemoFleetAgent | undefined {
-  return demoShellAgents().find(agent => agent.id === id);
-}
-
 /** Full fleet (base + generated scale tier) on the shell clock, for Session
  *  resolution only — the rail and Team exposé stay base-tier. A Fleet-board
  *  "Open session" can target ANY board agent (`vgs-*` included); the shell
