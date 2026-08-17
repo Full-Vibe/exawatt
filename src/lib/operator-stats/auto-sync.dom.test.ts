@@ -16,16 +16,56 @@ import {
   startOperatorStatsAutoSync,
 } from './auto-sync';
 
-const { supabaseClient } = vi.hoisted(() => ({
-  supabaseClient: { current: null as unknown },
-}));
+const { supabaseClient, distributionState, createOptionalClient } = vi.hoisted(
+  () => ({
+    supabaseClient: { current: null as unknown },
+    distributionState: { current: null as unknown },
+    createOptionalClient: vi.fn(() => supabaseClient.current),
+  })
+);
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => {
-    if (!supabaseClient.current) throw new Error('not configured');
-    return supabaseClient.current;
-  },
+  createOptionalClient,
 }));
+
+vi.mock('@/lib/distribution/resolved', () => ({
+  resolvedDistribution: () => distributionState.current,
+}));
+
+const OPERATOR_STATS_URL = 'https://services.example.test/operator-stats';
+
+function distribution(
+  operatorStats: object | null = {
+    url: OPERATOR_STATS_URL,
+    protocolVersion: 1,
+  }
+) {
+  return {
+    schemaVersion: 1,
+    brand: null,
+    account: operatorStats
+      ? {
+          supabaseUrl: 'https://account.example.test',
+          supabaseAnonKey: 'public-anon-key',
+          recoveryOrigin: 'https://app.example.test',
+        }
+      : null,
+    services: {
+      productFeedback: null,
+      operatorStats,
+      projects: null,
+      preferences: null,
+      accountData: null,
+    },
+    enrichment: {
+      contextLabels: null,
+      conversationSummaries: null,
+      goalVisuals: null,
+    },
+    analytics: null,
+    updates: null,
+  };
+}
 
 const SESSION = {
   access_token: 'header.payload.signature',
@@ -46,14 +86,16 @@ const PREVIEW = {
   runs: [],
 };
 
-function installBridge(options: { autoPublish?: boolean } = {}) {
+function installBridge(
+  options: { autoPublish?: boolean; startedAt?: boolean } = {}
+) {
   let settings: Record<string, unknown> =
     options.autoPublish === undefined
       ? {}
       : {
           operatorProfile: {
             autoPublish: options.autoPublish,
-            ...(options.autoPublish
+            ...(options.autoPublish && options.startedAt !== false
               ? { startedAt: '2026-08-10T00:00:00.000Z' }
               : {}),
           },
@@ -92,6 +134,7 @@ function installBridge(options: { autoPublish?: boolean } = {}) {
   });
   return {
     scan,
+    settings: bridge.settings,
     emit(next: Record<string, unknown>) {
       settings = next;
       for (const listener of listeners) listener(next);
@@ -100,7 +143,7 @@ function installBridge(options: { autoPublish?: boolean } = {}) {
 }
 
 function installSupabase() {
-  supabaseClient.current = {
+  const client = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: SESSION } })),
       getUserIdentities: vi.fn(async () => ({
@@ -108,9 +151,13 @@ function installSupabase() {
       })),
     },
   };
+  supabaseClient.current = client;
+  return client;
 }
 
 beforeEach(() => {
+  distributionState.current = distribution();
+  createOptionalClient.mockClear();
   window.localStorage.clear();
 });
 
@@ -138,6 +185,10 @@ describe('runOperatorStatsSync', () => {
     expect(b).toBe(a);
     expect(scan).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      OPERATOR_STATS_URL,
+      expect.objectContaining({ method: 'POST' })
+    );
 
     const state = readOperatorStatsSyncState();
     expect(state.phase).toBe('idle');
@@ -163,6 +214,23 @@ describe('runOperatorStatsSync', () => {
     expect(result.outcome).toBe('unavailable');
   });
 
+  it('is unavailable before account auth, local scan, or fetch when the service is null', async () => {
+    distributionState.current = distribution(null);
+    const { scan } = installBridge({ autoPublish: true });
+    const client = installSupabase();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await runOperatorStatsSync();
+
+    expect(result.outcome).toBe('unavailable');
+    expect(createOptionalClient).not.toHaveBeenCalled();
+    expect(client.auth.getSession).not.toHaveBeenCalled();
+    expect(client.auth.getUserIdentities).not.toHaveBeenCalled();
+    expect(scan).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('runs again after a finished sync rather than reusing the settled promise', async () => {
     const { scan } = installBridge({ autoPublish: true });
     installSupabase();
@@ -174,6 +242,27 @@ describe('runOperatorStatsSync', () => {
 
     expect(scan).toHaveBeenCalledTimes(2);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the configured endpoint for owner GET and aggregate POST', async () => {
+    installBridge({ autoPublish: true, startedAt: false });
+    installSupabase();
+    const fetchSpy = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ profile: null }),
+      })
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await runOperatorStatsSync();
+
+    expect(result.outcome).toBe('synced');
+    expect(fetchSpy.mock.calls).toEqual([
+      [OPERATOR_STATS_URL, expect.objectContaining({ method: 'GET' })],
+      [OPERATOR_STATS_URL, expect.objectContaining({ method: 'POST' })],
+    ]);
   });
 });
 
@@ -196,6 +285,23 @@ describe('startOperatorStatsAutoSync', () => {
     expect(startOperatorStatsAutoSync(run)).toBeNull();
 
     vi.advanceTimersByTime(OPERATOR_STATS_SYNC_INTERVAL_MS * 2);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('does not schedule or read settings when the service is null', () => {
+    distributionState.current = distribution(null);
+    const { settings } = installBridge({ autoPublish: true });
+    const run = vi.fn(async () => ({
+      outcome: 'synced' as const,
+      snapshot: null,
+      failure: null,
+    }));
+
+    expect(startOperatorStatsAutoSync(run)).toBeNull();
+    vi.advanceTimersByTime(OPERATOR_STATS_SYNC_INTERVAL_MS * 2);
+
+    expect(settings.get).not.toHaveBeenCalled();
+    expect(settings.onChanged).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
 

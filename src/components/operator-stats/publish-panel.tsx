@@ -9,7 +9,8 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { Session, UserIdentity } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
+import { createOptionalClient } from '@/lib/supabase/client';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import {
   AUTH_INTENT_PARAM,
@@ -72,13 +73,13 @@ function findGithub(identities: UserIdentity[] | null | undefined) {
 export function PublishPanel() {
   const tenancy = useOptionalWorkspaceTenancy();
   const inDemoWorkspace = tenancy?.activeWorkspace.kind === 'demo';
-  const supabase = useMemo(() => {
-    try {
-      return createClient();
-    } catch {
-      return null;
-    }
-  }, []);
+  const distribution = useMemo(() => resolvedDistribution(), []);
+  const operatorStatsEndpoint = distribution.services.operatorStats;
+  const operatorStatsAvailable = operatorStatsEndpoint !== null;
+  const supabase = useMemo(
+    () => (operatorStatsEndpoint ? createOptionalClient(distribution) : null),
+    [distribution, operatorStatsEndpoint]
+  );
   const [session, setSession] = useState<Session | null>(null);
   // Identities as the SERVER currently knows them. The session's own copy was
   // snapshotted when its token was issued, so it can be an hour behind a link
@@ -247,10 +248,8 @@ export function PublishPanel() {
       }
       linkInFlight.current = true;
       if (window.electron?.auth) {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-        if (!supabaseUrl || !supabaseAnonKey)
-          throw new Error('Authentication is not configured.');
+        const account = distribution.account;
+        if (!account) throw new Error('Authentication is not configured.');
         // Main builds its own Supabase client and has no session of its own,
         // and `linkIdentity` refuses without one. Read it fresh rather than
         // from state so a token refreshed since mount is the one that travels.
@@ -259,8 +258,8 @@ export function PublishPanel() {
           throw new Error('Auth session missing. Sign in again.');
         }
         await window.electron.auth.linkGithub({
-          supabaseUrl,
-          supabaseAnonKey,
+          supabaseUrl: account.supabaseUrl,
+          supabaseAnonKey: account.supabaseAnonKey,
           redirectTo: `${window.location.origin}/auth/electron-callback`,
           session: {
             accessToken: live.session.access_token,
@@ -306,11 +305,11 @@ export function PublishPanel() {
   }
 
   async function removeProfile() {
-    if (!session) return;
+    if (!session || !operatorStatsEndpoint) return;
     setBusy(true);
     setError(null);
     setMessage(null);
-    const response = await fetch('/api/operator-stats', {
+    const response = await fetch(operatorStatsEndpoint.url, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${session.access_token}` },
     });
@@ -350,6 +349,17 @@ export function PublishPanel() {
         <button type="button" className={styles.buttonQuiet} disabled>
           Publishing disabled in Demo
         </button>
+      </aside>
+    );
+  }
+
+  if (!operatorStatsAvailable) {
+    return (
+      <aside className={styles.publishPanel} data-operator-stats="unavailable">
+        <div>
+          <h2>Operator publishing unavailable</h2>
+          <p>Not configured in this build · local usage stays on this device.</p>
+        </div>
       </aside>
     );
   }

@@ -684,7 +684,7 @@ export const architectureManifest = {
           id: 'operator-stats-projection',
           label: 'Operator Stats Projection',
           summary:
-            'Pure Run/day/rank derivation over the shared incremental Consumption service, durable consent and sync state, versioned aggregate-only payload validation, and explicit evidence assurance.',
+            'Pure Run/day/rank derivation over the shared incremental Consumption service, durable consent and sync state, versioned aggregate-only payload validation, explicit evidence assurance, and distribution-gated GET/POST/DELETE whose absent state schedules and sends nothing.',
           layer: 'coordination',
           status: 'implemented',
           x: 870,
@@ -708,7 +708,7 @@ export const architectureManifest = {
           id: 'feedback-intake',
           label: 'Product Feedback Intake',
           summary:
-            'Authenticated general reports, label votes/corrections, the ⌘⇧F quick-capture bar with pre-captured screenshots, and the operator reinflation triage loop draining rows into canonical repo state.',
+            'Distribution-gated authenticated general reports, label votes/corrections, the ⌘⇧F quick-capture bar with pre-captured screenshots, an honest unavailable state when no intake is configured, and the operator reinflation triage loop draining rows into canonical repo state.',
           layer: 'coordination',
           status: 'implemented',
           x: 365,

@@ -994,12 +994,18 @@ export function CommandPalette({
   // Quick feedback (ENG-025 F1): the palette is the discoverable face of
   // ⌘⇧F; each kind-specific verb opens the same capture bar pre-set.
   const feedback = useOptionalProductFeedback();
+  const feedbackAvailable = feedback?.isAvailable ?? false;
   const feedbackAuthed = feedback?.isAuthenticated ?? false;
   const actionItems = useMemo<CommandItem[]>(() => {
     void shortcutVersion;
     const feedbackAvailability: CommandAvailability | undefined = feedbackAuthed
       ? undefined
-      : { available: false, reason: 'Sign in required' };
+      : {
+          available: false,
+          reason: feedbackAvailable
+            ? 'Sign in required'
+            : 'Unavailable in this build',
+        };
     const feedbackVerb = (
       id: string,
       label: string,
@@ -1088,6 +1094,7 @@ export function CommandPalette({
     ];
   }, [
     enterThemePicker,
+    feedbackAvailable,
     feedbackAuthed,
     handleSelect,
     onOpenHelpModal,
