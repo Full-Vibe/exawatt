@@ -6,7 +6,7 @@ import {
   DOWNLOAD_LABEL,
   DOWNLOAD_REQUIREMENT,
 } from './download';
-import { FOLD_CLOSE_VARIANTS, foldCloseVariant } from './fold-copy';
+import { FOLD_CLOSE_VARIANTS, foldCloseVariant, foldWords } from './fold-copy';
 import { FoldHero } from './fold-hero';
 import { bandById, bandCopyWords, countWords } from './manifest';
 
@@ -30,6 +30,11 @@ describe('the fold, rendered', () => {
       expect(bandCopyWords(fold), variant.id).toBeLessThanOrEqual(
         FOLD.copyBudget.max
       );
+      // The rendered count and the source count must agree, or the ceiling is
+      // measured on a different page than the one that ships. Each line is its
+      // own block span; `bandCopyWords` treats element boundaries as word
+      // boundaries so the two cannot drift.
+      expect(bandCopyWords(fold), variant.id).toBe(foldWords(variant));
       unmount();
     }
   });
@@ -43,23 +48,25 @@ describe('the fold, rendered', () => {
   });
 
   it('renders the selected variant and nothing from the others', () => {
-    const { container } = render(<FoldHero variant="c" />);
-    const copy = foldCloseVariant('c');
+    const { container } = render(<FoldHero variant="b" />);
+    const copy = foldCloseVariant('b');
 
     expect(container.querySelector('[data-fold-hero]')).toHaveAttribute(
       'data-fold-variant',
-      'c'
+      'b'
     );
     expect(container.querySelector('[data-fold-kicker]')).toHaveTextContent(
       copy.kicker!
     );
-    expect(container.querySelector('[data-fold-subhead]')).toHaveTextContent(
-      copy.subhead.join(' ')
-    );
+    for (const line of copy.subhead) {
+      expect(container.querySelector('[data-fold-subhead]')).toHaveTextContent(
+        line
+      );
+    }
   });
 
   it('omits the kicker entirely when a variant has none', () => {
-    const { container } = render(<FoldHero variant="b" />);
+    const { container } = render(<FoldHero variant="a" />);
 
     expect(container.querySelector('[data-fold-kicker]')).toBeNull();
   });

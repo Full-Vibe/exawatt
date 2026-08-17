@@ -1,43 +1,61 @@
 import { bandById, countWords } from './manifest';
 
 /**
- * Fold and close copy, as an options study (ENG-031 W3).
+ * Fold and close copy, as an options study (ENG-031 W3, reframed W3b).
  *
- * Four complete arrangements of the SAME two approved directions, so the
- * operator compares real type on a real page instead of reading a list of
- * sentences. Every variant is shippable; picking one is a one-word edit of
- * `DEFAULT_FOLD_CLOSE_VARIANT`.
+ * Four complete arrangements of ONE frame, so the operator compares real type
+ * on a real page instead of reading a list of sentences. Every variant is
+ * shippable; picking one is a one-word edit of `DEFAULT_FOLD_CLOSE_VARIANT`.
  *
- * WHAT IS BEING DECIDED, and it is one question:
- * does "The economy is refactoring." run as the h1, or is it demoted so the
- * control thesis can lead? The operator does not want to give up the thesis
- * line and asked for a two-way door, so the study spends its four slots on
- * three different WEIGHTS for it rather than on four different sentences:
+ * WHY THE FIRST FOUR VARIANTS WERE THROWN AWAY (operator, 2026-08-17):
+ * "Hmm those copy options all kind of suck. 'Two hundred you cannot' - are you
+ * trying to pitch me that I can't watch 200 agents? This doesn't make sense to
+ * me as a user."
  *
- * - A demotes it to a kicker above the control thesis;
- * - B keeps it as the h1 proper, with the control thesis as the subhead;
- * - C demotes it to a kicker above the imperative value line;
- * - D removes it from the fold entirely and spends it at the close, where the
- *   type is 72px. That is the third answer to "I hate to give up the h1
- *   thesis": you do not give it up, you make it the loudest thing on the page.
+ * The structural flaw, and it is a rule now, not a note: THAT COPY MADE THE
+ * READER THE BOTTLENECK. Telling a user what they cannot do is an insult
+ * dressed as a value proposition. The enemy is the old way of working and the
+ * tools that have not kept up, never the reader's own capacity. See
+ * `marketing.md`, "Copy rules".
  *
- * THE TWO APPROVED DIRECTIONS (operator, 2026-08-16):
- * - "One agent you can watch. Two hundred you cannot." carried by A and B.
- * - "Command a fleet of 100 agents." carried by C and D. Its second clause was
- *   unresolved; "See everything all of them did" was called clunky and wanted
- *   tightening toward control or visibility, so the variants carry the two
- *   tightest candidates: "See every one of them." and "Stay in control of
- *   every one."
+ * THE FRAME, which is the operator's own draft and the spine of all four:
  *
- * REGISTER: visionary AND concrete, in that combination and never one alone.
- * The vision line says where this goes; the control thesis says why you
- * download it today (`marketing.md`, "The control thesis, found by drill").
+ *   "Today you run 10 agents. Tomorrow you will run 10,000. Exawatt is the
+ *   command interface for your team's agent fleets. The economy is refactoring
+ *   and your tools need to keep up. Download now"
+ *
+ * Four things in it survive every variant below:
+ *
+ * - TRAJECTORY, NOT LIMITATION. Today to tomorrow. The reader is already
+ *   climbing and the product meets them further up. This is also what makes
+ *   the big number honest: 10,000 as a future is true in a way that 10,000
+ *   today is not, which resolves the honest-scale constraint the brief spends
+ *   pages on without softening the claim.
+ * - THE TOOLS ARE THE BOTTLENECK, stated outright.
+ * - TEAM SCALE. "your team's agent fleets" reaches past the single operator.
+ * - A DIRECT CTA, and the thesis line integrated into the flow rather than
+ *   fighting the headline for the top slot.
+ *
+ * WHAT THE FOUR VARY, since the frame is settled:
+ * - A holds the trajectory as a two-line h1 and spends the thesis AND the
+ *   enemy at 72px, where the type is loudest. 20 words above the fold.
+ * - B demotes today to the kicker so the honest future number owns the whole
+ *   h1, and puts the enemy directly under it.
+ * - C keeps the operator's thesis sentence verbatim in the subhead, in his
+ *   order, over a clipped one-to-a-thousand pairing.
+ * - D names the old tool as the foil in the h1 and weights the team hardest,
+ *   leaving the concrete numbers for the close.
+ *
+ * His draft runs 31 words above the fold against a 24-word ceiling. Every
+ * variant here earns those words back without giving up the trajectory, the
+ * tools-not-you enemy, or the team reach.
  *
  * RULES HELD BY CONSTRUCTION, each asserted in `fold-copy.test.ts`:
  * - under 26 words above the fold (the manifest ceiling is 24);
  * - 10 words or fewer at the close;
  * - no em dashes anywhere (operator: "that's an AI smell");
- * - never in the fold: orchestration, platform, SDLC, agentic, command center.
+ * - never in the fold: orchestration, platform, SDLC, agentic, command center;
+ * - never a sentence in which the reader is the thing that fails.
  *
  * Competitor overlap is awareness, not a blocklist (`marketing.md`,
  * "Competitor phrasing: note it, do not route around it"). Plain person-voice
@@ -51,8 +69,9 @@ export interface FoldCloseVariant {
   /** How the operator refers to it while comparing. */
   name: string;
   /**
-   * Small line above the headline, or null. This is where the vision line
-   * goes when the control thesis leads.
+   * Small line above the headline, or null. Used only where demoting a clause
+   * buys the headline something: in B it hands the whole h1 to the future
+   * number while keeping the honest present tense on the page.
    */
   kicker: string | null;
   /**
@@ -72,45 +91,48 @@ export interface FoldCloseVariant {
 export const FOLD_CLOSE_VARIANTS: FoldCloseVariant[] = [
   {
     id: 'a',
-    name: 'Two hundred',
-    kicker: 'The economy is refactoring.',
-    headline: ['One agent you can watch.', 'Two hundred you cannot.'],
-    subhead: ['Exawatt is the command interface for every agent you run.'],
-    close: 'Run two hundred. Watch every one.',
-    note: 'Thesis as kicker. The problem is the h1; the product is the subhead.',
+    name: 'Ten thousand',
+    kicker: null,
+    headline: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
+    subhead: ["Exawatt is the command interface for your team's agent fleets."],
+    close: 'The economy is refactoring. Your tools need to keep up.',
+    note: 'His draft, tightened to 20. Both halves of the climb at 60px; the thesis and the enemy spend at 72px, right above the button.',
   },
   {
     id: 'b',
-    name: 'Refactoring',
-    kicker: null,
-    headline: ['The economy is refactoring.'],
+    name: 'Tomorrow',
+    kicker: 'Today you run 10 agents.',
+    headline: ['Tomorrow you will run 10,000.'],
     subhead: [
-      'One agent you can watch. Two hundred you cannot.',
-      'Exawatt is the command interface for all of them.',
+      'Your tools need to keep up.',
+      'Exawatt is the command interface for your team.',
     ],
-    close: 'Take command of your fleet.',
-    note: 'Thesis kept as the h1. The control thesis carries the subhead.',
+    close: 'The economy is refactoring.',
+    note: 'The future number owns the whole h1 and the enemy sits directly under it. The vision line alone at 72px.',
   },
   {
     id: 'c',
-    name: 'See every one',
-    kicker: 'The economy is refactoring.',
-    headline: ['Command a fleet of 100 agents.', 'See every one of them.'],
-    subhead: ['Exawatt is one screen for every agent you run.'],
-    close: 'See every agent. Command every one.',
-    note: 'Imperative value line, second clause tightened toward visibility.',
+    name: 'Refactoring',
+    kicker: null,
+    headline: ['Today, one agent.', 'Tomorrow, a thousand.'],
+    subhead: [
+      "Exawatt is your team's command interface.",
+      'The economy is refactoring and your tools need to keep up.',
+    ],
+    close: 'Command the fleet you are about to run.',
+    note: 'His sentence and his order, kept whole in the subhead, over the tightest honest pairing. The close is an imperative.',
   },
   {
     id: 'd',
-    name: 'Stay in control',
+    name: 'Built for one',
     kicker: null,
     headline: [
-      'Command a fleet of 100 agents.',
-      'Stay in control of every one.',
+      'Your tools were built for one agent.',
+      'Your team is about to run thousands.',
     ],
-    subhead: ['Exawatt shows you what all of them are doing.'],
-    close: 'The economy is refactoring.',
-    note: 'Second clause tightened toward control. The thesis moves to 72px at the close.',
+    subhead: ['Exawatt is the command interface for agent fleets.'],
+    close: 'Today, 10 agents. Tomorrow, 10,000.',
+    note: 'The old tool is named as the foil in the h1 and the team carries the climb. The numbers land at 72px.',
   },
 ];
 
@@ -163,6 +185,23 @@ export const FOLD_FORBIDDEN = [
   'SDLC',
   'agentic',
   'command center',
+];
+
+/**
+ * Constructions that make the READER the thing that fails, which is what got
+ * the first four variants rejected. A phrase list cannot police an idea, so
+ * this stays deliberately small and literal: it catches the exact shapes that
+ * shipped, and the reason lives in the doc comment above and in
+ * `marketing.md`. The word "cannot" is not banned on its own; "you cannot" is.
+ */
+export const READER_AS_BOTTLENECK = [
+  'you cannot',
+  "you can't",
+  'you fail',
+  'you are the bottleneck',
+  'too many for you',
+  'more than you can',
+  'keep up with',
 ];
 
 /** Everything a reader sees in the fold or the close, for a lint pass. */

@@ -376,5 +376,26 @@ export function bandCopyWords(root: Element): number {
   )) {
     affordance.remove();
   }
-  return countWords(clone.textContent ?? '');
+
+  // Element boundaries are word boundaries. Every rendered line is its own
+  // block-level span, and `textContent` concatenates them with no separator,
+  // so "keep up." + "Exawatt is" measured as one word and a multi-line band
+  // could sit over its ceiling while the assertion passed. Collect the text
+  // nodes and join them instead.
+  const text: string[] = [];
+  const collect = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === TEXT_NODE) {
+        text.push(child.textContent ?? '');
+      } else {
+        collect(child);
+      }
+    }
+  };
+  collect(clone);
+
+  return countWords(text.join(' '));
 }
+
+/** `Node.TEXT_NODE`, spelled out so this module stays importable without a DOM. */
+const TEXT_NODE = 3;
