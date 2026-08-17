@@ -108,10 +108,13 @@ export class ShutdownCoordinator {
 
 export function shutdownCopy(
   intent: ShutdownIntent,
-  counts: LiveProcessCounts
+  counts: LiveProcessCounts,
+  appName = 'Exawatt'
 ): { title: string; detail: string } {
   const action =
-    intent === 'quit' ? 'Quit Exawatt and stop' : 'Restart Exawatt and stop';
+    intent === 'quit'
+      ? `Quit ${appName} and stop`
+      : `Restart ${appName} and stop`;
   const subject =
     counts.agents > 0
       ? `${counts.agents} ${counts.agents === 1 ? 'agent' : 'agents'}`
@@ -122,7 +125,7 @@ export function shutdownCopy(
       : '';
   const base =
     counts.agents > 0
-      ? 'Their sessions and terminal history will be saved. You can resume the agents after reopening Exawatt.'
+      ? `Their sessions and terminal history will be saved. You can resume the agents after reopening ${appName}.`
       : 'Terminal history will be saved. Shells reopen as new processes in the same directories.';
   return {
     title: `${action} ${subject}?`,

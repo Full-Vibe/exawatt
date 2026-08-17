@@ -1144,16 +1144,16 @@ async function confirmShutdown(
     if (response === 'cancel') return false;
     return true;
   }
-  const copy = shutdownCopy(intent, counts);
+  const copy = shutdownCopy(intent, counts, distributionIdentity.productName);
   const options: Electron.MessageBoxOptions = {
     type: 'warning',
     title: copy.title,
     message: copy.title,
     detail:
       intent === 'update'
-        ? `${copy.detail} The downloaded update will then install and reopen Exawatt.`
+        ? `${copy.detail} The downloaded update will then install and reopen ${distributionIdentity.productName}.`
         : intent === 'restart'
-          ? `${copy.detail} Exawatt reopens automatically.`
+          ? `${copy.detail} ${distributionIdentity.productName} reopens automatically.`
           : copy.detail,
     buttons: [
       'Cancel',
@@ -1186,8 +1186,8 @@ async function promptWindowManagementRestart(): Promise<void> {
     title: message,
     message,
     detail:
-      'After Exawatt has been open a long time, macOS can stop sharing its window with tools like Divvy, Rectangle, and Hammerspoon, so their shortcuts do nothing and you hear an error sound. This is a known macOS issue with Electron apps that Exawatt cannot detect or repair on its own.\n\nRestarting fixes it. Projects, Sessions, and terminal history are saved and restored; running agents stop and can be resumed afterwards.',
-    buttons: ['Cancel', 'Restart Exawatt'],
+      `After ${distributionIdentity.productName} has been open a long time, macOS can stop sharing its window with tools like Divvy, Rectangle, and Hammerspoon, so their shortcuts do nothing and you hear an error sound. This is a known macOS issue with Electron apps that ${distributionIdentity.productName} cannot detect or repair on its own.\n\nRestarting fixes it. Projects, Sessions, and terminal history are saved and restored; running agents stop and can be resumed afterwards.`,
+    buttons: ['Cancel', `Restart ${distributionIdentity.productName}`],
     defaultId: 1,
     cancelId: 0,
     noLink: true,
@@ -1210,8 +1210,8 @@ async function confirmWithoutCheckpoint(
   }
   const options: Electron.MessageBoxOptions = {
     type: 'warning',
-    title: "Exawatt couldn't save the latest Session state",
-    message: "Exawatt couldn't save the latest Session state",
+    title: `${distributionIdentity.productName} couldn't save the latest Session state`,
+    message: `${distributionIdentity.productName} couldn't save the latest Session state`,
     detail:
       'Quitting now may lose recent layout changes. Terminal history already checkpointed by the main process will remain.',
     buttons: ['Cancel', intent === 'quit' ? 'Quit Anyway' : 'Restart Anyway'],
@@ -1296,9 +1296,9 @@ async function reportShutdownFailure(error: unknown): Promise<void> {
   const detail = error instanceof Error ? error.message : String(error);
   const options: Electron.MessageBoxOptions = {
     type: 'error',
-    title: "Exawatt couldn't stop every Session",
-    message: "Exawatt couldn't stop every Session",
-    detail: `${detail.slice(0, 400)}\n\nExawatt will remain open. Check the affected Session before quitting again.`,
+    title: `${distributionIdentity.productName} couldn't stop every Session`,
+    message: `${distributionIdentity.productName} couldn't stop every Session`,
+    detail: `${detail.slice(0, 400)}\n\n${distributionIdentity.productName} will remain open. Check the affected Session before quitting again.`,
     buttons: ['OK'],
     noLink: true,
   };
@@ -1653,7 +1653,7 @@ app.whenReady().then(() => {
     updateStartupScreen({
       progress: startupStage.progress,
       label: 'Command engine paused',
-      detail: 'Exawatt could not start its local command services',
+      detail: `${distributionIdentity.productName} could not start its local command services`,
       failed: true,
     });
   });
