@@ -130,6 +130,7 @@
       "id": "public-script-tools",
       "classification": "PUBLIC",
       "include": [
+        "scripts/README.md",
         "scripts/agent-land.mjs",
         "scripts/agent-launcher-bench-shot.mjs",
         "scripts/agent-stop-check.mjs",
