@@ -20,14 +20,10 @@ export {
 } from './client';
 
 export {
-  ANALYTICS_INGEST_PATH,
-  DESKTOP_ANALYTICS_HOST,
   EXAWATT_HOSTED_ORIGIN,
   analyticsSurface,
   detectElectron,
-  readAnalyticsEnv,
-  resolveAnalyticsApiHost,
-  resolveAnalyticsDecision,
+  resolveDistributionAnalyticsDecision,
   type AnalyticsDecision,
   type AnalyticsDisabledReason,
 } from './config';

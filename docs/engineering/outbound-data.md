@@ -26,7 +26,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 
 | Destination | Category | Default | Off switch |
 | --- | --- | --- | --- |
-| `www.exawatt.ai/ingest` → PostHog (`us.i.posthog.com`, `us-assets.i.posthog.com`) | Product analytics | On in production builds | Runtime opt-out; `NEXT_PUBLIC_ANALYTICS_DISABLED`; omit `NEXT_PUBLIC_POSTHOG_KEY`; redirect via `NEXT_PUBLIC_POSTHOG_HOST` |
+| Distribution `analytics.ingestOrigin`; official: `www.exawatt.ai/ingest` → PostHog (`us.i.posthog.com`, `us-assets.i.posthog.com`) | Product analytics | Off in community; on in configured production distributions | Runtime opt-out; set distribution `analytics: null`; configure another absolute PostHog-compatible sink |
 | `www.exawatt.ai/api/context-labels` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Session context labels; `EXAWATT_CONTEXT_LABELS=0` |
 | `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
@@ -39,18 +39,21 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 
 Signed out, the desktop app is nearly silent: context labels, goal visuals,
 conversation summaries, Project sync, feedback, and stats all short-circuit on
-a missing access token. What still runs is the update check, the loopback
-renderer, locally spawned agents, and — once shipped — product analytics.
+a missing access token. What still runs is the update check when the
+distribution configures one, the loopback renderer, locally spawned agents,
+and product analytics when the distribution configures them.
 
 ---
 
 ## 1. Product analytics — PostHog, through Exawatt's own proxy
 
-**Destination.** The client posts to `/ingest` on an Exawatt origin. Next
-rewrites that to `https://us.i.posthog.com/:path*` and
-`/ingest/static/:path*` to `https://us-assets.i.posthog.com/static/:path*`
-(`next.config.ts`). The desktop app's only analytics destination is
-`exawatt.ai`.
+**Destination.** The client posts to the exact absolute
+`analytics.ingestOrigin` in the resolved distribution contract. The official
+contract selects `https://www.exawatt.ai/ingest`; Next rewrites that path to
+`https://us.i.posthog.com/:path*` and `/ingest/static/:path*` to
+`https://us-assets.i.posthog.com/static/:path*` (`next.config.ts`). The rewrite
+is absent when `analytics` is null. A downstream distributor may select its own
+absolute PostHog-compatible sink instead.
 
 Proxying is not concealment. The rewrite is in open-source configuration, the
 destination is named here, and the Privacy page says analytics are relayed to
@@ -59,11 +62,11 @@ the user's machine (ENG-016 D17, incident `0002`), not deniability.
 
 **Host resolution** (`src/lib/analytics/config.ts`):
 
-| Surface | `api_host` | Why |
+| Distribution | `api_host` | Why |
 | --- | --- | --- |
-| Hosted web app | `/ingest` (relative) | Same-origin; the rewrite runs on the hosted deployment |
-| Packaged desktop app | `https://www.exawatt.ai/ingest` (absolute) | Relative would resolve to the loopback renderer server, making the user's machine the thing that talks to PostHog |
-| Any surface with `NEXT_PUBLIC_POSTHOG_HOST` | that value | Distributor redirect or self-host |
+| Community (`analytics: null`) | none; SDK is not imported | No analytics capability or Exawatt fallback |
+| Official web and desktop | `https://www.exawatt.ai/ingest` | One stable outbound identity; absolute also works from packaged Electron's loopback renderer |
+| Downstream/self-hosted | exact `analytics.ingestOrigin` | Distributor-controlled redirect or self-host without patching product code |
 
 **What is sent.** Four events and nothing else. The complete property set:
 
@@ -126,8 +129,9 @@ never calls `identify()`, never sets person properties, and never sends an
 Exawatt account id. Installation identity and account identity stay separate
 (decision `0031`); `signed_in` is a boolean, never a user.
 
-**Default.** On in production builds — official distributions and production
-builds from the open-source repository. Never initialized in development or
+**Default.** Off in community builds, including production builds from the
+public repository. A distribution that supplies `analytics` enables the exact
+configured sink in production. Analytics never initialize in development or
 test builds.
 
 **How to turn it off.**
@@ -135,9 +139,8 @@ test builds.
 | Control | Effect |
 | --- | --- |
 | Runtime opt-out (`setAnalyticsOptOut(true)`, persisted at `exawatt.analytics.opt-out.v1`) | PostHog is never initialized on the next launch, and emission stops immediately in the current one |
-| `NEXT_PUBLIC_ANALYTICS_DISABLED=1` at build time | Same, for a whole distribution |
-| No `NEXT_PUBLIC_POSTHOG_KEY` | Same |
-| `NEXT_PUBLIC_POSTHOG_HOST=https://your-sink/…` | Events go to your sink instead; Exawatt receives nothing |
+| Distribution `analytics: null` at build time | Same, for a whole distribution; this is the community default |
+| Distribution `analytics: { ingestOrigin, projectKey }` | Events go only to that distributor-selected sink; Exawatt receives nothing unless its endpoint is selected |
 
 All four suppress **initialization and emission**, not merely ingestion: when
 analytics are off, `posthog-js` is never imported, so there is no queue and

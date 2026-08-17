@@ -47,7 +47,7 @@ test('a present invalid config fails instead of falling back', async () => {
   }
 });
 
-test('poisoned legacy env cannot enable a community service', async () => {
+test('poisoned legacy env cannot enable a community capability', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
   const prepared = await prepareDistribution({ root, inputJson: undefined });
   const env = nextDistributionEnvironment(prepared, {
@@ -55,12 +55,14 @@ test('poisoned legacy env cannot enable a community service', async () => {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: 'production-key',
     NEXT_PUBLIC_POSTHOG_KEY: 'production-analytics',
     NEXT_PUBLIC_POSTHOG_HOST: 'https://www.exawatt.ai/ingest',
+    NEXT_PUBLIC_ANALYTICS_DISABLED: 'false',
   });
   assert.equal(env.NEXT_PUBLIC_SUPABASE_URL, '');
   assert.equal(env.NEXT_PUBLIC_SUPABASE_ANON_KEY, '');
-  assert.equal(env.NEXT_PUBLIC_POSTHOG_KEY, '');
-  assert.equal(env.NEXT_PUBLIC_POSTHOG_HOST, '');
-  assert.equal(env.NEXT_PUBLIC_ANALYTICS_DISABLED, 'true');
+  assert.equal('NEXT_PUBLIC_POSTHOG_KEY' in env, false);
+  assert.equal('NEXT_PUBLIC_POSTHOG_HOST' in env, false);
+  assert.equal('NEXT_PUBLIC_ANALYTICS_DISABLED' in env, false);
+  assert.equal(env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON, prepared.canonical);
 });
 
 test('tampering with the prepared artifact fails its digest check', async () => {

@@ -7,7 +7,9 @@ import {
 import {
   assertDistributionAgreement,
   assertRendererCompositionAgreement,
+  distributionChildEnvironment,
   distributionIpcCapabilities,
+  resolveDistribution,
 } from './distribution';
 
 const canonical = serializeDistributionContract(COMMUNITY_DISTRIBUTION);
@@ -49,6 +51,21 @@ describe('Electron distribution mirror', () => {
       updateIpcChannels: [],
       protocolScheme: null,
     });
+  });
+
+  it('strips poisoned legacy analytics variables from the renderer child', () => {
+    const child = distributionChildEnvironment(
+      resolveDistribution(COMMUNITY_DISTRIBUTION),
+      {
+        NEXT_PUBLIC_POSTHOG_KEY: 'poisoned-key',
+        NEXT_PUBLIC_POSTHOG_HOST: 'https://www.exawatt.ai/ingest',
+        NEXT_PUBLIC_ANALYTICS_DISABLED: 'false',
+      }
+    );
+    expect(child.NEXT_PUBLIC_POSTHOG_KEY).toBeUndefined();
+    expect(child.NEXT_PUBLIC_POSTHOG_HOST).toBeUndefined();
+    expect(child.NEXT_PUBLIC_ANALYTICS_DISABLED).toBeUndefined();
+    expect(child.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON).toBe(canonical);
   });
 
   it('binds the renderer composition manifest to build-info', () => {

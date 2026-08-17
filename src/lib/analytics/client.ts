@@ -18,11 +18,10 @@
  */
 
 import {
-  detectElectron,
-  readAnalyticsEnv,
-  resolveAnalyticsDecision,
+  resolveDistributionAnalyticsDecision,
   type AnalyticsDecision,
 } from './config';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { toAnalyticsPayload, type AnalyticsEvent } from './events';
 import { ANALYTICS_PROPERTY_DENYLIST, scrubAnalyticsCapture } from './redact';
 
@@ -121,10 +120,11 @@ function flushPending(): void {
 export function initAnalytics(): Promise<AnalyticsDecision> {
   if (started) return started;
 
-  const decision = resolveAnalyticsDecision(readAnalyticsEnv(), {
-    isElectron: detectElectron(),
-    optedOut: readAnalyticsOptOut(),
-  });
+  const decision = resolveDistributionAnalyticsDecision(
+    resolvedDistribution(),
+    { optedOut: readAnalyticsOptOut() },
+    process.env.NODE_ENV
+  );
 
   if (!decision.enabled) {
     pending.length = 0;
@@ -158,9 +158,8 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     // loopback origin, so a remotely loaded extension could never execute
     // there — and loosening CSP in a privileged renderer to gain exception
     // capture would be a bad trade.
-    const { default: posthog } = await import(
-      'posthog-js/dist/module.full.no-external'
-    );
+    const { default: posthog } =
+      await import('posthog-js/dist/module.full.no-external');
     posthog.init(decision.key, {
       api_host: decision.apiHost,
       // No `ui_host`: decision `0034` keeps PostHog hostnames out of ordinary

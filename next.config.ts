@@ -2,10 +2,11 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import type { NextConfig } from 'next';
+import { parseDistributionContractJson } from '@exawatt/core/distribution';
 import {
-  distributionConnectSources,
-  parseDistributionContractJson,
-} from '@exawatt/core/distribution';
+  distributionContentSecurityPolicy,
+  distributionRewrites,
+} from './src/lib/distribution/next-policy';
 
 const distributionJson = process.env.EXAWATT_RESOLVED_DISTRIBUTION_JSON;
 const distributionDigest = process.env.EXAWATT_RESOLVED_DISTRIBUTION_SHA256;
@@ -15,7 +16,6 @@ if (!distributionJson || !distributionDigest) {
   );
 }
 const distribution = parseDistributionContractJson(distributionJson);
-const connectSources = distributionConnectSources(distribution).join(' ');
 
 const require = createRequire(import.meta.url);
 
@@ -76,26 +76,15 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON: distributionJson,
     NEXT_PUBLIC_EXAWATT_DISTRIBUTION_SHA256: distributionDigest,
   },
-  // ENG-030 OS1.1 / decision `0034`: analytics reach PostHog only through this
-  // Exawatt-owned rewrite, so the desktop app's sole analytics destination is
-  // exawatt.ai and no third-party hostname appears in its outbound connections
-  // (ENG-016 D17, incident `0002` — firewall identity must stay stable).
-  //
-  // The packaged renderer is served by a package-local standalone server on
-  // 127.0.0.1, so it must NOT use a relative ingest path: `config.ts` resolves
-  // the desktop api_host to the absolute hosted origin, which lands here.
+  // ENG-030 OS1.1 / decisions `0034` and `0036`: the proxy exists only when
+  // the resolved distribution declares analytics. The official contract
+  // points clients at its absolute Exawatt-owned `/ingest` endpoint; another
+  // distributor may instead name its own absolute PostHog-compatible sink.
+  // Absolute is load-bearing because packaged Electron serves Next on a
+  // random loopback port, where a relative ingest path would use the wrong
+  // network identity (ENG-016 D17, incident `0002`).
   async rewrites() {
-    if (!distribution.analytics) return [];
-    return [
-      {
-        source: '/ingest/static/:path*',
-        destination: 'https://us-assets.i.posthog.com/static/:path*',
-      },
-      {
-        source: '/ingest/:path*',
-        destination: 'https://us.i.posthog.com/:path*',
-      },
-    ];
+    return distributionRewrites(distribution);
   },
   // PostHog's ingest paths are trailing-slash sensitive; Next's redirect would
   // turn a capture into a 308 the SDK does not follow.
@@ -107,24 +96,11 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
+            value: distributionContentSecurityPolicy(distribution, {
               // React dev mode uses eval() for reconstructed callstacks;
-              // without the dev-only allowance every surface logs a console
-              // error that fails console-clean evals. Production stays strict.
-              process.env.NODE_ENV === 'development'
-                ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-                : "script-src 'self' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              `connect-src ${connectSources}`,
-              "worker-src 'self' blob:",
-              "frame-src 'none'",
-              "object-src 'none'",
-              "base-uri 'self'",
-              "form-action 'self' https:",
-            ].join('; '),
+              // production remains strict.
+              development: process.env.NODE_ENV === 'development',
+            }),
           },
         ],
       },

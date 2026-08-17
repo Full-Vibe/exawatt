@@ -94,20 +94,22 @@ export async function readPreparedDistribution(root) {
 
 export function nextDistributionEnvironment(prepared, ambient = process.env) {
   const account = prepared.contract.account;
-  const analytics = prepared.contract.analytics;
+  const forwarded = { ...ambient };
+  // These pre-contract inputs must not survive into Next at all. Empty values
+  // are weaker than absence: a future computed lookup could mistake one for a
+  // supported compatibility surface and reopen ambient configuration.
+  delete forwarded.NEXT_PUBLIC_POSTHOG_KEY;
+  delete forwarded.NEXT_PUBLIC_POSTHOG_HOST;
+  delete forwarded.NEXT_PUBLIC_ANALYTICS_DISABLED;
   return {
-    ...ambient,
+    ...forwarded,
     EXAWATT_RESOLVED_DISTRIBUTION_JSON: prepared.canonical,
     EXAWATT_RESOLVED_DISTRIBUTION_SHA256: prepared.digest,
     NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON: prepared.canonical,
     NEXT_PUBLIC_EXAWATT_DISTRIBUTION_SHA256: prepared.digest,
-    // Compatibility values are derived from the contract. Ambient legacy env
-    // cannot turn a community capability back on.
+    // Temporary Supabase compatibility values are derived from the contract.
     NEXT_PUBLIC_SUPABASE_URL: account?.supabaseUrl ?? '',
     NEXT_PUBLIC_SUPABASE_ANON_KEY: account?.supabaseAnonKey ?? '',
-    NEXT_PUBLIC_POSTHOG_KEY: analytics?.projectKey ?? '',
-    NEXT_PUBLIC_POSTHOG_HOST: analytics?.ingestOrigin ?? '',
-    NEXT_PUBLIC_ANALYTICS_DISABLED: analytics ? 'false' : 'true',
   };
 }
 

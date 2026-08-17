@@ -2,7 +2,7 @@
 # 0034 Analytics ingest reaches PostHog only through an Exawatt-owned proxy
 
 Date: 2026-08-06
-Status: accepted — implementation is ENG-030 OS1.1 and has not landed
+Status: accepted — implemented in ENG-030 OS1.1; community isolation is OS4
 
 ## Context
 

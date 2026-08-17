@@ -58,10 +58,12 @@ describe('outbound-data manifest', () => {
   });
 
   it('documents every off switch', () => {
-    expect(MANIFEST).toContain('NEXT_PUBLIC_ANALYTICS_DISABLED');
-    expect(MANIFEST).toContain('NEXT_PUBLIC_POSTHOG_KEY');
-    expect(MANIFEST).toContain('NEXT_PUBLIC_POSTHOG_HOST');
+    expect(MANIFEST).toContain('analytics: null');
+    expect(MANIFEST).toContain('analytics: { ingestOrigin, projectKey }');
     expect(MANIFEST).toContain('exawatt.analytics.opt-out.v1');
+    expect(MANIFEST).not.toContain('NEXT_PUBLIC_ANALYTICS_DISABLED');
+    expect(MANIFEST).not.toContain('NEXT_PUBLIC_POSTHOG_KEY');
+    expect(MANIFEST).not.toContain('NEXT_PUBLIC_POSTHOG_HOST');
   });
 
   it('names the other outbound destinations, not only analytics', () => {
