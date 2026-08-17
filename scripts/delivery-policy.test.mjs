@@ -253,9 +253,12 @@ test('several gated surfaces in one change owe each gate once', () => {
 // rather than deleted.
 test('a repaired gate is enforced again, not quarantined', () => {
   const files = ['src/components/nav/nav-history.ts'];
+  // BUG-035: the back stack owes BOTH. `eval:navigation` walks the altitude
+  // continuum; only the spine eval presses ⌘[ and ⌘] against a real router
+  // round trip, which is the contract this file owns and the one it broke.
   assert.deepEqual(
     missingSurfaceGates(files).map(entry => entry.gate),
-    ['eval:navigation']
+    ['eval:navigation', 'eval:navigation:spine']
   );
   assert.deepEqual(quarantinedSurfaceGates(files), []);
 });

@@ -198,6 +198,60 @@ describe('NavHistory (D27 app-location back stack)', () => {
       expect(h.isApplying()).toBe(false);
     });
 
+    // BUG-035, the same family one round trip later. Instrumented from the
+    // failing `eval:navigation:spine` run: Forward is pressed, ⌘[ follows
+    // before the router lands, and the FIRST apply's own completion arrives
+    // afterwards. With one apply slot it was read as an independent
+    // navigation — index walked to /settings, the workspace's own arrival
+    // truncated the stack, and ⌘] had nothing ahead of it.
+    it('keeps the forward stack when a second apply starts mid-flight', () => {
+      const h = new NavHistory();
+      h.visit(terminal);
+      h.visit(settings);
+
+      // ⌘] / Forward: apply #1 begins and its router round trip is in flight
+      expect(h.back()).toEqual(terminal);
+      h.beginApply(terminal);
+      h.visit(terminal);
+      expect(h.forward()).toEqual(settings);
+      h.beginApply(settings);
+
+      // ⌘[ before apply #1 lands: apply #2 begins while #1 is still expected
+      expect(h.back()).toEqual(terminal);
+      h.beginApply(terminal);
+
+      // now they land, oldest first
+      h.visit(settings);
+      h.visit(terminal);
+
+      expect(h.snapshot()).toEqual({ entries: [terminal, settings], index: 0 });
+      expect(h.canForward()).toBe(true);
+      expect(h.forward()).toEqual(settings);
+    });
+
+    it('an older apply still owns its own stages while a newer one flies', () => {
+      const h = new NavHistory();
+      h.visit(terminal);
+      h.beginApply(settings);
+      h.beginApply(otherTab);
+      // half of the /settings apply: its surface has landed, its tab has not
+      h.visit({ surface: '/settings', tab: terminal.tab });
+      expect(h.snapshot().entries).toEqual([terminal]);
+    });
+
+    it('a landed apply retires the ones it superseded', () => {
+      const h = new NavHistory();
+      h.visit(terminal);
+      h.beginApply(settings);
+      h.beginApply(otherTab);
+      h.visit(otherTab);
+      // /settings was superseded before it landed; its arrival can no longer
+      // be told apart from a real navigation, so it records normally
+      h.visit(settings);
+      expect(h.snapshot().entries).toEqual([terminal, settings]);
+      expect(h.isApplying()).toBe(false);
+    });
+
     it('an apply whose stages never finish cannot silence recording forever', () => {
       const h = new NavHistory();
       let clock = 0;
