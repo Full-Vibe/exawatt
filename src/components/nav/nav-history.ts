@@ -26,6 +26,16 @@
  *    apply is abandoned), so intermediate states are ignored by
  *    construction instead of by a TTL race the caller has to win.
  *
+ *    Applies OVERLAP, which is why the second invariant tracks a set rather
+ *    than the one pending apply D50 shipped (BUG-035, same family). A round
+ *    trip takes long enough that the next ⌘[ / ⌘] routinely starts before
+ *    the previous one has landed, and a single slot meant the newer apply
+ *    erased the older one's record. The older apply then completed unclaimed,
+ *    was read as an independent navigation, walked the index forward, and let
+ *    the newer apply's own completion truncate the forward stack — ⌘] from
+ *    the workspace reaching nothing while the Forward control, pressed a beat
+ *    later, still worked. Every apply is expected until it lands or expires.
+ *
  * Roadmap focus deliberately stays OUT of the stack — esc owns backing
  * out of the roadmap hierarchy (D9 doctrine).
  *
@@ -76,7 +86,9 @@ export class NavHistory {
   private revision = 0;
   private listeners = new Set<() => void>();
   private resolve: LocationResolver = () => true;
-  private applying: { location: NavLocation; at: number } | null = null;
+  /** Applies still expected to land, oldest first. The TTL bounds the list:
+   *  each entry is one back/forward keystroke and expires on its own clock. */
+  private applying: { location: NavLocation; at: number }[] = [];
   private now: () => number = () => Date.now();
 
   /** Reactive capability state for chrome controls. The history owner stays
@@ -149,34 +161,45 @@ export class NavHistory {
     return this.seek(1) !== -1;
   }
 
-  private applyExpired(): boolean {
-    return (
-      this.applying !== null &&
-      this.now() - this.applying.at > APPLY_TIMEOUT_MS
+  /** An apply that never completes must not silence recording forever. */
+  private dropExpiredApplies(): void {
+    const now = this.now();
+    this.applying = this.applying.filter(
+      apply => now - apply.at <= APPLY_TIMEOUT_MS
     );
   }
 
   /**
    * Record a location the operator landed on.
    *
-   * Equal-to-current is a no-op. While an apply is in flight, only the
-   * applied location is accepted — and accepting it ENDS the apply, so the
-   * very next independent navigation records normally. Everything else
-   * observed mid-apply is a transient stage of that same navigation.
+   * Equal-to-current is a no-op. While applies are in flight, only their own
+   * targets and stages are accepted — and accepting a target ENDS that apply,
+   * so the very next independent navigation records normally. Everything else
+   * observed mid-apply is a transient stage of one of those navigations.
    */
   visit(location: NavLocation): void {
-    if (this.applying && !this.applyExpired()) {
-      if (sameLocation(this.applying.location, location)) {
-        this.applying = null;
+    this.dropExpiredApplies();
+    if (this.applying.length > 0) {
+      const landed = this.applying.findIndex(apply =>
+        sameLocation(apply.location, location)
+      );
+      if (landed !== -1) {
+        // This apply arrived. Everything OLDER was superseded before it could
+        // land; its completion is now indistinguishable from a real
+        // navigation, so it stops being expected along with this one.
+        this.applying = this.applying.slice(landed + 1);
         return;
       }
-      // A STAGE of the apply shares something with its target — the tab has
+      // A STAGE of an apply shares something with its target — the tab has
       // landed but the router has not, or the reverse. A location sharing
-      // neither is the operator having moved on mid-apply, and swallowing
-      // that would drop a real stop from the chain (D50 review).
-      if (partOfApply(this.applying.location, location)) return;
+      // neither with ANY apply in flight is the operator having moved on
+      // mid-apply, and swallowing that would drop a real stop from the chain
+      // (D50 review).
+      if (this.applying.some(apply => partOfApply(apply.location, location))) {
+        return;
+      }
     }
-    this.applying = null;
+    this.applying = [];
     const current = this.current();
     if (current && sameLocation(current, location)) return;
     this.stack = this.stack.slice(0, this.index + 1);
@@ -186,14 +209,18 @@ export class NavHistory {
     this.notify();
   }
 
-  /** Suspend recording until `location` is observed (see class comment). */
+  /** Suspend recording until `location` is observed (see class comment).
+   *  Additive: an apply already in flight stays expected, because its own
+   *  completion is still coming and is not a navigation (BUG-035). */
   beginApply(location: NavLocation): void {
-    this.applying = { location, at: this.now() };
+    this.dropExpiredApplies();
+    this.applying.push({ location, at: this.now() });
   }
 
   /** True while an apply is in flight — recorders may skip work entirely. */
   isApplying(): boolean {
-    return this.applying !== null && !this.applyExpired();
+    const now = this.now();
+    return this.applying.some(apply => now - apply.at <= APPLY_TIMEOUT_MS);
   }
 
   /** Walk to the nearest live entry, dropping the dead ones passed over. */
@@ -225,7 +252,7 @@ export class NavHistory {
   }
 
   reset(): void {
-    this.applying = null;
+    this.applying = [];
     if (this.stack.length === 0 && this.index === -1) return;
     this.stack = [];
     this.index = -1;
