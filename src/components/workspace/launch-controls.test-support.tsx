@@ -1,5 +1,5 @@
-import { render } from '@testing-library/react';
-import { beforeEach, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, vi } from 'vitest';
 
 import { fallbackAgentSourceRegistry } from './agent-sources';
 import { AgentComposer } from './launch-controls';
@@ -12,6 +12,79 @@ export { AgentComposer, FOCUS_AGENT_COMPOSER_EVENT };
  *  (D24) — render is enough. */
 export function renderComposer(ui: React.ReactElement) {
   return render(ui);
+}
+
+/**
+ * The New Agent launcher's driving contract for unit tests (ENG-016 D49),
+ * stated once — the same reason `scripts/lib/electron-eval.mjs` states it once
+ * for the Electron evals.
+ *
+ * These tests used to drive the pre-D49 control row: `Agent Source`,
+ * `Agent model`, `Agent effort`, `Agent permissions`. D49 replaced that row
+ * with the setup drawer but left it in the DOM behind `hidden`, so the tests
+ * kept passing against UI no operator could reach (BUG-014). Everything below
+ * drives what actually ships.
+ */
+
+/** The drawer's closed face. Disabled until the launcher settles on a
+ *  selectable setup, which is the readiness the old row expressed as
+ *  "Agent permissions is enabled". */
+export function setupDrawerHandle(): HTMLElement {
+  return screen.getByRole('button', {
+    name: /^(Adjust |Hide setup options$)/,
+  });
+}
+
+export async function composerReady() {
+  await waitFor(() => expect(setupDrawerHandle()).not.toBeDisabled());
+}
+
+export type LauncherAxisLabel = 'Engine' | 'Model' | 'Thinking' | 'Permission';
+
+/** One axis's OptionMenu trigger. Its accessible name is `<Axis>: <selected>`
+ *  and its text content is the selected label. */
+export function launcherAxis(label: LauncherAxisLabel): HTMLElement {
+  return screen.getByRole('button', { name: new RegExp(`^${label}: `) });
+}
+
+/** Open the drawer that holds Engine, Model, Thinking and Permission. */
+export async function openSetupDrawer() {
+  await composerReady();
+  const handle = setupDrawerHandle();
+  if (handle.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(handle);
+  }
+  await waitFor(() => expect(launcherAxis('Engine')).toBeInTheDocument());
+}
+
+/** Choose an option on a drawer axis by its visible label. */
+export async function chooseLauncherAxis(
+  label: LauncherAxisLabel,
+  optionName: string | RegExp
+) {
+  await openSetupDrawer();
+  fireEvent.click(launcherAxis(label));
+  fireEvent.click(await screen.findByRole('option', { name: optionName }));
+}
+
+/** Start the Agent the launcher currently describes. */
+export function startButton(): HTMLElement {
+  return screen.getByRole('button', { name: 'Start' });
+}
+
+/** The selected setup chip. Its accessible name states the whole setup —
+ *  role, engine, model, variant, vendor, thinking — so it is the assertion
+ *  target for "the composer is showing X" without opening the drawer. */
+export function selectedSetup(): HTMLElement {
+  const chip = document.querySelector('[data-setup-chip][data-selected]');
+  if (!chip) throw new Error('The launcher has no selected setup chip.');
+  return chip as HTMLElement;
+}
+
+export async function expectSelectedSetup(pattern: RegExp) {
+  await waitFor(() =>
+    expect(selectedSetup().getAttribute('aria-label') ?? '').toMatch(pattern)
+  );
 }
 
 export function readyAgentSourceRegistry() {

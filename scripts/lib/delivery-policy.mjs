@@ -130,6 +130,53 @@ export const SURFACE_GATES = [
       file === 'src/components/ui/option-menu.tsx' ||
       file === 'src/components/ui/option-menu-keyboard.ts',
   },
+  {
+    gate: 'eval:electron:project-agent',
+    why: 'the composer owns the launcher\'s data, the setup drawer\'s axes and the "All engines and models" catalog, and nine evals drive all three through one shared helper',
+    // BUG-014: `eval:workspace:launcher` gates the launcher COMPONENTS, and
+    // the bench renders them from fixtures. Neither covered the composer that
+    // adapts runtime truth into them, so D49 could leave a whole control row
+    // behind `hidden` and nine scripts kept driving dead UI for two months.
+    // `scripts/lib/electron-eval.mjs` is here for the same reason one layer
+    // down: it is now the single owner of how an eval drives this surface, so
+    // changing it must run something that uses it.
+    match: file =>
+      file === 'src/components/workspace/launch-controls.tsx' ||
+      file === 'scripts/lib/electron-eval.mjs' ||
+      file === 'scripts/lib/harness-probe-fixture.mjs',
+  },
+  {
+    gate: 'eval:roadmap:rail',
+    why: 'the roadmap lens is the Sessions altitude and its declare-at-launch path crosses the launcher',
+    // The eval existed with NO package command at all, so no change could
+    // declare it and nothing ever ran it (BUG-014). It is `eval:roadmap:rail`
+    // now, and the surface it protects owes it. Born quarantined only because
+    // it was born with no command: the FIRST run found a live regression in
+    // the designed empty state (BUG-040), which the same eval reproduces
+    // against an unmodified master tree.
+    quarantined: 'BUG-040',
+    match: file =>
+      file.startsWith('src/components/roadmap/') ||
+      file.startsWith('electron/main/roadmap/'),
+  },
+  {
+    gate: 'eval:electron:recents',
+    why: 'the recent-conversation browser is the only route back into an exact provider Session',
+    quarantined: 'BUG-038',
+    match: file =>
+      file === 'src/components/workspace/recent-conversations.tsx' ||
+      file === 'electron/main/pty/conversation-catalog.ts',
+  },
+  {
+    gate: 'eval:electron:agent-sources',
+    why: 'the Agent Source registry decides which engines exist, whether they are launchable, and what models they publish',
+    quarantined: 'BUG-039',
+    match: file =>
+      file === 'src/components/workspace/agent-sources.ts' ||
+      file === 'electron/main/agent-sources-ipc.ts' ||
+      file === 'electron/main/pty/agent-models.ts' ||
+      file.startsWith('electron/main/agents/'),
+  },
 ];
 
 /**

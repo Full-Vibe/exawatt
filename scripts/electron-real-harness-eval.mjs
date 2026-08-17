@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from 'playwright-core';
+import { startAgentFromLauncher } from './lib/electron-eval.mjs';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -103,9 +104,7 @@ try {
   console.log(`[real-harness] Claude launched as ${claude.harnessSessionId}`);
   await acceptFixtureDirectoryTrust(page, claude);
   console.log('[real-harness] Claude directory trusted');
-  await page.getByLabel('Agent Source').click();
-  await page.getByRole('option', { name: 'Codex' }).click();
-  await page.getByRole('button', { name: 'Start' }).click();
+  await startAgentFromLauncher(page, { engine: 'Codex' });
   const startingCodex = await waitFor(
     page,
     current => current.find(session => session.harness === 'codex'),

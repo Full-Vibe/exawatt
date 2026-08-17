@@ -10,6 +10,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  claudeProbeSh,
+  codexProbeSh,
+} from './lib/harness-probe-fixture.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'exawatt-recent-conversations-'));
 const userData = join(root, 'userData');
@@ -32,11 +36,15 @@ for (const directory of [
 }
 writeFileSync(join(project, 'package.json'), '{}');
 
+// The fixture CLIs answer the product's probes before they do anything else:
+// an unanswered `--version` leaves the source unlaunchable and a resume that
+// never starts, with nothing in the eval output naming the cause.
 for (const source of ['claude', 'codex']) {
   const executable = join(fakeBin, source);
   writeFileSync(
     executable,
     `#!/bin/sh
+${source === 'claude' ? claudeProbeSh() : codexProbeSh()}
 printf 'FAKE_${source.toUpperCase()}_ARGS:'
 printf '<%s>' "$@"
 printf '\n'

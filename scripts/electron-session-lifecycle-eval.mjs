@@ -13,7 +13,14 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { openShellFromLauncher } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  startAgentFromLauncher,
+} from './lib/electron-eval.mjs';
+import {
+  claudeProbeSh,
+  codexProbeSh,
+} from './lib/harness-probe-fixture.mjs';
 
 const executable = resolve(
   process.env.EXAWATT_APP_PATH ??
@@ -41,7 +48,7 @@ const fakeClaude = join(fakeBin, 'claude');
 writeFileSync(
   fakeClaude,
   `#!/bin/sh
-if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
+${claudeProbeSh()}
 id="unknown"
 prev=""
 for arg in "$@"; do
@@ -59,7 +66,7 @@ const fakeCodex = join(fakeBin, 'codex');
 writeFileSync(
   fakeCodex,
   `#!/bin/sh
-if [ "$1" = "debug" ] && [ "$2" = "models" ]; then exit 0; fi
+${codexProbeSh()}
 id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
 fresh=1
 previous=""
@@ -151,27 +158,11 @@ async function openProject(page, dir) {
     .waitFor();
 }
 
-/** the composer is summoned, not permanent (D18) — expand it if collapsed */
-async function summonComposer(page) {
-  if ((await page.locator('[data-agent-composer]').count()) > 0) return;
-  const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
-  if ((await toggle.count()) > 0) {
-    await toggle.click();
-  } else {
-    await page.getByRole('button', { name: 'New Agent' }).click();
-  }
-  await page.locator('[data-agent-composer]').waitFor();
-}
-
-async function startAgent(page, source) {
-  await summonComposer(page);
-  await page.getByLabel('Agent Source').click();
-  await page.getByRole('option', { name: source }).click();
-  await page.getByRole('button', { name: 'Start' }).click();
+async function startAgent(page, engine) {
+  await startAgentFromLauncher(page, { engine });
 }
 
 async function openShell(page) {
-  await summonComposer(page);
   await openShellFromLauncher(page);
 }
 

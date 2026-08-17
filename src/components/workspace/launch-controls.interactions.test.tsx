@@ -5,6 +5,8 @@ import type { AgentModelCatalog } from '@/types/electron';
 import {
   AgentComposer,
   CLAUDE_MODEL_CATALOG,
+  composerReady,
+  expectSelectedSetup,
   installComposerTestHarness,
   renderComposer,
 } from './launch-controls.test-support';
@@ -27,14 +29,8 @@ describe('Agent composer · interactions and drafts', () => {
         onLaunch={onLaunch}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
+    await composerReady();
+    await expectSelectedSetup(/Claude Fable 5/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     const startingButton = screen.getByRole('button', { name: 'Starting…' });
@@ -78,10 +74,12 @@ describe('Agent composer · interactions and drafts', () => {
         onLaunch={onLaunch}
       />
     );
+    // Models are still detecting on purpose: the launcher has NOT settled, so
+    // the setup drawer stays shut while Start already accepts a bare Enter on
+    // the recommended source.
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled()
     );
-    expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled();
     fireEvent.keyDown(screen.getByLabelText('Initial task for the new Agent'), {
       key: 'Enter',
     });
@@ -110,14 +108,8 @@ describe('Agent composer · interactions and drafts', () => {
         onLaunch={vi.fn(async () => true)}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
+    await composerReady();
+    await expectSelectedSetup(/Claude Fable 5/);
     await screen.findByText(
       'No Claude Code, Codex, or OpenCode conversations found for this Project.'
     );
@@ -138,11 +130,7 @@ describe('Agent composer · interactions and drafts', () => {
     selected(/OpenCode/);
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
     selected(/Codex/);
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'GPT-5.6-Sol'
-      )
-    );
+    await expectSelectedSetup(/GPT-5\.6-Sol/);
 
     // with text present, arrows are caret keys — the source stays put
     fireEvent.change(task, { target: { value: 'Fix the intake flow' } });
@@ -159,14 +147,8 @@ describe('Agent composer · interactions and drafts', () => {
         onLaunch={onLaunch}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
+    await composerReady();
+    await expectSelectedSetup(/Claude Fable 5/);
     const task = screen.getByLabelText('Initial task for the new Agent');
 
     fireEvent.keyDown(task, { key: 'Enter', isComposing: true });
@@ -187,9 +169,7 @@ describe('Agent composer · interactions and drafts', () => {
     const task = screen.getByLabelText('Initial task for the new Agent');
     expect(task).toHaveValue('Half-written task brief');
     // the preferences-load reset must restore the draft, not blank it
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
+    await composerReady();
     expect(task).toHaveValue('Half-written task brief');
   });
 
@@ -203,14 +183,8 @@ describe('Agent composer · interactions and drafts', () => {
         onDraftChange={onDraftChange}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
+    await composerReady();
+    await expectSelectedSetup(/Claude Fable 5/);
     await screen.findByText(
       'No Claude Code, Codex, or OpenCode conversations found for this Project.'
     );
@@ -248,11 +222,7 @@ describe('Agent composer · interactions and drafts', () => {
         onUserInteraction={onUserInteraction}
       />
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
+    await expectSelectedSetup(/Claude Fable 5/);
     expect(onDraftIntent).not.toHaveBeenCalled();
 
     const task = screen.getByLabelText('Initial task for the new Agent');
@@ -281,9 +251,7 @@ describe('Agent composer · interactions and drafts', () => {
       />
     );
 
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
-    );
+    await composerReady();
 
     const catalogButton = screen.getByRole('button', {
       name: 'All engines and models',

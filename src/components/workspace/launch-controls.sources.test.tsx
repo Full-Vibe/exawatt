@@ -4,12 +4,16 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentModelCatalog } from '@/types/electron';
 import {
   AgentComposer,
+  chooseLauncherAxis,
   CLAUDE_MODEL_CATALOG,
   CODEX_MODEL_CATALOG,
+  expectSelectedSetup,
   FOCUS_AGENT_COMPOSER_EVENT,
   GROK_MODEL_CATALOG,
   installComposerTestHarness,
+  launcherAxis,
   OPENCODE_MODEL_CATALOG,
+  openSetupDrawer,
   readyAgentSourceRegistry,
   renderComposer,
 } from './launch-controls.test-support';
@@ -26,45 +30,32 @@ describe('Agent composer · sources and policy', () => {
       />
     );
 
-    const sourceTrigger = screen.getByLabelText('Agent Source');
-    await waitFor(() => expect(sourceTrigger).not.toBeDisabled());
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
-    expect(
-      sourceTrigger.querySelectorAll('[data-slot="harness-glyph"]')
-    ).toHaveLength(1);
+    await openSetupDrawer();
+    const engine = launcherAxis('Engine');
+    await expectSelectedSetup(/Claude Fable 5/);
+    expect(engine.querySelectorAll('[data-engine-glyph]')).toHaveLength(1);
 
-    fireEvent.click(sourceTrigger);
-    const claudeOption = screen.getByRole('option', { name: 'Claude Code' });
-    const codexOption = screen.getByRole('option', { name: 'Codex' });
-    const opencodeOption = screen.getByRole('option', { name: 'OpenCode' });
+    fireEvent.click(engine);
+    const claudeOption = screen.getByRole('option', { name: /^Claude Code/ });
+    const codexOption = screen.getByRole('option', { name: /^Codex/ });
+    const opencodeOption = screen.getByRole('option', { name: /^OpenCode/ });
     for (const option of [claudeOption, codexOption, opencodeOption]) {
-      expect(
-        option.querySelectorAll('[data-slot="harness-glyph"]')
-      ).toHaveLength(1);
-      expect(
-        option.querySelectorAll('[data-source-identity-mark]')
-      ).toHaveLength(1);
+      expect(option.querySelectorAll('[data-engine-glyph]')).toHaveLength(1);
     }
     expect(codexOption).not.toHaveStyle({ color: '#ECECEC' });
-    expect(
-      codexOption.querySelector('[data-source-identity-mark]')
-    ).toHaveStyle({ color: '#ECECEC', background: '#111820' });
+    expect(codexOption.querySelector('[data-engine-glyph]')).toHaveStyle({
+      color: '#ECECEC',
+    });
     fireEvent.click(codexOption);
 
-    await waitFor(() => expect(sourceTrigger).toHaveTextContent('Codex'));
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'GPT-5.6-Sol'
-      )
+      expect(launcherAxis('Engine')).toHaveTextContent('Codex')
     );
+    await expectSelectedSetup(/GPT-5\.6-Sol/);
     expect(
-      sourceTrigger.querySelectorAll('[data-slot="harness-glyph"]')
+      launcherAxis('Engine').querySelectorAll('[data-engine-glyph]')
     ).toHaveLength(1);
-    expect(sourceTrigger).not.toHaveStyle({ color: '#ECECEC' });
+    expect(launcherAxis('Engine')).not.toHaveStyle({ color: '#ECECEC' });
   });
 
   it('shows model and effort together and scopes both overrides to this Agent', async () => {
@@ -272,15 +263,15 @@ describe('Agent composer · sources and policy', () => {
       />
     );
 
-    const modelTrigger = screen.getByLabelText('Agent model');
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(modelTrigger).toHaveTextContent('GPT-5.6-Terra')
+      expect(launcherAxis('Model')).toHaveTextContent('GPT-5.6-Terra')
     );
     expect(onDraftChange).toHaveBeenCalledWith({
       draftModel: 'gpt-5.6-terra',
       draftEffort: 'high',
     });
-    expect(screen.getByLabelText('Agent effort')).toHaveTextContent('High');
+    expect(launcherAxis('Thinking')).toHaveTextContent('High');
   });
 
   it('does not carry pending model or effort choices across Agent Sources', async () => {
@@ -292,6 +283,7 @@ describe('Agent composer · sources and policy', () => {
       async harness =>
         harness === 'codex' ? pendingCodex : CLAUDE_MODEL_CATALOG
     );
+    const onDraftChange = vi.fn();
     renderComposer(
       <AgentComposer
         projectDir="/project"
@@ -300,31 +292,40 @@ describe('Agent composer · sources and policy', () => {
         initialModel="gpt-5.6-terra"
         initialEffort="max"
         onLaunch={vi.fn(async () => true)}
+        onDraftChange={onDraftChange}
       />
     );
 
-    const sourceTrigger = screen.getByLabelText('Agent Source');
+    // Codex's catalog never arrives, so the launcher never settles: the whole
+    // setup row stays placeholders and the drawer stays shut. ⌥arrows are the
+    // engine control that survives that state, and the reported draft is what
+    // the composer would hand back — which is the thing that must not be
+    // overwritten by a catalog that lands late.
+    await screen.findByText(
+      /No Claude Code, Codex, or OpenCode conversations found/
+    );
+    // The engine order only exists once the other sources have published their
+    // catalogs, and nothing on screen announces that while the row is still
+    // placeholders — so press the chord until the composer reports the move.
     await waitFor(() => {
-      expect(sourceTrigger).not.toBeDisabled();
-      expect(sourceTrigger).toHaveTextContent('Codex');
+      fireEvent.keyDown(
+        screen.getByLabelText('Initial task for the new Agent'),
+        { key: 'ArrowUp', altKey: true }
+      );
+      expect(
+        onDraftChange.mock.calls.some(
+          ([patch]) => patch?.draftSource && patch.draftSource !== 'codex'
+        )
+      ).toBe(true);
     });
-    fireEvent.click(sourceTrigger);
-    fireEvent.click(screen.getByRole('option', { name: 'Claude Code' }));
-    await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'Claude Fable 5 · 1M'
-      )
-    );
 
+    onDraftChange.mockClear();
     await act(async () => resolveCodex(CODEX_MODEL_CATALOG));
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent(
-      'Claude Code'
+    expect(onDraftChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ draftSource: 'codex' })
     );
-    expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-      'Claude Fable 5 · 1M'
-    );
-    expect(screen.getByLabelText('Agent effort')).toHaveTextContent(
-      'Extra high'
+    expect(onDraftChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ draftModel: 'gpt-5.6-terra' })
     );
   });
 
@@ -344,10 +345,9 @@ describe('Agent composer · sources and policy', () => {
         onLaunch={vi.fn(async () => true)}
       />
     );
+    await openSetupDrawer();
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-        'Ask'
-      )
+      expect(launcherAxis('Permission')).toHaveTextContent('Ask first')
     );
 
     act(() => {
@@ -357,11 +357,9 @@ describe('Agent composer · sources and policy', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent Source')).toHaveTextContent('Codex')
+      expect(launcherAxis('Engine')).toHaveTextContent('Codex')
     );
-    expect(screen.getByLabelText('Agent permissions')).toHaveTextContent(
-      'Auto'
-    );
+    expect(launcherAxis('Permission')).toHaveTextContent('Auto-review');
     await waitFor(() =>
       expect(
         screen.getByLabelText('Initial task for the new Agent')

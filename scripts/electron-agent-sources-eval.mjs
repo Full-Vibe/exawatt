@@ -10,7 +10,12 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  launcherAxis,
+  openSetupDrawer,
+  selectedLauncherSetup,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 /**
  * Grok Build's `sessions/<dir>` component, reproduced here rather than
@@ -220,6 +225,44 @@ async function previewTheme(page, theme, reducedTransparency = false) {
       materialBackground: materialStyle.backgroundColor,
     };
   });
+}
+
+/**
+ * Wait for the composer to be showing a setup for `engineLabel`.
+ *
+ * On timeout it states what the launcher IS showing. A bare
+ * `page.waitForFunction` timeout here says nothing at all, which is how the
+ * pre-D49 drift in this file stayed unreadable for two months (BUG-014).
+ */
+async function waitForSelectedEngine(page, engineLabel) {
+  try {
+    await page.waitForFunction(
+      label =>
+        document
+          .querySelector('[data-setup-chip][data-selected]')
+          ?.getAttribute('aria-label')
+          ?.includes(label),
+      engineLabel
+    );
+  } catch (error) {
+    const observed = await page.evaluate(() => ({
+      composer: document.querySelectorAll('[data-agent-composer]').length,
+      rowState: document
+        .querySelector('[data-setup-row]')
+        ?.getAttribute('data-row-state'),
+      chips: Array.from(document.querySelectorAll('[data-setup-chip]')).map(
+        chip => ({
+          id: chip.getAttribute('data-setup-id'),
+          selected: chip.getAttribute('data-selected'),
+          label: chip.getAttribute('aria-label'),
+        })
+      ),
+    }));
+    throw new Error(
+      `The composer never selected ${engineLabel}. Observed: ` +
+        `${JSON.stringify(observed)}\n${error.message}`
+    );
+  }
 }
 
 const base = process.env.EXA_BASE ?? 'http://localhost:7421';
@@ -464,11 +507,12 @@ try {
           claudeCatalog.models.map(model => model.id).join(',') ===
             'default,eval-claude'
       );
-      const modelTrigger = page.getByLabel('Agent model');
-      await modelTrigger.waitFor();
+      await openSetupDrawer(page);
       check(
         'composer exposes the source-reported Claude default',
-        (await modelTrigger.innerText()).includes('Default (recommended)')
+        (await launcherAxis(page, 'model').innerText()).includes(
+          'Default (recommended)'
+        )
       );
       const launchRegistry = await page.evaluate(() =>
         window.electron?.agentSources?.list('launch')
@@ -485,27 +529,23 @@ try {
           'launch-opencode'
         );
       });
-      await page.waitForFunction(() =>
-        document
-          .querySelector('[aria-label="Agent Source"]')
-          ?.textContent?.includes('OpenCode')
-      );
-      await page.getByLabel('Agent model').waitFor();
+      await waitForSelectedEngine(page, 'OpenCode');
+      await openSetupDrawer(page);
       check(
         'native OpenCode launch command opens the composer with OpenCode preselected',
-        (await page.getByLabel('Agent Source').innerText()).includes(
+        (await selectedLauncherSetup(page).getAttribute('aria-label')).includes(
           'OpenCode'
         ) && (await page.locator('[data-agent-composer]').count()) === 1
       );
-      await page.getByLabel('Agent model').click();
+      await launcherAxis(page, 'model').click();
       await page.getByRole('option', { name: /Eval Open Model/ }).click();
       check(
         'OpenCode model and exact variants reach the composer controls',
-        (await page.getByLabel('Agent model').innerText()).includes(
+        (await launcherAxis(page, 'model').innerText()).includes(
           'Eval Open Model'
-        ) && !(await page.getByLabel('Agent effort').isDisabled())
+        ) && !(await launcherAxis(page, 'thinking').isDisabled())
       );
-      await page.getByLabel('Agent effort').click();
+      await launcherAxis(page, 'thinking').click();
       await page.getByRole('option', { name: /^High\b/ }).click();
       await page
         .getByLabel('Initial task for the new Agent')
@@ -635,24 +675,20 @@ try {
           'launch-grok'
         );
       });
-      await page.waitForFunction(() =>
-        document
-          .querySelector('[aria-label="Agent Source"]')
-          ?.textContent?.includes('Grok Build')
-      );
-      await page.getByLabel('Agent model').waitFor();
+      await waitForSelectedEngine(page, 'Grok Build');
+      await openSetupDrawer(page);
       check(
         'native Grok Build launch command opens the composer with Grok preselected',
-        (await page.getByLabel('Agent Source').innerText()).includes(
+        (await selectedLauncherSetup(page).getAttribute('aria-label')).includes(
           'Grok Build'
         ) && (await page.locator('[data-agent-composer]').count()) === 1
       );
       check(
         'the source default model is pinned and no effort control is offered',
-        (await page.getByLabel('Agent model').innerText()).includes(
+        (await launcherAxis(page, 'model').innerText()).includes(
           'Eval Grok 4.5'
-        ) && (await page.getByLabel('Agent effort').isDisabled()),
-        await page.getByLabel('Agent model').innerText()
+        ) && (await launcherAxis(page, 'thinking').isDisabled()),
+        await launcherAxis(page, 'model').innerText()
       );
       await page
         .getByLabel('Initial task for the new Agent')
