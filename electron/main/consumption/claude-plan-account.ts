@@ -68,9 +68,13 @@ export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
  */
 export function isClaudePlanRemoteReadAllowed(options: {
   packaged: boolean;
+  testMode?: boolean;
   developmentOptIn?: string;
 }): boolean {
-  return options.packaged || options.developmentOptIn === '1';
+  return (
+    options.developmentOptIn === '1' ||
+    (options.packaged && options.testMode !== true)
+  );
 }
 
 const STATE_FILE = 'claude-plan.json';

@@ -93,7 +93,12 @@ describe('Claude plan runtime network boundary', () => {
     expect(isClaudePlanRemoteReadAllowed({ packaged: true })).toBe(true);
     expect(isClaudePlanRemoteReadAllowed({ packaged: false })).toBe(false);
     expect(isClaudePlanRemoteReadAllowed({
+      packaged: true,
+      testMode: true,
+    })).toBe(false);
+    expect(isClaudePlanRemoteReadAllowed({
       packaged: false,
+      testMode: true,
       developmentOptIn: '1',
     })).toBe(true);
     expect(isClaudePlanRemoteReadAllowed({
