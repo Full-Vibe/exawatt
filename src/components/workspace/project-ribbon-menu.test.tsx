@@ -6,13 +6,14 @@ describe('StripContextMenu readiness rows (ENG-026 N3)', () => {
   afterEach(cleanup);
 
   const items: StripMenuItem[] = [
-    { label: 'Rename…', onSelect: vi.fn() },
+    { id: 'rename', label: 'Rename…', onSelect: vi.fn() },
     {
+      id: 'push-to-cloud',
       label: 'Push to cloud',
       announcedComing: 'run this Agent on an Exawatt-hosted plan (Cloud)',
     },
-    { label: 'Cloud', note: 'Coming soon', onSelect: vi.fn() },
-    { label: 'Close', danger: true, onSelect: vi.fn() },
+    { id: 'cloud', label: 'Cloud', note: 'Coming soon', onSelect: vi.fn() },
+    { id: 'close', label: 'Close', danger: true, onSelect: vi.fn() },
   ];
 
   function renderMenu() {
@@ -70,13 +71,13 @@ describe('StripContextMenu keyboard standing', () => {
   afterEach(cleanup);
 
   const targets: StripMenuItem[] = [
-    { label: 'Claude Opus', onSelect: vi.fn() },
-    { label: 'Codex', onSelect: vi.fn() },
+    { id: 'claude-opus', label: 'Claude Opus', onSelect: vi.fn() },
+    { id: 'codex', label: 'Codex', onSelect: vi.fn() },
   ];
   const items: StripMenuItem[] = [
-    { label: 'Rename…', onSelect: vi.fn() },
-    { label: 'Clone to…', children: targets },
-    { label: 'Close', danger: true, onSelect: vi.fn() },
+    { id: 'rename', label: 'Rename…', onSelect: vi.fn() },
+    { id: 'clone-to', label: 'Clone to…', children: targets },
+    { id: 'close', label: 'Close', danger: true, onSelect: vi.fn() },
   ];
 
   const renderMenu = () =>
@@ -158,5 +159,83 @@ describe('StripContextMenu keyboard standing', () => {
     press('ArrowRight');
     activeRow()!.click();
     expect(targets[0].onSelect).toHaveBeenCalled();
+  });
+});
+
+describe('StripContextMenu row identity (BUG-051)', () => {
+  afterEach(cleanup);
+
+  // Two setups on one model share a label BY DESIGN — the launcher names a
+  // row after its model and puts the reasoning effort on the quiet note. The
+  // menu used to key rows on that label, so Clone to… on a Codex Session
+  // highlighted BOTH `GPT-5.6 Codex` rows at once and could not tell them
+  // apart (operator, 2026-08-17).
+  const sameLabel = (): StripMenuItem[] => [
+    {
+      id: 'agent:codex:gpt-5.6:high',
+      label: 'GPT-5.6 Codex',
+      detail: 'High',
+      accessibleLabel: 'Clone to Codex, GPT-5.6 Codex, High',
+      onSelect: vi.fn(),
+    },
+    {
+      id: 'agent:codex:gpt-5.6:medium',
+      label: 'GPT-5.6 Codex',
+      detail: 'Medium',
+      accessibleLabel: 'Clone to Codex, GPT-5.6 Codex, Medium',
+      onSelect: vi.fn(),
+    },
+  ];
+
+  const renderTargets = (targets: StripMenuItem[]) =>
+    render(
+      <StripContextMenu
+        x={10}
+        y={10}
+        color="#50E6FF"
+        label="Session actions"
+        items={[{ id: 'clone-to', label: 'Clone to…', children: targets }]}
+        onClose={vi.fn()}
+      />
+    );
+
+  const activeRows = () =>
+    screen
+      .getAllByRole('menuitem')
+      .filter(row => row.hasAttribute('data-menu-active'));
+
+  it('highlights exactly one of two same-labelled rows', () => {
+    renderTargets(sameLabel());
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowRight' });
+    expect(activeRows()).toHaveLength(1);
+    expect(activeRows()[0].textContent).toContain('High');
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    expect(activeRows()).toHaveLength(1);
+    expect(activeRows()[0].textContent).toContain('Medium');
+  });
+
+  it('keeps two same-labelled rows independently selectable', () => {
+    const targets = sameLabel();
+    renderTargets(targets);
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowRight' });
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    activeRows()[0].click();
+    expect(targets[0].onSelect).not.toHaveBeenCalled();
+    expect(targets[1].onSelect).toHaveBeenCalled();
+  });
+
+  it('separates them for a screen reader too', () => {
+    renderTargets(sameLabel());
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowRight' });
+    expect(
+      screen.getByRole('menuitem', {
+        name: 'Clone to Codex, GPT-5.6 Codex, High',
+      })
+    ).not.toBe(
+      screen.getByRole('menuitem', {
+        name: 'Clone to Codex, GPT-5.6 Codex, Medium',
+      })
+    );
   });
 });

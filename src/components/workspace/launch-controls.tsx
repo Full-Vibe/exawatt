@@ -71,6 +71,12 @@ import {
   saveNamedLaunchConfiguration,
   setLaunchConfigurationPinned,
 } from '@/lib/launch-configurations';
+import {
+  composeLaunchTargets,
+  launchTargetAvailability,
+  launchTargetPresentation,
+  type LaunchTargetAvailability,
+} from './launch-target-catalog';
 import type { LaunchConfigurationRibbonItem } from './launch-configuration-ribbon';
 import type { CommandPaletteLaunchConfiguration } from '@/components/shortcuts/command-palette-launch-configurations';
 import {
@@ -376,9 +382,6 @@ export function AgentComposer({
     fallbackAgentSourceRegistry('launch').sources.find(
       source => source.harness === effectiveSource
     )!;
-  const launchableSourceOrder = sourceSnapshots
-    .filter(source => source.launchable)
-    .map(source => source.harness);
   const launchReady =
     preferencesReady &&
     sourceRegistryReady &&
@@ -439,89 +442,28 @@ export function AgentComposer({
   const projectPins = new Set(
     configurationPool?.projects[projectDir]?.pins ?? []
   );
-  const catalogTargets: AgentLaunchConfiguration[] = [];
-  const seenTargetIds = new Set<string>();
-  for (const target of frozenTargets) {
-    if (target.kind === 'agent' && !seenTargetIds.has(target.id)) {
-      catalogTargets.push(target);
-      seenTargetIds.add(target.id);
-    }
-  }
-  for (const sourceId of launchableSourceOrder) {
-    const catalog = catalogsBySource[sourceId];
-    if (!catalog?.effectiveModel) continue;
-    const option = catalog.models.find(
-      candidate => candidate.id === catalog.effectiveModel
-    );
-    const sourceSnapshot = sourceSnapshots.find(
-      candidate => candidate.harness === sourceId
-    );
-    try {
-      const target = createAgentLaunchConfiguration(
-        {
-          sourceId: sourceSnapshot?.id ?? sourceId,
-          modelId: catalog.effectiveModel,
-          effort: catalog.effectiveEffort,
-          labels: {
-            source: sourceSnapshot?.label ?? sourceId,
-            model: option?.label ?? catalog.effectiveModelLabel,
-            effort: catalog.effectiveEffortLabel,
-          },
-        },
-        0
-      );
-      if (!seenTargetIds.has(target.id)) {
-        catalogTargets.push(target);
-        seenTargetIds.add(target.id);
-      }
-    } catch {
-      // A malformed source-owned identity is not made selectable.
-    }
-  }
-  if (currentConfigurationInput && !seenTargetIds.has(currentConfigurationId)) {
+  // The one catalog (`launch-target-catalog.ts`). Clone to… reads the same
+  // composition, availability and naming, so a change here reaches it too.
+  const catalogTargets = composeLaunchTargets({
+    ranked: frozenTargets,
+    sources: sourceSnapshots,
+    catalogs: catalogsBySource,
+  });
+  if (
+    currentConfigurationInput &&
+    !catalogTargets.some(target => target.id === currentConfigurationId)
+  ) {
     catalogTargets.unshift(
       createAgentLaunchConfiguration(currentConfigurationInput)
     );
-    seenTargetIds.add(currentConfigurationId);
   }
 
   const targetAvailability = useCallback(
-    (
-      target: AgentLaunchConfiguration
-    ): { available: boolean; reason?: string } => {
-      const snapshot = launchSourceSnapshots(sourceRegistry).find(
-        candidate =>
-          candidate.id === target.sourceId ||
-          candidate.harness === target.sourceId
-      );
-      if (!snapshot) {
-        return {
-          available: false,
-          reason: `Agent Source ${target.labels.source ?? target.sourceId} is not installed.`,
-        };
-      }
-      if (!snapshot?.launchable) {
-        return {
-          available: false,
-          reason: snapshot
-            ? `${snapshot.label}: ${snapshot.stateLabel}`
-            : `Agent Source ${target.sourceId} is unavailable.`,
-        };
-      }
-      const catalog = catalogsBySource[snapshot.harness];
-      if (!catalog) {
-        return { available: false, reason: 'Checking model availability…' };
-      }
-      const exactModelAvailable =
-        target.modelId === catalog.effectiveModel ||
-        catalog.models.some(option => option.id === target.modelId);
-      return exactModelAvailable
-        ? { available: true }
-        : {
-            available: false,
-            reason: `${target.labels.model ?? target.modelId} is not available from ${snapshot.label}.`,
-          };
-    },
+    (target: AgentLaunchConfiguration): LaunchTargetAvailability =>
+      launchTargetAvailability(target, {
+        sources: launchSourceSnapshots(sourceRegistry),
+        catalogs: catalogsBySource,
+      }),
     [catalogsBySource, sourceRegistry]
   );
 
@@ -531,32 +473,12 @@ export function AgentComposer({
     available: boolean;
   }> = catalogTargets.map(target => {
     const availability = targetAvailability(target);
-    const sourceLabel = target.labels.source ?? target.sourceId;
-    const modelDisplay = target.labels.model ?? target.modelId;
-    const effortDisplay = target.labels.effort ?? target.effort;
-    const label = target.name ?? modelDisplay;
-    const identity = [
-      sourceLabel,
-      modelDisplay,
-      effortDisplay,
-      target.labels.type,
-    ]
-      .filter(Boolean)
-      .join(', ');
+    const presented = launchTargetPresentation(target, sourceSnapshots);
     return {
       target,
       available: availability.available,
       item: {
-        id: target.id,
-        label,
-        detail: target.name
-          ? [modelDisplay, effortDisplay].filter(Boolean).join(' · ')
-          : effortDisplay || undefined,
-        accessibleLabel: target.name ? `${target.name}: ${identity}` : identity,
-        source:
-          sourceSnapshots.find(candidate => candidate.id === target.sourceId)
-            ?.harness ?? 'claude',
-        named: Boolean(target.name),
+        ...presented,
         pinned: projectPins.has(target.id),
         available: availability.available,
         unavailableReason: availability.reason,

@@ -485,7 +485,9 @@ describe('TabStrip turn-state glyphs (D22)', () => {
           source: 'codex',
           modelId: 'gpt-5.6-sol',
           effort: 'high',
-          label: 'Codex',
+          label: 'GPT-5.6 Codex',
+          detail: 'High',
+          accessibleLabel: 'Codex, GPT-5.6 Codex, High',
         },
         {
           id: 'opencode-config',
@@ -493,7 +495,8 @@ describe('TabStrip turn-state glyphs (D22)', () => {
           source: 'opencode',
           modelId: 'openrouter/kimi',
           effort: null,
-          label: 'OpenCode',
+          label: 'Kimi K2',
+          accessibleLabel: 'OpenCode, Kimi K2',
         },
       ],
       onCloneTab,
@@ -507,9 +510,15 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(clone).toHaveFocus();
     fireEvent.keyDown(clone, { key: 'ArrowRight' });
     await waitFor(() =>
-      expect(screen.getByRole('menuitem', { name: 'Codex' })).toHaveFocus()
+      expect(
+        screen.getByRole('menuitem', {
+          name: 'Clone to Codex, GPT-5.6 Codex, High',
+        })
+      ).toHaveFocus()
     );
-    fireEvent.click(screen.getByRole('menuitem', { name: 'OpenCode' }));
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Clone to OpenCode, Kimi K2' })
+    );
     expect(onCloneTab).toHaveBeenCalledWith(
       'a',
       expect.objectContaining({ id: 'opencode-config', source: 'opencode' })
@@ -529,7 +538,9 @@ describe('TabStrip turn-state glyphs (D22)', () => {
           source: 'codex',
           modelId: 'gpt-5.6-sol',
           effort: 'high',
-          label: 'Codex',
+          label: 'GPT-5.6 Codex',
+          detail: 'High',
+          accessibleLabel: 'Codex, GPT-5.6 Codex, High',
         },
       ],
       onCloneTab: vi.fn(),

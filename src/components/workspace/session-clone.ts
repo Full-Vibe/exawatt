@@ -1,14 +1,15 @@
-import type {
-  AgentModelCatalog,
-  AgentSourceRegistrySnapshot,
-} from '@/types/electron';
+import type { AgentSourceRegistrySnapshot } from '@/types/electron';
 import type { AgentSourceId } from './agent-sources';
 import { AGENT_SOURCE_META, launchSourceSnapshots } from './agent-sources';
-import type { WorkspaceTab } from './use-workspace-state';
 import {
-  launchConfigurationId,
-  type AgentLaunchConfiguration,
-} from '@exawatt/core';
+  composeLaunchTargets,
+  launchTargetAvailability,
+  launchTargetPresentation,
+  resolveLaunchSource,
+  type LaunchSourceCatalogs,
+} from './launch-target-catalog';
+import type { WorkspaceTab } from './use-workspace-state';
+import type { LaunchTarget } from '@exawatt/core';
 
 const MAX_HANDOFF_CHARS = 2_400;
 const MAX_FIELD_CHARS = 1_000;
@@ -26,6 +27,11 @@ export function tabCanClone(
   );
 }
 
+/**
+ * One row of the Clone to… menu. Identity is the Launch Configuration id, and
+ * `label` alone is NOT identity: two setups on the same model share it, which
+ * is exactly what `detail` exists to separate.
+ */
 export interface CloneSessionTarget {
   id: string;
   sourceId: string;
@@ -33,63 +39,45 @@ export interface CloneSessionTarget {
   modelId: string;
   effort: string | null;
   label: string;
+  /** Secondary line, e.g. `High`. Present whenever the engine reports one. */
+  detail?: string;
+  /** Full spoken identity: source, model, effort, type. */
+  accessibleLabel: string;
 }
 
+/**
+ * Clone to… is a FILTER over the one Launch Target catalog (⌘T's), never a
+ * second list: the same setups, in the same frecency order, under the same
+ * names. The only narrowing is availability — cloning into a setup the
+ * operator cannot start is not an offer worth making, whereas the composer
+ * still shows it with the missing fact attached because that surface is where
+ * you go to fix it.
+ */
 export function availableSessionCloneTargets(
   registry: AgentSourceRegistrySnapshot,
-  configurations: readonly AgentLaunchConfiguration[] = [],
-  catalogs: Partial<Record<AgentSourceId, AgentModelCatalog>> = {}
+  ranked: readonly LaunchTarget[] = [],
+  catalogs: LaunchSourceCatalogs = {}
 ): CloneSessionTarget[] {
-  const sources = launchSourceSnapshots(registry).filter(
-    source => source.launchable
-  );
-  const targets: CloneSessionTarget[] = [];
-  const seen = new Set<string>();
-  for (const configuration of configurations) {
-    const source = sources.find(
-      candidate => candidate.id === configuration.sourceId
-    );
-    if (!source) continue;
-    const catalog = catalogs[source.harness];
-    if (
-      !catalog ||
-      (configuration.modelId !== catalog.effectiveModel &&
-        !catalog.models.some(model => model.id === configuration.modelId))
-    ) {
-      continue;
-    }
-    targets.push({
-      id: configuration.id,
-      sourceId: source.id,
-      source: source.harness,
-      modelId: configuration.modelId,
-      effort: configuration.effort,
-      label:
-        configuration.name ??
-        configuration.labels.model ??
-        configuration.modelId,
+  const sources = launchSourceSnapshots(registry);
+  return composeLaunchTargets({ ranked, sources, catalogs })
+    .filter(
+      target => launchTargetAvailability(target, { sources, catalogs }).available
+    )
+    .map(target => {
+      const presented = launchTargetPresentation(target, sources);
+      return {
+        id: target.id,
+        // The launch path matches a Session against the REGISTRY source id, so
+        // a target that names its source by harness is normalised here.
+        sourceId: resolveLaunchSource(target, sources)?.id ?? target.sourceId,
+        source: presented.source,
+        modelId: target.modelId,
+        effort: target.effort,
+        label: presented.label,
+        detail: presented.detail,
+        accessibleLabel: presented.accessibleLabel,
+      };
     });
-    seen.add(configuration.id);
-  }
-  for (const source of sources) {
-    const catalog = catalogs[source.harness];
-    if (!catalog?.effectiveModel) continue;
-    const id = launchConfigurationId({
-      sourceId: source.id,
-      modelId: catalog.effectiveModel,
-      effort: catalog.effectiveEffort,
-    });
-    if (seen.has(id)) continue;
-    targets.push({
-      id,
-      sourceId: source.id,
-      source: source.harness,
-      modelId: catalog.effectiveModel,
-      effort: catalog.effectiveEffort,
-      label: catalog.effectiveModelLabel,
-    });
-  }
-  return targets;
 }
 
 function bounded(value: string | null | undefined): string | null {

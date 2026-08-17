@@ -121,6 +121,7 @@ import {
   type CloneSessionTarget,
 } from './session-clone';
 import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
+import { rankLaunchTargets } from '@exawatt/core';
 import {
   projectDeclaredLinks,
   projectRoadmapAttentionSessions,
@@ -387,7 +388,9 @@ export function WorkspaceClient() {
       setCloneTargets(
         availableSessionCloneTargets(
           result.snapshot,
-          pool.configurations,
+          // The composer's ranking, not the pool's insertion order: Clone to…
+          // must offer the same setups in the same order as ⌘T.
+          rankLaunchTargets(pool, activeProject.dir),
           Object.fromEntries(catalogEntries)
         )
       );
