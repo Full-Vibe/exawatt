@@ -6,6 +6,7 @@ import {
   AgentModelCatalogCache,
   CATALOG_FRESH_MS,
   CATALOG_MAX_AGE_MS,
+  CATALOG_MAX_ENTRIES,
   catalogCacheKey,
 } from './agent-model-catalog-cache';
 import type { AgentModelCatalog } from './agent-models';
@@ -39,12 +40,15 @@ const catalog = (
 
 let directory: string;
 let now = 1_000_000;
+/** Directories the fake filesystem says still exist. */
+let live: Set<string>;
 
 beforeEach(async () => {
   directory = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'exawatt-catalog-cache-')
   );
   now = 1_000_000;
+  live = new Set(['/repo', '/other']);
 });
 
 afterEach(async () => {
@@ -54,7 +58,8 @@ afterEach(async () => {
 const makeCache = () =>
   new AgentModelCatalogCache(
     () => directory,
-    () => now
+    () => now,
+    cwd => live.has(cwd)
   );
 
 const KEY = catalogCacheKey('claude', '/repo', '/bin/fish');
@@ -65,7 +70,7 @@ describe('AgentModelCatalogCache', () => {
   });
 
   it('round-trips a catalog through disk, so a restart does not re-probe', async () => {
-    await makeCache().write(KEY, catalog());
+    await makeCache().write(KEY, '/repo', catalog());
 
     // A brand-new instance, as after an app restart.
     const reread = await makeCache().read(KEY);
@@ -74,7 +79,7 @@ describe('AgentModelCatalogCache', () => {
   });
 
   it('serves a stale catalog but reports it as not fresh', async () => {
-    await makeCache().write(KEY, catalog());
+    await makeCache().write(KEY, '/repo', catalog());
     now += CATALOG_FRESH_MS + 1;
 
     const reread = await makeCache().read(KEY);
@@ -83,14 +88,14 @@ describe('AgentModelCatalogCache', () => {
   });
 
   it('refuses a catalog that is too old to show at all', async () => {
-    await makeCache().write(KEY, catalog());
+    await makeCache().write(KEY, '/repo', catalog());
     now += CATALOG_MAX_AGE_MS + 1;
 
     await expect(makeCache().read(KEY)).resolves.toBeNull();
   });
 
   it('refuses an entry written in the future rather than trusting a clock jump', async () => {
-    await makeCache().write(KEY, catalog());
+    await makeCache().write(KEY, '/repo', catalog());
     now -= 60_000;
 
     await expect(makeCache().read(KEY)).resolves.toBeNull();
@@ -98,16 +103,20 @@ describe('AgentModelCatalogCache', () => {
 
   it('never retains a probe that did not produce a live catalog', async () => {
     const cache = makeCache();
-    await cache.write(KEY, catalog({ catalogMode: 'configured-values' }));
+    await cache.write(
+      KEY,
+      '/repo',
+      catalog({ catalogMode: 'configured-values' })
+    );
     await expect(cache.read(KEY)).resolves.toBeNull();
 
-    await cache.write(KEY, catalog({ catalogMode: 'unavailable' }));
+    await cache.write(KEY, '/repo', catalog({ catalogMode: 'unavailable' }));
     await expect(cache.read(KEY)).resolves.toBeNull();
   });
 
   it('keys separately per engine, Project, and shell', async () => {
     const cache = makeCache();
-    await cache.write(KEY, catalog());
+    await cache.write(KEY, '/repo', catalog());
 
     await expect(
       cache.read(catalogCacheKey('codex', '/repo', '/bin/fish'))
@@ -122,7 +131,7 @@ describe('AgentModelCatalogCache', () => {
 
   it('normalizes the Project path so the same directory hits one entry', async () => {
     const cache = makeCache();
-    await cache.write(KEY, catalog());
+    await cache.write(KEY, '/repo', catalog());
     const viaRelative = catalogCacheKey('claude', '/repo/sub/..', '/bin/fish');
     await expect(cache.read(viaRelative)).resolves.not.toBeNull();
   });
@@ -137,20 +146,25 @@ describe('AgentModelCatalogCache', () => {
   });
 
   it('drops entries whose payload is not a catalog', async () => {
+    const good = catalogCacheKey('codex', '/repo', '/bin/fish');
     await fs.promises.writeFile(
       path.join(directory, 'agent-model-catalogs.json'),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         entries: {
-          [KEY]: { cachedAt: now, catalog: { harness: 'claude' } },
-          good: { cachedAt: now, catalog: catalog() },
+          [KEY]: {
+            cachedAt: now,
+            cwd: '/repo',
+            catalog: { harness: 'claude' },
+          },
+          [good]: { cachedAt: now, cwd: '/repo', catalog: catalog() },
         },
       }),
       'utf8'
     );
     const cache = makeCache();
     await expect(cache.read(KEY)).resolves.toBeNull();
-    await expect(cache.read('good')).resolves.not.toBeNull();
+    await expect(cache.read(good)).resolves.not.toBeNull();
   });
 
   it('ignores a cache file from a different schema version', async () => {
@@ -158,7 +172,7 @@ describe('AgentModelCatalogCache', () => {
       path.join(directory, 'agent-model-catalogs.json'),
       JSON.stringify({
         schemaVersion: 99,
-        entries: { [KEY]: { cachedAt: now, catalog: catalog() } },
+        entries: { [KEY]: { cachedAt: now, cwd: '/repo', catalog: catalog() } },
       }),
       'utf8'
     );
@@ -166,15 +180,97 @@ describe('AgentModelCatalogCache', () => {
   });
 
   it('leaves no temporary files behind after a write', async () => {
-    await makeCache().write(KEY, catalog());
+    await makeCache().write(KEY, '/repo', catalog());
     const entries = await fs.promises.readdir(directory);
     expect(entries).toEqual(['agent-model-catalogs.json']);
   });
 
-  it('clears on request', async () => {
+  /* ---------------------------------------------------------------- *
+   * BUG-033 — the size class                                          *
+   * ---------------------------------------------------------------- */
+
+  it('migrates a v1 file, recovering each row cwd from its key', async () => {
+    await fs.promises.writeFile(
+      path.join(directory, 'agent-model-catalogs.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        entries: { [KEY]: { cachedAt: now, catalog: catalog() } },
+      }),
+      'utf8'
+    );
     const cache = makeCache();
-    await cache.write(KEY, catalog());
-    await cache.clear();
-    await expect(cache.read(KEY)).resolves.toBeNull();
+    await expect(cache.read(KEY)).resolves.not.toBeNull();
+
+    // and the file it rewrote is v2, so nothing re-derives the cwd twice
+    const raw = JSON.parse(
+      await fs.promises.readFile(
+        path.join(directory, 'agent-model-catalogs.json'),
+        'utf8'
+      )
+    );
+    expect(raw.schemaVersion).toBe(2);
+    expect(raw.entries[KEY].cwd).toBe('/repo');
+  });
+
+  it('evicts the row for a retired worktree, not just refuses to serve it', async () => {
+    const worktree = catalogCacheKey('claude', '/other', '/bin/fish');
+    const cache = makeCache();
+    await cache.write(KEY, '/repo', catalog());
+    await cache.write(worktree, '/other', catalog());
+    expect(await cache.size()).toBe(2);
+
+    // The worktree is landed and removed, exactly as `agent:land` leaves it.
+    live.delete('/other');
+    await makeCache().write(KEY, '/repo', catalog());
+
+    const raw = JSON.parse(
+      await fs.promises.readFile(
+        path.join(directory, 'agent-model-catalogs.json'),
+        'utf8'
+      )
+    );
+    expect(Object.keys(raw.entries)).toEqual([KEY]);
+  });
+
+  it('never grows past the stated entry bound, however many Projects are opened', async () => {
+    const cache = makeCache();
+    for (let index = 0; index < CATALOG_MAX_ENTRIES * 3; index += 1) {
+      const cwd = `/worktree-${index}`;
+      live.add(cwd);
+      now += 1_000;
+      await cache.write(
+        catalogCacheKey('claude', cwd, '/bin/fish'),
+        cwd,
+        catalog()
+      );
+    }
+    expect(await cache.size()).toBe(CATALOG_MAX_ENTRIES);
+
+    // The survivors are the newest, so the working set stays warm.
+    const newest = catalogCacheKey(
+      'claude',
+      `/worktree-${CATALOG_MAX_ENTRIES * 3 - 1}`,
+      '/bin/fish'
+    );
+    await expect(makeCache().read(newest)).resolves.not.toBeNull();
+    const oldest = catalogCacheKey('claude', '/worktree-0', '/bin/fish');
+    await expect(makeCache().read(oldest)).resolves.toBeNull();
+  });
+
+  it('reclaims aged rows on load, without waiting for a probe', async () => {
+    const cache = makeCache();
+    await cache.write(KEY, '/repo', catalog());
+    now += CATALOG_MAX_AGE_MS + 1;
+
+    const reloaded = makeCache();
+    await reloaded.read(KEY);
+    expect(await reloaded.size()).toBe(0);
+    const raw = JSON.parse(
+      await fs.promises.readFile(
+        path.join(directory, 'agent-model-catalogs.json'),
+        'utf8'
+      )
+    );
+    expect(raw.entries).toEqual({});
   });
 });

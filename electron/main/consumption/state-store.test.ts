@@ -8,15 +8,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CONSUMPTION_SAMPLE_HORIZON_MS,
   localLogAssurance,
   type ConsumptionSample,
   type ConsumptionWatermark,
   type PlanWindowObservation,
 } from '@exawatt/core';
-import {
-  ConsumptionStateStore,
-  emptyConsumptionMeta,
-} from './state-store';
+import { ConsumptionStateStore, emptyConsumptionMeta } from './state-store';
 
 let dir: string;
 
@@ -237,9 +235,7 @@ describe('ConsumptionStateStore', () => {
     );
     await store.flush();
     const after = await new ConsumptionStateStore(dir).load();
-    expect([...after.samples.keys()].sort()).toEqual(
-      [...live.keys()].sort()
-    );
+    expect([...after.samples.keys()].sort()).toEqual([...live.keys()].sort());
     expect(after.watermarks['/f'].consumedBytes).toBe(9);
     expect(after.meta.firstScanComplete).toBe(true);
     expect(after.logBytes).toBeLessThan(before.logBytes);
@@ -300,5 +296,133 @@ describe('ConsumptionStateStore', () => {
       mkdirSpy.mockRestore();
       renameSpy.mockRestore();
     }
+  });
+});
+
+/**
+ * BUG-032 — the state bound compaction always assumed it had.
+ *
+ * `compact()` rewrites the log FROM LIVE STATE, so a log bound is only a bound
+ * while the state is bounded. It never was: on the operator's machine the file
+ * reached 139.5 MB / 173,571 lines, every one of them parsed before `ready`
+ * resolved at launch.
+ */
+describe('sample retention', () => {
+  const DAY = 24 * 3_600_000;
+  const newest = Date.parse('2026-08-16T00:00:00.000Z');
+  const dated = (key: string, daysBack: number) =>
+    sample(key, { at: new Date(newest - daysBack * DAY).toISOString() });
+
+  it('drops samples older than the horizon while hydrating, and says so', async () => {
+    const store = new ConsumptionStateStore(dir);
+    await store.append({
+      samples: [
+        dated('recent-0', 0),
+        dated('recent-1', 3),
+        dated('edge', 13),
+        dated('old-30', 30),
+        dated('old-200', 200),
+      ],
+      observations: [],
+      marks: [],
+    });
+    await store.writeMeta(emptyConsumptionMeta());
+    await store.flush();
+
+    const reloaded = await new ConsumptionStateStore(dir).load();
+    expect([...reloaded.samples.keys()].sort()).toEqual([
+      'edge',
+      'recent-0',
+      'recent-1',
+    ]);
+    expect(reloaded.expiredSamples).toBe(2);
+  });
+
+  it('a wider horizon keeps what the default drops — the bound is policy, not a constant', async () => {
+    const store = new ConsumptionStateStore(dir);
+    await store.append({
+      samples: [dated('recent', 0), dated('old', 200)],
+      observations: [],
+      marks: [],
+    });
+    await store.writeMeta(emptyConsumptionMeta());
+    await store.flush();
+
+    const wide = await new ConsumptionStateStore(dir, {
+      sampleHorizonMs: 365 * DAY,
+    }).load();
+    expect(wide.samples.size).toBe(2);
+    expect(wide.expiredSamples).toBe(0);
+  });
+
+  it('compaction reclaims a log whose state shrank, not just one that grew', async () => {
+    const store = new ConsumptionStateStore(dir);
+    // Past the compaction slack, so the ratio rule is what decides. Each line
+    // is padded to ~40 KB to reach that scale without writing 20k rows.
+    const padding = 'p'.repeat(40_000);
+    await store.append({
+      samples: Array.from({ length: 250 }, (_unused, index) => ({
+        ...dated(`old-${index}`, 90),
+        cwd: padding,
+      })),
+      observations: [],
+      marks: [],
+    });
+    await store.append({
+      samples: [{ ...dated('recent', 0), cwd: padding }],
+      observations: [],
+      marks: [],
+    });
+    // Meta claims a huge historical compaction floor, which is exactly the
+    // state that used to make `shouldCompact` answer false forever.
+    await store.writeMeta({
+      ...emptyConsumptionMeta(),
+      compactedBytes: 500_000_000,
+    });
+    await store.flush();
+
+    const reloaded = new ConsumptionStateStore(dir);
+    const loaded = await reloaded.load();
+    expect(loaded.samples.size).toBe(1);
+    expect(loaded.retainedBytes).toBeLessThan(loaded.logBytes / 10);
+    expect(reloaded.shouldCompact).toBe(true);
+
+    await reloaded.compact(
+      loaded.samples.values(),
+      loaded.watermarks,
+      loaded.observations,
+      loaded.meta
+    );
+    await reloaded.flush();
+
+    const after = await new ConsumptionStateStore(dir).load();
+    expect(after.logBytes).toBeLessThan(loaded.logBytes / 10);
+    expect([...after.samples.keys()]).toEqual(['recent']);
+  });
+
+  it('the log stops growing: repeated passes over old history add nothing', async () => {
+    const store = new ConsumptionStateStore(dir);
+    await store.append({
+      samples: [dated('anchor', 0)],
+      observations: [],
+      marks: [],
+    });
+    await store.writeMeta(emptyConsumptionMeta());
+    await store.flush();
+    const baseline = (await new ConsumptionStateStore(dir).load()).logBytes;
+
+    // A state store hydrated under the bound holds the anchor only, so a
+    // caller replaying ancient samples through it retains nothing new.
+    const reloaded = new ConsumptionStateStore(dir);
+    const loaded = await reloaded.load();
+    for (let index = 0; index < 200; index += 1) {
+      expect(loaded.samples.add(dated(`ancient-${index}`, 120))).toBeNull();
+    }
+    expect(loaded.samples.size).toBe(1);
+    expect(baseline).toBeGreaterThan(0);
+  });
+
+  it('states its horizon rather than inheriting wall time', () => {
+    expect(CONSUMPTION_SAMPLE_HORIZON_MS).toBe(14 * DAY);
   });
 });

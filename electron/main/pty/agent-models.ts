@@ -1300,7 +1300,7 @@ export async function listAgentModels(
       if (!cached.fresh && !revalidating.has(key)) {
         revalidating.add(key);
         void probeAgentModels(harness, cwd, shell)
-          .then(catalog => cache.write(key, catalog))
+          .then(catalog => cache.write(key, cwd, catalog))
           .catch(() => undefined)
           .finally(() => revalidating.delete(key));
       }
@@ -1309,6 +1309,6 @@ export async function listAgentModels(
   }
 
   const catalog = await probeAgentModels(harness, cwd, shell);
-  void cache.write(key, catalog).catch(() => undefined);
+  void cache.write(key, cwd, catalog).catch(() => undefined);
   return catalog;
 }

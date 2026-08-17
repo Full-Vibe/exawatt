@@ -16,7 +16,12 @@ import type {
   ConsumptionFileRef,
   ConsumptionUpdatedEvent,
 } from '@exawatt/core';
-import { planWindowKey, totalTokens } from '@exawatt/core';
+import {
+  CONSUMPTION_SAMPLE_HORIZON_MS,
+  CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
+  planWindowKey,
+  totalTokens,
+} from '@exawatt/core';
 import {
   CLAUDE_DELEGATED_JSONL,
   CLAUDE_DELEGATED_META_JSON,
@@ -222,6 +227,11 @@ function makeService(
     debounceMs: 5,
     minPassIntervalMs: 0,
     staleAfterMs: Number.POSITIVE_INFINITY,
+    // The corpus fixture deliberately spans 2026-07-01 to 2026-08-10 so the
+    // idempotency and capacity rules are exercised across sources. That is
+    // wider than the default sample retention (BUG-032), so these tests widen
+    // it explicitly; retention itself is asserted in its own test below.
+    sampleHorizonMs: CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
     ...overrides,
   });
   services.push(service);
@@ -556,5 +566,71 @@ describe('privacy', () => {
       expect(stat.size).toBe(before.size);
       expect(stat.mtimeMs).toBe(before.mtimeMs);
     }
+  });
+});
+
+/**
+ * BUG-032 — retention is enforced where samples are WRITTEN.
+ *
+ * The corpus fixture spans 2026-07-01 to 2026-08-10, so a default-horizon
+ * service sees the Codex half as current and the Claude half as history. That
+ * split is the assertion: what falls outside the horizon never enters state,
+ * and therefore never enters the log that compaction rewrites from state.
+ */
+describe('sample retention', () => {
+  it('admits only what the horizon covers, and says how much it dropped', async () => {
+    const bounded = makeService({
+      sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
+    });
+    await bounded.snapshot();
+    await bounded.settle();
+    const snapshot = await bounded.snapshot();
+
+    // The Codex fixture (2026-08-09/10) is inside the window; the Claude
+    // fixture (2026-07-01..04) is forty days behind it and is not.
+    expect(new Set(snapshot.samples.map(s => s.source))).toEqual(
+      new Set(['codex'])
+    );
+    expect(snapshot.samples.length).toBeGreaterThan(0);
+  });
+
+  it('the persisted log carries only what state retained', async () => {
+    const bounded = makeService({
+      sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
+    });
+    await bounded.snapshot();
+    await bounded.settle();
+    await bounded.dispose();
+
+    const log = await fs.promises.readFile(
+      path.join(stateDir, 'log-v1.jsonl'),
+      'utf8'
+    );
+    const samples = log
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line))
+      .filter(envelope => envelope.k === 'sample');
+    expect(samples.length).toBeGreaterThan(0);
+    expect(samples.every(envelope => envelope.v.source === 'codex')).toBe(true);
+
+    // And a restart agrees: nothing outside the horizon comes back.
+    const restarted = makeService({
+      sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
+    });
+    const after = await restarted.snapshot();
+    expect(after.samples.every(sample => sample.source === 'codex')).toBe(true);
+  });
+
+  it('a widened horizon is the same service seeing more', async () => {
+    const wide = makeService({
+      sampleHorizonMs: CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
+    });
+    await wide.snapshot();
+    await wide.settle();
+    const snapshot = await wide.snapshot();
+    expect(new Set(snapshot.samples.map(s => s.source))).toEqual(
+      new Set(['claude-code', 'codex'])
+    );
   });
 });

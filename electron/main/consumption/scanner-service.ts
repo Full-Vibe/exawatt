@@ -33,13 +33,13 @@ import * as fsNode from 'fs';
 import {
   ClaudeConsumptionAdapter,
   CodexConsumptionAdapter,
+  ConsumptionSampleWindow,
   GrokConsumptionAdapter,
   LIVE_CONSUMPTION_SNAPSHOT_VERSION,
   WindowObservationAccumulator,
   addDiagnostics,
   derivePlanWindowRates,
   emptyDiagnostics,
-  mergeSamples,
   planWindowKey,
   type ConsumptionDiagnostics,
   type ConsumptionFileProgress,
@@ -107,6 +107,12 @@ export interface ConsumptionScannerServiceOptions {
   appendEveryFiles?: number;
   /** Delay before the automatic initial pass. */
   initialDelayMs?: number;
+  /**
+   * Sample retention behind the newest sample (BUG-032). Defaults to
+   * `CONSUMPTION_SAMPLE_HORIZON_MS`; main widens it to cover an active
+   * Operator-profile publication anchor, clamped by `ConsumptionSampleWindow`.
+   */
+  sampleHorizonMs?: number;
   now?: () => number;
 }
 
@@ -144,8 +150,14 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private readonly appendEveryFiles: number;
   private readonly initialDelayMs: number;
   private readonly identities: () => ProviderIdentityRecord[];
+  private readonly sampleHorizonMs: number | undefined;
 
-  private samples = new Map<string, ConsumptionSample>();
+  /**
+   * Bounded live sample state. This is the collection BUG-032 named: it is
+   * the compaction floor, the hydrate cost, and the `snapshot()` scan, and it
+   * had no size class until it carried a retention horizon.
+   */
+  private samples: ConsumptionSampleWindow;
   private watermarks: ConsumptionWatermarks = {};
   private latestWindows = new Map<string, PlanWindow>();
   private observations = new WindowObservationAccumulator();
@@ -176,7 +188,13 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private listeners = new Set<(event: ConsumptionUpdatedEvent) => void>();
 
   constructor(private readonly options: ConsumptionScannerServiceOptions) {
-    this.store = new ConsumptionStateStore(options.stateDir);
+    this.sampleHorizonMs = options.sampleHorizonMs;
+    this.samples = new ConsumptionSampleWindow({
+      horizonMs: options.sampleHorizonMs,
+    });
+    this.store = new ConsumptionStateStore(options.stateDir, {
+      sampleHorizonMs: options.sampleHorizonMs,
+    });
     this.fileSystem =
       options.fileSystem ?? new NodeConsumptionFileSystem({ maxFiles: 50_000 });
     this.claudeRoot = options.claudeRoot ?? defaultClaudeConsumptionRoot();
@@ -203,13 +221,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     this.ensureStarted();
     await this.ready;
     this.kickIfStale();
-    const sinceMs = request?.sinceMs;
-    let samples: ConsumptionSample[] = [];
-    for (const sample of this.samples.values()) {
-      if (sinceMs !== undefined && Date.parse(sample.at) < sinceMs) continue;
-      samples.push(sample);
-    }
-    samples.sort((left, right) => (left.at < right.at ? -1 : 1));
+    const samples = this.samples.since(request?.sinceMs);
     const observations = this.observations.list();
     return {
       version: LIVE_CONSUMPTION_SNAPSHOT_VERSION,
@@ -250,13 +262,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     if (!this.firstScanComplete) {
       throw new Error('Local usage scan is incomplete');
     }
-    const samples: ConsumptionSample[] = [];
-    for (const sample of this.samples.values()) {
-      if (Date.parse(sample.at) < sinceMs) continue;
-      samples.push(sample);
-    }
-    samples.sort((left, right) => (left.at < right.at ? -1 : 1));
-    return samples;
+    return this.samples.since(sinceMs);
   }
 
   rescan(): void {
@@ -330,6 +336,13 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
         this.emptySources = loaded.meta.emptySources;
         for (const window of loaded.meta.planWindows) {
           this.latestWindows.set(planWindowKey(window), window);
+        }
+        if (loaded.expiredSamples > 0) {
+          console.log(
+            `[consumption] retention dropped ${loaded.expiredSamples} sample(s) ` +
+              `older than ${Math.round(this.samples.retentionMs / 86_400_000)}d ` +
+              `while hydrating ${loaded.logBytes} log bytes`
+          );
         }
         if (this.samples.size > 0) this.revision += 1;
       } catch (error) {
@@ -440,11 +453,13 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
       samples: (incoming: ConsumptionSample[]) => {
         for (const sample of incoming) {
           const existing = this.samples.get(sample.idempotencyKey);
-          const merged = existing
-            ? mergeSamples([existing, sample]).samples[0]
-            : sample;
+          // Retention is enforced HERE, at the write, not at every read. A
+          // sample outside the horizon is never admitted to state and is
+          // therefore never appended to the log either, which is what keeps
+          // the compaction floor bounded.
+          const merged = this.samples.add(sample);
+          if (!merged) continue;
           if (existing) corpusDuplicates += 1;
-          this.samples.set(sample.idempotencyKey, merged);
           buffer.samples.push(merged);
         }
         if (incoming.length > 0) contentDirty = true;

@@ -732,7 +732,7 @@ export const architectureManifest = {
           id: 'goal-visual-service',
           label: 'Goal Visual Service',
           summary:
-            'Device-locally gated deterministic generation, private per-user cache and quota, bounded provider download, and source-neutral fallback/ready projection.',
+            'Device-locally gated deterministic generation, private per-user cache and quota, bounded provider download, and source-neutral fallback/ready projection. Pixels persist once in the bounded content-addressed side store under `userData/goal-visuals/`, keyed by the identity the provider already assigns; the workspace layout carries only the reference and main resolves it on restore.',
           layer: 'coordination',
           status: 'implemented',
           x: 920,
@@ -744,7 +744,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted IPC, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, native-network PKCE, atomic delivery, signed updates, and parser-validated roadmap transactions.',
+            'Immediate launch frame, trusted IPC, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, native-network PKCE, atomic delivery, signed updates, and parser-validated roadmap transactions. Every persisted collection declares a size class and names an eviction owner (decision `0039`): the layout stays a small-object record and large per-Session artifacts live in a content-addressed side store, referenced by id.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,
