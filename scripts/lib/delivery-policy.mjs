@@ -298,6 +298,41 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     });
   }
 
+  // BUG-042: the default community contract has no account service, and the
+  // resolver blanks the legacy service variables AFTER ambient env on purpose,
+  // so a route that demands that capability while Next prerenders it fails
+  // every build path — CI, `pnpm electron:build:dogfood`, and the packaged
+  // renderer. Two routes did, and the only evidence that would have caught it
+  // is a build under the DEFAULT contract. Nothing ran one: CI's `pnpm build`
+  // step passed Supabase secrets the resolver discards, and master's CI run is
+  // cancelled by the next landing before it reaches the build (see incident
+  // `0015`), so the seam commit itself was never proven.
+  //
+  // This is a changed-path check, not a SURFACE_GATES entry, precisely because
+  // declaring is the part that got skipped. It runs unattended on the exact
+  // tree being landed, and `verify:community-build` unsets any ambient
+  // distribution config so an agent shell that exported one cannot make the
+  // check quietly prove the official build instead.
+  if (
+    paths.some(
+      file =>
+        file.startsWith('src/app/') ||
+        file.startsWith('src/lib/supabase/') ||
+        file.startsWith('src/lib/distribution/') ||
+        file.startsWith('packages/core/src/distribution/') ||
+        file === 'next.config.ts' ||
+        file === 'scripts/prepare-distribution.mjs' ||
+        file === 'scripts/lib/distribution-build.mjs' ||
+        file === 'scripts/run-next-with-distribution.mjs'
+    )
+  ) {
+    checks.push({
+      id: 'verify:community-build',
+      command: 'pnpm',
+      args: ['run', 'verify:community-build'],
+    });
+  }
+
   if (
     paths.some(
       file =>

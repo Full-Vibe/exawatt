@@ -1,0 +1,63 @@
+# Generated for the public repository by the "public-ci" recipe.
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check open-source path classification
+        run: pnpm open-source:paths:check
+
+      - name: Restore Node compile cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/node-compile-cache
+          key: node-compile-${{ runner.os }}-${{ runner.arch }}-node-22-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            node-compile-${{ runner.os }}-${{ runner.arch }}-node-22-
+
+      - name: Run linter
+        run: pnpm lint
+
+      - name: Run type check
+        run: pnpm type-check
+
+      - name: Run tests
+        run: pnpm test:ci
+
+      # With no EXAWATT_DISTRIBUTION_CONFIG_JSON this is the COMMUNITY build,
+      # and that is deliberate: it is the composition every reader of the
+      # repository gets. The two Supabase secrets this step used to pass were
+      # inert — `nextDistributionEnvironment` blanks them after ambient env so
+      # legacy variables cannot turn a community capability back on — so they
+      # only made the step look like it proved the official build (BUG-042).
+      - name: Build
+        run: pnpm verify:community-build

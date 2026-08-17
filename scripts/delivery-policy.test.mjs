@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
@@ -92,6 +93,49 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
     'vitest-related',
     'electron:compile',
   ]);
+});
+
+// BUG-042: a route that demanded the account service while Next prerendered
+// it failed every build path, and no unattended check ever ran a build under
+// the DEFAULT community contract.
+test('routable and distribution-seam changes receive the community build', () => {
+  assert.deepEqual(ids(['src/app/admin/invites/page.tsx']), [
+    'open-source:paths:check',
+    'content:scan',
+    'type-check',
+    'test:agent-delivery',
+    'vitest-related',
+    'verify:community-build',
+  ]);
+  assert.deepEqual(ids(['scripts/lib/distribution-build.mjs']), [
+    'open-source:paths:check',
+    'content:scan',
+    'type-check',
+    'test:agent-delivery',
+    'vitest-related',
+    'verify:community-build',
+  ]);
+  for (const file of [
+    'src/lib/supabase/server.ts',
+    'src/lib/distribution/resolved.ts',
+    'packages/core/src/distribution/contract.ts',
+    'next.config.ts',
+    'scripts/prepare-distribution.mjs',
+    'scripts/run-next-with-distribution.mjs',
+  ]) {
+    assert.ok(
+      ids([file]).includes('verify:community-build'),
+      `${file} owes the community build`
+    );
+  }
+  // The check must unset an ambient contract, or an agent shell that exported
+  // one proves the official build instead of the default one.
+  assert.match(
+    JSON.parse(
+      readFileSync(path.join(root, 'package.json'), 'utf8')
+    ).scripts['verify:community-build'],
+    /^env -u EXAWATT_DISTRIBUTION_CONFIG_JSON /
+  );
 });
 
 test('roadmap corpus changes receive the canonical parser contract', () => {
