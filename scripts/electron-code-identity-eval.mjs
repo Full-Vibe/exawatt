@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 // Generated for the public repository by the "public-dogfood-tooling" recipe.
 
-import path from 'node:path';
 import {
   EXPECTED_DOGFOOD_IDENTIFIER,
   EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
   evaluateAppCodeIdentity,
 } from './lib/macos-code-signing.mjs';
+import { packagedAppBundle } from './lib/packaged-app.mjs';
 
+// The bundle is named by the distribution contract, not by a literal (BUG-043).
+// The signing identity it must carry is NOT: `EXPECTED_DOGFOOD_*` is the
+// operator's Developer ID custody, which only the official distribution claims.
+// A distributor with its own signing identity overrides it explicitly.
 const appPath =
   process.argv[2] ??
   process.env.EXAWATT_APP_PATH ??
-  path.join(process.cwd(), 'release', 'mac-arm64', 'Exawatt.app');
+  (await packagedAppBundle({ appPathOverride: undefined }));
 
 const result = await evaluateAppCodeIdentity(appPath, {
   expectedIdentifier:

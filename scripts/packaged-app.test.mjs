@@ -1,0 +1,103 @@
+// Generated for the public repository by the "public-dogfood-tooling" recipe.
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+
+import { prepareDistribution } from './lib/distribution-build.mjs';
+import {
+  assertPackagedContract,
+  resolvePackagedApp,
+} from './lib/packaged-app.mjs';
+
+/**
+ * BUG-043. Every packaged eval used to spell `Exawatt.app` out, so the ENFORCED
+ * packaged gate launched a bundle the default contract does not produce, and
+ * asserted an updater capability that contract deliberately excludes.
+ */
+
+const officialFixture = new URL(
+  './distribution.official.example.json',
+  import.meta.url
+);
+
+// A path that need not exist: resolution is a question about the contract.
+const ROOT = path.join(tmpdir(), 'exawatt-packaged-app-fixture');
+
+test('the packaged bundle and its owed capabilities come from the contract', async () => {
+  const community = await resolvePackagedApp({
+    root: ROOT,
+    appPathOverride: undefined,
+    inputJson: undefined,
+  });
+  assert.equal(community.identity.productName, 'Exawatt Community');
+  assert.equal(
+    community.executablePath,
+    path.join(
+      ROOT,
+      'release/mac-arm64/Exawatt Community.app/Contents/MacOS/Exawatt Community'
+    )
+  );
+  assert.equal(community.productUpdatesEnabled, false);
+
+  const official = await resolvePackagedApp({
+    root: ROOT,
+    appPathOverride: undefined,
+    inputJson: await readFile(officialFixture, 'utf8'),
+  });
+  assert.equal(official.identity.productName, 'Exawatt');
+  assert.equal(
+    official.executablePath,
+    path.join(ROOT, 'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt')
+  );
+  assert.equal(official.productUpdatesEnabled, true);
+  assert.notEqual(community.digest, official.digest);
+});
+
+test('the resolver reads the shell contract, not the last build left on disk', async () => {
+  // Resolving from `.exawatt-build/distribution.json` is what made the first
+  // official-contract run of the repaired gate PASS while testing the community
+  // package — incident `0015`'s false comfort with the arrow reversed. The
+  // resolved identity must follow the INPUT, whatever a prepared artifact says.
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-packaged-app-'));
+  const prepared = await prepareDistribution({ root, inputJson: undefined });
+  const official = await resolvePackagedApp({
+    root,
+    appPathOverride: undefined,
+    inputJson: await readFile(officialFixture, 'utf8'),
+  });
+  assert.equal(official.identity.productName, 'Exawatt');
+  assert.notEqual(official.digest, prepared.digest);
+});
+
+test('EXAWATT_APP_PATH moves the bundle without moving the expectations', async () => {
+  const resolved = await resolvePackagedApp({
+    root: ROOT,
+    appPathOverride: '/tmp/elsewhere/Renamed.app/Contents/MacOS/Renamed',
+    inputJson: undefined,
+  });
+  assert.equal(
+    resolved.executablePath,
+    '/tmp/elsewhere/Renamed.app/Contents/MacOS/Renamed'
+  );
+  assert.equal(resolved.appPath, '/tmp/elsewhere/Renamed.app');
+  assert.equal(resolved.productUpdatesEnabled, false);
+});
+
+test('a package built from another contract is refused by digest, not by capability', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-packaged-app-'));
+  const app = path.join(root, 'Exawatt Community.app');
+  const renderer = path.join(app, 'Contents', 'Resources', 'renderer');
+  await mkdir(renderer, { recursive: true });
+  assert.throws(
+    () => assertPackagedContract(app, 'a'.repeat(64)),
+    /renderer\/distribution\.sha256/
+  );
+  await writeFile(path.join(renderer, 'distribution.sha256'), 'b'.repeat(64));
+  assert.throws(
+    () => assertPackagedContract(app, 'a'.repeat(64)),
+    /was built from distribution bbbbbbbbbbbb/
+  );
+  assert.doesNotThrow(() => assertPackagedContract(app, 'b'.repeat(64)));
+});

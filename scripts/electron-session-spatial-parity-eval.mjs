@@ -7,11 +7,11 @@ import {
   openShellFromLauncher,
   withElectronApp,
 } from './lib/electron-eval.mjs';
+import { packagedExecutable } from './lib/packaged-app.mjs';
 
-const executable = resolve(
-  process.env.EXAWATT_APP_PATH ??
-    'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
-);
+// The packaged bundle is named by the distribution contract, not by a literal
+// (BUG-043): the default community contract packages `Exawatt Community.app`.
+const executable = await packagedExecutable();
 const root = mkdtempSync(join(tmpdir(), 'exawatt-session-spatial-parity-'));
 const userData = join(root, 'userData');
 const projectDir = join(root, 'project');
