@@ -272,10 +272,17 @@ Connection material has two tiers, and Exawatt holds as little as it can:
   operator's existing SSH configuration, agent, and key. Manually entered
   servers are the fallback for an operator without an alias; only that path
   writes host/user/key material, and it writes it to the OS keychain.
-- **The Gateway credential is never persisted.** Exawatt resolves the source's
-  own declared Gateway token through the authorized tunnel and holds it in
-  process memory for the life of the connection. Pasting a token is a fallback
-  for a source that does not declare one, not the normal path.
+- **The Gateway's shared secret is never persisted.** On first connect Exawatt
+  resolves the source's own declared Gateway token through the authorized
+  tunnel, holds it in process memory only, and uses it once: to pair Exawatt's
+  own device identity with exactly the scopes the current milestone needs. The
+  Gateway answers with a device token bound to that identity and those scopes.
+  Exawatt persists **that** device token in the OS keychain and never touches
+  the shared secret again. The persisted credential is therefore per-device,
+  scoped (read-only through H1), and revocable on the server with the source's
+  own tooling; the credential that could do anything never rests anywhere
+  Exawatt owns. Pasting a shared token is a fallback for a source that does not
+  declare one, not the normal path.
 
 No connection material of either tier crosses into renderer state.
 
@@ -316,9 +323,20 @@ simulated evidence.
   registry with customer-hosted placement, OS-owned connection material, bounded
   Gateway discovery, capability/freshness truth, authoritative reconnect
   snapshots, subscriptions, and optional source-declared replay positions.
-  C1 also carries three decisions taken 2026-08-17: an SSH-alias-first tunnel
-  transport, an in-memory-only Gateway credential, and retirement of the
-  pre-registry single-Gateway path (see the milestone log entry).
+  C1 also carries the decisions taken 2026-08-17: an SSH-alias-first tunnel
+  transport, shared-secret-in-memory plus persisted read-only device token,
+  and retirement of the pre-registry single-Gateway path (see the milestone
+  log entries). Concretely, C1 lands: (a) an SSH tunnel owner in Electron main
+  with alias enumeration, port-forward lifecycle, and failure classes that
+  separate host-unreachable, Gateway-down, and auth-rejected; (b) bounded
+  Gateway-token resolution over the tunnel and read-scoped device pairing;
+  (c) registry records for placement, endpoint reference, credential owner,
+  observed version and capabilities, and observation freshness; (d) discovery
+  via `agents.list` and topology via `sessions.list`, classified by key
+  segment, plus `cron.list` and `status`; (e) an authoritative resnapshot on
+  every reconnect; (f) deletion of the environment-flag single-Gateway path
+  and the `hosted-openclaw` coming-soon adapter. C1 has no UI beyond Settings
+  → Agent Sources showing the connected source and its health.
 - **C2 Connect flow and coworker projection.** Prototype the cross-surface state
   in `/hud-gallery`, then wire **⌘N → Connect existing Agent…**, explicit
   Project mapping, and read-only Marcus/Scout/Tyler Agent + Team views with a
@@ -505,7 +523,10 @@ on other providers rather than to fit this one topology:
   is the only path that writes server access material to the OS keychain.
 - **The Gateway credential is resolved through the authorized tunnel and kept
   in memory only.** Connecting a server the operator can already reach requires
-  no pasted secret and leaves no new secret at rest.
+  no pasted secret and leaves no new secret at rest. (Refined the same day by
+  the live probe below: the shared secret stays in memory only and is used
+  once to pair a scoped device identity; the resulting read-only device token
+  is what persists.)
 
 The read-only gate stays strict: C1 through C3 ship observation, and command
 authority waits for H2 even though the protocol client already has a send path.
@@ -525,3 +546,68 @@ a different placement, not a second adapter.
 
 No application code changed with these decisions; they refine the C1 packet
 before it is opened.
+
+### 2026-08-17 — live read-only probe of both dogfood Gateways
+
+With the operator's permission, probed both servers over SSH using only
+read-scoped Gateway methods and the source's own CLI. Nothing was written,
+paired, or persisted. Findings that change C1's shape (no endpoint, path,
+token, or key material is recorded here):
+
+**Reachability.** Both Gateways run the same OpenClaw release, listen on
+loopback only, and use shared-token auth. The SSH tunnel is the only path in,
+which confirms the transport decision rather than merely permitting it.
+
+**Discovery is first-class.** `agents.list` returns the configured-Agent list
+directly: id, display name, workspace, model, runtime, default flag, and the
+Gateway's `mainKey`. No inference from Session keys is needed. Agents that
+exist only as retained directories and not in configuration do not appear,
+which is exactly the retired-history behaviour the acceptance criteria require.
+
+**The scope map matches the ladder.** The Gateway classifies every method by
+required scope. `operator.read` covers all of H1: `agents.list`,
+`sessions.list`, `sessions.subscribe`, `sessions.messages.subscribe`,
+`chat.history`, `cron.list`, `cron.runs`, `tasks.list`, `status`, `health`,
+and `usage.*`. `operator.write` is H2: `chat.send`, `chat.abort`,
+`sessions.steer`, `tasks.cancel`. `operator.admin` owns cron mutation,
+configuration, and Agent create/delete, and stays out of scope. Read-only is
+therefore enforceable **by the source**, not only by Exawatt's allowlist.
+
+**Pairing is silent through the tunnel.** A connection that reaches the
+Gateway from loopback with the valid shared token and no proxy or browser
+origin headers is classified as local, and for that class an unpaired device
+requesting scopes is paired without an approval step; the requested scopes are
+stored on the device record and returned as a device token. A later scope
+upgrade through the same locality is also silent. This is what makes the
+device-token custody model above workable with no operator ceremony: Exawatt's
+own device identity asks for `operator.read`, receives a read-only token,
+persists that, and drops the shared secret. The Gateway lists the paired
+device by name and can revoke it, so custody is visible on the source side.
+
+**Topology, as observed.** Gateway A configures two Agents. One has its
+identity name set and is the default; the other has no identity name on the
+box at all, so the "Marcus" the operator uses is an Exawatt display-name
+override, never something to read from the source. That Agent's 75 retained
+Sessions decompose as one `main`, one cron context, one spawned subagent, and
+72 arbitrarily named helper contexts, so context-kind classification must key
+on the Session key's second segment (`main`, `cron`, `subagent`, otherwise
+helper) and never on the label. Gateway B configures one Agent with no
+channels, no `main` Session, and a single automation on a fixed interval that
+runs in isolated Sessions. Nobody has ever conversed with it. Its primary
+conversation is therefore genuinely absent, and the kernel's null-primary path
+is exercised by real data on day one: that Agent opens with Automations
+leading and no conversation, not with a fabricated Home.
+
+**Work-state and automation signals exist.** Every Session record carries
+`hasActiveRun`; `status` reports task totals, heartbeat configuration, and
+Session counts per Agent; `cron.list` reports schedule, last run time and
+status, next run, and delivery mode. D40 work state, the compact work stack,
+and Automations all have observed sources.
+
+**Amendment to the credential decision.** The morning's "in memory only" rule
+was written before pairing was understood. Persisting nothing would force
+Exawatt to re-read the admin-capable shared secret over SSH on every launch,
+which is a worse posture than holding a read-only, per-device, revocable
+token. The rule is now: shared secret in memory only and used once; scoped
+device token persisted in the OS keychain. H2 upgrades that token's scope
+explicitly rather than re-pairing.
