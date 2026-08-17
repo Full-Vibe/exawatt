@@ -586,6 +586,19 @@ Agent Sources the live registry reports launchable. The remediation prompt
 carries the versioned grammar because the target repository cannot read
 Exawatt's own documentation tree.
 
+### 2026-08-16 — operator dogfood evidence: the roadmap is still not a daily tool
+
+Feedback `6e94cb26-1ed4-4593-9d7e-5bbb98b94f5e` confirms S13's human-view
+problem remains open in the real Team-altitude panel. The operator described
+the current rail as a small-text "huge pile of tickets" that he does not use
+day to day. The desired answer is fast search (slash-triggered subsequence or
+semantic search was offered as an interaction hypothesis), a systematized
+"done / ongoing / next" summary, and a more graphical sense of roadmap items
+advancing. The attached 2048px dogfood capture shows the narrow rail beside
+nine live Exawatt Sessions; density and type scale make the roadmap lose that
+competition for attention. Treat this as evidence for the already-shaped S13
+human-consumable roadmap, not as approval of a particular search mechanism.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
