@@ -31,7 +31,10 @@ import {
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { registerConsumptionIPC } from './consumption-ipc';
 import { ConsumptionScannerService } from './consumption/scanner-service';
-import { ClaudePlanAccountService } from './consumption/claude-plan-account';
+import {
+  ClaudePlanAccountService,
+  isClaudePlanRemoteReadAllowed,
+} from './consumption/claude-plan-account';
 import { ProviderPlanCompositeSource } from './consumption/provider-plan-composite';
 import { registerAnalyticsIPC } from './analytics-ipc';
 import {
@@ -1485,10 +1488,10 @@ async function bootstrapCommandSurface(): Promise<void> {
     logPath: authLogPath,
   });
 
-  const electronAuthFetch: typeof fetch = (input, init) =>
+  const electronNetworkFetch: typeof fetch = (input, init) =>
     electronNet.fetch(input instanceof URL ? input.toString() : input, init);
   const authFetch = runtime.authDiagnostics.instrumentAuthFetch(
-    electronAuthFetch,
+    electronNetworkFetch,
     recordAuthDiagnostic,
     'electron.net.fetch'
   );
@@ -1541,6 +1544,15 @@ async function bootstrapCommandSurface(): Promise<void> {
   claudePlanAccount = new ClaudePlanAccountService({
     stateDir: path.join(app.getPath('userData'), 'consumption-plan'),
     enabled: isClaudePlanWindowsEnabled(loadSettings()),
+    // Chromium owns the request in installed builds, so Little Snitch sees
+    // Exawatt's stable Developer ID instead of Node or an ad-hoc Electron
+    // helper. Routine unpackaged launches stay local; the narrow override is
+    // reserved for deliberately exercising this exact account integration.
+    remoteReadAllowed: isClaudePlanRemoteReadAllowed({
+      packaged: app.isPackaged,
+      developmentOptIn: process.env.EXAWATT_DEV_CLAUDE_PLAN_NETWORK,
+    }),
+    fetchFn: electronNetworkFetch,
   });
   registerConsumptionIPC(
     () => BrowserWindow.getAllWindows(),

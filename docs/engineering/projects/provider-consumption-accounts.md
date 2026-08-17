@@ -87,7 +87,11 @@ ENG-009's relations).
 - `electron/main/consumption/claude-plan-account.ts` — the adapter
   (`parseClaudeUsage`, pure) + `ClaudePlanAccountService` (keychain read,
   fetch, cadence, persistence, revision/notify). Its ONLY write path is its
-  own state dir.
+  own state dir. Installed builds inject `electron.net.fetch`, keeping the
+  request on Exawatt's signed Chromium network boundary; routine unpackaged
+  launches cannot make the remote read. The immutable runtime capability is
+  separate from the mutable Privacy preference, so a settings write cannot
+  reopen an unsigned development path.
 - `electron/main/consumption/provider-plan-composite.ts` — implements the
   scanner's `ConsumptionScannerLike` seam over both sources: merges
   `planWindows` (`origin: 'provider-account'`), `windowObservations`,
@@ -129,6 +133,12 @@ throttled main-side to one fetch per 5 minutes + 0–45 s jitter, single-
 flight, with failures consuming the same cadence slot (no retry storms).
 The vendor page self-describes as sub-minute fresh; five minutes is
 deliberately conservative for a third-party undocumented endpoint.
+
+The cadence applies only to installed builds. Unpackaged development and eval
+launches are local by default because the downloaded Electron runtime is
+ad-hoc signed on macOS; focused integration testing requires the explicit
+`EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` opt-in. This keeps normal product work from
+creating a new firewall identity every time the Electron dependency changes.
 
 ### The off switch
 
@@ -195,3 +205,18 @@ REPAIRED 2026-08-11 (`1a5d449`, ENG-016): the eval now drives the D49
 catalog ("All engines and models" → "Shell in <project>") through the
 shared `openShellFromLauncher` helper and runs all 48 checks green;
 details in the ENG-016 findings log.
+
+### Signed network identity repair (2026-08-16)
+
+The operator was approving `api.anthropic.com` in Little Snitch roughly twenty
+times per day during normal Exawatt development. The plan-account service had
+defaulted to Node's global `fetch`, while every unpackaged Electron launch also
+enabled the default-on read. That made an ad-hoc Electron runtime — no Team ID,
+revision-bound CDHash — the network identity for an automatic credentialed
+request. A broad parent-process rule could not repair the leaf identity.
+
+Repaired at both boundaries: installed builds inject `electron.net.fetch`, so
+the request uses the signed Exawatt Chromium stack; unpackaged builds cannot
+make it unless the narrow development opt-in is set. Unit evidence pins the
+runtime policy and proves the Privacy toggle cannot expand it. Incident `0011`
+carries the controlled Little Snitch reproduction and signature evidence.
