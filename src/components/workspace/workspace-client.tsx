@@ -41,6 +41,8 @@ import { navHistory, type NavLocation } from '@/components/nav/nav-history';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener } from './project-opener';
 import { ExposeOverlay } from './expose-overlay';
+import { teamViewProjects } from './team-order';
+import { useTeamOrderPreference } from './team-order-preference';
 import { useLiveConsumptionByTab } from '@/components/consumption/use-live-consumption-by-tab';
 import { ReentryRecapLine } from './reentry-recap';
 import {
@@ -734,6 +736,20 @@ export function WorkspaceClient() {
     () => mergeFleetAttention(fleetAttention('pty', attention), roadmapAttention),
     [attention, roadmapAttention]
   );
+  // What the Team altitude PAINTS, for the tab ring (BUG-021). `⌘⇧[`/`⌘⇧]`
+  // step "the next Session in display order", and while Team is open the
+  // display is this grid, not the strip underneath it. Same sort function
+  // the overlay renders from, same inputs, so the command and the surface
+  // cannot disagree; the durable arrangement is read, never written.
+  const { mode: teamOrderMode } = useTeamOrderPreference();
+  const teamDisplayedProjects = useMemo(
+    () =>
+      teamViewProjects(projects, teamOrderMode, {
+        activity,
+        attention: mergedAttention,
+      }),
+    [activity, mergedAttention, projects, teamOrderMode]
+  );
   // Eligibility is the SAME rule the surfaces paint with (D51). It used to be
   // `exitCode === null` here and `tabIsLive(tab)` everywhere else, which is
   // how a tab could wear an amber marker ⌘J refused to visit (BUG-009).
@@ -1303,7 +1319,8 @@ export function WorkspaceClient() {
           : false,
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
-      cycle: cycleTab,
+      cycle: (delta: 1 | -1) =>
+        cycleTab(delta, overviewOpen ? teamDisplayedProjects : undefined),
       moveTab: moveTabWithFeedback,
       moveProject: moveProjectWithFeedback,
       newAgent: () => {
@@ -1401,6 +1418,8 @@ export function WorkspaceClient() {
     reopenLastClosedSession,
     selectProject,
     cycleTab,
+    overviewOpen,
+    teamDisplayedProjects,
     selectTabByOrdinal,
     moveTabWithFeedback,
     moveProjectWithFeedback,

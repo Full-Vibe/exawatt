@@ -648,6 +648,56 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-16 (S6.1.2 — `eval:workspace:team` is GREEN on master; the waiver
+  was taken against a tree that predated the fix): **a gate reported red on
+  "unmodified origin/master" was measured on a checkout ~18 minutes older
+  than the fix that repaired it.**
+
+  - **The claim.** BUG-026 (`f234e06`) landed with `eval:workspace:team`
+    waived, reporting the glide gate red on unmodified `origin/master`, three
+    runs at load 17-160, reduced motion ruled out. Read against S6.1.1, which
+    had proved the same gate red before its fix and green after on the same
+    rig, the two accounts could not both be true.
+
+  - **The measurement.** A fresh worktree from `origin/master` (`f234e06`,
+    which contains both S6.1.1 commits), its own dev server, seven
+    consecutive runs: **all green, 10 tiles glided every time**, at load
+    averages 14, 14, 18, 16 and then deliberately 49, 125 and 200 under
+    synthetic CPU load covering the whole range the other agent reported. The
+    gate is neither red nor load-sensitive.
+
+  - **What was actually measured.** That agent's attempt ref
+    (`agent-attempts/attention-scope-1786927873953-1-10c5661c`) has parent
+    `9506c65`, timestamped 17:17. S6.1.1 landed at 17:35. Its tree therefore
+    still contained `callbacks.current.delete(key)` — the self-evicting FLIP
+    ref-cache — so **the glide really was dead there**, and it still carried
+    the OLD `waitForTimeout(80)` glide gate. The observation was correct and
+    the diagnosis was correct; only "on unmodified `origin/master`" was
+    wrong, because `agent:land` rebases at the END, so a long session tests a
+    baseline that ages the whole time it runs.
+
+  - **Consequence, and the thing worth generalising.** No quarantine is
+    warranted: the gate is green, so recording it as quarantined would
+    itself be the BUG-010/011/014 disease in reverse — a working gate written
+    off. The transferable rule is that **"red on master" is a claim about a
+    tree, not about a branch name**: verify it in a worktree created from
+    `origin/master` at the moment of the claim, not in the session's own
+    checkout. A waiver taken against a stale baseline suppresses a gate that
+    would have passed, which is how a real regression gets to walk in behind
+    it later.
+
+  - **The same trap, an hour later, in this session.** This is not a rare
+    shape and it is not a comment on that agent. Landing THIS finding failed
+    the floor on `check-dependency-licenses` — "THIRD_PARTY_NOTICES.md is
+    stale" — which had nothing to do with the change: the worktree was cut
+    from `f234e06`, and `96a4660` regenerated those notices afterwards. The
+    branch was carrying a baseline that had aged out from under it, exactly
+    as the waived gate had. The fix is the same in both directions: rebase on
+    `origin/master` and re-measure before believing any red, because on a
+    repo with this many concurrent worktrees a checkout is stale within
+    minutes, and `agent:land`'s own rebase does not happen until the end.
+
+
 - 2026-08-16 (S6.1.1, landed — FIX-002 closed a second time): **the geometry
   was never wrong. The selection was taken back after the arrow key set it,
   by a mouse event nobody moved.**
