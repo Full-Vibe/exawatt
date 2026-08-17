@@ -2530,11 +2530,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  project boundaries (operator, 2026-07-03) — the strip is one global
    *  ring. Open zero-tab Projects are real stops (D19): landing on one
    *  activates its empty state (the Agent composer) instead of skipping it.
-   *  The ring math is pure and unit-tested in tab-ring.ts (D18). */
+   *  The ring math is pure and unit-tested in tab-ring.ts (D18).
+   *
+   *  DISPLAY order is a parameter, because it is not the same at every
+   *  altitude (BUG-021). The strip shows the durable manual arrangement
+   *  (D20) and is the default; Team shows S6.3's Started or Activity sort
+   *  and passes that instead, so one press moves one tile in whichever
+   *  order the operator is actually looking at. The ring math stays the one
+   *  owner either way — only what it is asked about changes. */
   const cycleTab = useCallback(
-    (delta: 1 | -1): boolean => {
+    (delta: 1 | -1, displayed?: readonly Project[]): boolean => {
       const { projects: gs, activeDir: ad } = stateRef.current;
-      const next = nextTabInRing(gs, ad, delta);
+      const next = nextTabInRing(displayed ?? gs, ad, delta);
       if (!next) return false;
       moveOperator(next.dir, next.tab?.id ?? null);
       return true;

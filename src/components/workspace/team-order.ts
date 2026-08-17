@@ -96,3 +96,29 @@ export function orderTeamTabs(
     )
     .map(entry => entry.tab);
 }
+
+/**
+ * Every Project with its tabs in the order Team PAINTS them (BUG-021).
+ *
+ * The Team altitude and the tab ring were reading two different orders for
+ * one question — "which Session comes next?". The grid sorted per Project
+ * with `orderTeamTabs` while `⌘⇧[`/`⌘⇧]` stepped the durable manual
+ * arrangement (D20), so one press moved one place in the STRIP and landed
+ * wherever that Session happened to sit in the GRID. The ring's own
+ * contract was never "the arrangement"; it is "every visible section in
+ * DISPLAY order", and at Team the display is this.
+ *
+ * So this is the one producer of that order, and both the surface that
+ * draws it and the command that steps it read it from here. Projects keep
+ * their global order — only tabs sort, and nothing is written back.
+ */
+export function teamViewProjects<P extends { tabs: readonly WorkspaceTab[] }>(
+  projects: readonly P[],
+  mode: TeamOrderMode,
+  signals: TeamOrderSignals
+): Array<P & { tabs: WorkspaceTab[] }> {
+  return projects.map(project => ({
+    ...project,
+    tabs: orderTeamTabs(project.tabs, mode, signals),
+  }));
+}

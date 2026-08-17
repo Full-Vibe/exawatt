@@ -18,7 +18,7 @@ import {
   projectDeclaredLinks,
   projectRoadmapSessions,
 } from './roadmap-lens-input';
-import { orderTeamTabs } from './team-order';
+import { teamViewProjects } from './team-order';
 import { useTeamOrderPreference } from './team-order-preference';
 import { useFlipTiles } from './use-flip-tiles';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
@@ -231,12 +231,11 @@ export function ExposeOverlay({
     [activity, attention]
   );
   const reducedMotion = usePrefersReducedMotion();
+  // The order Team PAINTS. Shared with the tab ring, which steps through
+  // whatever this surface is showing rather than the durable arrangement
+  // behind it (BUG-021) — one producer, so the two can never disagree.
   const viewProjects = useMemo(
-    () =>
-      projects.map(project => ({
-        ...project,
-        tabs: orderTeamTabs(project.tabs, orderMode, orderSignals),
-      })),
+    () => teamViewProjects(projects, orderMode, orderSignals),
     [orderMode, orderSignals, projects]
   );
   // one key per visual order; any band move re-keys and the tiles glide
