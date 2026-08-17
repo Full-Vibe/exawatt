@@ -182,13 +182,6 @@ export function delegationBusy(
   return !!delegation && delegation.children.length > 0;
 }
 
-/** The Agent reported that it is waiting on the operator (ENG-023 D4). */
-export function delegationBlocked(
-  delegation: SessionDelegation | null | undefined
-): boolean {
-  return !!delegation?.blockedOn;
-}
-
 /**
  * Apply one normalized harness event.
  *

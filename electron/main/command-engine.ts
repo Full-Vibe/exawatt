@@ -30,10 +30,6 @@ interface BroadcastWindow {
 let phase: CommandEnginePhase = 'starting';
 let windows: () => readonly BroadcastWindow[] = () => [];
 
-export function commandEnginePhase(): CommandEnginePhase {
-  return phase;
-}
-
 /** Terminal states win: an engine that paused does not drift back to
  *  `starting`, and a ready engine is only demoted by an explicit pause. */
 export function setCommandEnginePhase(next: CommandEnginePhase): void {
@@ -47,10 +43,4 @@ export function registerCommandEngineIPC(
 ): void {
   windows = allWindows;
   handleTrusted(COMMAND_ENGINE_CHANNEL, () => phase);
-}
-
-/** Tests only. */
-export function resetCommandEngineForTests(): void {
-  phase = 'starting';
-  windows = () => [];
 }

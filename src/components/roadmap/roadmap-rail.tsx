@@ -91,26 +91,6 @@ export const ROADMAP_RAIL_WIDTH = 320;
 export const ROADMAP_RAIL_FOCUSED_WIDTH = 420;
 export const ROADMAP_STRIP_WIDTH = 36;
 
-/** machine-local view preference; repo state never lives here */
-const MODE_STORAGE_KEY = 'exawatt:roadmap-rail-mode';
-
-export function loadRailMode(): RoadmapRailMode {
-  try {
-    const raw = window.localStorage.getItem(MODE_STORAGE_KEY);
-    return raw === 'open' ? 'open' : 'strip';
-  } catch {
-    return 'strip';
-  }
-}
-
-export function saveRailMode(mode: RoadmapRailMode): void {
-  try {
-    window.localStorage.setItem(MODE_STORAGE_KEY, mode);
-  } catch {
-    // preference only; losing it is harmless
-  }
-}
-
 type RailRow =
   | { kind: 'group'; group: 'shipped' | 'parked'; label: string }
   | {

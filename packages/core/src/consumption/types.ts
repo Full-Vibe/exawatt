@@ -434,7 +434,3 @@ export interface ConsumptionScanResult {
   planWindows: PlanWindow[];
   diagnostics: ConsumptionDiagnostics;
 }
-
-export function emptyScanResult(): ConsumptionScanResult {
-  return { samples: [], planWindows: [], diagnostics: emptyDiagnostics() };
-}

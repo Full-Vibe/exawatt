@@ -341,8 +341,6 @@ export const STATES: readonly StudyState[] = [
   },
 ];
 
-export const DEFAULT_STATE: StateId = 'dual-signal';
-
 /* ------------------------------------------------------------------ */
 /* construction                                                        */
 /* ------------------------------------------------------------------ */

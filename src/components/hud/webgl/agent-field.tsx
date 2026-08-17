@@ -96,21 +96,6 @@ export interface AgentFieldHandle {
   nudge(dx: number, dy: number, dollySteps: number, dAzimuth: number): void;
 }
 
-const PROJECT_NAMES = [
-  'ATLAS',
-  'ORION',
-  'VANGUARD',
-  'HELIOS',
-  'KESTREL',
-  'NOVA',
-  'CITADEL',
-  'TEMPEST',
-  'AURORA',
-  'WARDEN',
-  'ZEPHYR',
-  'PHALANX',
-] as const;
-
 // Status weighting drives both node SIZE (importance) and dominant-status pick.
 const STATUS_RANK: Record<AgentStatus, number> = {
   error: 6,
@@ -130,29 +115,6 @@ const STATUS_SIZE: Record<AgentStatus, number> = {
   complete: 1.9,
   idle: 1.5,
 };
-
-// Deterministic per-cluster status mix — reproducible across SSR/CSR.
-// Rates are tuned so red stays RARE: ~8% attention fleet-wide, concentrated in
-// the "hot" clusters, so critical sectors actually stand out on the map.
-function statusForAgent(clusterSeed: number, localIdx: number): AgentStatus {
-  const h = (clusterSeed * 131 + localIdx * 2654435761) >>> 0;
-  const r = h % 100;
-  const hot = clusterSeed % 4 === 1; // a couple of clusters run "hot"
-  if (hot) {
-    if (r < 6) return 'error';
-    if (r < 20) return 'blocked';
-    if (r < 36) return 'reviewing';
-    if (r < 76) return 'working';
-    if (r < 90) return 'complete';
-    return 'idle';
-  }
-  if (r < 2) return 'error';
-  if (r < 8) return 'blocked';
-  if (r < 22) return 'reviewing';
-  if (r < 70) return 'working';
-  if (r < 88) return 'complete';
-  return 'idle';
-}
 
 const NODE_PITCH = 4.0;
 
@@ -228,39 +190,6 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
   }
 
   return { agents, clusters };
-}
-
-/**
- * Synthetic demo fleet: deterministically partition n agents into project
- * clusters (round-robin) with a tuned status mix, then run the shared layout.
- */
-export function generateClusteredAgents(n: number): {
-  agents: FieldAgent[];
-  clusters: ClusterInfo[];
-} {
-  const numClusters = Math.min(
-    PROJECT_NAMES.length,
-    Math.max(3, Math.round(Math.sqrt(n) / 3))
-  );
-  const groups: FieldGroupSpec[] = Array.from(
-    { length: numClusters },
-    (_, c) => ({
-      id: PROJECT_NAMES[c],
-      label: PROJECT_NAMES[c],
-      agents: [],
-    })
-  );
-  const localCounter = new Array(numClusters).fill(0);
-  for (let i = 0; i < n; i++) {
-    const c = i % numClusters;
-    const li = localCounter[c]++;
-    groups[c].agents.push({
-      id: `agent-${i}`,
-      name: `${PROJECT_NAMES[c]}-${String(li).padStart(3, '0')}`,
-      status: statusForAgent(c, li),
-    });
-  }
-  return layoutClusteredField(groups);
 }
 
 /** Overall scene radius (for camera framing). */

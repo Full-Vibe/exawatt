@@ -32,8 +32,6 @@ const STATUS_ORDER = [
   'complete',
 ] as const;
 
-export type PopulationStatus = (typeof STATUS_ORDER)[number];
-
 const STATUS_INDEX = new Map<string, number>(
   STATUS_ORDER.map((status, index) => [status, index])
 );

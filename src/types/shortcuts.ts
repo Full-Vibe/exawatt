@@ -62,18 +62,6 @@ export interface ChordState {
   timestamp: number; // When chord started
 }
 
-/** Command palette item */
-export interface CommandPaletteItem {
-  id: string;
-  type: 'shortcut' | 'navigation' | 'task' | 'action';
-  label: string;
-  description?: string;
-  shortcut?: ShortcutKeys; // Display shortcut badge
-  icon?: React.ComponentType<{ className?: string }>;
-  onSelect: () => void;
-  keywords?: string[]; // Additional search terms
-}
-
 /** Check if keys is a chord (array of two bindings) */
 export function isChord(keys: ShortcutKeys): keys is [KeyBinding, KeyBinding] {
   return Array.isArray(keys) && keys.length === 2;

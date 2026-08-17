@@ -5,8 +5,6 @@
 // ============================================================
 
 // Base frame types
-export type OCFrameType = 'req' | 'res' | 'event';
-
 export interface OCRequest<P = unknown> {
   type: 'req';
   id: string;
@@ -81,37 +79,6 @@ export interface ChatSendParams {
   idempotencyKey?: string;
 }
 
-export interface ChatHistoryParams {
-  sessionKey?: string;
-  limit?: number;
-}
-
-export interface ChatAbortParams {
-  sessionKey?: string;
-}
-
-export interface ChatInjectParams {
-  text: string;
-  sessionKey?: string;
-}
-
-export interface SessionsListParams {}
-export interface SessionsGetParams {
-  key: string;
-}
-export interface SessionsResetParams {
-  key: string;
-}
-export interface SessionsPatchParams {
-  key: string;
-  patch: {
-    thinkingLevel?: number;
-    verboseLevel?: number;
-    model?: string;
-  };
-}
-
-export interface CronListParams {}
 export interface CronAddParams {
   name: string;
   schedule: string; // cron expression
@@ -119,21 +86,6 @@ export interface CronAddParams {
   sessionKey?: string;
   enabled?: boolean;
 }
-export interface CronRunParams {
-  jobId: string;
-}
-export interface CronUpdateParams {
-  jobId: string;
-  patch: Partial<CronAddParams>;
-}
-export interface CronRemoveParams {
-  jobId: string;
-}
-export interface CronStatusParams {}
-export interface CronRunsParams {
-  jobId: string;
-}
-
 // ---- Method Results ----
 
 export interface OCSession {
@@ -224,30 +176,3 @@ export interface PresencePayload {
   sessionCount: number;
 }
 
-export interface TickPayload {
-  ts: number;
-}
-
-export interface HealthPayload {
-  uptime: number;
-  healthy: boolean;
-}
-
-// Known event names
-export type OCEventName =
-  | 'connect.challenge'
-  | 'chat.segment'
-  | 'chat.tool'
-  | 'presence'
-  | 'tick'
-  | 'health'
-  | 'agent';
-
-// Typed event union
-export type OCTypedEvent =
-  | (OCEvent<OCConnectChallenge> & { event: 'connect.challenge' })
-  | (OCEvent<ChatSegmentPayload> & { event: 'chat.segment' })
-  | (OCEvent<ChatToolPayload> & { event: 'chat.tool' })
-  | (OCEvent<PresencePayload> & { event: 'presence' })
-  | (OCEvent<TickPayload> & { event: 'tick' })
-  | (OCEvent<HealthPayload> & { event: 'health' });

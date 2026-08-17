@@ -21,8 +21,6 @@ export const HERO_STATUS_ORDER = [
   'complete',
 ] as const satisfies readonly AgentStatus[];
 
-export type HeroStatusIndex = 0 | 1 | 2 | 3 | 4 | 5;
-
 export interface HeroBoardUnit {
   /** Board-model coordinates; the renderer maps them to world XZ. */
   x: number;

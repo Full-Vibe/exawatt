@@ -16,10 +16,6 @@ export function publishActiveTenantKind(kind: TenantWorkspaceKind): void {
   activeKind = kind;
 }
 
-export function activeTenantKind(): TenantWorkspaceKind {
-  return activeKind;
-}
-
 /** Live-workspace verbs (PTY launches, the Agent composer, pending-launch
  *  slots) are only meaningful against Personal local truth. */
 export function personalTenantActive(): boolean {
