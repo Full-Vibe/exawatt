@@ -9,7 +9,7 @@ import {
   teamIdentifierFromIdentityName,
   resolveDeveloperIdIdentity,
 } from './lib/macos-code-signing.mjs';
-import { assertPackedApp } from './release-package.mjs';
+import { assertPackedApp } from './lib/packed-app-assertions.mjs';
 
 const root = process.cwd();
 const execFileAsync = promisify(execFile);
@@ -104,9 +104,8 @@ if (buildInfo.sha !== sourceSha) {
   );
 }
 
-// The dogfood build is the operator's daily artifact and diverges from its
-// config the same way a release does (incident `0010`). It owes no update
-// feed, so it gets everything else: identity, icon, and payload.
+// A dogfood build can be community, official, or downstream. Assert the exact
+// resolved identity, protocol, icon posture, and payload on the real bundle.
 const builderConfig = JSON.parse(
   await readFile(
     path.join(root, '.exawatt-build', 'electron-builder.dogfood.json'),

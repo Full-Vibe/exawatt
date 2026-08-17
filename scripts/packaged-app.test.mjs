@@ -32,6 +32,10 @@ test('the packaged bundle and its owed capabilities come from the contract', asy
     inputJson: undefined,
   });
   assert.equal(community.identity.productName, 'Exawatt Community');
+  assert.equal(community.identity.appId, 'ai.exawatt.community');
+  assert.equal(community.identity.protocolScheme, null);
+  assert.equal(community.identity.iconPath, null);
+  assert.equal(community.identity.updateChannel, null);
   assert.equal(
     community.executablePath,
     path.join(
@@ -47,12 +51,30 @@ test('the packaged bundle and its owed capabilities come from the contract', asy
     inputJson: await readFile(officialFixture, 'utf8'),
   });
   assert.equal(official.identity.productName, 'Exawatt');
+  assert.equal(official.identity.appId, 'ai.exawatt.desktop');
+  assert.equal(official.identity.protocolScheme, 'exawatt');
+  assert.equal(
+    official.identity.iconPath,
+    'electron/resources/icon.icns'
+  );
+  assert.equal(official.identity.updateChannel, 'stable');
   assert.equal(
     official.executablePath,
     path.join(ROOT, 'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt')
   );
   assert.equal(official.productUpdatesEnabled, true);
   assert.notEqual(community.digest, official.digest);
+  for (const field of [
+    'appId',
+    'productName',
+    'protocolScheme',
+    'iconPath',
+    'updateChannel',
+    'stateNamespace',
+    'cacheNamespace',
+  ]) {
+    assert.notEqual(community.identity[field], official.identity[field], field);
+  }
 });
 
 test('the resolver reads the shell contract, not the last build left on disk', async () => {

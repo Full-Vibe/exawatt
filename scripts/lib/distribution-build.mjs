@@ -151,8 +151,15 @@ export function electronBuilderDistributionConfig(
   const overlayWithoutExtends = { ...(overlay ?? {}) };
   delete overlayWithoutExtends.extends;
   const config = mergeConfig(base, overlayWithoutExtends);
+  const templateProductName = config.productName;
   config.appId = identity.appId;
   config.productName = identity.productName;
+  if (typeof config.copyright === 'string' && templateProductName) {
+    config.copyright = config.copyright.replaceAll(
+      templateProductName,
+      identity.productName
+    );
+  }
   if (identity.protocolScheme) {
     config.protocols = [
       { name: identity.productName, schemes: [identity.protocolScheme] },
@@ -161,6 +168,14 @@ export function electronBuilderDistributionConfig(
     delete config.protocols;
   }
   config.mac = config.mac ?? {};
+  for (const [key, value] of Object.entries(config.mac.extendInfo ?? {})) {
+    if (typeof value === 'string' && templateProductName) {
+      config.mac.extendInfo[key] = value.replaceAll(
+        templateProductName,
+        identity.productName
+      );
+    }
+  }
   if (identity.iconPath) config.mac.icon = identity.iconPath;
   else delete config.mac.icon;
   if (contract.updates) {
