@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  useSyncExternalStore,
 } from 'react';
 import * as THREE from 'three';
 import {
@@ -41,8 +42,17 @@ import {
   type PopulationDotField,
 } from './population-dots';
 import {
+  createZoneLabelTierStore,
+  type ZoneLabelTierStore,
+} from './operations-board-label-tier';
+import {
+  createEmergenceTracker,
+  type EmergenceTracker,
+} from './operations-board-emergence';
+import {
   BoardField,
   BoardTransitionProvider,
+  useBoardFocusRecession,
   useBoardTransitionClock,
 } from './operations-board-field';
 import {
@@ -123,6 +133,10 @@ const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
 const BURN_RAMP_STEPS = 32;
 
+/** How far a non-focused Project's mass mixes toward the board (V3.7). Bodies
+ *  and plates recede this much; status lights never do. */
+const FOCUS_RECESSION_MIX = 0.58;
+
 /** One color decision for every piece mark: status protocol by default, the
  *  FLUX ramp under the burn lens. Shape always keeps carrying status (D30
  *  redundant channels), so the lens swaps only the hue channel. */
@@ -185,6 +199,8 @@ export interface OperationsBoardHandle {
   recenter(): void;
   restoreViewport(viewport: OperationsBoardViewport): void;
   focusProject(projectId: string): void;
+  /** Fly to the whole board -- the Fleet altitude's frame. */
+  focusFleet(): void;
   focusAgent(agentId: string, force?: boolean): void;
   enterSession(agentId: string): void;
   zoom(steps: number): void;
@@ -570,12 +586,27 @@ function BoardCameraRig({
         width: size.width,
         height: size.height,
       });
-      target.current.x = next.x;
-      target.current.y = next.y;
-      target.current.zoom = next.zoom;
-      beginFlightRef.current();
-      if (reduced) snapToTargetRef.current();
-      invalidate();
+      // The hotkey that caused this move already started the camera on its
+      // own frame (`focusProject` / `focusFleet`), before React committed. If
+      // this commit resolves to the flight already in progress, JOIN it --
+      // restarting would reset the ease and read as a hitch 80ms in.
+      const alreadyFlying =
+        flightFrom.current !== null &&
+        Math.abs(next.x - target.current.x) < 1e-3 &&
+        Math.abs(next.y - target.current.y) < 1e-3 &&
+        Math.abs(Math.log(next.zoom / Math.max(target.current.zoom, 1e-6))) < 1e-3;
+      if (!alreadyFlying) {
+        target.current.x = next.x;
+        target.current.y = next.y;
+        target.current.zoom = next.zoom;
+        // The clamp (F3) measures zoom against this fit. It must be the pose
+        // the move actually lands on, or the resting camera can sit outside
+        // its own limits and the first input rubber-bands it somewhere else.
+        fitZoom.current = next.zoom;
+        beginFlightRef.current();
+        if (reduced) snapToTargetRef.current();
+        invalidate();
+      }
     }
     previousSemanticAddress.current = semanticAddress;
   }, [
@@ -591,9 +622,16 @@ function BoardCameraRig({
     size.width,
   ]);
 
+  const previousProjection = useRef(projection);
   useEffect(() => {
     target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
-    beginFlightRef.current();
+    // A flight belongs to a projection CHANGE. This effect also re-runs when
+    // its callbacks are rebuilt by a layout change, and starting a flight then
+    // restarted the semantic flight already in progress a frame later.
+    if (previousProjection.current !== projection) {
+      previousProjection.current = projection;
+      beginFlightRef.current();
+    }
     announceTargetViewport();
     if (reduced) snapToTarget();
     invalidate();
@@ -857,6 +895,20 @@ function BoardCameraRig({
         target.current.x = next.x;
         target.current.y = next.y;
         target.current.zoom = next.zoom;
+        fitZoom.current = next.zoom;
+        beginFlightRef.current();
+        if (reduced) snapToTarget();
+        invalidate();
+      },
+      focusFleet() {
+        const next = semanticBoardCameraTarget(target.current, layout.bounds, {
+          width: size.width,
+          height: size.height,
+        });
+        target.current.x = next.x;
+        target.current.y = next.y;
+        target.current.zoom = next.zoom;
+        fitZoom.current = next.zoom;
         beginFlightRef.current();
         if (reduced) snapToTarget();
         invalidate();
@@ -929,6 +981,7 @@ function BoardCameraRig({
     constrainTarget,
     controllerRef,
     invalidate,
+    layout.bounds,
     layout.bounds.height,
     layout.bounds.width,
     layout.cameraBounds,
@@ -1186,6 +1239,8 @@ function ZoneEdges({
  *  by semantic address so descent/ascent re-choreographs (never data ticks). */
 function ZoneLayer({
   zones,
+  altitude,
+  focusedProjectId,
   reduced,
   onDrillProject,
   onToggleZoneSelect,
@@ -1194,6 +1249,8 @@ function ZoneLayer({
   theme,
 }: {
   zones: SpatialBoardProjectZone[];
+  altitude: SpatialBoardLayout['altitude'];
+  focusedProjectId: string | null;
   reduced: boolean;
   onDrillProject: (projectId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
@@ -1203,6 +1260,11 @@ function ZoneLayer({
 }) {
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
+  const plateRefs = useRef(new Map<string, THREE.Object3D & { color?: THREE.Color }>());
+  const zoneIds = useMemo(() => zones.map(zone => zone.id), [zones]);
+  const recession = useBoardFocusRecession(zoneIds, altitude, focusedProjectId, reduced);
+  const recessionScratch = useMemo(() => ({ a: new THREE.Color(), b: new THREE.Color() }), []);
+  const lastRecession = useRef(new Map<string, number>());
   const geometry = useMemo(() => {
     const next = new THREE.CylinderGeometry(0.5, 0.5, 1, 64);
     next.rotateX(Math.PI / 2);
@@ -1213,6 +1275,25 @@ function ZoneLayer({
   useFrame((state, delta) => {
     const material = materialRef.current;
     if (!material) return;
+    // Focus recession: a neighbour's plate mixes toward the board. Sampled
+    // from the shared clock so it arrives with the camera; written only when
+    // it changed so a resting board costs nothing.
+    const now = performance.now();
+    let receding = false;
+    for (const zone of zones) {
+      const plate = plateRefs.current.get(zone.id);
+      if (!plate?.color) continue;
+      const amount = recession(zone.id, now);
+      const previous = lastRecession.current.get(zone.id);
+      if (previous !== undefined && Math.abs(previous - amount) < 0.002) continue;
+      lastRecession.current.set(zone.id, amount);
+      const base = hoveredId === zone.id ? theme.zoneHover : spatialProjectZoneFill(theme, zone.id);
+      recessionScratch.a.set(base);
+      recessionScratch.b.set(theme.zone);
+      plate.color.copy(recessionScratch.a.lerp(recessionScratch.b, amount * FOCUS_RECESSION_MIX));
+      if (amount > 0.001 && amount < 0.999) receding = true;
+    }
+    if (receding) state.invalidate();
     if (entrance.current >= 1) {
       material.opacity = 1;
       return;
@@ -1238,6 +1319,13 @@ function ZoneLayer({
           return (
             <Instance
               key={zone.id}
+              ref={(instance: THREE.Object3D | null) => {
+                if (instance) plateRefs.current.set(zone.id, instance);
+                else {
+                  plateRefs.current.delete(zone.id);
+                  lastRecession.current.delete(zone.id);
+                }
+              }}
               position={[center.x, center.y, 0]}
               scale={[zone.rect.width, zone.rect.height, 0.62]}
               color={
@@ -1248,9 +1336,13 @@ function ZoneLayer({
               onPointerOver={event => {
                 if (!interactive) return;
                 event.stopPropagation();
+                lastRecession.current.delete(zone.id);
                 onHover(zone.id);
               }}
-              onPointerOut={() => onHover(null)}
+              onPointerOut={() => {
+                lastRecession.current.delete(zone.id);
+                onHover(null);
+              }}
               onClick={(event: ThreeEvent<MouseEvent>) => {
                 if (!interactive || event.delta > 5) return;
                 event.stopPropagation();
@@ -1396,7 +1488,6 @@ function DampedHtmlAnchor({
 /** Zone-label budget (V3.1): full cards only when the zone's projected size
  *  can afford them; below that a one-line chip keeps identity, count, and the
  *  drill affordance while the population field stays visible. */
-export type ZoneLabelTier = 'full' | 'compact';
 
 /** "12%" / "<1%" — the zone control is the exact-figure owner while the dot
  *  field speaks in color. */
@@ -1409,7 +1500,7 @@ function ProjectControls({
   zones,
   altitude,
   focusedProjectId,
-  labelTier,
+  labelTierStore,
   reduced,
   lens,
   onDrillProject,
@@ -1419,13 +1510,18 @@ function ProjectControls({
   zones: SpatialBoardProjectZone[];
   altitude: SpatialBoardLayout['altitude'];
   focusedProjectId: string | null;
-  labelTier: ZoneLabelTier;
+  labelTierStore: ZoneLabelTierStore;
   reduced: boolean;
   lens: SpatialBoardLens;
   onDrillProject: (projectId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
   theme: SpatialThemeSnapshot;
 }) {
+  const labelTier = useSyncExternalStore(
+    labelTierStore.subscribe,
+    labelTierStore.get,
+    labelTierStore.get
+  );
   return zones.map(zone => {
     // The zone control is the focusable DOM equivalent of the zone plate, so
     // it carries both verbs: activate opens, shift-activate (pointer or
@@ -1440,96 +1536,75 @@ function ProjectControls({
       0.8,
     ];
     const accent = spatialProjectIdentityColor(theme, zone.id);
+    // Compact is a CLASS, not a different tree. The label used to swap its
+    // whole DOM subtree between a compact and a full rendering when the zoom
+    // crossed a threshold or focus changed, which remounted every zone's
+    // control at once -- ten <Html> portals in one commit, a 58ms stall
+    // measured mid-flight, and a visible hitch in the camera. One structure
+    // that shows or hides its detail rows costs an attribute write per zone
+    // and never interrupts a frame. Detail rows also read as a reveal, which
+    // is what altitude is supposed to feel like.
     const compact =
       labelTier === 'compact' ||
       (altitude !== 'fleet' && zone.id !== focusedProjectId);
-    if (compact) {
-      const compactContent = (
-        <span className="flex items-baseline gap-2">
-          <span
-            className="max-w-[7.5rem] truncate text-chrome-micro font-semibold tracking-[-0.01em]"
-            style={{ color: theme.label }}
-          >
-            {zone.label}
-          </span>
-          <span
-            className="font-mono text-chrome-nano tabular-nums"
-            style={{ color: theme.labelMuted }}
-          >
-            {zone.agentCount}
-          </span>
-          {zone.blockedCount > 0 && (
-            <span
-              className="font-mono text-chrome-nano tabular-nums"
-              style={{ color: theme.status['needs-you'] }}
-            >
-              {zone.blockedCount}!
-            </span>
-          )}
-          {lens === 'burn' && zone.burn && (
-            <span
-              className="font-mono text-chrome-nano tabular-nums"
-              style={{
-                color: spatialPressureColor(theme, zone.burn.intensity),
-              }}
-              title={`${burnShareCopy(zone.burn.share)} of the fleet's normalized token burn`}
-            >
-              {burnShareCopy(zone.burn.share)}
-            </span>
-          )}
-        </span>
-      );
-      return (
-        <DampedHtmlAnchor key={zone.id} position={position} reduced={reduced}>
-          {!zone.isAggregate ? (
-            <button
-              type="button"
-              data-board-zone={zone.id}
-              aria-current={zone.selected ? 'true' : undefined}
-              aria-label={`Open Project ${zone.label}`}
-              onClick={activateZone}
-              style={{
-                borderColor: accent,
-                color: theme.label,
-                boxShadow: `0 8px 22px ${theme.shadow}`,
-              }}
-              className="exa-material-chrome board-control-enter border px-1.5 py-0.5 text-left outline-none transition-[border-color,background-color] duration-150 hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {compactContent}
-            </button>
-          ) : (
-            <div
-              style={{
-                borderColor: accent,
-                color: theme.label,
-                boxShadow: `0 8px 22px ${theme.shadow}`,
-              }}
-              className="exa-material-chrome board-control-enter border px-1.5 py-0.5 text-left"
-            >
-              {compactContent}
-            </div>
-          )}
-        </DampedHtmlAnchor>
-      );
-    }
+    const burnShare =
+      lens === 'burn' && zone.burn ? burnShareCopy(zone.burn.share) : null;
     const content = (
       <>
-        <span className="flex items-baseline justify-between gap-3">
+        <span className="flex items-baseline justify-between gap-2">
           <span
-            className="max-w-[9.5rem] truncate text-chrome-meta font-semibold tracking-[-0.01em]"
+            className={
+              compact
+                ? 'max-w-[7.5rem] truncate text-chrome-micro font-semibold tracking-[-0.01em]'
+                : 'max-w-[9.5rem] truncate text-chrome-meta font-semibold tracking-[-0.01em]'
+            }
             style={{ color: theme.label }}
           >
             {zone.label}
           </span>
-          <span
-            className="font-mono text-chrome-nano tabular-nums"
-            style={{ color: theme.labelMuted }}
-          >
-            {zone.agentCount}A
+          <span className="flex items-baseline gap-2">
+            <span
+              className="font-mono text-chrome-nano tabular-nums"
+              style={{ color: theme.labelMuted }}
+            >
+              {zone.agentCount}
+              <span className={compact ? 'hidden' : undefined}>A</span>
+            </span>
+            {zone.blockedCount > 0 && (
+              <span
+                className={
+                  compact
+                    ? 'font-mono text-chrome-nano tabular-nums'
+                    : 'hidden'
+                }
+                style={{ color: theme.status['needs-you'] }}
+              >
+                {zone.blockedCount}!
+              </span>
+            )}
+            {burnShare && (
+              <span
+                className={
+                  compact
+                    ? 'font-mono text-chrome-nano tabular-nums'
+                    : 'hidden'
+                }
+                style={{
+                  color: spatialPressureColor(theme, zone.burn!.intensity),
+                }}
+                title={`${burnShare} of the fleet's normalized token burn`}
+              >
+                {burnShare}
+              </span>
+            )}
           </span>
         </span>
         <span
-          className="mt-0.5 flex gap-2 font-mono text-chrome-nano tabular-nums"
+          className={
+            compact
+              ? 'hidden'
+              : 'mt-0.5 flex gap-2 font-mono text-chrome-nano tabular-nums'
+          }
           style={{ color: theme.labelMuted }}
         >
           <span>
@@ -1548,9 +1623,9 @@ function ProjectControls({
                 style={{
                   color: spatialPressureColor(theme, zone.burn.intensity),
                 }}
-                title={`${burnShareCopy(zone.burn.share)} of the fleet's normalized token burn`}
+                title={`${burnShare} of the fleet's normalized token burn`}
               >
-                {burnShareCopy(zone.burn.share)} of burn
+                {burnShare} of burn
               </span>
             ) : (
               <span style={{ color: theme.consumption.unknown }}>
@@ -1558,35 +1633,39 @@ function ProjectControls({
               </span>
             ))}
         </span>
-        <ProjectHealthRail zone={zone} theme={theme} />
+        <span className={compact ? 'hidden' : 'block'}>
+          <ProjectHealthRail zone={zone} theme={theme} />
+        </span>
       </>
     );
+    const frameClass = compact
+      ? 'exa-material-chrome board-control-enter border px-1.5 py-0.5 text-left'
+      : 'exa-material-chrome board-control-enter w-44 border px-2.5 py-2 text-left';
+    const frameStyle = {
+      borderColor: accent,
+      color: theme.label,
+      boxShadow: `0 8px 22px ${theme.shadow}`,
+    };
     return (
       <DampedHtmlAnchor key={zone.id} position={position} reduced={reduced}>
         {!zone.isAggregate ? (
           <button
             type="button"
             data-board-zone={zone.id}
+            data-board-zone-tier={compact ? 'compact' : 'full'}
             aria-current={zone.selected ? 'true' : undefined}
             aria-label={`Open Project ${zone.label}`}
             onClick={activateZone}
-            style={{
-              borderColor: accent,
-              color: theme.label,
-              boxShadow: `0 8px 22px ${theme.shadow}`,
-            }}
-            className="exa-material-chrome board-control-enter w-44 border px-2.5 py-2 text-left outline-none transition-[border-color,background-color,transform] duration-150 hover:brightness-105 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
+            style={frameStyle}
+            className={`${frameClass} outline-none transition-[border-color,background-color,transform] duration-150 hover:brightness-105 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring`}
           >
             {content}
           </button>
         ) : (
           <div
-            style={{
-              borderColor: accent,
-              color: theme.label,
-              boxShadow: `0 8px 22px ${theme.shadow}`,
-            }}
-            className="exa-material-chrome board-control-enter w-44 border px-2.5 py-2 text-left"
+            data-board-zone-tier={compact ? 'compact' : 'full'}
+            style={frameStyle}
+            className={frameClass}
           >
             {content}
           </div>
@@ -2014,13 +2093,31 @@ function StatusMarkLayer({
   active,
   lens,
   theme,
+  emergenceScale,
 }: {
   pieces: SpatialBoardPiece[];
   active: boolean;
   lens: SpatialBoardLens;
   theme: SpatialThemeSnapshot;
+  /** Per-frame scale for a piece's marks (V3.7 emergence); 1 when settled. */
+  emergenceScale?: (pieceId: string, nowMs: number) => number;
 }) {
   const rotorRefs = useRef(new Map<string, THREE.Object3D>());
+  // Every mark instance a piece owns, so its light scales with its body.
+  const markRefs = useRef(new Map<string, Set<THREE.Object3D>>());
+  const collectMark = (pieceId: string) => (instance: THREE.Object3D | null) => {
+    if (!instance) return;
+    let set = markRefs.current.get(pieceId);
+    if (!set) {
+      set = new Set();
+      markRefs.current.set(pieceId, set);
+    }
+    set.add(instance);
+  };
+  const sizeById = useMemo(
+    () => new Map(pieces.map(piece => [piece.id, piece.size])),
+    [pieces]
+  );
   const agentPieces = pieces.filter(piece => piece.kind === 'agent');
   const byState = (state: StatusLightState) =>
     agentPieces.filter(
@@ -2035,6 +2132,18 @@ function StatusMarkLayer({
   const geometries = STATUS_MARK_GEOMETRY;
 
   useFrame((state, delta) => {
+    if (emergenceScale) {
+      const now = performance.now();
+      let emerging = false;
+      for (const [pieceId, set] of markRefs.current) {
+        const factor = emergenceScale(pieceId, now);
+        if (factor === 1) continue;
+        emerging = true;
+        const size = (sizeById.get(pieceId) ?? 1) * factor;
+        for (const mark of set) mark.scale.set(size, size, 1);
+      }
+      if (emerging) state.invalidate();
+    }
     if (rotorRefs.current.size === 0) return;
     if (!active) {
       for (const rotor of rotorRefs.current.values()) rotor.rotation.z = 0;
@@ -2050,6 +2159,7 @@ function StatusMarkLayer({
   });
 
   const instance = (piece: SpatialBoardPiece) => ({
+    ref: collectMark(piece.id),
     position: [piece.x, -piece.y, 0.94] as [number, number, number],
     scale: [piece.size, piece.size, 1] as [number, number, number],
     color: pieceLensColor(piece, lens, theme),
@@ -2162,6 +2272,7 @@ function StatusMarkLayer({
               {...instance(piece)}
               key={`status-rotor:${piece.id}`}
               ref={(target: THREE.Object3D | null) => {
+                collectMark(piece.id)(target);
                 if (target) rotorRefs.current.set(piece.id, target);
                 else rotorRefs.current.delete(piece.id);
               }}
@@ -2316,6 +2427,7 @@ function AgentPieceLayer({
   hoveredDelegationId,
   selectedDelegationUnitId,
   altitude,
+  focusedProjectId,
   reduced,
   ambient,
   lens,
@@ -2330,6 +2442,7 @@ function AgentPieceLayer({
   /** The delegated child arrow navigation currently sits on. */
   selectedDelegationUnitId: string | null;
   altitude: SpatialBoardLayout['altitude'];
+  focusedProjectId: string | null;
   reduced: boolean;
   ambient: boolean;
   lens: SpatialBoardLens;
@@ -2343,9 +2456,64 @@ function AgentPieceLayer({
     piece => piece.visible && piece.kind === 'agent'
   );
   const solid = visible.filter(piece => piece.sessionState !== 'stopped');
+  // Pieces that appear or disappear while the layer is mounted -- a Project
+  // revealing its Agents at scale, or hiding them again -- scale in and out
+  // on the board's transition policy instead of popping (V3.7). Departing
+  // pieces stay rendered until they are gone; the tracker says which.
+  const emergence = useRef<EmergenceTracker | null>(null);
+  if (emergence.current === null) {
+    emergence.current = createEmergenceTracker(
+      solid.map(piece => piece.id),
+      reduced ? 0 : undefined
+    );
+  }
+  const lastPieceById = useRef(new Map<string, SpatialBoardPiece>());
+  for (const piece of solid) lastPieceById.current.set(piece.id, piece);
+  const [retiringIds, setRetiringIds] = useState<string[]>([]);
+  useLayoutEffect(() => {
+    const now = performance.now();
+    emergence.current!.reconcile(
+      solid.map(piece => piece.id),
+      now
+    );
+    const next = emergence.current!.retiring(now);
+    setRetiringIds(previous =>
+      previous.length === next.length && previous.every((id, i) => id === next[i])
+        ? previous
+        : next
+    );
+  }, [solid]);
+  const rendered = useMemo(() => {
+    const ids = new Set(solid.map(piece => piece.id));
+    const retiring: SpatialBoardPiece[] = [];
+    for (const id of retiringIds) {
+      if (ids.has(id)) continue;
+      const piece = lastPieceById.current.get(id);
+      if (piece) retiring.push(piece);
+    }
+    return retiring.length ? [...solid, ...retiring] : solid;
+  }, [retiringIds, solid]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
+  // Focus recession (V3.7): a neighbour's bodies mix toward the board on the
+  // shared clock. One sampler per zone, one write per body per frame only
+  // while the value is actually moving.
+  const bodyZoneIds = useMemo(
+    () => [...new Set(visible.map(piece => piece.projectId))],
+    [visible]
+  );
+  const recession = useBoardFocusRecession(
+    bodyZoneIds,
+    altitude,
+    focusedProjectId,
+    reduced
+  );
+  const recessionScratch = useMemo(
+    () => ({ a: new THREE.Color(), b: new THREE.Color() }),
+    []
+  );
+  const lastBodyRecession = useRef(new Map<string, number>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const invalidate = useThree(state => state.invalidate);
   const pieceGeometry = AGENT_HEX_GEOMETRY;
@@ -2355,14 +2523,19 @@ function AgentPieceLayer({
   const settledDelegation = useSettledDelegationUnits(delegationUnits, reduced);
   const statusSubjects = useMemo(
     () => [
-      ...solid,
+      ...rendered,
       ...delegationStatusPieces(settledDelegation).map(piece =>
         piece.id === selectedDelegationUnitId
           ? { ...piece, selected: true }
           : piece
       ),
     ],
-    [selectedDelegationUnitId, settledDelegation, solid]
+    [selectedDelegationUnitId, settledDelegation, rendered]
+  );
+  /** Per-frame scale for a piece from its emergence, 1 when settled. */
+  const emergenceScale = useCallback(
+    (pieceId: string, nowMs: number) => emergence.current!.scaleOf(pieceId, nowMs),
+    []
   );
 
   // Entrance choreography (V2.4): pieces scale in with a radial slot stagger
@@ -2370,6 +2543,50 @@ function AgentPieceLayer({
   // changes, this remains a board/data arrival signature and never replays on
   // Fleet → Project → Agent navigation.
   useFrame((state, delta) => {
+    {
+      const now = performance.now();
+      const tracker = emergence.current!;
+      if (tracker.active(now)) {
+        for (const piece of rendered) {
+          const body = bodyRefs.current.get(piece.id);
+          if (!body) continue;
+          const scale = piece.size * tracker.scaleOf(piece.id, now);
+          body.scale.set(scale, scale, 1);
+        }
+        state.invalidate();
+        // Once every departing piece is gone, drop it from the render list.
+        const stillRetiring = tracker.retiring(now);
+        if (stillRetiring.length !== retiringIds.length) {
+          tracker.prune(now);
+          setRetiringIds(stillRetiring);
+        }
+      }
+    }
+    {
+      const now = performance.now();
+      let receding = false;
+      for (const piece of visible) {
+        const body = bodyRefs.current.get(piece.id) as
+          | (THREE.Object3D & { color?: THREE.Color })
+          | undefined;
+        if (!body?.color) continue;
+        const amount = recession(piece.projectId, now);
+        const previous = lastBodyRecession.current.get(piece.id);
+        if (previous !== undefined && Math.abs(previous - amount) < 0.002)
+          continue;
+        lastBodyRecession.current.set(piece.id, amount);
+        recessionScratch.a.set(theme.unit);
+        recessionScratch.b.set(theme.zone);
+        body.color.copy(
+          recessionScratch.a.lerp(
+            recessionScratch.b,
+            amount * FOCUS_RECESSION_MIX
+          )
+        );
+        if (amount > 0.001 && amount < 0.999) receding = true;
+      }
+      if (receding) state.invalidate();
+    }
     if (entranceClock.current === null) {
       if (bodyMat.current) bodyMat.current.opacity = 1;
       return;
@@ -2403,13 +2620,13 @@ function AgentPieceLayer({
   const selected = statusSubjects.find(piece => piece.selected);
   return (
     <group>
-      <Instances geometry={pieceGeometry} limit={256} range={solid.length}>
+      <Instances geometry={pieceGeometry} limit={256} range={rendered.length}>
         <meshLambertMaterial
           ref={bodyMat}
           transparent
           opacity={reduced ? 1 : 0}
         />
-        {solid.map(piece => {
+        {rendered.map(piece => {
           const interactive = piece.kind === 'agent' && altitude !== 'fleet';
           return (
             <Instance
@@ -2450,6 +2667,7 @@ function AgentPieceLayer({
         active={ambient}
         lens={lens}
         theme={theme}
+        emergenceScale={emergenceScale}
       />
       <DelegationUnitLayer
         units={delegationUnits}
@@ -3193,7 +3411,6 @@ function DelegationControls({
   onSelectDelegationChild,
   onHoverChange,
   reduced,
-  now,
   theme,
 }: {
   units: SpatialBoardDelegationUnit[];
@@ -3207,9 +3424,13 @@ function DelegationControls({
   onHoverChange: (unitId: string | null) => void;
   reduced: boolean;
   /** Injected clock so elapsed copy is deterministic and stable per paint. */
-  now: number;
   theme: SpatialThemeSnapshot;
 }) {
+  // The minute clock lives with its only consumer. At the canvas root it
+  // re-rendered every layer under the board once a minute for the elapsed
+  // labels on delegated children -- measured as two renders on the wall-clock
+  // minute with the board otherwise parked under reduced motion.
+  const now = useMinuteClock();
   if (altitude === 'fleet') return null;
   const parentLabels = new Map(
     pieces.map(piece => [piece.id, piece.label] as const)
@@ -3335,7 +3556,6 @@ export function OperationsBoardCanvas({
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
   const pageVisible = usePageVisible();
-  const now = useMinuteClock();
   const ambient = !reduced && !lowPower && pageVisible;
   // During a Team→Fleet handoff the lazy postprocessing chunk's shader
   // compile is the single biggest main-thread stall — landing it mid
@@ -3372,10 +3592,10 @@ export function OperationsBoardCanvas({
   // tier stable through damped zoom, and the state only flips at a boundary
   // crossing (never per frame). Recomputes on zoom AND on zone-width changes
   // (layout ticks can resize zones without any camera motion).
-  const [labelTier, setLabelTier] = useState<ZoneLabelTier>('full');
-  const labelTierRef = useRef<ZoneLabelTier>('full');
-  const zoneWidthRef = useRef(24);
-  const zoomRef = useRef(1);
+  // The tier lives in a store the zone controls subscribe to, not in state
+  // here: a root-level flip mid-flight re-rendered every layer under the
+  // canvas. See `operations-board-label-tier.ts`.
+  const [labelTierStore] = useState(() => createZoneLabelTierStore('full'));
   const minZoneWidth =
     visibleZones.length > 0
       ? visibleZones.reduce(
@@ -3383,32 +3603,13 @@ export function OperationsBoardCanvas({
           Number.POSITIVE_INFINITY
         )
       : 24;
-  zoneWidthRef.current = minZoneWidth;
-  const applyLabelTier = useCallback(() => {
-    const projectedPx = zoneWidthRef.current * zoomRef.current;
-    const next: ZoneLabelTier =
-      labelTierRef.current === 'full'
-        ? projectedPx < 250
-          ? 'compact'
-          : 'full'
-        : projectedPx > 290
-          ? 'full'
-          : 'compact';
-    if (next !== labelTierRef.current) {
-      labelTierRef.current = next;
-      setLabelTier(next);
-    }
-  }, []);
-  const handleZoomChange = useCallback(
-    (zoom: number) => {
-      zoomRef.current = zoom;
-      applyLabelTier();
-    },
-    [applyLabelTier]
-  );
   useEffect(() => {
-    applyLabelTier();
-  }, [minZoneWidth, applyLabelTier]);
+    labelTierStore.setMinZoneWidth(minZoneWidth);
+  }, [labelTierStore, minZoneWidth]);
+  const handleZoomChange = useCallback(
+    (zoom: number) => labelTierStore.setZoom(zoom),
+    [labelTierStore]
+  );
   return (
     <Canvas
       orthographic
@@ -3465,11 +3666,14 @@ export function OperationsBoardCanvas({
       <BoardField
         pieces={layout.pieces}
         altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
         reduced={reduced}
       >
       <BoardGrid bounds={layout.bounds} theme={theme} />
       <ZoneLayer
         zones={visibleZones}
+        altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
         reduced={reduced}
         onDrillProject={onDrillProject}
         onToggleZoneSelect={onToggleZoneSelect}
@@ -3483,6 +3687,7 @@ export function OperationsBoardCanvas({
         hoveredDelegationId={hoveredDelegationId}
         selectedDelegationUnitId={selectedDelegationUnitId}
         altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
         reduced={reduced}
         ambient={ambient}
         lens={lens}
@@ -3509,7 +3714,7 @@ export function OperationsBoardCanvas({
         zones={visibleZones}
         altitude={layout.altitude}
         focusedProjectId={layout.focusedProjectId}
-        labelTier={labelTier}
+        labelTierStore={labelTierStore}
         reduced={reduced}
         lens={lens}
         onDrillProject={onDrillProject}
@@ -3535,7 +3740,6 @@ export function OperationsBoardCanvas({
         onSelectDelegationChild={onSelectDelegationChild}
         onHoverChange={setHoveredDelegationId}
         reduced={reduced}
-        now={now}
         theme={theme}
       />
       </BoardField>

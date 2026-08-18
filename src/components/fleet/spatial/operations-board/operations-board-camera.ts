@@ -31,8 +31,13 @@ export const BOARD_CAMERA_POLICY = {
   fitPaddingY: 8,
   fitMinimumWidth: 18,
   fitMinimumHeight: 14,
-  semanticZoomRatio: 1.45,
-  compactViewportSemanticZoomRatio: 2.2,
+  // How far one semantic move may zoom relative to where the camera is now.
+  // Under one geometry (V3.7) the room a focused Project needs comes from the
+  // camera alone -- units no longer grow when focused -- so a Fleet -> Project
+  // move must be allowed to reach the Project's actual fit. 1.45 was tuned
+  // when the unit did 1.69x of the work; that factor moved here.
+  semanticZoomRatio: 3.6,
+  compactViewportSemanticZoomRatio: 4.2,
   compactViewportMaximumWidth: 600,
   safeInsetX: 0.18,
   safeInsetY: 0.2,

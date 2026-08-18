@@ -13,7 +13,7 @@
  * scale eval harness (scripts/spatial-scale-eval.mjs).
  */
 
-import { Suspense, useEffect, useMemo } from 'react';
+import { Suspense, startTransition, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   DEMO_PROJECTS_BY_KEY,
@@ -203,12 +203,23 @@ function BoardScaleFixture() {
     Number(params.get('projects') ?? PROJECT_NAMES.length) ||
       PROJECT_NAMES.length
   );
-  const altitude = params.get('altitude') === 'project' ? 'project' : 'fleet';
-  const focusedProjectId =
-    altitude === 'project'
+  const urlAltitude = params.get('altitude') === 'project' ? 'project' : 'fleet';
+  const urlFocused =
+    urlAltitude === 'project'
       ? (params.get('project') ??
         (voltaic ? 'project:dispatch-engine' : `project:${PROJECT_NAMES[0]}`))
       : null;
+  // Drilling is real here (V3.7): the motion eval drives hotkeys at scale, so
+  // the fixture must answer them the way the client does. State, seeded from
+  // the URL, so a press changes altitude on its own frame.
+  const [address, setAddress] = useState<{
+    altitude: 'fleet' | 'project';
+    focusedProjectId: string | null;
+  }>({ altitude: urlAltitude, focusedProjectId: urlFocused });
+  useEffect(() => {
+    setAddress({ altitude: urlAltitude, focusedProjectId: urlFocused });
+  }, [urlAltitude, urlFocused]);
+  const { altitude, focusedProjectId } = address;
   const projection: SpatialBoardProjection =
     params.get('projection') === 'fixed-angle' ? 'fixed-angle' : 'top-down';
 
@@ -239,9 +250,17 @@ function BoardScaleFixture() {
         <OperationsBoardSurface
           layout={layout}
           projection={projection}
-          onDrillProject={() => undefined}
+          onDrillProject={projectId =>
+            startTransition(() =>
+              setAddress({ altitude: 'project', focusedProjectId: projectId })
+            )
+          }
           onSelectAgent={() => undefined}
-          onOverview={() => undefined}
+          onOverview={() =>
+            startTransition(() =>
+              setAddress({ altitude: 'fleet', focusedProjectId: null })
+            )
+          }
           onProjectionChange={() => undefined}
           viewportStorageKey={`exawatt:spatial-viewport:t10:${agentCount}:${altitude}`}
           preserveDrawingBuffer

@@ -60,7 +60,17 @@ export function useAgentFieldGlide(controller: {
         dt,
         reducedQuery.matches
       );
-      if (dt > 0) apply(dt);
+      // A glide with nothing moving is not a camera input. Nudging the camera
+      // by zero still told it the operator had taken the wheel -- it dropped
+      // any semantic flight into damp mode, re-clamped the target, and
+      // suspended follow -- so every keystroke on the board, camera key or
+      // not, ended in a stray camera move.
+      const moving =
+        velocity.panX !== 0 ||
+        velocity.panY !== 0 ||
+        velocity.dolly !== 0 ||
+        velocity.orbit !== 0;
+      if (dt > 0 && moving) apply(dt);
       if (pressed.size === 0 && !settling) {
         raf = null;
         return;
@@ -93,7 +103,10 @@ export function useAgentFieldGlide(controller: {
       start();
     };
     const onUp = (e: KeyboardEvent) => {
-      pressed.delete(normalizeCameraKey(e.key));
+      // Only a key this glide is holding can release it. Releasing on every
+      // keyup started a settle step for keys the glide never saw.
+      const key = normalizeCameraKey(e.key);
+      if (!pressed.delete(key)) return;
       start();
     };
     const clear = () => {

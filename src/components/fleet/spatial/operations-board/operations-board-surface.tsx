@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  memo,
 } from 'react';
 import Link from 'next/link';
 import {
@@ -297,7 +298,16 @@ function BoardMiniMap({
   );
 }
 
-export function OperationsBoardSurface({
+/**
+ * The board is a memo boundary (V3.7). Nothing above it is compiled by the
+ * React Compiler, so without this every render of the fleet client -- the
+ * URL catching up with a move already made, a minute-clock tick, a fleet
+ * tick that changed nothing the board reads -- re-rendered the surface, the
+ * canvas, and every layer under it: measured 56ms, landing mid-flight as a
+ * frame hitch. Every prop it takes is stable across those renders, so the
+ * boundary is what makes that fact count.
+ */
+export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   layout,
   projection,
   lens = 'status',
@@ -582,6 +592,10 @@ export function OperationsBoardSurface({
       if (event.key >= '1' && event.key <= '9') {
         const zone = visibleZones[Number(event.key) - 1];
         if (zone && !zone.isAggregate) {
+          // The camera moves on THIS frame; the route follows. Under one
+          // geometry the flight target is knowable from the current layout,
+          // so a hotkey answers like a game's instead of after a render.
+          controller.current?.focusProject(zone.id);
           onDrillProject(zone.id);
           event.preventDefault();
         }
@@ -589,7 +603,10 @@ export function OperationsBoardSurface({
       }
       if (event.key === '0') {
         if (layout.altitude === 'fleet') controller.current?.recenter();
-        else onOverview();
+        else {
+          controller.current?.focusFleet();
+          onOverview();
+        }
         event.preventDefault();
       } else if (event.key.toLowerCase() === 'n') {
         triage(1);
@@ -988,4 +1005,4 @@ export function OperationsBoardSurface({
       )}
     </div>
   );
-}
+});

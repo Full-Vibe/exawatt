@@ -135,6 +135,27 @@ contrast-corrected against the resolved ground.
    ONE clock with a real duration and an ease that leaves and arrives at rest,
    and every participating layer samples the same progress. See
    `operations-board-transition.ts` for the board's implementation.
+4d. **The world is fixed; altitude is a camera state.** (ENG-004 V3.7.)
+   Semantic navigation must never re-lay-out, re-size, or re-kind what is on
+   the board; it moves the camera and changes what DETAIL is shown (labels,
+   dimming, a reveal at the same anchor). Geometry that depends on the focused
+   item produces a one-frame cut under a still camera before every flight —
+   measured at 2–3x the flight's own peak diff — and no motion system can hide
+   it. `eval:spatial:motion` is the gate.
+4e. **No state that flips mid-flight above the layers.** A `useState` at the
+   canvas root re-renders every layer under it; if it can change during a
+   camera move (a zoom-threshold label tier, a wall-clock tick) it lands as a
+   50–60ms task in the middle of the flight. Hold such state in a small
+   external store the consumer subscribes to (`useSyncExternalStore`), with
+   hysteresis where a threshold drives it, and keep DOM tiers as CLASS toggles
+   on one structure rather than subtree swaps. The board's `OperationsBoardSurface`
+   is a `memo` boundary for the same reason: the React Compiler is not enabled
+   here, so nothing is memoised unless you memoise it.
+4f. **Hotkeys move the camera on the keystroke's frame.** Kick the imperative
+   camera verb in the key handler, commit the route/state as a `startTransition`
+   (a keydown is a discrete event and would otherwise flush synchronously
+   before the browser paints), and make the commit JOIN a flight already in
+   progress rather than restart it.
 4c. **Interpolate multiplicative quantities in log space.** Camera zoom and
    uniform scale are ratios, not distances: 1 → 2 and 2 → 4 are the same visual
    change. Mixing them linearly front-loads zooming in and back-loads zooming

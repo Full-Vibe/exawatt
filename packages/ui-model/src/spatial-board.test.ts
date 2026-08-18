@@ -346,16 +346,54 @@ describe('selectSpatialBoardLayout', () => {
     const focusedBeta = focused.zones.find(zone => zone.id === 'project:Beta')!;
     expect(focusedBeta.rect).toEqual(overviewBeta.rect);
     expect(focusedBeta.minimapRect).toEqual(overviewBeta.minimapRect);
-    expect(
-      focused.pieces.some(piece => piece.projectId === 'project:Beta')
-    ).toBe(true);
-    expect(
-      focused.pieces
-        .filter(piece => piece.projectId === 'project:Beta')
-        .every(piece => piece.kind === 'aggregate')
-    ).toBe(true);
+    // V3.7: a neighbour keeps its hexes when another Project is focused. It
+    // recedes by dimming and losing labels, never by turning into dots -- a
+    // kind flip is a cut, and focus must not cut.
+    const focusedBetaPieces = focused.pieces.filter(
+      piece => piece.projectId === 'project:Beta'
+    );
+    const overviewBetaPieces = overview.pieces.filter(
+      piece => piece.projectId === 'project:Beta'
+    );
+    expect(focusedBetaPieces.map(p => [p.id, p.kind, p.x, p.y, p.size])).toEqual(
+      overviewBetaPieces.map(p => [p.id, p.kind, p.x, p.y, p.size])
+    );
     expect(focused.cameraBounds).toEqual(
       focused.zones.find(zone => zone.id === 'project:Alpha')!.rect
+    );
+  });
+
+  it('keeps one geometry across every altitude, so focus is only a camera move', () => {
+    // The whole V3.7 claim in one assertion: a Project's circle, pitch, unit
+    // size, and every one of its pieces are identical at Fleet, at Project
+    // altitude focused, and at Project altitude with a neighbour focused.
+    const state = fleet([
+      ...Array.from({ length: 9 }, (_, index) => agent(`a${index}`, 'Alpha')),
+      ...Array.from({ length: 5 }, (_, index) => agent(`b${index}`, 'Beta')),
+    ]);
+    const overview = selectSpatialBoardLayout(state);
+    const focusAlpha = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: 'project:Alpha',
+      previousLayout: overview,
+    });
+    const focusBeta = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
+      previousLayout: focusAlpha,
+    });
+    const geometry = (layout: typeof overview) => ({
+      zones: layout.zones.map(z => [z.id, z.rect, z.radius, z.slotPitch, z.unitSize]),
+      pieces: layout.pieces.map(p => [p.id, p.kind, p.x, p.y, p.size]),
+    });
+    expect(geometry(focusAlpha)).toEqual(geometry(overview));
+    expect(geometry(focusBeta)).toEqual(geometry(overview));
+    // What DOES change is which Project the camera frames.
+    expect(focusAlpha.cameraBounds).toEqual(
+      focusAlpha.zones.find(z => z.id === 'project:Alpha')!.rect
+    );
+    expect(focusBeta.cameraBounds).toEqual(
+      focusBeta.zones.find(z => z.id === 'project:Beta')!.rect
     );
   });
 
@@ -407,7 +445,10 @@ describe('selectSpatialBoardLayout', () => {
 
     expect(center(focusedBeta.rect)).toEqual(center(overviewBeta.rect));
     expect(focusedBeta.slotIndex).toBe(overviewBeta.slotIndex);
-    expect(focusedBeta.rect).not.toEqual(focusedBeta.minimapRect);
+    // V3.7: an aggregated Project keeps its Fleet circle when focused. The
+    // camera zooms in for the room; the circle does not grow for it.
+    expect(focusedBeta.rect).toEqual(overviewBeta.rect);
+    expect(focusedBeta.rect).toEqual(focusedBeta.minimapRect);
     expect(focused.cameraBounds).toEqual(focusedBeta.rect);
   });
 
