@@ -400,6 +400,111 @@ describe('agent topology projection (ENG-010 C0)', () => {
     ]);
   });
 
+  it('reads an Agent as running when any one of its contexts is', () => {
+    const result = successful(
+      projectAgentTopology(
+        CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES,
+        CONNECTED_OPENCLAW_PROJECTION_PLAN
+      )
+    );
+    const byName = new Map(
+      result.projection.agents.map(agent => [agent.displayName, agent])
+    );
+
+    // Marcus is conversationally quiet and his automation is mid-run. The
+    // coworker is working; which context is doing it stays on the contexts.
+    const marcus = byName.get('Marcus')!;
+    expect(marcus.hasActiveRun).toBe(true);
+    expect(marcus.primaryConversation?.hasActiveRun).toBe(false);
+    expect(
+      marcus.contexts
+        .filter(context => context.hasActiveRun === true)
+        .map(context => context.nativeContextId)
+    ).toEqual(['fixture:cron:marcus:one']);
+
+    // Tyler's source says every context of his is idle; Scout's says nothing
+    // about any of them. Neither is running, and neither is stopped.
+    expect(byName.get('Tyler')!.hasActiveRun).toBe(false);
+    expect(byName.get('Scout')!.hasActiveRun).toBe(false);
+    expect(
+      byName
+        .get('Scout')!
+        .contexts.every(context => context.hasActiveRun === undefined)
+    ).toBe(true);
+  });
+
+  it('never lets an unreported or non-boolean run signal read as running', () => {
+    const sourceId = 'source-run-signal';
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'quiet'), agent(sourceId, 'busy')],
+            [
+              // The source declared nothing at all for this one.
+              context(sourceId, 'quiet', 'agent:quiet:main'),
+              context(sourceId, 'quiet', 'agent:quiet:cron', {
+                kind: 'cron',
+                nativeKind: 'cron',
+                roles: [],
+                hasActiveRun: false,
+              }),
+              context(sourceId, 'busy', 'agent:busy:main', {
+                hasActiveRun: false,
+              }),
+              context(sourceId, 'busy', 'agent:busy:helper', {
+                kind: 'helper',
+                nativeKind: 'helper',
+                roles: [],
+                hasActiveRun: true,
+              }),
+            ]
+          ),
+        ],
+        plan([mapping(sourceId, 'quiet'), mapping(sourceId, 'busy')])
+      )
+    );
+    const byNative = new Map(
+      result.projection.agents.map(agent => [agent.nativeAgentId, agent])
+    );
+
+    expect(byNative.get('quiet')!.hasActiveRun).toBe(false);
+    expect(byNative.get('busy')!.hasActiveRun).toBe(true);
+    // Absent survives as absent: the kernel never fills in a false the source
+    // did not say, because unknown and idle are different answers.
+    expect(
+      byNative
+        .get('quiet')!
+        .contexts.find(
+          context => context.nativeContextId === 'agent:quiet:main'
+        )!.hasActiveRun
+    ).toBeUndefined();
+  });
+
+  it('fails closed on a run signal that is not a boolean', () => {
+    const sourceId = 'source-bad-run-signal';
+    for (const hasActiveRun of ['running', 1, null, {}]) {
+      const result = projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'worker')],
+            [
+              {
+                ...context(sourceId, 'worker', 'agent:worker:main'),
+                hasActiveRun,
+              } as unknown as SourceContextRecord,
+            ]
+          ),
+        ],
+        plan([mapping(sourceId, 'worker')])
+      );
+      expect(result.ok).toBe(false);
+      expect(issueCodes(result)).toContain('invalid-context');
+    }
+  });
+
   it('fails closed on multiple primary conversations', () => {
     const result = projectAgentTopology(
       [
@@ -951,6 +1056,7 @@ describe('agent topology projection (ENG-010 C0)', () => {
       'roles',
       'parent',
       'nativeRunId',
+      'hasActiveRun',
       'createdAt',
       'lastActiveAt',
       'projectionVersion',

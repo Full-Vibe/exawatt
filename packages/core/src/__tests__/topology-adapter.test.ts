@@ -128,9 +128,12 @@ function realisticInput(): OpenClawTopologyInput {
         payload: sessionsPayload([
           sessionEntry('agent:alpha:main', {
             updatedAt: OBSERVED_AT - 5 * MINUTE_MS,
+            hasActiveRun: false,
           }),
           sessionEntry('agent:alpha:channel:invented-channel-1'),
-          sessionEntry('agent:alpha:subagent:invented-spawn-1'),
+          sessionEntry('agent:alpha:subagent:invented-spawn-1', {
+            hasActiveRun: true,
+          }),
         ]),
       },
       {
@@ -138,6 +141,7 @@ function realisticInput(): OpenClawTopologyInput {
         payload: sessionsPayload([
           sessionEntry('agent:writer:cron:invented-job-1', {
             label: 'Cron: nightly-sweep',
+            hasActiveRun: false,
           }),
           sessionEntry('agent:writer:helper-thread-invented-4'),
         ]),
@@ -597,6 +601,71 @@ describe('adaptOpenClawTopology field mapping', () => {
     ).toBeUndefined();
   });
 
+  it('carries the run signal, and reads anything unreadable as unknown', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        sessionLists: [
+          {
+            nativeAgentId: 'writer',
+            payload: sessionsPayload([
+              sessionEntry('agent:writer:main', { hasActiveRun: true }),
+              sessionEntry('agent:writer:cron:invented-job-1', {
+                hasActiveRun: false,
+              }),
+              // Said nothing.
+              sessionEntry('agent:writer:cron:invented-job-2'),
+              // Said something unusable. Truthiness is never accepted.
+              sessionEntry('agent:writer:cron:invented-job-3', {
+                hasActiveRun: 'running',
+              }),
+              sessionEntry('agent:writer:cron:invented-job-4', {
+                hasActiveRun: 1,
+              }),
+              sessionEntry('agent:writer:cron:invented-job-5', {
+                hasActiveRun: null,
+              }),
+            ]),
+          },
+        ],
+      })
+    );
+    const snapshot = adapted(result);
+    expect(contextById(snapshot, 'agent:writer:main').hasActiveRun).toBe(true);
+    expect(
+      contextById(snapshot, 'agent:writer:cron:invented-job-1').hasActiveRun
+    ).toBe(false);
+    for (const suffix of ['2', '3', '4', '5']) {
+      expect(
+        contextById(snapshot, `agent:writer:cron:invented-job-${suffix}`)
+          .hasActiveRun
+      ).toBeUndefined();
+    }
+    // An unreadable run signal costs the fact, never the context, and is not
+    // a payload fault worth telling the operator about.
+    expect(codes(result)).toEqual([]);
+    expect(snapshot.contexts).toHaveLength(6);
+  });
+
+  it('hands the kernel a run signal it accepts and reads as work', () => {
+    const snapshot = adapted(adaptOpenClawTopology(realisticInput()));
+    const projection = projectAgentTopology([snapshot], planFor(snapshot));
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    const byNative = new Map(
+      projection.projection.agents.map(agent => [agent.nativeAgentId, agent])
+    );
+    // One spawned context is mid-run; the conversation is not. The coworker
+    // is working either way.
+    expect(byNative.get('alpha')?.hasActiveRun).toBe(true);
+    // Nothing writer owns is running, and its helper reported nothing at all.
+    expect(byNative.get('writer')?.hasActiveRun).toBe(false);
+    expect(
+      contextById(snapshot, 'agent:writer:helper-thread-invented-4')
+        .hasActiveRun
+    ).toBeUndefined();
+  });
+
   it('resolves a same-Agent parent and drops every other lineage claim', () => {
     const result = adaptOpenClawTopology(
       input({
@@ -703,6 +772,46 @@ describe('adaptOpenClawTopology bounds', () => {
         context => context.nativeContextId === 'agent:writer:helper-thread-2399'
       )
     ).toBe(false);
+  });
+
+  it('keeps the run signal on every context that survives the cap', () => {
+    const sessions = [
+      // The stalest context in the source, and mid-run: main survives the cap
+      // on identity alone, and its work fact must survive with it.
+      sessionEntry('agent:writer:main', { updatedAt: 1, hasActiveRun: true }),
+      ...Array.from({ length: 2_400 }, (_unused, index) =>
+        sessionEntry(
+          `agent:writer:helper-thread-${String(index).padStart(4, '0')}`,
+          {
+            updatedAt: OBSERVED_AT - index * MINUTE_MS,
+            // Only the freshest helper is running, and only the stalest
+            // helpers are evicted, so eviction cannot silence the signal.
+            hasActiveRun: index === 0,
+          }
+        )
+      ),
+    ];
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        sessionLists: [
+          { nativeAgentId: 'writer', payload: sessionsPayload(sessions) },
+        ],
+      })
+    );
+    const snapshot = adapted(result);
+    expect(snapshot.contexts).toHaveLength(2_000);
+    expect(contextById(snapshot, 'agent:writer:main').hasActiveRun).toBe(true);
+    expect(
+      contextById(snapshot, 'agent:writer:helper-thread-0000').hasActiveRun
+    ).toBe(true);
+    expect(
+      contextById(snapshot, 'agent:writer:helper-thread-1998').hasActiveRun
+    ).toBe(false);
+    const projection = projectAgentTopology([snapshot], planFor(snapshot));
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    expect(projection.projection.agents[0]?.hasActiveRun).toBe(true);
   });
 
   it('caps the whole snapshot at 20000 contexts while keeping every main', () => {
@@ -815,6 +924,12 @@ describe('adaptOpenClawTopology determinism', () => {
     const second = adaptOpenClawTopology(reordered);
     expect(second).toEqual(first);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+    // Reordering the payload cannot move which context is reported running.
+    expect(
+      adapted(second)
+        .contexts.filter(context => context.hasActiveRun === true)
+        .map(context => context.nativeContextId)
+    ).toEqual(['agent:alpha:subagent:invented-spawn-1']);
   });
 
   it('sorts issues by path', () => {

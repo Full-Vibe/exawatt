@@ -11,6 +11,7 @@ import type {
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
   AgentSourceState,
+  AgentStatus,
   AgentLaunchConfigurationInput,
   KeyboardShortcutOverridesV1,
   LaunchConfigurationPoolV1,
@@ -19,7 +20,10 @@ import type {
   DistributionIdentity,
   AgentSourcePlacement,
   ConnectedSourceView,
+  SourceAgentDiscoveryState,
+  SourceConnectionState,
   SourceCredentialOwner,
+  SourceFailureClass,
   SourceTransport,
   SshHostAlias,
 } from '@exawatt/core';
@@ -740,45 +744,6 @@ export interface ElectronAnalyticsApi {
   onMainProcessEvents: (handler: () => void) => () => void;
 }
 
-export interface ElectronOpenClawCapabilityGrant {
-  capabilityId: string;
-  status: 'connected';
-  grants: {
-    observe: true;
-    chat: true;
-    schedule: true;
-  };
-}
-
-export type ElectronOpenClawEvent =
-  | {
-      capabilityId: string;
-      type: 'connection-status';
-      status: 'connecting' | 'connected' | 'disconnected' | 'error';
-    }
-  | {
-      capabilityId: string;
-      type: 'connection-error';
-      message: string;
-    }
-  | {
-      capabilityId: string;
-      type: 'gateway-event';
-      eventName: 'presence' | 'chat.segment' | 'chat.tool' | 'health';
-      payload: unknown;
-    };
-
-export interface ElectronOpenClawApi {
-  connect: () => Promise<ElectronOpenClawCapabilityGrant>;
-  call: (
-    capabilityId: string,
-    method: string,
-    params: unknown
-  ) => Promise<unknown>;
-  disconnect: (capabilityId: string) => Promise<void>;
-  onEvent: (handler: (event: ElectronOpenClawEvent) => void) => () => void;
-}
-
 /**
  * ENG-010 C1. Configured Agent Sources: saved connections to a Gateway,
  * whether it runs on this machine or on a server the operator hosts.
@@ -787,6 +752,122 @@ export interface ElectronOpenClawApi {
  * material, and the authenticated socket stay in Electron main, and there is
  * no command channel: H1 observes, and H2 adds the conversation path.
  */
+/**
+ * How current Exawatt's view of a source is. Independent of work state by
+ * contract: none of these fields, and none of their labels, may be read as a
+ * claim that remote work stopped, paused, or ended.
+ */
+export interface ConnectedSourceConnectionView {
+  state: SourceConnectionState;
+  /** `Live` | `Reconnecting` | `Stale` | `Unavailable`. */
+  label: string;
+  /** Longer sentence for detail surfaces; still only about observation. */
+  detail: string;
+  observationAgeMs: number | null;
+  stalePresentation: boolean;
+  failure: SourceFailureClass | null;
+}
+
+export type ConnectedSourcePhase =
+  | 'idle'
+  | 'opening-tunnel'
+  | 'bootstrapping'
+  | 'pairing'
+  | 'discovering'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed';
+
+export interface ConnectedSourceStatusView {
+  sourceId: string;
+  displayName: string;
+  adapterId: AgentSourceAdapterId;
+  placement: AgentSourcePlacement;
+  /** `Local` | `Remote` | `Exawatt Cloud`. Quiet metadata, never a status. */
+  placementLabel: string;
+  observing: boolean;
+  phase: ConnectedSourcePhase;
+  connection: ConnectedSourceConnectionView;
+  identityDrift: boolean;
+  snapshotRevision: number;
+}
+
+/** What the Connect dialog's discovery step chooses from. */
+export interface DiscoveredSourceAgent {
+  nativeAgentId: string;
+  displayName: string;
+  discoveryState: SourceAgentDiscoveryState;
+  contextCount: number;
+  hasPrimaryConversation: boolean;
+  mapping: {
+    exawattAgentId: string;
+    projectId: string;
+    projectLabel: string;
+    displayNameOverride: string | null;
+  } | null;
+}
+
+/** One projected remote coworker, ready to stand beside the local Agents. */
+export interface RemoteAgentView {
+  id: string;
+  displayName: string;
+  projectId: string;
+  projectLabel: string;
+  discoveryState: SourceAgentDiscoveryState;
+  placement: AgentSourcePlacement;
+  placementLabel: string;
+  adapterId: AgentSourceAdapterId;
+  source: { id: string; displayName: string };
+  nativeAgentId: string;
+  primaryContextId: string | null;
+  /**
+   * D40 work state, in the same vocabulary a local Agent uses. Observed at
+   * `observedAt`; a stale connection leaves it at its last-known value and
+   * `connection` is what says the view is not current.
+   */
+  workState: AgentStatus;
+  contextCount: number;
+  observedAt: number;
+  createdAt: number;
+  lastActiveAt: number;
+  connection: ConnectedSourceConnectionView;
+  projectionVersion: number;
+}
+
+/** One Project/name decision the Connect flow collected. */
+export interface ConnectedAgentMappingInput {
+  nativeAgentId: string;
+  projectId: string;
+  projectLabel?: string;
+  displayNameOverride?: string | null;
+}
+
+export type ConnectSourceResult =
+  | {
+      ok: true;
+      sourceId: string;
+      agents: DiscoveredSourceAgent[];
+      status: ConnectedSourceStatusView;
+    }
+  | {
+      ok: false;
+      sourceId: string;
+      outcome: 'unknown-source' | 'identity-drift' | 'failed';
+      failure: SourceFailureClass | null;
+      message: string;
+    };
+
+/**
+ * A tick, not a payload. It names the source that moved and how fresh it is;
+ * the renderer decides whether to pull the roster again.
+ */
+export interface ConnectedSourceChange {
+  sourceId: string;
+  phase: ConnectedSourcePhase;
+  connection: ConnectedSourceConnectionView;
+  snapshotRevision: number;
+}
+
 export interface ElectronConnectedSourcesApi {
   list: () => Promise<ConnectedSourceView[]>;
   /** Reads SSH config text only. Listing a server is not contacting it. */
@@ -806,8 +887,22 @@ export interface ElectronConnectedSourcesApi {
     | { ok: false; issues: string[] }
   >;
   rename: (id: string, displayName: string) => Promise<{ ok: boolean }>;
+  /** Connects one saved source and answers with the Agents it configures. */
+  connect: (id: string) => Promise<ConnectSourceResult>;
+  /** Per-source observation freshness. */
+  status: () => Promise<ConnectedSourceStatusView[]>;
+  /** The projected coworkers. */
+  agents: () => Promise<RemoteAgentView[]>;
+  /** Saves Exawatt-side Project/name decisions. Issues no Gateway call. */
+  mapAgents: (
+    id: string,
+    mappings: ConnectedAgentMappingInput[]
+  ) => Promise<{ ok: true; mapped: number } | { ok: false; issues: string[] }>;
+  /** Stops observing. The remote installation keeps working. */
+  disconnect: (id: string) => Promise<{ ok: boolean }>;
   /** Removes Exawatt's record only; the remote installation is untouched. */
   detach: (id: string) => Promise<{ ok: boolean }>;
+  onChanged: (handler: (change: ConnectedSourceChange) => void) => () => void;
 }
 
 export interface ExawattBuildInfo {
@@ -969,7 +1064,6 @@ declare global {
       platform: string;
       agentSources?: ElectronAgentSourcesApi;
       connectedSources?: ElectronConnectedSourcesApi;
-      openClaw?: ElectronOpenClawApi;
       operatorStats?: {
         scan: (
           since: string,

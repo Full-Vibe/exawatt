@@ -12,16 +12,15 @@ import {
 } from 'react';
 import {
   FleetManager,
-  OCMethods,
   DemoWorkspaceTransport,
   demoWorkspaceProjectCatalog,
+  INITIAL_AGENT_METRICS,
   LocalSessionsTransport,
   type ExawattAgent,
   type AgentActivity,
   type FleetState,
   type FleetMetrics,
   type OCConnectionStatus,
-  type OCGatewayClient,
   type ExawattCronJob,
   type ExawattCronRun,
   type ExawattCronJobCreate,
@@ -38,7 +37,7 @@ import {
 } from '@/components/consumption/live-store';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
-import { ElectronOpenClawClient } from './electron-openclaw-client';
+import type { RemoteAgentView } from '@/types/electron';
 
 // --- Context ---
 
@@ -52,19 +51,58 @@ interface FleetContextValue {
   /** Projects exist independently of whether they currently contain Agents. */
   projects: ProjectCatalogEntry[];
   connectionStatus: OCConnectionStatus | 'initializing';
-  ocAvailable: boolean;
   /** the Demo TENANT drives the fleet (vs the web's default demo posture) —
-   *  its corpus is not a connection state, so Connect never applies */
+   *  its corpus is authored, so configured sources never join it */
   demoTenantActive: boolean;
-  connectToRealOC: () => void;
-}
-
-interface ConnectionToast {
-  id: number;
-  message: string;
 }
 
 const FleetContext = createContext<FleetContextValue | null>(null);
+
+/**
+ * A projected remote coworker, shaped exactly like a local one (ENG-010 C2).
+ *
+ * The point of doing this here rather than downstream is that no surface
+ * should need a remote branch: Team, Fleet, and the board read one
+ * `ExawattAgent`. Placement, connection freshness, and source identity ride
+ * on `presence`, which is quiet secondary metadata and deliberately separate
+ * from `status` — the D40 work state — so neither can borrow the other's
+ * colour.
+ *
+ * `status` is the work state the source reported, already mapped to D40 by
+ * the main process, so a remote coworker with a run in flight reads as
+ * working exactly like a local one. It is copied straight through: losing
+ * observation must never edit it, because a coworker last seen working is
+ * still working as far as anyone knows, and `presence.stalePresentation` is
+ * what says how current that knowledge is.
+ */
+export function remoteAgentToExawattAgent(
+  remote: RemoteAgentView
+): ExawattAgent {
+  return {
+    id: remote.id,
+    name: remote.displayName,
+    status: remote.workState,
+    goal: '',
+    projectId: remote.projectId,
+    project: remote.projectLabel,
+    sessionKey: remote.primaryContextId ?? '',
+    metrics: { ...INITIAL_AGENT_METRICS },
+    lastActivityAt: remote.lastActiveAt,
+    createdAt: remote.createdAt,
+    presence: {
+      placement: remote.placement,
+      placementLabel: remote.placementLabel,
+      connection: remote.connection.state,
+      connectionLabel: remote.connection.label,
+      stalePresentation: remote.connection.stalePresentation,
+      source: {
+        id: remote.source.id,
+        displayName: remote.source.displayName,
+        adapterId: remote.adapterId,
+      },
+    },
+  };
+}
 
 function sameProjectCatalog(
   current: ProjectCatalogEntry[],
@@ -87,28 +125,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<
     OCConnectionStatus | 'initializing'
   >('initializing');
-  const [connectionToasts, setConnectionToasts] = useState<ConnectionToast[]>(
-    []
-  );
   const [isDemo, setIsDemo] = useState(false);
   const [isLocal, setIsLocal] = useState(false);
   const [projects, setProjects] = useState<ProjectCatalogEntry[]>([]);
-  const [ocAvailable, setOcAvailable] = useState(false);
-  const [isConnectingToOC, setIsConnectingToOC] = useState(false);
   const demoTransportRef = useRef<DemoWorkspaceTransport | null>(null);
   const localTransportRef = useRef<LocalSessionsTransport | null>(null);
-  const ocClientRef = useRef<
-    (OCGatewayClient & { connect(): Promise<void>; disconnect(): void }) | null
-  >(null);
-  const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
-    'initializing'
-  );
-  const toastIdRef = useRef(0);
-  const toastTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  /** Cancels an in-flight `connectToRealOC` retry. Invoked by the source
-   *  effect's cleanup, so a tenant switch or unmount can never let a late
-   *  resolve wire the OC client into a stale manager. */
-  const cancelOcRetryRef = useRef<(() => void) | null>(null);
 
   // Workspace tenancy (ENG-027 W2): the fleet source is a property of the
   // ACTIVE TENANT. Personal = live local truth; Demo = the Voltaic fixtures
@@ -119,17 +140,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const demoTenantActive =
     (tenancy?.hydrated ?? false) &&
     tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
-
-  const pushConnectionToast = useCallback((message: string) => {
-    const id = ++toastIdRef.current;
-    setConnectionToasts(prev => [...prev, { id, message }]);
-
-    const timer = setTimeout(() => {
-      setConnectionToasts(prev => prev.filter(toast => toast.id !== id));
-    }, 3000);
-
-    toastTimersRef.current.push(timer);
-  }, []);
 
   // One FleetManager per source regime: recreating it on tenant change is
   // what guarantees zero state bleed between the Demo and Personal fleets.
@@ -149,7 +159,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       setIsDemo(true);
       setIsLocal(false);
       setConnectionStatus('connected');
-      prevConnectionStatusRef.current = 'connected';
       setProjects(current => {
         const next = demoWorkspaceProjectCatalog();
         return sameProjectCatalog(current, next) ? current : next;
@@ -176,10 +185,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const openClawBridge =
-          typeof window !== 'undefined' ? window.electron?.openClaw : undefined;
-        setOcAvailable(Boolean(openClawBridge));
-
         // Desktop app: LIVE LOCAL TRUTH (ENG-002 W0.3). The Agent Terminal
         // Workspace's real PTY sessions ARE the fleet. The web app keeps the
         // demo posture / OC below, unchanged.
@@ -191,7 +196,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           setIsDemo(false);
           setIsLocal(true);
           setConnectionStatus('connected');
-          prevConnectionStatusRef.current = 'connected';
 
           const workspace = window.electron?.workspace;
           const localTransport = new LocalSessionsTransport({
@@ -275,7 +279,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         );
         // On any error, fall back to the Demo Workspace source
         if (!mounted) return;
-        ocClientRef.current?.disconnect();
         startDemoWorkspace();
       }
     }
@@ -284,106 +287,69 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
-      cancelOcRetryRef.current?.();
-      cancelOcRetryRef.current = null;
       offWorkspaceChanged?.();
       offDelegation?.();
       offLiveBurn?.();
-      ocClientRef.current?.disconnect();
-      for (const timer of toastTimersRef.current) clearTimeout(timer);
-      toastTimersRef.current = [];
       manager.disconnect();
       demoTransportRef.current?.stop();
       demoTransportRef.current = null;
       localTransportRef.current?.stop();
       localTransportRef.current = null;
     };
-  }, [manager, pushConnectionToast, tenancyHydrated, demoTenantActive]);
+  }, [manager, tenancyHydrated, demoTenantActive]);
 
-  const connectToRealOC = useCallback(() => {
-    // Never from the Demo tenant: its fleet is the authored corpus, not a
-    // connection state.
-    if (isConnectingToOC || !isDemo || demoTenantActive) return;
-    setIsConnectingToOC(true);
+  // ENG-010 C2: configured Agent Sources contribute coworkers ALONGSIDE the
+  // local fleet, never instead of it. The manager is keyed by source id, so
+  // remote Agents upsert into the same state the local transport writes and
+  // neither displaces the other.
+  //
+  // The Demo tenant is excluded on purpose: its fleet is an authored corpus,
+  // not a set of connections, and joining live remote coworkers to it would
+  // make the demo dishonest in both directions.
+  useEffect(() => {
+    if (!tenancyHydrated || demoTenantActive) return;
+    const sources =
+      typeof window !== 'undefined'
+        ? window.electron?.connectedSources
+        : undefined;
+    if (!sources) return;
 
-    demoTransportRef.current?.stop();
-    demoTransportRef.current = null;
-    ocClientRef.current?.disconnect();
-    manager.disconnect();
+    let mounted = true;
+    // Ids this effect put into the fleet, so it removes exactly its own.
+    let placed: string[] = [];
 
-    // Cancellable retry: the cancel handle lives in a ref so the source
-    // effect's cleanup (tenant switch, unmount) actually severs an in-flight
-    // attempt — a late resolve or reject must never touch a stale manager.
-    let cancelled = false;
-    cancelOcRetryRef.current?.();
-    cancelOcRetryRef.current = () => {
-      cancelled = true;
-      setIsConnectingToOC(false);
+    const sync = async () => {
+      let remote: RemoteAgentView[];
+      try {
+        remote = await sources.agents();
+      } catch {
+        // A failed read is not evidence about the coworkers. Keep the
+        // last-known roster; freshness is what tells the operator the truth.
+        return;
+      }
+      if (!mounted) return;
+      const next = remote.map(remoteAgentToExawattAgent);
+      for (const agent of next) manager.upsertAgent(agent);
+      const live = new Set(next.map(agent => agent.id));
+      for (const id of placed) if (!live.has(id)) manager.removeAgent(id);
+      placed = next.map(agent => agent.id);
     };
 
-    async function retryConnection() {
-      try {
-        const bridge = window.electron?.openClaw;
-        if (!bridge) throw new Error('OpenClaw requires the desktop app');
-        const client = new ElectronOpenClawClient(bridge);
-        ocClientRef.current = client;
+    void sync();
+    // A tick names the source that moved and how fresh it is; the roster is
+    // pulled here rather than pushed, so a reconnect ladder never costs a
+    // topology payload per attempt.
+    const off = sources.onChanged?.(() => {
+      void sync();
+    });
 
-        const methods = new OCMethods(client);
-        manager.connect(client, methods);
-
-        client.on('connection:status', status => {
-          if (cancelled) return;
-          setConnectionStatus(status);
-          const prev = prevConnectionStatusRef.current;
-          if (status === 'disconnected')
-            pushConnectionToast('Connection lost. Reconnecting...');
-          if (status === 'connected' && prev === 'disconnected')
-            pushConnectionToast('Reconnected. State refreshed.');
-          prevConnectionStatusRef.current = status;
-        });
-
-        await client.connect();
-
-        if (cancelled) {
-          client.disconnect();
-          return;
-        }
-        setIsDemo(false);
-        setIsConnectingToOC(false);
-        cancelOcRetryRef.current = null;
-      } catch (err) {
-        console.warn(
-          '[Exawatt] OC reconnection failed, staying in demo mode:',
-          err instanceof Error ? err.message : err
-        );
-        if (cancelled) return;
-
-        ocClientRef.current?.disconnect();
-        setIsDemo(true);
-        setConnectionStatus('connected');
-        prevConnectionStatusRef.current = 'connected';
-        setIsConnectingToOC(false);
-        cancelOcRetryRef.current = null;
-        pushConnectionToast('OpenClaw unavailable. Staying in Demo Mode.');
-
-        const demoTransport = new DemoWorkspaceTransport({
-          tier: 'scale',
-          nowMs: Date.now(),
-        });
-        demoTransportRef.current = demoTransport;
-        demoTransport.initialize(manager);
-        demoTransport.start();
-      }
-    }
-
-    void retryConnection();
-  }, [
-    isDemo,
-    isConnectingToOC,
-    demoTenantActive,
-    manager,
-    pushConnectionToast,
-  ]);
+    return () => {
+      mounted = false;
+      off?.();
+      for (const id of placed) manager.removeAgent(id);
+      placed = [];
+    };
+  }, [manager, tenancyHydrated, demoTenantActive]);
 
   const value = useMemo(
     () => ({
@@ -391,40 +357,14 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       isDemo,
       isLocal,
       projects,
-      connectionStatus: isConnectingToOC
-        ? ('connecting' as const)
-        : connectionStatus,
-      ocAvailable,
-      demoTenantActive,
-      connectToRealOC,
-    }),
-    [
-      manager,
-      isDemo,
-      isLocal,
-      projects,
       connectionStatus,
-      ocAvailable,
       demoTenantActive,
-      connectToRealOC,
-      isConnectingToOC,
-    ]
+    }),
+    [manager, isDemo, isLocal, projects, connectionStatus, demoTenantActive]
   );
 
   return (
-    <FleetContext.Provider value={value}>
-      {children}
-      <div className="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2">
-        {connectionToasts.map(toast => (
-          <div
-            key={toast.id}
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 shadow-lg"
-          >
-            {toast.message}
-          </div>
-        ))}
-      </div>
-    </FleetContext.Provider>
+    <FleetContext.Provider value={value}>{children}</FleetContext.Provider>
   );
 }
 
@@ -490,22 +430,6 @@ export function useFleet(): {
 
   const agents = Object.values(fleetState.agents);
   return { agents, metrics: fleetState.metrics, fleetState, projects };
-}
-
-export function useConnectToOC(): {
-  connectToRealOC: () => void;
-  ocAvailable: boolean;
-  canConnect: boolean;
-} {
-  const { connectToRealOC, ocAvailable, isDemo, demoTenantActive } =
-    useFleetContext();
-  // Connect is a WEB demo-posture affordance; the Demo tenant's fleet is a
-  // corpus, not a connection — no dead button there.
-  return {
-    connectToRealOC,
-    ocAvailable,
-    canConnect: isDemo && !demoTenantActive && ocAvailable,
-  };
 }
 
 export function useCron() {

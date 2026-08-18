@@ -91,6 +91,17 @@ export interface SourceContextRecord extends SourceContextRef {
   roles: readonly SourceContextRole[];
   /** Optional stable source run identity for reconnect reconciliation. */
   nativeRunId: string | null;
+  /**
+   * Whether the source reported a run in flight in this context at
+   * `AgentSourceTopologySnapshot.observedAt`.
+   *
+   * Three states on purpose: `true` is running, `false` is the source saying
+   * it is not, and absent is the source saying nothing at all. Absent is
+   * unknown, never "not running" and never "stopped" — a surface may only
+   * claim work it was actually told about. This is a work fact observed at a
+   * moment; how current that moment is belongs to the connection, not here.
+   */
+  hasActiveRun?: boolean;
   createdAt?: number;
   lastActiveAt?: number;
 }
@@ -129,6 +140,20 @@ export interface ProjectedAgent extends SourceAgentRef {
   evidenceBasis: AgentSourceEvidenceBasis;
   projectionVersion: typeof AGENT_PROJECTION_VERSION;
   primaryConversation: SourceContextRecord | null;
+  /**
+   * True when any of this Agent's contexts has a run in flight.
+   *
+   * A derived boolean rather than a list of the running contexts: `contexts`
+   * already carries every record, each with its own `hasActiveRun`, so a work
+   * stack filters what it needs without the kernel shipping the same records
+   * twice under a second name. What the kernel owes its callers here is the
+   * product rule stated exactly once — an Agent is working when any context of
+   * its is — so that no surface re-invents it and none can drift.
+   *
+   * False therefore covers both "no context is running" and "the source said
+   * nothing about any of them". Neither is a claim that work stopped.
+   */
+  hasActiveRun: boolean;
   contexts: readonly SourceContextRecord[];
 }
 
@@ -280,6 +305,9 @@ function copyContext(context: SourceContextRecord): SourceContextRecord {
     parent: context.parent ? copyContextRef(context.parent) : null,
     roles: [...context.roles],
     nativeRunId: context.nativeRunId,
+    ...(context.hasActiveRun === undefined
+      ? {}
+      : { hasActiveRun: context.hasActiveRun }),
     ...(context.createdAt === undefined
       ? {}
       : { createdAt: context.createdAt }),
@@ -537,6 +565,10 @@ export function projectAgentTopology(
         parentValid &&
         (candidateContext.nativeRunId === null ||
           validText(candidateContext.nativeRunId)) &&
+        // Absent is unknown and allowed; anything present must be a boolean,
+        // so a truthy string can never be read as a run in flight.
+        (candidateContext.hasActiveRun === undefined ||
+          typeof candidateContext.hasActiveRun === 'boolean') &&
         (candidateContext.createdAt === undefined ||
           validTimestamp(candidateContext.createdAt)) &&
         (candidateContext.lastActiveAt === undefined ||
@@ -775,6 +807,7 @@ export function projectAgentTopology(
       projectionVersion: AGENT_PROJECTION_VERSION,
       primaryConversation:
         primaryContexts.length === 1 ? copyContext(primaryContexts[0]!) : null,
+      hasActiveRun: contexts.some(context => context.hasActiveRun === true),
       contexts: contexts.map(copyContext),
     });
   }

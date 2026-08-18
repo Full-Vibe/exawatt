@@ -233,6 +233,8 @@ interface DraftContext {
   kind: SourceContextKind;
   nativeKind: string;
   nativeRunId: string | null;
+  /** Absent when the session payload declared nothing readable. */
+  hasActiveRun?: boolean;
   /** Unresolved parent key; resolved only after capping decides what survives. */
   parentContextId: string | null;
   createdAt?: number;
@@ -623,6 +625,17 @@ export function adaptOpenClawTopology(
           : null,
         parentContextId: readParentKey(candidate),
       };
+      /*
+       * `sessions.list` reports a run in flight per session. A Gateway that
+       * omits the field, or answers with something other than a boolean, has
+       * told Exawatt nothing: the fact stays absent rather than becoming
+       * `false`, because "not running" and "never said" are different claims
+       * and neither may be coerced into the other. Truthiness is deliberately
+       * not accepted, so a string can never promote a coworker to working.
+       */
+      if (typeof candidate.hasActiveRun === 'boolean') {
+        draft.hasActiveRun = candidate.hasActiveRun;
+      }
       if (validTimestamp(candidate.createdAt)) {
         draft.createdAt = candidate.createdAt;
       }
@@ -742,6 +755,9 @@ export function adaptOpenClawTopology(
           ? [PRIMARY_CONVERSATION_ROLE]
           : NO_ROLES,
       nativeRunId: context.nativeRunId,
+      ...(context.hasActiveRun === undefined
+        ? {}
+        : { hasActiveRun: context.hasActiveRun }),
       ...(context.createdAt === undefined
         ? {}
         : { createdAt: context.createdAt }),

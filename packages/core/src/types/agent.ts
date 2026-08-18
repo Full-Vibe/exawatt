@@ -3,6 +3,10 @@
  * Core data model for agents — independent of OpenClaw types
  */
 
+import type { AgentSourceAdapterId } from '../agent-sources';
+import type { AgentSourcePlacement } from '../agent-projection';
+import type { SourceConnectionState } from '../sources/connected-source';
+
 export type AgentStatus =
   | 'working'
   | 'blocked'
@@ -92,6 +96,36 @@ export interface AgentDelegation {
   children: AgentDelegatedChild[];
 }
 
+/**
+ * Where a coworker runs, and how current Exawatt's view of it is (ENG-010 C2).
+ *
+ * Absent means Local and directly observed: a terminal Agent on this machine
+ * has no connection to lose, so it needs no freshness lens. Read
+ * `agent.presence?.placement ?? 'local'` rather than branching on remoteness.
+ *
+ * Three signals stay independent here on purpose. `placement` is an
+ * infrastructure fact, `connection` is observation freshness, and
+ * `ExawattAgent.status` remains the D40 work state. A surface must never let
+ * one borrow the other's colour, and nothing in this object may be read as a
+ * claim that remote work stopped, paused, or ended.
+ */
+export interface AgentPresence {
+  placement: AgentSourcePlacement;
+  /** `Local` | `Remote` | `Exawatt Cloud`. Quiet secondary metadata. */
+  placementLabel: string;
+  connection: SourceConnectionState;
+  /** `Live` | `Reconnecting` | `Stale` | `Unavailable`. */
+  connectionLabel: string;
+  /** True while Exawatt must not present its cached view as current. */
+  stalePresentation: boolean;
+  /** The configured Agent Source this coworker was projected from. */
+  source: {
+    id: string;
+    displayName: string;
+    adapterId: AgentSourceAdapterId;
+  };
+}
+
 export interface ExawattAgent {
   id: string;
   name: string;
@@ -110,6 +144,8 @@ export interface ExawattAgent {
   delegation?: AgentDelegation | null;
   createdAt: number; // unix ms
   activities?: AgentActivity[];
+  /** placement + observation freshness; absent means Local (ENG-010 C2) */
+  presence?: AgentPresence;
 }
 
 /**
