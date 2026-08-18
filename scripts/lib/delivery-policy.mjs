@@ -99,12 +99,38 @@ export const SURFACE_GATES = [
     // Quarantining was refused throughout, because it would have dropped this
     // surface's only real ⌘[/⌘] and application-menu coverage for every
     // distribution to route around a step that was wrong in one.
+    //
+    // BUG-058 adds the two files that own the ⌘⇧F step, which this gate has
+    // asserted since F1 and never named. `product-feedback-provider.tsx` is
+    // where `openQuickCapture` decides whether the dialog can open at all —
+    // the exact function BUG-045 was about, cited three paragraphs up and
+    // still absent from this list — and `ui/dialog.tsx` is the primitive that
+    // gives that dialog the role and accessible name the script matches on
+    // (`getByRole('dialog', { name: 'Quick feedback' })`). BUG-049 changed
+    // both, and both branches of this step ride on them.
+    //
+    // The pattern is now named, not just patched. Three times in one day a
+    // gate failed to name a file that owns its contract: `nav-history.ts`
+    // here (BUG-035), `workspace-client.tsx` on `eval:electron:lifecycle`
+    // (BUG-041), and these two (BUG-058). The map is written from the
+    // SURFACE the gate is nominally about; the script asserts more than that
+    // surface, and every extra assertion silently acquires an owner nobody
+    // routes. When adding or widening an assertion in a gated eval, add the
+    // file that can break it here in the same change.
     match: file =>
       file === 'electron/main/application-menu.ts' ||
       file === 'packages/core/src/shortcuts/command-verbs.ts' ||
       file === 'src/components/shortcuts/shortcut-provider.tsx' ||
       file === 'src/components/nav/nav-history.ts' ||
-      file === 'src/components/nav/command-navigation-provider.tsx',
+      file === 'src/components/nav/command-navigation-provider.tsx' ||
+      file === 'src/components/feedback/product-feedback-provider.tsx' ||
+      file === 'src/components/ui/dialog.tsx' ||
+      // The gate's own script, for the reason `eval:electron:packaged` already
+      // names `electron-packaged-smoke.mjs` and `eval:electron:project-agent`
+      // names `lib/electron-eval.mjs`: a change to how a gate asserts must run
+      // that gate. This one was the exception, so BUG-058's own hardening of
+      // three steps would have been asked for nothing.
+      file === 'scripts/electron-spine-eval.mjs',
   },
   {
     gate: 'eval:electron:packaged',
