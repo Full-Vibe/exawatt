@@ -19,7 +19,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
+  type ReactNode,
 } from 'react';
 import { ComingSoonMarker } from '@/components/readiness';
 import {
@@ -40,6 +40,11 @@ import {
   loadAgentSourceRegistry,
   runAgentSourceAction,
 } from '@/components/workspace/agent-sources';
+import {
+  ConnectedSourceDetail,
+  ConnectedSourcesRail,
+  useConnectedSources,
+} from './connected-sources-section';
 import type {
   AgentSourceAdapterId,
   AgentSourceCatalogEntry,
@@ -267,12 +272,15 @@ function RegistryRail({
   adding,
   onSelect,
   onAdd,
+  children,
 }: {
   sources: AgentSourceSnapshot[];
   selectedId: string;
   adding: boolean;
   onSelect: (id: string) => void;
   onAdd: () => void;
+  /** The configured-connection group (ENG-010 C2), below the adapters. */
+  children?: ReactNode;
 }) {
   return (
     <section
@@ -357,6 +365,7 @@ function RegistryRail({
           );
         })}
       </div>
+      {children}
     </section>
   );
 }
@@ -713,7 +722,20 @@ function AddSourceView({
   );
 }
 
-export function AgentSourcesSettings() {
+export function AgentSourcesSettings({
+  onConnectExistingAgent,
+}: {
+  /**
+   * The ⌘N Connect existing Agent route. A sibling packet owns that dialog,
+   * so Settings takes an opener rather than growing a second connect flow;
+   * until one is exported the empty state names the chord instead.
+   */
+  onConnectExistingAgent?: () => void;
+} = {}) {
+  const connected = useConnectedSources();
+  const [selectedConnectionId, setSelectedConnectionId] = useState<
+    string | null
+  >(null);
   const [registry, setRegistry] = useState(() =>
     fallbackAgentSourceRegistry('all')
   );
@@ -811,6 +833,20 @@ export function AgentSourcesSettings() {
     () => registry.sources.find(source => source.id === selectedId) ?? null,
     [registry.sources, selectedId]
   );
+
+  const selectedConnection = useMemo(
+    () =>
+      connected.sources.find(source => source.id === selectedConnectionId) ??
+      null,
+    [connected.sources, selectedConnectionId]
+  );
+
+  // A detached record takes its detail view with it, back to the adapters.
+  useEffect(() => {
+    if (selectedConnectionId && !selectedConnection) {
+      setSelectedConnectionId(null);
+    }
+  }, [selectedConnection, selectedConnectionId]);
 
   const waitForReconciliation = useCallback((delay: number) => {
     return new Promise<void>(resolve => {
@@ -954,10 +990,11 @@ export function AgentSourcesSettings() {
       >
         <RegistryRail
           sources={registry.sources}
-          selectedId={selectedId}
+          selectedId={selectedConnection ? '' : selectedId}
           adding={adding}
           onSelect={id => {
             cancelReconciliation();
+            setSelectedConnectionId(null);
             setSelectedId(id);
             setAdding(false);
             setMessage(null);
@@ -967,13 +1004,42 @@ export function AgentSourcesSettings() {
             setAdding(true);
             setMessage(null);
           }}
-        />
+        >
+          {connected.available && (
+            <ConnectedSourcesRail
+              sources={connected.sources}
+              observations={connected.observations}
+              selectedId={adding ? null : selectedConnectionId}
+              onSelect={id => {
+                cancelReconciliation();
+                setSelectedConnectionId(id);
+                setAdding(false);
+                setMessage(null);
+              }}
+              onConnect={onConnectExistingAgent}
+            />
+          )}
+        </RegistryRail>
         <div className="min-w-0 bg-[var(--settings-page)]">
           {adding ? (
             <AddSourceView
               available={registry.available}
               comingSoon={registry.comingSoon}
               onSelect={selectAdapter}
+            />
+          ) : selectedConnection ? (
+            <ConnectedSourceDetail
+              source={selectedConnection}
+              observation={connected.observations.get(selectedConnection.id)}
+              busy={connected.busyId === selectedConnection.id}
+              message={connected.message}
+              onReconnect={() =>
+                void connected.reconnect(selectedConnection.id)
+              }
+              onRename={name =>
+                void connected.rename(selectedConnection.id, name)
+              }
+              onDetach={() => void connected.detach(selectedConnection.id)}
             />
           ) : selected ? (
             <SourceDetail
