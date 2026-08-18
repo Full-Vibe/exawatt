@@ -56,6 +56,20 @@ contextBridge.exposeInMainWorld('electron', {
       action: 'authenticate' | 'choose-model' | 'install-guide'
     ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
+  // ENG-010 C1. Configured sources are saved connections to a Gateway, local
+  // or hosted. The renderer sees names and health; SSH material and the OS
+  // keychain never cross this boundary, and there is no command channel here
+  // because H1 is read-only.
+  connectedSources: {
+    list: () => ipcRenderer.invoke('connected-sources:list'),
+    /** Passive: reads SSH config text, never contacts a server. */
+    sshAliases: () => ipcRenderer.invoke('connected-sources:ssh-aliases'),
+    add: (input: unknown) => ipcRenderer.invoke('connected-sources:add', input),
+    rename: (id: string, displayName: string) =>
+      ipcRenderer.invoke('connected-sources:rename', id, displayName),
+    /** Removes Exawatt's record only. The remote installation is untouched. */
+    detach: (id: string) => ipcRenderer.invoke('connected-sources:detach', id),
+  },
   // Local/LAN OpenClaw credentials and the authenticated WebSocket live in
   // Electron main. This is an opaque, method-allowlisted capability — never a
   // token/config reader and never a caller-selected endpoint.

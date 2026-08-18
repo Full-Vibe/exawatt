@@ -17,6 +17,11 @@ import type {
   PtyHarness,
   DistributionContractV2,
   DistributionIdentity,
+  AgentSourcePlacement,
+  ConnectedSourceView,
+  SourceCredentialOwner,
+  SourceTransport,
+  SshHostAlias,
 } from '@exawatt/core';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
 import type {
@@ -774,6 +779,37 @@ export interface ElectronOpenClawApi {
   onEvent: (handler: (event: ElectronOpenClawEvent) => void) => () => void;
 }
 
+/**
+ * ENG-010 C1. Configured Agent Sources: saved connections to a Gateway,
+ * whether it runs on this machine or on a server the operator hosts.
+ *
+ * The renderer receives names and health only. SSH configuration, keychain
+ * material, and the authenticated socket stay in Electron main, and there is
+ * no command channel: H1 observes, and H2 adds the conversation path.
+ */
+export interface ElectronConnectedSourcesApi {
+  list: () => Promise<ConnectedSourceView[]>;
+  /** Reads SSH config text only. Listing a server is not contacting it. */
+  sshAliases: () => Promise<{
+    aliases: SshHostAlias[];
+    configPresent: boolean;
+    incompleteIncludes: boolean;
+  }>;
+  add: (input: {
+    adapterId: AgentSourceAdapterId;
+    placement: AgentSourcePlacement;
+    displayName: string;
+    transport: SourceTransport;
+    credentialOwner: SourceCredentialOwner;
+  }) => Promise<
+    | { ok: true; source: ConnectedSourceView | null }
+    | { ok: false; issues: string[] }
+  >;
+  rename: (id: string, displayName: string) => Promise<{ ok: boolean }>;
+  /** Removes Exawatt's record only; the remote installation is untouched. */
+  detach: (id: string) => Promise<{ ok: boolean }>;
+}
+
 export interface ExawattBuildInfo {
   sha: string;
   branch: string;
@@ -932,6 +968,7 @@ declare global {
       isElectron: boolean;
       platform: string;
       agentSources?: ElectronAgentSourcesApi;
+      connectedSources?: ElectronConnectedSourcesApi;
       openClaw?: ElectronOpenClawApi;
       operatorStats?: {
         scan: (
