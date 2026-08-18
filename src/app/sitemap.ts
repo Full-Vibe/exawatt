@@ -1,3 +1,4 @@
+import { servesOwnLegalPages } from '@/lib/hosted-features/distribution-availability';
 import type { MetadataRoute } from 'next';
 import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
 
@@ -12,10 +13,16 @@ import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
  * (decision `0029`), so the index page is listed and the profiles are left to
  * be discovered through it rather than enumerated in a sitemap.
  */
-const PAGES = ['/', '/download', '/leaderboard', '/privacy', '/terms'] as const;
+// `/privacy` and `/terms` come from the company overlay, so a build without a
+// brand does not serve them and must not advertise them.
+const PAGES = ['/', '/download', '/leaderboard'] as const;
+const BRANDED_PAGES = ['/privacy', '/terms'] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return PAGES.map(path => ({
+  const paths = servesOwnLegalPages()
+    ? [...PAGES, ...BRANDED_PAGES]
+    : [...PAGES];
+  return paths.map(path => ({
     url: `${EXAWATT_HOSTED_ORIGIN}${path === '/' ? '' : path}`,
   }));
 }

@@ -43,6 +43,18 @@ const SIGNED_DISTRIBUTION = {
   ownAccount: { claudePlanUsage: 'stable-signed' },
 } satisfies DistributionContractV2;
 
+/** A named distribution, which is the signal that it serves its own legal pages. */
+const BRANDED_DISTRIBUTION = {
+  ...COMMUNITY_DISTRIBUTION,
+  brand: {
+    appId: 'ai.exawatt.desktop',
+    productName: 'Exawatt',
+    protocolScheme: 'exawatt',
+    iconPath: 'electron/resources/icon.icns',
+    updateChannel: 'stable',
+  },
+} satisfies DistributionContractV2;
+
 const { goalVisualSource } = vi.hoisted(() => {
   const listeners = new Set<(enabled: boolean) => void>();
   let enabled = true;
@@ -531,13 +543,27 @@ describe('Settings → Privacy', () => {
     ).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('links to the privacy policy instead of restating it', async () => {
+  it('links to the privacy policy when this distribution serves one', async () => {
+    distributionState.current = BRANDED_DISTRIBUTION;
     installSettingsBridge();
     await renderPrivacy();
 
     expect(
       screen.getByRole('link', { name: 'Privacy policy' })
     ).toHaveAttribute('href', '/privacy');
+  });
+
+  it('omits the link in a build that serves no privacy page', async () => {
+    // The page lives in the company overlay, so an unbranded community build
+    // does not serve `/privacy`. Linking it anyway would be a broken product,
+    // not merely a 404 — and the surface already states the outbound
+    // behaviour inline, which is the part a user needs.
+    installSettingsBridge();
+    await renderPrivacy();
+
+    expect(
+      screen.queryByRole('link', { name: 'Privacy policy' })
+    ).toBeNull();
   });
 
   it('still renders the browser-reachable controls without a desktop bridge', async () => {

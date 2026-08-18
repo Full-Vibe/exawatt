@@ -16,7 +16,10 @@ import {
   type OwnAccountFeatureId,
   type PublicSharingFeatureId,
 } from '@/lib/hosted-features/contract';
-import { isOutboundControlConfigured } from '@/lib/hosted-features/distribution-availability';
+import {
+  isOutboundControlConfigured,
+  servesOwnLegalPages,
+} from '@/lib/hosted-features/distribution-availability';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import type { ElectronSettingsApi, ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
@@ -292,14 +295,16 @@ export function PrivacySettings() {
 
         <DiagnosticsSettings />
 
-        <p className="font-ui text-chrome-label text-[var(--settings-dim)]">
-          <Link
-            href="/privacy"
-            className="rounded underline underline-offset-2 outline-none transition-colors hover:text-[var(--settings-text)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
-          >
-            Privacy policy
-          </Link>
-        </p>
+        {servesOwnLegalPages() ? (
+          <p className="font-ui text-chrome-label text-[var(--settings-dim)]">
+            <Link
+              href="/privacy"
+              className="rounded underline underline-offset-2 outline-none transition-colors hover:text-[var(--settings-text)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+            >
+              Privacy policy
+            </Link>
+          </p>
+        ) : null}
       </div>
     </section>
   );
