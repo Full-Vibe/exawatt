@@ -60,6 +60,7 @@ import {
   RESUME_ACTIVE_AGENT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
   requestProjectPicker,
+  requestConnectAgentSource,
   requestAgentComposer,
   requestReopenLastClosed,
   LAUNCH_CONFIGURATION_CATALOG_EVENT,
@@ -125,6 +126,54 @@ export const WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS: ReadonlySet<string> =
  * Demo shell executes movement through its own adapter (D44) and resets
  * the snapshot on unmount, so availability itself is their tenant gate.
  */
+/**
+ * Every menu command id this provider dispatches.
+ *
+ * The manifest can declare a menu item, the native menu can render it, and the
+ * renderer can still have no case for it: dispatch is a switch, and a missing
+ * case falls through in silence. That is the FIX-012 defect one rung further
+ * out, so each dispatcher publishes what it handles and the command-verb
+ * contract joins those sets to the manifest. A verb that grows a menu item
+ * without a dispatch now fails a test rather than shipping a menu entry that
+ * does nothing.
+ *
+ * This provider is not the only dispatcher: feedback owns `submit-feedback`
+ * and publishes it separately. Launch rows are excluded on purpose, being
+ * derived from the Agent Source contract and handled before the switch, so
+ * they cannot go missing one at a time.
+ */
+export const DISPATCHED_MENU_COMMAND_IDS: ReadonlySet<string> = new Set([
+  // The menu-command switch.
+  'go-terminal',
+  'go-sessions',
+  'go-spatial',
+  'history-back',
+  'history-forward',
+  'open-settings',
+  'command-palette',
+  'new-agent',
+  'launch-shell',
+  'reopen-closed-tab',
+  'open-project',
+  'connect-agent-source',
+  'rename-tab',
+  'toggle-split',
+  'move-tab-left',
+  'move-tab-right',
+  'move-project-left',
+  'move-project-right',
+  'close-tab',
+  'close-project',
+  'reveal-path',
+  'jump-attention',
+  'open-roadmap',
+  'resume-agent',
+  'resume-scope',
+  // Handled by the shortcut switch above rather than the menu switch, because
+  // the same overlay answers a key and a menu item.
+  'help-modal',
+]);
+
 export const LIVE_WORKSPACE_MENU_COMMANDS: ReadonlySet<string> = new Set([
   ...menuCommandVerbs()
     .filter(verb => verb.tenantScope === 'personal-workspace')
@@ -385,6 +434,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
         case 'open-project':
           requestProjectPicker();
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
+          break;
+        case 'connect-agent-source':
+          requestConnectAgentSource();
           if (!window.location.pathname.startsWith('/workspace')) {
             navigateCommandSurface('/workspace');
           }

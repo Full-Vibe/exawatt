@@ -180,6 +180,9 @@ export function buildApplicationMenuTemplate(
       label: 'File',
       submenu: [
         verb('workspace-new-project'),
+        // Same class of object, same menu: Open Project names a directory on
+        // this machine, Connect names a Gateway the operator already runs.
+        verb('connect-agent-source'),
         separator(),
         verb('workspace-reveal-path'),
         verb('workspace-close-project'),

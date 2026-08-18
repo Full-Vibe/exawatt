@@ -100,6 +100,17 @@ function dataUrlFromFile(file: File): Promise<string> {
   });
 }
 
+/**
+ * The menu commands this provider dispatches (ENG-010 C2).
+ *
+ * Menu dispatch is spread across a few owners, and a menu item whose owner
+ * forgot it is silently dead. Each owner publishes its own set so the
+ * command-verb contract can prove every declared menu verb reaches one.
+ */
+export const FEEDBACK_MENU_COMMAND_IDS: ReadonlySet<string> = new Set([
+  'submit-feedback',
+]);
+
 export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const distribution = useMemo(() => resolvedDistribution(), []);
   const feedbackEndpoint = distribution.services.productFeedback;
