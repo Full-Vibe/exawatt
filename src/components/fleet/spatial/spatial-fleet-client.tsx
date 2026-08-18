@@ -18,9 +18,8 @@ import {
   writeBoardRoute,
   type BoardRoute,
 } from './board-route';
-import { Crosshair, Keyboard, RadioTower, Search } from 'lucide-react';
+import { Crosshair, Keyboard, Search } from 'lucide-react';
 import {
-  useConnectToOC,
   useCron,
   useFleet,
   useFleetConnection,
@@ -106,7 +105,9 @@ export function SpatialFleetClient() {
   );
   useEffect(() => {
     const fromUrl = readBoardRoute(searchParams);
-    setRoute(previous => (sameBoardRoute(previous, fromUrl) ? previous : fromUrl));
+    setRoute(previous =>
+      sameBoardRoute(previous, fromUrl) ? previous : fromUrl
+    );
   }, [searchParams]);
   const altitude: Altitude = route.altitude;
   const focusedProjectId = route.projectId;
@@ -114,7 +115,6 @@ export function SpatialFleetClient() {
   const projection: SpatialBoardProjection = route.projection;
   const { fleetState, projects } = useFleet();
   const { isDemo } = useFleetConnection();
-  const { connectToRealOC, canConnect } = useConnectToOC();
   const { jobs } = useCron();
   const { openHelpModal } = useShortcuts();
   const { navigateCommandSurface } = useCommandNavigation();
@@ -778,16 +778,6 @@ export function SpatialFleetClient() {
               </button>
             )}
           </div>
-        )}
-        {canConnect && (
-          <Button
-            onClick={connectToRealOC}
-            size="sm"
-            className="fleet-action-button h-8"
-          >
-            <RadioTower className="h-4 w-4" />
-            Connect
-          </Button>
         )}
         <Button
           type="button"

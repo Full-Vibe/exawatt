@@ -67,19 +67,23 @@ contextBridge.exposeInMainWorld('electron', {
     add: (input: unknown) => ipcRenderer.invoke('connected-sources:add', input),
     rename: (id: string, displayName: string) =>
       ipcRenderer.invoke('connected-sources:rename', id, displayName),
+    /** The operator act that reaches a server. Read-only end to end. */
+    connect: (id: string) =>
+      ipcRenderer.invoke('connected-sources:connect', id),
+    /** Per-source observation freshness. Never a claim about remote work. */
+    status: () => ipcRenderer.invoke('connected-sources:status'),
+    /** The projected coworkers, for the roster. */
+    agents: () => ipcRenderer.invoke('connected-sources:agents'),
+    /** Exawatt-side Project/name decisions. Issues no Gateway call. */
+    mapAgents: (id: string, mappings: unknown) =>
+      ipcRenderer.invoke('connected-sources:map-agents', id, mappings),
+    /** Stops observing. The remote installation keeps working. */
+    disconnect: (id: string) =>
+      ipcRenderer.invoke('connected-sources:disconnect', id),
     /** Removes Exawatt's record only. The remote installation is untouched. */
     detach: (id: string) => ipcRenderer.invoke('connected-sources:detach', id),
-  },
-  // Local/LAN OpenClaw credentials and the authenticated WebSocket live in
-  // Electron main. This is an opaque, method-allowlisted capability — never a
-  // token/config reader and never a caller-selected endpoint.
-  openClaw: {
-    connect: () => ipcRenderer.invoke('openclaw:connect'),
-    call: (capabilityId: string, method: string, params: unknown) =>
-      ipcRenderer.invoke('openclaw:call', capabilityId, method, params),
-    disconnect: (capabilityId: string) =>
-      ipcRenderer.invoke('openclaw:disconnect', capabilityId),
-    onEvent: subscribe<unknown>('openclaw:event'),
+    /** Which source moved and how fresh it is — never a topology payload. */
+    onChanged: subscribe<unknown>('connected-sources:changed'),
   },
   operatorStats: {
     scan: (since: string, timezone: string) =>
