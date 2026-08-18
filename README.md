@@ -43,9 +43,9 @@ pnpm install
 pnpm electron:build:dir
 ```
 
-Requires macOS on Apple silicon and Node 22. This produces a community build: it talks to no
-Exawatt service, carries no analytics, and has no update channel. It runs Demo
-Mode and any agent harness you have installed locally.
+Requires macOS on Apple silicon and Node 22. This produces a community build:
+it talks to no Exawatt service, carries no analytics, and has no update
+channel. It runs Demo Mode and any agent harness you have installed locally.
 
 Official signed builds come from exawatt.ai and are a separate distribution.
 See [LICENSING.md](LICENSING.md) for what that distinction means.
