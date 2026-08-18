@@ -99,8 +99,22 @@ const FRAMING_TIGHTNESS = {
  * bleeds past all four edges of its frame. So on a phone the board fills the
  * width and runs off the top and bottom, and the marks stay the size a thumb
  * can actually resolve.
+ *
+ * KEYED ON A NARROW FRAME, NOT ON `height > width` (ENG-031 W6c). The phone's
+ * board is a fixed card of `44svh + 2rem`, which at 390x844 is 403px tall: it
+ * cleared the portrait test by thirteen pixels, and on a shorter phone, in
+ * landscape, or after any change to the card's height it would have failed it
+ * and silently served the desktop framing to a 390px frame. The condition the
+ * crop is actually about is that the frame is NARROW relative to the board's
+ * own spread, so that is what it now tests, with the aspect test kept for a
+ * genuinely tall frame at any width.
  */
 const PORTRAIT_CROP = 0.62;
+
+/** A frame this narrow gets the phone's crop whatever its aspect. Matches the
+ *  overlay's own `COMPACT_FRAME_PX`, which decides how many Projects a frame
+ *  that size can name. */
+const NARROW_FRAME_PX = 560;
 
 const MARK_SCALE = 1.7;
 const STATUS_TRANSITION_SECONDS = 0.85;
@@ -203,6 +217,17 @@ export interface HeroBoardFraming {
   center: THREE.Vector3;
   radius: number;
   tightness: number;
+  /**
+   * How this altitude answers a NARROW frame (ENG-031 W6c).
+   *
+   * The phone crops rather than fits, but `cluster` is ALREADY the fleet
+   * framing cropped, and multiplying the two put the fold's own Project half
+   * outside a 390px frame with its name faded out beside it. A board whose
+   * circles carry no names is the "pile of rotating icons" verdict returning
+   * at a smaller size, so the altitude that exists to be a crop opts out of
+   * the second one and says so here rather than in a branch at the call site.
+   */
+  narrowCrop: number;
 }
 
 /**
@@ -233,7 +258,22 @@ export const HERO_DEFAULT_LADDER: HeroAltitude[] = ['fleet', 'team', 'agent'];
 
 export function heroBoardFramings(
   capture: HeroBoardCapture,
-  ladder: readonly HeroAltitude[] = HERO_DEFAULT_LADDER
+  ladder: readonly HeroAltitude[] = HERO_DEFAULT_LADDER,
+  /**
+   * A phone-width frame. It changes exactly one thing: what `cluster` is
+   * centred on (ENG-031 W6c).
+   *
+   * On a wide frame `cluster` is the fleet framing cropped on the fleet's own
+   * centre, and whichever Projects happen to fall in the column are the ones
+   * the fold shows. In a 390px frame that lottery put the ONE Project the fold
+   * emphasizes into the top-left corner, half outside the frame, so its name
+   * faded out and the phone's first screen was a board with nothing named on
+   * it. The fold's crop is now centred on the Project the fold is actually
+   * pointing at, which is the same subject `hero-board-subjects.ts` gives the
+   * highlight and the copy, so the phone opens on a named, centred Project and
+   * the first scroll move is still the crop opening out to the whole fleet.
+   */
+  narrow = false
 ): HeroBoardFraming[] {
   const center = boardCenter(capture);
   const fleet = new THREE.Vector3(0, 0, 0);
@@ -259,18 +299,26 @@ export function heroBoardFramings(
       center: fleet,
       radius: fleetRadius,
       tightness: FRAMING_TIGHTNESS.fleet,
+      narrowCrop: PORTRAIT_CROP,
     },
     cluster: {
-      center: fleet,
+      center: narrow ? team : fleet,
       radius: fleetRadius * FRAMING_TIGHTNESS.clusterRadius,
       tightness: FRAMING_TIGHTNESS.fleet,
+      narrowCrop: 1,
     },
     team: {
       center: team,
       radius: zone.radius * 1.5,
       tightness: FRAMING_TIGHTNESS.team,
+      narrowCrop: PORTRAIT_CROP,
     },
-    agent: { center: agent, radius: 4.4, tightness: FRAMING_TIGHTNESS.agent },
+    agent: {
+      center: agent,
+      radius: 4.4,
+      tightness: FRAMING_TIGHTNESS.agent,
+      narrowCrop: PORTRAIT_CROP,
+    },
   };
 
   const resolved = (ladder.length > 1 ? ladder : HERO_DEFAULT_LADDER).map(
@@ -1257,9 +1305,10 @@ function HeroCameraRig({
   const camera = useThree(state => state.camera);
   const size = useThree(state => state.size);
   const invalidate = useThree(state => state.invalidate);
+  const narrowFrame = size.width > 0 && size.width < NARROW_FRAME_PX;
   const framings = useMemo(
-    () => heroBoardFramings(capture, ladder),
-    [capture, ladder]
+    () => heroBoardFramings(capture, ladder, narrowFrame),
+    [capture, ladder, narrowFrame]
   );
   const keyframes = useRef<Keyframe[]>(
     framings.map(() => ({ target: new THREE.Vector3(), distance: 1 }))
@@ -1416,8 +1465,9 @@ function HeroCameraRig({
     // scroll cannot ask for a closer distance, and nothing else can either.
     const floor = maxZoomDistance(camera, markWorldSize);
     rig.minDistance = Math.max(4, floor);
-    const crop = size.height > size.width ? PORTRAIT_CROP : 1;
+    const narrow = size.width < NARROW_FRAME_PX || size.height > size.width;
     framings.forEach((framing, index) => {
+      const crop = narrow ? framing.narrowCrop : 1;
       rig.rotateTo(BASE_AZIMUTH, BASE_POLAR, false);
       rig.moveTo(framing.center.x, framing.center.y, framing.center.z, false);
       rig.dollyTo(

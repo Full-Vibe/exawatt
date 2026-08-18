@@ -57,11 +57,24 @@ import {
  */
 const LABEL_DIM = 0.28;
 
-/** A Project label is gone this close to the frame edge, and full strength by
- *  the second number. A chip is about 140px wide, so a centre inside the first
- *  figure is already half outside the frame. */
-const LABEL_EDGE_HIDE_PX = 40;
-const LABEL_EDGE_FADE_PX = 160;
+/**
+ * How a Project label leaves the frame edge, measured from ITS OWN EDGE rather
+ * than from its anchor (ENG-031 W6c).
+ *
+ * The previous window compared the anchor's distance to the frame edge against
+ * a guessed 140px chip. Names are not all one width: "Growth Marketing",
+ * "Device Telemetry" and "Customer Support" all reached full strength with a
+ * third of the chip already outside the frame, and on production they rendered
+ * as `owth Marketing` and `Customer Suppor`, cut mid-word against a hard
+ * vertical edge with the same ground on both sides. That reads as a rendering
+ * bug rather than as a crop, which is exactly what the fade exists to prevent.
+ *
+ * The width is READ ONCE PER LABEL and cached. Its content is a fixed name and
+ * two fixed counts, so the box never changes size, and one layout read per
+ * zone on the first frame is not a per-frame layout read.
+ */
+const LABEL_EDGE_HIDE_PX = 0;
+const LABEL_EDGE_FADE_PX = 56;
 
 /** And the same at the TOP, where the frame's own fleet chip lives. A Project
  *  label riding up into it printed two lines of chrome through each other on
@@ -79,6 +92,29 @@ const LABEL_HEIGHT_PX = 46;
  *  be made without a layout read inside the render loop. */
 const CARD_WIDTH_PX = 240;
 const CARD_MAX_WIDTH_SHARE = 0.62;
+/** And its height, for the same reason: four lines plus its own padding. */
+const CARD_HEIGHT_PX = 112;
+
+/**
+ * Below this frame width the board is the phone's card, and it names FEWER
+ * Projects (ENG-031 W6c).
+ *
+ * A 390px frame holds about two and a half name chips across. At the fold and
+ * at every fleet framing it was printing five, so `Battery Dispatch`,
+ * `Gateway Firmware`, `Installer Portal`, `Cloud Platform` and `Customer App`
+ * stacked through each other and through their own counts, and the identity
+ * card landed on top of the pile. The board stopped naming itself and started
+ * looking broken, which is the "pile of rotating icons" verdict returning at a
+ * smaller size.
+ *
+ * The rule is the canon's own framing rule rather than a smaller font: a
+ * portrait viewport CROPS instead of fitting, so the phone names what is in
+ * the middle of the frame and lets the rest be marks. Emphasis wins first, so
+ * a panel pointing at one Project always gets that Project's name; proximity
+ * to the frame centre breaks the tie when every zone leads.
+ */
+const COMPACT_FRAME_PX = 560;
+const COMPACT_LABEL_LIMIT = 2;
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
@@ -136,6 +172,8 @@ export function HeroBoardOverlay({
   const [statusTick, setStatusTick] = useState(0);
 
   const zoneNodes = useRef(new Map<number, HTMLElement>());
+  /** Each Project label's half width, read once. Its content never changes. */
+  const labelHalfWidths = useRef(new Map<number, number>());
   const unitNodes = useRef(new Map<number, HTMLElement>());
   const cardNode = useRef<HTMLDivElement>(null);
   const beaconNode = useRef<HTMLDivElement>(null);
@@ -158,10 +196,37 @@ export function HeroBoardOverlay({
 
   const flush = useCallback((): void => {
     const bridge = getBridge();
+    // A phone names the middle of the frame and lets the rest be marks. The
+    // ranking is computed BEFORE the write pass so the decision is one pass
+    // over ten zones rather than a comparison inside each label's own write.
+    const compact = bridge.width > 0 && bridge.width < COMPACT_FRAME_PX;
+    let named: Set<number> | null = null;
+    if (compact) {
+      const centreX = bridge.width / 2;
+      const ranked: { index: number; focus: number; distance: number }[] = [];
+      for (const index of zoneNodes.current.keys()) {
+        const anchor = bridge.zones[index];
+        if (!anchor?.onScreen) continue;
+        ranked.push({
+          index,
+          focus: bridge.zoneFocus[index] ?? 1,
+          distance: Math.abs(anchor.x - centreX),
+        });
+      }
+      // Emphasis first, then the middle of the frame. A panel pointing at one
+      // Project always keeps that Project's name.
+      ranked.sort(
+        (a, b) =>
+          b.focus - a.focus || a.distance - b.distance || a.index - b.index
+      );
+      named = new Set(
+        ranked.slice(0, COMPACT_LABEL_LIMIT).map(entry => entry.index)
+      );
+    }
     for (const [index, node] of zoneNodes.current) {
       const anchor = bridge.zones[index];
       if (!anchor) continue;
-      if (!anchor.onScreen) {
+      if (!anchor.onScreen || (named && !named.has(index))) {
         node.style.opacity = '0';
         continue;
       }
@@ -181,7 +246,14 @@ export function HeroBoardOverlay({
       // And it fades out at the frame edge rather than being sliced by it. A
       // name cut mid-word against a hard vertical edge reads as a rendering
       // bug, not as a crop, because the ground is the same on both sides.
-      const margin = Math.min(anchor.x, bridge.width - anchor.x);
+      // Measured from the label's OWN edge: a chip is as wide as the name in
+      // it, and one guessed width let the long names print half outside.
+      let half = labelHalfWidths.current.get(index);
+      if (half === undefined) {
+        half = node.offsetWidth / 2;
+        labelHalfWidths.current.set(index, half);
+      }
+      const margin = Math.min(anchor.x, bridge.width - anchor.x) - (half ?? 0);
       const edge = smoothstep(LABEL_EDGE_HIDE_PX, LABEL_EDGE_FADE_PX, margin);
       const top = smoothstep(
         LABEL_TOP_HIDE_PX,
@@ -239,12 +311,39 @@ export function HeroBoardOverlay({
           bridge.width * CARD_MAX_WIDTH_SHARE
         );
         const gap = anchor.radius + 14;
-        const flip = anchor.x + gap + cardWidth > bridge.width - 8;
-        card.style.transform = `translate3d(${Math.round(
-          anchor.x + (flip ? -gap : gap)
-        )}px, ${Math.round(anchor.y)}px, 0) translate(${
-          flip ? '-100%' : '0'
-        }, -50%)`;
+        // BESIDE, FLIPPED, OR STACKED, in that order (ENG-031 W6c).
+        //
+        // Testing the right edge alone put the card off the LEFT one on a
+        // phone: a mark near the right edge flipped, and 240px to its left is
+        // -106px in a 390px frame, so the whole card rendered outside the
+        // board. Flipping now requires room on the side it flips TO, and when
+        // neither side has room the card stacks under its own mark instead of
+        // being clamped on top of it, which is the only placement a frame
+        // narrower than a mark plus a card actually has.
+        const fitsRight = anchor.x + gap + cardWidth <= bridge.width - 8;
+        const fitsLeft = anchor.x - gap - cardWidth >= 8;
+        const clampLeft = (value: number) =>
+          Math.min(
+            Math.max(8, value),
+            Math.max(8, bridge.width - cardWidth - 8)
+          );
+        if (fitsRight || fitsLeft) {
+          const left = clampLeft(
+            fitsRight ? anchor.x + gap : anchor.x - gap - cardWidth
+          );
+          card.style.transform = `translate3d(${Math.round(
+            left
+          )}px, ${Math.round(anchor.y)}px, 0) translate(0, -50%)`;
+        } else {
+          const left = clampLeft(anchor.x - cardWidth / 2);
+          const below = anchor.y + gap;
+          const stackAbove = below + CARD_HEIGHT_PX > bridge.height - 8;
+          card.style.transform = `translate3d(${Math.round(
+            left
+          )}px, ${Math.round(stackAbove ? anchor.y - gap : below)}px, 0) translate(0, ${
+            stackAbove ? '-100%' : '0'
+          })`;
+        }
         card.style.opacity = '1';
       } else {
         card.style.opacity = '0';
@@ -459,7 +558,7 @@ export function HeroBoardOverlay({
               data-hero-zone-label={zone.label}
             >
               <span
-                className="rounded-md border px-2.5 py-1 text-lg leading-tight font-semibold tracking-tight"
+                className="rounded-md border px-2 py-1 text-base leading-tight font-semibold tracking-tight sm:px-2.5 sm:text-lg"
                 style={{
                   color: chrome.label,
                   backgroundColor: chrome.namePanel,

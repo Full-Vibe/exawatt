@@ -38,9 +38,9 @@ export interface SiteNavLink {
  * The nav, beside the one download button.
  *
  * `Changelog` is an in-page anchor rather than a route, because the dated list
- * IS on this page: `proof` renders eleven landed milestones on the day each
- * one landed. Pointing a nav item at a real dated list beats pointing it at a
- * page that has to be written first.
+ * IS on this page: `proof` renders five landed milestones on the day each one
+ * landed, and links out to the rest. Pointing a nav item at a real dated list
+ * beats pointing it at a page that has to be written first.
  */
 export const SITE_NAV_LINKS: SiteNavLink[] = [
   { label: 'Changelog', href: '#proof' },
@@ -89,7 +89,13 @@ export const SITE_FOOTER_COLUMNS: SiteFooterColumn[] = [
         external: true,
       },
     ],
-    note: 'The app is AGPL-3.0. The compatibility spec that lets any harness become Exawatt ready is Apache-2.0, so anyone can build against it, including people who compete with us.',
+    // W6c: the FACTS and the sting are untouched; the middle clause stopped
+    // being written in our own vocabulary. "The compatibility spec that lets
+    // any harness become Exawatt ready" is three internal nouns in a row, and
+    // the page's own reader-facing word for a harness is already in the
+    // `any-lab` panel. A licence sentence a stranger has to decode is a
+    // licence sentence nobody reads.
+    note: 'The app is AGPL-3.0. The spec that lets any agent tool work with Exawatt is Apache-2.0, so anyone can build against it, including people who compete with us.',
   },
   {
     heading: 'Legal',

@@ -1,7 +1,8 @@
 import { bandById, countWords, type BandId } from './manifest';
 
 /**
- * The pinned sequence's panels (ENG-031 W4, rewritten W5, widened W8, CUT W6b).
+ * The pinned sequence's panels (ENG-031 W4, rewritten W5, widened W8, CUT W6b,
+ * cut again W6c).
  *
  * ONE graphic, five explanations. Each panel says what the board is doing
  * WHILE the board does it, and names the thing it is pointing at. The names
@@ -23,6 +24,30 @@ import { bandById, countWords, type BandId } from './manifest';
  * still here: "Every colour here is a claim, and a wrong one costs you a
  * trip", "Never a green check that lies", and the plain-voice product
  * sentences. Nothing was softened, generalised, or made safer.
+ *
+ * W6C, THE SECOND CUT: ONE CLAIM PER PANEL, AND EVERY SENTENCE DOES WORK.
+ * W6b removed the mechanism trios and left each panel with a two-sentence
+ * claim, a coda, and a state line. Read as a cold developer, VC or founder,
+ * four of those sentences were still CAPTIONS on a picture that was already
+ * saying it, and one was mechanism a stranger has no use for until after they
+ * trust us. Each cut is named where it happened:
+ *
+ * - `altitude-attention` loses "Reported by the agent, never guessed from its
+ *   output." That is how the colour is true, which is a docs sentence. The
+ *   claim above it already spends the honesty, and `altitude-agent` now says
+ *   the same fact as a value ("in its own words").
+ * - `altitude-agent` loses "Drop all the way in and an agent is a name, the
+ *   work it is on, and a status that changes while you read it", which was 24
+ *   words describing the frame the reader is looking at.
+ * - `altitude-delegation` loses "Some of these agents are running agents of
+ *   their own", which restated its own heading.
+ * - `any-lab` loses "The same board, coloured by what is running each agent",
+ *   because the legend under it names the harnesses off the capture, and its
+ *   coda is PROMOTED into the claim: "Bring the plan you already pay for" is
+ *   the commercial answer a stranger actually wants, and it was set at 13px.
+ * - `trust` keeps its coda. A disclosure with a control attached is a feature
+ *   and a disclosure without one is a warning (`marketing.md`, "Disclosure is
+ *   not apology"), so the switch stays.
  *
  * THE PANELS, one claim at a time, each one a claim the board is
  * simultaneously proving:
@@ -85,34 +110,32 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
       'The board tells you where to look, so you never go looking.',
       'Every colour here is a claim, and a wrong one costs you a trip.',
     ],
-    coda: 'Reported by the agent, never guessed from its output.',
   },
   {
     id: 'altitude-agent',
     copy: [
-      'Drop all the way in and an agent is a name, the work it is on, and a status that changes while you read it.',
+      'Every agent tells you the job it is on, in its own words.',
       'Working, needs you, done. Never a green check that lies.',
     ],
   },
   {
     id: 'altitude-delegation',
     copy: [
-      'Some of these agents are running agents of their own.',
-      'The work fans out and comes back under the one that asked for it. This is how ten becomes ten thousand.',
+      'The work fans out and comes back under the one that asked for it.',
+      'This is how ten becomes ten thousand.',
     ],
   },
   {
     id: 'any-lab',
     copy: [
       'Every lab will sell you agents. None of them will sell you the seat you command them from.',
-      'The same board, coloured by what is running each agent.',
+      'Bring the plan you already pay for. Exawatt never asks for a balance of its own.',
     ],
-    coda: 'Bring the plan you already pay for. Exawatt never asks for a balance of its own.',
   },
   {
     id: 'trust',
     copy: [
-      'Every one of these agents runs on your Mac, under your account, on your keys.',
+      'Your agents run on your Mac, under your account, on your keys.',
       'Your code, your prompts, and what your agents write never pass through Exawatt.',
     ],
     coda: 'Every outbound feature has a switch in Settings.',
