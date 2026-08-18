@@ -443,8 +443,10 @@ async function sampleThemeChurnIsolation() {
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load' });
   await page.evaluate(() => window.__resetExaTypographyEarlyProbe());
+  // The sticky header is the only route from `/` to `/architecture`: the fold
+  // carries no call to action of its own (operator, 2026-08-17).
   await page
-    .locator('[data-home-architecture-button]')
+    .locator('#site-header a[href="/architecture"]')
     .click({ noWaitAfter: true });
   await page.waitForURL('**/architecture');
   const clientNavigation = await sampleTypography('home-to-architecture');

@@ -1,42 +1,36 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { HomeHero } from './_home-hero';
 
-const motionState = vi.hoisted(() => ({ reduced: false }));
-
 vi.mock('@/lib/motion/use-prefers-reduced-motion', () => ({
-  usePrefersReducedMotion: () => motionState.reduced,
+  usePrefersReducedMotion: () => false,
 }));
 
 vi.mock('./_hero-bg', () => ({
-  HeroBg: ({ onFadeInComplete }: { onFadeInComplete?: () => void }) => (
-    <button onClick={onFadeInComplete} type="button">
-      Complete background fade
-    </button>
-  ),
+  HeroBg: () => <div data-testid="hero-bg" />,
 }));
 
-describe('HomeHero architecture CTA', () => {
-  beforeEach(() => {
-    motionState.reduced = false;
+describe('HomeHero', () => {
+  it('states the product and its subhead over the ground', () => {
+    render(<HomeHero />);
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Exawatt'
+    );
+    expect(screen.getByTestId('hero-bg')).toBeInTheDocument();
+    expect(document.querySelector('[data-home-hero]')).toHaveAttribute(
+      'data-public-exhibition-surface',
+      'true'
+    );
   });
 
-  it('renders a plain link to /architecture, hidden until the background is ready', () => {
+  // The fold has now lost an in-fold control twice: the 3D command key switch,
+  // then the plain `Architecture` button that replaced it. Both removals were
+  // the operator's, so the absence is the contract, not an omission.
+  it('carries no call to action', () => {
     render(<HomeHero />);
-    const reveal = document.querySelector('[data-home-architecture-cta]')!;
-    const link = screen.getByRole('link', { name: 'Architecture', hidden: true });
 
-    expect(reveal).toHaveStyle({ opacity: '0' });
-    expect(reveal).toHaveAttribute('aria-hidden', 'true');
-    expect(link).toHaveAttribute('href', '/architecture');
-    expect(link).toHaveAttribute('tabIndex', '-1');
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Complete background fade' })
-    );
-
-    expect(reveal).toHaveStyle({ opacity: '1' });
-    expect(reveal).toHaveAttribute('aria-hidden', 'false');
-    expect(link).not.toHaveAttribute('tabIndex');
+    expect(screen.queryAllByRole('link', { hidden: true })).toHaveLength(0);
+    expect(screen.queryAllByRole('button', { hidden: true })).toHaveLength(0);
   });
 });
