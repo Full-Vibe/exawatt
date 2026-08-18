@@ -10,8 +10,12 @@ import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { ExposeOverlay } from './expose-overlay';
-import { NO_FLEET_ATTENTION } from './session-status';
-import type { Project } from './use-workspace-state';
+import {
+  mergeFleetAttention,
+  NO_FLEET_ATTENTION,
+  sessionStateWord,
+} from './session-status';
+import type { Project, SessionTab } from './use-workspace-state';
 
 const { loadGoalVisualPreference, saveGoalVisualPreference } = vi.hoisted(
   () => ({
@@ -41,7 +45,10 @@ function render(ui: ReactElement) {
   });
 }
 
-const projects: Project[] = [
+/** The local fleet these cases paint; a coworker roster is separate. */
+type SessionProject = Omit<Project, 'tabs'> & { tabs: SessionTab[] };
+
+const projects: SessionProject[] = [
   {
     dir: '/one',
     name: 'One',
@@ -50,6 +57,7 @@ const projects: Project[] = [
     tabs: [
       {
         id: 'tab-a',
+        kind: 'session' as const,
         durableSessionId: 'durable-a',
         harness: 'shell',
         title: 'Alpha',
@@ -65,6 +73,7 @@ const projects: Project[] = [
       },
       {
         id: 'tab-b',
+        kind: 'session' as const,
         durableSessionId: 'durable-b',
         harness: 'codex',
         title: 'Beta',
@@ -80,6 +89,7 @@ const projects: Project[] = [
       },
       {
         id: 'tab-c',
+        kind: 'session' as const,
         durableSessionId: 'durable-c',
         harness: 'claude',
         title: 'Gamma',
@@ -211,7 +221,9 @@ describe('Sessions overview', () => {
         onClose={vi.fn()}
       />
     );
-    const gamma = screen.getByRole('button', { name: 'Gamma, One, stopped' });
+    const gamma = screen.getByRole('button', {
+      name: 'Gamma, One, Idle, stopped',
+    });
     expect(gamma.querySelector('[data-expose-state="stopped"]')).not.toBeNull();
     fireEvent.click(gamma);
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
@@ -513,8 +525,8 @@ describe('Sessions overview', () => {
     );
 
     const titles = () =>
-      Array.from(document.querySelectorAll('[data-expose-tile]')).map(node =>
-        node.getAttribute('aria-label')?.split(',')[0]
+      Array.from(document.querySelectorAll('[data-expose-tile]')).map(
+        node => node.getAttribute('aria-label')?.split(',')[0]
       );
     // Chrome model: oldest first, the newest Agent appends
     await waitFor(() =>
@@ -627,9 +639,7 @@ describe('Sessions overview', () => {
     await waitFor(() => expect(alpha).toHaveFocus());
     fireEvent.keyDown(alpha, { key: 'r' });
     expect(onResumeTab).not.toHaveBeenCalled();
-    expect(
-      document.querySelector('[data-expose-resume="tab-a"]')
-    ).toBeNull();
+    expect(document.querySelector('[data-expose-resume="tab-a"]')).toBeNull();
   });
 
   // The chord targeted the ACTIVE tab while the operator was looking at a
@@ -806,6 +816,7 @@ describe('Sessions overview', () => {
         {
           ...projects[0].tabs[1],
           id: 'tab-untitled',
+          kind: 'session' as const,
           durableSessionId: 'durable-untitled',
           title: 'Claude Code',
           titleKind: 'default',
@@ -827,7 +838,7 @@ describe('Sessions overview', () => {
     );
 
     const tile = screen.getByRole('button', {
-      name: 'New agent, One, new',
+      name: 'New agent, One, Idle',
     });
     expect(screen.getByText('New agent')).toHaveClass(
       'font-sans',
@@ -855,6 +866,7 @@ describe('Sessions overview', () => {
       activeTabId: 'tab-d',
       tabs: [
         {
+          kind: 'session' as const,
           id: 'tab-d',
           durableSessionId: 'durable-d',
           harness: 'claude',
@@ -881,7 +893,195 @@ describe('Sessions overview', () => {
         onClose={vi.fn()}
       />
     );
-    const tile = screen.getByRole('button', { name: 'New agent, Two, draft' });
+    const tile = screen.getByRole('button', {
+      name: 'New agent, Two, Idle, draft',
+    });
     expect(tile.querySelector('[data-expose-state="draft"]')).not.toBeNull();
+  });
+
+  describe('the state word beside the mark (ENG-033 H2)', () => {
+    /** One Project, one Agent, driven into each D40 state in turn. */
+    function soloProject(overrides: Partial<Project['tabs'][number]> = {}) {
+      return [
+        {
+          ...projects[0],
+          activeTabId: 'tab-b',
+          tabs: [{ ...projects[0].tabs[1], ...overrides }],
+        },
+      ] as Project[];
+    }
+
+    function readout(): HTMLElement {
+      const node = document.querySelector('[data-session-state-word]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    }
+
+    const CASES: Array<{
+      what: string;
+      word: string;
+      light: string;
+      props: Partial<Parameters<typeof ExposeOverlay>[0]>;
+      tab?: Partial<Project['tabs'][number]>;
+    }> = [
+      {
+        what: 'streaming',
+        word: 'Working',
+        light: 'active',
+        props: { activity: { 'session-b': true } },
+      },
+      {
+        what: 'a finished turn',
+        word: 'Result ready',
+        light: 'result',
+        props: { engaged: { 'session-b': true } },
+      },
+      {
+        what: 'never given work',
+        word: 'Idle',
+        light: 'off',
+        props: {},
+      },
+      {
+        what: 'a reported operator gate',
+        word: 'Needs you',
+        light: 'needs-you',
+        props: {
+          delegation: {
+            'session-b': {
+              ownTurn: 'generating' as const,
+              blockedOn: 'question' as const,
+              children: [],
+            },
+          },
+        },
+      },
+      {
+        what: 'an unseen attention signal',
+        word: 'Needs you',
+        light: 'needs-you',
+        props: {
+          attention: mergeFleetAttention({
+            id: 'test',
+            scope: { kind: 'fleet' },
+            signals: { 'session-b': { kind: 'bell', since: 1 } },
+          }),
+        },
+      },
+      {
+        what: 'a failed Agent',
+        word: 'Error',
+        light: 'fault',
+        props: {},
+        tab: {
+          lifecycle: 'failed',
+          sessionId: null,
+          resumeState: 'identity-missing',
+        },
+      },
+    ];
+
+    it.each(CASES)(
+      'prints the word for $what, and the mark agrees',
+      ({ word, light, props, tab }) => {
+        render(
+          <ExposeOverlay
+            projects={soloProject(tab)}
+            summaries={{}}
+            attention={NO_FLEET_ATTENTION}
+            activeTabId="tab-b"
+            onPick={vi.fn()}
+            onClose={vi.fn()}
+            {...props}
+          />
+        );
+
+        const state = readout();
+        // The word, as text — no colour token consulted, so this is the
+        // colour-free read the roster has to survive.
+        expect(state).toHaveTextContent(word);
+        expect(state.getAttribute('data-session-state-word')).toBe(word);
+        // ...and the mark drawn from the same state, so the two channels
+        // cannot drift apart.
+        expect(state.querySelector('[data-status-light]')).toHaveAttribute(
+          'data-status-light',
+          light
+        );
+        // The accessible name says the same word, once.
+        const tile = document.querySelector(
+          '[data-expose-tile]'
+        ) as HTMLElement;
+        const name = tile.getAttribute('aria-label') ?? '';
+        expect(name).toContain(`, ${word}`);
+        expect(name.split(`, ${word}`)).toHaveLength(2);
+      }
+    );
+
+    it('writes no em dash and no all-caps in the word it renders', () => {
+      render(
+        <ExposeOverlay
+          projects={soloProject()}
+          summaries={{}}
+          attention={NO_FLEET_ATTENTION}
+          activity={{ 'session-b': true }}
+          activeTabId="tab-b"
+          onPick={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      for (const node of Array.from(
+        document.querySelectorAll('[data-session-state-word]')
+      )) {
+        const word = node.getAttribute('data-session-state-word') ?? '';
+        expect(word).not.toContain('—');
+        expect(node.textContent ?? '').not.toContain('—');
+        expect(word).not.toBe(word.toUpperCase());
+      }
+    });
+
+    it('keeps the tile footprint and the measured grid geometry unchanged', () => {
+      render(
+        <ExposeOverlay
+          projects={projects}
+          summaries={{}}
+          attention={NO_FLEET_ATTENTION}
+          activity={{ 'session-b': true }}
+          activeTabId="tab-a"
+          onPick={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Row derivation is measurement-based, so the word must not change the
+      // tile box. Every tile stays the same fixed footprint.
+      for (const tile of Array.from(
+        document.querySelectorAll('[data-expose-tile]')
+      )) {
+        expect(tile).toHaveStyle({ width: '272px', height: '252px' });
+      }
+      // The state readout never wraps at the narrow end, and never shrinks
+      // the identity run into it.
+      const word = readout().lastElementChild as HTMLElement;
+      expect(word).toHaveClass('whitespace-nowrap');
+      expect(readout()).toHaveClass('shrink-0');
+    });
+
+    it('says the same word the local path derives, from the one owner', () => {
+      render(
+        <ExposeOverlay
+          projects={soloProject()}
+          summaries={{}}
+          attention={NO_FLEET_ATTENTION}
+          engaged={{ 'session-b': true }}
+          activeTabId="tab-b"
+          onPick={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+      expect(readout().getAttribute('data-session-state-word')).toBe(
+        sessionStateWord({ state: 'done' })
+      );
+    });
   });
 });

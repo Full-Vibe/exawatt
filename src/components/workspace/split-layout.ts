@@ -10,7 +10,7 @@
  * a live pane, a stopped tab, the ⌘T draft page, or the empty-Project
  * composer. Only drafts are unpinnable (there is nothing to watch yet).
  */
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab, WorkspaceTab } from './use-workspace-state';
 import type { PaneLayout } from './terminal-pane';
 
 export interface StageTabRef {
@@ -19,9 +19,12 @@ export interface StageTabRef {
 }
 
 /** a tab the split can show on the watched side — anything with content
- *  now (live pane) or retained history (stopped); a ⌘T draft has neither */
+ *  now (live pane) or retained history (stopped); a ⌘T draft has neither.
+ *  A connected coworker always has something to watch: its conversation is
+ *  the pane, and "watch one, drive one" is exactly what a coworker running
+ *  work beside a local Session is for. */
 export function tabIsPinnable(tab: WorkspaceTab): boolean {
-  return tab.lifecycle !== 'draft';
+  return tab.kind === 'remote-agent' || tab.lifecycle !== 'draft';
 }
 
 /** ⌘D outcome against the current pin: a real pin unpins (even a stopped
@@ -114,8 +117,9 @@ export function resolveStageLayout(options: {
 }
 
 export interface ComposerSlot {
-  /** The draft tab hosting the composer, or null before one exists. */
-  tab: WorkspaceTab | null;
+  /** The draft tab hosting the composer, or null before one exists. Always a
+   *  Session tab: a coworker is opened, never composed. */
+  tab: SessionTab | null;
   dir: string;
   layout: PaneLayout;
   /**
@@ -151,7 +155,8 @@ export function resolveComposerSlot(options: {
   const { entries, stage, activeProjectDir, draftDiscards } = options;
   const draft =
     entries.find(
-      entry =>
+      (entry): entry is StageTabRef & { tab: SessionTab } =>
+        entry.tab.kind === 'session' &&
         entry.tab.lifecycle === 'draft' &&
         stage.layoutFor(entry.tab.id) !== 'hidden'
     ) ?? null;

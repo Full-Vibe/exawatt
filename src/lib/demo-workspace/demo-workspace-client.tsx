@@ -59,7 +59,7 @@ import {
 } from '@/components/workspace/session-status';
 import type {
   Project,
-  WorkspaceTab,
+  SessionTab,
 } from '@/components/workspace/use-workspace-state';
 import {
   deriveWorkspaceCommandAvailability,
@@ -116,7 +116,7 @@ const DEMO_KEY_HINTS: Array<{
 
 /** Close-ledger entry: where the tab lived, so reopen restores it there. */
 interface ClosedDemoTab {
-  tab: WorkspaceTab;
+  tab: SessionTab;
   projectDir: string;
   projectIndex: number;
   tabIndex: number;

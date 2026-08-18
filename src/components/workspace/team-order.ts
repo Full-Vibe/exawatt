@@ -59,6 +59,12 @@ export function teamOrderRank(
   { activity, attention }: TeamOrderSignals
 ): TeamOrderRank {
   if (mode === 'started') return { band: 0, recency: 0 };
+  // A coworker has no PTY incarnation, so neither signal this function is
+  // given can say anything about it. Its D40 work state is real, and it is
+  // the roster's to report — not this function's to infer from the absence of
+  // a local one. It keeps a seat among the tabs that are not visibly working
+  // rather than being sorted to the end, where a stopped Session belongs.
+  if (tab.kind === 'remote-agent') return { band: 2, recency: 0 };
   const live = tabIsLive(tab);
   const working = !!(tab.sessionId && live && activity[tab.sessionId]);
   if (working) return { band: 0, recency: 0 };
@@ -85,7 +91,9 @@ export function orderTeamTabs(
       tab,
       index,
       rank: teamOrderRank(tab, mode, signals),
-      started: tab.startedAt ?? Number.POSITIVE_INFINITY,
+      started:
+        (tab.kind === 'session' ? tab.startedAt : null) ??
+        Number.POSITIVE_INFINITY,
     }))
     .sort(
       (a, b) =>

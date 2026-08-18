@@ -9,7 +9,7 @@ import {
 } from '@/components/workspace/session-status';
 import type {
   Project,
-  WorkspaceTab,
+  SessionTab,
 } from '@/components/workspace/use-workspace-state';
 import type { SessionDelegation } from '@/types/electron';
 
@@ -27,10 +27,11 @@ function tab(
   title: string,
   cwd: string,
   state: 'working' | 'done' | 'fresh' = 'done'
-): WorkspaceTab {
+): SessionTab {
   studyTab += 1;
   const id = `ribbon-study-${studyTab}`;
   return {
+    kind: 'session',
     id,
     durableSessionId: `durable-${id}`,
     harness: studyTab % 3 === 0 ? 'claude' : 'codex',
@@ -47,12 +48,14 @@ function tab(
   };
 }
 
+/** This study's corpus is local Sessions only. */
+type StudyProject = Omit<Project, 'tabs'> & { tabs: SessionTab[] };
+
 function makeProject(
   dir: string,
   titles: string[],
-  colorIndex: number,
-
-): Project {
+  colorIndex: number
+): StudyProject {
   const tabs = titles.map((title, index) =>
     tab(title, dir, index === titles.length - 1 ? 'working' : 'done')
   );

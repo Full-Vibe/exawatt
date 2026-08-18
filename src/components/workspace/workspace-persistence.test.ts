@@ -4,8 +4,10 @@ import {
   resumableAgentTabsInProject,
   tabCanResumeAsAgent,
   tabFromPtySession,
+  type PersistedSessionTab,
+  type PersistedTab,
   type Project,
-  type WorkspaceTab,
+  type SessionTab,
 } from './use-workspace-state';
 
 const tab = (id: string, harnessSessionId?: string) => ({
@@ -16,6 +18,16 @@ const tab = (id: string, harnessSessionId?: string) => ({
   sessionId: `pty-${id}`,
   ...(harnessSessionId ? { harnessSessionId } : {}),
 });
+
+/** Every legacy layout below is Session tabs only; the upgrade stamps the
+ *  kind, and these assertions read the Session fields it preserved. */
+function sessionTabs(project: {
+  tabs: PersistedTab[];
+}): PersistedSessionTab[] {
+  return project.tabs.filter(
+    (tab): tab is PersistedSessionTab => tab.kind === 'session'
+  );
+}
 
 describe('workspace persistence v3', () => {
   it('preserves four distinct exact identities in one Project', () => {
@@ -35,7 +47,7 @@ describe('workspace persistence v3', () => {
         },
       ],
     });
-    expect(parsed?.projects[0].tabs.map(item => item.harnessSessionId)).toEqual(
+    expect(sessionTabs(parsed!.projects[0]).map(item => item.harnessSessionId)).toEqual(
       ids
     );
   });
@@ -54,7 +66,7 @@ describe('workspace persistence v3', () => {
         },
       ],
     });
-    expect(parsed?.projects[0].tabs[0].harnessSessionId).toBeNull();
+    expect(sessionTabs(parsed!.projects[0])[0].harnessSessionId).toBeNull();
   });
 });
 
@@ -75,7 +87,7 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.v).toBe(6);
+    expect(parsed?.v).toBe(7);
     expect(parsed?.pinnedTabId).toBe('tab-1');
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       harnessSessionId: '00000001-1111-4111-8111-111111111111',
@@ -103,8 +115,8 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.projects[0].tabs[0].roadmapItemId).toBe('ENG-017');
-    expect(parsed?.projects[0].tabs.map(item => item.durableSessionId)).toEqual(
+    expect(sessionTabs(parsed!.projects[0])[0].roadmapItemId).toBe('ENG-017');
+    expect(sessionTabs(parsed!.projects[0]).map(item => item.durableSessionId)).toEqual(
       ['tab-1', 'tab-2']
     );
   });
@@ -123,7 +135,7 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.v).toBe(6);
+    expect(parsed?.v).toBe(7);
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       harnessSessionId: null,
       roadmapItemId: null,
@@ -188,7 +200,7 @@ describe('workspace persistence v5 (ENG-018)', () => {
       ],
     });
 
-    expect(parsed?.projects[0].tabs[0].lifecycle).toBe('interrupted');
+    expect(sessionTabs(parsed!.projects[0])[0].lifecycle).toBe('interrupted');
     expect(parsed?.projects[0].tabs[1]).toMatchObject({
       durableSessionId: 'tab-2-session',
       lifecycle: 'stopped-clean',
@@ -243,9 +255,9 @@ describe('workspace persistence v5 (ENG-018)', () => {
         state: 'ready',
       },
     });
-    expect(parsed?.projects[0].tabs[1].initialTask).toBeUndefined();
-    expect(parsed?.projects[0].tabs[1].contextSummary).toBeUndefined();
-    expect(parsed?.projects[0].tabs[1].goalVisual).toBeUndefined();
+    expect(sessionTabs(parsed!.projects[0])[1].initialTask).toBeUndefined();
+    expect(sessionTabs(parsed!.projects[0])[1].contextSummary).toBeUndefined();
+    expect(sessionTabs(parsed!.projects[0])[1].goalVisual).toBeUndefined();
   });
 
   it('round-trips a content-bearing draft tab (D28)', () => {
@@ -344,7 +356,7 @@ describe('workspace persistence v5 (ENG-018)', () => {
       ],
     });
 
-    expect(parsed?.v).toBe(6);
+    expect(parsed?.v).toBe(7);
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       title: 'Codex',
       titleKind: 'default',
@@ -409,6 +421,7 @@ describe('workspace persistence v6 title ownership', () => {
 
 describe('workspace Agent recovery eligibility', () => {
   const stopped = {
+    kind: 'session' as const,
     id: 'tab-1',
     durableSessionId: 'durable-1',
     harness: 'claude',
@@ -422,7 +435,7 @@ describe('workspace Agent recovery eligibility', () => {
     exitCode: null,
     roadmapItemId: null,
     initialTask: null,
-  } satisfies WorkspaceTab;
+  } satisfies SessionTab;
 
   it('includes stopped exact agents but excludes shells, live, and unidentified tabs', () => {
     expect(tabCanResumeAsAgent(stopped)).toBe(true);
@@ -440,7 +453,7 @@ describe('workspace Agent recovery eligibility', () => {
   });
 
   it('keeps Project recovery inside the selected Project boundary', () => {
-    const project = (dir: string, tabs: WorkspaceTab[]): Project => ({
+    const project = (dir: string, tabs: SessionTab[]): Project => ({
       dir,
       name: dir.slice(1),
       color: '#19E6FF',

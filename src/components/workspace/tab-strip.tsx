@@ -97,7 +97,12 @@ import {
   type FleetAttentionSignals,
 } from './status-glyphs';
 import { useOrdinalHints } from './use-ordinal-hints';
-import { tabIsLive, type Project } from './use-workspace-state';
+import {
+  isRemoteAgentTab,
+  isSessionTab,
+  tabIsLive,
+  type Project,
+} from './use-workspace-state';
 
 interface Editing {
   kind: 'group' | 'tab';
@@ -357,13 +362,18 @@ export function TabStrip({
       }
       const block = blocks.at(-1);
       if (!block || block.dir !== token.project.dir) continue;
-      const visibleLabel = sessionDisplayCopy({
-        harness: token.tab.harness,
-        title: token.tab.title,
-        titleKind: token.tab.titleKind,
-        lifecycle: token.tab.lifecycle,
-        summary: summaries[token.tab.durableSessionId],
-      }).primary;
+      // What the chip will actually print, so the width solver measures the
+      // string on screen. A coworker's is its own name: the source configured
+      // it, so there is no default-title fallback to resolve.
+      const visibleLabel = isSessionTab(token.tab)
+        ? sessionDisplayCopy({
+            harness: token.tab.harness,
+            title: token.tab.title,
+            titleKind: token.tab.titleKind,
+            lifecycle: token.tab.lifecycle,
+            summary: summaries[token.tab.durableSessionId],
+          }).primary
+        : token.tab.title;
       block.tabs.push({
         id: token.tab.id,
         openWidth: estimateRibbonTokenWidth(token, visibleLabel),
@@ -1412,6 +1422,14 @@ export function TabStrip({
             }
 
             const tab = token.tab;
+            // The strip carries two honest kinds of chip. A coworker's chip is
+            // deliberately quieter than a Session's: everything a Session chip
+            // says beyond its name — turn state, stopped status, exit, resume
+            // — is local-process truth this strip owns. A coworker's state is
+            // its source's and is read where the roster is read (Team and its
+            // own pane), so the chip says who it is and nothing it cannot see.
+            const session = isSessionTab(tab) ? tab : null;
+            const remote = isRemoteAgentTab(tab) ? tab : null;
             const condensed = mode === 'mini';
             const on = groupActive && tab.id === project.activeTabId;
             // Chrome's rule: once tabs are shrunk, only the tab you are on
@@ -1427,51 +1445,95 @@ export function TabStrip({
             // for it and still beat the trimmed presentation.
             const tightTab = !condensed && tabWidth > 0 && tabWidth < 200;
             const floatingClose = tightTab && !on;
-            const dead = !tabIsLive(tab);
-            const summary = summaries[tab.durableSessionId];
+            // `dead` is "this tab's local process is gone". A coworker never
+            // had one, so it is never dead and never wears a stopped badge.
+            const dead = session ? !tabIsLive(session) : false;
+            const summary = session
+              ? summaries[session.durableSessionId]
+              : undefined;
             const attentionSignal =
-              !dead && tab.sessionId ? attention[tab.sessionId] : undefined;
+              session && !dead && session.sessionId
+                ? attention[session.sessionId]
+                : undefined;
             // Same call the ⌘J queue makes, so the marker and the jump
             // cannot drift apart again (D51/BUG-009).
-            const needsYou = paintsAttention(
-              { sessionId: tab.sessionId, live: !dead },
-              attention
-            );
-            const isAgent = tab.harness !== 'shell';
-            const isDraft = tab.lifecycle === 'draft';
-            const fault = tab.lifecycle === 'failed';
-            const tabDelegation = tab.sessionId
-              ? delegation[tab.sessionId]
-              : undefined;
-            const facts = sessionTurnFacts(tab, {
-              activity,
-              engaged,
-              summaries,
-              delegation,
-            });
-            const glyphState = sessionGlyphState(
-              // A stopped Session cannot be working: its process is gone, and
-              // a flag left behind belongs to a turn that no longer exists.
-              dead ? { ...facts, working: false } : facts
-            );
-            const display = sessionDisplayCopy({
-              harness: tab.harness,
-              title: tab.title,
-              titleKind: tab.titleKind,
-              lifecycle: tab.lifecycle,
-              summary,
-            });
+            const needsYou = session
+              ? paintsAttention(
+                  { sessionId: session.sessionId, live: !dead },
+                  attention
+                )
+              : false;
+            const isDraft = session ? session.lifecycle === 'draft' : false;
+            const fault = session ? session.lifecycle === 'failed' : false;
+            const tabDelegation =
+              session && session.sessionId
+                ? delegation[session.sessionId]
+                : undefined;
+            const glyphState = session
+              ? sessionGlyphState(
+                  // A stopped Session cannot be working: its process is gone,
+                  // and a flag left behind belongs to a turn that no longer
+                  // exists.
+                  (facts =>
+                    dead ? { ...facts, working: false } : facts)(
+                    sessionTurnFacts(session, {
+                      activity,
+                      engaged,
+                      summaries,
+                      delegation,
+                    })
+                  )
+                )
+              : null;
+            const display = session
+              ? sessionDisplayCopy({
+                  harness: session.harness,
+                  title: session.title,
+                  titleKind: session.titleKind,
+                  lifecycle: session.lifecycle,
+                  summary,
+                })
+              : // The source configured the coworker's name and Exawatt shows
+                // it. There is no default-title fallback to apply, because
+                // there is no untitled coworker.
+                { primary: tab.title, context: null, primaryKind: 'title' as const };
             const ordinal = ordinalByTabId.get(tab.id);
-            const stoppedStatus =
-              tab.lifecycle === 'interrupted'
+            const stoppedStatus = !session
+              ? null
+              : session.lifecycle === 'interrupted'
                 ? 'Interrupted'
-                : tab.lifecycle === 'failed'
+                : session.lifecycle === 'failed'
                   ? 'Failed'
-                  : tab.lifecycle === 'exited'
+                  : session.lifecycle === 'exited'
                     ? 'Exited'
                     : 'Stopped';
-            const tabMenuItems: StripMenuItem[] = isDraft
+            const tabMenuItems: StripMenuItem[] = remote
               ? [
+                  ...(tabIsPinnable(tab) && onTogglePinTab
+                    ? [
+                        {
+                          id: 'pin-split',
+                          label:
+                            tab.id === pinnedTabId
+                              ? 'Unpin from split'
+                              : 'Pin in split',
+                          onSelect: () => onTogglePinTab(tab.id),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'close-tab',
+                    // Not "Close": what closes is Exawatt's view. The
+                    // coworker keeps working on its own source, so the verb
+                    // says which of the two it ends.
+                    label: 'Close view',
+                    focusAfterSelect: 'none',
+                    onSelect: () => onCloseTab(tab.id),
+                  },
+                ]
+              : session
+                ? isDraft
+                ? [
                   {
                     id: 'discard-draft',
                     label: 'Discard',
@@ -1482,12 +1544,12 @@ export function TabStrip({
               : [
                   ...(dead &&
                   onResumeTab &&
-                  (tab.harnessSessionId || tab.harness === 'shell')
+                  (session.harnessSessionId || session.harness === 'shell')
                     ? [
                         {
                           id: 'resume',
                           label:
-                            tab.harness === 'shell'
+                            session.harness === 'shell'
                               ? 'Start New Shell'
                               : 'Resume This Agent',
                           onSelect: () => onResumeTab(tab.id),
@@ -1499,12 +1561,12 @@ export function TabStrip({
                     label: 'Rename…',
                     focusAfterSelect: 'none',
                     onSelect: () =>
-                      setEditing({ kind: 'tab', id: tab.id, value: tab.title }),
+                      setEditing({ kind: 'tab', id: tab.id, value: session.title }),
                   },
                   ...(onCloneTab &&
                   cloneTargets.length > 0 &&
-                  tabCanClone(tab, {
-                    engaged: !!(tab.sessionId && engaged[tab.sessionId]),
+                  tabCanClone(session, {
+                    engaged: !!(session.sessionId && engaged[session.sessionId]),
                     contextSummary: summary,
                   })
                     ? [
@@ -1543,7 +1605,7 @@ export function TabStrip({
                         {
                           id: 'reveal-tab',
                           label: 'Reveal in Finder',
-                          onSelect: () => onRevealPath(tab.cwd),
+                          onSelect: () => onRevealPath(session.cwd),
                         },
                       ]
                     : []),
@@ -1551,7 +1613,7 @@ export function TabStrip({
                   // announced where it will really live, with the Cloud preview
                   // surface's contextual entry point beside it (the ⌘K
                   // preview-row pattern: real navigation, muted Coming soon).
-                  ...(tab.harness !== 'shell'
+                  ...(session.harness !== 'shell'
                     ? [
                         {
                           id: 'push-to-cloud',
@@ -1574,7 +1636,8 @@ export function TabStrip({
                     focusAfterSelect: 'none',
                     onSelect: () => onCloseTab(tab.id),
                   },
-                ];
+                ]
+                : [];
             const openTabMenu = (
               trigger: HTMLElement,
               point: { x: number; y: number }
@@ -1596,7 +1659,12 @@ export function TabStrip({
                 data-ribbon-key={token.key}
                 data-project-parent={project.dir}
                 data-tab-id={tab.id}
-                data-tab-harness={tab.harness}
+                // Two honest kinds of chip, told apart by an attribute rather
+                // than by copy: a coworker's chip carries no harness, no
+                // lifecycle, and no durable Session, because it is a view of
+                // work this machine does not run.
+                data-tab-kind={tab.kind}
+                data-tab-harness={session?.harness}
                 // The tab's STATE, next to its identity. `New agent` is the
                 // designed fallback COPY for any Session with no operator
                 // title and no context label yet (`sessionDisplayCopy`), so a
@@ -1606,9 +1674,10 @@ export function TabStrip({
                 // the lifecycle, and until this attribute existed the only
                 // thing exposed was the copy, so an evaluator counted a
                 // running Session as an unconsumed draft (BUG-038).
-                data-tab-lifecycle={tab.lifecycle}
+                data-tab-lifecycle={session?.lifecycle}
                 data-tab-condensed={condensed || undefined}
-                data-durable-session-id={tab.durableSessionId}
+                data-durable-session-id={session?.durableSessionId}
+                data-remote-agent-id={remote?.agentId}
                 data-active={on || undefined}
                 data-close-stabilized={
                   heldCloseKeys.has(token.key) || undefined
@@ -1688,28 +1757,50 @@ export function TabStrip({
                       keyboardMenuPoint(event.currentTarget)
                     );
                   }}
-                  aria-label={`${display.primary}${
-                    display.context ? ` — ${display.context}` : ''
-                  } — ${
-                    dead
-                      ? stoppedStatus.toLowerCase()
-                      : needsYou
-                        ? 'needs your attention'
-                        : SESSION_GLYPH_LABEL[glyphState]
-                  }`}
-                  title={`${condensed ? `${display.primary}\n` : ''}${tab.cwd}${
-                    summary ? `\n${summary}` : ''
-                  }${needsYou ? '\nneeds your attention (⌘J jumps here)' : ''}${
-                    !dead && !needsYou
-                      ? `\n${SESSION_GLYPH_COPY[glyphState]}`
-                      : ''
-                  }${dead ? `\n${tab.resumeState.replace('-', ' ')}` : ''}${
-                    ordinal ? `\n⌘${ordinal} selects` : ''
-                  }\n${
-                    isDraft
-                      ? '⏎ starts · ⌘W discards'
-                      : '⌘W or middle-click closes — kept in Recently closed'
-                  }\ndouble-click to rename`}
+                  aria-label={
+                    remote
+                      ? `${display.primary} — connected coworker`
+                      : `${display.primary}${
+                          display.context ? ` — ${display.context}` : ''
+                        } — ${
+                          dead
+                            ? (stoppedStatus ?? 'stopped').toLowerCase()
+                            : needsYou
+                              ? 'needs your attention'
+                              : glyphState
+                                ? SESSION_GLYPH_LABEL[glyphState]
+                                : ''
+                        }`
+                  }
+                  title={
+                    remote
+                      ? `${condensed ? `${display.primary}\n` : ''}${
+                          remote.projectLabel
+                            ? `${remote.projectLabel}\n`
+                            : ''
+                        }Connected coworker${
+                          ordinal ? `\n⌘${ordinal} selects` : ''
+                        }\n⌘W closes this view; the Agent keeps working`
+                      : `${condensed ? `${display.primary}\n` : ''}${
+                          session?.cwd ?? ''
+                        }${summary ? `\n${summary}` : ''}${
+                          needsYou
+                            ? '\nneeds your attention (⌘J jumps here)'
+                            : ''
+                        }${
+                          !dead && !needsYou && glyphState
+                            ? `\n${SESSION_GLYPH_COPY[glyphState]}`
+                            : ''
+                        }${
+                          dead && session
+                            ? `\n${session.resumeState.replace('-', ' ')}`
+                            : ''
+                        }${ordinal ? `\n⌘${ordinal} selects` : ''}\n${
+                          isDraft
+                            ? '⏎ starts · ⌘W discards'
+                            : '⌘W or middle-click closes — kept in Recently closed'
+                        }\ndouble-click to rename`
+                  }
                   // `text-left` is load-bearing, not decoration: the chrome is
                   // a <button>, and the UA stylesheet centers button text. In
                   // a tab wider than its title that centered the label, so a
@@ -1727,7 +1818,7 @@ export function TabStrip({
                       <OrdinalKeycap value={ordinal} color={color} />
                     </span>
                   )}
-                  {!dead || isDraft || fault ? (
+                  {glyphState && (!dead || isDraft || fault) ? (
                     <SessionStatusGlyph
                       state={isDraft ? 'fresh' : glyphState}
                       attention={attentionSignal}
@@ -1753,12 +1844,13 @@ export function TabStrip({
                   the width that decides when Projects fold — Claude vs
                   Codex stays legible on the Project you are in, in the
                   tooltip, and in ⌘K (operator, 2026-08-03). */}
-                  {tab.harness !== 'shell' &&
+                  {session &&
+                    session.harness !== 'shell' &&
                     !isDraft &&
                     !tightTab &&
                     !condensed && (
                       <span className="shrink-0" style={{ color }}>
-                        <HarnessGlyph harness={tab.harness} size={11} />
+                        <HarnessGlyph harness={session.harness} size={11} />
                       </span>
                     )}
                   {editing?.kind === 'tab' && editing.id === tab.id ? (
@@ -1794,15 +1886,15 @@ export function TabStrip({
                       </span>
                     </span>
                   )}
-                  {dead && !isDraft && condensed && (
+                  {session && dead && !isDraft && condensed && (
                     <span
                       aria-hidden
                       className="text-[9px] leading-none"
                       style={{
                         color:
-                          tab.lifecycle === 'interrupted'
+                          session.lifecycle === 'interrupted'
                             ? HUD.amber
-                            : tab.lifecycle === 'failed'
+                            : session.lifecycle === 'failed'
                               ? HUD.red
                               : HUD.textDim,
                       }}
@@ -1810,15 +1902,15 @@ export function TabStrip({
                       ○
                     </span>
                   )}
-                  {dead && !isDraft && !condensed && (
+                  {session && dead && !isDraft && !condensed && stoppedStatus && (
                     <span
                       aria-label={stoppedStatus}
                       className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
                       style={{
                         color:
-                          tab.lifecycle === 'interrupted'
+                          session.lifecycle === 'interrupted'
                             ? HUD.amber
-                            : tab.lifecycle === 'failed'
+                            : session.lifecycle === 'failed'
                               ? HUD.red
                               : HUD.textDim,
                       }}
@@ -1839,7 +1931,8 @@ export function TabStrip({
                     one you are reading; on every other tab the whole face
                     stays what it should be — a target that selects it. */}
                 {summary &&
-                  isAgent &&
+                  session &&
+                  session.harness !== 'shell' &&
                   !isDraft &&
                   !condensed &&
                   on &&
@@ -1863,7 +1956,7 @@ export function TabStrip({
                         alwaysVisible
                         onRate={(sentiment, betterLabel) =>
                           onRateContext({
-                            durableSessionId: tab.durableSessionId,
+                            durableSessionId: session.durableSessionId,
                             label: summary,
                             sentiment,
                             betterLabel,

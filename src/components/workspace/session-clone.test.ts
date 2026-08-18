@@ -4,7 +4,7 @@ import {
   sessionClonePrompt,
   tabCanClone,
 } from './session-clone';
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab } from './use-workspace-state';
 import {
   fallbackAgentSourceRegistry,
   launchSourceSnapshots,
@@ -12,9 +12,10 @@ import {
 import { composeLaunchTargets } from './launch-target-catalog';
 import { createAgentLaunchConfiguration } from '@exawatt/core';
 
-function tab(overrides: Partial<WorkspaceTab> = {}): WorkspaceTab {
+function tab(overrides: Partial<SessionTab> = {}): SessionTab {
   return {
     id: 'tab-a',
+    kind: 'session' as const,
     durableSessionId: 'durable-a',
     harness: 'claude',
     title: 'Claude',

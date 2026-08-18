@@ -26,6 +26,7 @@ const MIN = 60_000;
 const tab = (id: string, startedAt: number): WorkspaceTab =>
   ({
     id,
+    kind: 'session' as const,
     durableSessionId: `durable-${id}`,
     sessionId: `session-${id}`,
     harness: 'claude',

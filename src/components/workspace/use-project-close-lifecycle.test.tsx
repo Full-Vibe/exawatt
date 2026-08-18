@@ -10,6 +10,7 @@ import {
 function tab(): WorkspaceTab {
   return {
     id: 'tab-a',
+    kind: 'session' as const,
     durableSessionId: 'durable-a',
     harness: 'claude',
     title: 'Claude Code',

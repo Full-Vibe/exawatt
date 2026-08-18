@@ -2,12 +2,13 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SessionRestorePanel } from './session-restore-panel';
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab } from './use-workspace-state';
 
 const stoppedTab = (
   harnessSessionId: string | null = 'provider-one'
-): WorkspaceTab => ({
+): SessionTab => ({
   id: 'tab-one',
+  kind: 'session' as const,
   durableSessionId: 'session-one',
   harness: 'codex',
   title: 'Voting shipped',

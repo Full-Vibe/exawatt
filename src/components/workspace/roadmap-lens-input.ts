@@ -25,14 +25,32 @@ import {
   type FleetAttentionSignals,
   type SessionTurnSources,
 } from './session-status';
-import { tabIsLive, type WorkspaceTab } from './use-workspace-state';
+import {
+  isSessionTab,
+  tabIsLive,
+  type WorkspaceTab,
+} from './use-workspace-state';
+
+/**
+ * The roadmap lens joins PLANS to local Sessions: an item's progress is read
+ * from a Session's own context, its working directory, and its turn state.
+ * A connected coworker has none of those in Exawatt's hands — its work is
+ * reported by its source — so it is projected out here rather than joined on
+ * fields it does not have. Whether a coworker can carry a roadmap item is a
+ * product question this file must not answer by accident.
+ */
+function sessionTabsOf(
+  tabs: readonly WorkspaceTab[] | undefined
+): readonly Extract<WorkspaceTab, { kind: 'session' }>[] {
+  return (tabs ?? []).filter(isSessionTab);
+}
 
 export function projectRoadmapSessions(
   tabs: readonly WorkspaceTab[] | undefined,
   attention: FleetAttentionSignals,
   sources: SessionTurnSources
 ): RoadmapSessionDescriptor[] {
-  return (tabs ?? [])
+  return sessionTabsOf(tabs)
     .filter(t => t.sessionId && tabIsLive(t))
     .map(t => ({
       sessionId: t.sessionId as string,
@@ -69,7 +87,7 @@ export function projectRoadmapAttentionSessions(
   tabs: readonly WorkspaceTab[] | undefined,
   summaries: Record<string, string>
 ): RoadmapAttentionSession[] {
-  return (tabs ?? [])
+  return sessionTabsOf(tabs)
     .filter(t => t.sessionId && tabIsLive(t))
     .map(t => ({
       sessionId: t.sessionId as string,
@@ -89,7 +107,7 @@ export function projectDeclaredLinks(
   tabs: readonly WorkspaceTab[] | undefined,
   projectDir: string
 ): SessionLink[] {
-  return (tabs ?? [])
+  return sessionTabsOf(tabs)
     .filter(t => t.roadmapItemId && t.sessionId && tabIsLive(t))
     .map(t => ({
       sessionId: t.sessionId as string,

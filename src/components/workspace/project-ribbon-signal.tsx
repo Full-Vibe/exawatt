@@ -86,6 +86,12 @@ function tabStatusLight({
   engaged: Record<string, boolean>;
   delegation: Record<string, SessionDelegation>;
 }): StatusLightState {
+  // The ribbon's per-tab light reads local Session truth, and every input
+  // here is keyed by a PTY incarnation a coworker does not have. It takes the
+  // neutral mark rather than one derived from signals that were never about
+  // it; its real D40 state comes from the roster, and Team and its own pane
+  // are where that is read.
+  if (tab.kind === 'remote-agent') return 'off';
   if (tab.lifecycle === 'failed') return 'fault';
   // A stopped Session carries no live turn state; its own row says so, and at
   // Project altitude it must not masquerade as a pending result.

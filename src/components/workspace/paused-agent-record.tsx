@@ -22,7 +22,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { HARNESS_META } from './harnesses';
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab } from './use-workspace-state';
 
 /** Bytes as the operator reads them, not as a machine writes them. */
 export function formatHistorySize(bytes: number): string {
@@ -48,7 +48,7 @@ export function formatWhen(at: number, now = Date.now()): string {
  * How it ended, in the vocabulary the rest of the app already uses. A
  * paused Agent that cannot say why it stopped is the thing this replaces.
  */
-export function endedCopy(tab: WorkspaceTab): string {
+export function endedCopy(tab: SessionTab): string {
   if (tab.lifecycle === 'interrupted') {
     return 'Interrupted. The previous run did not shut down cleanly.';
   }
@@ -85,7 +85,7 @@ export function PausedAgentRecord({
   summary,
   bridge,
 }: {
-  tab: WorkspaceTab;
+  tab: SessionTab;
   /** the auto-summary for this Session, when one exists */
   summary?: string | null;
   /** defaults to the real preload bridge; supplied by benches and tests */
