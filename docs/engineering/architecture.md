@@ -80,8 +80,20 @@ than replacing its bundle or state; a branded distributor receives only the
 scheme its contract declares.
 A separately hashed `desktop-public` renderer-composition manifest enumerates
 the packaged payload so the public-tree-only desktop rule can be inspected at
-the artifact boundary; the hosted web delivery may compose a private route
-overlay. Agent Source WebSockets are separate from service origins and remain
+the artifact boundary; the hosted web delivery composes a private route overlay.
+That overlay is now the only place hosted implementations live (ENG-030 WP3).
+`company/overlay-manifest.json` declares every file, `company/overlay/web/`
+mirrors the repository path each takes in a composed tree, and
+`scripts/lib/company-composition.mjs` composes `official-web` or
+`official-desktop` as a strictly ADDITIVE function of the Gate A public tree at
+a commit: an entry may only create a path the public tree lacks, and hosted-web
+targets are structurally refused by the desktop profile. `pnpm build` composes
+in place, so the deployed tree is the composed tree; a community contract
+composes nothing and withdraws anything a previous official build applied. The
+public tree keeps the typed request/response contracts and answers 404, and the
+runtime census in `src/lib/distribution/community-runtime.test.ts` spans both
+trees: an entrypoint must be declared on exactly one side, and nothing under
+`src/` may import across the boundary. Agent Source WebSockets are separate from service origins and remain
 available to community builds for operator-configured Gateways. Local/LAN
 OpenClaw is an Electron-main capability: main reads the source-owned config,
 keeps the Gateway secret, device key/token, endpoint selection, and

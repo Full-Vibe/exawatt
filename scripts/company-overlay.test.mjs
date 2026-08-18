@@ -389,6 +389,24 @@ test('in-place composition fails loudly when an overlay source is gone', async (
   });
 });
 
+test('a source archive with no Git history still composes, and records that', async () => {
+  // Deploy runners commonly unpack a tarball rather than a clone. Refusing to
+  // build there would turn a safety check into the outage it prevents.
+  await withRepository(fixtureFiles(), async root => {
+    await rm(path.join(root, '.git'), { recursive: true, force: true });
+    const applied = await applyCompanyOverlayInPlace({
+      root,
+      profile: 'official-web',
+    });
+    assert.equal(applied.trackedTargetCheck, 'skipped-no-git');
+    assert.equal(applied.applied.length, 2);
+    assert.equal(
+      await exists(path.join(root, 'src/app/api/private/route.ts')),
+      true
+    );
+  });
+});
+
 test('a checkout with no overlay manifest composes nothing and says so', async () => {
   const files = fixtureFiles();
   for (const key of Object.keys(files)) {

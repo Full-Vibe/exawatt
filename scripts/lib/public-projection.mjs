@@ -30,8 +30,8 @@ export const GIT_FILTER_REPO = 'git-filter-repo';
  *      ever fast-forwards. `assertFastForward` refuses anything else; the
  *      projector never force-pushes.
  *
- * GENERATED outputs are deliberately NOT projected yet. Gate A classifies 45
- * paths (`package.json`, `README.md`, `src/lib/auth/admin.ts`, …) GENERATED:
+ * GENERATED outputs are deliberately NOT projected yet. Gate A classifies 40
+ * paths (`package.json`, `README.md`, `electron-builder.yml`, …) GENERATED:
  * the public repository must receive a recipe's rendered bytes, never the
  * private source blob. Projecting their private blobs would leak, so this
  * module excludes them and reports them in `generatedOutputs` instead of

@@ -800,10 +800,24 @@ async function readWorkingManifest(root) {
   return validateCompanyOverlayManifest(manifest);
 }
 
+/**
+ * Which declared targets the repository already tracks.
+ *
+ * Returns `null` when this is not a Git working tree. Deploy runners commonly
+ * unpack a source archive rather than a clone, and refusing to build there
+ * would turn a safety check into the outage it exists to prevent. The invariant
+ * itself is enforced where a repository does exist: `assertAddOnlyTargets`
+ * during `company:proof`, and the runtime census, which fails if a hosted
+ * entrypoint reappears under `src/app`.
+ */
 async function trackedPaths(root, candidates) {
   if (candidates.length === 0) return new Set();
-  const stdout = await git(root, ['ls-files', '-z', '--', ...candidates]);
-  return new Set(stdout.split('\0').filter(Boolean));
+  try {
+    const stdout = await git(root, ['ls-files', '-z', '--', ...candidates]);
+    return new Set(stdout.split('\0').filter(Boolean));
+  } catch {
+    return null;
+  }
 }
 
 async function pruneEmptyParents(root, relativePath) {
@@ -853,7 +867,7 @@ export async function applyCompanyOverlayInPlace({ root, profile }) {
 
   const declaredTargets = manifest.entries.map(entry => entry.target);
   const tracked = await trackedPaths(repoRoot, declaredTargets);
-  if (tracked.size > 0) {
+  if (tracked && tracked.size > 0) {
     fail(
       `the public tree already tracks overlay target(s): ${[...tracked].sort().join(', ')}`
     );
@@ -902,6 +916,7 @@ export async function applyCompanyOverlayInPlace({ root, profile }) {
     schemaVersion: 1,
     profile,
     overlay: 'present',
+    trackedTargetCheck: tracked === null ? 'skipped-no-git' : 'passed',
     manifestPath: COMPANY_OVERLAY_MANIFEST,
     applied: applied.sort((a, b) => a.target.localeCompare(b.target)),
     removed,
