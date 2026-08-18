@@ -160,9 +160,9 @@ describe('pinned board sequence', () => {
     // Every panel but the fold. The fold's own resting place is scroll zero,
     // and a snap point a few pixels below it would fight the one position
     // every page already has.
-    expect(points.map(node => node.getAttribute('data-pinned-snap-point'))).toEqual(
-      bands.slice(1).map(band => band.id)
-    );
+    expect(
+      points.map(node => node.getAttribute('data-pinned-snap-point'))
+    ).toEqual(bands.slice(1).map(band => band.id));
     for (const point of points) {
       // Desktop only, and off under reduced motion: the unpinned layout is a
       // reading column in normal flow, with no camera steps to settle on.

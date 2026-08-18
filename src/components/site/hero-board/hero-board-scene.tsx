@@ -90,6 +90,45 @@ const BASE_POLAR = 40 * DEG;
 const STATUS_TRANSITION_SECONDS = 0.85;
 
 /**
+ * THE WORKING-TO-DONE MOMENT (ENG-031 W10, operator: "I need a delightful
+ * animation when an agent transitions from working to check done (think the
+ * cool Twitter like button animation)").
+ *
+ * It is the one state change on this board that is unambiguously GOOD NEWS,
+ * and until now it looked exactly like every other one: an 0.85s crossfade
+ * from the open arc to the check. Twitter's heart is the reference and the
+ * three things it does are the three things here. The mark pops past its own
+ * size and settles back with a real overshoot, a ring expands out of it and
+ * thins to nothing, and a handful of particles fly out and fade.
+ *
+ * ALL OF IT IS IN THE SHADER, keyed per instance off `aChangeAt` and one
+ * `aPop` flag, so the whole beat costs two float writes per transition and
+ * ZERO per-frame JavaScript over the field. And it stays in the UNIT mesh
+ * rather than becoming a second one, which is the difference between three
+ * draw calls and four: every unit quad is padded to `MARK_QUAD_PAD` and the
+ * fragment shader scales its own coordinate space back up, so the mark is
+ * drawn at exactly the size and antialiasing it always was and the burst has
+ * room around it.
+ *
+ * REDUCED MOTION gets the plain crossfade. `aPop` is written as zero, so
+ * there is no pop and no burst, and the colour and glyph change exactly as
+ * they did before.
+ */
+const POP_SECONDS = 0.44;
+const BURST_SECONDS = 0.78;
+/** How far past its own size the mark swells at the peak of the pop. */
+const POP_SCALE = 0.45;
+/** The share of the pop spent on the attack. The rest is the eased settle,
+ *  which is where the overshoot back under 1.0 comes from. */
+const POP_ATTACK = 0.18;
+/** Unit quad size as a multiple of the mark's own footprint, so the burst has
+ *  somewhere to go without a second mesh. The mark's drawn size is unchanged:
+ *  the fragment shader multiplies its coordinate space by the same number. */
+const MARK_QUAD_PAD = 2.6;
+/** Particles per burst. Six reads as a burst and stays one cheap loop. */
+const BURST_PARTICLES = 6;
+
+/**
  * The delegated-child quad, as a multiple of the child's own mark size
  * (ENG-031 W5).
  *
@@ -404,6 +443,7 @@ function HeroUnits({
   animating,
   statusProtocolMotion,
   statusChanges,
+  transitionBurst,
   highlight,
   lens,
   getBridge,
@@ -413,6 +453,9 @@ function HeroUnits({
   animating: boolean;
   statusProtocolMotion: boolean;
   statusChanges: boolean;
+  /** False under reduced motion: the crossfade stays, the pop and the burst
+   *  do not (guide rule 12). */
+  transitionBurst: boolean;
   highlight: HeroHighlight;
   lens: HeroLens;
   getBridge: HeroBridgeAccess;
@@ -451,6 +494,13 @@ function HeroUnits({
       'aChangeAt',
       new THREE.InstancedBufferAttribute(new Float32Array(count), 1)
     );
+    // 1 when the change starting at `aChangeAt` is the working-to-done one,
+    // and 0 for every other change. It is the whole trigger for the pop and
+    // the burst: two floats per transition, no per-frame JavaScript.
+    next.setAttribute(
+      'aPop',
+      new THREE.InstancedBufferAttribute(new Float32Array(count), 1)
+    );
     // Highlight emphasis rides its own per-instance transition clock rather
     // than a single uniform, because two things retrigger it: a panel change
     // moves every unit at once, and a status turn moves ONE unit whenever the
@@ -487,6 +537,11 @@ function HeroUnits({
       uFocusTransition: { value: FOCUS_TRANSITION_SECONDS },
       uDim: { value: HERO_DIM },
       uStatusColor: { value: colors },
+      uPopSeconds: { value: POP_SECONDS },
+      uBurstSeconds: { value: BURST_SECONDS },
+      uPopScale: { value: POP_SCALE },
+      uPopAttack: { value: POP_ATTACK },
+      uQuadPad: { value: MARK_QUAD_PAD },
     };
     // Mount-time seed only. `lensColors` is deliberately not a dependency:
     // rebuilding the uniform object would rebuild the material, and the effect
@@ -513,11 +568,15 @@ function HeroUnits({
     const changeAt = geometry.getAttribute(
       'aChangeAt'
     ) as THREE.InstancedBufferAttribute;
+    const pop = geometry.getAttribute('aPop') as THREE.InstancedBufferAttribute;
     const statuses = getBridge().statuses;
     capture.units.forEach((unit, index) => {
       statuses[index] = unit.status;
       scratch.position.set(unit.x - center.x, 0.03, unit.y - center.y);
-      scratch.scale.setScalar(unit.size * MARK_SCALE);
+      // The quad is padded so the burst has room; the fragment shader scales
+      // its own coordinate space by the same number, so the MARK is drawn at
+      // exactly the size and antialiasing it had before.
+      scratch.scale.setScalar(unit.size * MARK_SCALE * MARK_QUAD_PAD);
       scratch.updateMatrix();
       mesh.current!.setMatrixAt(index, scratch.matrix);
       markFrom.setX(index, MARK_BY_STATUS[unit.status]!);
@@ -526,6 +585,7 @@ function HeroUnits({
       statusTo.setX(index, unit.status);
       // Long settled: nothing flashes on arrival.
       changeAt.setX(index, -1000);
+      pop.setX(index, 0);
     });
     mesh.current.instanceMatrix.needsUpdate = true;
     mesh.current.computeBoundingSphere();
@@ -534,6 +594,7 @@ function HeroUnits({
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
+    pop.needsUpdate = true;
   }, [capture, center, geometry, getBridge]);
 
   const elapsed = useRef(0);
@@ -626,6 +687,8 @@ function HeroUnits({
    */
   const lensRef = useRef(lens);
   lensRef.current = lens;
+  const burstRef = useRef(transitionBurst);
+  burstRef.current = transitionBurst;
   useEffect(() => {
     const material_ = material.current;
     if (!material_) return;
@@ -647,6 +710,7 @@ function HeroUnits({
     const changeAt = geometry.getAttribute(
       'aChangeAt'
     ) as THREE.InstancedBufferAttribute;
+    const pop = geometry.getAttribute('aPop') as THREE.InstancedBufferAttribute;
     const statuses = getBridge().statuses;
 
     for (let index = 0; index < count; index += 1) {
@@ -658,12 +722,17 @@ function HeroUnits({
       markTo.setX(index, mark);
       statusTo.setX(index, ordinal);
       changeAt.setX(index, elapsed.current);
+      // A LENS CHANGE IS NOT A RESULT. Every unit's `aChangeAt` moves here, so
+      // leaving `aPop` set would fire 173 celebrations at once the moment the
+      // reader scrolls onto the provenance panel.
+      pop.setX(index, 0);
     }
     markFrom.needsUpdate = true;
     markTo.needsUpdate = true;
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
+    pop.needsUpdate = true;
     invalidate();
   }, [capture, count, geometry, getBridge, invalidate, lens]);
 
@@ -702,16 +771,24 @@ function HeroUnits({
     const changeAt = geometry.getAttribute(
       'aChangeAt'
     ) as THREE.InstancedBufferAttribute;
+    const pop = geometry.getAttribute('aPop') as THREE.InstancedBufferAttribute;
     markFrom.setX(index, markTo.getX(index));
     statusFrom.setX(index, statusTo.getX(index));
     markTo.setX(index, MARK_BY_STATUS[next]!);
     statusTo.setX(index, next);
     changeAt.setX(index, elapsed.current);
+    // WORKING TO DONE, and only that (W10). It is the ONE state change on this
+    // board that is unambiguously good news, so it is the one that celebrates:
+    // the open arc becoming the check, which in mark terms is 1 becoming 2.
+    // Every other turn keeps the plain crossfade it has always had.
+    const isResult = MARK_BY_STATUS[from] === 1 && MARK_BY_STATUS[next] === 2;
+    pop.setX(index, isResult && burstRef.current ? 1 : 0);
     markFrom.needsUpdate = true;
     markTo.needsUpdate = true;
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
+    pop.needsUpdate = true;
     if (followsStatus.current) {
       // The emphasis rides the same turn the colour does, so an agent that
       // stops needing a human fades out of the highlight instead of popping.
@@ -759,6 +836,7 @@ function HeroUnits({
           attribute float aStatusFrom;
           attribute float aStatusTo;
           attribute float aChangeAt;
+          attribute float aPop;
           attribute float aFocusFrom;
           attribute float aFocusTo;
           attribute float aFocusAt;
@@ -766,12 +844,20 @@ function HeroUnits({
           uniform float uTransition;
           uniform float uFocusTransition;
           uniform float uDim;
+          uniform float uPopSeconds;
+          uniform float uBurstSeconds;
+          uniform float uPopScale;
+          uniform float uPopAttack;
           uniform vec3 uStatusColor[6];
           varying vec2 vUv;
           varying vec3 vColor;
           varying float vMark;
           varying float vFlash;
           varying float vFocus;
+          varying float vPop;
+          varying float vBurst;
+          varying float vBurstOn;
+          varying float vSeed;
           void main() {
             vUv = uv - 0.5;
             float t = clamp((uTime - aChangeAt) / uTransition, 0.0, 1.0);
@@ -791,16 +877,41 @@ function HeroUnits({
             float ft = clamp((uTime - aFocusAt) / uFocusTransition, 0.0, 1.0);
             float focus = mix(aFocusFrom, aFocusTo, smoothstep(0.0, 1.0, ft));
             vFocus = mix(uDim, 1.0, focus);
+
+            // THE WORKING-TO-DONE POP (W10). An attack up past the mark's own
+            // size, then an ease-out-BACK settle that overshoots under 1.0
+            // before arriving, which is the shape the eye reads as spring
+            // rather than as a zoom. It leaves and arrives at rest (guide
+            // rule 4b) and it is finite: past uPopSeconds it is exactly zero.
+            float pt = clamp((uTime - aChangeAt) / uPopSeconds, 0.0, 1.0);
+            float attack = smoothstep(0.0, uPopAttack, pt);
+            float u = clamp((pt - uPopAttack) / max(1.0 - uPopAttack, 0.001), 0.0, 1.0);
+            float back = 1.0 + 2.70158 * pow(u - 1.0, 3.0) + 1.70158 * pow(u - 1.0, 2.0);
+            vPop = aPop * uPopScale * (attack - back);
+
+            // And the burst's own clock, longer than the pop so the ring is
+            // still travelling out while the check settles.
+            vBurst = clamp((uTime - aChangeAt) / uBurstSeconds, 0.0, 1.0);
+            vBurstOn = aPop * (1.0 - step(0.999, vBurst));
+            // A per-pop seed, so two bursts do not fire identical particles.
+            vSeed = fract(aChangeAt * 43.7585453) * 6.2831853;
+
             gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
           }
         `}
         fragmentShader={`
           uniform float uSpin;
+          uniform float uQuadPad;
+          uniform vec3 uStatusColor[6];
           varying vec2 vUv;
           varying vec3 vColor;
           varying float vMark;
           varying float vFlash;
           varying float vFocus;
+          varying float vPop;
+          varying float vBurst;
+          varying float vBurstOn;
+          varying float vSeed;
 
           float sdSegment(vec2 p, vec2 a, vec2 b, float r) {
             vec2 pa = p - a;
@@ -810,7 +921,14 @@ function HeroUnits({
           }
 
           void main() {
-            vec2 p = vUv;
+            // THE QUAD IS PADDED, THE MARK IS NOT (W10). Every unit's quad is
+            // uQuadPad times its own footprint so the burst has room without a
+            // second mesh and a fourth draw call; multiplying the coordinate
+            // space back up here draws the mark at exactly the size, weight
+            // and fwidth coverage it had before the padding existed.
+            // Dividing by the pop is what makes the mark SWELL: the same glyph
+            // in a smaller coordinate space is a bigger glyph on screen.
+            vec2 p = vUv * uQuadPad / (1.0 + vPop);
             float d = length(p);
             const float R = 0.30;
             const float T = 0.058;
@@ -865,8 +983,42 @@ function HeroUnits({
             // Analytic coverage: this is the shader paying back antialias:false.
             float coverage = 1.0 - smoothstep(-fwidth(sdf), fwidth(sdf), sdf);
             float alpha = coverage * weight * vFocus;
+            vec3 color = vColor * (1.0 + vFlash * 0.45);
+
+            // THE BURST (W10). A ring that expands out of the mark and thins
+            // to nothing, and six particles that fly out and fade, in the
+            // RESULT colour, drawn in the padded quad's own space. All of it
+            // is finite and all of it is analytic: no second mesh, no second
+            // draw call, no per-frame JavaScript, and past uBurstSeconds
+            // vBurstOn is exactly zero so the board is pixel-identical to the
+            // board the idle budget was measured on.
+            if (vBurstOn > 0.0) {
+              float bt = vBurst;
+              float ease = 1.0 - pow(1.0 - bt, 2.4);
+              float fade = pow(1.0 - bt, 1.6);
+
+              float ringR = mix(0.055, 0.30, ease);
+              float ringW = mix(0.028, 0.004, ease);
+              float ringD = abs(length(vUv) - ringR) - ringW;
+              float ring = 1.0 - smoothstep(-fwidth(ringD), fwidth(ringD), ringD);
+
+              float travel = mix(0.075, 0.40, ease);
+              float sparkR = mix(0.030, 0.002, ease);
+              float best = 1.0e9;
+              for (int i = 0; i < ${BURST_PARTICLES}; i++) {
+                float a = vSeed + 6.2831853 * (float(i) / float(${BURST_PARTICLES}));
+                vec2 c = vec2(cos(a), sin(a)) * travel;
+                best = min(best, length(vUv - c) - sparkR);
+              }
+              float sparks = 1.0 - smoothstep(-fwidth(best), fwidth(best), best);
+
+              float burst = max(ring * 0.85, sparks) * fade * vBurstOn * vFocus;
+              if (burst > alpha) color = uStatusColor[5];
+              alpha = max(alpha, burst);
+            }
+
             if (alpha < 0.004) discard;
-            gl_FragColor = vec4(vColor * (1.0 + vFlash * 0.45), alpha);
+            gl_FragColor = vec4(color, alpha);
             #include <colorspace_fragment>
           }
         `}
@@ -1186,11 +1338,26 @@ function HeroCameraRig({
         unit => new THREE.Vector3(unit.x - center.x, 0.03, unit.y - center.y)
       ),
       unitRadius: capture.units.map(unit => (unit.size * MARK_SCALE) / 2),
+      /** One representative mark radius, for the reference projection. */
+      medianUnitRadius:
+        capture.units.length > 0
+          ? ([...capture.units.map(unit => (unit.size * MARK_SCALE) / 2)].sort(
+              (a, b) => a - b
+            )[Math.floor(capture.units.length / 2)] ?? 0)
+          : 0,
     };
   }, [capture]);
   const projected = useRef(new THREE.Vector3());
   const offset = useRef(new THREE.Vector3());
   const right = useRef(new THREE.Vector3());
+  /** Scratch for the one reference projection that sizes DOM hit testing. */
+  const reference = useRef(new THREE.Vector3());
+  const referenceAnchor = useRef<HeroAnchor>({
+    x: 0,
+    y: 0,
+    radius: 0,
+    onScreen: false,
+  });
 
   // Input policy. EVERY binding is NONE: a hero that eats page scroll is
   // scroll-jacking (the research found zero of it across all 16 sites), and a
@@ -1301,6 +1468,21 @@ function HeroCameraRig({
       const anchor = bridge.units[index];
       if (!anchor) continue;
       project(anchors.units[index]!, anchors.unitRadius[index]!, anchor);
+    }
+    // HOW BIG A MARK IS RIGHT NOW, in one projection (ENG-031 W10). The
+    // overlay's delegated hit testing needs a mark's on-screen radius to
+    // decide whether the pointer is on one, and every mark in the capture is
+    // the same world size on one plane, so the camera's own target is the
+    // right place to measure it. One projection a frame rather than 173.
+    const rig = controls.current;
+    if (rig) {
+      rig.getTarget(reference.current, true);
+      project(
+        reference.current,
+        anchors.medianUnitRadius,
+        referenceAnchor.current
+      );
+      bridge.markRadius = referenceAnchor.current.radius;
     }
     bridge.onProject?.();
   }, [anchors, getBridge, camera, project, size.width, size.height]);
@@ -1456,6 +1638,12 @@ export interface HeroBoardSceneProps {
   /** The D40 rule that only Active moves. Exposed so the study can price it. */
   statusProtocolMotion?: boolean;
   statusChanges?: boolean;
+  /**
+   * The working-to-done celebration (ENG-031 W10). False under reduced motion,
+   * where the crossfade stays and the pop and the burst do not (guide rule
+   * 12), and exposed so the study can price it against the idle budget.
+   */
+  transitionBurst?: boolean;
   /** Scroll progress 0..1, written by a rAF-coalesced listener, never state. */
   progressRef: RefObject<number>;
   /** The ordered altitudes the camera travels, from the page's band list. */
@@ -1482,6 +1670,7 @@ export function HeroBoardScene({
   animating,
   statusProtocolMotion = true,
   statusChanges = true,
+  transitionBurst = true,
   progressRef,
   ladder = HERO_DEFAULT_LADDER,
   highlight,
@@ -1520,6 +1709,7 @@ export function HeroBoardScene({
         animating={animating}
         statusProtocolMotion={statusProtocolMotion}
         statusChanges={statusChanges}
+        transitionBurst={transitionBurst}
         highlight={highlight}
         lens={lens}
         getBridge={getBridge}

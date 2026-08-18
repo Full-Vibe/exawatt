@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react';
 import { CloseBand } from './close-band';
 import { FoldBand } from './fold-band';
-import { ProofBand } from './proof-band';
 import type { BandId, HomepageBand } from './manifest';
 
 export type BandComponent = ComponentType<{ band: HomepageBand }>;
@@ -20,7 +19,9 @@ export type BandComponent = ComponentType<{ band: HomepageBand }>;
  *   renders `PinnedBoardSequence` over it. Eight rows are in this state now,
  *   which is the whole middle of the page.
  * - a band whose copy moved somewhere else: `observability` into the
- *   attention panel, `open-source` into the footer column.
+ *   attention panel, `open-source` into the footer column, and `proof` out to
+ *   the releases page the nav's `Changelog` item now points at (W10, operator:
+ *   "Remove the What shipped ... section").
  * - a band nobody has written: `voice` and `security`, each of which says in
  *   the manifest what would have to be true for anyone to write it.
  *
@@ -50,6 +51,6 @@ export const BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
   trust: null,
   'open-source': null,
   security: null,
-  proof: ProofBand,
+  proof: null,
   close: CloseBand,
 };

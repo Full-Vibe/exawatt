@@ -36,32 +36,36 @@ describe('homepage band contract', () => {
     }
   });
 
-  it('gives the WIDEST framing the longest hold, across every panel that holds it', () => {
-    // The brief's constraint is about the ALTITUDE, not about one band, and
-    // W9 is what makes the difference visible: the fold and
-    // `altitude-attention` are two panels at the SAME framing, so the camera
-    // sits at the fold's crop for the sum of the two before it ever moves.
-    // That hold is the load-bearing beat on the page, because the board
-    // changing under a still camera is the one thing a competitor cannot
-    // screenshot, and it may not be shorter than any other hold in the run.
-    const held = new Map<string, number>();
-    for (const anchor of heroCameraAnchors()) {
-      const band = bandById(anchor.id);
-      held.set(
-        anchor.altitude,
-        (held.get(anchor.altitude) ?? 0) + band.screens
-      );
-    }
-    let widest = '';
-    for (const altitude of held.keys()) {
-      if (widest === '' || BAND_ALTITUDE_DEPTH[altitude as 'fleet'] <
-          BAND_ALTITUDE_DEPTH[widest as 'fleet']) {
-        widest = altitude;
-      }
-    }
-    const opening = held.get(widest) ?? 0;
-    for (const [altitude, screens] of held) {
-      expect(screens, altitude).toBeLessThanOrEqual(opening);
+  it('moves the camera on the very first scroll', () => {
+    // THE GUARD W10 EARNED (operator: "I do want some sort of camera change /
+    // zoom / animation on the first scroll section - right now the scene is
+    // static").
+    //
+    // W9 asserted the OPPOSITE here: the fold and `altitude-attention` shared
+    // one framing, and the test held that hold to be the longest on the page,
+    // because a board changing under a still camera is the beat a competitor
+    // cannot screenshot. Read from the top of the page that reasoning
+    // inverts. The first scroll is where a reader finds out whether the
+    // picture is alive, and a camera that answers it by not moving reads as a
+    // screenshot however much the marks are doing. So the still-camera hold
+    // is superseded and its guard is replaced by this one, which says the
+    // thing the operator actually asked for: the first step is a real step.
+    //
+    // The MAGNITUDE lives in `hero-board-framings.test.ts`, where the world
+    // units are. This asserts only that the rung changes, because a rung is
+    // what the manifest owns.
+    const anchors = heroCameraAnchors();
+    expect(anchors[0]!.id).toBe('fold');
+    expect(
+      BAND_ALTITUDE_DEPTH[anchors[1]!.altitude],
+      `${anchors[1]!.id} must not hold the fold's framing`
+    ).toBeGreaterThan(BAND_ALTITUDE_DEPTH[anchors[0]!.altitude]);
+    // And the fold is still the widest thing the page ever shows.
+    for (const anchor of anchors) {
+      expect(
+        BAND_ALTITUDE_DEPTH[anchor.altitude],
+        anchor.id
+      ).toBeGreaterThanOrEqual(BAND_ALTITUDE_DEPTH[anchors[0]!.altitude]);
     }
   });
 
@@ -143,10 +147,14 @@ describe('homepage band ordering', () => {
     //
     // AMENDED again (W9, operator: "I think the zoom is a little bouncy, I
     // like it when it goes only one direction smoothly across multiple
-    // steps"). The ladder holds the fold's crop for the attention beat, steps
-    // in once while two lens panels re-read the same marks, steps in again
-    // onto the Project where delegation is legible, and dives to one agent
-    // last. It never opens out, at any step.
+    // steps"). It never opens out, at any step.
+    //
+    // AMENDED again (W10, operator: "I do want some sort of camera change /
+    // zoom / animation on the first scroll section"). The ladder no longer
+    // HOLDS the fold's crop for the attention beat: it glides ten percent in
+    // to `cluster-in`, steps in again while two lens panels re-read the same
+    // marks, steps in onto the Project where delegation is legible, and dives
+    // to one agent last.
     const anchors = heroCameraAnchors();
 
     expect(anchors.map(anchor => anchor.id)).toEqual([
@@ -159,7 +167,7 @@ describe('homepage band ordering', () => {
     ]);
     expect(bandById('fold').altitudeAnchor).toBe('cluster');
     expect(pinnedAltitudeLadder()).toEqual([
-      'cluster',
+      'cluster-in',
       'cluster-close',
       'cluster-close',
       'team',
@@ -236,8 +244,10 @@ describe('homepage band ordering', () => {
     // W6b: the operator's verdict was the same again, about text this time.
     // Eight bands over about eight and a half screens, and six of the eight
     // are one graphic.
-    expect(proposedBands().length).toBeLessThanOrEqual(8);
-    expect(pageScreens()).toBeLessThan(9);
+    // W10 took `proof` off the page outright, so it is seven bands over about
+    // 7.6 screens, and six of the seven are one graphic.
+    expect(proposedBands().length).toBeLessThanOrEqual(7);
+    expect(pageScreens()).toBeLessThan(8);
     // And most of the page is ONE graphic rather than a stack of stops.
     expect(pinnedBoardBands().length + 1).toBeGreaterThanOrEqual(
       proposedBands().length - 2
@@ -360,6 +370,10 @@ describe('the two arrangements', () => {
   it('keeps `/` on the shipped fold and `/v2` on the whole arc', () => {
     expect(shippedBands().map(band => band.id)).toEqual(['fold']);
     expect(proposedBands().map(band => band.id)).toContain('close');
+    // `proof` is RESERVED after W10 and renders nowhere. Its component and
+    // its copy are deleted, so a promotion has to write them again rather
+    // than flip a status onto a band that would render an empty screen.
+    expect(proposedBands().map(band => band.id)).not.toContain('proof');
     expect(arrangementBands('shipped')).toEqual(shippedBands());
     expect(arrangementBands('proposed')).toEqual(proposedBands());
   });

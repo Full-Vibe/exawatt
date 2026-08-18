@@ -167,17 +167,20 @@ export type BandHeadingRole = 'none' | 'headline' | 'section' | 'closing';
  * with the rest of the page, and a fold that opened on the whole fleet inside
  * a 58% column showed marks two pixels wide.
  *
- * AMENDED 2026-08-17 (W9): `cluster` is where the run OPENS AND HOLDS, and it
- * is the widest frame the reader is ever shown. `cluster-close` is that same
- * crop one step in, for the panels whose subject is what the marks MEAN rather
- * than where they are. The run no longer opens out to `fleet` at all, because
- * the camera now only ever travels one direction; see `BAND_ALTITUDE_DEPTH`.
+ * AMENDED 2026-08-18 (W10): `cluster` is where the run OPENS, and it is the
+ * widest frame the reader is ever shown. It no longer HOLDS. `cluster-in` is
+ * that crop ten percent in, and it exists for one reason: the reader's first
+ * scroll has to move the camera. `cluster-close` is one step in again, for the
+ * panels whose subject is what the marks MEAN rather than where they are. The
+ * run never opens out to `fleet` at all, because the camera only ever travels
+ * one direction; see `BAND_ALTITUDE_DEPTH`.
  */
 export type BandAltitude =
   | 'agent'
   | 'team'
   | 'fleet'
   | 'cluster'
+  | 'cluster-in'
   | 'cluster-close';
 
 /**
@@ -203,9 +206,10 @@ export type BandAltitude =
 export const BAND_ALTITUDE_DEPTH: Record<BandAltitude, number> = {
   fleet: 0,
   cluster: 1,
-  'cluster-close': 2,
-  team: 3,
-  agent: 4,
+  'cluster-in': 2,
+  'cluster-close': 3,
+  team: 4,
+  agent: 5,
 };
 
 /**
@@ -339,8 +343,17 @@ export const BAND_SCREENS_MAX = 1.4;
  * the per-band budgets, where it is attributable to a band; the page number
  * only catches a page that has quietly doubled.
  */
+/*
+ * FLOOR LOWERED AGAIN 2026-08-18 (W10), 230 to 170, and this time the cut is
+ * a whole band rather than a sentence. The operator removed the `What shipped`
+ * section outright, which takes about 65 written words and the page's second
+ * tall reading block off it in one edit. The floor is not a target and never
+ * has been: it exists so the page cannot go vague, and 170 sits below what
+ * W10 actually writes so a later pass can still drop a line that stops working
+ * without this test asking for it back.
+ */
 export const PAGE_COPY_BUDGET: Required<CopyBudget> = {
-  min: 230,
+  min: 170,
   max: 520,
 };
 
@@ -462,12 +475,16 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // for a rewrite, not room for a second idea.
     copyBudget: { min: 22, max: 42 },
     medium: 'pinned-board',
-    // THE CAMERA HOLDS AT F0, exactly where the fold left it (W9). The
-    // argument is made by the board changing under a STILL camera, which is
-    // the one beat on the page a competitor cannot screenshot, and it was
-    // being spent on a pull-out that arrived at the same moment. Only the
-    // agents waiting on a person stay bright; the crop is unchanged.
-    altitudeAnchor: 'cluster',
+    // THE FIRST SCROLL GLIDES (W10, operator: "I do want some sort of camera
+    // change / zoom / animation on the first scroll section - right now the
+    // scene is static"). W9 held the fold's crop here so the board could make
+    // the argument under a still camera. Read from the top of the page that
+    // reasoning inverts: the first scroll is where a reader finds out whether
+    // the picture is alive, and a camera that answers it by not moving reads
+    // as a screenshot however much the marks are doing. Ten percent in, on
+    // the same centre, so the fold's composition survives the move and only
+    // the agents waiting on a person stay bright.
+    altitudeAnchor: 'cluster-in',
     boardLens: 'status',
     boardHighlight: 'needs-you',
     screens: 1.2,
@@ -654,14 +671,27 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     id: 'proof',
     job: 'ALIVE. A dated list of what landed.',
     headingRole: 'section',
-    heading: 'What shipped',
+    heading: null,
     copyBudget: { min: 40, max: 110 },
     medium: 'cards',
     altitudeAnchor: null,
     boardLens: null,
     boardHighlight: null,
     screens: 1,
-    status: 'proposed',
+    status: 'reserved',
+    // RETIRED 2026-08-18 (W10, operator: "Remove the What shipped ...
+    // section"). The dated list, its five rows, its heading and its link are
+    // DELETED rather than parked: `proof-band.tsx` and `narrative-copy.ts`
+    // are gone, and the nav's `Changelog` item points at the releases page,
+    // which is where the rest of the list already lived.
+    //
+    // The row stays because the slot is real. PROOF is one of the sixteen-site
+    // skeleton's own sections and the page still has no named human in
+    // `voice`, so if borrowed credibility is ever needed again this is where
+    // it goes. What it may not do is come back as a second tall reading block
+    // under a graphic that is already the argument.
+    reservedUntil:
+      'The page needs borrowed credibility again, and it can be shown without a second tall reading block under the board.',
   },
   {
     id: 'close',

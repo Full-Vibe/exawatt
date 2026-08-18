@@ -39,16 +39,11 @@ describe('Agent Source identity projection', () => {
       const glyph = container.querySelector('[data-slot="harness-glyph"]');
 
       expect(mark).toHaveStyle({ color: source!.color });
-      if (harness === 'codex') {
-        expect(glyph).toHaveAttribute('stroke', 'currentColor');
-      } else if (harness === 'claude') {
-        expect(glyph).toHaveAttribute('fill', 'currentColor');
-      } else {
-        expect(glyph?.querySelector('path')).toHaveAttribute(
-          'fill',
-          'currentColor'
-        );
-      }
+      // Every mark takes the surrounding ink the same way (ENG-031 W10). The
+      // three-way branch this replaced existed because three of the glyphs
+      // were drawn differently from each other; they are all the vendors' own
+      // filled path data now, so there is one shape of assertion.
+      expect(glyph).toHaveAttribute('fill', 'currentColor');
     }
   );
 });

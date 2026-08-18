@@ -102,6 +102,9 @@ export interface HeroBoardProps {
   preserveDrawingBuffer?: boolean;
   statusProtocolMotion?: boolean;
   statusChanges?: boolean;
+  /** Study and eval override for the working-to-done celebration. Reduced
+   *  motion turns it off on its own; this is how a study prices it. */
+  transitionBurst?: boolean;
   onCreated?: (state: RootState) => void;
   onModeChange?: (mode: HeroBoardMode) => void;
 }
@@ -117,6 +120,7 @@ export function HeroBoard({
   preserveDrawingBuffer = false,
   statusProtocolMotion = true,
   statusChanges = true,
+  transitionBurst = true,
   onCreated,
   onModeChange,
 }: HeroBoardProps) {
@@ -260,6 +264,10 @@ export function HeroBoard({
             animating={animating}
             statusProtocolMotion={statusProtocolMotion}
             statusChanges={statusChanges}
+            // REDUCED MOTION GETS THE CROSSFADE AND NOTHING ELSE (guide rule
+            // 12). The poster path already covers the default reduced-motion
+            // case; this is the belt for a live board a study forces.
+            transitionBurst={transitionBurst && !reducedMotion}
             progressRef={progressRef ?? fallbackProgress}
             ladder={ladder}
             highlight={resolved}

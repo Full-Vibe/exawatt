@@ -62,6 +62,13 @@ export const HERO_LENS_CHANNELS = 6;
 export interface HeroLensChannel {
   label: string;
   color: string;
+  /**
+   * The Agent Source's declared id, where the channel IS a harness (ENG-031
+   * W10). The legend draws that harness's own brand mark beside its swatch, so
+   * a reader who does not know the product still recognises whose agents these
+   * are. Undefined on any channel that is not a harness.
+   */
+  adapterId?: string;
 }
 
 export interface HeroLens {
@@ -133,9 +140,11 @@ export function resolveHeroLens(
       active: true,
       channel,
       colors: padded(colors, theme.unitMuted),
-      legend: capture.sources
-        .slice(0, HERO_LENS_CHANNELS)
-        .map(source => ({ label: source.label, color: source.color })),
+      legend: capture.sources.slice(0, HERO_LENS_CHANNELS).map(source => ({
+        label: source.label,
+        color: source.color,
+        adapterId: source.adapterId,
+      })),
       legendKind: 'categorical',
       caption: 'Every mark, coloured by the harness running it.',
     };

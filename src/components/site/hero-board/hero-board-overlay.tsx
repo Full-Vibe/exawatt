@@ -11,11 +11,15 @@
  *   what are the circles   -> every Project circle carries its real name, its
  *                             agent count, and how many of its agents need a
  *                             human, anchored to the projected centre.
- *   what are the dots      -> the legend names the five signals the product
- *                             itself uses. No sixth light is invented here.
- *   are these real         -> scroll in and every mark becomes a hoverable,
- *                             focusable, clickable Agent with its real name
- *                             and the six-word contract it is executing.
+ *   what are the dots      -> point at one. Every mark, at every altitude, is
+ *                             a hit target, and the card that opens names the
+ *                             harness, the Agent, its Project, what it is
+ *                             doing and its live status. The bottom-right
+ *                             legend came off in W10 (operator: "i think we
+ *                             don't need the legend at the bottom-right"): the
+ *                             attention panel's copy and the card teach the
+ *                             colours, and the legend was chrome over a board
+ *                             that is meant to be the argument.
  *
  * Mechanics, per `r3f-authoring-guide.md`:
  *
@@ -26,9 +30,12 @@
  *   this layer writes `style.transform` on nodes it already owns. React state
  *   carries semantic identity only: the hovered unit, the selected unit, and
  *   the small set of units close enough to deserve a hit target.
- * - Hit testing is DOM, not raycasting. The units are one InstancedMesh with
- *   `raycast` disabled, so pointer work costs nothing at Fleet altitude, and
- *   what a mouse can reach a keyboard can reach too.
+ * - Hit testing is DOM, not raycasting, and after W10 it is DELEGATED: ONE
+ *   handler over the board frame resolves the nearest projected mark, which is
+ *   O(1) DOM and one pass over 173 numbers per pointer event. That is what
+ *   makes every mark hoverable at every altitude without 173 positioned nodes
+ *   in the per-frame write pass; the per-frame cost went DOWN, from 36 rings
+ *   to one. The units stay one InstancedMesh with `raycast` disabled.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,12 +52,12 @@ import type { HeroBoardCapture } from './capture-types';
 import { HERO_STATUS_ORDER } from './capture-types';
 import type { HeroHighlight } from './hero-board-highlight';
 import {
-  AGENT_AFFORDANCE_PROGRESS,
+  AGENT_HOVER_SLOP_PX,
+  AGENT_KEYBOARD_LIMIT,
   AGENT_TRACK_INTERVAL_MS,
-  AGENT_TRACK_LIMIT,
-  AGENT_TRACK_MIN_RADIUS_PX,
   type HeroBridgeAccess,
 } from './hero-board-annotations';
+import { HarnessMark, harnessMarkExists } from '@/components/site/harness-mark';
 
 /**
  * What a receded Project label keeps. Higher than the marks' own floor: a name
@@ -102,8 +109,9 @@ const LABEL_HEIGHT_PX = 38;
  *  be made without a layout read inside the render loop. */
 const CARD_WIDTH_PX = 240;
 const CARD_MAX_WIDTH_SHARE = 0.62;
-/** And its height, for the same reason: four lines plus its own padding. */
-const CARD_HEIGHT_PX = 112;
+/** And its height, for the same reason: the harness row, the name, the
+ *  Project, the contract line and the status, plus its own padding. */
+const CARD_HEIGHT_PX = 132;
 
 /**
  * Below this frame width the board is the phone's card, and it names FEWER
@@ -130,15 +138,6 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 }
-
-/** The five signals, loudest first, exactly as the product names them. */
-const LEGEND: StatusLightState[] = [
-  'needs-you',
-  'fault',
-  'active',
-  'result',
-  'off',
-];
 
 function statusOf(
   capture: HeroBoardCapture,
@@ -177,7 +176,7 @@ export function HeroBoardOverlay({
   onSelect,
 }: HeroBoardOverlayProps) {
   const bridge = getBridge();
-  const [tracked, setTracked] = useState<number[]>([]);
+  const [keyboardStops, setKeyboardStops] = useState<number[]>([]);
   const [hovered, setHovered] = useState(-1);
   const [statusTick, setStatusTick] = useState(0);
 
@@ -192,7 +191,8 @@ export function HeroBoardOverlay({
   /** Each Project label's half width, read once. It changes only when the
    *  count line's digits do, which is what `activeWidthEpoch` re-reads. */
   const labelHalfWidths = useRef(new Map<number, number>());
-  const unitNodes = useRef(new Map<number, HTMLElement>());
+  /** The ONE target ring, moved to whichever mark is being read. */
+  const ringNode = useRef<HTMLDivElement>(null);
   const cardNode = useRef<HTMLDivElement>(null);
   const beaconNode = useRef<HTMLDivElement>(null);
   const focus = useRef(-1);
@@ -298,30 +298,27 @@ export function HeroBoardOverlay({
         (LABEL_DIM + (1 - LABEL_DIM) * focus) * edge * top
       );
     }
-    for (const [index, node] of unitNodes.current) {
-      const anchor = bridge.units[index];
-      if (!anchor) continue;
-      if (!anchor.onScreen) {
-        node.style.opacity = '0';
-        node.style.pointerEvents = 'none';
-        continue;
+    // ONE RING, ON THE MARK THE READER IS ON (W10). It used to be one node per
+    // tracked unit, positioned every frame whether or not anybody was pointing
+    // at it, which cost 36 write passes a frame to draw affordances nobody had
+    // asked for. Hit testing is delegated now, so the only ring that has to
+    // exist is the one under the pointer, the keyboard focus, or the panel's
+    // own subject. Thirty-six per-frame node writes became one.
+    const ring = ringNode.current;
+    if (ring) {
+      const anchor =
+        shownRef.current >= 0 ? bridge.units[shownRef.current] : undefined;
+      if (anchor?.onScreen) {
+        const size = Math.max(22, Math.round(anchor.radius * 2 + 10));
+        ring.style.width = `${size}px`;
+        ring.style.height = `${size}px`;
+        ring.style.transform = `translate3d(${Math.round(anchor.x)}px, ${Math.round(
+          anchor.y
+        )}px, 0) translate(-50%, -50%)`;
+        ring.style.opacity = '1';
+      } else {
+        ring.style.opacity = '0';
       }
-      const size = Math.max(22, Math.round(anchor.radius * 2));
-      node.style.width = `${size}px`;
-      node.style.height = `${size}px`;
-      node.style.transform = `translate3d(${Math.round(anchor.x)}px, ${Math.round(
-        anchor.y
-      )}px, 0) translate(-50%, -50%)`;
-      const focus = bridge.unitFocus[index] ?? 1;
-      // A HIT TARGET IS NOT A DECORATION (W9). Every altitude now carries
-      // them, so at the fold's crop they must be invisible until pointed at:
-      // three dozen hairline rings over the hero would be exactly the "pile of
-      // icons" verdict returning as chrome. Past the radius where a mark is an
-      // individual they read as the aimable affordance they always were.
-      const individual = anchor.radius >= AGENT_TRACK_MIN_RADIUS_PX;
-      const showRing = individual || index === shownRef.current;
-      node.style.opacity = showRing ? String(0.3 + 0.7 * focus) : '0';
-      node.style.pointerEvents = 'auto';
     }
     // THE LIVE "N ACTIVE" LINE. Recomputed only when the scheduler turned an
     // Agent, and written as text on nodes the overlay already owns, so a
@@ -362,11 +359,13 @@ export function HeroBoardOverlay({
     const target = shownRef.current;
     if (card && target >= 0) {
       const anchor = bridge.units[target];
-      // THE CARD OPENS ON PIXELS, NOT ON SCROLL POSITION (W9). "Is this mark
-      // an individual" is a question about how big it is on screen, and the
-      // constant that answers it already existed. Below it a hover gets a
-      // target ring and its Project's name; above it, the full identity.
-      if (anchor?.onScreen && anchor.radius >= AGENT_TRACK_MIN_RADIUS_PX) {
+      // THE CARD OPENS ON EVERY MARK (W10, operator: "When you hover and click
+      // on one, I want it to pop up and indicate what it's doing"). W9 gated
+      // it on the mark's projected radius, so at the fold's crop and at the
+      // attention beat a hover said only which Project the dot belonged to.
+      // A seven-pixel dot is small; the Agent behind it is not, and the card
+      // is next to the mark rather than inside it.
+      if (anchor?.onScreen) {
         // Flip when the card would not FIT, not at a fixed share of the frame.
         // A share works on a wide desktop frame and fails on a 390px phone,
         // where a unit left of centre still leaves less room than the card
@@ -429,30 +428,96 @@ export function HeroBoardOverlay({
   }, [getBridge, flush, projected]);
 
   /* -------------------------------------------------------------- */
-  /* which units own a hit target: re-chosen at 6Hz, never per frame */
+  /* pointer: ONE delegated handler, every mark, at every altitude   */
+  /* -------------------------------------------------------------- */
+
+  /**
+   * Resolve the mark under a point, or -1 (ENG-031 W10).
+   *
+   * One pass over the projected centres, nearest wins, and the winner has to
+   * be inside its own radius plus a little slop. That is O(n) arithmetic over
+   * 173 numbers per pointer event and zero DOM, which is why every mark can be
+   * a target at every altitude: the alternative, a positioned node per mark,
+   * is O(n) DOM in the per-frame write pass, and it is what capped this at 36.
+   */
+  const markAt = useCallback(
+    (x: number, y: number): number => {
+      const bridge = getBridge();
+      let best = -1;
+      let bestDistance = Infinity;
+      for (let index = 0; index < bridge.units.length; index += 1) {
+        const anchor = bridge.units[index]!;
+        if (!anchor.onScreen) continue;
+        const distance = Math.hypot(anchor.x - x, anchor.y - y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = index;
+        }
+      }
+      if (best < 0) return -1;
+      const reach = Math.max(bridge.markRadius, 6) + AGENT_HOVER_SLOP_PX;
+      return bestDistance <= reach ? best : -1;
+    },
+    [getBridge]
+  );
+
+  const framePoint = useCallback(
+    (
+      event:
+        | React.PointerEvent<HTMLDivElement>
+        | React.MouseEvent<HTMLDivElement>
+    ) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    },
+    []
+  );
+
+  const handleHitPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      // A finger on the board is the reader scrolling the page, so touch never
+      // hovers. It still taps, below.
+      if (event.pointerType === 'touch') return;
+      const point = framePoint(event);
+      const index = markAt(point.x, point.y);
+      // SEMANTIC IDENTITY ONLY (guide rule 14). This runs at pointer
+      // frequency and sets state only when the ANSWER changes, which is a few
+      // times a second at most.
+      setHovered(current => (current === index ? current : index));
+    },
+    [framePoint, markAt]
+  );
+
+  const handleHitPointerLeave = useCallback(() => setHovered(-1), []);
+
+  const handleHitClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const point = framePoint(event);
+      const index = markAt(point.x, point.y);
+      // CLICK PINS, CLICK AWAY RELEASES. A click that lands on no mark is the
+      // reader dismissing the card, which is the other half of the operator's
+      // "Escape or click-away releases".
+      if (index < 0) {
+        if (selectedRef.current >= 0) onSelect(-1);
+        return;
+      }
+      setHovered(index);
+      onSelect(selectedRef.current === index ? -1 : index);
+    },
+    [framePoint, markAt, onSelect]
+  );
+
+  /* -------------------------------------------------------------- */
+  /* keyboard stops: a bounded sample, re-chosen at 6Hz              */
   /* -------------------------------------------------------------- */
 
   useEffect(() => {
     const bridge = getBridge();
     if (!projected) {
-      setTracked([]);
-      bridge.tracked = [];
+      setKeyboardStops([]);
       return;
     }
     const pick = () => {
-      // HIT TARGETS AT EVERY ALTITUDE (W9, operator: "subtle mouseover effects
-      // on the agents just to show that it's a real thing, not like a gif").
-      // This used to return early and CLEAR everything below the affordance
-      // progress, so the fold and the attention beat answered a mouse with
-      // nothing at all. What that early return was really protecting against
-      // was a card pinned over the fleet pointing at a two-pixel mark, and
-      // that is now handled where it belongs, on the mark's own projected
-      // radius. Selection still ends when the reader leaves the close
-      // altitudes, because a selection is a semantic act and a stale one is a
-      // claim about a mark nobody can see.
-      if (bridge.progress < AGENT_AFFORDANCE_PROGRESS && selectedRef.current >= 0) {
-        onSelect(-1);
-      }
       const centreX = bridge.width / 2;
       const centreY = bridge.height / 2;
       const candidates: { index: number; distance: number }[] = [];
@@ -472,16 +537,15 @@ export function HeroBoardOverlay({
         });
       }
       candidates.sort((a, b) => a.distance - b.distance);
-      const next = candidates.slice(0, AGENT_TRACK_LIMIT).map(c => c.index);
+      const next = candidates.slice(0, AGENT_KEYBOARD_LIMIT).map(c => c.index);
       // Keep whatever the visitor is currently reading, even if it drifted out
-      // of the nearest set: a card must not vanish under the pointer.
-      for (const keep of [shownRef.current, focus.current]) {
+      // of the nearest set: a focused button must not be removed under the
+      // caret, and a pinned card must not lose its stop.
+      for (const keep of [selectedRef.current, focus.current]) {
         if (keep >= 0 && !next.includes(keep)) next.push(keep);
       }
       next.sort((a, b) => a - b);
-      // The projector measures an exact on-screen radius only for these.
-      bridge.tracked = next;
-      setTracked(previous =>
+      setKeyboardStops(previous =>
         previous.length === next.length &&
         previous.every((value, at) => value === next[at])
           ? previous
@@ -491,7 +555,19 @@ export function HeroBoardOverlay({
     pick();
     const timer = globalThis.setInterval(pick, AGENT_TRACK_INTERVAL_MS);
     return () => globalThis.clearInterval(timer);
-  }, [getBridge, projected, onSelect]);
+  }, [getBridge, projected]);
+
+  /* -------------------------------------------------------------- */
+  /* the projector measures an exact radius for ONE mark             */
+  /* -------------------------------------------------------------- */
+
+  useEffect(() => {
+    const bridge = getBridge();
+    // The ring's size and the card's offset are the only things that need a
+    // mark's exact projected radius, and they only ever need it for the mark
+    // being read. Everything else is a centre.
+    bridge.tracked = shown >= 0 ? [shown] : [];
+  }, [getBridge, shown]);
 
   /* -------------------------------------------------------------- */
   /* the shown unit's status is live, so watch just that one         */
@@ -564,6 +640,8 @@ export function HeroBoardOverlay({
       : null;
   const unitProject =
     unit !== undefined ? capture.zones[unit.zone]?.label : undefined;
+  const unitSource =
+    unit !== undefined ? capture.sources[unit.source] : undefined;
   void statusTick;
 
   const chrome = useMemo(
@@ -616,36 +694,6 @@ export function HeroBoardOverlay({
         </span>{' '}
         need you
       </p>
-
-      {/* Colour means state, in the product's own five-signal vocabulary.
-          It is set in the READING FACE, sentence case (ENG-031 W6b, operator:
-          "kill the uppercase monospace eyebrows everywhere except that chip").
-          Tracked uppercase mono is a machine voice, and these five words are
-          the product's own vocabulary being taught to a person. The legend
-          also stopped wrapping: at 390px five tracked items broke across two
-          lines and orphaned IDLE on its own row. */}
-      <ul
-        // On a phone the legend and the honesty stamp share the bottom rail and
-        // collide, so the legend steps up a line until there is room for both.
-        className="absolute right-3 bottom-7 flex max-w-[calc(100%-1.5rem)] flex-wrap justify-end gap-x-3 gap-y-1 rounded-md px-2 py-1 sm:bottom-2"
-        style={{ color: chrome.muted, backgroundColor: chrome.panel }}
-        data-hero-overlay-fixed
-        data-hero-overlay-legend
-      >
-        {LEGEND.map(state => (
-          <li
-            key={state}
-            className="flex shrink-0 items-center gap-1.5 text-[11px] leading-none whitespace-nowrap sm:text-xs"
-          >
-            <span
-              aria-hidden
-              className="inline-block size-1.5 rounded-full"
-              style={{ backgroundColor: theme.status[state] }}
-            />
-            {STATUS_LIGHT_META[state].label}
-          </li>
-        ))}
-      </ul>
 
       {projected ? (
         <>
@@ -724,74 +772,86 @@ export function HeroBoardOverlay({
             </div>
           ))}
 
-          {/* Individual agents, once the pull is close enough to aim at one. */}
-          {tracked.map(index => {
-            const target = capture.units[index];
-            if (!target) return null;
-            const state = statusOf(
-              capture,
-              bridge.statuses[index] ?? target.status
-            );
-            const isShown = index === shown;
-            return (
-              <button
-                key={index}
-                type="button"
-                ref={node => {
-                  if (node) unitNodes.current.set(index, node);
-                  else unitNodes.current.delete(index);
-                }}
-                className="absolute top-0 left-0 rounded-full transition-[border-color,background-color,box-shadow] duration-150 outline-none"
-                style={{
-                  opacity: 0,
-                  willChange: 'transform',
-                  // Resting: a hairline that says "aimable" without competing
-                  // with the mark inside it. Shown: the unit's own status
-                  // colour, so the highlight and the signal agree.
-                  borderWidth: isShown ? 2 : 1,
-                  borderStyle: 'solid',
-                  borderColor: isShown
-                    ? theme.status[state]
-                    : spatialColorWithAlpha(theme.label, 0.2),
-                  backgroundColor: isShown
-                    ? spatialColorWithAlpha(theme.status[state], 0.16)
-                    : 'transparent',
-                  boxShadow: isShown
-                    ? `0 0 0 4px ${spatialColorWithAlpha(theme.status[state], 0.16)}`
-                    : 'none',
-                }}
-                onPointerEnter={() => setHovered(index)}
-                onPointerLeave={() => setHovered(-1)}
-                onFocus={() => {
-                  focus.current = index;
-                  setHovered(index);
-                }}
-                onBlur={() => {
-                  focus.current = -1;
-                  setHovered(-1);
-                }}
-                onClick={() => {
-                  // A click only SELECTS a mark that is an individual. At the
-                  // fold's crop a click on a seven-pixel dot would set a
-                  // selection whose card cannot open, which is a control that
-                  // silently does nothing. Hovering still works there; it just
-                  // says the Project rather than the Agent.
-                  const anchor = getBridge().units[index];
-                  if (!anchor || anchor.radius < AGENT_TRACK_MIN_RADIUS_PX) {
-                    return;
-                  }
-                  onSelect(selected === index ? -1 : index);
-                }}
-                data-hero-unit={index}
-                data-hero-unit-shown={isShown ? 'true' : undefined}
-              >
-                <span className="sr-only">
-                  {target.name}. {capture.zones[target.zone]?.label}.{' '}
-                  {target.doing}. {STATUS_LIGHT_META[state].label}.
-                </span>
-              </button>
-            );
-          })}
+          {/* THE HIT LAYER (ENG-031 W10, operator: "It looks like not all
+              the agents are hoverable and clickable"). One element, covering
+              the board, resolving the nearest projected mark on every pointer
+              event. Every one of the 173 marks answers a mouse at every
+              altitude, and the per-frame write pass got SMALLER rather than
+              larger, because the affordance that used to be 36 positioned
+              nodes is now one ring on the mark being read.
+
+              It sits first so every annotation paints over it, and it is the
+              only element in this overlay that takes the pointer at all. */}
+          <div
+            className="absolute inset-0"
+            style={{ pointerEvents: 'auto' }}
+            onPointerMove={handleHitPointerMove}
+            onPointerLeave={handleHitPointerLeave}
+            onClick={handleHitClick}
+            data-hero-hit-layer
+          />
+
+          {/* The target ring. One node, moved, never remounted. */}
+          <div
+            ref={ringNode}
+            aria-hidden
+            className="absolute top-0 left-0 rounded-full transition-opacity duration-150"
+            style={{
+              opacity: 0,
+              willChange: 'transform',
+              borderWidth: 2,
+              borderStyle: 'solid',
+              borderColor: unitStatus
+                ? theme.status[unitStatus]
+                : spatialColorWithAlpha(theme.label, 0.3),
+              backgroundColor: unitStatus
+                ? spatialColorWithAlpha(theme.status[unitStatus], 0.14)
+                : 'transparent',
+              boxShadow: unitStatus
+                ? `0 0 0 4px ${spatialColorWithAlpha(theme.status[unitStatus], 0.14)}`
+                : 'none',
+            }}
+            data-hero-unit-ring={shown >= 0 ? String(shown) : undefined}
+          />
+
+          {/* KEYBOARD REACH. A bounded sample of the same marks, as real
+              buttons carrying the same accessible sentence they have carried
+              since W2. They are visually hidden because the RING is the visual
+              affordance now, and a focused stop opens the same card a hover
+              does. See `AGENT_KEYBOARD_LIMIT` for why the tab order is bounded
+              while the pointer's reach is not. */}
+          <ul className="sr-only" data-hero-unit-stops>
+            {keyboardStops.map(index => {
+              const target = capture.units[index];
+              if (!target) return null;
+              const state = statusOf(
+                capture,
+                bridge.statuses[index] ?? target.status
+              );
+              return (
+                <li key={index}>
+                  <button
+                    type="button"
+                    style={{ pointerEvents: 'auto' }}
+                    onFocus={() => {
+                      focus.current = index;
+                      setHovered(index);
+                    }}
+                    onBlur={() => {
+                      focus.current = -1;
+                      setHovered(-1);
+                    }}
+                    onClick={() => onSelect(selected === index ? -1 : index)}
+                    data-hero-unit={index}
+                    data-hero-unit-shown={index === shown ? 'true' : undefined}
+                  >
+                    {target.name}. {capture.zones[target.zone]?.label}.{' '}
+                    {target.doing}. {STATUS_LIGHT_META[state].label}.
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
 
           {/* ONE BREATHING MARK (ENG-031 W6b). The single agent the framed
               Project is waiting on, haloed in the DOM so the fold has
@@ -831,8 +891,50 @@ export function HeroBoardOverlay({
           >
             {unit && unitStatus ? (
               <>
+                {/* THE HARNESS, AS ITS OWN MARK (ENG-031 W10, operator: "I
+                    want it to show a recognizable harness logo"). It is the
+                    first thing on the card because it is the thing a stranger
+                    recognises before they have read a word: the fleet is
+                    running agents from more than one lab, and the proof is
+                    that this Agent's card carries that lab's mark. Read off
+                    `capture.sources[unit.source]`, which comes from
+                    `contracts/agent-sources.json` by way of the launcher's
+                    own declarations, so the mark, the label and the lens
+                    colour are one answer. */}
+                {unitSource ? (
+                  <p
+                    className="flex items-center gap-1.5"
+                    data-hero-unit-harness={unitSource.adapterId}
+                  >
+                    {harnessMarkExists(unitSource.adapterId) ? (
+                      <span
+                        aria-hidden
+                        className="inline-flex shrink-0 items-center justify-center"
+                        // ONE NEUTRAL INK for every harness. Anthropic, OpenAI
+                        // and xAI each forbid recolouring their mark, and each
+                        // supplies a white rendition for a dark ground, which
+                        // is what this is. The SOURCE colour is already on
+                        // screen: it is what the marks are painted in under
+                        // the `source` lens. See
+                        // `LICENSES/brand/harness-marks.md`.
+                        style={{ color: chrome.label }}
+                      >
+                        <HarnessMark
+                          adapterId={unitSource.adapterId}
+                          size={16}
+                        />
+                      </span>
+                    ) : null}
+                    <span
+                      className="text-chrome-micro tracking-wide"
+                      style={{ color: chrome.muted }}
+                    >
+                      {unitSource.label}
+                    </span>
+                  </p>
+                ) : null}
                 <p
-                  className="text-chrome-title font-semibold"
+                  className="mt-1 text-chrome-title font-semibold"
                   style={{ color: chrome.label }}
                 >
                   {unit.name}

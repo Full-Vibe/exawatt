@@ -79,6 +79,11 @@ const SOURCE_ADAPTER: Record<string, string> = {
   grok: 'grok',
 };
 
+/** The launcher's own id for a consumption source id. One entry differs. */
+export function heroSourceAdapterId(sourceId: string): string {
+  return SOURCE_ADAPTER[sourceId] ?? sourceId;
+}
+
 export function heroSourceLabel(sourceId: string): string {
   const adapterId = SOURCE_ADAPTER[sourceId] ?? sourceId;
   return (
@@ -216,6 +221,7 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
       ),
     },
     sources: sourceIds.map(id => ({
+      adapterId: heroSourceAdapterId(id),
       label: heroSourceLabel(id),
       color: heroSourceColor(id),
     })),

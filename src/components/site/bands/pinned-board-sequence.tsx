@@ -91,6 +91,7 @@ import {
   type SpatialThemeSnapshot,
 } from '@/components/fleet/spatial/spatial-theme';
 import { cn } from '@/lib/utils';
+import { HarnessMark, harnessMarkExists } from '@/components/site/harness-mark';
 import { altitudePanel } from './altitude-copy';
 import { BandHeading } from './band-section';
 import { FoldHero } from './fold-hero';
@@ -627,6 +628,30 @@ function PinnedPanel({
                             className="h-2 w-2 rounded-full"
                             style={{ background: channel.color }}
                           />
+                          {/* THE HARNESS'S OWN MARK (ENG-031 W10, operator:
+                              "I want it to show a recognizable harness
+                              logo"). The swatch is what maps the legend to
+                              the board; the mark is what a stranger
+                              recognises before they read the name. Drawn in
+                              the panel's own ink rather than the source
+                              colour: three of these vendors forbid
+                              recolouring their mark, and the colour is
+                              already said by the swatch beside it. See
+                              `LICENSES/brand/harness-marks.md`. */}
+                          {channel.adapterId &&
+                          harnessMarkExists(channel.adapterId) ? (
+                            <span
+                              aria-hidden
+                              className="inline-flex shrink-0 items-center justify-center"
+                              style={{ color: theme.label }}
+                              data-pinned-legend-harness={channel.adapterId}
+                            >
+                              <HarnessMark
+                                adapterId={channel.adapterId}
+                                size={16}
+                              />
+                            </span>
+                          ) : null}
                           <span
                             className="text-sm"
                             style={{ color: theme.label }}
