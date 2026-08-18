@@ -55,12 +55,24 @@ family without inheriting the rest of Exawatt Cloud.
 
 ## Goal-visual privacy boundary
 
-The V1 goal-visual request contains only `schemaVersion` and an opaque
-`identityKey`. It never contains a Project name, accepted goal label, prompt,
-instruction, path, or transcript. Clients should derive the 64-character key
-locally with a keyed SHA-256 construction or persist a random content mapping;
-services must treat it as opaque. The returned image is deterministic for that
-key within a service's documented generation version.
+The V1 goal-visual request in `services/v1/schemas/goal-visuals.schema.json`
+contains only `schemaVersion` and an opaque `identityKey`, and no Project name,
+accepted goal label, prompt, instruction, path, or transcript. Clients derive
+the 64-character key locally with a keyed SHA-256 construction or persist a
+random content mapping; services must treat it as opaque. The returned image is
+deterministic for that key within a service's documented generation version.
+
+**That is the target, not yet the shipped client.** CORRECTED 2026-08-18: this
+section read as a present-tense privacy guarantee, and the sentence below was
+the only thing qualifying it. Today Exawatt's own client sends
+`{ schemaVersion, projectKey, label }` (`electron/main/pty/context-summarizer.ts`),
+where `label` is the accepted context label, and the hosted route derives the
+identity server-side. So the accepted goal label does reach the service on the
+shipped path. `docs/engineering/outbound-data.md` section 4 is the accurate
+account of what leaves a machine today; this schema is what the client-derived
+key migration moves to, and it is the shape a distributor should implement
+against. Until that migration lands, do not read this section as a statement
+about the current Exawatt client.
 
 The current private hosted routes predate this publication contract. Runtime
 call-site and hosted-handler alignment is a separate migration; these schemas

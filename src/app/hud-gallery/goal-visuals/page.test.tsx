@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { GOAL_VISUAL_PREFERENCE_STORAGE_KEY } from '@/lib/goal-visuals/preference-source';
 import {
   COMMUNITY_DISTRIBUTION,
   type DistributionContractV2,
@@ -48,6 +49,7 @@ describe('Agent tile visual language bench', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.localStorage.removeItem(GOAL_VISUAL_PREFERENCE_STORAGE_KEY);
   });
 
   it('holds full-card geometry constant across seven visual languages', async () => {
@@ -94,6 +96,32 @@ describe('Agent tile visual language bench', () => {
     distributionState.current = COMMUNITY_DISTRIBUTION;
     const fetchMock = vi.fn(async () => {
       throw new Error('community visual study attempted network I/O');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <TooltipProvider>
+        <GoalVisualBenchPage />
+      </TooltipProvider>
+    );
+
+    expect(await screen.findByText(/Deterministic fallbacks/)).toBeVisible();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when Agent tile backgrounds is switched off', async () => {
+    // `OUTBOUND_CONTROLS.goalVisuals` is disclosed as the control that PREVENTS
+    // this hosted call, and until 2026-08-18 this second caller ignored it. Off
+    // must mean no session lookup and no request, exactly as it does in
+    // `context-summarizer.ts`, or the disclosure on Settings -> Privacy and in
+    // `docs/engineering/outbound-data.md` section 4 is false.
+    window.localStorage.setItem(GOAL_VISUAL_PREFERENCE_STORAGE_KEY, 'false');
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'bench-token' } },
+    });
+    const fetchMock = vi.fn(async () => {
+      throw new Error('switched-off visual study attempted network I/O');
     });
     vi.stubGlobal('fetch', fetchMock);
 

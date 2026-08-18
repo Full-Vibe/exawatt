@@ -47,11 +47,33 @@ const rendered = (path: string) =>
       .replace(/^[ \t]*\/\/.*$/gm, ' ')
   );
 
-const PRIVACY = rendered('src/app/privacy/page.tsx');
-const TERMS = rendered('src/app/terms/page.tsx');
+/**
+ * The pages moved to `company/overlay/web/` on 2026-08-18 (a fork inherits no
+ * operator's legal pages), and this file kept reading the pre-move paths, so it
+ * failed at import on `master`. It resolves both now: the composed location an
+ * official build serves from, then the overlay source. A public checkout has
+ * neither, and the legal describes skip there rather than asserting about
+ * pages that are not the contributor's to ship. The indexability describe
+ * below is public and always runs.
+ */
+function legalSurface(route: 'privacy' | 'terms'): string | null {
+  for (const candidate of [
+    `src/app/${route}/page.tsx`,
+    `company/overlay/web/src/app/${route}/page.tsx`,
+  ]) {
+    if (existsSync(candidate)) return rendered(candidate);
+  }
+  return null;
+}
+
+const PRIVACY_SOURCE = legalSurface('privacy');
+const TERMS_SOURCE = legalSurface('terms');
+const HAS_LEGAL_SURFACES = PRIVACY_SOURCE !== null && TERMS_SOURCE !== null;
+const PRIVACY = PRIVACY_SOURCE ?? '';
+const TERMS = TERMS_SOURCE ?? '';
 const RELEASE_WORKFLOW = read('.github/workflows/release-macos.yml');
 
-describe('privacy page: outbound controls', () => {
+describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: outbound controls', () => {
   it('names every control the operator can actually see in Settings', () => {
     for (const control of Object.values(OUTBOUND_CONTROLS)) {
       expect(
@@ -102,7 +124,7 @@ describe('privacy page: outbound controls', () => {
   });
 });
 
-describe('privacy page: what is collected', () => {
+describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: what is collected', () => {
   it('does not claim to collect agent prompts, outputs, or logs', () => {
     // Nothing in the codebase writes agent content to a table. The Supabase
     // writes are projects, user_preferences, product_feedback (+attachments),
@@ -132,12 +154,22 @@ describe('privacy page: what is collected', () => {
   });
 
   it('describes the analytics reality of the build people download', () => {
-    // The claim only holds while the release build ships without a key. If
-    // this workflow ever passes NEXT_PUBLIC_POSTHOG_KEY, the downloaded app
-    // starts collecting and this page has to be rewritten in the same change.
-    expect(RELEASE_WORKFLOW).not.toContain('NEXT_PUBLIC_POSTHOG_KEY');
+    // REPLACED 2026-08-18. This assertion used to read
+    // `expect(RELEASE_WORKFLOW).not.toContain('NEXT_PUBLIC_POSTHOG_KEY')`,
+    // guarding the page's claim that the downloaded app "is built without an
+    // analytics key". It could not fail: `src/lib/analytics/config.ts` states
+    // that ambient NEXT_PUBLIC_POSTHOG_* variables are deliberately invisible,
+    // so the variable's absence from the workflow proved nothing. Meanwhile
+    // the workflow gained a job-level EXAWATT_DISTRIBUTION_CONFIG_JSON and
+    // refuses to run without it, and an official contract carries `analytics`
+    // — so the release the guard was protecting had become the release that
+    // falsifies the claim. The mechanism, not the old variable, is the anchor
+    // now; `src/lib/hosted-features/outbound-disclosure.test.ts` owns the
+    // full version of this assertion.
+    expect(RELEASE_WORKFLOW).toContain('EXAWATT_DISTRIBUTION_CONFIG_JSON');
+    expect(PRIVACY).not.toContain('built without an analytics key');
     expect(PRIVACY).toContain(
-      'The macOS app you download is built without an analytics key'
+      'Analytics run only where the build carries an analytics endpoint'
     );
   });
 
@@ -151,7 +183,7 @@ describe('privacy page: what is collected', () => {
   });
 });
 
-describe('legal surfaces: no phantom billing', () => {
+describe.skipIf(!HAS_LEGAL_SURFACES)('legal surfaces: no phantom billing', () => {
   it('has no billing implementation to describe', () => {
     expect(existsSync('src/app/pricing')).toBe(false);
     expect(read('package.json')).not.toContain('stripe');
@@ -173,7 +205,7 @@ describe('legal surfaces: no phantom billing', () => {
   });
 });
 
-describe('terms page: describes the product that ships', () => {
+describe.skipIf(!HAS_LEGAL_SURFACES)('terms page: describes the product that ships', () => {
   it('describes a macOS desktop app, not a cloud platform', () => {
     for (const claim of [
       'cloud-based platform',
