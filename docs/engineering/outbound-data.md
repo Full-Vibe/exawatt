@@ -9,7 +9,9 @@ canon, not marketing copy: if the code and this file disagree, the file is a
 bug. Verify it against the source before trusting it — every row names the file
 that makes the call.
 
-Audited 2026-08-06 for ENG-030 OS1.1/OS1.2.
+Audited 2026-08-06 for ENG-030 OS1.1/OS1.2. Re-audited against the code
+2026-08-18 for the public seed (ENG-030 OS2.2); `src/lib/hosted-features/
+outbound-disclosure.test.ts` now fails when this file and the code diverge.
 
 ## The one thing that surprises people
 
@@ -222,7 +224,12 @@ claude-haiku-4-5`).
 
 ## 4. Goal visuals — `www.exawatt.ai/api/goal-visuals` → fal.ai
 
-- **Called by** `electron/main/pty/context-summarizer.ts`. **Server**
+- **Called by** `electron/main/pty/context-summarizer.ts`, and by
+  `src/components/hud/goal-visual-layout-study.tsx` on the `/hud-gallery`
+  workbench, which sends fixture goals rather than any of yours. Corrected
+  2026-08-18: that second caller ignored the preference until this audit gated
+  it, so "Agent tile backgrounds" now genuinely prevents every goal-visual
+  request rather than only the product one. **Server**
   `src/app/api/goal-visuals/route.ts`, `src/lib/goal-visuals/server.ts`.
 - **Sent to Exawatt** (≤2 KB, three fields): `schemaVersion`, `projectKey` —
   a SHA-256 digest of the project directory or name, so the path never leaves —
@@ -236,6 +243,10 @@ claude-haiku-4-5`).
 - **Default**: on when signed in.
 - **Off**: Settings → Privacy → Agent tile backgrounds (also "Backgrounds" in
   Team's chrome — same preference); `EXAWATT_GOAL_VISUAL_ENDPOINT` redirects it.
+- **Published contract**: `contracts/services/v1/schemas/goal-visuals.schema.json`
+  specifies a client-derived `identityKey` and no label at all. That is the
+  migration target, not the shipped request; `contracts/README.md` now says so
+  rather than reading as a present-tense guarantee.
 
 ## 5. Supabase — account, sync, feedback, stats
 
@@ -247,14 +258,29 @@ Project `NEXT_PUBLIC_SUPABASE_URL`. Reached by the renderer
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OAuth (Google/GitHub) and email/password                                                        | PKCE exchange; the provider consent page opens in the **system browser**, not in the app                                                                                       | On explicit user action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Session refresh                                                                                 | refresh token                                                                                                                                                                  | Signed in                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Project registry (`src/lib/projects/registry.ts`)                                               | Project name, **full absolute local path**, color, order, last opened                                                                                                          | Signed in, on every Project open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Project registry (`src/lib/projects/registry.ts`)                                               | Project name, **full absolute local path**, **git remote**, color, order, last opened                                                                                          | Signed in, on every Project open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Product feedback ⌘⇧F (`services.productFeedback` V1; official endpoint `/api/feedback`)         | Message text, kind, sentiment, surface, app version, build SHA, platform, context (URL, viewport, Project name, durable session id), optional **screenshot of the app window** | Only when the user submits; a build with no configured endpoint does not inspect account auth or send                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Operator profile / stats (`services.operatorStats` V1; official endpoint `/api/operator-stats`) | `POST`: GitHub identity plus numeric day and Run aggregates; authenticated owner-only `GET`: enabled state plus consent/sync timestamps; no Project, path, or prompt data      | **Off by default, switch-governed** (decision `0029` amended 2026-08-10 and repaired 2026-08-16): the Publishing switch (leaderboard panel, and Settings → Privacy → Public operator profile — `operatorProfile.autoPublish`) is the consent act; while on, syncs run automatically (shortly after launch, then ~6-hourly, `src/lib/operator-stats/auto-sync.ts`) from the shared incremental Consumption service; off or absent means nothing is scanned or sent; the metadata `GET` runs only when a legacy enabled preference lacks its durable consent anchor; `DELETE` removes the profile and pauses publishing. A build with no configured endpoint installs no schedule, reads no account auth, scans nothing, and renders publishing unavailable |
 | Public leaderboard/profile reads                                                                | nothing outbound; anonymous reads                                                                                                                                              | Only when visiting `/leaderboard` or `/operator/<handle>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Keyboard shortcut overrides (`src/app/actions/preferences.ts`)                                  | The `user_preferences.keyboard_shortcuts` array, so a rebind follows you to another machine. No other preference syncs                                                          | Signed in, when you change a shortcut                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Session validation on navigation (`src/proxy.ts`)                                               | One `auth.getUser()` round trip per guarded navigation, sent only when an `sb-*` cookie is present. Four-second timeout, fails open                                             | Signed in                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Quota RPCs                                                                                      | `claim_*_quota` calls for the three hosted features                                                                                                                            | With those features                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Turn all of it off by signing out; the app remains fully usable for local Agent
 work and Demo Mode without an account.
+
+**One destination in this section is not Exawatt's.** A published operator
+profile carries the avatar URL GitHub issued for that account, and
+`src/components/operator-stats/avatar.tsx` renders it with `next/image
+unoptimized`, so the browser fetches the image from
+`avatars.githubusercontent.com` itself. `img-src` in the desktop CSP is
+`'self' data: blob: https:` (`src/lib/distribution/next-policy.ts`), unlike
+`connect-src`, which is enumerated from the distribution contract. Viewing
+`/leaderboard`, `/operator/<handle>`, or `/run/<id>` therefore discloses the
+VIEWER's IP address and user agent to GitHub, once per distinct avatar. Nothing
+about the viewer's own work leaves, no account is required to trigger it, and
+a community build never reaches those pages at all because `account` is null.
+Added 2026-08-18; this row had been missing since the leaderboard shipped.
 
 ## 6. App updates — Supabase Storage
 
@@ -405,8 +431,11 @@ or event.
   PostHog stream described in section 1.
 - No session replay, DOM autocapture, heatmaps, or surveys.
 - No crash reporter other than PostHog's redacted `$exception`.
-- No runtime font, script, or asset fetch from a CDN: `next/font` self-hosts at
-  build time, and the analytics SDK loads no remote extension.
+- No runtime font or script fetch from a CDN: `next/font` self-hosts at build
+  time, and the analytics SDK loads no remote extension
+  (`disable_external_dependency_loading`). Corrected 2026-08-18: this bullet
+  said "font, script, or asset", and the one asset exception is the GitHub
+  avatar on the public profile pages, described in section 5.
 - No telemetry from Demo Mode that differs from Live Mode; the events above are
   the whole stream.
 

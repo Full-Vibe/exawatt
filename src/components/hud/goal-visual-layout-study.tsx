@@ -13,6 +13,7 @@ import {
 } from '@/components/workspace/workspace-theme';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { createGoalVisualPreferenceSource } from '@/lib/goal-visuals/preference-source';
 import styles from './goal-visual-layout-study.module.css';
 
 const GOALS = [
@@ -183,11 +184,26 @@ export function GoalVisualLanguageStudy() {
   const [loadState, setLoadState] = useState<
     'loading' | 'ready' | 'signed-out' | 'unavailable'
   >('loading');
-
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
+        // Settings -> Privacy -> "Agent tile backgrounds" is disclosed as the
+        // control that PREVENTS the goal-visual hosted call (decision `0031`,
+        // and `OUTBOUND_CONTROLS.goalVisuals` renders that sentence). This
+        // study is a second caller of the same endpoint, so it honors the same
+        // switch; until 2026-08-18 it did not, which made the disclosure false
+        // for anyone who opened the gallery. Read from the preference SOURCE
+        // rather than the React context: this is an enforcement point, and it
+        // must not depend on a provider being mounted above it.
+        const enabled = await createGoalVisualPreferenceSource()
+          .load()
+          .catch(() => true);
+        if (!enabled) {
+          // Switched off: look up no session, construct no request.
+          if (!cancelled) setLoadState('unavailable');
+          return;
+        }
         const distribution = resolvedDistribution();
         const endpoint = distribution.enrichment.goalVisuals;
         // Capability absence is the community path. Keep every deterministic

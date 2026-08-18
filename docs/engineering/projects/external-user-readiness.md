@@ -203,9 +203,12 @@ are findings, not deliverables:
 - **The hosted-feature boundary is wider than assumed.** Writing the outbound
   data manifest turned up that `/api/context-labels` sends the Project name in
   cleartext plus up to eight raw operator prompts, with no user-facing toggle
-  (env var only) — while `/api/conversations/summarize`, which sends only
-  opaque `harness:id` keys, *does* redact. See Open; this is a decision `0031`
-  compliance gap, not a defect in this work.
+  at the time (env var only) — while `/api/conversations/summarize`, which
+  sends only opaque `harness:id` keys, *does* redact. That was a decision
+  `0031` compliance gap, not a defect in this work; ENG-030 OS1.5 closed the
+  toggle half on 2026-08-07, and both entry points route through
+  `redactContextEvidence` now. Read this bullet as the state on the day it was
+  written.
 
 Verification: full suite green (1812 passed / 1 skipped, against a 1733
 baseline on `master`); `pnpm type-check` and `pnpm lint` clean; the ceiling
@@ -214,14 +217,19 @@ production.
 
 ## Open
 
-- **Context labels have no user-facing off switch, and send the most.**
-  Decision `0031` requires hosted feature processing to carry "an independent
-  user control that prevents hosted feature calls." `/api/context-labels` has
-  only an environment variable, and it is the widest-sending endpoint in the
-  product: Project name in cleartext plus up to eight raw operator prompts. It
-  predates this work and is a genuine compliance gap against a decision
-  already accepted — it belongs to ENG-021, and it should close before any
-  non-operator relies on the feature.
+- ~~Context labels have no user-facing off switch, and send the most.~~
+  **Closed 2026-08-07 (ENG-030 OS1.5); recorded here 2026-08-18.**
+  `contextLabels.hosted` is a real preference with its own row on Settings →
+  Privacy, enforced at the boundary in
+  `electron/main/pty/context-summarizer.ts`: off assembles no evidence and
+  constructs no request. Decision `0031`'s "independent user control that
+  prevents hosted feature calls" is satisfied. This item sat open for eleven
+  days after the code closed it, in a PUBLIC-classified file, which is the
+  same decay decision `0021` was corrected for on 2026-08-18 —
+  `src/lib/hosted-features/outbound-disclosure.test.ts` now fails on a live
+  "no off switch" sentence about a control that has one. What remains true is
+  the volume: context labels are still the widest-sending Exawatt-hosted path
+  in the product, and `docs/engineering/outbound-data.md` section 2 states it.
 - **Refusal attribution.** A user who trips the global ceiling or the kill
   switch cannot be told which. The cheap fix is a read-only
   `service_availability(service)` RPC consulted only on the rare refusal path,

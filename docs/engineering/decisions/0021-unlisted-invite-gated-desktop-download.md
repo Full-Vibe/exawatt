@@ -41,5 +41,10 @@ fetchable by anyone who knows the object URL.
   opt-out yet", which OS1.5 made false when it gave context labels their own
   switch on the Privacy surface. A stale privacy claim is worse published than
   unpublished, and this document is public-bound, so it is fixed at the source
-  rather than in the rendered variant. No analytics, tracking pixels, or
-  third-party scripts are added.
+  rather than in the rendered variant. The page adds no tracking pixel and no
+  third-party script. CORRECTED 2026-08-18: it also said "No analytics", which
+  decision `0034` made false for the hosted site the moment the proxied ingest
+  shipped. `/download` is an ordinary page of `www.exawatt.ai`, so
+  `instrumentation-client.ts` initializes the same content-excluding four-event
+  stream there as everywhere else, relayed through `exawatt.ai/ingest`. What
+  the page still does not add is anything of its own.
