@@ -14,8 +14,10 @@ import {
   readPathManifest,
 } from './lib/open-source-paths.mjs';
 import {
+  PRIVATE_COMPANY_PATH_PREFIXES,
   PRIVATE_DISTRIBUTION_PATHS,
   applyPublicVariantDirectives,
+  applyPublicVariantJsonDirectives,
   renderRecipe,
   rendersOutput,
   unrenderedReason,
@@ -81,6 +83,63 @@ test('a replace region publishes the commented lines at their own indentation', 
     applyPublicVariantDirectives(source, { path: 'fixture.yml' }),
     'on:\n  push:\n    branches: [master]\n\n    tags: []\n'
   );
+});
+
+test('a Markdown replacement drops the delimited comment on both sides', () => {
+  const source = [
+    'Public sentence.',
+    '<!-- exawatt:public-replace-begin the partner is private -->',
+    'Evidence: partner conversation `2026-08-14-someone`.',
+    '<!-- exawatt:public-replace-with -->',
+    '<!-- Evidence: a partner conversation. -->',
+    '<!-- -->',
+    '<!-- Second line. -->',
+    '<!-- exawatt:public-replace-end -->',
+    '',
+  ].join('\n');
+  assert.equal(
+    applyPublicVariantDirectives(source, { path: 'fixture.md' }),
+    'Public sentence.\nEvidence: a partner conversation.\n\nSecond line.\n'
+  );
+});
+
+test('a JSON document declares its public variant in a reserved member', () => {
+  const source = JSON.stringify(
+    {
+      scripts: { build: 'x', 'invite:issue': 'node scripts/issue-invite.mjs' },
+      'exawatt:public-variant': {
+        omit: { '/scripts/invite:issue': 'the invite store is hosted' },
+        replace: { '/scripts/build': { why: 'public build', value: 'y' } },
+      },
+    },
+    null,
+    2
+  );
+  assert.equal(
+    applyPublicVariantJsonDirectives(source, { path: 'fixture.json' }),
+    JSON.stringify({ scripts: { build: 'y' } }, null, 2) + '\n'
+  );
+});
+
+test('a JSON public-variant directive fails closed', () => {
+  const cases = [
+    ['{}', /must declare its public variant/u],
+    [
+      '{"exawatt:public-variant":{"omit":{"/nope":"why"}}}',
+      /matches nothing/u,
+    ],
+    [
+      '{"a":1,"exawatt:public-variant":{"replace":{"/a":{"why":"w"}}}}',
+      /needs a "value"/u,
+    ],
+  ];
+  for (const [source, expected] of cases) {
+    assert.throws(
+      () => applyPublicVariantJsonDirectives(source, { path: 'fixture.json' }),
+      expected,
+      source
+    );
+  }
 });
 
 test('malformed directives throw instead of guessing', () => {
@@ -187,6 +246,19 @@ test('no rendered output reaches a PRIVATE path', async () => {
     );
   }
 
+  // The document-set renderer forbids whole path prefixes rather than exact
+  // files. Each one must still cover tracked paths, and cover nothing public,
+  // or it either rots into a dead term or starts censoring public material.
+  for (const prefix of PRIVATE_COMPANY_PATH_PREFIXES) {
+    const covered = tracked.filter(file => file.startsWith(prefix));
+    assert.ok(covered.length > 0, `${prefix} matches no tracked path`);
+    assert.deepEqual(
+      covered.filter(file => classify(file).classification !== 'PRIVATE'),
+      [],
+      `${prefix} covers a path that is not PRIVATE`
+    );
+  }
+
   const leaks = [];
   for (const [file, bytes] of await renderWorkingTree()) {
     const text = bytes.toString('utf8');
@@ -217,6 +289,17 @@ test('a rendered source file still parses', async () => {
     for (const [file, bytes] of await renderWorkingTree()) {
       if (file.endsWith('.yml') || file.endsWith('.yaml')) {
         assert.ok(parse(bytes.toString('utf8')), file);
+        continue;
+      }
+      if (file.endsWith('.json')) {
+        assert.ok(JSON.parse(bytes.toString('utf8')), file);
+        continue;
+      }
+      if (file.endsWith('.md')) {
+        const text = bytes.toString('utf8');
+        // A removed region must not leave a seam a reader can see.
+        assert.doesNotMatch(text, /\n{3}/u, file);
+        assert.doesNotMatch(text, /^#{1,6} .*\n[^\n]/mu, file);
         continue;
       }
       const candidate = path.join(scratch, path.basename(file));
@@ -252,4 +335,46 @@ test('the public CI variant triggers on its own master and takes no secret', asy
   assert.equal(triggers.pull_request_target, undefined);
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   assert.doesNotMatch(text, /\$\{\{\s*secrets\./u);
+});
+
+test('the public agent contract describes the contributor flow, not direct landing', async () => {
+  const rendered = await renderWorkingTree();
+  const agents = rendered.get('AGENTS.md').toString('utf8');
+  assert.match(agents, /open a pull request against `master`/u);
+  assert.doesNotMatch(agents, /Do not open pull requests/u);
+  // Release custody, the research-storage contract, and the marketing update
+  // rule are the three sections decision `0036` §2 keeps company-side.
+  assert.doesNotMatch(agents, /## Releasing the macOS app/u);
+  assert.doesNotMatch(agents, /docs\/research\/partner-conversations/u);
+  assert.doesNotMatch(agents, /docs\/product\/marketing\.md/u);
+  // The public test pins the public contract, in both directions.
+  const pins = rendered
+    .get('scripts/delivery-documentation.test.mjs')
+    .toString('utf8');
+  assert.match(pins, /open a pull request against `master`/u);
+  assert.doesNotMatch(pins, /Do not open pull requests/u);
+});
+
+test('the public package.json keeps every dependency and drops private scripts', async () => {
+  const rendered = await renderWorkingTree();
+  const publicPackage = JSON.parse(
+    rendered.get('package.json').toString('utf8')
+  );
+  const privatePackage = JSON.parse(
+    await readFile(path.join(ROOT, 'package.json'), 'utf8')
+  );
+  // A lockfile is resolver output over the dependency graph, so the public
+  // variant may only prune `scripts`; anything else invalidates the lockfile
+  // the public repository ships. `regenerate-public-lockfile-after-public-package`
+  // records the same reasoning.
+  assert.deepEqual(publicPackage.dependencies, privatePackage.dependencies);
+  assert.deepEqual(
+    publicPackage.devDependencies,
+    privatePackage.devDependencies
+  );
+  assert.equal(publicPackage['exawatt:public-variant'], undefined);
+  for (const name of ['invite:issue', 'feedback:triage', 'electron:release']) {
+    assert.equal(publicPackage.scripts[name], undefined, name);
+  }
+  assert.equal(publicPackage.scripts.dev, privatePackage.scripts.dev);
 });

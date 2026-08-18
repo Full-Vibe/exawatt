@@ -27,6 +27,12 @@
  * private diff, and the renderer stays a mechanical, auditable transformation
  * that fails closed when the private file grows something it cannot remove.
  *
+ * The directives come in two forms, because the outputs do. A text file
+ * declares its public variant in delimited regions written in its own comment
+ * syntax — `#`, `//`, or Markdown's `<!-- … -->` — and a JSON file, which has
+ * no comments, declares it in a reserved `exawatt:public-variant` member of
+ * JSON Pointers. Both are mechanical: resolve, drop, substitute, and assert.
+ *
  * Recipes with no renderer are declared, not forgotten. `unrenderedReason`
  * returns why, and the projector reports them; their private blobs are never
  * projected, so the gap is an absence, not a leak.
@@ -73,23 +79,43 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
+/**
+ * Reads the comment syntax out of the `-replace-with` line itself, so one
+ * directive protocol serves `#`, `//`, and the delimited `<!-- … -->` form
+ * Markdown needs. The closing token is optional and empty for line comments.
+ */
 function commentToken(line, path, at) {
-  const match = /^(\s*)(\S+)\s+exawatt:public-replace-with\b/u.exec(line);
+  const match =
+    /^(\s*)(\S+)[ \t]+exawatt:public-replace-with[ \t]*(\S*)[ \t]*$/u.exec(line);
   if (!match) {
     fail(path + ':' + at + ' must write ' + REPLACE_WITH + ' after a comment');
   }
-  return match[2];
+  return { open: match[2], close: match[3] };
 }
 
 function uncomment(line, token, path, at) {
   const match = new RegExp(
-    '^(\\s*)' + escapeRegExp(token) + '( ?)(.*)$',
+    '^(\\s*)' + escapeRegExp(token.open) + '( ?)(.*)$',
     'u'
   ).exec(line);
   if (!match) {
-    fail(path + ':' + at + ' replacement line does not start with ' + token);
+    fail(
+      path + ':' + at + ' replacement line does not start with ' + token.open
+    );
   }
-  const body = match[3];
+  let body = match[3];
+  if (token.close !== '') {
+    const closed = new RegExp(
+      '^(.*?)[ \\t]?' + escapeRegExp(token.close) + '$',
+      'u'
+    ).exec(body);
+    if (!closed) {
+      fail(
+        path + ':' + at + ' replacement line does not end with ' + token.close
+      );
+    }
+    body = closed[1];
+  }
   return body === '' ? '' : match[1] + body;
 }
 
@@ -107,6 +133,8 @@ function uncomment(line, token, path, at) {
  *   <comment> the public lines, written as comments
  *   <comment> exawatt:public-replace-end
  *
+ * The comment syntax is read off the `-replace-with` line itself, so Markdown's
+ * delimited `<!-- … -->` works alongside `#` and `//` without a second dialect.
  * Replacement lines are emitted with their comment token removed, keeping the
  * indentation the comment itself carried, so the public bytes are legible in
  * the private file exactly as they will be published. Anything malformed —
@@ -173,17 +201,28 @@ export function applyPublicVariantDirectives(source, { path = 'input' } = {}) {
 /**
  * Prepends the one-line notice that tells a reader of the public repository
  * that this file is a projection output. It goes after a shebang, because a
- * shebang is only a shebang on line one.
+ * shebang is only a shebang on line one, and after YAML front matter, because
+ * `exawatt-roadmap: v2` is only front matter when the document opens with it.
  */
 function withGeneratedNotice(text, { comment, recipeId }) {
   const notice =
-    comment +
+    comment.open +
     ' Generated for the public repository by the "' +
     recipeId +
-    '" recipe.';
+    '" recipe.' +
+    (comment.close === '' ? '' : ' ' + comment.close);
   const lines = text.split('\n');
   if (lines[0]?.startsWith('#!')) {
     return [lines[0], notice, ...lines.slice(1)].join('\n');
+  }
+  if (lines[0] === '---') {
+    const close = lines.indexOf('---', 1);
+    if (close === -1) fail('front matter opened but never closed');
+    return [
+      ...lines.slice(0, close + 1),
+      notice,
+      ...lines.slice(close + 1),
+    ].join('\n');
   }
   return [notice, ...lines].join('\n');
 }
@@ -237,6 +276,46 @@ const PRIVATE_DISTRIBUTION_REFERENCES = Object.freeze([
 /** The private update feed is service custody, never a public default. */
 const PRIVATE_UPDATE_FEED = Object.freeze([literal('supabase.co')]);
 
+/**
+ * Path prefixes whose every tracked file is company canon: private evidence,
+ * go-to-market, production schema custody, and the release lane. A public
+ * document that cites one of them fails decision `0036` §2's standing
+ * requirement that public canon never needs a private link to be actionable,
+ * so the document-set renderer refuses it rather than publishing a dead link.
+ *
+ * `recipe-renderers.test.mjs` proves each prefix still covers at least one
+ * tracked path and covers nothing that is not PRIVATE, so the list can neither
+ * rot into dead terms nor quietly start forbidding public material.
+ */
+export const PRIVATE_COMPANY_PATH_PREFIXES = Object.freeze([
+  '.claude/commands/triage-feedback.md',
+  '.github/workflows/release-macos.yml',
+  'docs/archive/founder-q-and-a-',
+  'docs/engineering/projects/feedback-reinflation.md',
+  'docs/engineering/projects/launch-execution.md',
+  'docs/engineering/projects/open-source-readiness',
+  'docs/engineering/projects/release-macos-cost.md',
+  'docs/product/demo-script.md',
+  'docs/product/marketing.md',
+  'docs/research/market/',
+  'docs/research/open-source-comps/',
+  'docs/research/operator-briefs/',
+  'docs/research/partner-conversations/',
+  'scripts/electron-auth-session-eval.mjs',
+  'scripts/feedback-triage.mjs',
+  'scripts/issue-invite.mjs',
+  'scripts/prepare-release-metadata.mjs',
+  'scripts/product-feedback-supabase-eval.mjs',
+  'scripts/publish-supabase-updates.mjs',
+  'scripts/require-official-distribution.mjs',
+  'scripts/service-ceiling-quota-eval.mjs',
+  'supabase/migrations/',
+]);
+
+const PRIVATE_COMPANY_REFERENCES = Object.freeze(
+  PRIVATE_COMPANY_PATH_PREFIXES.map(literal)
+);
+
 function renderText(source, { path, recipeId, forbidden = [], why }) {
   const rendered = withGeneratedNotice(
     applyPublicVariantDirectives(decodeText(source, path), { path }),
@@ -247,7 +326,10 @@ function renderText(source, { path, recipeId, forbidden = [], why }) {
 }
 
 function commentSyntaxFor(path) {
-  if (path.endsWith('.yml') || path.endsWith('.yaml')) return '#';
+  if (path.endsWith('.yml') || path.endsWith('.yaml')) {
+    return { open: '#', close: '' };
+  }
+  if (path.endsWith('.md')) return { open: '<!--', close: '-->' };
   if (
     path.endsWith('.mjs') ||
     path.endsWith('.cjs') ||
@@ -255,9 +337,114 @@ function commentSyntaxFor(path) {
     path.endsWith('.ts') ||
     path.endsWith('.tsx')
   ) {
-    return '//';
+    return { open: '//', close: '' };
   }
   fail('no comment syntax is known for ' + path);
+}
+
+const JSON_DIRECTIVE_KEY = 'exawatt:public-variant';
+
+function unescapePointerSegment(segment) {
+  return segment.replaceAll('~1', '/').replaceAll('~0', '~');
+}
+
+/**
+ * Resolves a JSON Pointer to its container and final key, failing when the
+ * pointer names something the document does not have. A directive that no
+ * longer matches the document is a stale judgement, and publishing on a stale
+ * judgement is exactly what fail-closed means here.
+ */
+function resolvePointer(document, pointer, path) {
+  if (!pointer.startsWith('/')) {
+    fail(path + ' public-variant pointer must start with "/": ' + pointer);
+  }
+  const segments = pointer.slice(1).split('/').map(unescapePointerSegment);
+  let container = document;
+  for (const segment of segments.slice(0, -1)) {
+    if (
+      container === null ||
+      typeof container !== 'object' ||
+      !Object.hasOwn(container, segment)
+    ) {
+      fail(path + ' public-variant pointer matches nothing: ' + pointer);
+    }
+    container = container[segment];
+  }
+  const key = segments.at(-1);
+  if (
+    container === null ||
+    typeof container !== 'object' ||
+    !Object.hasOwn(container, key)
+  ) {
+    fail(path + ' public-variant pointer matches nothing: ' + pointer);
+  }
+  return { container, key };
+}
+
+/**
+ * The JSON form of the same protocol. JSON carries no comments, so a JSON
+ * document declares its public variant in a reserved `exawatt:public-variant`
+ * member instead of in delimited regions:
+ *
+ *   "exawatt:public-variant": {
+ *     "omit": { "/scripts/invite:issue": "why this entry is company-only" },
+ *     "replace": {
+ *       "/scripts/test:agent-delivery": { "why": "…", "value": "…" }
+ *     }
+ *   }
+ *
+ * The judgement still lives in the private file, reviewed in the private diff,
+ * and the renderer stays mechanical: resolve, delete, set, drop the directive
+ * member itself. Every pointer must match, so a directive cannot rot into a
+ * silent no-op while the document moves out from under it.
+ */
+export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
+  let document;
+  try {
+    document = JSON.parse(source);
+  } catch (error) {
+    fail(path + ' is not valid JSON: ' + error.message);
+  }
+  const directive = document[JSON_DIRECTIVE_KEY];
+  if (directive === undefined) {
+    fail(
+      path +
+        ' must declare its public variant in a "' +
+        JSON_DIRECTIVE_KEY +
+        '" member; JSON carries no comments to declare it in'
+    );
+  }
+  delete document[JSON_DIRECTIVE_KEY];
+
+  for (const pointer of Object.keys(directive.omit ?? {})) {
+    const { container, key } = resolvePointer(document, pointer, path);
+    delete container[key];
+  }
+  for (const [pointer, entry] of Object.entries(directive.replace ?? {})) {
+    const { container, key } = resolvePointer(document, pointer, path);
+    if (!Object.hasOwn(entry ?? {}, 'value')) {
+      fail(path + ' public-variant replace needs a "value": ' + pointer);
+    }
+    container[key] = entry.value;
+  }
+
+  const rendered = JSON.stringify(document, null, 2) + '\n';
+  if (rendered.includes(DIRECTIVE_NAMESPACE)) {
+    fail('rendered variant of ' + path + ' still carries a directive marker');
+  }
+  return rendered;
+}
+
+function renderJson(source, { path, recipeId, forbidden = [], why }) {
+  // A JSON document has nowhere to carry the generated-file notice the text
+  // renderers prepend; `recipeId` stays in the signature so every renderer is
+  // called the same way.
+  void recipeId;
+  const rendered = applyPublicVariantJsonDirectives(decodeText(source, path), {
+    path,
+  });
+  if (forbidden.length > 0) assertAbsent(rendered, forbidden, { path, why });
+  return Buffer.from(rendered, 'utf8');
 }
 
 const RENDERERS = new Map([
@@ -338,6 +525,63 @@ const RENDERERS = new Map([
     },
   ],
   [
+    'render-public-document-set',
+    {
+      // `scripts/delivery-documentation.test.mjs` is a document by subject: it
+      // pins the prose contract in `AGENTS.md`, so it moves with the set.
+      renders: path => path !== 'README.md',
+      unrenderable: path =>
+        path === 'README.md'
+          ? 'the public README is a crafted launch artifact in the operator’s ' +
+            'own voice, not a subset of the private one. It is authored once ' +
+            'by the launch craft lane and then carries directives like every ' +
+            'other document in this set; a mechanical transformation of the ' +
+            'private README would publish an internal index as a front door.'
+          : null,
+      render: (path, source, recipeId) => {
+        const render = path.endsWith('.json') ? renderJson : renderText;
+        const rendered = render(source, {
+          path,
+          recipeId,
+          forbidden: [
+            ...PRIVATE_COMPANY_REFERENCES,
+            ...PRIVATE_DISTRIBUTION_REFERENCES,
+            ...PRIVATE_UPDATE_FEED,
+          ],
+          why:
+            'a public document may keep what a contributor needs in order to ' +
+            'understand, modify, test, or contribute to the public ' +
+            'application, and what describes the public or official client’s ' +
+            'observable behaviour, but never company canon, private evidence, ' +
+            'production topology, or release custody (decision `0036` §2)',
+        });
+        // A removed region must leave the document it came from intact, not a
+        // seam. Three newlines in a row means a directive swallowed content on
+        // one side of a blank line and not the other, which is exactly the
+        // mistake a reviewer of the private diff cannot see.
+        if (path.endsWith('.md')) {
+          const text = rendered.toString('utf8');
+          const seam = /\n{3}/u.test(text)
+            ? 'a blank-line seam'
+            : /^#{1,6} .*\n[^\n]/mu.test(text)
+              ? 'a heading with no blank line under it'
+              : null;
+          if (seam !== null) {
+            fail(
+              'rendered ' +
+                path +
+                ' has ' +
+                seam +
+                ' where a public-variant region was removed; move the marker ' +
+                'so the region consumes exactly the blank lines it should'
+            );
+          }
+        }
+        return rendered;
+      },
+    },
+  ],
+  [
     'render-public-update-config-test',
     {
       renders: path => path === 'scripts/app-update-config.test.mjs',
@@ -364,15 +608,6 @@ const RENDERERS = new Map([
  */
 export const UNRENDERED_RECIPE_KINDS = new Map([
   [
-    'render-public-document-set',
-    'the public variant of this 21-document set (roadmap, vision, README, ' +
-      'AGENTS.md, package.json) needs editorial judgement about business ' +
-      'posture, operator-only state, and citations of private research. A ' +
-      'mechanical transformation would either copy the private prose or ' +
-      'invent public prose. It becomes renderable once each document declares ' +
-      'its private regions with public-variant directives.',
-  ],
-  [
     'render-public-launch-pages',
     'the privacy and terms pages are legal statements about one operator’s ' +
       'hosted service: its processors, its contact addresses, its retention. ' +
@@ -381,13 +616,17 @@ export const UNRENDERED_RECIPE_KINDS = new Map([
   ],
   [
     'regenerate-public-lockfile-after-public-package',
-    'a lockfile is resolver output, not a text transformation. It becomes a ' +
-      'verbatim copy guarded by a package-graph equality assertion the moment ' +
-      'the public `package.json` renders: pnpm records importers by dependency ' +
-      'graph, not by `scripts`, so a public package.json that only prunes ' +
-      'script entries resolves to the identical lockfile. A real resolver is ' +
-      'needed only if the public package graph ever drops a dependency, and ' +
-      'guessing that would publish a lockfile installing a tree nobody built.',
+    'a lockfile is resolver output, not a text transformation, and it is the ' +
+      'one output in this set whose correctness a pure function of its own ' +
+      'bytes cannot establish. The public `package.json` now renders and ' +
+      'prunes only `scripts` entries, and pnpm records importers by dependency ' +
+      'graph rather than by `scripts`, so the correct public lockfile is the ' +
+      'private one verbatim — but proving that needs both blobs at once, and ' +
+      'the file-info callback sees one. It becomes a verbatim copy the moment ' +
+      'a commit-scoped substitution can assert the two package graphs are ' +
+      'equal; a real resolver is needed only if the public package graph ever ' +
+      'drops a dependency, and guessing would publish a lockfile installing a ' +
+      'tree nobody built.',
   ],
   [
     'project-public-path-manifest',
