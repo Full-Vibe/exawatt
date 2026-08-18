@@ -56,6 +56,24 @@ Recorded rather than closed. If it recurs, capture the FULL output (not the
 tail): a run that fails with no `×` line is an unhandled error or a dead
 worker, and that distinction is the whole diagnosis.
 
+## A second intermittent: named failures under machine load
+
+Distinct from the one above, and the distinction is the diagnosis. That one
+fails with NO failing test named. This one names several — typically
+`launch-controls.*` and `hud-gallery/page.test.tsx` — and every named file
+passes when run alone.
+
+The cause is contention, not code. On 2026-08-17 a full `pnpm test:run`
+reported five failures at a load average of 212–308, with two agents building
+Electron and Next concurrently and 26 orphaned renderer servers alive
+(BUG-070). Each named failure passed in isolation immediately afterwards.
+
+Before "fixing" a red suite, check `uptime`. Above roughly 30, DOM tests are
+timing the machine rather than the code. Re-run the named files alone; if they
+pass, the suite result is contention and the correct action is to stop adding
+load, not to edit tests. The cheap checks that stay honest under load are
+`pnpm publication:check` and a targeted `pnpm test:related <paths>`.
+
 ## Surface gates
 
 The repository owns 31 eval gates and the changed-path floor routes to one.

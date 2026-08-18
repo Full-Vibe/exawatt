@@ -55,7 +55,73 @@ export function sweepOrphans(root = process.cwd()) {
   } catch {
     /* pkill exits non-zero when nothing matched — nothing to sweep */
   }
+  sweepOrphanedRendererServers();
 }
+
+/** Kill packaged-renderer `next-server` children orphaned by a SIGKILLed run.
+ *
+ *  A packaged app spawns its Next standalone server as a child
+ *  (`electron/main/main.ts`), and shuts it down from `before-quit`. That path
+ *  is correct and runs on a normal quit. It does NOT run when the Electron
+ *  main is SIGKILLed, which is exactly what a force-closed or externally
+ *  killed eval does: the server reparents to init and survives, holding a
+ *  loopback port, ~70 MB, and — because a foreground Node process registers
+ *  with LaunchServices — its own Dock icon.
+ *
+ *  Found 2026-08-17 with 26 such orphans alive at once, some 19 hours old,
+ *  ~1.8 GB resident, 78 phantom `Exawatt Community` Dock registrations, and a
+ *  load average near 300. That contention is itself a likely contributor to
+ *  BUG-050's lifecycle-eval failure and to named-test flakes under load.
+ *
+ *  Scoped by the child's WORKING DIRECTORY, which is always inside this run's
+ *  own temp tree, so it can never reach a sibling agent's live app — the same
+ *  scoping lesson the Electron sweep above records. */
+export function sweepOrphanedRendererServers(prefixes = ORPHAN_CWD_PREFIXES) {
+  let pids;
+  try {
+    pids = execFileSync('ps', ['-eo', 'pid=,ppid=,comm='], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .map(line => line.trim().split(/\s+/))
+      .filter(([, ppid, ...rest]) => ppid === '1' && rest.join(' ').includes('next-server'))
+      .map(([pid]) => Number(pid))
+      .filter(Number.isInteger);
+  } catch {
+    return 0;
+  }
+  let swept = 0;
+  for (const pid of pids) {
+    let cwd = '';
+    try {
+      cwd = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+        .split('\n')
+        .find(line => line.startsWith('n')) ?? '';
+    } catch {
+      continue;
+    }
+    if (!prefixes.some(prefix => cwd.includes(prefix))) continue;
+    try {
+      process.kill(pid, 'SIGTERM');
+      swept += 1;
+    } catch {
+      /* already gone */
+    }
+  }
+  return swept;
+}
+
+/** Temp-directory markers every packaged eval uses for its scratch state. A
+ *  server whose cwd is under one of these belongs to a finished eval run. */
+const ORPHAN_CWD_PREFIXES = Object.freeze([
+  'exawatt-lifecycle-',
+  'exawatt-observatory-',
+  'exawatt-electron-',
+  'exawatt-packaged-',
+]);
 
 function realpathOrSelf(value) {
   try {
