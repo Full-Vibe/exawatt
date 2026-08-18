@@ -139,7 +139,19 @@ export const COMMUNITY_IDENTITY: DistributionIdentity = Object.freeze({
   productName: 'Exawatt Community',
   appId: 'ai.exawatt.community',
   protocolScheme: null,
-  iconPath: null,
+  /**
+   * A community build ships its OWN mark, and this is the trademark boundary
+   * made concrete rather than merely promised: the graphite variant is a
+   * public-tree asset, the Exawatt mark is not, and no community build can
+   * present itself as the official application even by accident. It follows
+   * Chromium's shape — same geometry, one neutral hue — so the two are
+   * distinguishable in a Dock at a glance.
+   *
+   * This was `null`, which deleted the icon key entirely and left a community
+   * build wearing Electron's default. Correct on trademark, unfinished as a
+   * product.
+   */
+  iconPath: 'electron/resources/icon-community.icns',
   updateChannel: null,
   stateNamespace: 'ai.exawatt.community',
   cacheNamespace: 'ai.exawatt.community',
