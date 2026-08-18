@@ -262,9 +262,31 @@ export const BAND_SCREENS_MAX = 1.4;
  * Floor lowered 2026-08-17 after the operator killed the proof band's lede and
  * coda as copy for its own sake. The floor exists to stop padding, and it must
  * never be the reason a deliberate cut gets refilled.
+ *
+ * FLOOR LOWERED AGAIN 2026-08-17 (W6c), 280 to 230, and the reason is the same
+ * one for the third time. W6b left every panel with a two-sentence claim, a
+ * coda and a state line, and reading the page as a cold developer, VC or
+ * founder found four of those sentences CAPTIONING a picture that was already
+ * saying it and one explaining a mechanism nobody needs before they trust us.
+ * Deleting them takes the written page to about 255 words.
+ *
+ * The floor is NOT a target and it never has been. It exists so the page
+ * cannot become vague, and what actually satisfies it is SPECIFICITY: five
+ * dated rows, a named requirement at the button, a lens legend read off the
+ * capture, and claims a competitor could not truthfully write. A page that
+ * met 280 by re-describing its own graphic would fail the thing the floor is
+ * for while passing the number. 230 is set below what W6c wrote so a later
+ * pass can still cut a sentence that stops working without the test asking
+ * for it back.
+ *
+ * The CEILING stays at 520 on purpose. It is the measured band's number and
+ * it binds `pageCopyCeiling()`, the sum of every rendered band's declared
+ * budget, which W6c tightened band by band instead. Real restraint lives in
+ * the per-band budgets, where it is attributable to a band; the page number
+ * only catches a page that has quietly doubled.
  */
 export const PAGE_COPY_BUDGET: Required<CopyBudget> = {
-  min: 280,
+  min: 230,
   max: 520,
 };
 
@@ -367,7 +389,9 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'ATTENTION. The board recedes to the agents waiting on a person, and says why the colour is trustworthy.',
     headingRole: 'section',
     heading: 'Only what needs you',
-    copyBudget: { min: 25, max: 60 },
+    // W6c: one claim, no coda. The budget is the claim's own size plus room
+    // for a rewrite, not room for a second idea.
+    copyBudget: { min: 22, max: 42 },
     medium: 'pinned-board',
     // The SAME altitude as the panel before it, deliberately. The argument is
     // made by the board changing under a still camera, which is the one beat
@@ -407,7 +431,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'DEPTH. Into one project and down to one agent, with a status that changes while you read it.',
     headingRole: 'section',
     heading: 'Down to one agent',
-    copyBudget: { min: 25, max: 55 },
+    copyBudget: { min: 22, max: 40 },
     medium: 'pinned-board',
     altitudeAnchor: 'agent',
     boardLens: 'status',
@@ -420,7 +444,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'TRAJECTORY. Agents run agents, so the camera opens back out while the fleet blooms.',
     headingRole: 'section',
     heading: 'Agents run agents',
-    copyBudget: { min: 20, max: 50 },
+    copyBudget: { min: 18, max: 36 },
     medium: 'pinned-board',
     // Back OUT to the FLEET framing, which is the only anchor in the run that
     // reverses, and it reverses all the way: the mechanism by which ten
@@ -437,7 +461,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'PROVENANCE. Whose agents these are, coloured by the harness that runs each one.',
     headingRole: 'section',
     heading: 'Agents from any lab',
-    copyBudget: { min: 20, max: 50 },
+    copyBudget: { min: 30, max: 48 },
     // W8 promoted this from a card chapter to a LENS. A harness is a property
     // of every mark on the board, so the claim proves itself the moment the
     // fleet recolours by source.
@@ -473,7 +497,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'OWNERSHIP. Whose machine this runs on, and the switch attached to every outbound thing.',
     headingRole: 'section',
     heading: 'Your machine, your keys, your repo',
-    copyBudget: { min: 20, max: 55 },
+    copyBudget: { min: 30, max: 46 },
     medium: 'pinned-board',
     altitudeAnchor: 'fleet',
     // Declared `permission` and resolved as `status` until the fixture carries
@@ -546,7 +570,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'ALIVE. A dated list of what landed.',
     headingRole: 'section',
     heading: 'What shipped',
-    copyBudget: { min: 40, max: 130 },
+    copyBudget: { min: 40, max: 110 },
     medium: 'cards',
     altitudeAnchor: null,
     boardLens: null,
