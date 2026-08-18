@@ -1,6 +1,10 @@
 {
   "manifestVersion": 1,
-  "shippedAssetRoots": ["electron/resources", "public", "src/app"],
+  "shippedAssetRoots": [
+    "electron/resources",
+    "public",
+    "src/app"
+  ],
   "assets": [
     {
       "path": "electron/resources/icon-master.png",
@@ -39,7 +43,7 @@
       "path": "public/images/hero-board-poster.jpg",
       "status": "included",
       "kind": "generated Demo Workspace poster",
-      "sha256": "98bcc2bc39cdbccb57f4a8d51cb19ab5b3cb8230c63f88c25219cae55ef3bb58",
+      "sha256": "7df848b16e77aa29817c7e4f3fd2928d2d1efd5a5b1d11a0821006e57d4f1651",
       "origin": "Generated from Exawatt's synthetic Demo Workspace hero-board capture by EXA_BASE=<worktree-server> pnpm eval:hero-board -- --poster. The generator and regeneration contract live in scripts/hero-board-idle-eval.mjs and docs/engineering/projects/website-overhaul.md.",
       "distributionBasis": "First-party generated asset derived only from repository code and synthetic Demo Mode fixtures; distributed under the repository license."
     },
