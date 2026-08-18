@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BAND_ALTITUDE_DEPTH,
   BAND_SCREENS_MAX,
   BAND_SCREENS_MIN,
   HOMEPAGE_BANDS,
@@ -13,6 +14,7 @@ import {
   arrangementBands,
   pageCopyCeiling,
   pageScreens,
+  pinnedAltitudeDepths,
   pinnedAltitudeLadder,
   pinnedBoardBands,
   proposedBands,
@@ -34,21 +36,32 @@ describe('homepage band contract', () => {
     }
   });
 
-  it('gives the fleet ALTITUDE the longest hold, across every panel that holds it', () => {
+  it('gives the WIDEST framing the longest hold, across every panel that holds it', () => {
     // The brief's constraint is about the ALTITUDE, not about one band, and
-    // W5 is what makes the difference visible: `altitude-fleet` and
-    // `altitude-attention` are two panels at the same altitude, so the camera
-    // sits at the Fleet framing for the sum of the two. `altitude-attention`
-    // is individually the longest single hold on the page on purpose, because
-    // the board changing under a still camera is the load-bearing beat.
+    // W9 is what makes the difference visible: the fold and
+    // `altitude-attention` are two panels at the SAME framing, so the camera
+    // sits at the fold's crop for the sum of the two before it ever moves.
+    // That hold is the load-bearing beat on the page, because the board
+    // changing under a still camera is the one thing a competitor cannot
+    // screenshot, and it may not be shorter than any other hold in the run.
     const held = new Map<string, number>();
-    for (const band of pinnedBoardBands()) {
-      const altitude = band.altitudeAnchor!;
-      held.set(altitude, (held.get(altitude) ?? 0) + band.screens);
+    for (const anchor of heroCameraAnchors()) {
+      const band = bandById(anchor.id);
+      held.set(
+        anchor.altitude,
+        (held.get(anchor.altitude) ?? 0) + band.screens
+      );
     }
-    const fleet = held.get('fleet') ?? 0;
+    let widest = '';
+    for (const altitude of held.keys()) {
+      if (widest === '' || BAND_ALTITUDE_DEPTH[altitude as 'fleet'] <
+          BAND_ALTITUDE_DEPTH[widest as 'fleet']) {
+        widest = altitude;
+      }
+    }
+    const opening = held.get(widest) ?? 0;
     for (const [altitude, screens] of held) {
-      expect(screens, altitude).toBeLessThanOrEqual(fleet);
+      expect(screens, altitude).toBeLessThanOrEqual(opening);
     }
   });
 
@@ -123,42 +136,60 @@ describe('homepage band ordering', () => {
     expect(shipped).toEqual(order.filter(id => shipped.includes(id)));
   });
 
-  it('derives the altitude ladder from the band order, fleet in to agent', () => {
-    // AMENDED 2026-08-17 (W4): the ladder is a DIVE, not a pull-back. The
-    // operator asked to keep the fold's own board as a persistent graphic that
-    // changes as you scroll, and the fold's board is the Fleet.
+  it('derives the altitude ladder from the band order, and only ever closes in', () => {
+    // AMENDED 2026-08-17 (W4): the ladder is a DIVE, not a pull-back.
+    // AMENDED again (W8): the board enters at section two and STAYS.
+    // AMENDED again (W6b): the fold is the run's FIRST FRAME.
     //
-    // AMENDED again (W8): the board enters at section two and STAYS. So the
-    // ladder holds at the fleet framing for the claim and the attention beat,
-    // dives once to a single agent, opens all the way back out for delegation,
-    // and stays out while the three lens panels re-read the same fleet from a
-    // different property of the same marks.
-    //
-    // AMENDED again (W6b): the fold is the run's FIRST FRAME, so the ladder
-    // starts one rung IN, at the `cluster` crop, and the first scroll move is
-    // the camera opening out to the whole fleet. That pull-out is the scale
-    // claim, made as a camera move rather than as a screen of type, which is
-    // why `altitude-fleet` is reserved.
+    // AMENDED again (W9, operator: "I think the zoom is a little bouncy, I
+    // like it when it goes only one direction smoothly across multiple
+    // steps"). The ladder holds the fold's crop for the attention beat, steps
+    // in once while two lens panels re-read the same marks, steps in again
+    // onto the Project where delegation is legible, and dives to one agent
+    // last. It never opens out, at any step.
     const anchors = heroCameraAnchors();
 
     expect(anchors.map(anchor => anchor.id)).toEqual([
       'fold',
       'altitude-attention',
-      'altitude-agent',
-      'altitude-delegation',
       'any-lab',
       'trust',
+      'altitude-delegation',
+      'altitude-agent',
     ]);
     expect(bandById('fold').altitudeAnchor).toBe('cluster');
     expect(pinnedAltitudeLadder()).toEqual([
-      'fleet',
+      'cluster',
+      'cluster-close',
+      'cluster-close',
+      'team',
       'agent',
-      'fleet',
-      'fleet',
-      'fleet',
     ]);
     expect(anchorsHeroCamera(bandById('proof'))).toBe(false);
     expect(anchorsHeroCamera(bandById('close'))).toBe(false);
+  });
+
+  it('never lets the camera reverse, so the zoom cannot go bouncy again', () => {
+    // THE GUARD THE OPERATOR'S NOTE EARNED. A reordered row, a promoted
+    // reserve, or a new panel given a convenient framing all fail here rather
+    // than shipping a page that zooms in, out, and in again. Depth is
+    // declared once in `BAND_ALTITUDE_DEPTH` and `hero-board-framings.test.ts`
+    // asserts the world-unit distances agree with it, so this assertion is
+    // about the real camera and not about a label.
+    const depths = pinnedAltitudeDepths();
+    expect(depths.length).toBeGreaterThan(1);
+    for (let index = 1; index < depths.length; index += 1) {
+      expect(
+        depths[index]!,
+        `${heroCameraAnchors()[index]!.id} must not open back out`
+      ).toBeGreaterThanOrEqual(depths[index - 1]!);
+    }
+    // And it actually TRAVELS: a run that held one framing throughout would
+    // pass a monotonicity test and say nothing.
+    expect(depths.at(-1)!).toBeGreaterThan(depths[0]!);
+    // The deepest rung is the last thing the page shows over the board, which
+    // is what hands the reader straight to the dated list and the button.
+    expect(heroCameraAnchors().at(-1)?.id).toBe('altitude-agent');
   });
 
   it('places every reserved band in the slot it would occupy', () => {
@@ -171,9 +202,14 @@ describe('homepage band ordering', () => {
       order.indexOf('altitude-fleet')
     );
     // Provenance, spend and ownership run after the board has established what
-    // it is, and all three finish before the dated list.
+    // it is, and all three finish before the dive and the dated list. W9 moved
+    // them AHEAD of delegation, because saying them at the fold's crop and
+    // then stepping in is the only ordering that never reverses the camera.
     for (const id of ['any-lab', 'cost', 'trust'] as const) {
       expect(order.indexOf(id), id).toBeGreaterThan(
+        order.indexOf('altitude-attention')
+      );
+      expect(order.indexOf(id), id).toBeLessThan(
         order.indexOf('altitude-delegation')
       );
       expect(order.indexOf(id), id).toBeLessThan(order.indexOf('proof'));
@@ -181,7 +217,7 @@ describe('homepage band ordering', () => {
     // `observability` merged into the attention panel and `altitude-team` into
     // the dive. Each row keeps the slot it would take back.
     expect(order.indexOf('observability')).toBeGreaterThan(
-      order.indexOf('altitude-delegation')
+      order.indexOf('altitude-attention')
     );
     expect(order.indexOf('altitude-team')).toBeLessThan(
       order.indexOf('altitude-agent')
@@ -215,26 +251,27 @@ describe('the pinned board run', () => {
 
     expect(pinned.map(band => band.id)).toEqual([
       'altitude-attention',
-      'altitude-agent',
-      'altitude-delegation',
       'any-lab',
       'trust',
+      'altitude-delegation',
+      'altitude-agent',
     ]);
     expect(pinned.map(band => band.boardHighlight)).toEqual([
       'needs-you',
-      'one-agent',
+      'whole-fleet',
+      'whole-fleet',
       'delegation',
-      'whole-fleet',
-      'whole-fleet',
+      'one-agent',
     ]);
-    // The LENS is what makes the last two panels different pictures of the
-    // same fleet rather than the same picture twice.
+    // The LENS is what makes the two middle panels different pictures of the
+    // same fleet rather than the same picture twice, which is what lets the
+    // camera hold between them without repeating itself.
     expect(pinned.map(band => band.boardLens)).toEqual([
-      'status',
-      'status',
       'status',
       'source',
       'permission',
+      'status',
+      'status',
     ]);
   });
 

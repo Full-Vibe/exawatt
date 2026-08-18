@@ -96,24 +96,26 @@ describe('pinned scroll geometry', () => {
     expect(boardProgressAt(uneven[1]!, uneven)).toBeCloseTo(0.5, 6);
   });
 
-  it('runs the real manifest sequence, holding once and reversing once', () => {
+  it('runs the real manifest sequence, and the camera never reverses', () => {
     const bands = pinnedBoardBands();
     const anchors = panelAnchors(bands.map(band => band.screens));
-    // W6b: five panels over one board, after the fold's own frame. The camera
-    // opens out of the fold's crop to the whole fleet for the attention beat,
-    // dives once to a single agent, opens all the way back out for delegation,
-    // and then STAYS out while the lens panels re-read the same fleet.
+    // W9: five panels over one board, after the fold's own frame. The camera
+    // HOLDS the fold's crop through the attention beat, steps in once while
+    // two lens panels re-read the same marks, steps in again onto the Project
+    // where delegation is legible, and dives to one agent last.
     expect(bands.map(band => band.altitudeAnchor)).toEqual([
-      'fleet',
+      'cluster',
+      'cluster-close',
+      'cluster-close',
+      'team',
       'agent',
-      'fleet',
-      'fleet',
-      'fleet',
     ]);
-    // Progress is still monotonic even though the ALTITUDE is not. The scroll
-    // arithmetic knows nothing about altitudes; it walks panel anchors, and
-    // the camera resolves each anchor to a framing. That separation is what
-    // lets the last panel open back out without touching this file.
+    // Progress is monotonic, and now so is the ALTITUDE it resolves to. The
+    // scroll arithmetic still knows nothing about altitudes: it walks panel
+    // anchors, and the camera resolves each anchor to a framing. That
+    // separation is what lets the ladder be reshaped without touching this
+    // file, and `manifest.test.ts` is where the ladder's own direction is
+    // asserted.
     for (let index = 1; index < anchors.length; index += 1) {
       expect(boardProgressAt(anchors[index]!, anchors)).toBeGreaterThan(
         boardProgressAt(anchors[index - 1]!, anchors)
@@ -124,5 +126,31 @@ describe('pinned scroll geometry', () => {
       1,
       6
     );
+  });
+
+  it('puts each panel snap point exactly on its own keyframe', () => {
+    // THE SNAP SENTINEL'S ARITHMETIC, asserted here rather than trusted to a
+    // CSS `calc` nobody can run (ENG-031 W9). `pinned-board-sequence.tsx`
+    // places panel k's snap point `(screens[k] * vh - sticky) / 2` below the
+    // panel box's own top, and this proves that expression lands on the same
+    // scroll position `panelAnchors()` calls the panel's keyframe. Snapping
+    // the panel BOX instead would settle the camera between two steps, which
+    // is the defect rather than the fix.
+    const screens = [1, 1.2, 1, 1, 1, 1];
+    const vh = 900;
+    const sticky = vh - 48; // the pinned box: one viewport minus the header
+    const stickyScreens = sticky / vh;
+    const travel = pinnedTravelScreens(screens, stickyScreens) * vh;
+    const anchors = panelAnchors(screens, stickyScreens);
+
+    let panelTop = 0;
+    screens.forEach((panelScreens, index) => {
+      const sentinel = panelTop + (panelScreens * vh - sticky) / 2;
+      expect(anchors[index]! * travel, `panel ${index}`).toBeCloseTo(
+        sentinel,
+        6
+      );
+      panelTop += panelScreens * vh;
+    });
   });
 });

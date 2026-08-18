@@ -1180,3 +1180,43 @@ html:has(main[data-home-arrangement='proposed']) body {
   }
 }
 
+/* ---- The proposed homepage SETTLES on its steps (ENG-031 W9, operator:
+   "could you have it snap slightly more so scroll settles in the steps,
+   instead of being able to get stuck in between").
+
+   Native CSS snap on the document scroller, never a scroll library and never
+   a `scrollTo`: the page must never take the scroll away from the reader, and
+   the 16-site reference study found zero scroll-jacking across the whole
+   cohort. PROXIMITY rather than mandatory is the whole of "slightly more" —
+   the browser nudges a finger that has nearly arrived at a panel and leaves a
+   reader who deliberately stopped between two of them exactly where they are.
+
+   Scoped the same way this file already scopes the proposed homepage's ground:
+   `:has()` on the arrangement, so it is route-stable, JS-free, and follows the
+   page when `HOMEPAGE_ARRANGEMENT` flips onto `/`. The snap TARGETS are one
+   zero-height sentinel per panel in `pinned-board-sequence.tsx`, placed on the
+   camera keyframe rather than on the panel box.
+
+   Desktop only. Below `md` the sequence is unpinned, the copy is in normal
+   document flow under a fixed board card, and there are no camera steps to
+   settle on: snapping a reading column mid-paragraph would be a defect. The
+   sentinels carry no `snap-start` below `md` either, so this is gated twice.
+   ---- */
+@media (min-width: 768px) {
+  html:has(
+    main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
+  ) {
+    scroll-snap-type: y proximity;
+  }
+}
+
+/* Reduced motion unpins the whole sequence, so there is nothing to settle on
+   and an unexpected scroll adjustment is exactly what the preference asks us
+   not to do. Stated explicitly rather than left to the sentinels. */
+@media (prefers-reduced-motion: reduce) {
+  html:has(
+    main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
+  ) {
+    scroll-snap-type: none;
+  }
+}

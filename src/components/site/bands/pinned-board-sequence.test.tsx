@@ -144,6 +144,46 @@ describe('pinned board sequence', () => {
     add.mockRestore();
   });
 
+  it('settles on its steps with NATIVE snap, and only inside the run', () => {
+    // Operator, W9: "could you have it snap slightly more so scroll settles in
+    // the steps, instead of being able to get stuck in between." The answer is
+    // CSS scroll snap, declared on the document scroller in `globals.css` and
+    // targeted here, so the browser owns the scroll from first paint and this
+    // component still never calls `scrollTo`.
+    const { container } = render(<PinnedBoardSequence bands={bands} />);
+    const section = container.querySelector('[data-pinned-board-sequence]')!;
+    expect(section.getAttribute('data-pinned-snap')).toBe('proximity');
+
+    const points = Array.from(
+      container.querySelectorAll('[data-pinned-snap-point]')
+    );
+    // Every panel but the fold. The fold's own resting place is scroll zero,
+    // and a snap point a few pixels below it would fight the one position
+    // every page already has.
+    expect(points.map(node => node.getAttribute('data-pinned-snap-point'))).toEqual(
+      bands.slice(1).map(band => band.id)
+    );
+    for (const point of points) {
+      // Desktop only, and off under reduced motion: the unpinned layout is a
+      // reading column in normal flow, with no camera steps to settle on.
+      expect(point.className).toContain('md:snap-start');
+      expect(point.className).toContain('motion-reduce:md:snap-align-none');
+      // A zero-height, non-interactive marker. It exists to be a scroll
+      // position, never to be seen or hit.
+      expect(point.className).toContain('h-px');
+      expect(point.className).toContain('pointer-events-none');
+      expect(point.getAttribute('aria-hidden')).toBe('true');
+    }
+    // The snap point sits on the CAMERA KEYFRAME, not on the panel box: the
+    // panel is `screens` viewport heights tall and the pinned box is one
+    // viewport minus the header, so the two differ by up to 114px at 1.2
+    // screens. `pinned-scroll.test.ts` proves the arithmetic; this proves the
+    // component ships it.
+    expect((points[0] as HTMLElement).style.top).toBe(
+      'calc((var(--panel-screens) * 100svh - (100svh - 3rem)) / 2)'
+    );
+  });
+
   it('binds no scroll listener when reduced motion unpins the layout', () => {
     // Unpinned there is no camera to drive: the listener does not exist rather
     // than running and being overridden by a media query.
@@ -278,9 +318,17 @@ describe('pinned board sequence', () => {
     // The board's Agent hit targets sit under the reading column; a panel that
     // swallowed pointer events would make them unreachable. The fold's own
     // button is the one thing that opts back in.
+    //
+    // THE WHOLE LAYER, not just the column (ENG-031 W9). Asserting only the
+    // column passed while the page shipped a full-width, full-height panel box
+    // over the board at `z-10`, which swallowed every hover the board has ever
+    // been offered on this page. The assertion is on the layer now, which is
+    // the element that actually covers the board.
     const { container } = render(<PinnedBoardSequence bands={bands} />);
+    const layer = container.querySelector('[data-pinned-panels-layer]')!;
     const column = container.querySelector('[data-pinned-panel-column]')!;
 
+    expect(layer.className).toContain('pointer-events-none');
     expect(column.className).toContain('pointer-events-none');
     expect(
       container.querySelector('[data-band-affordance="download"]')!.className

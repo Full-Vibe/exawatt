@@ -54,7 +54,7 @@ import {
   type HeroHighlightId,
 } from './hero-board-highlight';
 import { resolveHeroLens, type HeroLensId } from './hero-board-lens';
-import type { HeroAltitude } from './hero-board-scene';
+import type { HeroAltitude } from './hero-board-framings';
 import { HeroBoardOverlay } from './hero-board-overlay';
 
 const HeroBoardScene = dynamic(
@@ -133,7 +133,8 @@ export function HeroBoard({
   const bridge = useRef(
     createHeroAnnotationBridge(
       HERO_BOARD_CAPTURE.zones.length,
-      HERO_BOARD_CAPTURE.units.length
+      HERO_BOARD_CAPTURE.units.length,
+      HERO_BOARD_CAPTURE.units.map(unit => unit.status)
     )
   );
   const getBridge = useCallback(() => bridge.current, []);
@@ -189,6 +190,40 @@ export function HeroBoard({
 
   const handleReady = useCallback(() => setPainted(true), []);
 
+  /**
+   * THE BOARD ANSWERS A MOUSE (ENG-031 W9, operator: "allow some minor
+   * (constrained) mouse interaction ... just to show that it's a real thing,
+   * not like a gif").
+   *
+   * Read here, on the frame the reader's pointer is actually over, and written
+   * straight into the bridge as two numbers. No React state, no re-render, no
+   * listener on the canvas: the pointer is per-frame data and it travels the
+   * same seam every other per-frame value travels (guide rule 14).
+   *
+   * MOUSE ONLY, and that is the whole mobile story: on a phone a finger on the
+   * board is the reader scrolling the page, and a lean that followed it would
+   * be the hero moving while the page moves. Reduced motion writes nothing at
+   * all, and the poster path has no camera to lean anyway.
+   */
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (reducedMotion || event.pointerType !== 'mouse') return;
+      const element = frame.current;
+      if (!element) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const pointer = bridge.current.pointer;
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
+      pointer.active = true;
+    },
+    [reducedMotion]
+  );
+
+  const handlePointerLeave = useCallback(() => {
+    bridge.current.pointer.active = false;
+  }, []);
+
   return (
     <div
       ref={frame}
@@ -198,6 +233,9 @@ export function HeroBoard({
       data-hero-board-animating={animating ? 'true' : 'false'}
       data-hero-board-canvas-count={mode === 'live' ? 1 : 0}
       style={{ backgroundColor: theme.canvas }}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+      data-hero-board-pointer-lean={mode === 'live' ? 'true' : 'false'}
     >
       {mode === 'poster' ? (
         <Image

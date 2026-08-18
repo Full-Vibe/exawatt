@@ -49,22 +49,31 @@ import { bandById, countWords, type BandId } from './manifest';
  *   and a disclosure without one is a warning (`marketing.md`, "Disclosure is
  *   not apology"), so the switch stays.
  *
+ * W9, THE ORDER IS THE CAMERA PATH (operator: "I like it when it goes only
+ * one direction smoothly across multiple steps"). The panels are resequenced,
+ * not rewritten: each claim already stood alone, so the reorder cost no
+ * sentence. What it bought is a camera that holds or closes in at every step
+ * and never opens back out, and a run that ENDS on the dive, which is the
+ * frame both design reviews called the best on the page.
+ *
  * THE PANELS, one claim at a time, each one a claim the board is
  * simultaneously proving:
  *
  * 1. `fold` WHAT. Not written here: the fold's own copy is the operator's
- *    frame in `fold-copy.ts`. It is the first frame of this graphic.
- * 2. `altitude-attention` ATTENTION. The camera opens out of the fold's crop
- *    to the whole fleet and the board recedes to the agents waiting on a
- *    person. The one beat a competitor cannot screenshot.
- * 3. `altitude-agent` DEPTH. One dive, down to one agent whose status changes
- *    while it is read. Promoted from fourth to second (operator: it is the
- *    best frame on the site and it was arriving too late).
- * 4. `altitude-delegation` TRAJECTORY. Agents run agents, and the camera opens
- *    back out while the constellations bloom.
- * 5. `any-lab` PROVENANCE. The fleet recolours by the harness running each
- *    agent, so vendor neutrality proves itself.
- * 6. `trust` OWNERSHIP. Whose machine, whose keys, whose repo.
+ *    frame in `fold-copy.ts`. It is the first frame of this graphic, and its
+ *    crop is the widest the page ever shows.
+ * 2. `altitude-attention` ATTENTION. The camera HOLDS on that crop while the
+ *    board recedes to the agents waiting on a person. A still camera over a
+ *    changing board is the one beat a competitor cannot screenshot.
+ * 3. `any-lab` PROVENANCE. One step in, and the fleet recolours by the harness
+ *    running each agent, so vendor neutrality proves itself.
+ * 4. `trust` OWNERSHIP. Whose machine, whose keys, whose repo, said while the
+ *    marks it is a claim about are all still in frame.
+ * 5. `altitude-delegation` TRAJECTORY. In a step, onto the Project where a
+ *    child mark blooming out of its parent is actually legible.
+ * 6. `altitude-agent` DEPTH. All the way down to one agent whose status
+ *    changes while it is read, and then the page releases into the dated list
+ *    and the button.
  *
  * `altitude-fleet` and `cost` are RESERVED, each with its reason in
  * `manifest.ts`. Their lenses and highlights still resolve, so either is a
@@ -112,20 +121,6 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
     ],
   },
   {
-    id: 'altitude-agent',
-    copy: [
-      'Every agent tells you the job it is on, in its own words.',
-      'Working, needs you, done. Never a green check that lies.',
-    ],
-  },
-  {
-    id: 'altitude-delegation',
-    copy: [
-      'The work fans out and comes back under the one that asked for it.',
-      'This is how ten becomes ten thousand.',
-    ],
-  },
-  {
     id: 'any-lab',
     copy: [
       'Every lab will sell you agents. None of them will sell you the seat you command them from.',
@@ -139,6 +134,20 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
       'Your code, your prompts, and what your agents write never pass through Exawatt.',
     ],
     coda: 'Every outbound feature has a switch in Settings.',
+  },
+  {
+    id: 'altitude-delegation',
+    copy: [
+      'The work fans out and comes back under the one that asked for it.',
+      'This is how ten becomes ten thousand.',
+    ],
+  },
+  {
+    id: 'altitude-agent',
+    copy: [
+      'Every agent tells you the job it is on, in its own words.',
+      'Working, needs you, done. Never a green check that lies.',
+    ],
   },
 ];
 
