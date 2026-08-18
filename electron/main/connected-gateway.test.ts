@@ -3,6 +3,7 @@ import {
   describeConnectionStatus,
   type ConnectedSourceRecord,
   type OCClientConfig,
+  type SourceAuthority,
   type SourceFailureClass,
 } from '@exawatt/core';
 import {
@@ -10,8 +11,13 @@ import {
   ConnectedGatewaySession,
   H1_READ_METHODS,
   H1_READ_SCOPES,
+  H2_WRITE_METHODS,
+  H2_WRITE_SCOPES,
   RECONNECT_BASE_DELAY_MS,
+  SCOPES_FOR_AUTHORITY,
   TUNNEL_FAILURE_TO_SOURCE_FAILURE,
+  authorityForGrantedScopes,
+  classifyAuthorityRefusal,
   type ConnectedGatewayClient,
   type ConnectedGatewayPhase,
   type ConnectedGatewaySessionDeps,
@@ -62,6 +68,9 @@ const AGENT_TESSERA = 'agent-tessera';
 
 const FIXED_NOW = 1_760_000_000_000;
 
+/** Distinguishes one client instance's device identity from another's. */
+let deviceKeys = 0;
+
 /** Words the product may never use about work it merely stopped watching. */
 const STOPPED_WORK_WORDS = /stopped|paused|ended|halted|finished|terminated/iu;
 
@@ -73,6 +82,57 @@ class FakeGateway {
   automationCount = 1;
   /** Methods the fake was asked for, in order. */
   readonly received: { method: string; params: unknown }[] = [];
+
+  /**
+   * Scopes this source has approved for Exawatt's device. Null until the
+   * device is known, which is what makes the first pairing the silent one.
+   */
+  approvedScopes: string[] | null = null;
+  /** Scopes presented on each handshake, in order. */
+  readonly handshakes: string[][] = [];
+  /** Errors to answer the next handshakes with, consumed one per attempt. */
+  private readonly handshakeErrors: string[] = [];
+
+  /**
+   * The server half of pairing, modelled on a live Gateway probed 2026-08-18.
+   *
+   * A device the source has never seen is approved silently for exactly what
+   * it asks, and its record then pins those scopes. A device the source
+   * already knows may reconnect asking for the same scopes or fewer; asking
+   * for more is refused and the approved scopes are unchanged, whichever
+   * credential it presents. Exawatt cannot approve itself, so this fake has no
+   * path by which a client raises its own approval.
+   */
+  pair(
+    requested: readonly string[],
+    deviceToken: string | null
+  ): { ok: true } | { ok: false; message: string } {
+    this.handshakes.push([...requested]);
+    const scripted = this.handshakeErrors.shift();
+    if (scripted !== undefined) return { ok: false, message: scripted };
+
+    if (this.approvedScopes === null || deviceToken === null) {
+      this.approvedScopes = [...requested];
+      return { ok: true };
+    }
+    const approved = new Set(this.approvedScopes);
+    if (requested.every(scope => approved.has(scope))) return { ok: true };
+    return {
+      ok: false,
+      message:
+        'NOT_PAIRED: pairing required: device is asking for more scopes than currently approved',
+    };
+  }
+
+  /** The operator approving the Exawatt device on the source itself. */
+  approve(scopes: readonly string[]): void {
+    this.approvedScopes = [...scopes];
+  }
+
+  /** Script the next handshakes to fail, one message per attempt. */
+  failHandshakes(...messages: string[]): void {
+    this.handshakeErrors.push(...messages);
+  }
 
   respond(method: string, params: unknown): unknown {
     this.received.push({ method, params });
@@ -118,6 +178,20 @@ class FakeGateway {
         return { version: this.version, sessions: this.agentIds.length };
       case 'health':
         return { ok: true };
+      case 'chat.send':
+      case 'chat.abort':
+      case 'sessions.steer':
+      case 'tasks.cancel':
+        /*
+         * The source is the real enforcement. A device approved only for
+         * reading is refused here even if Exawatt manages to form the request,
+         * which is what makes the local allowlist a second lock rather than
+         * the only one.
+         */
+        if (!(this.approvedScopes ?? []).includes('operator.write')) {
+          throw new Error('FORBIDDEN: operator.write scope required');
+        }
+        return { ok: true };
       default:
         throw new Error(`FakeGateway received an unexpected method: ${method}`);
     }
@@ -126,8 +200,12 @@ class FakeGateway {
 
 class FakeGatewayClient {
   deviceToken: string | null = null;
+  /** Scopes this client reports the Gateway granted, when it reports any. */
+  grantedScopes: readonly string[] | null = null;
   disconnectCount = 0;
   presentedToken: string | null = null;
+  /** The device keypair a real client generates once and keeps for its life. */
+  readonly deviceKey = `device-key-${++deviceKeys}`;
   private status = 'disconnected';
   readonly calls: { method: string; params: unknown }[] = [];
   private readonly statusHandlers = new Set<(status: string) => void>();
@@ -136,15 +214,23 @@ class FakeGatewayClient {
     readonly config: OCClientConfig,
     private readonly gateway: FakeGateway,
     private readonly issueToken: string | null,
-    private readonly refuse: boolean
+    private readonly refuse: boolean,
+    private readonly reportGrantedScopes: readonly string[] | null = null
   ) {}
 
   async connect(): Promise<void> {
     if (this.refuse) throw new Error('gateway refused the handshake');
+    const requested = [...(this.config.scopes ?? [])];
+    const paired = this.gateway.pair(requested, this.deviceToken);
+    if (!paired.ok) {
+      this.status = 'error';
+      throw new Error(paired.message);
+    }
     this.presentedToken = this.deviceToken ?? this.config.token ?? null;
     if (this.deviceToken === null && this.issueToken !== null) {
       this.deviceToken = this.issueToken;
     }
+    this.grantedScopes = this.reportGrantedScopes;
     this.status = 'connected';
   }
 
@@ -221,6 +307,7 @@ function createFakeStore(initial: Record<string, string> = {}) {
   const tokens = new Map(Object.entries(initial));
   const writes: { id: string; token: string }[] = [];
   const cleared: string[] = [];
+  const authorities: { id: string; authority: SourceAuthority }[] = [];
   let refuseWrites = false;
   return {
     tokens,
@@ -241,6 +328,11 @@ function createFakeStore(initial: Record<string, string> = {}) {
     clearDeviceToken: vi.fn((id: string) => {
       cleared.push(id);
       tokens.delete(id);
+    }),
+    authorities,
+    setGrantedAuthority: vi.fn((id: string, authority: SourceAuthority) => {
+      authorities.push({ id, authority });
+      return true;
     }),
   };
 }
@@ -322,6 +414,8 @@ interface HarnessOptions {
   bootstrapFailure?: GatewayBootstrapFailure;
   issueDeviceToken?: string | null;
   refuseHandshake?: boolean;
+  /** Scopes the fake Gateway echoes back as granted, when it echoes any. */
+  reportGrantedScopes?: readonly string[];
   maxReconnectAttempts?: number;
 }
 
@@ -382,7 +476,8 @@ function createHarness(options: HarnessOptions = {}) {
         options.issueDeviceToken === undefined
           ? DEVICE_TOKEN
           : options.issueDeviceToken,
-        options.refuseHandshake ?? false
+        options.refuseHandshake ?? false,
+        options.reportGrantedScopes ?? null
       );
       clients.push(client);
       return client as unknown as ConnectedGatewayClient;
@@ -940,6 +1035,485 @@ describe('ConnectedGatewaySession — failure vocabularies', () => {
     }
     for (const mapped of Object.values(BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE)) {
       expect(sourceClasses).toContain(mapped);
+    }
+  });
+});
+
+// ---- ENG-033 H2: granted authority ---------------------------------------
+
+/** A source that already holds a granted write authority from an earlier run. */
+function writeAuthorityRecord(): ConnectedSourceRecord {
+  return { ...sshAliasRecord(), grantedAuthority: 'write' };
+}
+
+/** A source whose device the operator has already approved for write. */
+function writeGrantedHarness() {
+  const harness = createHarness({
+    record: writeAuthorityRecord(),
+    storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+  });
+  harness.gateway.approve([...H2_WRITE_SCOPES]);
+  return harness;
+}
+
+describe('ConnectedGatewaySession — granted authority', () => {
+  it('starts read-only and records nothing it was not granted', async () => {
+    const harness = createHarness();
+
+    await harness.session.connect();
+
+    expect(harness.session.authority).toBe('read');
+    expect(harness.gateway.handshakes).toEqual([['operator.read']]);
+    expect(harness.store.authorities).toEqual([]);
+  });
+
+  it('presents the wider scope for a source that already holds write', async () => {
+    const harness = writeGrantedHarness();
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.clients[0]?.config.scopes).toEqual([...H2_WRITE_SCOPES]);
+    expect(harness.session.authority).toBe('write');
+  });
+
+  it('falls back to read when the source no longer approves the remembered write', async () => {
+    const harness = createHarness({
+      record: writeAuthorityRecord(),
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    // The operator narrowed or re-approved the device on the source itself.
+    harness.gateway.approve([...H1_READ_SCOPES]);
+
+    const result = await harness.session.connect();
+
+    // Observation survives, and the record stops claiming authority the source
+    // no longer grants. Never the reverse: no failure widens what Exawatt asks.
+    expect(result.ok).toBe(true);
+    expect(harness.session.authority).toBe('read');
+    expect(harness.session.status()).toMatchObject({ state: 'live' });
+    expect(harness.store.authorities).toEqual([
+      { id: SOURCE_ID, authority: 'read' },
+    ]);
+    expect(harness.gateway.handshakes).toEqual([
+      [...H2_WRITE_SCOPES],
+      [...H1_READ_SCOPES],
+    ]);
+    await expect(harness.session.write('chat.send')).rejects.toThrow(
+      /read access only/u
+    );
+  });
+
+  it('believes the Gateway over the ask when the two disagree', async () => {
+    const harness = createHarness({
+      record: writeAuthorityRecord(),
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+      // The handshake completes, and the source reports a narrower grant.
+      reportGrantedScopes: ['operator.read'],
+    });
+    harness.gateway.approve([...H2_WRITE_SCOPES]);
+
+    await harness.session.connect();
+
+    expect(harness.session.authority).toBe('read');
+    expect(harness.store.authorities).toEqual([
+      { id: SOURCE_ID, authority: 'read' },
+    ]);
+  });
+
+  it('cannot be widened by a Gateway reporting more than was asked', async () => {
+    const harness = createHarness({
+      reportGrantedScopes: [
+        'operator.read',
+        'operator.write',
+        'operator.admin',
+      ],
+    });
+
+    await harness.session.connect();
+
+    expect(harness.session.authority).toBe('read');
+    await expect(harness.session.write('chat.send')).rejects.toThrow(
+      /read access only/u
+    );
+  });
+});
+
+describe('ConnectedGatewaySession — requesting write authority', () => {
+  it('reports the approval the source needs and keeps working read-only', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('approval-required');
+    expect(result.authority).toBe('read');
+    expect(result.message).toMatch(/approve/iu);
+    expect(result.message).not.toMatch(STOPPED_WORK_WORDS);
+
+    // Nothing was recorded, and the source is still being observed.
+    expect(harness.store.authorities).toEqual([]);
+    expect(harness.session.authority).toBe('read');
+    expect(harness.session.phase).toBe('connected');
+    await expect(harness.session.read('health')).resolves.toEqual({ ok: true });
+    await expect(harness.session.write('chat.send')).rejects.toThrow(
+      /read access only/u
+    );
+
+    // Asked wider, was refused, went back to the scope it holds.
+    expect(harness.gateway.handshakes).toEqual([
+      [...H1_READ_SCOPES],
+      [...H2_WRITE_SCOPES],
+      [...H1_READ_SCOPES],
+    ]);
+  });
+
+  it('asks as the device it already is, and never re-pairs', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+    const client = harness.clients[0]!;
+
+    await harness.session.requestWriteAuthority();
+
+    // One client for the life of the session means one device keypair, and the
+    // persisted device token is what it presents. A second client would be a
+    // second device on the operator's server: the failure mode this prevents.
+    expect(harness.clients).toHaveLength(1);
+    expect(harness.clients[0]?.deviceKey).toBe(client.deviceKey);
+    expect(client.presentedToken).toBe(DEVICE_TOKEN);
+    expect(harness.store.clearDeviceToken).not.toHaveBeenCalled();
+    expect(harness.store.writes).toEqual([]);
+    // The admin-capable shared secret is not read again to buy authority.
+    expect(harness.resolveCredential).not.toHaveBeenCalled();
+  });
+
+  it('is granted once the operator approves the device on the source', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    expect((await harness.session.requestWriteAuthority()).outcome).toBe(
+      'approval-required'
+    );
+
+    // The operator approves the Exawatt device on the server itself. Exawatt
+    // has no method for this, by design.
+    harness.gateway.approve([...H2_WRITE_SCOPES]);
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('granted');
+    expect(result.authority).toBe('write');
+    expect(harness.session.authority).toBe('write');
+    expect(harness.store.authorities).toEqual([
+      { id: SOURCE_ID, authority: 'write' },
+    ]);
+
+    const client = harness.clients[0]!;
+    const before = client.calls.length;
+    await harness.session.write('chat.send', { text: 'ready when you are' });
+    expect(client.calls.slice(before)).toEqual([
+      { method: 'chat.send', params: { text: 'ready when you are' } },
+    ]);
+  });
+
+  it('reports a plain refusal as a refusal, with the source still observed', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    harness.gateway.failHandshakes('INTERNAL: the Gateway is restarting');
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('refused');
+    expect(result.authority).toBe('read');
+    expect(result.message).toContain('the Gateway is restarting');
+    expect(harness.session.phase).toBe('connected');
+    await expect(harness.session.read('health')).resolves.toEqual({ ok: true });
+  });
+
+  it('has nothing to ask when no connection is open', async () => {
+    const harness = createHarness();
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('refused');
+    expect(result.authority).toBe('read');
+    expect(result.message).toMatch(/no gateway connection/iu);
+    expect(harness.clients).toHaveLength(0);
+  });
+
+  it('asks the Gateway nothing when the authority is already held', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    const handshakes = harness.gateway.handshakes.length;
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('unchanged');
+    expect(result.authority).toBe('write');
+    expect(harness.gateway.handshakes).toHaveLength(handshakes);
+  });
+
+  it('repairs observation through the ordinary ladder when the refusal costs the socket', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    harness.gateway.failHandshakes(
+      'NOT_PAIRED: pairing required: device is asking for more scopes than currently approved',
+      'INTERNAL: the Gateway went away'
+    );
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('approval-required');
+    expect(result.authority).toBe('read');
+    // The lost socket is an outage like any other, not a new failure mode.
+    expect(harness.session.phase).toBe('reconnecting');
+    expect(harness.timers.scheduled).toEqual([RECONNECT_BASE_DELAY_MS]);
+    expect(describeConnectionStatus(harness.session.status())).not.toMatch(
+      STOPPED_WORK_WORDS
+    );
+  });
+});
+
+describe('ConnectedGatewaySession — relinquishing write authority', () => {
+  it('returns the source to read-only and shuts the write surface', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    const client = harness.clients[0]!;
+
+    const result = await harness.session.relinquishWriteAuthority();
+
+    expect(result.outcome).toBe('granted');
+    expect(result.authority).toBe('read');
+    expect(harness.session.authority).toBe('read');
+    expect(harness.store.authorities).toEqual([
+      { id: SOURCE_ID, authority: 'read' },
+    ]);
+    // It stopped asking: the last handshake presents read scopes only.
+    expect(harness.gateway.handshakes.at(-1)).toEqual([...H1_READ_SCOPES]);
+    expect(client.config.scopes).toEqual([...H1_READ_SCOPES]);
+
+    const before = client.calls.length;
+    for (const method of H2_WRITE_METHODS) {
+      await expect(harness.session.write(method)).rejects.toThrow(
+        /read access only/u
+      );
+    }
+    expect(client.calls).toHaveLength(before);
+    await expect(harness.session.read('health')).resolves.toEqual({ ok: true });
+  });
+
+  it('does not claim the device was revoked, because it was not', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+
+    const result = await harness.session.relinquishWriteAuthority();
+
+    // Exawatt stopped asking. The approval on the source is the operator's to
+    // withdraw with the source's own tooling, so no copy may say it happened.
+    expect(result.message).not.toMatch(/revoked|removed|deleted|unpaired/iu);
+    expect(result.message).toMatch(/revoke it there/u);
+  });
+
+  it('needs no connection, because asking for less needs no permission', async () => {
+    const harness = createHarness({ record: writeAuthorityRecord() });
+
+    const result = await harness.session.relinquishWriteAuthority();
+
+    expect(result.outcome).toBe('granted');
+    expect(result.authority).toBe('read');
+    expect(harness.store.authorities).toEqual([
+      { id: SOURCE_ID, authority: 'read' },
+    ]);
+    expect(harness.clients).toHaveLength(0);
+  });
+
+  it('reports unchanged for a source that never held write', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    const handshakes = harness.gateway.handshakes.length;
+
+    const result = await harness.session.relinquishWriteAuthority();
+
+    expect(result.outcome).toBe('unchanged');
+    expect(result.authority).toBe('read');
+    expect(harness.gateway.handshakes).toHaveLength(handshakes);
+    expect(harness.store.authorities).toEqual([]);
+  });
+
+  it('keeps the write surface shut even when the narrowing reconnect fails', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    harness.gateway.failHandshakes('INTERNAL: the Gateway went away');
+
+    const result = await harness.session.relinquishWriteAuthority();
+
+    expect(result.authority).toBe('read');
+    expect(harness.session.authority).toBe('read');
+    await expect(harness.session.write('chat.send')).rejects.toThrow(
+      /read access only/u
+    );
+  });
+});
+
+describe('ConnectedGatewaySession — the write surface', () => {
+  it.each(H2_WRITE_METHODS)(
+    'lets %s through once write is granted',
+    async method => {
+      const harness = writeGrantedHarness();
+      await harness.session.connect();
+      const client = harness.clients[0]!;
+      const before = client.calls.length;
+
+      await harness.session.write(method, { note: 'invented' });
+
+      expect(client.calls.slice(before)).toEqual([
+        { method, params: { note: 'invented' } },
+      ]);
+    }
+  );
+
+  it('refuses everything outside the write allowlist without reaching the client', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    const client = harness.clients[0]!;
+    const before = client.calls.length;
+
+    for (const method of [
+      // Admin, in every shape the Gateway classifies as one.
+      'cron.add',
+      'cron.remove',
+      'cron.update',
+      'config.set',
+      'agents.create',
+      'agents.delete',
+      'sessions.create',
+      // Reads belong to the read surface, not this one.
+      'agents.list',
+      'chat.history',
+      // And the verbs the doc defers until the source can prove them.
+      'sessions.pause',
+      'sessions.resume',
+      'sessions.stop',
+      '',
+    ]) {
+      await expect(harness.session.write(method)).rejects.toThrow(
+        /write surface allows only/u
+      );
+    }
+
+    expect(client.calls).toHaveLength(before);
+  });
+
+  it('refuses every write method on a read-only source without reaching the client', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    const client = harness.clients[0]!;
+    const before = client.calls.length;
+
+    for (const method of H2_WRITE_METHODS) {
+      await expect(
+        harness.session.write(method, { text: 'x' })
+      ).rejects.toThrow(/read access only/u);
+    }
+
+    expect(client.calls).toHaveLength(before);
+    expect(
+      client.calls.some(call =>
+        (H2_WRITE_METHODS as readonly string[]).includes(call.method)
+      )
+    ).toBe(false);
+  });
+
+  it('cannot be reached through the read surface, whatever the authority', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    const client = harness.clients[0]!;
+    const before = client.calls.length;
+
+    for (const method of H2_WRITE_METHODS) {
+      await expect(harness.session.read(method)).rejects.toThrow(/read-only/u);
+    }
+    for (const method of ['cron.add', 'agents.create']) {
+      await expect(harness.session.read(method)).rejects.toThrow(/read-only/u);
+      await expect(harness.session.write(method)).rejects.toThrow(
+        /write surface allows only/u
+      );
+    }
+
+    expect(client.calls).toHaveLength(before);
+  });
+
+  it('refuses a granted write with no connection open', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    await harness.session.disconnect();
+
+    await expect(harness.session.write('chat.send')).rejects.toThrow(
+      /no gateway connection/iu
+    );
+  });
+});
+
+describe('ConnectedGatewaySession — authority vocabularies', () => {
+  it('allows exactly the Gateway operator.write methods and no pause verb', () => {
+    expect([...H2_WRITE_METHODS]).toEqual([
+      'chat.send',
+      'chat.abort',
+      'sessions.steer',
+      'tasks.cancel',
+    ]);
+    expect(H2_WRITE_METHODS.join(' ')).not.toMatch(/pause|resume|stop/iu);
+    expect([...H2_WRITE_SCOPES]).toEqual(['operator.read', 'operator.write']);
+  });
+
+  it('never puts an admin method on either surface', () => {
+    const admin = [
+      'cron.add',
+      'cron.remove',
+      'cron.update',
+      'config.set',
+      'config.get',
+      'agents.create',
+      'agents.delete',
+    ];
+    for (const method of admin) {
+      expect(H1_READ_METHODS).not.toContain(method);
+      expect(H2_WRITE_METHODS).not.toContain(method);
+    }
+    expect(JSON.stringify(SCOPES_FOR_AUTHORITY)).not.toContain(
+      'operator.admin'
+    );
+  });
+
+  it('maps each authority to the scopes it presents', () => {
+    expect(SCOPES_FOR_AUTHORITY.read).toEqual([...H1_READ_SCOPES]);
+    expect(SCOPES_FOR_AUTHORITY.write).toEqual([...H2_WRITE_SCOPES]);
+  });
+
+  it('reads write out of granted scopes only when the write scope is there', () => {
+    expect(authorityForGrantedScopes(['operator.read'])).toBe('read');
+    expect(authorityForGrantedScopes(['operator.read', 'operator.write'])).toBe(
+      'write'
+    );
+    expect(authorityForGrantedScopes([])).toBe('read');
+    expect(authorityForGrantedScopes(['operator.admin'])).toBe('read');
+    expect(authorityForGrantedScopes(['operator.writer'])).toBe('read');
+  });
+
+  it('tells an approval apart from an outage in the Gateway own words', () => {
+    for (const message of [
+      'INVALID_REQUEST: unauthorized: device token scope mismatch (re-pair or approve scope upgrade)',
+      'NOT_PAIRED: pairing required: device is asking for more scopes than currently approved',
+    ]) {
+      expect(classifyAuthorityRefusal(message)).toBe('approval-required');
+    }
+    for (const message of [
+      'INTERNAL: the Gateway is restarting',
+      'connection timeout after 10000ms',
+      '',
+    ]) {
+      expect(classifyAuthorityRefusal(message)).toBe('refused');
     }
   });
 });

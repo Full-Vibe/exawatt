@@ -3,9 +3,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseConnectedSourceRecord,
+  readGrantedAuthority,
   toConnectedSourceView,
   type ConnectedSourceRecord,
   type ConnectedSourceView,
+  type SourceAuthority,
   type SourceTransport,
 } from '@exawatt/core';
 
@@ -159,6 +161,9 @@ export class ConnectedSourceStore {
       transport: input.transport,
       credentialOwner: input.credentialOwner,
       hasDeviceCredential: false,
+      // Every source starts read-only. Authority is only ever raised by a
+      // grant the Gateway returned, never by how the source was configured.
+      grantedAuthority: 'read',
       createdAt: (this.deps.now ?? Date.now)(),
     };
     const parsed = parseConnectedSourceRecord(candidate);
@@ -174,6 +179,33 @@ export class ConnectedSourceStore {
     const parsed = parseConnectedSourceRecord({
       ...records[index],
       displayName,
+    });
+    if (!parsed.ok) return false;
+    records[index] = parsed.record;
+    this.persist(records);
+    return true;
+  }
+
+  /**
+   * Record the authority the Gateway granted this device.
+   *
+   * Write-only from the session that observed the handshake: nothing else may
+   * raise it, and no caller may set it to something the Gateway did not
+   * answer with. Lowering it always succeeds, because asking for less needs
+   * nobody's permission.
+   */
+  setGrantedAuthority(id: string, grantedAuthority: SourceAuthority): boolean {
+    const records = this.list();
+    const index = records.findIndex(record => record.id === id);
+    if (index < 0) return false;
+    if (
+      readGrantedAuthority(records[index].grantedAuthority) === grantedAuthority
+    ) {
+      return true;
+    }
+    const parsed = parseConnectedSourceRecord({
+      ...records[index],
+      grantedAuthority,
     });
     if (!parsed.ok) return false;
     records[index] = parsed.record;

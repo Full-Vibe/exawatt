@@ -1,5 +1,6 @@
 import {
   adaptOpenClawTopology,
+  readGrantedAuthority,
   resolveConnectionStatus,
   type AgentSourceTopologySnapshot,
   type ConnectedSourceRecord,
@@ -8,6 +9,7 @@ import {
   type OCGatewayClient,
   type OCGatewayOperatorScope,
   type OpenClawTopologyIssue,
+  type SourceAuthority,
   type SourceFailureClass,
   type SourceTransport,
 } from '@exawatt/core';
@@ -32,13 +34,14 @@ import type {
  * transport, credential custody, pairing, discovery, freshness, reconnect, and
  * detach. It owns no UI, no projection policy, and no remote authority.
  *
- * Four rules shape every decision in this file.
+ * Five rules shape every decision in this file.
  *
- * 1. **H1 is read-only, and the source enforces it.** The session requests
- *    exactly `operator.read` on connect, so the Gateway itself refuses a write
- *    even if Exawatt asks for one. The local method allowlist below is the
- *    second lock, not the first: it stops a typo or a future edit from ever
- *    forming the request. See `H1_READ_METHODS`.
+ * 1. **Read-only is the default, and the source enforces it.** The session
+ *    requests exactly the scopes its granted authority earns, which for every
+ *    new source is `operator.read`, so the Gateway itself refuses a write even
+ *    if Exawatt asks for one. The local method allowlists below are the second
+ *    lock, not the first: they stop a typo or a future edit from ever forming
+ *    the request. See `H1_READ_METHODS` and `H2_WRITE_METHODS`.
  * 2. **Losing the connection is not evidence about the remote Agent.** A drop
  *    means Exawatt stopped observing. It never means work stopped, paused, or
  *    ended, so nothing here writes such a conclusion into state or copy.
@@ -53,6 +56,14 @@ import type {
  *    installation, its Agents, workspaces, history, automations, and
  *    credentials are untouched, and the device Exawatt paired stays revocable
  *    on the source with the source's own tooling.
+ * 5. **Authority is granted, never assumed (ENG-033 H2).** Write authority is
+ *    something the source's operator approves on the source; asking for it is
+ *    a request whose honest outcomes include "an approval is waiting for you
+ *    on the server". Exawatt records only what the Gateway answered with, and
+ *    the write surface consults that record, so a surface that runs ahead of
+ *    an approval is refused here rather than at the server. Exawatt never
+ *    tries to approve its own device: doing so would need the admin-capable
+ *    authority this whole custody model exists to avoid holding.
  */
 
 /**
@@ -73,15 +84,78 @@ export const H1_READ_METHODS = [
   'cron.list',
   'cron.runs',
   'tasks.list',
+  // Subscriptions are observation, not command: the Gateway classifies all
+  // four as `operator.read`, so following a conversation as it arrives needs
+  // no authority beyond what H1 already holds.
+  'sessions.subscribe',
+  'sessions.unsubscribe',
+  'sessions.messages.subscribe',
+  'sessions.messages.unsubscribe',
 ] as const;
 
 export type H1ReadMethod = (typeof H1_READ_METHODS)[number];
 
+/**
+ * Scopes a source granted write authority presents. Read travels with it
+ * because a write-authorised session still observes; asking for write alone
+ * would trade one authority for another rather than add one.
+ */
+export const H2_WRITE_SCOPES = ['operator.read', 'operator.write'] as const;
+
+/**
+ * Every Gateway method the write surface allows, and the complete set the
+ * Gateway classifies as `operator.write`. Nothing here mutates a schedule,
+ * changes configuration, or creates or deletes an Agent: those are
+ * `operator.admin`, which Exawatt does not request, cannot represent as an
+ * authority, and has no surface for.
+ *
+ * There is deliberately no Pause, Resume, or Stop. The project doc defers a
+ * generic remote Pause until the source can name the halted scope and prove
+ * resumable continuity, and a verb assembled out of these four methods would
+ * be exactly the approximation it forbids.
+ */
+export const H2_WRITE_METHODS = [
+  'chat.send',
+  'chat.abort',
+  'sessions.steer',
+  'tasks.cancel',
+] as const;
+
+export type H2WriteMethod = (typeof H2_WRITE_METHODS)[number];
+
 /*
- * A Set so the guard is a cheap lookup on an untrusted string, built from the
- * exported tuple so the runtime check cannot drift from the union.
+ * Sets so each guard is a cheap lookup on an untrusted string, built from the
+ * exported tuples so the runtime checks cannot drift from the unions.
  */
 const H1_READ_METHOD_SET: ReadonlySet<string> = new Set(H1_READ_METHODS);
+const H2_WRITE_METHOD_SET: ReadonlySet<string> = new Set(H2_WRITE_METHODS);
+
+/** The scopes each authority presents on the handshake. One table, both tiers. */
+export const SCOPES_FOR_AUTHORITY: Readonly<
+  Record<SourceAuthority, readonly OCGatewayOperatorScope[]>
+> = {
+  read: H1_READ_SCOPES,
+  write: H2_WRITE_SCOPES,
+};
+
+/**
+ * The authority a set of granted scopes actually buys. Write requires the
+ * write scope to be present; anything else, including an unrecognised scope
+ * vocabulary from a future Gateway, is observation.
+ */
+export function authorityForGrantedScopes(
+  scopes: readonly string[]
+): SourceAuthority {
+  return scopes.includes('operator.write') ? 'write' : 'read';
+}
+
+/** The narrower of two authorities. Used to intersect asked with granted. */
+function narrowerAuthority(
+  left: SourceAuthority,
+  right: SourceAuthority
+): SourceAuthority {
+  return left === 'write' && right === 'write' ? 'write' : 'read';
+}
 
 export type ConnectedGatewayPhase =
   | 'idle'
@@ -154,6 +228,70 @@ export type SnapshotResult =
  */
 export type ConnectResult = SnapshotResult;
 
+/**
+ * What became of an operator's request to change this source's authority.
+ *
+ * `approval-required` is a first-class answer, not an error. Verified against a
+ * live Gateway 2026-08-18: a device already approved at `operator.read` that
+ * reconnects asking for `operator.write` is refused whether it presents its own
+ * device token (`device token scope mismatch`) or the admin-capable shared
+ * secret (`pairing required: device is asking for more scopes than currently
+ * approved`), and the device record keeps its narrower scopes either way.
+ * Raising an approved device's scope is a decision taken on the source, by the
+ * person who owns it, with the source's own device tooling. Exawatt asks; it
+ * cannot grant.
+ *
+ * `refused` is every other no. `unchanged` means Exawatt already holds the
+ * authority asked for and put no question to the Gateway.
+ */
+export const AUTHORITY_REQUEST_OUTCOMES = [
+  'granted',
+  'approval-required',
+  'refused',
+  'unchanged',
+] as const;
+export type AuthorityRequestOutcome =
+  (typeof AUTHORITY_REQUEST_OUTCOMES)[number];
+
+export interface AuthorityRequestResult {
+  outcome: AuthorityRequestOutcome;
+  /**
+   * The authority Exawatt holds now that the attempt is over. It is the
+   * granted truth in every branch, so a caller that reads nothing else still
+   * cannot act on authority the source did not give.
+   */
+  authority: SourceAuthority;
+  /** One operator-facing sentence: what happened, and what to do about it. */
+  message: string;
+}
+
+/**
+ * Signals that a no meant "a human must approve this on the source" rather
+ * than "this failed".
+ *
+ * Matching a remote string is weak evidence, so it is used in exactly one
+ * direction: it can make a refusal more informative, never more permissive. No
+ * branch reachable from here grants authority, so a Gateway that phrases a
+ * refusal differently costs the operator a clearer sentence and nothing else.
+ */
+const APPROVAL_REQUIRED_SIGNALS = [
+  'not_paired',
+  'pairing required',
+  'pairing_required',
+  'scope mismatch',
+  'scope upgrade',
+  'approval',
+] as const;
+
+export function classifyAuthorityRefusal(
+  message: string
+): 'approval-required' | 'refused' {
+  const text = message.toLowerCase();
+  return APPROVAL_REQUIRED_SIGNALS.some(signal => text.includes(signal))
+    ? 'approval-required'
+    : 'refused';
+}
+
 /** The protocol client this session drives. */
 export type ConnectedGatewayClient = OCGatewayClient & {
   connect(): Promise<void>;
@@ -164,12 +302,25 @@ export type ConnectedGatewayClient = OCGatewayClient & {
    * one; read after `connect()` to pick up a freshly issued one.
    */
   deviceToken?: string | null;
+  /**
+   * Scopes the Gateway reported granting on the last completed handshake, when
+   * it reported any.
+   *
+   * The seam exists so that a Gateway which echoes its own device record can
+   * correct Exawatt's belief. It is read in one direction: a report can only
+   * narrow what Exawatt records, never widen it. Absent means the Gateway said
+   * nothing, which is not evidence of a wider grant.
+   */
+  grantedScopes?: readonly string[] | null;
 };
 
 export interface ConnectedGatewaySessionDeps {
   store: Pick<
     ConnectedSourceStore,
-    'readDeviceToken' | 'writeDeviceToken' | 'clearDeviceToken'
+    | 'readDeviceToken'
+    | 'writeDeviceToken'
+    | 'clearDeviceToken'
+    | 'setGrantedAuthority'
   >;
   openTunnel: typeof openSshTunnel;
   resolveCredential: typeof resolveGatewayCredential;
@@ -395,6 +546,13 @@ export class ConnectedGatewaySession {
   private stopWatchingTunnel: (() => void) | null = null;
   private client: ConnectedGatewayClient | null = null;
   private clientStatusHandler: ((status: string) => void) | null = null;
+  /**
+   * The config object the live client kept. Held because a scope change is a
+   * property of the handshake, so renegotiating means changing `scopes` on the
+   * object the client reads and connecting the same client again. `pair()`
+   * already clears `token` on this same object for the same reason.
+   */
+  private clientConfig: OCClientConfig | null = null;
 
   /** Last authoritative snapshot. Retained across a drop, never merged into. */
   private lastSnapshot: AgentSourceTopologySnapshot | null = null;
@@ -407,10 +565,23 @@ export class ConnectedGatewaySession {
   private terminalFailure: SourceFailureClass | null = null;
   private drift: GatewayIdentityDrift | null = null;
 
+  /**
+   * Authority the Gateway granted this device, as last observed. The seeded
+   * value is what the store persisted; every later value comes from a
+   * completed handshake. The record passed to the constructor is a snapshot
+   * and is never mutated, so this field is the live truth.
+   */
+  private grantedAuthority: SourceAuthority;
+
   private reconnectTimer: unknown = null;
   private reconnectAttempts = 0;
   /** Set while this session is deliberately tearing a connection down. */
   private tearingDown = false;
+  /**
+   * Set while this session is deliberately cycling the socket to change scope.
+   * The drop it causes is not an outage and must not start the retry ladder.
+   */
+  private renegotiating = false;
   /** Set by `disconnect()`; cleared by a later `connect()`. */
   private detached = false;
 
@@ -420,6 +591,7 @@ export class ConnectedGatewaySession {
   ) {
     this.record = record;
     this.deps = deps;
+    this.grantedAuthority = readGrantedAuthority(record.grantedAuthority);
     const configured =
       deps.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.maxReconnectAttempts = Math.max(
@@ -448,6 +620,14 @@ export class ConnectedGatewaySession {
   /** Non-null once a reconnect observed a different installation. */
   get identityDrift(): GatewayIdentityDrift | null {
     return this.drift;
+  }
+
+  /**
+   * Authority the source granted this device. The one gate the write surface
+   * consults, and the one value a caller should read before offering a verb.
+   */
+  get authority(): SourceAuthority {
+    return this.grantedAuthority;
   }
 
   onPhaseChange(listener: (phase: ConnectedGatewayPhase) => void): () => void {
@@ -482,6 +662,34 @@ export class ConnectedGatewaySession {
    * deterministically and `observedAt` is the only field that moves, so running
    * this twice over identical source state produces an identical topology.
    */
+  /**
+   * Follow Gateway events for this source.
+   *
+   * Subscribing is observation, so this rides the read authority H1 already
+   * holds. The returned unsubscribe is the only way off: a listener that
+   * outlived its owner would keep forwarding a conversation nobody is
+   * watching, and the Gateway replays nothing after a reconnect, so a stale
+   * listener would be silently wrong rather than merely wasteful.
+   *
+   * Ordering across a reconnect is deliberately NOT this method's problem.
+   * The frame sequence resets per connection, so the consumer reconciles
+   * against an authoritative read instead of trusting event order to survive.
+   */
+  onGatewayEvent(
+    eventName: string,
+    handler: (payload: unknown) => void
+  ): () => void {
+    const client = this.client;
+    if (!client) return () => {};
+    client.onOCEvent(eventName, handler);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      client.offOCEvent(eventName, handler);
+    };
+  }
+
   async resnapshot(): Promise<SnapshotResult> {
     if (!this.client) {
       return {
@@ -492,8 +700,44 @@ export class ConnectedGatewaySession {
       };
     }
     const result = await this.discover();
-    if (result.ok) this.setPhase('connected');
+    if (result.ok) {
+      await this.followConversations();
+      this.setPhase('connected');
+    }
     return result;
+  }
+
+  /**
+   * Ask the Gateway to stream this source's conversations.
+   *
+   * Best effort on purpose. A Gateway that does not accept the subscription
+   * leaves the operator reading replies on the next authoritative read, which
+   * is slower and still correct; failing the whole connection over it would
+   * trade a working read-only source for nothing. The subscription is
+   * re-established after every reconnect rather than resumed, because events
+   * are not replayed and a resumed cursor would silently skip whatever
+   * arrived while the socket was down.
+   */
+  private async followConversations(): Promise<void> {
+    const snapshot = this.snapshot;
+    if (!snapshot) return;
+    for (const agent of snapshot.agents) {
+      if (agent.discoveryState !== 'configured') continue;
+      const primary = snapshot.contexts.find(
+        context =>
+          context.nativeAgentId === agent.nativeAgentId &&
+          context.roles.includes('primary-conversation')
+      );
+      if (!primary) continue;
+      try {
+        await this.read('sessions.messages.subscribe', {
+          key: primary.nativeContextId,
+        });
+      } catch {
+        // Reported by absence: no stream, and the reader falls back to
+        // authoritative history. Nothing here may fail the connection.
+      }
+    }
   }
 
   status(): ConnectionStatus {
@@ -520,6 +764,167 @@ export class ConnectedGatewaySession {
    */
   async read<R = unknown>(method: string, params?: unknown): Promise<R> {
     return this.callGateway<R>(method, params);
+  }
+
+  /**
+   * The command surface (ENG-033 H2), and the only place a write method name
+   * reaches the client.
+   *
+   * Two separate refusals, in this order. A method outside `H2_WRITE_METHODS`
+   * is not a write verb at all, so it is refused regardless of authority:
+   * `read()` cannot reach a write method, this cannot reach a read one, and
+   * neither can reach an admin one. Then the granted authority decides,
+   * because a surface that offered a composer before the source's operator
+   * approved the device would otherwise turn a local mistake into a confusing
+   * server-side rejection.
+   */
+  async write<R = unknown>(method: string, params?: unknown): Promise<R> {
+    return this.callGatewayWrite<R>(method, params);
+  }
+
+  /**
+   * Ask the source to raise this device from observation to conversation.
+   *
+   * This is a request, and the honest set of answers includes one that is
+   * neither yes nor no: the Gateway will not raise an already-approved
+   * device's scope without an approval performed on the source itself. When
+   * that is the answer, the source keeps working exactly as it was and the
+   * result says what the operator has to do.
+   *
+   * Nothing here re-pairs. The same client keeps the same device keypair and
+   * the same persisted device token, the shared secret is not read again, and
+   * the stored credential is never cleared: a scope request that quietly
+   * replaced Exawatt's device identity would leave a stranded device on the
+   * operator's server and lose the custody trail the whole model depends on.
+   */
+  async requestWriteAuthority(): Promise<AuthorityRequestResult> {
+    if (this.grantedAuthority === 'write') {
+      return {
+        outcome: 'unchanged',
+        authority: 'write',
+        message: 'This source has already granted Exawatt write authority.',
+      };
+    }
+
+    const client = this.client;
+    const config = this.clientConfig;
+    if (!client || !config) {
+      return {
+        outcome: 'refused',
+        authority: this.grantedAuthority,
+        message:
+          'No Gateway connection is open for this source, so there is nothing to ask.',
+      };
+    }
+
+    this.renegotiating = true;
+    let restoreFailed = false;
+    try {
+      const attempt = await this.renegotiate(client, config, 'write');
+      if (attempt.ok) {
+        const granted = this.grantedFrom(client, 'write');
+        this.applyGrantedAuthority(granted);
+        if (granted === 'write') {
+          return {
+            outcome: 'granted',
+            authority: 'write',
+            message: 'This source granted Exawatt write authority.',
+          };
+        }
+        /*
+         * The handshake completed and the Gateway reported a narrower grant
+         * than the one asked for. Recording the ask would be the exact lie
+         * this whole field exists to prevent, so the narrower grant wins.
+         */
+        return {
+          outcome: 'refused',
+          authority: granted,
+          message:
+            'This source granted observation only, so Exawatt still holds read access.',
+        };
+      }
+
+      // Refused. Put the connection back the way the operator had it: the
+      // request failing must not cost them the view they already had.
+      const restored = await this.renegotiate(
+        client,
+        config,
+        this.grantedAuthority
+      );
+      restoreFailed = !restored.ok;
+      return {
+        outcome: attempt.refusal,
+        authority: this.grantedAuthority,
+        message:
+          attempt.refusal === 'approval-required'
+            ? 'This source needs its own operator to approve write access for the Exawatt device. Approve it with the source device tooling, then ask again.'
+            : `This source refused write access: ${attempt.message}`,
+      };
+    } finally {
+      this.renegotiating = false;
+      if (restoreFailed) {
+        // The refusal is answered above; the lost socket is an ordinary drop
+        // and the existing ladder is what repairs it.
+        this.handleDrop('gateway-down');
+      }
+    }
+  }
+
+  /**
+   * Give write authority back.
+   *
+   * Asking for less than the source approved always succeeds, so this needs
+   * nobody's permission and takes effect locally first: the write surface is
+   * shut before any socket work, and it stays shut even if the Gateway is
+   * unreachable.
+   *
+   * What this achieves, said plainly: **Exawatt stops asking.** It reconnects
+   * requesting `operator.read`, so this session and every later one hold read
+   * scopes only. It does not revoke the device and it is not known to lower
+   * the approval the source recorded, which was verified only in the raising
+   * direction. An operator who wants the source-side approval itself withdrawn
+   * revokes or re-approves the Exawatt device with the source's own tooling,
+   * and the message says so rather than claiming a revocation that may not
+   * have happened.
+   */
+  async relinquishWriteAuthority(): Promise<AuthorityRequestResult> {
+    if (this.grantedAuthority === 'read') {
+      return {
+        outcome: 'unchanged',
+        authority: 'read',
+        message: 'Exawatt already holds read access only on this source.',
+      };
+    }
+
+    this.applyGrantedAuthority('read');
+
+    const client = this.client;
+    const config = this.clientConfig;
+    if (!client || !config) {
+      return {
+        outcome: 'granted',
+        authority: 'read',
+        message:
+          'Exawatt gave up write access and will ask for read access only. The device stays paired on the source until you revoke it there.',
+      };
+    }
+
+    this.renegotiating = true;
+    let dropped = false;
+    try {
+      const narrowed = await this.renegotiate(client, config, 'read');
+      dropped = !narrowed.ok;
+      return {
+        outcome: 'granted',
+        authority: 'read',
+        message: narrowed.ok
+          ? 'Exawatt gave up write access and now asks for read access only. The device stays paired on the source until you revoke it there.'
+          : 'Exawatt gave up write access and will ask for read access only when it reconnects. The device stays paired on the source until you revoke it there.',
+      };
+    } finally {
+      this.renegotiating = false;
+      if (dropped) this.handleDrop('gateway-down');
+    }
   }
 
   /**
@@ -669,7 +1074,11 @@ export class ConnectedGatewaySession {
   }
 
   /**
-   * Pair Exawatt's own device identity at exactly `operator.read`.
+   * Pair Exawatt's own device identity at exactly the scopes its granted
+   * authority earns, which for a source connecting for the first time is
+   * `operator.read` and nothing else. Connecting never widens authority: it
+   * presents what the record says the source already granted, and a refusal
+   * narrows the ask rather than escalating it.
    *
    * The shared secret lives in one local variable for the length of this
    * method. It is presented once, the device token the Gateway answers with is
@@ -701,10 +1110,9 @@ export class ConnectedGatewaySession {
     this.setPhase('pairing');
 
     let sharedSecret: string | null = credential.sharedSecret;
-    const scopes: readonly OCGatewayOperatorScope[] = [...H1_READ_SCOPES];
     const config: OCClientConfig = {
       url: `ws://${LOOPBACK_HOST}:${port}`,
-      scopes,
+      scopes: [...SCOPES_FOR_AUTHORITY[this.grantedAuthority]],
       ...describeExawattClient(),
     };
     if (sharedSecret !== null) {
@@ -713,19 +1121,34 @@ export class ConnectedGatewaySession {
 
     const client = this.deps.createClient(config);
     this.client = client;
+    this.clientConfig = config;
     if (credential.deviceToken !== null) {
       client.deviceToken = credential.deviceToken;
     }
 
-    try {
-      await client.connect();
-    } catch (error) {
+    let requested: SourceAuthority = this.grantedAuthority;
+    let opened = await this.openHandshake(client);
+    if (!opened.ok && requested === 'write') {
+      /*
+       * Asking for less than the source approved is always allowed, so a
+       * refused write ask means the approval this record remembers no longer
+       * stands: revoked, re-approved narrower, or a different installation's
+       * device list. Falling back to read keeps observation alive and records
+       * the honest downgrade instead of stranding the source over authority it
+       * does not have. The reverse fallback does not exist and must not: no
+       * failure may widen what Exawatt asks for.
+       */
+      requested = 'read';
+      config.scopes = [...SCOPES_FOR_AUTHORITY.read];
+      opened = await this.openHandshake(client);
+    }
+    if (!opened.ok) {
       sharedSecret = null;
       config.token = undefined;
       return {
         ok: false,
         failure: 'gateway-down',
-        message: messageOf(error, 'The Gateway refused the connection.'),
+        message: opened.message,
       };
     }
 
@@ -754,7 +1177,97 @@ export class ConnectedGatewaySession {
     sharedSecret = null;
     config.token = undefined;
 
+    this.applyGrantedAuthority(this.grantedFrom(client, requested));
+
     return { ok: true };
+  }
+
+  // ---- Authority ---------------------------------------------------------
+
+  /**
+   * One handshake attempt, with the client's own failure turned into a
+   * sentence rather than an exception.
+   */
+  private async openHandshake(
+    client: ConnectedGatewayClient
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      await client.connect();
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        message: messageOf(error, 'The Gateway refused the connection.'),
+      };
+    }
+  }
+
+  /**
+   * Present the same device again at a different scope.
+   *
+   * Scope is settled during the handshake, so changing it means cycling the
+   * socket. The client instance is reused deliberately and this is the whole
+   * distinction between an upgrade and a re-pairing: it keeps the device
+   * keypair the Gateway knows this device by, and it keeps the persisted
+   * device token. A fresh client would generate a fresh keypair, which is a
+   * new device, which is exactly the outcome the doc rules out.
+   */
+  private async renegotiate(
+    client: ConnectedGatewayClient,
+    config: OCClientConfig,
+    authority: SourceAuthority
+  ): Promise<
+    | { ok: true }
+    | { ok: false; message: string; refusal: 'approval-required' | 'refused' }
+  > {
+    config.scopes = [...SCOPES_FOR_AUTHORITY[authority]];
+    try {
+      client.disconnect();
+    } catch {
+      // A socket that will not close cleanly must not stop the reconnect that
+      // is the point of this call.
+    }
+    const opened = await this.openHandshake(client);
+    if (opened.ok) return { ok: true };
+    return {
+      ok: false,
+      message: opened.message,
+      refusal: classifyAuthorityRefusal(opened.message),
+    };
+  }
+
+  /**
+   * What the Gateway granted on a handshake that completed.
+   *
+   * A completed handshake is the grant: verified live 2026-08-18, a Gateway
+   * refuses the handshake outright when a device asks for more scope than its
+   * record approves, by either credential route. So the requested authority is
+   * the ceiling and the floor unless the Gateway itself reports otherwise,
+   * and a report can only narrow.
+   */
+  private grantedFrom(
+    client: ConnectedGatewayClient,
+    requested: SourceAuthority
+  ): SourceAuthority {
+    const reported = client.grantedScopes;
+    if (!Array.isArray(reported) || reported.length === 0) return requested;
+    const scopes = reported.filter(
+      (scope): scope is string => typeof scope === 'string'
+    );
+    return narrowerAuthority(requested, authorityForGrantedScopes(scopes));
+  }
+
+  /** Record a change in granted authority, in memory and on disk. */
+  private applyGrantedAuthority(next: SourceAuthority): void {
+    if (this.grantedAuthority === next) return;
+    this.grantedAuthority = next;
+    /*
+     * A failed write means the record is missing or unreadable, in which case
+     * there is no configured source left to hold authority on. The field above
+     * is what this session's write surface obeys either way, so the gate never
+     * depends on the disk answering.
+     */
+    this.deps.store.setGrantedAuthority(this.record.id, next);
   }
 
   /**
@@ -861,11 +1374,11 @@ export class ConnectedGatewaySession {
   }
 
   /**
-   * The single gateway call path. Every read in this file goes through here.
+   * The read call path. Every read in this file goes through here.
    *
-   * The source-side scope grant is the real read-only enforcement; this
-   * allowlist is the local guard that stops a typo or a future edit from ever
-   * forming a write request in the first place.
+   * The source-side scope grant is the real enforcement; this allowlist is the
+   * local guard that stops a typo or a future edit from ever forming a wider
+   * request in the first place.
    */
   private async callGateway<R>(method: string, params?: unknown): Promise<R> {
     if (!H1_READ_METHOD_SET.has(method)) {
@@ -873,6 +1386,36 @@ export class ConnectedGatewaySession {
         `Refusing "${method}": ENG-010 H1 is read-only and allows only ${H1_READ_METHODS.join(', ')}.`
       );
     }
+    return this.dispatch<R>(method, params);
+  }
+
+  /**
+   * The write call path, and the second lock on the same reasoning as the
+   * read one. The scopes on the device record are what actually stops a write
+   * Exawatt was never granted; this allowlist plus the granted-authority gate
+   * stop Exawatt from forming that request at all, so a surface that ran ahead
+   * of an approval fails here with a sentence about the approval instead of
+   * reaching the server and coming back with a protocol error.
+   */
+  private async callGatewayWrite<R>(
+    method: string,
+    params?: unknown
+  ): Promise<R> {
+    if (!H2_WRITE_METHOD_SET.has(method)) {
+      throw new Error(
+        `Refusing "${method}": the write surface allows only ${H2_WRITE_METHODS.join(', ')}.`
+      );
+    }
+    if (this.grantedAuthority !== 'write') {
+      throw new Error(
+        `Refusing "${method}": this source has granted Exawatt read access only. Request write access and approve the Exawatt device on the source first.`
+      );
+    }
+    return this.dispatch<R>(method, params);
+  }
+
+  /** The one place a method name reaches the client, whichever tier sent it. */
+  private async dispatch<R>(method: string, params?: unknown): Promise<R> {
     const client = this.client;
     if (!client) {
       throw new Error('No Gateway connection is open for this source.');
@@ -913,7 +1456,7 @@ export class ConnectedGatewaySession {
    * Exawatt's observation and about nothing else.
    */
   private handleDrop(failure: SourceFailureClass | null): void {
-    if (this.detached || this.tearingDown) return;
+    if (this.detached || this.tearingDown || this.renegotiating) return;
     if (this.currentPhase === 'reconnecting') return;
 
     this.transportUp = false;
@@ -988,6 +1531,7 @@ export class ConnectedGatewaySession {
       const statusHandler = this.clientStatusHandler;
       this.client = null;
       this.clientStatusHandler = null;
+      this.clientConfig = null;
       if (client && statusHandler) {
         client.off('connection:status', statusHandler);
       }

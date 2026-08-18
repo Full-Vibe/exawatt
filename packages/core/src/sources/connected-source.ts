@@ -48,6 +48,43 @@ export const SOURCE_CREDENTIAL_OWNERS = [
 ] as const;
 export type SourceCredentialOwner = (typeof SOURCE_CREDENTIAL_OWNERS)[number];
 
+/**
+ * How much authority Exawatt actually holds on a source (ENG-033 H2).
+ *
+ * Two values, and deliberately no third. `read` is observation: it is the
+ * floor, the default, and everything H1 ships. `write` is the ability to talk
+ * to a coworker: send, abort, steer, cancel. Administration — cron mutation,
+ * configuration, Agent create/delete — has no representable value here,
+ * because a vocabulary that cannot express admin cannot be talked into
+ * granting it.
+ *
+ * The name is `granted`, not `allowed` or `requested`, and that is the whole
+ * point. It records what the Gateway answered with on a completed handshake,
+ * never what Exawatt asked for. Raising it is a server-side pairing approval
+ * the operator performs on the source; Exawatt cannot approve itself.
+ */
+export const SOURCE_AUTHORITIES = ['read', 'write'] as const;
+export type SourceAuthority = (typeof SOURCE_AUTHORITIES)[number];
+
+const AUTHORITY_SET: ReadonlySet<string> = new Set(SOURCE_AUTHORITIES);
+
+/**
+ * The one fail-closed reader for granted authority.
+ *
+ * Absent, wrong-typed, or unrecognised all resolve to `read`, and none of them
+ * rejects the record. That asymmetry with the rest of this file's validation is
+ * deliberate. Every other field has no safe answer when it is corrupt, so the
+ * record is refused. This one has exactly one safe answer, and it is the answer
+ * a source starts with: read-only. Rejecting the record instead would detach a
+ * working source over a field whose worst case is that the operator has to ask
+ * for write authority again.
+ */
+export function readGrantedAuthority(value: unknown): SourceAuthority {
+  return typeof value === 'string' && AUTHORITY_SET.has(value)
+    ? (value as SourceAuthority)
+    : 'read';
+}
+
 /** Persisted in Electron main only. Never sent to the renderer. */
 export interface ConnectedSourceRecord {
   id: string;
@@ -59,6 +96,19 @@ export interface ConnectedSourceRecord {
   credentialOwner: SourceCredentialOwner;
   /** True once a scoped device token exists in the OS keychain for this source. */
   hasDeviceCredential: boolean;
+  /**
+   * Authority the source's Gateway granted this device, as observed on the
+   * last completed handshake. Never what Exawatt asked for, and never a
+   * standing permission Exawatt gave itself.
+   *
+   * Required, so that no record can quietly omit the authority it is being
+   * operated under. Persisted JSON is a different matter: a record written
+   * before authority existed simply has no such field, and
+   * `parseConnectedSourceRecord` reads that absence as read-only through
+   * `readGrantedAuthority`, which is the one place any absent or unrecognised
+   * value is turned into a value.
+   */
+  grantedAuthority: SourceAuthority;
   createdAt: number;
 }
 
@@ -95,6 +145,10 @@ export function toConnectedSourceView(
       record.transport.kind === 'ssh-alias' ? record.transport.alias : null,
     credentialOwner: record.credentialOwner,
     hasDeviceCredential: record.hasDeviceCredential,
+    // `grantedAuthority` stays in main for now. It is not connection material
+    // and it belongs in this projection the moment a surface shows it; the
+    // packet that adds a composer adds the field with the surface, so the
+    // renderer never carries an authority nothing reads.
   };
 }
 
@@ -308,6 +362,10 @@ export function parseConnectedSourceRecord(
       transport,
       credentialOwner: value.credentialOwner as SourceCredentialOwner,
       hasDeviceCredential: value.hasDeviceCredential as boolean,
+      // Normalised rather than validated-or-rejected, for the reason given on
+      // `readGrantedAuthority`. A record written before H2 has no such field
+      // and is read as read-only, which is exactly what it holds.
+      grantedAuthority: readGrantedAuthority(value.grantedAuthority),
       createdAt: value.createdAt as number,
     },
   };
