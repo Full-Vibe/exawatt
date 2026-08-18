@@ -345,7 +345,7 @@ simulated evidence.
   segment, plus `cron.list` and `status`; (e) an authoritative resnapshot on
   every reconnect; (f) deletion of the environment-flag single-Gateway path
   and the `hosted-openclaw` coming-soon adapter.
-- **C2 Connect flow and coworker projection.** Prototype the cross-surface state
+- **C2 Connect flow and coworker projection — LANDED 2026-08-18.** Prototype the cross-surface state
   in `/hud-gallery`, then wire **⌘N → Connect existing Agent…**, explicit
   Project mapping, and read-only Marcus/Scout/Tyler Agent + Team views with a
   bounded primary-conversation history and compact current-work stack.
@@ -683,3 +683,62 @@ source has no SSH alias, so the bootstrap cannot yet resolve a credential for
 the operator's own machine-local Gateway; and `ssh-manual` transport is
 accepted by the record model but not yet by the tunnel owner, which is
 alias-only and fails closed with a plain sentence.
+
+### 2026-08-18 — C2 landed: the route, the roster, and what removing debt exposed
+
+Connect is a route on the ⌘N chooser, beside opening a known Project and adding
+one from disk, with a File menu entry that lands on that same route rather than
+opening a second door. It lists the operator's own SSH aliases by name, names
+the stage a bounded connection test is in, preselects configured Agents while
+keeping retired ones apart and unchecked, and takes an explicit Project mapping.
+Cancelling at any step leaves both the source and the server untouched.
+
+Remote coworkers now stand in the same roster as local ones, carrying placement,
+connection freshness, and source identity as one optional presence field, so no
+downstream surface needs a remote branch. Settings gains the connected-source
+registry, and `/hud-gallery/connected-source` holds the treatment the design
+system requires to be reviewed before it reaches production.
+
+**Work state became real.** `sessions.list` reports an active run per session
+and that signal now travels adapter to kernel to runtime to renderer, tri-state
+so that "the source said nothing" is never coerced into "not working". Remote
+still reaches only two of D40's six states: a turn boundary, a human gate, and
+an exit have no remote evidence, and claiming one would invent a result, a gate,
+or a fault. H2 earns those.
+
+**Two rungs the existing contracts did not reach, both found by writing the
+test rather than by review.**
+
+A verb could satisfy every join the discoverability manifest makes, render in
+the native menu, and still do nothing, because dispatch is a switch and a
+missing case is silent. Dispatch has three owners, so each publishes what it
+handles and the contract now joins the union to the manifest in both
+directions. Writing that test immediately flagged five verbs; all five turned
+out to be dispatched from the other two owners, which is the answer the test
+should give, since the invariant is that a menu item does something rather than
+that one file handles everything.
+
+The second was the read-only posture itself. H1 being read-only was a claim
+about which function the renderer called, while the old broker sat wired into
+main with `chat.send` and the whole cron mutation set on its allowlist, reached
+through a preload bridge nothing consumed any more. Deleting it, and the
+single-connection resolver that turned local configuration into THE gateway
+connection, makes read-only structural: no code path in the process can now
+send a message or change a schedule on someone's server.
+
+**C1 follow-ups closed as seams.** Credential resolution is one function
+dispatching on transport kind, with an SSH implementation and a local one; the
+local path resolves the indirection this machine actually uses through a
+bounded read of a secret file whose name config text cannot choose, and
+executes nothing. Transport is one destination model whose alias and manual
+cases share a single injection guard, so hardening cannot be present on one
+path and missing on the other.
+
+**Evidence.** The live probe now runs the shipping client identity rather than a
+profile the Gateway exempts from pairing, asserts against the server's own
+record that the device it pairs carries `operator.read` and nothing else, and
+removes only the devices that run created, computed as a difference against a
+listing taken beforehand. Matching on client id or scopes would have been
+simpler and eventually deleted the very device production is meant to keep.
+Both dogfood Gateways pass, and both finish holding only the operator's own
+device.
