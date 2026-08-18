@@ -95,7 +95,9 @@
         "docs/product/**",
         "docs/references/**"
       ],
-      "exclude": []
+      "exclude": [
+        "docs/engineering/incidents/**"
+      ]
     },
     {
       "id": "electron-public",
@@ -259,11 +261,6 @@
       "path": "docs/engineering/decisions/0036-open-client-private-cloud-and-official-distribution.md",
       "classification": "PUBLIC",
       "reason": "public rationale with private research citations inlined"
-    },
-    {
-      "path": "docs/engineering/incidents/0007-desktop-identity-link-missing-session.md",
-      "classification": "PUBLIC",
-      "reason": "public incident with identity evidence scrubbed"
     },
     {
       "path": "docs/engineering/projects/consumption-spine.md",
