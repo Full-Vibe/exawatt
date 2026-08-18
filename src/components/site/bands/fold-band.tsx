@@ -12,10 +12,15 @@ import type { HomepageBand } from './manifest';
  * that mounts a second `HeroBoard` is the defect this pass removed.
  *
  * `/` is the page the proposal is compared against, so it must not move under
- * the comparison. Retiring this component, the homepage command key switch and
- * the `t8-home-keyswitch` R3F battery is the same edit as flipping
- * `HOMEPAGE_ARRANGEMENT` to `proposed`, because "the 3D key switch comes off
- * the site" is what the proposed fold already does.
+ * the comparison. The homepage 3D command key switch has already come off of
+ * `HomeHero` (operator, 2026-08-17), which is the one piece of this fold's
+ * interior the proposed fold also does differently — the rest of this
+ * component still stands apart from flipping `HOMEPAGE_ARRANGEMENT` to
+ * `proposed`. Its `t8-home-keyswitch` R3F battery retired with it. `t7`
+ * (material workbench) and `t9` (agent-start eval) stay, along with the
+ * `/hud-gallery` workbench itself: decision
+ * `0025-reactivate-keyswitch-gallery-study` keeps that surface as the
+ * material study bench, independent of what ships on `/`.
  */
 export const FOLD_BAND_CLASS = '-mt-12';
 

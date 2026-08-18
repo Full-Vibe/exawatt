@@ -443,7 +443,9 @@ async function sampleThemeChurnIsolation() {
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load' });
   await page.evaluate(() => window.__resetExaTypographyEarlyProbe());
-  await page.locator('[data-command-key-button]').click({ noWaitAfter: true });
+  await page
+    .locator('[data-home-architecture-button]')
+    .click({ noWaitAfter: true });
   await page.waitForURL('**/architecture');
   const clientNavigation = await sampleTypography('home-to-architecture');
   clientNavigation.rasterHashes = await sampleTitleRaster();

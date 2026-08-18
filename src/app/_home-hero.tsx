@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { CommandKeySwitchButton } from '@/components/hud/webgl/keyswitch-study';
+import Link from 'next/link';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   BandContent,
   BandCopy,
@@ -15,40 +16,9 @@ import { HeroBg } from './_hero-bg';
 // (ENG-031 W1); the hero owns what is inside it.
 const FOLD = bandById('fold');
 
-const COMMAND_KEY_DELAY_MS = 1_000;
-const COMMAND_KEY_FADE_DURATION_MS = 2_000;
-
-type CommandKeyRevealPhase = 'waiting' | 'revealing' | 'ready';
-
 export function HomeHero() {
   const reducedMotion = usePrefersReducedMotion();
   const [backgroundReady, setBackgroundReady] = useState(false);
-  const [keyPhase, setKeyPhase] = useState<CommandKeyRevealPhase>('waiting');
-
-  useEffect(() => {
-    if (!backgroundReady) return;
-    if (reducedMotion) {
-      setKeyPhase('ready');
-      return;
-    }
-
-    const revealTimer = window.setTimeout(
-      () => setKeyPhase('revealing'),
-      COMMAND_KEY_DELAY_MS
-    );
-    const readyTimer = window.setTimeout(
-      () => setKeyPhase('ready'),
-      COMMAND_KEY_DELAY_MS + COMMAND_KEY_FADE_DURATION_MS
-    );
-
-    return () => {
-      window.clearTimeout(revealTimer);
-      window.clearTimeout(readyTimer);
-    };
-  }, [backgroundReady, reducedMotion]);
-
-  const keyVisible = keyPhase !== 'waiting';
-  const keyInteractive = keyPhase === 'ready';
 
   return (
     <div
@@ -75,25 +45,23 @@ export function HomeHero() {
           </span>
         </BandCopy>
         <div
-          aria-hidden={!keyInteractive}
-          data-home-command-key-reveal
-          data-reveal-delay-ms={COMMAND_KEY_DELAY_MS}
-          data-reveal-duration-ms={COMMAND_KEY_FADE_DURATION_MS}
-          data-reveal-state={keyPhase}
+          aria-hidden={!backgroundReady}
+          data-home-architecture-cta
           style={{
-            opacity: keyVisible ? 1 : 0,
-            transitionDuration: reducedMotion
-              ? '0ms'
-              : `${COMMAND_KEY_FADE_DURATION_MS}ms`,
+            opacity: backgroundReady ? 1 : 0,
+            transitionDuration: reducedMotion ? '0ms' : '500ms',
             transitionProperty: 'opacity',
             transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
-            willChange: keyPhase === 'revealing' ? 'opacity' : undefined,
           }}
         >
-          <CommandKeySwitchButton
-            idleHint={keyInteractive}
-            interactive={keyInteractive}
-          />
+          <Button
+            asChild
+            className="h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90"
+            data-home-architecture-button
+            tabIndex={backgroundReady ? undefined : -1}
+          >
+            <Link href="/architecture">Architecture</Link>
+          </Button>
         </div>
       </BandContent>
     </div>
