@@ -33,7 +33,7 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:3000 and pick Demo Mode. Everything you see is authored
+Open http://localhost:7000 and pick Demo Mode. Everything you see is authored
 sample data, and it is labeled as such wherever it appears.
 
 ## Build the desktop app
@@ -43,7 +43,7 @@ pnpm install
 pnpm electron:build:dir
 ```
 
-Requires macOS and Node 22. This produces a community build: it talks to no
+Requires macOS on Apple silicon and Node 22. This produces a community build: it talks to no
 Exawatt service, carries no analytics, and has no update channel. It runs Demo
 Mode and any agent harness you have installed locally.
 

@@ -33,6 +33,41 @@ export function distributionRewrites(
 }
 
 /**
+ * `/download` is answered by whichever tree owns it (ENG-030 WP3).
+ *
+ * The company overlay adds `src/app/download/page.tsx` in an `official-web`
+ * composition: the official signed build, its live release metadata, and invite
+ * attribution. Every other tree, including a public clone and a community
+ * build, has no such file, and the marketing bands link `/download` through
+ * `DOWNLOAD_HREF` regardless. This rewrite is what makes the public page the
+ * answer in that case.
+ *
+ * It is deliberately UNCONDITIONAL, and that is the whole design. Next applies
+ * an array of rewrites after checking the filesystem, so a composed tree wins
+ * by having the page and the public tree wins by not having it. The switch is
+ * therefore the composition itself rather than a second signal derived from the
+ * contract, which cannot disagree with the tree the way an environment-derived
+ * boolean can. Incident `0017` is what a silent disagreement between those two
+ * costs.
+ */
+export const PUBLIC_DOWNLOAD_REWRITE: DistributionRewrite = Object.freeze({
+  source: '/download',
+  destination: '/download/community',
+});
+
+/**
+ * Rewrites that follow the COMPOSITION rather than the distribution contract.
+ * Kept separate from `distributionRewrites` so neither list can quietly acquire
+ * the other's condition.
+ */
+export function compositionRewrites(): DistributionRewrite[] {
+  // A COPY, not the frozen declaration: Next normalizes each rewrite in place
+  // (basePath, locale), so handing it the frozen object fails the build with
+  // `Cannot assign to read only property 'source'`.
+  return [{ ...PUBLIC_DOWNLOAD_REWRITE }];
+}
+
+/**
  * Build one deterministic CSP from the resolved contract. Distribution
  * service origins are exact; the separate `ws:` lane is intentionally broad
  * because an operator-owned Agent Source Gateway may be loopback, LAN, or
