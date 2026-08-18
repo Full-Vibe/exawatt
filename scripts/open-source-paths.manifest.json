@@ -150,6 +150,7 @@
         "scripts/check-dependency-licenses.mjs",
         "scripts/check-production-theme-literals.mjs",
         "scripts/ci-batch-worker.mjs",
+        "scripts/community-network-observatory.mjs",
         "scripts/company-compose.mjs",
         "scripts/company-proof.mjs",
         "scripts/discard-electron-snapshot.mjs",
