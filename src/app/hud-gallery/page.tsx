@@ -551,6 +551,13 @@ export default function HudGallery() {
                 style={{ color: HUD.cyan }}
               >
                 Open the Usage multiplexer directions →
+              </a>{' '}
+              <a
+                href="/hud-gallery/connected-source"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Connected Agents study →
               </a>
             </p>
           </header>
