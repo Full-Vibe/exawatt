@@ -6,7 +6,11 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { STATUS_LIGHT_META } from '@/components/status-light';
+import {
+  STATUS_LIGHT_META,
+  STATUS_LIGHT_STATES,
+  statusLightWord,
+} from '@/components/status-light';
 import ConnectedSourceBenchPage from './page';
 
 afterEach(cleanup);
@@ -216,5 +220,21 @@ describe('Connected Agents study', () => {
     const text = `${document.body.textContent ?? ''} ${ariaLabels().join(' ')}`;
     expect(text).not.toContain('—');
     expect(text).not.toMatch(/\b(stopped|paused|lost)\b/i);
+  });
+
+  it('reads its work words from the owner production Team tiles read', () => {
+    renderStudy();
+
+    // ENG-033 H2: production adopted this study's word. Both sides now go
+    // through `statusLightWord`, so the study cannot quietly re-word a state
+    // that the shipped roster still spells the old way.
+    for (const state of STATUS_LIGHT_STATES) {
+      const word = statusLightWord(state);
+      expect(word).toBe(STATUS_LIGHT_META[state].label);
+      expect(word).not.toContain('—');
+    }
+    for (const word of ['Working', 'Needs you', 'Result ready', 'Error']) {
+      expect(screen.getAllByText(word).length).toBeGreaterThan(0);
+    }
   });
 });
