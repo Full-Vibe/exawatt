@@ -24,6 +24,8 @@
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
+
+import { recordGeneratedAssetProvenance } from './lib/asset-provenance-record.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
@@ -309,10 +311,18 @@ async function main() {
       .locator('[data-hero-board]')
       .screenshot({ type: 'jpeg', quality: 82 });
     writeFileSync(POSTER_PATH, buffer);
+    // Re-attest in the same action that rewrites the bytes, so regenerating
+    // can never leave `pnpm assets:check` red for an intended change.
+    const attested = await recordGeneratedAssetProvenance({
+      root: ROOT,
+      assetPath: POSTER_PATH,
+      bytes: buffer,
+    });
     results.push({
       option: 'poster',
       path: POSTER_PATH,
       bytes: buffer.length,
+      provenance: attested.changed ? 're-attested' : 'unchanged',
       ok: true,
     });
     await page.close();

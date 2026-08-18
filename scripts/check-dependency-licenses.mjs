@@ -8,6 +8,8 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { format } from 'prettier';
 
+import { assertInstallFresh } from './lib/install-freshness.mjs';
+
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NOTICE_PATH = path.join(ROOT, 'THIRD_PARTY_NOTICES.md');
@@ -359,6 +361,12 @@ export function renderNotice(rows, lockfileHash = '<lockfile-sha256>') {
 }
 
 export async function runLicenseCheck({ write = false } = {}) {
+  // Establish that node_modules is trustworthy before reporting on it. A stale
+  // tree makes every row below describe packages the repository does not
+  // declare, and in --write mode it would COMMIT that fiction.
+  await assertInstallFresh(ROOT, {
+    task: write ? '`pnpm licenses:generate`' : '`pnpm licenses:check`',
+  });
   const collected = await collectInstalledRows(await installedPackages());
   const rows = collected.rows;
   const failures = [...collected.failures, ...validateRows(rows)];
@@ -380,7 +388,9 @@ export async function runLicenseCheck({ write = false } = {}) {
           noticeRows.every(row => actualNotice.includes(inventoryRow(row)));
     if (!platformComplete) {
       failures.push(
-        'THIRD_PARTY_NOTICES.md is stale; run pnpm licenses:generate on macOS'
+        'THIRD_PARTY_NOTICES.md does not match the installed dependency set; ' +
+          'run `pnpm licenses:generate` on macOS (dependencies verified installed ' +
+          'from this lockfile, so the notices really are behind)'
       );
     }
   }
