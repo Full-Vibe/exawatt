@@ -51,15 +51,23 @@
  *     launch, a packaged community build resolved no hostname at all, and
  *     opened no socket to any address off loopback.
  *   • In particular none to an Exawatt-owned service, and none to Anthropic.
+ *   • And, by assertion rather than observation, that the automatic
+ *     own-account read is refused by the boundary this exact build compiled:
+ *     the community contract declares no stable signed identity, while the
+ *     same guard grants a distribution that does (BUG-060).
  *
  * ── WHAT IT DOES NOT PROVE ───────────────────────────────────────────────
  *
  *   • Anything outside the window, or on a path this exercise never walks.
- *   • The automatic own-account (Anthropic) read. `EXAWATT_TEST=1` is required
- *     for a non-focus-stealing launch, and test mode is one of the two inputs
- *     to `isClaudePlanRemoteReadAllowed`. The run therefore cannot observe
- *     that boundary, so the OWN-ACCOUNT section below asserts the decision
- *     itself against what this repository currently declares, and prints it.
+ *   • The automatic own-account (Anthropic) read, BY OBSERVATION.
+ *     `EXAWATT_TEST=1` is required for a non-focus-stealing launch and is one
+ *     of that gate's own inputs, so this window can never provoke the read.
+ *     The OWN-ACCOUNT section below therefore ASSERTS that boundary against
+ *     the packaged contract and the compiled guard instead, in both
+ *     directions, and prints what it proved. Since BUG-060 the boundary is
+ *     the distribution's `ownAccount.claudePlanUsage` declaration, which the
+ *     community composition does not carry, so a fail here is a real
+ *     regression rather than a standing disclosure.
  */
 
 import { execFile, execFileSync } from 'node:child_process';
@@ -349,6 +357,7 @@ const nonNull = [
   contract.account !== null && 'account',
   contract.analytics !== null && 'analytics',
   contract.updates !== null && 'updates',
+  contract.ownAccount !== null && 'ownAccount',
   ...Object.entries(contract.services)
     .filter(([, ref]) => ref !== null)
     .map(([name]) => `services.${name}`),
@@ -573,16 +582,16 @@ try {
   }
 
   /* ---------------------------------------------------------------- */
-  /* own-account (Anthropic) — a different family, stated not implied  */
+  /* own-account (Anthropic) — a different family, asserted not implied */
   /* ---------------------------------------------------------------- */
 
   // Decision `0036` §6 (amended 2026-08-16) requires the automatic own-account
   // read to be gated on a distribution-declared stable signing identity,
   // because `app.isPackaged` is not a durable boundary after the repository
   // split: a contributor's ad-hoc package is packaged too (incident `0011`).
-  // Schema V1 does not carry `ownAccount` yet, so the boundary is still
-  // `packaged && !test`. This asserts what the repository ACTUALLY declares so
-  // the roadmap cannot drift from it in either direction.
+  // BUG-060 landed that declaration as schema V2's `ownAccount.claudePlanUsage`
+  // and this asserts it CLOSED, in both directions, against the same compiled
+  // guard the package was built from and the same contract it carries.
   const compiledPlanAccount = resolve(
     ROOT,
     'dist-electron/main/consumption/claude-plan-account.js'
@@ -595,26 +604,56 @@ try {
     );
   }
   const { isClaudePlanRemoteReadAllowed } = require(compiledPlanAccount);
+  // What the artifact under observation actually declares.
+  const declaresStableSigned =
+    contract.ownAccount?.claudePlanUsage === 'stable-signed';
+  // The exact shape of a contributor's ad-hoc `pnpm electron:build`: packaged,
+  // not a test run, no developer opt-in.
   const adHocPackagedAutomatic = isClaudePlanRemoteReadAllowed({
+    stableSignedIdentity: declaresStableSigned,
     packaged: true,
     testMode: false,
     developmentOptIn: undefined,
   });
-  const OWN_ACCOUNT_BOUNDARY_TODAY = true; // see the comment above
-  if (adHocPackagedAutomatic !== OWN_ACCOUNT_BOUNDARY_TODAY) {
+  // The same guard with the declaration present. Asserting this too is what
+  // makes the check a BOUNDARY rather than a feature switched off: a guard
+  // hard-wired to false would pass the line above and fail this one.
+  const declaredPackagedAutomatic = isClaudePlanRemoteReadAllowed({
+    stableSignedIdentity: true,
+    packaged: true,
+    testMode: false,
+    developmentOptIn: undefined,
+  });
+  if (declaresStableSigned) {
     findings.push(
-      'The own-account boundary changed: an ad-hoc packaged community build ' +
-        `now computes automatic Anthropic read = ${adHocPackagedAutomatic}. ` +
-        'That is the milestone property moving — update OS4.2 and this gate ' +
-        'together rather than letting one describe the other wrongly.'
+      'The community composition declares ownAccount.claudePlanUsage, which no ' +
+        'community build may: the declaration belongs to a distributor with ' +
+        'signing custody (decision `0036` §6).'
+    );
+  }
+  if (adHocPackagedAutomatic !== false) {
+    findings.push(
+      'OWN-ACCOUNT BOUNDARY OPEN: an ad-hoc packaged community build computes ' +
+        `automatic Anthropic read = ${adHocPackagedAutomatic}. That is BUG-060 ` +
+        'regressing — the grant must come from the distribution contract.'
+    );
+  }
+  if (declaredPackagedAutomatic !== true) {
+    findings.push(
+      'The own-account guard refuses even a distribution that DECLARES a stable ' +
+        `signed identity (computed ${declaredPackagedAutomatic}). The community ` +
+        'absence above is then vacuous: it proves a disabled feature, not a ' +
+        'boundary. Repair the guard rather than trusting this run.'
     );
   }
   console.log(
-    `\n[observatory] OPEN — own-account read: an ad-hoc packaged community ` +
-      `build computes automatic Anthropic read = ${adHocPackagedAutomatic} ` +
-      '(`packaged && !test`). This run cannot observe it: EXAWATT_TEST=1 is ' +
-      'required for a non-focus-stealing launch and is one of that gate’s ' +
-      'own inputs. OS4.2 stays open on `ownAccount.claudePlanUsage`.'
+    `\n[observatory] own-account read: this build declares ` +
+      `ownAccount.claudePlanUsage = ${contract.ownAccount?.claudePlanUsage ?? 'null'}, ` +
+      `so an ad-hoc packaged community build computes automatic Anthropic ` +
+      `read = ${adHocPackagedAutomatic}; a distribution declaring ` +
+      `stable-signed computes ${declaredPackagedAutomatic}. Asserted, not ` +
+      'observed: EXAWATT_TEST=1 is required for a non-focus-stealing launch ' +
+      'and is one of that gate’s own inputs.'
   );
 
   if (findings.length > 0) {

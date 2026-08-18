@@ -61,7 +61,7 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows } from './window-broadcast';
-import type { DistributionContractV1 } from '@exawatt/core/distribution';
+import type { DistributionContractV2 } from '@exawatt/core/distribution';
 
 let activeContextSummarizer: ContextSummarizer | null = null;
 
@@ -79,7 +79,7 @@ setAgentModelCatalogCache(
  * (single-window app today; cheap to scope per-window later).
  */
 export function registerPtyIPC(
-  distribution: DistributionContractV1,
+  distribution: DistributionContractV2,
   previousRunInterrupted = false
 ): void {
   const contextSummarizer = new ContextSummarizer({ distribution });

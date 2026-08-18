@@ -18,7 +18,7 @@ import {
 } from '@exawatt/core';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 import { planLoginShell, shellQuote } from './login-shell';
 
@@ -1200,7 +1200,7 @@ export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export interface ConversationCatalogOptions {
-  distribution?: DistributionContractV1;
+  distribution?: DistributionContractV2;
   adapters?: ConversationCatalogAdapter[];
   projectSessions?: () => ClosedSessionEntry[];
   cacheFile?: string;

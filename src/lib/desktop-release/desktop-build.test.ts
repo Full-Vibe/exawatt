@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 import {
   fetchDesktopBuild,
@@ -14,7 +14,7 @@ const FEED_URL = 'https://updates.example.test/macos/arm64';
 const UPDATE_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
   updates: { feedUrl: FEED_URL },
-} satisfies DistributionContractV1;
+} satisfies DistributionContractV2;
 
 // Verbatim shape published by electron-builder for v0.1.7.
 const FEED = `version: 0.1.7

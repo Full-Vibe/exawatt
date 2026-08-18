@@ -60,20 +60,35 @@ export const CLAUDE_OAUTH_BETA_HEADER = 'oauth-2025-04-20';
 export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
 
 /**
- * Credentialed account reads belong to an installed, signed app identity.
- * Unpackaged Electron is ad-hoc signed on macOS, so every Electron revision
- * presents Little Snitch with a different CDHash. A focused developer may
- * opt in explicitly when exercising this exact integration; routine dev and
- * eval launches stay local.
+ * Credentialed account reads belong to a build with a DURABLE network
+ * identity, and the distribution contract is what declares one (BUG-060).
+ *
+ * Packaging alone was the pre-split proxy and is not the boundary: a
+ * contributor's ad-hoc package reports `app.isPackaged === true` and presents
+ * Little Snitch a new CDHash on every Electron revision, which is exactly the
+ * approval churn incident `0011` recorded. Decision `0036` §6 therefore moves
+ * the grant into schema V2's `ownAccount.claudePlanUsage`, which the
+ * distributor sets beside its own signing custody. Community declares none.
+ *
+ * Packaging remains NECESSARY, not sufficient: an unpackaged run built from an
+ * official contract is still ad-hoc-signed Electron, so it is still `0011`.
+ * A focused developer may opt in explicitly when exercising this exact
+ * integration; routine dev and eval launches stay local.
  */
 export function isClaudePlanRemoteReadAllowed(options: {
+  /** `ownAccount.claudePlanUsage === 'stable-signed'` in the resolved
+   *  distribution contract. The grant. */
+  stableSignedIdentity: boolean;
+  /** The running artifact is a package, not an unpackaged dev runtime. */
   packaged: boolean;
   testMode?: boolean;
   developmentOptIn?: string;
 }): boolean {
   return (
     options.developmentOptIn === '1' ||
-    (options.packaged && options.testMode !== true)
+    (options.stableSignedIdentity &&
+      options.packaged &&
+      options.testMode !== true)
   );
 }
 
@@ -265,7 +280,9 @@ function parseSpend(payload: {
         usedMinor,
         limitMinor: finiteOrNull(spend.limit?.amount_minor),
         currency:
-          typeof spend.used?.currency === 'string' ? spend.used.currency : 'USD',
+          typeof spend.used?.currency === 'string'
+            ? spend.used.currency
+            : 'USD',
         exponent: finiteOrNull(spend.used?.exponent) ?? 2,
         percent: finiteOrNull(spend.percent),
         enabled: spend.enabled === true,
@@ -367,7 +384,10 @@ export function parseClaudeUsage(
     ];
     for (const [candidate, identity] of legacy) {
       if (!candidate || typeof candidate !== 'object' || !identity) continue;
-      const bucket = candidate as { utilization?: unknown; resets_at?: unknown };
+      const bucket = candidate as {
+        utilization?: unknown;
+        resets_at?: unknown;
+      };
       const percent = finiteOrNull(bucket.utilization);
       if (percent === null) continue;
       byId.set(identity.limitId, {
@@ -503,7 +523,8 @@ export class ClaudePlanAccountService {
    * and must not await it; the returned promise exists for tests.
    */
   maybeRefresh(): Promise<void> {
-    if (!this.enabled || this.disposed) return this.inFlight ?? Promise.resolve();
+    if (!this.enabled || this.disposed)
+      return this.inFlight ?? Promise.resolve();
     if (this.inFlight) return this.inFlight;
     if (this.now() < this.nextAllowedAtMs) return Promise.resolve();
     this.nextAllowedAtMs =

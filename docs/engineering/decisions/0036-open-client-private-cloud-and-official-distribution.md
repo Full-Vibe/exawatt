@@ -5,7 +5,9 @@ Date: 2026-08-10
 Status: accepted — implementation is ENG-030 OS2–OS6; amended 2026-08-11:
 counsel review is trigger-deferred, not a publication gate (see Amendment);
 amended 2026-08-16: automatic own-account network reads require a
-distribution-declared stable signing identity
+distribution-declared stable signing identity; amended 2026-08-17: that
+declaration landed as schema V2, with V1 still accepted and read as
+`ownAccount: null`
 
 ## Context
 
@@ -172,8 +174,9 @@ Supabase configuration, analytics sink, update feed, or official-build marker
 by default. It runs Demo Mode and local Agent Sources, and may be configured by
 its distributor to use that distributor's compatible services.
 
-Amended 2026-08-16 during OS4 preflight: schema V1 is one strict, canonical
-build input owned by `@exawatt/core`. An absent input selects the stable
+Amended 2026-08-16 during OS4 preflight: the distribution schema is one
+strict, canonical build input owned by `@exawatt/core` (V1 then; V2 since
+BUG-060, with V1 still readable). An absent input selects the stable
 community identity (`Exawatt Community`, `ai.exawatt.community`); a present
 invalid input fails rather than falling back. Community has no protocol scheme,
 update channel, branded icon, or product-update preload/IPC capability and uses
@@ -213,6 +216,24 @@ none; the official overlay declares the capability alongside signing custody;
 a downstream distributor may declare it for its own stable signed build. This
 field controls local behavior only. It is never proof of officiality or
 authorization to use an Exawatt service.
+
+Amended 2026-08-17 (BUG-060), because the declaration above was specified into
+schema V1 and never implemented: it lands as schema **V2**'s required
+`ownAccount: { claudePlanUsage: 'stable-signed' } | null`, and the parser
+accepts BOTH document versions. A V1 document upgrades in memory with
+`ownAccount: null`. A version bump rather than a loosened V1 is the point: the
+stored copies of the official contract live in Vercel Production and Preview,
+a GitHub Actions repository secret, and operator custody, none of which the
+commit that changes the schema can rewrite. Adding a required key to an
+exact-key-strict V1 would invalidate all of them the instant the code landed,
+which is incident `0017` by construction. Each version stays exact-key-strict
+for its own shape — a V1 document carrying `ownAccount` is as invalid as a V2
+document missing it — because that strictness is what makes an absent input
+select community rather than half-configure an official build. The upgrade
+direction is fail-safe: a contract written before the declaration existed does
+not acquire the capability. Packaging remains necessary but no longer
+sufficient; an unpackaged run reading an official contract is still ad-hoc
+Electron and still incident `0011`.
 
 Every distributable desktop build carries the public
 `ReleaseProvenanceV1` contract. It records the application version, exact

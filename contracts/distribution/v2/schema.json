@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/distribution/v2/schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Exawatt distribution contract V2",
+  "description": "Build-time capabilities supplied by a distributor. Null capabilities are absent and cause no network request. V2 adds ownAccount: whether this distribution supplies a stable signed identity for automatic reads against the operator's own vendor account. A V1 document is still accepted by the Exawatt client and is read as ownAccount: null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "brand",
+    "account",
+    "services",
+    "enrichment",
+    "analytics",
+    "updates",
+    "ownAccount"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "brand": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/brand"
+        }
+      ]
+    },
+    "account": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/account"
+        }
+      ]
+    },
+    "services": {
+      "$ref": "#/$defs/services"
+    },
+    "enrichment": {
+      "$ref": "#/$defs/enrichment"
+    },
+    "analytics": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/analytics"
+        }
+      ]
+    },
+    "updates": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/updates"
+        }
+      ]
+    },
+    "ownAccount": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/ownAccount"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "services": {
+            "type": "object",
+            "properties": {
+              "productFeedback": {
+                "type": "null"
+              },
+              "operatorStats": {
+                "type": "null"
+              },
+              "projects": {
+                "type": "null"
+              },
+              "preferences": {
+                "type": "null"
+              }
+            }
+          },
+          "enrichment": {
+            "type": "object",
+            "properties": {
+              "contextLabels": {
+                "type": "null"
+              },
+              "conversationSummaries": {
+                "type": "null"
+              },
+              "goalVisuals": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "serviceUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^(?:https://|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?(?:/|$))",
+      "not": {
+        "type": "string",
+        "pattern": "(?:^[a-z]+://[^/?#]*@|#)"
+      }
+    },
+    "endpointRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "protocolVersion"],
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/serviceUrl"
+        },
+        "protocolVersion": {
+          "const": 1
+        }
+      }
+    },
+    "nullableEndpointRef": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/endpointRef"
+        }
+      ]
+    },
+    "brand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "productName",
+        "protocolScheme",
+        "iconPath",
+        "updateChannel"
+      ],
+      "properties": {
+        "appId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$"
+        },
+        "productName": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "protocolScheme": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]*$"
+        },
+        "iconPath": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "^(?:/|.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))"
+              }
+            }
+          ]
+        },
+        "updateChannel": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supabaseUrl", "supabaseAnonKey", "recoveryOrigin"],
+      "properties": {
+        "supabaseUrl": {
+          "$ref": "#/$defs/serviceUrl"
+        },
+        "supabaseAnonKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "recoveryOrigin": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/serviceUrl"
+            },
+            {
+              "type": "string",
+              "pattern": "^(?:https://[^/?#]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)/?$"
+            }
+          ]
+        }
+      }
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productFeedback",
+        "operatorStats",
+        "projects",
+        "preferences",
+        "accountData"
+      ],
+      "properties": {
+        "productFeedback": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        },
+        "operatorStats": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        },
+        "projects": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        },
+        "preferences": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        },
+        "accountData": {
+          "type": "null",
+          "description": "Reserved. V1 has no account-data protocol."
+        }
+      }
+    },
+    "enrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contextLabels", "conversationSummaries", "goalVisuals"],
+      "properties": {
+        "contextLabels": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        },
+        "conversationSummaries": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        },
+        "goalVisuals": {
+          "$ref": "#/$defs/nullableEndpointRef"
+        }
+      }
+    },
+    "analytics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ingestOrigin", "projectKey"],
+      "properties": {
+        "ingestOrigin": {
+          "$ref": "#/$defs/serviceUrl"
+        },
+        "projectKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "updates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feedUrl"],
+      "properties": {
+        "feedUrl": {
+          "$ref": "#/$defs/serviceUrl"
+        }
+      }
+    },
+    "ownAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claudePlanUsage"],
+      "properties": {
+        "claudePlanUsage": {
+          "const": "stable-signed",
+          "description": "The distributor signs this build with a stable identity, so an automatic read against the operator's own Claude account does not present a new code-signature identity on every revision. Local behaviour only; never proof of officiality or authorization to use an Exawatt service."
+        }
+      }
+    }
+  }
+}

@@ -15,7 +15,7 @@ import type {
   KeyboardShortcutOverridesV1,
   LaunchConfigurationPoolV1,
   PtyHarness,
-  DistributionContractV1,
+  DistributionContractV2,
   DistributionIdentity,
 } from '@exawatt/core';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
@@ -785,7 +785,7 @@ export interface ExawattBuildInfo {
    *  (ENG-025: feedback rows stamp both) */
   version: string;
   distribution: {
-    contract: DistributionContractV1;
+    contract: DistributionContractV2;
     digest: string;
     identity: DistributionIdentity;
     capabilities: {

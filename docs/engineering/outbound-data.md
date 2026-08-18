@@ -31,7 +31,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
 | `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in) | Own-account feature (re-entry recap) | On | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0` |
-| Signed Exawatt Chromium network stack → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On in installed builds; off in development and tests | Settings → Privacy → Claude plan usage; focused integration testing only: `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` |
+| Signed Exawatt Chromium network stack → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On in packaged builds whose distribution declares `ownAccount.claudePlanUsage: 'stable-signed'`; off in community builds, development, and tests | Settings → Privacy → Claude plan usage (a build without the declaration shows "Not configured in this build" instead of a switch); focused integration testing only: `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` |
 | `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
 | `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
 | Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
@@ -367,10 +367,14 @@ OAuth token Claude Code already stores in the macOS Keychain
   Electron's downloaded development runtime is ad-hoc signed on macOS, so it
   cannot present Little Snitch with Exawatt's durable Developer ID. A focused
   integration run may opt in with `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1`.
-  Until ENG-030 OS4 lands, the runtime capability uses `app.isPackaged`; OS4
-  replaces that temporary proxy with
-  `ownAccount.claudePlanUsage: 'stable-signed' | null` from the distribution
-  contract, because an ad-hoc community artifact can also be packaged.
+  Since 2026-08-17 (BUG-060) the grant is the distribution's own declaration,
+  `ownAccount.claudePlanUsage: 'stable-signed' | null` in schema V2, not
+  `app.isPackaged` — an ad-hoc community artifact is packaged too. Community
+  declares none, so a community build never makes this request automatically.
+  Packaging remains necessary as well: an unpackaged run built from an
+  official contract is still ad-hoc-signed Electron. A stored schema-1
+  contract is still accepted and reads as `ownAccount: null`, so a build from
+  one makes no automatic read until its custodian rewrites it.
 - **Off**: Settings → Privacy → **Claude plan usage**
   (`claudePlanWindows.enabled`), enforced at the boundary: off constructs no
   request and the meter shows Claude as unmetered again. Exawatt never
@@ -381,9 +385,9 @@ OAuth token Claude Code already stores in the macOS Keychain
 - **Transport identity**: installed builds issue the request through
   `electron.net.fetch`, the same Chromium network boundary used by desktop
   authentication. The packaged app and helper are Developer ID signed as
-  Exawatt; the request does not use Node's global `fetch`. Under OS4, a
-  community build defaults the automatic read off; a distributor may enable
-  it only by declaring its own stable signed identity. That declaration is a
+  Exawatt; the request does not use Node's global `fetch`. A community build
+  makes no automatic read; a distributor enables it only by declaring its own
+  stable signed identity in its distribution contract. That declaration is a
   local capability, never Exawatt service authorization.
 
 Everything else is local. The retired `/api/oc/token` route returns `410` and

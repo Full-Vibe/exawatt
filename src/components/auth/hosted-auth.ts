@@ -1,4 +1,4 @@
-import type { DistributionContractV1 } from '@exawatt/core/distribution';
+import type { DistributionContractV2 } from '@exawatt/core/distribution';
 
 /**
  * Where a desktop operator has to finish an auth flow that leaves the app
@@ -21,7 +21,7 @@ export interface HostedAuthTargets {
 
 /** A build without account transport has no hosted-auth target at all. */
 export function resolveHostedAuthTargets(
-  distribution: DistributionContractV1
+  distribution: DistributionContractV2
 ): HostedAuthTargets | null {
   const origin = distribution.account?.recoveryOrigin;
   if (!origin) return null;

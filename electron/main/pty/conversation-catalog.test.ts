@@ -21,7 +21,7 @@ import {
 import { encodeGrokCwdDirname } from '@exawatt/core';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
 const OFFICIAL_SUMMARY_DISTRIBUTION = {
@@ -38,7 +38,7 @@ const OFFICIAL_SUMMARY_DISTRIBUTION = {
       protocolVersion: 1,
     },
   },
-} satisfies DistributionContractV1;
+} satisfies DistributionContractV2;
 
 const roots: string[] = [];
 

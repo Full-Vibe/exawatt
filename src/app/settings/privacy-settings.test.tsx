@@ -8,6 +8,10 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  COMMUNITY_DISTRIBUTION,
+  type DistributionContractV2,
+} from '@exawatt/core/distribution';
 import { readAnalyticsOptOut } from '@/lib/analytics';
 import {
   HOSTED_FEATURE_IDS,
@@ -17,6 +21,27 @@ import {
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import type { ExawattSettings } from '@/types/electron';
 import { PrivacySettings } from './privacy-settings';
+
+/**
+ * BUG-060: the Claude plan read is the first control on this surface gated by
+ * a distribution capability, so the surface now has two states per row. These
+ * tests run against a distribution that DECLARES the capability unless they
+ * say otherwise; the community case has its own test at the bottom.
+ */
+const { distributionState } = vi.hoisted(() => ({
+  distributionState: { current: null as unknown },
+}));
+
+vi.mock('@/lib/distribution/resolved', () => ({
+  resolvedDistribution: () => distributionState.current,
+  resolvedDistributionDigest: () => null,
+  resetResolvedDistributionForTest: () => undefined,
+}));
+
+const SIGNED_DISTRIBUTION = {
+  ...COMMUNITY_DISTRIBUTION,
+  ownAccount: { claudePlanUsage: 'stable-signed' },
+} satisfies DistributionContractV2;
 
 const { goalVisualSource } = vi.hoisted(() => {
   const listeners = new Set<(enabled: boolean) => void>();
@@ -133,6 +158,7 @@ function groupFor(attribute: string): HTMLElement {
 
 describe('Settings → Privacy', () => {
   beforeEach(() => {
+    distributionState.current = SIGNED_DISTRIBUTION;
     window.localStorage.clear();
     goalVisualSource.reset();
     goalVisualSource.save.mockClear();
@@ -287,6 +313,47 @@ describe('Settings → Privacy', () => {
     );
     await waitFor(() => expect(plan).toHaveAttribute('aria-checked', 'false'));
     expect(bridge.setReentryRecap).not.toHaveBeenCalled();
+  });
+
+  // BUG-060. A community build has no stable signed identity to make this
+  // request under, so the read never happens there. Rendering a live switch
+  // for it would be a control that changes nothing — the shape incident
+  // `0017` cost eighteen hours, one level down.
+  it('states plainly that a community build does not carry the plan read', async () => {
+    distributionState.current = COMMUNITY_DISTRIBUTION;
+    installSettingsBridge();
+    await renderPrivacy();
+
+    const ownAccounts = groupFor('data-own-account-settings');
+    const plan = rowFor('claudePlanWindows');
+    expect(ownAccounts.contains(plan)).toBe(true);
+    expect(plan).toHaveAttribute('data-outbound-state', 'unconfigured');
+    expect(
+      within(ownAccounts).queryByRole('switch', {
+        name: OUTBOUND_CONTROLS.claudePlanWindows.label,
+      })
+    ).toBeNull();
+    expect(
+      within(rowFor('claudePlanWindows')).getByText(
+        'Not configured in this build'
+      )
+    ).toBeVisible();
+
+    // The disclosure survives: this surface is the manifest of what the app
+    // would send, and an absent capability does not erase the sentence.
+    expect(
+      within(rowFor('claudePlanWindows')).getByText(
+        OUTBOUND_CONTROLS.claudePlanWindows.sends
+      )
+    ).toBeVisible();
+
+    // The recap is gated by nothing, so it keeps its switch in the same
+    // group and in the same build.
+    expect(
+      within(ownAccounts).getByRole('switch', {
+        name: OUTBOUND_CONTROLS.reentryRecap.label,
+      })
+    ).toBeVisible();
   });
 
   it('reflects a plan-window preference persisted earlier', async () => {

@@ -88,13 +88,16 @@ export interface OutboundControl {
   /** Default-on per decision `0031` for hosted/own-account/analytics rows;
    *  public sharing is default-OFF per decision `0029`. Disclosed either way. */
   defaultEnabled: boolean;
-  /** Null for operator-owned local traffic. WP2b uses this to render an honest
-   * "not configured in this build" state before offering a switch. */
+  /** Null only for traffic no distribution capability gates — outbound that
+   * leaves through a separate program with its own network identity. Anything
+   * else names the capability, and the Privacy surface renders an honest "not
+   * configured in this build" state instead of a dead switch. */
   requiresDistributionCapability:
     | 'enrichment.contextLabels'
     | 'enrichment.conversationSummaries'
     | 'enrichment.goalVisuals'
     | 'services.operatorStats'
+    | 'ownAccount.claudePlanUsage'
     | 'analytics'
     | null;
 }
@@ -159,6 +162,10 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
       'Anthropic, through your own Claude Code sign-in — never Exawatt',
     cost: 'Coming back to a Session shows no "since you left" line; you catch up by reading the terminal.',
     defaultEnabled: true,
+    // Genuinely null: the recap shells out to the operator's own `claude`
+    // CLI, a separate program with its own firewall identity. Nothing here
+    // travels under Exawatt's signature, so no distribution declaration gates
+    // it (incident `0011`, "Current remedy").
     requiresDistributionCapability: null,
   },
   claudePlanWindows: {
@@ -175,7 +182,11 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
       'Anthropic, through your own Claude Code sign-in — never Exawatt',
     cost: 'Claude shows no plan windows here; local token counts stay.',
     defaultEnabled: true,
-    requiresDistributionCapability: null,
+    // Unlike the recap, this request leaves through Exawatt's OWN Chromium
+    // network stack, so it carries this build's signing identity. Only a
+    // distribution that declares a stable signed one may make it
+    // automatically (BUG-060, decision `0036` §6).
+    requiresDistributionCapability: 'ownAccount.claudePlanUsage',
   },
   operatorProfile: {
     id: 'operatorProfile',

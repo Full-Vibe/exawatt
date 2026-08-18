@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 import { ContextSummarizer } from './context-summarizer';
 import {
@@ -123,7 +123,7 @@ describe('resolved enrichment contract against a fake compatible service', () =>
             protocolVersion: 1,
           },
         },
-      } satisfies DistributionContractV1;
+      } satisfies DistributionContractV2;
 
       const summarizer = new ContextSummarizer({ distribution });
       summarizer.attach(new FakeManager() as unknown as PtySessionManager);
