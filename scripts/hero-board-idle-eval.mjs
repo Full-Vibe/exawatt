@@ -276,8 +276,7 @@ async function main() {
     const ok =
       reduced.mode === 'poster' &&
       reduced.canvases === 0 &&
-      reduced.poster &&
-      !!reduced.stamp;
+      reduced.poster;
     results.push({ option: 'reduced-motion', ...reduced, ok });
     if (!ok) failures += 1;
     await page.close();

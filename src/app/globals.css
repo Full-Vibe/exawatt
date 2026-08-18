@@ -1180,31 +1180,3 @@ html:has(main[data-home-arrangement='proposed']) body {
   }
 }
 
-/* ---- The fold's one breathing mark (ENG-031 W6b).
-   The board's own marks never pulse: the D40 rule is that only Active moves,
-   and a pulsing needs-you light is the "pewpew map" the brief rules out at
-   density. This is ONE beacon, in the DOM overlay, over the single agent the
-   fold's project is waiting on, so the fold has a live thing in it without
-   putting a second claim on 173 marks or spending the measured idle budget on
-   the GPU. Reduced motion holds it still rather than removing it. ---- */
-@keyframes hero-beacon-breath {
-  0%,
-  100% {
-    opacity: 0.16;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: translate(-50%, -50%) scale(1.55);
-  }
-}
-.hero-beacon-breath {
-  transform: translate(-50%, -50%);
-  animation: hero-beacon-breath 3.4s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-beacon-breath {
-    animation: none;
-    opacity: 0.32;
-  }
-}

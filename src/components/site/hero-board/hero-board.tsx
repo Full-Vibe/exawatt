@@ -244,17 +244,8 @@ export function HeroBoard({
         onSelect={setSelectedUnit}
       />
 
-      {/* The honesty stamp, in the reading face. Mono is spent once on this
-          page, on the fleet chip (operator, W6b); a second tracked uppercase
-          line in the opposite corner made the frame look like a diagnostic
-          readout rather than a product. */}
-      <p
-        className="pointer-events-none absolute bottom-2 left-3 z-20 text-[11px] leading-none"
-        style={{ color: theme.labelMuted }}
-        data-hero-board-stamp
-      >
-        {HERO_BOARD_CAPTURE.source.stamp}
-      </p>
+      {/* The corner stamp is retired (operator, 2026-08-17: "what purpose does
+          that serve?"). Demo-ness stays declared in the capture source. */}
     </div>
   );
 }

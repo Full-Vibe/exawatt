@@ -258,9 +258,13 @@ export const BAND_SCREENS_MAX = 1.4;
  *
  * This is a cut in VOLUME and not in register. The lines the page is known by
  * are all still on it.
+ *
+ * Floor lowered 2026-08-17 after the operator killed the proof band's lede and
+ * coda as copy for its own sake. The floor exists to stop padding, and it must
+ * never be the reason a deliberate cut gets refilled.
  */
 export const PAGE_COPY_BUDGET: Required<CopyBudget> = {
-  min: 320,
+  min: 280,
   max: 520,
 };
 
@@ -539,10 +543,10 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
   },
   {
     id: 'proof',
-    job: 'ALIVE. Built by the fleet it commands, and a dated list of what landed.',
+    job: 'ALIVE. A dated list of what landed.',
     headingRole: 'section',
-    heading: 'Built by the fleet it commands',
-    copyBudget: { min: 80, max: 130 },
+    heading: 'What shipped',
+    copyBudget: { min: 40, max: 130 },
     medium: 'cards',
     altitudeAnchor: null,
     boardLens: null,

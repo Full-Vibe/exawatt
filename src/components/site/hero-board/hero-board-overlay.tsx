@@ -564,17 +564,10 @@ export function HeroBoardOverlay({
               highlight.beacon >= 0 ? highlight.beacon : undefined
             }
           >
-            {highlight.beacon >= 0 ? (
-              <span
-                className="hero-beacon-breath absolute block size-14 rounded-full"
-                style={{
-                  backgroundColor: spatialColorWithAlpha(
-                    theme.status['needs-you'],
-                    0.55
-                  ),
-                }}
-              />
-            ) : null}
+            {/* The breathing beacon is retired (operator, 2026-08-17: "This
+                pulsing circle doesn't look right - kill it"). It rendered as
+                a muddy disc over the marks. The anchor node stays so the
+                measurement bridge is unchanged; it simply has no child. */}
           </div>
 
           {/* The identity card. One node, moved, never remounted. */}
