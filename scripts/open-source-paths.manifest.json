@@ -409,16 +409,6 @@
       "path": "src/app/icon.png",
       "classification": "PUBLIC",
       "reason": "community application icon"
-    },
-    {
-      "path": "src/app/privacy/page.tsx",
-      "classification": "PUBLIC",
-      "reason": "public legal page without private service custody"
-    },
-    {
-      "path": "src/app/terms/page.tsx",
-      "classification": "PUBLIC",
-      "reason": "public legal page without private service custody"
     }
   ],
   "recipes": {}

@@ -111,9 +111,10 @@ const DECLARED_CONSTRUCTOR_SITES: Record<string, string> = {
 const SERVICE_HOST_SUFFIXES = ['exawatt.ai', 'supabase.co', 'posthog.com'];
 
 const DECLARED_HOST_LITERALS: Record<string, string> = {
-  // Contact addresses in the published legal copy — `mailto:`, never a fetch.
-  'src/app/privacy/page.tsx': 'mailto: contact addresses',
-  'src/app/terms/page.tsx': 'mailto: contact addresses',
+  // `src/app/{privacy,terms}/page.tsx` used to be declared here for their
+  // `mailto:` contact addresses. They moved to the company overlay on
+  // 2026-08-18 because a fork must not inherit one operator's legal pages, so
+  // the public tree no longer contains them and no declaration is owed.
   // Canonical public website origin for sitemap/robots. The module's own
   // comment pins it: never an analytics fallback.
   'src/lib/analytics/config.ts': 'sitemap/robots origin',
