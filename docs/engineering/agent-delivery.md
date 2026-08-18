@@ -68,6 +68,18 @@ reported five failures at a load average of 212–308, with two agents building
 Electron and Next concurrently and 26 orphaned renderer servers alive
 (BUG-070). Each named failure passed in isolation immediately afterwards.
 
+**Control evidence, 2026-08-18.** A landing failed `test:related` with six
+named `app-dom` failures. Re-running the SAME files on a detached clean
+`origin/master` worktree, with none of the branch's changes, failed too — with
+TWO DIFFERENT tests. Different failures from the same code on consecutive runs
+is the proof that neither set is a real defect: a break is deterministic, and
+these are not. The branch under test only changed an icon path.
+
+So the diagnostic is two steps, and the second is the one that settles it:
+re-run the named files alone, and if that is ambiguous, run them against a
+detached `origin/master` worktree. A failure that reproduces on clean master
+is not yours. A failure whose IDENTITY changes between runs is nobody's.
+
 Before "fixing" a red suite, check `uptime`. Above roughly 30, DOM tests are
 timing the machine rather than the code. Re-run the named files alone; if they
 pass, the suite result is contention and the correct action is to stop adding
