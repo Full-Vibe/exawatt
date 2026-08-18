@@ -939,3 +939,31 @@ no packet privately extends the contract to solve a local color.
   runs on every landing, and the release path refuses a bundle whose icon is
   not that artwork or is not shaped like a macOS app icon. Incident `0010`
   names the class this shares with `0009`.
+- 2026-08-17, BUG-059: **`pnpm theme:check` was red on `master`, and one half
+  had been for nine days.** Red on `origin/master` itself, not only in the
+  shared main checkout — a detached `origin/master` worktree fails
+  identically. The generator half was always green (`3 themes valid and
+  generated artifacts current`); `check-production-theme-literals.mjs`
+  reported six raw literals across three files, from two independent causes.
+  `src/components/hud/team-order-study.tsx` (3) is a `/hud-gallery` study
+  reachable only from `src/app/hud-gallery/team-order/page.tsx`, and all six of
+  its sibling studies were already in `NON_PRODUCTION_FILES`; it was simply
+  never added when it was created on 2026-08-07, which the checker confirms by
+  failing on it at `3400a087` and at `5e86c012~1`. The hero-board pair arrived
+  with ENG-031 W6/W8 on 2026-08-17 and gets two different dispositions,
+  because they are two different kinds of file: `hero-board/capture-source.ts`
+  is the capture's DERIVATION, imported by `capture.test.ts` alone and
+  documented in its own header as never entering the browser bundle, so it
+  joins `NON_PRODUCTION_FILES`; `hero-board/capture.ts` is its frozen output
+  and genuinely ships to a first-paint-critical page, so it takes a capped
+  exception of 2 for third-party Agent Source brand colours carried as data
+  from the generated declarations — the same disposition
+  `workspace/source-identity-mark.tsx` and `fleet/spatial/spatial-theme.ts`
+  already hold. `site/bands/fold-hero.tsx` carried 8 more at `5e86c012` and
+  was repaired independently before this pass. Nothing was capped that could
+  be removed and nothing was excluded that renders production chrome: the
+  ratchet test (`caps every file exception so new raw paint fails the ratchet`)
+  still passes, so a seventh literal in any excepted file still fails. The
+  durable point is about the gate rather than the colours: this check exists so
+  that a surface cannot invent a colour, and it had been failing long enough
+  for its red to be read as background noise.

@@ -279,8 +279,22 @@ await withElectronApp(
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(120);
   await page.keyboard.press('KeyO');
-  await page.waitForTimeout(900);
-  check('g o reaches sessions view', page.url().includes('view=sessions'));
+  // Bounded wait, not a fixed sleep, for the reason written at ⌘[/⌘] above and
+  // at `g m` below: under concurrent-worktree load a router round trip can
+  // outlast any chosen sleep, and this step then reports the chord as broken
+  // when it worked (BUG-058). The assertion is unchanged — the URL must carry
+  // the sessions view — only the waiting is.
+  check(
+    'g o reaches sessions view',
+    await page
+      .waitForURL(url => url.search.includes('view=sessions'), {
+        timeout: 8000,
+      })
+      .then(
+        () => true,
+        () => false
+      )
+  );
   await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
   await page.keyboard.press('KeyG');
@@ -404,12 +418,28 @@ await withElectronApp(
   );
   await page.reload({ waitUntil: 'networkidle' });
   await page.locator('[data-command-altitude]').waitFor();
-  const persisted = await page.evaluate(() => window.electron.workspace.load());
-  check(
-    'recentProjects persisted in workspace layout',
-    Array.isArray(persisted?.recentProjects) &&
-      persisted.recentProjects.some(r => r.dir === '/tmp')
-  );
+  // The reloaded app rehydrates and writes its own layout back, so a single
+  // read races that boot write rather than testing durability (BUG-058). Poll
+  // the same assertion until it holds or the ceiling expires: a layout that
+  // genuinely loses the seeded Project never satisfies it, so nothing is
+  // relaxed — only a read taken too early is.
+  const persistedRecents = await page
+    .waitForFunction(
+      async () => {
+        const layout = await window.electron.workspace.load();
+        return (
+          Array.isArray(layout?.recentProjects) &&
+          layout.recentProjects.some(r => r.dir === '/tmp')
+        );
+      },
+      undefined,
+      { timeout: 8000 }
+    )
+    .then(
+      () => true,
+      () => false
+    );
+  check('recentProjects persisted in workspace layout', persistedRecents);
 
   // ---- D9: keyboard authority, searchable help, recents, titles ----
 
@@ -419,12 +449,34 @@ await withElectronApp(
     (await page.title()) === `Agent — ${productName}`
   );
 
-  // registry-resolved workspace verb still fires: ⌘E opens the rename editor
+  // registry-resolved workspace verb still fires: ⌘E opens the rename editor.
+  // `rename-tab` is available only once a tab is ACTIVE, and this step follows
+  // a reload, so a press sent before rehydration lands on an unavailable verb
+  // and is simply dropped — no wait after the press can recover it (BUG-058).
+  // Wait for the rehydrated tab, then press, then wait for the editor.
+  // The readiness wait reports as this step's own FAIL rather than throwing:
+  // a seeded tab that never becomes active is a real regression and must be
+  // read as one, not as an aborted run with no summary.
+  const renameTargetReady = await page
+    .locator('[data-tab-id="spine-tab"][data-active]')
+    .waitFor({ timeout: 10000 })
+    .then(
+      () => true,
+      () => false
+    );
   await page.keyboard.press('Meta+KeyE');
-  await page.waitForTimeout(500);
-  const renameFocused = await page.evaluate(
-    () => document.activeElement?.tagName === 'INPUT'
-  );
+  const renameFocused =
+    renameTargetReady &&
+    (await page
+      .waitForFunction(
+        () => document.activeElement?.tagName === 'INPUT',
+        null,
+        { timeout: 5000 }
+      )
+      .then(
+        () => true,
+        () => false
+      ));
   check('cmd+E opens the inline rename editor', renameFocused);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);

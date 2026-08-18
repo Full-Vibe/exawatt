@@ -13,17 +13,27 @@ const NON_PRODUCTION_PREFIXES = [
   'src/app/hud-gallery/',
   'src/generated/',
 ];
+/**
+ * Files that live under a production path but never render production chrome:
+ * `/hud-gallery` studies and specimens, and derivation rigs that run only in
+ * tests. `hero-board/capture-source.ts` is the second kind — it is the hero
+ * capture's DERIVATION, imported by `capture.test.ts` alone and documented as
+ * never entering the browser bundle; its frozen output `capture.ts` is the
+ * production artifact and is capped as an exception below instead (BUG-058).
+ */
 const NON_PRODUCTION_FILES = new Set([
   'src/components/hud/board-tile-study.tsx',
   'src/components/hud/gallery-fixtures.ts',
   'src/components/hud/project-ribbon-study.tsx',
   'src/components/hud/ribbon-dogfood-bench.tsx',
   'src/components/hud/session-state-tile-study.tsx',
+  'src/components/hud/team-order-study.tsx',
   'src/components/hud/webgl/agent-field-regimes.tsx',
   'src/components/hud/webgl/agent-field.tsx',
   'src/components/hud/webgl/keyswitch-study.tsx',
   'src/components/hud/webgl/scenes.tsx',
   'src/components/readiness/gallery-study.tsx',
+  'src/components/site/hero-board/capture-source.ts',
   'src/components/status-light/specimens.tsx',
 ]);
 
@@ -95,6 +105,11 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
   'src/components/workspace/project-colors.ts': {
     max: 10,
     reason: 'persisted Project identity palette',
+  },
+  'src/components/site/hero-board/capture.ts': {
+    max: 2,
+    reason:
+      'frozen hero capture: third-party Agent Source brand colours carried as data from the generated declarations',
   },
   'src/components/workspace/source-identity-mark.tsx': {
     max: 2,
