@@ -1497,7 +1497,7 @@ Milestones:
   backend one, which the Gateway treats as a local self-connection and skips)
   yields a device record carrying `operator.read` and nothing else. The Settings
   surface moves to C2, where the Connect flow gives it something to show.
-- C2 Connect flow and coworker projection — `/hud-gallery` review, then **⌘N →
+- C2 Connect flow and coworker projection — LANDED 2026-08-18: `/hud-gallery` review, then **⌘N →
   Connect existing Agent…**, explicit Project mapping, and read-only Agent/Team
   views with bounded primary-conversation history and meaningful current work.
 - C3 Relaunch and dogfood proof — outage, source restart, rename, detach,
