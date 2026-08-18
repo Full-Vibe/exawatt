@@ -7,7 +7,11 @@ on:
     # Its detached CI worker advances only this ref after queue drain; running
     # the full matrix on every intermediate master push exhausted the included
     # Actions allowance even though obsolete runs were cancelled.
-    branches: [ci-batches/master]
+    #
+    # ENG-030 WP6-D: the projected public repository has no batch ref — the
+    # projector advances its `master` directly — so the public variant of this
+    # workflow triggers on `master` instead.
+    branches: [master]
   pull_request:
     branches: [master, main]
   workflow_dispatch:

@@ -10,6 +10,12 @@ import {
   buildProjectionPlan,
   projectPublicHistory,
 } from './lib/public-projection.mjs';
+import { renderRecipeOutput } from './lib/recipe-renderers.mjs';
+import {
+  findImageMetadataFindings,
+  findTextFindings,
+  readForbiddenVocabulary,
+} from './public-content-scan.mjs';
 
 /**
  * Every fixture is a local repository under a temp directory and the "public
@@ -62,6 +68,7 @@ function git(cwd, args, extra = {}) {
 }
 
 const MANIFEST_PATH = 'scripts/open-source-paths.manifest.json';
+const WORKFLOW = '.github/workflows/ci.yml';
 
 const MANIFEST = {
   schemaVersion: 1,
@@ -87,22 +94,66 @@ const MANIFEST = {
       recipe: 'public-config',
       reason: 'identity-free public configuration',
     },
+    {
+      path: '.github/workflows/ci.yml',
+      classification: 'GENERATED',
+      recipe: 'public-ci',
+      reason: 'public CI is secretless and least privilege',
+    },
   ],
   recipes: {
+    // No renderer: the fixture keeps one recipe on the unrendered side so the
+    // projection is proved to exclude AND report it, not silently drop it.
     'public-config': {
-      kind: 'render-public-config',
+      kind: 'render-public-launch-pages',
       inputs: ['src/config.private.ts'],
       outputs: [{ path: 'src/config.ts', mode: '100644' }],
+    },
+    'public-ci': {
+      kind: 'render-public-ci',
+      inputs: ['.github/workflows/ci.yml'],
+      outputs: [{ path: '.github/workflows/ci.yml', mode: '100644' }],
     },
   },
 };
 
+/**
+ * The private workflow, with the public-variant directives a private file uses
+ * to declare how its public variant differs from it.
+ */
+function workflow(timeout) {
+  return [
+    'name: CI',
+    '',
+    'on:',
+    '  push:',
+    '    # exawatt:public-replace-begin the batch ref is private',
+    '    branches: [ci-batches/master]',
+    '    # exawatt:public-replace-with',
+    '    # branches: [master]',
+    '    # exawatt:public-replace-end',
+    '',
+    'permissions:',
+    '  contents: read',
+    '',
+    'jobs:',
+    '  test:',
+    '    runs-on: ubuntu-latest',
+    `    timeout-minutes: ${timeout}`,
+    '',
+  ].join('\n');
+}
+
 const PRIVATE_PATHS = ['company/secret.md', 'src/config.private.ts'];
-const EXPECTED_PUBLIC_PATHS = [
+const EXPECTED_COPIED_PATHS = [
   'README.md',
   'scripts/open-source-paths.manifest.json',
   'src/a.ts',
   'src/b.ts',
+];
+const EXPECTED_PUBLIC_PATHS = [
+  '.github/workflows/ci.yml',
+  ...EXPECTED_COPIED_PATHS,
 ];
 
 function write(root, file, contents) {
@@ -125,10 +176,19 @@ function sourceFixture() {
   write(source, 'README.md', '# fixture\n');
   write(source, MANIFEST_PATH, JSON.stringify(MANIFEST, null, 2) + '\n');
   write(source, 'src/a.ts', 'export const a = 1;\n');
-  write(source, 'src/config.private.ts', 'export const operator = "jake";\n');
+  write(source, 'src/config.private.ts', 'export const operator = "op";\n');
   write(source, 'src/config.ts', 'export const operator = null;\n');
   write(source, 'company/secret.md', 'private overlay\n');
-  git(source, ['add', '--', 'README.md', MANIFEST_PATH, 'src', 'company']);
+  write(source, '.github/workflows/ci.yml', workflow(25));
+  git(source, [
+    'add',
+    '--',
+    'README.md',
+    MANIFEST_PATH,
+    'src',
+    'company',
+    '.github',
+  ]);
   git(source, ['commit', '--quiet', '-m', 'root']);
 
   write(source, 'company/secret.md', 'private overlay, revised\n');
@@ -142,7 +202,10 @@ function sourceFixture() {
   const earlier = git(source, ['rev-parse', 'HEAD']);
 
   write(source, 'src/a.ts', 'export const a = 11;\n');
-  git(source, ['add', '--', 'src/a.ts']);
+  // The workflow changes too, so the rendered variant has to be recomputed for
+  // a second source blob rather than rendered once at the tip.
+  write(source, '.github/workflows/ci.yml', workflow(45));
+  git(source, ['add', '--', 'src/a.ts', '.github/workflows/ci.yml']);
   git(source, ['commit', '--quiet', '-m', 'edit public file']);
   const head = git(source, ['rev-parse', 'HEAD']);
 
@@ -240,7 +303,7 @@ test('the projected tree is exactly Gate A’s PUBLIC output set', async () => {
       destination: fixture.at('public'),
     });
 
-    assert.deepEqual(plan.copiedPaths, EXPECTED_PUBLIC_PATHS);
+    assert.deepEqual(plan.copiedPaths, EXPECTED_COPIED_PATHS);
     assert.deepEqual(projection.projectedPaths, EXPECTED_PUBLIC_PATHS);
     assert.equal(projection.outputCount, EXPECTED_PUBLIC_PATHS.length);
 
@@ -265,11 +328,24 @@ test('the projected tree is exactly Gate A’s PUBLIC output set', async () => {
     }
     assert.deepEqual([...everyPath].sort(), EXPECTED_PUBLIC_PATHS);
 
-    // GENERATED outputs are reported, never projected from the private blob.
-    assert.deepEqual(projection.generatedOutputs, [
-      { path: 'src/config.ts', recipe: 'public-config' },
-    ]);
+    // A GENERATED output with no renderer is reported and excluded, never
+    // projected from the private blob.
+    assert.deepEqual(
+      projection.unrenderedOutputs.map(output => output.path),
+      ['src/config.ts']
+    );
+    assert.match(
+      projection.unrenderedOutputs[0].reason,
+      /legal statements about one operator/u
+    );
     assert.equal(everyPath.has('src/config.ts'), false);
+
+    // A GENERATED output WITH a renderer is substituted into the projection.
+    assert.deepEqual(
+      projection.renderedOutputs.map(output => output.path),
+      ['.github/workflows/ci.yml']
+    );
+    assert.equal(everyPath.has('.github/workflows/ci.yml'), true);
   } finally {
     fixture.cleanup();
   }
@@ -444,6 +520,160 @@ test('an empty public remote is projected without a fast-forward refusal', async
     });
     assert.equal(seed.existingPublicSha, null);
     assert.equal(seed.outputCount, EXPECTED_PUBLIC_PATHS.length);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a rendered GENERATED path carries the recipe’s bytes, not the private blob', async () => {
+  const fixture = sourceFixture();
+  try {
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('public'),
+    });
+
+    // Every commit that ever carried the workflow carries the RENDERED variant
+    // of the blob it had AT THAT COMMIT. Checking the whole history is the
+    // point: a projector that rendered once at the tip would pass a tip-only
+    // assertion and publish stale bytes for every earlier commit.
+    const commits = git(projection.destination, [
+      'rev-list',
+      'master',
+      '--',
+      WORKFLOW,
+    ]).split('\n');
+    assert.equal(commits.length, 2, 'both workflow revisions must survive');
+
+    const projected = commits
+      .map(commit =>
+        git(projection.destination, ['show', `${commit}:${WORKFLOW}`])
+      )
+      .sort();
+    const expected = [25, 45]
+      .map(timeout =>
+        renderRecipeOutput({
+          recipeId: 'public-ci',
+          kind: 'render-public-ci',
+          path: WORKFLOW,
+          source: Buffer.from(workflow(timeout), 'utf8'),
+        })
+          .toString('utf8')
+          .trim()
+      )
+      .sort();
+    assert.deepEqual(projected, expected);
+
+    for (const variant of projected) {
+      assert.match(variant, /Generated for the public repository/u);
+      assert.match(variant, /branches: \[master\]/u);
+      assert.doesNotMatch(variant, /ci-batches\/master/u);
+      assert.doesNotMatch(variant, /exawatt:public-/u);
+    }
+    assert.notEqual(
+      git(fixture.source, ['show', `master:${WORKFLOW}`]),
+      projected[0],
+      'the private blob must never be the projected blob'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('rendering is deterministic: the same source projects to the same blob', async () => {
+  const fixture = sourceFixture();
+  try {
+    const first = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('first'),
+    });
+    const second = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('second'),
+    });
+    assert.equal(first.publicSha, second.publicSha);
+    assert.equal(
+      git(first.destination, ['rev-parse', `master:${WORKFLOW}`]),
+      git(second.destination, ['rev-parse', `master:${WORKFLOW}`]),
+      'a rendered blob must hash identically across independent runs'
+    );
+    assert.equal(first.renderedVariants, second.renderedVariants);
+    assert.equal(first.renderedVariants, 2, 'one render per distinct source');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('an earlier projection stays an ancestor once GENERATED paths are rendered', async () => {
+  const fixture = sourceFixture();
+  try {
+    const earlier = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.earlier,
+      destination: fixture.at('earlier'),
+    });
+    const later = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('later'),
+    });
+    git(later.destination, [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      earlier.destination,
+      'master:refs/remotes/earlier/master',
+    ]);
+    assert.equal(
+      await assertFastForward({
+        repo: later.destination,
+        candidateSha: later.publicSha,
+        existingRef: 'refs/remotes/earlier/master',
+      }),
+      true,
+      'substitution must not re-parent the public history'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('every rendered output passes the checks the content gate applies', async () => {
+  const fixture = sourceFixture();
+  try {
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('public'),
+    });
+    const forbiddenVocabulary = await readForbiddenVocabulary(
+      process.env.EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE
+    );
+
+    const findings = [];
+    for (const output of projection.renderedOutputs) {
+      const bytes = execFileSync('git', ['show', `master:${output.path}`], {
+        cwd: projection.destination,
+        env: gitEnv(),
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      findings.push(...findImageMetadataFindings(bytes, output.path));
+      findings.push(
+        ...findTextFindings(
+          bytes.toString('utf8'),
+          output.path,
+          forbiddenVocabulary
+        )
+      );
+    }
+    assert.deepEqual(
+      findings,
+      [],
+      'a rendered output must not carry anything Gate B would reject'
+    );
   } finally {
     fixture.cleanup();
   }
