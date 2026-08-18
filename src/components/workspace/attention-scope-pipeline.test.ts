@@ -28,7 +28,12 @@ import {
   paintsAttention,
   type SessionAttentionSignal,
 } from './session-status';
-import { tabIsLive, type Project, type WorkspaceTab } from './use-workspace-state';
+import {
+  isSessionTab,
+  tabIsLive,
+  type Project,
+  type WorkspaceTab,
+} from './use-workspace-state';
 
 const A = '/work/alpha';
 const B = '/work/bravo';
@@ -49,6 +54,7 @@ Status: blocked
 function tab(over: Partial<WorkspaceTab>): WorkspaceTab {
   return {
     id: 't',
+    kind: 'session' as const,
     durableSessionId: 'd',
     sessionId: 's',
     harness: 'claude',
@@ -122,7 +128,9 @@ function workspace(
     fleetAttention('roadmap', signals)
   );
   const candidates = FLEET.flatMap(project =>
-    project.tabs.map(t => ({ sessionId: t.sessionId, live: tabIsLive(t) }))
+    project.tabs
+      .filter(isSessionTab)
+      .map(t => ({ sessionId: t.sessionId, live: tabIsLive(t) }))
   );
   return {
     pins: pinned,

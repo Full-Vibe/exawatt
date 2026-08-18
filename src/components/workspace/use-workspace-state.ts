@@ -19,6 +19,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -113,7 +114,16 @@ function persistedGoalVisual(
   };
 }
 
-export interface WorkspaceTab {
+/**
+ * A local PTY Session's tab.
+ *
+ * Everything on it describes a process this machine owns: a working directory,
+ * a harness, an incarnation, an exit code, a resume identity. None of that is
+ * true of a connected coworker, which is why `RemoteAgentTab` is a second kind
+ * rather than these fields with empty values in them.
+ */
+export interface SessionTab {
+  kind: 'session';
   /** stable across revives (sessionId changes when a tab is re-launchd) */
   id: string;
   /** stable logical Session identity, distinct from tab/PTY/provider IDs */
@@ -159,6 +169,83 @@ export interface WorkspaceTab {
   draftRoadmapItemId?: string | null;
 }
 
+/**
+ * A connected coworker's tab (ENG-033 H2).
+ *
+ * Identity, and deliberately nothing else. The conversation, the work stack,
+ * and the coworker's own state live on someone else's machine; Exawatt reads
+ * them through the source and never caches them in the layout. What persists
+ * is which coworker this tab is a view of.
+ *
+ * `title` and `projectLabel` are last-known copies of names the source owns,
+ * kept so the strip can say who a restored tab is before the roster answers.
+ * Neither is authority: the roster overrides both the moment it arrives.
+ *
+ * Closing this tab closes the view. It never reaches the remote worker, which
+ * is why nothing here names a process, a directory, or a lifecycle.
+ */
+export interface RemoteAgentTab {
+  kind: 'remote-agent';
+  /** stable across roster refreshes and across a relaunch */
+  id: string;
+  /** last-known coworker name; the source owns the real one */
+  title: string;
+  /** the configured Agent Source this coworker is observed through */
+  sourceId: string;
+  /** the Agent's own id on that source */
+  nativeAgentId: string;
+  /** Exawatt's id for the projected coworker — what the bridge is addressed by */
+  agentId: string;
+  /** last-known Project label from the mapping */
+  projectLabel: string;
+}
+
+/**
+ * The two honest kinds of tab.
+ *
+ * The shared members are `kind`, `id`, and `title`: identity and the strip's
+ * label. Everything else belongs to one kind, so any consumer that assumes
+ * PTY-ness has to say what it means for a coworker before it compiles.
+ */
+export type WorkspaceTab = SessionTab | RemoteAgentTab;
+
+export function isRemoteAgentTab(tab: WorkspaceTab): tab is RemoteAgentTab {
+  return tab.kind === 'remote-agent';
+}
+
+export function isSessionTab(tab: WorkspaceTab): tab is SessionTab {
+  return tab.kind === 'session';
+}
+
+/** What `openRemoteAgent` needs from the roster to open a coworker. */
+export interface RemoteAgentOpenRef {
+  /** Exawatt's id for the projected coworker */
+  agentId: string;
+  nativeAgentId: string;
+  sourceId: string;
+  /** the coworker's name, as its source configured it */
+  displayName: string;
+  /** the Project this Agent was mapped to at Connect time */
+  projectId: string;
+  projectLabel: string;
+}
+
+/**
+ * The Project group a coworker's tab belongs to.
+ *
+ * Mapping is an explicit Connect-flow decision, so the group is the mapped
+ * Project — by identity, never by resemblance. A mapping that names no
+ * Project at all falls back to the source, which is the only other true thing
+ * about where this coworker came from; it never lands in whichever Project the
+ * operator happens to be standing in.
+ */
+export function remoteAgentGroupDir(ref: {
+  projectId: string;
+  sourceId: string;
+}): string {
+  return ref.projectId.trim() || `source:${ref.sourceId}`;
+}
+
 export interface WorkspaceDraftPatch {
   draftTask?: string;
   draftSource?: AgentSourceId;
@@ -171,9 +258,9 @@ export interface WorkspaceDraftPatch {
 }
 
 export function applyWorkspaceDraftPatch(
-  tab: WorkspaceTab,
+  tab: SessionTab,
   patch: WorkspaceDraftPatch
-): WorkspaceTab {
+): SessionTab {
   const sourceChanged =
     patch.draftSource !== undefined &&
     patch.draftSource !== (tab.draftSource ?? null);
@@ -252,13 +339,31 @@ export type CloseOutcome =
    *  an interrupted turn and a discarded question are not the same loss. */
   | { kind: 'needs-confirm'; turn: SessionGlyphState }
   | { kind: 'discarded' }
-  | { kind: 'closed'; entry: ClosedSessionEntry };
+  | { kind: 'closed'; entry: ClosedSessionEntry }
+  /** A coworker's view closed. Nothing was stopped, archived, or asked of the
+   *  source: the remote worker never learns Exawatt looked away. */
+  | { kind: 'view-closed'; title: string };
 
+/**
+ * A PTY incarnation this machine owns is running behind the tab.
+ *
+ * False for a coworker, and not because Exawatt is disconnected: a remote
+ * Agent has no local process at all, so this question has one answer for it
+ * forever. What that coworker is DOING is its own D40 work state, which the
+ * roster reports and this predicate must never be mistaken for.
+ */
 export function tabIsLive(tab: WorkspaceTab): boolean {
+  if (isRemoteAgentTab(tab)) return false;
   return tab.resumeState === 'live' || tab.resumeState === 'resumed';
 }
 
+/**
+ * Resume starts a new local process for a saved provider conversation. There
+ * is nothing to start for a coworker, and asking its source to would be a
+ * command Exawatt does not hold.
+ */
 export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
+  if (isRemoteAgentTab(tab)) return false;
   return (
     !tabIsLive(tab) &&
     tab.resumeState !== 'resuming' &&
@@ -274,8 +379,9 @@ export function tabFromPtySession(
   id: string,
   roadmapItemId: string | null = null,
   initialTask: string | null = null
-): WorkspaceTab {
+): SessionTab {
   return {
+    kind: 'session',
     id,
     durableSessionId: session.durableSessionId,
     harness: session.harness,
@@ -323,7 +429,7 @@ export function resumableAgentTabsInProject(
   );
 }
 
-/** Current persisted layout (v6). v6 makes tab-title ownership explicit. */
+/** v6 layout on disk: every tab was a local Session. */
 export interface PersistedV6 {
   v: 6;
   lastUsedDir: string;
@@ -387,6 +493,38 @@ export interface PersistedV6 {
       draftRoadmapItemId?: string | null;
     }>;
   }>;
+}
+
+/** A local Session's tab on disk. v7 is the first shape that says so. */
+export type PersistedSessionTab = {
+  kind: 'session';
+} & PersistedV6['projects'][number]['tabs'][number];
+
+/**
+ * A connected coworker's tab on disk (ENG-033 H2).
+ *
+ * Identity only. No transcript, no work stack, no coworker state: all of that
+ * belongs to the source and is re-read on open, so a layout can never present
+ * yesterday's conversation as current.
+ */
+export interface PersistedRemoteAgentTab {
+  kind: 'remote-agent';
+  id: string;
+  title: string;
+  sourceId: string;
+  nativeAgentId: string;
+  agentId: string;
+  projectLabel: string;
+}
+
+export type PersistedTab = PersistedSessionTab | PersistedRemoteAgentTab;
+
+/** Current persisted layout (v7): two honest kinds of tab. */
+export interface PersistedV7 extends Omit<PersistedV6, 'v' | 'projects'> {
+  v: 7;
+  projects: Array<
+    Omit<PersistedV6['projects'][number], 'tabs'> & { tabs: PersistedTab[] }
+  >;
 }
 
 /** v5 layout on disk: v6 before tab-title ownership was explicit. */
@@ -510,10 +648,39 @@ function upgradeV5TabTitle(
   return { title: tab.title, titleKind: 'operator' };
 }
 
+/** A persisted remote tab is identity, so any missing piece of it is fatal:
+ *  a coworker tab that cannot say which Agent on which source it is a view of
+ *  is not a tab, and restoring it would mint an empty pane nothing can fill. */
+function readRemoteAgentTab(tab: unknown): PersistedRemoteAgentTab | null {
+  if (!tab || typeof tab !== 'object') return null;
+  const record = tab as Record<string, unknown>;
+  const text = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim().length > 0 && value.length <= 512
+      ? value
+      : null;
+  const id = text(record.id);
+  const sourceId = text(record.sourceId);
+  const nativeAgentId = text(record.nativeAgentId);
+  const agentId = text(record.agentId);
+  if (!id || !sourceId || !nativeAgentId || !agentId) return null;
+  return {
+    kind: 'remote-agent',
+    id,
+    sourceId,
+    nativeAgentId,
+    agentId,
+    // Names are the source's to own. A layout that lost them still restores;
+    // the roster puts the real ones back the moment it answers.
+    title: text(record.title) ?? nativeAgentId,
+    projectLabel: text(record.projectLabel) ?? '',
+  };
+}
+
 /** Read the persisted layout, upgrading older shapes in place: v1 (key
  *  `initiatives`) → v2 (key `projects`) → v3 (exact provider IDs) → v4
- *  (declared roadmap links) → v5 (durable lifecycle) → v6 (title ownership). */
-export function parsePersisted(raw: unknown): PersistedV6 | null {
+ *  (declared roadmap links) → v5 (durable lifecycle) → v6 (title ownership)
+ *  → v7 (two kinds of tab). */
+export function parsePersisted(raw: unknown): PersistedV7 | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
   const toV5 = (p: PersistedV4): PersistedV5 => ({
@@ -540,16 +707,32 @@ export function parsePersisted(raw: unknown): PersistedV6 | null {
       })),
     })),
   });
-  const normalizeV6 = (parsed: PersistedV6): PersistedV6 => {
+  const toV7 = (p: PersistedV6): PersistedV7 => ({
+    ...p,
+    v: 7,
+    // Every tab a v6 file holds is a local Session; that is what v6 could say.
+    projects: p.projects.map(project => ({
+      ...project,
+      tabs: project.tabs.map(tab => ({ kind: 'session' as const, ...tab })),
+    })),
+  });
+  const normalizeV7 = (parsed: PersistedV7): PersistedV7 => {
     const seen = new Set<string>();
     return {
       ...parsed,
       projects: parsed.projects.map(project => ({
         ...project,
-        tabs: project.tabs.map(tab => {
-          let durableSessionId = tab.durableSessionId || tab.id;
+        tabs: project.tabs.flatMap<PersistedTab>(tab => {
+          if ((tab as { kind?: unknown }).kind === 'remote-agent') {
+            const remote = readRemoteAgentTab(tab);
+            return remote ? [remote] : [];
+          }
+          // Anything else is a Session tab, including one written by a v6
+          // build straight into a v7 file by a hand edit.
+          const session = tab as PersistedSessionTab;
+          let durableSessionId = session.durableSessionId || session.id;
           if (seen.has(durableSessionId))
-            durableSessionId = `${tab.id}-session`;
+            durableSessionId = `${session.id}-session`;
           seen.add(durableSessionId);
           const lifecycle: SessionLifecycle = [
             'running',
@@ -559,25 +742,34 @@ export function parsePersisted(raw: unknown): PersistedV6 | null {
             'resuming',
             'failed',
             'draft',
-          ].includes(tab.lifecycle)
-            ? tab.lifecycle
+          ].includes(session.lifecycle)
+            ? session.lifecycle
             : 'stopped-clean';
-          return {
-            ...tab,
-            durableSessionId,
-            titleKind:
-              tab.titleKind === 'default' || tab.titleKind === 'operator'
-                ? tab.titleKind
-                : isDefaultHarnessTitle(tab.harness, tab.title)
-                  ? 'default'
-                  : 'operator',
-            lifecycle,
-            exitCode: tab.exitCode ?? null,
-          };
+          return [
+            {
+              ...session,
+              kind: 'session' as const,
+              durableSessionId,
+              titleKind:
+                session.titleKind === 'default' ||
+                session.titleKind === 'operator'
+                  ? session.titleKind
+                  : isDefaultHarnessTitle(session.harness, session.title)
+                    ? 'default'
+                    : 'operator',
+              lifecycle,
+              exitCode: session.exitCode ?? null,
+            },
+          ];
         }),
       })),
     };
   };
+  const normalizeV6 = (parsed: PersistedV6): PersistedV7 =>
+    normalizeV7(toV7(parsed));
+  if (d.v === 7 && Array.isArray(d.projects)) {
+    return normalizeV7(raw as PersistedV7);
+  }
   if (d.v === 6 && Array.isArray(d.projects)) {
     return normalizeV6(raw as PersistedV6);
   }
@@ -626,6 +818,51 @@ export function parsePersisted(raw: unknown): PersistedV6 | null {
     return upgrade(initiatives, rest);
   }
   return null;
+}
+
+/**
+ * The ids of the sources Exawatt still has a record of.
+ *
+ * `null` means Exawatt could not ask — no desktop bridge, or a read that
+ * failed. That is not the same answer as "no sources", and the caller must not
+ * treat it as one.
+ */
+async function readConfiguredSourceIds(): Promise<ReadonlySet<string> | null> {
+  const api = window.electron?.connectedSources;
+  if (!api?.list) return null;
+  try {
+    const sources = await api.list();
+    return new Set(sources.map(source => source.id));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Drop coworker tabs whose source Exawatt no longer has a record of.
+ *
+ * Detach is an operator decision that removes Exawatt's projection, so its
+ * tabs must not come back with the layout. An Agent the roster stops reporting
+ * is a different question entirely, and one this function refuses to answer:
+ * a source that is merely unreachable reports nothing, and losing the
+ * connection is never evidence the coworker is gone. That tab survives and
+ * resolves to a missing state on screen.
+ */
+export function dropDetachedRemoteTabs(
+  persisted: PersistedV7 | null,
+  configuredSourceIds: ReadonlySet<string> | null
+): PersistedV7 | null {
+  if (!persisted || configuredSourceIds === null) return persisted;
+  return {
+    ...persisted,
+    projects: persisted.projects.map(project => ({
+      ...project,
+      tabs: project.tabs.filter(
+        tab =>
+          tab.kind !== 'remote-agent' || configuredSourceIds.has(tab.sourceId)
+      ),
+    })),
+  };
 }
 
 export interface LaunchOptions {
@@ -771,7 +1008,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // The single release moment: the layout is the renderer's authority on which
   // Sessions exist, so an identity it has stopped naming is unreachable and is
   // released here — whatever removed the tab, and in both identity spaces.
-  useSessionScopeRelease(sessionScope, projects);
+  //
+  // Only Session tabs name a Session. A coworker tab holds neither identity,
+  // so it is not part of the question this owner answers; projecting it out
+  // here keeps that fact in one place instead of teaching the owner about a
+  // second kind of tab it would then have to keep ignoring.
+  const sessionScopeLayout = useMemo(
+    () => projects.map(project => ({ tabs: project.tabs.filter(isSessionTab) })),
+    [projects]
+  );
+  useSessionScopeRelease(sessionScope, sessionScopeLayout);
 
   const syncProjectIdentity = useCallback(
     (ref: { rootPath: string; name: string }) => {
@@ -883,15 +1129,21 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     []
   );
 
+  /**
+   * Patch one Session tab. Deliberately not total over the union: every field
+   * it exists to move is a PTY fact, and a coworker tab has none of them. A
+   * remote tab reaches this only through a bug, and ignoring it keeps that bug
+   * from writing a lifecycle onto someone else's Agent.
+   */
   const updateTab = useCallback(
-    (tabId: string, patch: Partial<WorkspaceTab>) => {
+    (tabId: string, patch: Partial<SessionTab>) => {
       setProjects(prev =>
         prev.map(g =>
-          g.tabs.some(t => t.id === tabId)
+          g.tabs.some(t => t.id === tabId && isSessionTab(t))
             ? {
                 ...g,
                 tabs: g.tabs.map(t =>
-                  t.id === tabId ? { ...t, ...patch } : t
+                  t.id === tabId && isSessionTab(t) ? { ...t, ...patch } : t
                 ),
               }
             : g
@@ -937,18 +1189,34 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // size via getInitialSize, whose cell metrics come from the resolved
       // font — spawning with defaults while a custom font loads recreates
       // the TUI init-width race
-      const [live, persistedRaw, recovery] = await Promise.all([
-        api.list(),
-        ws?.load() ?? Promise.resolve(null),
-        ws?.recovery() ?? Promise.resolve({ previousRunInterrupted: false }),
-        loadTerminalFont(),
-      ]);
+      const [live, persistedRaw, recovery, configuredSourceIds] =
+        await Promise.all([
+          api.list(),
+          ws?.load() ?? Promise.resolve(null),
+          ws?.recovery() ?? Promise.resolve({ previousRunInterrupted: false }),
+          // Which sources are still configured. A DETACHED source is gone by
+          // operator decision, and its coworker tabs must not come back with
+          // the layout. Only an ANSWERED list decides that: a read that failed,
+          // or a build with no connected-sources capability at all, is not
+          // evidence that anything was detached, so the tabs stay and the pane
+          // says what it could not read (BUG-063's rule).
+          readConfiguredSourceIds(),
+          loadTerminalFont(),
+        ]);
       if (cancelled) return;
-      const persisted = parsePersisted(persistedRaw);
+      const persisted = dropDetachedRemoteTabs(
+        parsePersisted(persistedRaw),
+        configuredSourceIds
+      );
       if (persisted && api.reconcileResumeIdentities) {
         const agentTabs = persisted.projects.flatMap(project =>
           project.tabs.flatMap(tab =>
-            tab.harness === 'shell' || tab.lifecycle === 'draft'
+            // A coworker has no provider conversation of Exawatt's to
+            // reconcile: its history is its source's, and Exawatt never
+            // holds a resume identity for it.
+            tab.kind === 'remote-agent' ||
+            tab.harness === 'shell' ||
+            tab.lifecycle === 'draft'
               ? []
               : [
                   {
@@ -973,6 +1241,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             );
             for (const project of persisted.projects) {
               for (const tab of project.tabs) {
+                if (tab.kind === 'remote-agent') continue;
                 tab.harnessSessionId =
                   byDurableId.get(tab.durableSessionId) ?? tab.harnessSessionId;
               }
@@ -996,7 +1265,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (persisted) {
         const persistedSummaries = persisted.projects.flatMap(g =>
           g.tabs.flatMap(t =>
-            t.contextSummary
+            // Goals are a durable SESSION's, keyed by an identity a coworker
+            // tab does not have. Its context lives on its own source.
+            t.kind !== 'remote-agent' && t.contextSummary
               ? [[t.durableSessionId, t.contextSummary] as const]
               : []
           )
@@ -1019,7 +1290,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         const persistedGoalVisuals = persisted.projects.flatMap(g =>
           g.tabs.flatMap(t =>
-            t.goalVisual ? [[t.durableSessionId, t.goalVisual] as const] : []
+            t.kind !== 'remote-agent' && t.goalVisual
+              ? [[t.durableSessionId, t.goalVisual] as const]
+              : []
           )
         );
         const restoreGoalVisual = api.restoreGoalVisual;
@@ -1101,7 +1374,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           activeTabId: g.tabs.some(t => t.id === g.activeTabId)
             ? g.activeTabId
             : (g.tabs[0]?.id ?? null),
-          tabs: g.tabs.map(raw => {
+          tabs: g.tabs.map<WorkspaceTab>(raw => {
+            if (raw.kind === 'remote-agent') {
+              // A coworker restores as identity and nothing else. There is no
+              // process to adopt, no lifecycle to repair, and no cached
+              // conversation: the surface re-reads the source on open, so a
+              // relaunch can never present yesterday's transcript as current.
+              return {
+                kind: 'remote-agent',
+                id: raw.id,
+                title: raw.title,
+                sourceId: raw.sourceId,
+                nativeAgentId: raw.nativeAgentId,
+                agentId: raw.agentId,
+                projectLabel: raw.projectLabel,
+              };
+            }
             // the persisted draft fields stay OFF non-draft tabs (and the
             // untyped draftSource string never reaches WorkspaceTab)
             const {
@@ -1120,6 +1408,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             if (t.lifecycle === 'draft') {
               return {
                 ...t,
+                kind: 'session' as const,
                 initialTask: t.initialTask ?? null,
                 sessionId: null,
                 exitCode: null,
@@ -1165,6 +1454,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
+                kind: 'session' as const,
                 initialTask,
                 startedAt: s.startedAt,
                 sessionId: s.id,
@@ -1179,6 +1469,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
+                kind: 'session' as const,
                 initialTask,
                 startedAt: s.startedAt,
                 sessionId: null,
@@ -1196,6 +1487,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             // never spawn until the operator explicitly resumes.
             return {
               ...t,
+              kind: 'session' as const,
               initialTask,
               harnessSessionId: observedIdentity ?? t.harnessSessionId,
               sessionId: null,
@@ -1295,8 +1587,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setProjects(prev =>
         prev.map(g => ({
           ...g,
+          // PTY events are about local processes. A coworker tab has no
+          // durable Session and no incarnation, so no event can name it.
           tabs: g.tabs.map(t =>
-            t.sessionId === id || t.durableSessionId === durableSessionId
+            isSessionTab(t) &&
+            (t.sessionId === id || t.durableSessionId === durableSessionId)
               ? {
                   ...t,
                   sessionId: null,
@@ -1318,7 +1613,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           prev.map(g => ({
             ...g,
             tabs: g.tabs.map(t =>
-              t.sessionId === id || t.durableSessionId === durableSessionId
+              isSessionTab(t) &&
+              (t.sessionId === id || t.durableSessionId === durableSessionId)
                 ? {
                     ...t,
                     harnessSessionId,
@@ -1344,7 +1640,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const tab = active?.tabs.find(
         candidate => candidate.id === active.activeTabId
       );
-      if (tab?.sessionId === next.id) setReentryRecap(next);
+      if (tab && isSessionTab(tab) && tab.sessionId === next.id) {
+        setReentryRecap(next);
+      }
     });
     const offActivity = api.onActivity?.(({ id, working }) => {
       if (working) quietBeforeSeed.delete(id);
@@ -1406,7 +1704,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, []);
 
   const serializeWorkspace = useCallback(
-    (cleanShutdown = false): PersistedV6 => {
+    (cleanShutdown = false): PersistedV7 => {
       const {
         projects: gs,
         activeDir: ad,
@@ -1430,7 +1728,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       ].slice(0, 12);
       recentsRef.current = recents;
       return {
-        v: 6,
+        v: 7,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
@@ -1442,17 +1740,34 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           const tabs = g.tabs
             .filter(
               tab =>
+                // A coworker tab is identity, so it always persists: there is
+                // no unstarted state for a view of someone else's work.
+                isRemoteAgentTab(tab) ||
                 tab.lifecycle !== 'draft' ||
                 tab.draftTouched === true ||
                 !!tab.draftTask?.trim()
             )
-            .map(tab => {
+            .map<PersistedTab>(tab => {
+              if (isRemoteAgentTab(tab)) {
+                // Identity, and nothing the source owns. No transcript, no
+                // work stack, no coworker state: all of it is re-read on open.
+                return {
+                  kind: 'remote-agent',
+                  id: tab.id,
+                  title: tab.title,
+                  sourceId: tab.sourceId,
+                  nativeAgentId: tab.nativeAgentId,
+                  agentId: tab.agentId,
+                  projectLabel: tab.projectLabel,
+                };
+              }
               const stopped =
                 cleanShutdown &&
                 (shutdownTargetsRef.current.has(tab.durableSessionId) ||
                   tabIsLive(tab) ||
                   tab.lifecycle === 'resuming');
               return {
+                kind: 'session' as const,
                 id: tab.id,
                 durableSessionId: tab.durableSessionId,
                 harness: tab.harness,
@@ -1559,6 +1874,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         shutdownTargetsRef.current = new Set(
           stateRef.current.projects.flatMap(project =>
             project.tabs
+              .filter(isSessionTab)
               .filter(tab => tabIsLive(tab) || tab.lifecycle === 'resuming')
               .map(tab => tab.durableSessionId)
           )
@@ -1573,6 +1889,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           );
           for (const project of state.projects) {
             for (const tab of project.tabs) {
+              if (tab.kind === 'remote-agent') continue;
               const session = byDurable.get(tab.durableSessionId);
               if (session?.harnessSessionId) {
                 tab.harnessSessionId = session.harnessSessionId;
@@ -1791,7 +2108,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const project = stateRef.current.projects.find(group =>
         group.tabs.some(tab => tab.id === tabId)
       );
-      const tab = project?.tabs.find(candidate => candidate.id === tabId);
+      const found = project?.tabs.find(candidate => candidate.id === tabId);
+      // Clone starts a NEW local Agent from an Exawatt-owned context summary.
+      // A coworker's context is its source's, and Exawatt holds no authority
+      // to spawn anything there, so the verb simply does not reach one.
+      const tab = found && isSessionTab(found) ? found : null;
       const contextSummary = tab
         ? (summariesRef.current[tab.durableSessionId] ?? null)
         : null;
@@ -1901,7 +2222,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const dir = dirArg ?? ad;
       const g = dir ? gs.find(x => x.dir === dir) : undefined;
       if (!g) return null;
-      const existing = g.tabs.find(t => t.lifecycle === 'draft');
+      const existing = g.tabs.find(
+        t => isSessionTab(t) && t.lifecycle === 'draft'
+      );
       if (existing) {
         if (Object.keys(requested).length > 0) {
           setProjects(prev =>
@@ -1910,7 +2233,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 ? {
                     ...grp,
                     tabs: grp.tabs.map(t =>
-                      t.id === existing.id
+                      t.id === existing.id && isSessionTab(t)
                         ? applyWorkspaceDraftPatch(t, requested)
                         : t
                     ),
@@ -1922,7 +2245,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         moveOperator(g.dir, existing.id);
         return existing.id;
       }
-      const tab: WorkspaceTab = {
+      const tab: SessionTab = {
+        kind: 'session',
         id: newTabId(),
         durableSessionId: newDurableSessionId(),
         harness: 'claude',
@@ -1965,7 +2289,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     (tabId: string, patch: WorkspaceDraftPatch) => {
       setProjects(prev => {
         const group = prev.find(g => g.tabs.some(t => t.id === tabId));
-        const tab = group?.tabs.find(t => t.id === tabId);
+        const found = group?.tabs.find(t => t.id === tabId);
+        // Only a draft carries composer work, and only a Session tab can be a
+        // draft: a coworker is opened, never composed.
+        const tab = found && isSessionTab(found) ? found : null;
         if (!group || !tab || tab.lifecycle !== 'draft') return prev;
         const nextTab = applyWorkspaceDraftPatch(tab, patch);
         if (
@@ -2017,12 +2344,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const closeTab = useCallback(
     (tabId: string, opts: { force?: boolean } = {}): Promise<CloseOutcome> => {
       const operation = (async (): Promise<CloseOutcome> => {
-        const api = window.electron?.pty;
-        if (!api) return { kind: 'noop' };
         const { projects: gs } = stateRef.current;
         const g = gs.find(x => x.tabs.some(t => t.id === tabId));
         const tab = g?.tabs.find(t => t.id === tabId);
-        if (!g || !tab || tab.resumeState === 'resuming') {
+        if (!g || !tab) return { kind: 'noop' };
+        if (isRemoteAgentTab(tab)) {
+          // ⌘W on a coworker closes the VIEW (doc: "closing its tab closes
+          // the Exawatt view, not the remote worker"). No confirm, because
+          // nothing is lost; no stop, no archive, no ledger entry, and not one
+          // byte to the source. Its work carries on and Exawatt stops looking.
+          removeTabFromLayout(tabId);
+          return { kind: 'view-closed', title: tab.title };
+        }
+        // Everything past here stops or archives a local process, so it needs
+        // the PTY bridge; closing a coworker's view never did.
+        const api = window.electron?.pty;
+        if (!api) return { kind: 'noop' };
+        if (tab.resumeState === 'resuming') {
           return { kind: 'noop' };
         }
         if (tab.lifecycle === 'draft') {
@@ -2138,7 +2476,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           ...entry,
           semanticSummary: entry.goal,
         });
-      const tab: WorkspaceTab = {
+      const tab: SessionTab = {
+        kind: 'session',
         id: reuseTabId ?? newTabId(),
         durableSessionId: entry.durableSessionId,
         harness: entry.harness,
@@ -2190,7 +2529,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           !!reuseTabId &&
           next[i].tabs.some(
             candidate =>
-              candidate.id === reuseTabId && candidate.lifecycle === 'draft'
+              candidate.id === reuseTabId &&
+              isSessionTab(candidate) &&
+              candidate.lifecycle === 'draft'
           );
         next[i] = {
           ...next[i],
@@ -2243,9 +2584,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     async (tabId: string, selectedHarnessId?: string): Promise<boolean> => {
       const api = window.electron?.pty;
       if (!api) return false;
-      const tab = stateRef.current.projects
+      const found = stateRef.current.projects
         .flatMap(project => project.tabs)
         .find(candidate => candidate.id === tabId);
+      // Resume starts a new local process for a saved provider conversation.
+      // A coworker has no local process, and asking its source to start one
+      // is a command Exawatt does not hold, so the verb refuses rather than
+      // pretending it did something.
+      const tab = found && isSessionTab(found) ? found : null;
       if (resumeInFlightRef.current.has(tabId)) return false;
       if (!tab || tabIsLive(tab) || tab.resumeState === 'resuming')
         return false;
@@ -2432,6 +2778,88 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [moveOperator, syncProjectIdentity]
   );
 
+  /**
+   * Open a connected coworker's conversation (ENG-033 H2).
+   *
+   * The same gesture as opening a local Session, and the same result: a tab in
+   * the strip, selected. Asking twice returns to the tab that already exists
+   * rather than opening a second view of one coworker.
+   *
+   * Opening reaches nothing. No Gateway call, no command, no state change on
+   * the source: the tab is a view, and the surface it renders is what reads
+   * the conversation.
+   */
+  const openRemoteAgent = useCallback(
+    (ref: RemoteAgentOpenRef): string => {
+      const dir = remoteAgentGroupDir(ref);
+      const existing = stateRef.current.projects
+        .flatMap(project =>
+          project.tabs.map(tab => ({ dir: project.dir, tab }))
+        )
+        .find(
+          entry =>
+            isRemoteAgentTab(entry.tab) && entry.tab.agentId === ref.agentId
+        );
+      if (existing) {
+        // The source owns the names; a rename there shows here on next open.
+        setProjects(prev =>
+          prev.map(project => ({
+            ...project,
+            tabs: project.tabs.map(tab =>
+              isRemoteAgentTab(tab) && tab.agentId === ref.agentId
+                ? {
+                    ...tab,
+                    title: ref.displayName,
+                    projectLabel: ref.projectLabel,
+                  }
+                : tab
+            ),
+          }))
+        );
+        moveOperator(existing.dir, existing.tab.id);
+        return existing.tab.id;
+      }
+      const tab: RemoteAgentTab = {
+        kind: 'remote-agent',
+        id: newTabId(),
+        title: ref.displayName,
+        sourceId: ref.sourceId,
+        nativeAgentId: ref.nativeAgentId,
+        agentId: ref.agentId,
+        projectLabel: ref.projectLabel,
+      };
+      setProjects(prev => {
+        const index = prev.findIndex(project => project.dir === dir);
+        if (index === -1) {
+          // The Project this Agent was mapped to at Connect time is not open.
+          // It is still where the coworker belongs, so the group opens with
+          // the mapping's own label rather than the coworker landing in
+          // whichever Project the operator happens to be standing in.
+          return [
+            ...prev,
+            {
+              dir,
+              name: ref.projectLabel || ref.displayName,
+              color: pickDistinctColor(prev.map(project => project.color)),
+              tabs: [tab],
+              activeTabId: tab.id,
+            },
+          ];
+        }
+        const next = [...prev];
+        next[index] = {
+          ...next[index],
+          tabs: [...next[index].tabs, tab],
+          activeTabId: next[index].activeTabId ?? tab.id,
+        };
+        return next;
+      });
+      moveOperator(dir, tab.id);
+      return tab.id;
+    },
+    [moveOperator]
+  );
+
   /** Curated import adds inert Projects in one state transition. Every path is
    *  resolved again at the trust boundary even when it came from our scanner. */
   const importProjects = useCallback(
@@ -2538,11 +2966,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     (sessionRef: string): boolean => {
       const { projects: gs } = stateRef.current;
       for (const g of gs) {
-        const tab = g.tabs.find(
-          t =>
-            t.sessionId === sessionRef ||
-            t.id === sessionRef ||
-            t.durableSessionId === sessionRef
+        const tab = g.tabs.find(t =>
+          isSessionTab(t)
+            ? t.sessionId === sessionRef ||
+              t.id === sessionRef ||
+              t.durableSessionId === sessionRef
+            : // A coworker answers to its tab id only. The other two names are
+              // Session identities it does not have.
+              t.id === sessionRef
         );
         if (tab) {
           moveOperator(g.dir, tab.id);
@@ -2713,16 +3144,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const activeProject = projects.find(g => g.dir === activeDir) ?? null;
   /** operator naming (W0.4): titles/names persist via the layout save; the
-   *  PTY session is renamed too so fleet/spatial show the same identity */
+   *  PTY session is renamed too so fleet/spatial show the same identity.
+   *
+   *  A coworker is not renamed here. Its name is its source's, carried
+   *  through the projection mapping, so an Exawatt-local override would be a
+   *  second name for the same worker that the source never hears about;
+   *  renaming lives with the mapping, in Connect and source detail. */
   const renameTab = useCallback(
     (tabId: string, title: string) => {
       const next = title.trim();
       if (!next) return;
-      updateTab(tabId, { title: next, titleKind: 'operator' });
       const tab = stateRef.current.projects
         .flatMap(g => g.tabs)
         .find(t => t.id === tabId);
-      if (tab?.sessionId) {
+      if (!tab || isRemoteAgentTab(tab)) return;
+      updateTab(tabId, { title: next, titleKind: 'operator' });
+      if (tab.sessionId) {
         void window.electron?.pty?.rename(tab.sessionId, next);
       }
     },
@@ -2822,7 +3259,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // ---- attention focus contract (S1): tell main which session the operator
   // is looking at — the focused session never flags, and focusing clears.
   // The local record clears optimistically; main confirms via pty:attention.
-  const activeSessionId = activeTab?.sessionId ?? null;
+  const activeSessionId =
+    activeTab && isSessionTab(activeTab) ? activeTab.sessionId : null;
   useEffect(() => {
     setReentryRecap(current =>
       current?.id === activeSessionId ? current : null
@@ -2891,6 +3329,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     resumeAll,
     selectProject,
     selectTab,
+    openRemoteAgent,
     activateSession,
     cycleTab,
     selectTabByOrdinal,

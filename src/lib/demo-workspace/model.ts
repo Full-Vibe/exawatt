@@ -31,7 +31,7 @@ import {
 } from '@exawatt/core';
 import type {
   Project,
-  WorkspaceTab,
+  SessionTab,
 } from '@/components/workspace/use-workspace-state';
 import type { SessionAttentionSignal } from '@/components/workspace/session-status';
 import type { GoalVisualReadout } from '@/components/workspace/goal-visual-backdrop';
@@ -108,9 +108,10 @@ export function demoHarness(agent: DemoFleetAgent): PtyHarness {
 export function demoTab(
   agent: DemoFleetAgent,
   project: DemoWorkspaceProject
-): WorkspaceTab {
+): SessionTab {
   const failed = agent.status === 'error';
   return {
+    kind: 'session',
     id: agent.id,
     durableSessionId: agent.id,
     harness: demoHarness(agent),
@@ -129,9 +130,12 @@ export function demoTab(
   };
 }
 
+/** The demo corpus is authored local Sessions; its groups say so. */
+export type DemoShellProject = Omit<Project, 'tabs'> & { tabs: SessionTab[] };
+
 /** The demo Workspace as the shell's `Project[]` — same grouping shape the
  *  live workspace store produces. */
-export function demoShellProjects(): Project[] {
+export function demoShellProjects(): DemoShellProject[] {
   const agents = demoShellAgents();
   return DEMO_PROJECTS.map(project => {
     const tabs = agents

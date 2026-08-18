@@ -15,7 +15,7 @@ import {
   PausedAgentRecord,
   type PausedHistoryBridge,
 } from '@/components/workspace/paused-agent-record';
-import type { WorkspaceTab } from '@/components/workspace/use-workspace-state';
+import type { SessionTab } from '@/components/workspace/use-workspace-state';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
@@ -53,7 +53,7 @@ const BRIDGE: PausedHistoryBridge = {
   }),
 };
 
-const tab = (over: Partial<WorkspaceTab>): WorkspaceTab =>
+const tab = (over: Partial<SessionTab>): SessionTab =>
   ({
     id: 't',
     durableSessionId: 'durable-1',
@@ -70,9 +70,9 @@ const tab = (over: Partial<WorkspaceTab>): WorkspaceTab =>
     startedAt: Date.now() - 4 * 60 * 60 * 1000,
     roadmapItemId: null,
     ...over,
-  }) as WorkspaceTab;
+  }) as SessionTab;
 
-const CASES: Array<{ id: string; caption: string; tab: WorkspaceTab; summary?: string }> =
+const CASES: Array<{ id: string; caption: string; tab: SessionTab; summary?: string }> =
   [
     {
       id: 'stopped-clean',

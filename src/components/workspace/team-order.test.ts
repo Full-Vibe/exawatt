@@ -9,6 +9,7 @@ const tab = (
 ): WorkspaceTab =>
   ({
     id,
+    kind: 'session' as const,
     durableSessionId: `d-${id}`,
     sessionId: `s-${id}`,
     harness: 'claude',

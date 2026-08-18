@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { HarnessResumeCandidate } from '@/types/electron';
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab } from './use-workspace-state';
 import { HARNESS_META } from './harnesses';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 
@@ -12,7 +12,7 @@ export function SessionRestorePanel({
   tab,
   onResumeTab,
 }: {
-  tab: WorkspaceTab;
+  tab: SessionTab;
   onResumeTab: (tabId: string, selectedHarnessId?: string) => Promise<boolean>;
 }) {
   const [candidates, setCandidates] = useState<HarnessResumeCandidate[] | null>(

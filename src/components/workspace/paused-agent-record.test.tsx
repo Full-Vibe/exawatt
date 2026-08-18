@@ -7,11 +7,12 @@ import {
   PausedAgentRecord,
   type PausedHistoryBridge,
 } from './paused-agent-record';
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab } from './use-workspace-state';
 
-const tab = (over: Partial<WorkspaceTab> = {}): WorkspaceTab =>
+const tab = (over: Partial<SessionTab> = {}): SessionTab =>
   ({
     id: 't1',
+    kind: 'session' as const,
     durableSessionId: 'durable-1',
     sessionId: null,
     harness: 'claude',
@@ -26,7 +27,7 @@ const tab = (over: Partial<WorkspaceTab> = {}): WorkspaceTab =>
     startedAt: 1,
     roadmapItemId: null,
     ...over,
-  }) as WorkspaceTab;
+  }) as SessionTab;
 
 /** The injectable bridge, so no test has to fake `window.electron` — a
  *  partial fake there is what made a browser look like Electron. */

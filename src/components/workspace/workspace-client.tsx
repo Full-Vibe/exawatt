@@ -50,11 +50,14 @@ import { useTeamOrderPreference } from './team-order-preference';
 import { useLiveConsumptionByTab } from '@/components/consumption/use-live-consumption-by-tab';
 import { ReentryRecapLine } from './reentry-recap';
 import {
+  isRemoteAgentTab,
+  isSessionTab,
   useWorkspaceState,
   tabCanResumeAsAgent,
   tabIsLive,
 } from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
+import { RemoteAgentPane, useRemoteCoworkers } from './remote-agent';
 import { ResumeRecoveryBar } from './resume-recovery-bar';
 import { PausedAgentRecord } from './paused-agent-record';
 import {
@@ -105,7 +108,14 @@ import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { PROJECT_PALETTE } from './project-colors';
 import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { setQuickFeedbackAttribution } from '@/components/feedback/quick-feedback-events';
-import { Bell, BellOff, FolderOpen, SquareTerminal, Plus } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  FolderOpen,
+  Plus,
+  Server,
+  SquareTerminal,
+} from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
 import {
@@ -365,6 +375,29 @@ export function WorkspaceClient() {
     setProjectColor,
     ready,
   } = useWorkspaceState({ getInitialSize });
+  /**
+   * The active tab, told apart by kind.
+   *
+   * Almost everything this file asks of the active tab is a PTY question — a
+   * working directory, a turn, a resume identity, a goal — and a coworker has
+   * none of them. Naming both here once means each of those questions reads
+   * the tab it is actually about instead of guarding at every call site.
+   */
+  const activeSessionTab =
+    activeTab && isSessionTab(activeTab) ? activeTab : null;
+  const activeRemoteTab =
+    activeTab && isRemoteAgentTab(activeTab) ? activeTab : null;
+  /**
+   * The connected roster (ENG-033 H2). One read for the workspace: Team's
+   * tiles and every coworker pane resolve from the same snapshot, so the grid
+   * and the conversation can never disagree about who exists.
+   */
+  const {
+    roster: remoteRoster,
+    coworkers,
+    requestWriteAccess: requestSourceWriteAccess,
+    reconnect: reconnectSource,
+  } = useRemoteCoworkers(inElectron);
   const [cloneTargets, setCloneTargets] = useState<CloneSessionTarget[]>([]);
   useEffect(() => {
     if (!activeProject?.dir) {
@@ -407,10 +440,12 @@ export function WorkspaceClient() {
 
   useEffect(() => {
     const activeCloneable =
-      activeTab &&
-      tabCanClone(activeTab, {
-        engaged: !!(activeTab.sessionId && engaged[activeTab.sessionId]),
-        contextSummary: summaries[activeTab?.durableSessionId ?? ''],
+      !!activeSessionTab &&
+      tabCanClone(activeSessionTab, {
+        engaged: !!(
+          activeSessionTab.sessionId && engaged[activeSessionTab.sessionId]
+        ),
+        contextSummary: summaries[activeSessionTab.durableSessionId],
       });
     window.dispatchEvent(
       new CustomEvent(CLONE_TARGET_CATALOG_EVENT, {
@@ -422,7 +457,7 @@ export function WorkspaceClient() {
         new CustomEvent(CLONE_TARGET_CATALOG_EVENT, { detail: [] })
       );
     };
-  }, [activeTab, cloneTargets, engaged, summaries]);
+  }, [activeTab, activeSessionTab, cloneTargets, engaged, summaries]);
 
   useEffect(() => {
     const cloneActive = (event: Event) => {
@@ -556,15 +591,17 @@ export function WorkspaceClient() {
   const reconnectableAgents = useMemo(
     () =>
       projects.flatMap(project =>
-        project.tabs.flatMap(tab =>
-          tab.harness !== 'shell' &&
-          !tabIsLive(tab) &&
-          tab.resumeState !== 'resuming' &&
-          !tab.harnessSessionId &&
-          tab.lifecycle !== 'draft'
-            ? [{ projectDir: project.dir, tab }]
-            : []
-        )
+        project.tabs
+          .filter(isSessionTab)
+          .flatMap(tab =>
+            tab.harness !== 'shell' &&
+            !tabIsLive(tab) &&
+            tab.resumeState !== 'resuming' &&
+            !tab.harnessSessionId &&
+            tab.lifecycle !== 'draft'
+              ? [{ projectDir: project.dir, tab }]
+              : []
+          )
       ),
     [projects]
   );
@@ -643,7 +680,9 @@ export function WorkspaceClient() {
   useEffect(() => {
     const off = window.electron?.pty?.onNotificationClick(({ id }) => {
       for (const project of projects) {
-        const tab = project.tabs.find(item => item.sessionId === id);
+        const tab = project.tabs.find(
+          item => isSessionTab(item) && item.sessionId === id
+        );
         if (tab) {
           selectTab(project.dir, tab.id);
           return;
@@ -799,15 +838,15 @@ export function WorkspaceClient() {
     () =>
       attentionJumpQueue(
         projects.flatMap(project =>
-          project.tabs.map(tab => ({
+          project.tabs.filter(isSessionTab).map(tab => ({
             sessionId: tab.sessionId,
             live: tabIsLive(tab),
           }))
         ),
         mergedAttention,
-        activeTab?.sessionId ?? null
+        activeSessionTab?.sessionId ?? null
       ),
-    [activeTab?.sessionId, mergedAttention, projects]
+    [activeSessionTab?.sessionId, mergedAttention, projects]
   );
   const hasAttentionTarget = attentionJumpTargets.length > 0;
 
@@ -818,7 +857,9 @@ export function WorkspaceClient() {
   const jumpAttentionQueue = useCallback((): boolean => {
     for (const sessionId of attentionJumpTargets) {
       for (const g of projects) {
-        const tab = g.tabs.find(t => t.sessionId === sessionId);
+        const tab = g.tabs.find(
+          t => isSessionTab(t) && t.sessionId === sessionId
+        );
         if (tab) {
           selectTab(g.dir, tab.id);
           return true;
@@ -871,7 +912,18 @@ export function WorkspaceClient() {
   // Live per-Session burn on the exposé tiles (ENG-008 E5): each tab's
   // captured provider identity joins the live corpus through the one shared
   // burn derivation. Tabs whose Session reports nothing stay absent.
-  const consumptionByTab = useLiveConsumptionByTab(projects);
+  // Burn is joined by the provider conversation a local Session captured. A
+  // coworker's usage is its source's to report and Exawatt has no read of it,
+  // so it contributes no row rather than a zero.
+  const consumptionByTab = useLiveConsumptionByTab(
+    useMemo(
+      () =>
+        projects.map(project => ({
+          tabs: project.tabs.filter(isSessionTab),
+        })),
+      [projects]
+    )
+  );
 
   const roadmapByTab = useMemo(() => {
     const out: Record<
@@ -879,7 +931,10 @@ export function WorkspaceClient() {
       { label: string; fraction: string | null; inferred: boolean }
     > = {};
     for (const g of projects) {
-      for (const t of g.tabs) {
+      // A roadmap item is declared at launch on a local Session. A coworker
+      // carries its own plan on its own source, which the roadmap lens has
+      // no read of, so it contributes no chip rather than an empty one.
+      for (const t of g.tabs.filter(isSessionTab)) {
         // declared ids are machine-local tab annotations — valid whether or
         // not the process is live, so a STOPPED tab keeps its item in the
         // overview (exactly the info you want when deciding what to resume)
@@ -991,10 +1046,12 @@ export function WorkspaceClient() {
   // workspace state.
   useEffect(() => {
     const projectName = activeProject?.name ?? null;
-    const durableSessionId = activeTab?.durableSessionId ?? null;
+    // Feedback attributes to a durable Session. A coworker has none, so
+    // feedback from its tab carries the Project and no Session id.
+    const durableSessionId = activeSessionTab?.durableSessionId ?? null;
     setQuickFeedbackAttribution(() => ({ projectName, durableSessionId }));
     return () => setQuickFeedbackAttribution(null);
-  }, [activeProject?.name, activeTab?.durableSessionId]);
+  }, [activeProject?.name, activeSessionTab?.durableSessionId]);
 
   const closeOverview = useCallback(() => {
     updateOverview(false);
@@ -1120,7 +1177,9 @@ export function WorkspaceClient() {
       if (outcome.kind === 'needs-confirm') {
         const project = projects.find(g => g.tabs.some(t => t.id === tabId));
         const tab = project?.tabs.find(t => t.id === tabId);
-        if (!project || !tab) return;
+        // Only a started local Agent asks. A coworker's close never returns
+        // `needs-confirm`, because closing its view loses nothing.
+        if (!project || !tab || !isSessionTab(tab)) return;
         setCloseConfirm({
           tabId,
           title: tab.title,
@@ -1158,9 +1217,11 @@ export function WorkspaceClient() {
       // Each tab's turn read the way its own light reads it, then counted by
       // consequence: an interrupted turn and a discarded question are
       // different losses and the dialog names them separately.
-      const turns = project.tabs.map(tab =>
-        sessionGlyphState(turnFactsFor(tab))
-      );
+      // Closing a Project ends its local Agents' turns. Its coworker views
+      // simply close, so they are not counted as anything at risk.
+      const turns = project.tabs
+        .filter(isSessionTab)
+        .map(tab => sessionGlyphState(turnFactsFor(tab)));
       setProjectCloseConfirm({
         dir,
         name: project.name,
@@ -1194,11 +1255,13 @@ export function WorkspaceClient() {
     void window.electron?.pty?.openPath(path, path);
   }, []);
   const revealActivePath = useCallback((): boolean => {
-    const target = activeTab?.cwd ?? activeProject?.dir;
+    // A coworker's working directory is on another machine; Finder has
+    // nothing to open, so the verb falls back to the Project it sits in.
+    const target = activeSessionTab?.cwd ?? activeProject?.dir;
     if (!target) return false;
     revealPath(target);
     return true;
-  }, [activeProject, activeTab, revealPath]);
+  }, [activeProject, activeSessionTab, revealPath]);
   /**
    * Browser-style close target: the active Agent tab wins; when the active
    * Project has no tabs, the same verb closes that empty Project. Keep this
@@ -1347,7 +1410,7 @@ export function WorkspaceClient() {
   const shortcutActions = useMemo<WorkspaceShortcutActions>(() => {
     const focusTerminal = () => {
       window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
-      return !!activeTab?.sessionId;
+      return !!activeSessionTab?.sessionId;
     };
     return {
       launchShell: () =>
@@ -1470,6 +1533,7 @@ export function WorkspaceClient() {
     };
   }, [
     activeTab,
+    activeSessionTab?.sessionId,
     announceWorkspace,
     attentionJumpTargets.length,
     commandAvailability,
@@ -1567,9 +1631,22 @@ export function WorkspaceClient() {
   // hold its height across the moment a draft intent materialises the tab —
   // the 37px drop BUG-041 measured and left. A draft's cwd IS the Project's
   // dir, so the row's text does not change across that hand-off either.
-  const contextPath = activeTab?.cwd ?? composerSlot?.dir ?? null;
+  const contextPath = activeSessionTab?.cwd ?? composerSlot?.dir ?? null;
+  /**
+   * What the context row says when a coworker is active. It has no directory
+   * on this machine, so the row states where the work actually runs: the
+   * source, and the Project the mapping put it in. Same row, same height —
+   * this row's height is load-bearing over the terminal pane, so the two
+   * kinds of tab must never make it appear and disappear.
+   */
+  const contextCoworker = activeRemoteTab
+    ? [activeRemoteTab.title, activeRemoteTab.projectLabel]
+        .filter(part => part.trim().length > 0)
+        .join(' · ')
+    : null;
   /** There is a live pane behind the composer/record to send focus to. */
-  const focusableTerminal = !!activeTab && activeTab.lifecycle !== 'draft';
+  const focusableTerminal =
+    !!activeSessionTab && activeSessionTab.lifecycle !== 'draft';
 
   return (
     <div
@@ -1734,7 +1811,7 @@ export function WorkspaceClient() {
                 Height is the load-bearing property here — `min-h-9` on a row
                 above the terminal pane, so a shift resizes every xterm — which
                 is why `eval:workspace:chrome` gates this file. */}
-            {contextPath !== null && (
+            {(contextPath !== null || contextCoworker !== null) && (
               <div
                 data-active-session-context
                 className="flex min-h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5"
@@ -1743,20 +1820,40 @@ export function WorkspaceClient() {
                   background: HUD.bg.panelFill,
                 }}
               >
-                <FolderOpen
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: HUD.textDim }}
-                />
-                <span
-                  data-active-session-path
-                  className="min-w-0 shrink truncate font-mono text-chrome-label"
-                  title={contextPath}
-                  tabIndex={0}
-                  style={{ color: HUD.textMono }}
-                >
-                  {middleTruncatePath(contextPath)}
-                </span>
-                {activeTab && activeItemChip && (
+                {contextCoworker !== null ? (
+                  <>
+                    <Server
+                      className="h-3.5 w-3.5 shrink-0"
+                      style={{ color: HUD.textDim }}
+                    />
+                    <span
+                      data-active-coworker
+                      className="min-w-0 shrink truncate font-mono text-chrome-label"
+                      title={contextCoworker}
+                      tabIndex={0}
+                      style={{ color: HUD.textMono }}
+                    >
+                      {contextCoworker}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen
+                      className="h-3.5 w-3.5 shrink-0"
+                      style={{ color: HUD.textDim }}
+                    />
+                    <span
+                      data-active-session-path
+                      className="min-w-0 shrink truncate font-mono text-chrome-label"
+                      title={contextPath ?? ''}
+                      tabIndex={0}
+                      style={{ color: HUD.textMono }}
+                    >
+                      {middleTruncatePath(contextPath ?? '')}
+                    </span>
+                  </>
+                )}
+                {activeSessionTab && activeItemChip && (
                   <button
                     type="button"
                     title={`working on ${activeItemChip.item.title} — open in roadmap`}
@@ -1778,8 +1875,9 @@ export function WorkspaceClient() {
                       activeItemChip.item.title}
                   </button>
                 )}
-                {activeTab &&
-                  (reentryRecap && activeTab.sessionId === reentryRecap.id ? (
+                {activeSessionTab &&
+                  (reentryRecap &&
+                  activeSessionTab.sessionId === reentryRecap.id ? (
                     <ReentryRecapLine
                       recap={reentryRecap}
                       onExpire={dismissReentryRecap}
@@ -1787,7 +1885,7 @@ export function WorkspaceClient() {
                   ) : (
                     // durable-Session goal (D21): a stopped tab still answers
                     // "what was this session driving toward?"
-                    summaries[activeTab.durableSessionId] && (
+                    summaries[activeSessionTab.durableSessionId] && (
                       <span
                         className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
                         style={{
@@ -1795,7 +1893,7 @@ export function WorkspaceClient() {
                           borderColor: HUD.strokeFaint,
                         }}
                       >
-                        {summaries[activeTab.durableSessionId]}
+                        {summaries[activeSessionTab.durableSessionId]}
                       </span>
                     )
                   ))}
@@ -1890,6 +1988,41 @@ export function WorkspaceClient() {
                   {font !== null &&
                     allTabs.map(({ tab, dir }) => {
                       const layout = stage.layoutFor(tab.id);
+                      if (isRemoteAgentTab(tab)) {
+                        // A coworker's pane is its conversation, never a
+                        // terminal: there is no local process to attach to,
+                        // and no scrollback of Exawatt's to keep alive. It
+                        // mounts only while visible, so the workspace holds
+                        // one conversation subscription per pane on screen
+                        // rather than one per tab ever opened.
+                        if (layout === 'hidden') return null;
+                        return (
+                          <div
+                            key={tab.id}
+                            data-pane={layout}
+                            className={LAYOUT_CLASS[layout]}
+                            style={
+                              layout === 'right'
+                                ? { borderLeft: `1px solid ${HUD.strokeSoft}` }
+                                : undefined
+                            }
+                            onMouseDown={
+                              tab.id !== activeTab?.id
+                                ? () => selectTab(dir, tab.id)
+                                : undefined
+                            }
+                          >
+                            <div className="absolute inset-0 min-h-0">
+                              <RemoteAgentPane
+                                onReconnect={reconnectSource}
+                                onRequestWriteAccess={requestSourceWriteAccess}
+                                roster={remoteRoster}
+                                tab={tab}
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
                       if (tab.sessionId) {
                         return (
                           <TerminalPane

@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { SessionDelegation } from '@/types/electron';
 import { deriveProjectRibbonSignal } from './project-ribbon-signal';
 import { fleetAttention, mergeFleetAttention } from './session-status';
-import type { Project, WorkspaceTab } from './use-workspace-state';
+import type { Project, SessionTab } from './use-workspace-state';
 
-function tab(id: string, lifecycle: WorkspaceTab['lifecycle'] = 'running') {
+function tab(id: string, lifecycle: SessionTab['lifecycle'] = 'running') {
   return {
     id,
+    kind: 'session' as const,
     durableSessionId: `durable-${id}`,
     harness: 'codex',
     title: id,
@@ -19,11 +20,11 @@ function tab(id: string, lifecycle: WorkspaceTab['lifecycle'] = 'running') {
     exitCode: lifecycle === 'failed' ? 1 : null,
     roadmapItemId: null,
     initialTask: id,
-  } satisfies WorkspaceTab;
+  } satisfies SessionTab;
 }
 
 function signal(
-  tabs: WorkspaceTab[],
+  tabs: SessionTab[],
   overrides: Partial<{
     summaries: Record<string, string>;
     attention: Record<string, { kind: 'bell'; since: number }>;

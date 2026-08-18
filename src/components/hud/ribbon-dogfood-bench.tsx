@@ -28,7 +28,7 @@ import {
 } from '@/components/workspace/workspace-theme';
 import type {
   Project,
-  WorkspaceTab,
+  SessionTab,
 } from '@/components/workspace/use-workspace-state';
 import {
   fleetAttention,
@@ -48,10 +48,11 @@ const COLORS = [
 ];
 
 let benchSeq = 0;
-function benchTab(title: string, cwd: string, fresh = false): WorkspaceTab {
+function benchTab(title: string, cwd: string, fresh = false): SessionTab {
   benchSeq += 1;
   const id = `bench-${benchSeq}`;
   return {
+    kind: 'session',
     id,
     durableSessionId: `durable-${id}`,
     harness: benchSeq % 3 === 0 ? 'claude' : 'codex',
@@ -75,7 +76,7 @@ function benchProject(
   titles: string[],
   colorIndex: number,
   { freshTail = false }: { freshTail?: boolean } = {}
-): Project {
+): BenchProject {
   const dir = `/workspace/${name}`;
   const tabs = titles.map(title => benchTab(title, dir));
   if (freshTail) tabs.push(benchTab('', dir, true));
@@ -88,9 +89,12 @@ function benchProject(
   };
 }
 
+/** This bench's corpus is local Sessions only. */
+type BenchProject = Omit<Project, 'tabs'> & { tabs: SessionTab[] };
+
 /** Jake's reported shape: three prior Projects holding ordinals 1–6, the
  *  active dense Project (5 Agents), then the one-Agent Switcheroo. */
-function initialProjects(): Project[] {
+function initialProjects(): BenchProject[] {
   benchSeq = 0;
   return [
     benchProject('gpagent', ['Fix UTC boundary', 'Ship date audit'], 0),
@@ -257,7 +261,7 @@ function FakeTerminalStage({
 }
 
 export function RibbonDogfoodBench() {
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<BenchProject[]>(initialProjects);
   const [activeDir, setActiveDir] = useState('/workspace/exawatt');
   const [benchWidth, setBenchWidth] = useState(1080);
   // The layout dial, live (operator, 2026-08-03: "I'll need to play with

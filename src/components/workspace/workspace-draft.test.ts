@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyWorkspaceDraftPatch,
-  type WorkspaceTab,
+  type SessionTab,
 } from './use-workspace-state';
 
-function draft(): WorkspaceTab {
+function draft(): SessionTab {
   return {
     id: 'draft-a',
+    kind: 'session' as const,
     durableSessionId: 'durable-a',
     harness: 'claude',
     title: 'New agent',

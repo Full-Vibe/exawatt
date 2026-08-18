@@ -15,6 +15,7 @@ const ROW = 34;
 function fakeTab(id: string): WorkspaceTab {
   return {
     id,
+    kind: 'session' as const,
     durableSessionId: `d-${id}`,
     harness: 'claude',
     title: id,

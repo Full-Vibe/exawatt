@@ -18,7 +18,7 @@ import {
 import type { CloneSessionTarget } from './session-clone';
 import type { SessionAttentionSignal } from './status-glyphs';
 import { DELEGATION_DOT_CAP } from './session-status';
-import type { Project, WorkspaceTab } from './use-workspace-state';
+import type { Project, SessionTab } from './use-workspace-state';
 import type { SessionDelegation } from '@/types/electron';
 import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
 
@@ -29,8 +29,9 @@ import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
  * context-label fallback instead of collapsing to icons alone.
  */
 
-function tab(overrides: Partial<WorkspaceTab> & { id: string }): WorkspaceTab {
+function tab(overrides: Partial<SessionTab> & { id: string }): SessionTab {
   return {
+    kind: 'session' as const,
     durableSessionId: `durable-${overrides.id}`,
     harness: 'claude',
     title: 'Claude Code',
@@ -66,7 +67,7 @@ function strip({
   onCloseTab = vi.fn(),
   onSelectTab = vi.fn(),
 }: {
-  tabs: WorkspaceTab[];
+  tabs: SessionTab[];
   summaries?: Record<string, string>;
   attention?: Record<string, SessionAttentionSignal>;
   activity?: Record<string, boolean>;
@@ -82,7 +83,7 @@ function strip({
   onSelectTab?: (dir: string, tabId: string) => void;
 }) {
   const view = (
-    nextTabs: WorkspaceTab[],
+    nextTabs: SessionTab[],
     nextDelegation: Record<string, SessionDelegation> = delegation
   ) => {
     const projects: Project[] = [
@@ -126,7 +127,7 @@ function strip({
   const result = render(view(tabs));
   return {
     ...result,
-    rerenderTabs: (nextTabs: WorkspaceTab[]) => result.rerender(view(nextTabs)),
+    rerenderTabs: (nextTabs: SessionTab[]) => result.rerender(view(nextTabs)),
     /** re-render with different harness-reported delegation (ENG-023) */
     rerenderDelegation: (next: Record<string, SessionDelegation>) =>
       result.rerender(view(tabs, next)),

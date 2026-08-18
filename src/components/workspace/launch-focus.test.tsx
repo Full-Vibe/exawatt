@@ -160,7 +160,11 @@ function tabById(
   view: Awaited<ReturnType<typeof mountedWorkspace>>,
   id: string
 ) {
-  return view.result.current.projects[0]?.tabs.find(tab => tab.id === id);
+  // Every tab this file launches into is a local Session.
+  const found = view.result.current.projects[0]?.tabs.find(
+    tab => tab.id === id
+  );
+  return found && found.kind === 'session' ? found : undefined;
 }
 
 describe('a late launch does not move the operator (BUG-018)', () => {

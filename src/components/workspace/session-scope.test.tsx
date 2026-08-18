@@ -253,7 +253,7 @@ describe('a forgotten Session leaves nothing behind in the renderer', () => {
     ]);
     describeSession(emit, DURABLE, PTY);
     const tabId = view.result.current.projects[0].tabs.find(
-      tab => tab.durableSessionId === DURABLE
+      tab => tab.kind === 'session' && tab.durableSessionId === DURABLE
     )!.id;
     await act(async () => {
       await view.result.current.closeTab(tabId, { force: true });

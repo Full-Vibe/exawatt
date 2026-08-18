@@ -31,11 +31,10 @@ import { useFlipTiles } from './use-flip-tiles';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
-  attentionNeedsOperator,
   delegationCopy,
-  SESSION_GLYPH_LABEL,
   sessionGlyphState,
   sessionLensTurnState,
+  sessionStateWord,
   sessionTurnFacts,
 } from './status-glyphs';
 import type { FleetAttentionSignals } from './status-glyphs';
@@ -62,10 +61,23 @@ import {
 } from './team-grid-nav';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { tokens as formatTokens } from '@/components/consumption/flux';
-import { tabCanResumeAsAgent, tabIsLive } from './use-workspace-state';
+import {
+  isRemoteAgentTab,
+  isSessionTab,
+  tabCanResumeAsAgent,
+  tabIsLive,
+} from './use-workspace-state';
 import type { RingAnchor } from './tab-ring';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness, SessionDelegation } from '@/types/electron';
+import type { AgentSourcePlacement } from '@exawatt/core';
+import type { RemoteCoworkerTile } from './remote-agent/remote-agent-roster';
+import {
+  StatusLight,
+  statusLightWord,
+  type StatusLightState,
+} from '@/components/status-light';
+import { Cloud, Monitor, Server } from 'lucide-react';
 import type { RoadmapItemView } from '@exawatt/ui-model';
 import {
   RoadmapRail,
@@ -107,13 +119,32 @@ interface EmptyProjectItem {
   color: string;
 }
 
-type SelectionItem = Tile | EmptyProjectItem;
+/** A coworker's seat in the grid: open as a tab here, or not open yet. */
+interface CoworkerItem {
+  kind: 'coworker';
+  sessionId: null;
+  /** Set once this coworker has a tab; null while it is only on the roster. */
+  tabId: string | null;
+  dir: string;
+  agentId: string;
+  coworker: RemoteCoworkerTile | null;
+  /** Last-known name, for a coworker whose roster row has not arrived. */
+  fallbackName: string;
+  color: string;
+}
+
+type SelectionItem = Tile | EmptyProjectItem | CoworkerItem;
 
 /** Team's operator-owned ring subject. A null tab names an empty Project
  * tile; null for the whole value means Team no longer owns selection. */
 export type TeamSelection = RingAnchor;
 
+function isCoworkerItem(item: SelectionItem): item is CoworkerItem {
+  return 'kind' in item && item.kind === 'coworker';
+}
+
 function selectionKey(item: SelectionItem): string {
+  if (isCoworkerItem(item)) return `agent:${item.agentId}`;
   return item.tabId ?? `project:${item.dir}`;
 }
 
@@ -139,6 +170,16 @@ const TILE_H = 252;
 // render — which reached the follow-active-tab effect through the S6.3 view
 // order and made it yank focus back to the active tile on every re-render.
 const EMPTY_MAP = Object.freeze({}) as Record<string, never>;
+const EMPTY_COWORKERS = Object.freeze([]) as readonly RemoteCoworkerTile[];
+
+const COWORKER_PLACEMENT_GLYPH: Record<
+  AgentSourcePlacement,
+  typeof Monitor
+> = {
+  local: Monitor,
+  'customer-hosted': Server,
+  'exawatt-hosted': Cloud,
+};
 
 export function ExposeOverlay({
   projects,
@@ -155,8 +196,10 @@ export function ExposeOverlay({
   activeTabId,
   activeProjectDir = null,
   navigationSelection = null,
+  remoteCoworkers = EMPTY_COWORKERS,
   roadmapRead,
   onPick,
+  onOpenRemoteAgent,
   onPickProject = () => {},
   onResumeTab,
   onSelectionChange,
@@ -204,10 +247,18 @@ export function ExposeOverlay({
    *  `activeTabId`, this can change when the requested ring target is already
    *  the hidden Agent underlay, so the roving highlight still moves. */
   navigationSelection?: TeamSelection | null;
+  /** The connected coworkers this workspace observes (ENG-033 H2). Every one
+   *  gets a tile: the ones already open as tabs sit in their mapped Project,
+   *  the rest in Connected. Absent means no source is configured, which is
+   *  not the same as a source reporting no Agents. */
+  remoteCoworkers?: readonly RemoteCoworkerTile[];
   /** tenant roadmap source override (ENG-027 W2): the Demo Workspace lens
    *  reads fixture markdown instead of the `roadmap:read` IPC */
   roadmapRead?: RoadmapReadSource;
   onPick: (dir: string, tabId: string) => void;
+  /** Open a coworker's conversation. The same gesture as opening a Session,
+   *  and it reaches the source for nothing but a read. */
+  onOpenRemoteAgent?: (agentId: string) => void;
   onPickProject?: (dir: string) => void;
   /** Resume a paused Agent from here (FIX-010). Team paints stopped Agents,
    *  so withholding the verb made the altitude state a fact it could not act
@@ -267,7 +318,12 @@ export function ExposeOverlay({
   const tiles = useMemo<Tile[]>(
     () =>
       viewProjects.flatMap(g =>
-        g.tabs.map(t => {
+        // Session tabs only. A coworker in this Project is painted by its own
+        // tile below: everything a Session tile shows past the name — turn
+        // state, lifecycle word, resume, roadmap plan, burn — is local truth
+        // Exawatt owns, and a coworker has an entirely different set of true
+        // things to say about itself.
+        g.tabs.filter(isSessionTab).map(t => {
           const live = tabIsLive(t) && !!t.sessionId && t.exitCode === null;
           return {
             sessionId: t.sessionId,
@@ -291,12 +347,59 @@ export function ExposeOverlay({
       ),
     [viewProjects]
   );
-  const items = useMemo<SelectionItem[]>(
+  const coworkerByAgentId = useMemo(
+    () => new Map(remoteCoworkers.map(agent => [agent.agentId, agent])),
+    [remoteCoworkers]
+  );
+  /** The coworkers already open as tabs, in the Project group holding them. */
+  const openCoworkers = useMemo<CoworkerItem[]>(
     () =>
-      viewProjects.flatMap<SelectionItem>(project => {
+      viewProjects.flatMap(project =>
+        project.tabs.filter(isRemoteAgentTab).map(tab => ({
+          kind: 'coworker' as const,
+          sessionId: null,
+          tabId: tab.id,
+          dir: project.dir,
+          agentId: tab.agentId,
+          coworker: coworkerByAgentId.get(tab.agentId) ?? null,
+          fallbackName: tab.title,
+          color: project.color,
+        }))
+      ),
+    [coworkerByAgentId, viewProjects]
+  );
+  /**
+   * Coworkers with no tab open yet.
+   *
+   * They lead their own section rather than being filed under a Project
+   * group, because the Project a coworker was mapped to at Connect time need
+   * not name a Project this workspace has open, and a group keyed by a
+   * directory that does not exist is a worse lie than an honest heading.
+   */
+  const unopenedCoworkers = useMemo<CoworkerItem[]>(() => {
+    const open = new Set(openCoworkers.map(item => item.agentId));
+    return remoteCoworkers
+      .filter(agent => !open.has(agent.agentId))
+      .map(agent => ({
+        kind: 'coworker' as const,
+        sessionId: null,
+        tabId: null,
+        dir: agent.projectId,
+        agentId: agent.agentId,
+        coworker: agent,
+        fallbackName: agent.name,
+        color: HUD.textDim,
+      }));
+  }, [openCoworkers, remoteCoworkers]);
+  const items = useMemo<SelectionItem[]>(
+    () => [
+      ...viewProjects.flatMap<SelectionItem>(project => {
         const projectTiles = tiles.filter(tile => tile.dir === project.dir);
-        return projectTiles.length > 0
-          ? projectTiles
+        const projectCoworkers = openCoworkers.filter(
+          item => item.dir === project.dir
+        );
+        return projectTiles.length > 0 || projectCoworkers.length > 0
+          ? [...projectTiles, ...projectCoworkers]
           : [
               {
                 sessionId: null,
@@ -307,7 +410,17 @@ export function ExposeOverlay({
               } satisfies EmptyProjectItem,
             ];
       }),
-    [tiles, viewProjects]
+      ...unopenedCoworkers,
+    ],
+    [openCoworkers, tiles, unopenedCoworkers, viewProjects]
+  );
+  /** Open what is selected: a tab if it has one, its conversation if not. */
+  const openCoworker = useCallback(
+    (item: CoworkerItem) => {
+      if (item.tabId) onPick(item.dir, item.tabId);
+      else onOpenRemoteAgent?.(item.agentId);
+    },
+    [onOpenRemoteAgent, onPick]
   );
 
   // start where the operator was — ⌃⌘2 then Enter must be a no-op return,
@@ -568,7 +681,10 @@ export function ExposeOverlay({
       const item = items[sel];
       if (item) {
         e.preventDefault();
-        if (item.tabId) onPick(item.dir, item.tabId);
+        // One gesture, three subjects: a Session opens its tab, a coworker
+        // opens its conversation, an empty Project opens the Project.
+        if (isCoworkerItem(item)) openCoworker(item);
+        else if (item.tabId) onPick(item.dir, item.tabId);
         else onPickProject(item.dir);
       }
       return;
@@ -584,6 +700,8 @@ export function ExposeOverlay({
     // deliberately out of the tab order (the grid is one roving stop). `r`
     // acts on the SELECTED tile, which is the thing the operator is looking
     // at — the same rule Enter follows.
+    // Resume is a Session verb. `tiles` holds only Session tiles, so a
+    // coworker under the cursor finds none and the key does nothing to it.
     if (plainKey && e.key === 'r' && onResumeTab) {
       const item = items[sel];
       const tile = item?.tabId
@@ -617,8 +735,17 @@ export function ExposeOverlay({
   };
 
   const selectedItem = items[sel];
-  const selectedTabId = selectedItem?.tabId ?? null;
-  const selectedDirForVerbs = selectedItem?.dir ?? null;
+  // A coworker that is not open yet has no seat in the layout, so it is not a
+  // ring anchor: publishing its mapped Project id would point the workspace's
+  // verbs at a Project group that need not exist.
+  const selectionIsAnchored =
+    !!selectedItem && (!isCoworkerItem(selectedItem) || !!selectedItem.tabId);
+  const selectedTabId = selectionIsAnchored
+    ? (selectedItem?.tabId ?? null)
+    : null;
+  const selectedDirForVerbs = selectionIsAnchored
+    ? (selectedItem?.dir ?? null)
+    : null;
   // Publish in the same commit that paints the roving highlight. A passive
   // effect left a one-frame split where a fast tab-ring chord still read the
   // hidden Agent underlay after Team visibly moved to another tile (BUG-021).
@@ -632,13 +759,144 @@ export function ExposeOverlay({
   // Leaving Team hands the verbs back to the Agent altitude's active tab.
   useEffect(() => () => onSelectionChange?.(null), [onSelectionChange]);
 
+  /**
+   * A connected coworker's tile (ENG-033 H2).
+   *
+   * The reviewed treatment in `/hud-gallery/connected-source`, at Team scale:
+   * the D40 light and the name lead, the Project reads as dim metadata, the
+   * connection is its own chip, and last-known content is marked rather than
+   * hidden. No lifecycle word and no Resume, because neither is a thing
+   * Exawatt knows or may do about someone else's Agent.
+   */
+  const coworkerTile = (item: CoworkerItem) => {
+    const index = items.findIndex(
+      candidate =>
+        isCoworkerItem(candidate) && candidate.agentId === item.agentId
+    );
+    const selected = index === sel;
+    const agent = item.coworker;
+    const name = agent?.name ?? item.fallbackName;
+    const PlacementGlyph = agent
+      ? COWORKER_PLACEMENT_GLYPH[agent.placement]
+      : null;
+    // The roster does not carry this Agent right now. That is not evidence it
+    // stopped: an unreachable source reports nothing at all. The tile says
+    // what Exawatt can see and refuses to say more.
+    const unreported = agent === null;
+    const stale = agent?.connection.stalePresentation ?? true;
+    const color = item.color;
+    return (
+      <div
+        key={`agent:${item.agentId}`}
+        data-expose-tile-slot={`agent:${item.agentId}`}
+        className="group/tile relative shrink-0"
+      >
+        <button
+          ref={node => {
+            const key = `agent:${item.agentId}`;
+            if (node) tileRefs.current.set(key, node);
+            else tileRefs.current.delete(key);
+          }}
+          type="button"
+          data-expose-tile
+          data-expose-agent={item.agentId}
+          data-expose-agent-open={item.tabId ?? undefined}
+          data-connection={agent?.connection.state ?? 'unavailable'}
+          data-selected={selected || undefined}
+          tabIndex={selected ? 0 : -1}
+          aria-label={
+            unreported
+              ? `${name}, connected coworker, not reported by its source right now`
+              : `${name}, ${agent.projectLabel || agent.sourceName}, ${statusLightWord(
+                  agent.workState
+                )}, ${agent.connection.label}`
+          }
+          onClick={() => openCoworker(item)}
+          onMouseMove={event => {
+            if (pointerClaims(event)) setSel(index);
+          }}
+          onFocus={() => setSel(index)}
+          className="relative isolate flex flex-col gap-2 overflow-hidden rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+          style={{
+            width: TILE_W,
+            height: TILE_H,
+            borderColor: selected ? color : withThemeAlpha(color, 0.27),
+            background: HUD.bg.panelFill,
+            boxShadow: selected
+              ? `0 0 14px ${withThemeAlpha(color, 0.33)}`
+              : 'none',
+            opacity: entered ? 1 : 0,
+            transform: entered
+              ? selected
+                ? 'scale(1.02)'
+                : 'none'
+              : 'translateY(10px) scale(0.97)',
+          }}
+        >
+          <span className="flex min-w-0 items-start gap-2.5">
+            <StatusLight size="standard" state={agent?.workState ?? 'off'} />
+            <span className="min-w-0 flex-1">
+              <span
+                className="block truncate font-sans text-sm font-semibold"
+                style={{ color: HUD.text }}
+              >
+                {name}
+              </span>
+              <span
+                className="block truncate font-mono text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
+                {agent?.projectLabel || agent?.sourceName || 'Coworker'}
+              </span>
+            </span>
+          </span>
+          <span
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-chrome-meta"
+            style={{ color: HUD.textDim }}
+          >
+            {stale && (
+              <span
+                className="rounded border px-1.5 py-0.5"
+                data-last-known
+                style={{ borderColor: withThemeAlpha(HUD.textDim, 0.28) }}
+              >
+                Last known
+              </span>
+            )}
+            <span
+              data-connection-chip={agent?.connection.state ?? 'unavailable'}
+              style={{ color: stale ? HUD.amber : HUD.textDim }}
+            >
+              {agent?.connection.label ?? 'Not reported'}
+            </span>
+          </span>
+          {agent && (
+            <span
+              className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-chrome-meta"
+              style={{ color: HUD.textDim }}
+            >
+              <span className="truncate">{agent.sourceName}</span>
+              <span aria-hidden="true">·</span>
+              <span
+                className="inline-flex items-center gap-1"
+                data-placement={agent.placement}
+              >
+                {PlacementGlyph && <PlacementGlyph size={12} />}
+                {agent.placementLabel}
+              </span>
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  };
+
   const sessionTile = (tile: Tile) => {
     const index = items.findIndex(item => item.tabId === tile.tabId);
     const selected = index === sel;
     const attentionSignal = tile.sessionId
       ? attention[tile.sessionId]
       : undefined;
-    const needsYou = attentionNeedsOperator(attentionSignal);
     const fault = tile.stateLabel === 'failed';
     // Durable Session context survives process replacement. The display
     // projection is total: rejected/missing labels become "New agent", never
@@ -661,6 +919,13 @@ export function ExposeOverlay({
     const glyphState = sessionGlyphState(
       sessionTurnFacts(tile, { activity, engaged, summaries, delegation })
     );
+    // One state in, one mark and one word out: the tile's visible readout and
+    // its accessible name both read this, so they cannot disagree.
+    const stateWord = sessionStateWord({
+      state: glyphState,
+      attention: attentionSignal,
+      fault,
+    });
     const roadmap = roadmapByTab[tile.tabId];
     const consumption = consumptionByTab[tile.tabId] ?? null;
     const initiative = initiativeByTab[tile.tabId] ?? null;
@@ -709,85 +974,96 @@ export function ExposeOverlay({
             Resume
           </button>
         )}
-      <button
-        ref={node => {
-          if (node) tileRefs.current.set(tile.tabId, node);
-          else tileRefs.current.delete(tile.tabId);
-        }}
-        data-expose-tile
-        data-expose-tab={tile.tabId}
-        data-selected={selected || undefined}
-        tabIndex={selected ? 0 : -1}
-        // The tile subtree is presentational to AT (an aria-label'd button),
-        // so the delegation census must ride the accessible name — it is the
-        // only place a screen-reader user hears the team at all (ENG-023).
-        aria-label={`${display.primary}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
-          tile.live && !needsYou ? `, ${SESSION_GLYPH_LABEL[glyphState]}` : ''
-        }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}${
-          delegationCensus ? `, ${delegationCensus}` : ''
-        }${initiative ? `, Initiative ${initiative.name}` : ''}${
-          consumption ? `, ${formatTokens(consumption.rawTokens)} tokens` : ''
-        }`}
-        onClick={() => onPick(tile.dir, tile.tabId)}
-        onMouseMove={event => {
-          if (pointerClaims(event)) setSel(index);
-        }}
-        onFocus={() => setSel(index)}
-        className="relative isolate flex flex-col overflow-hidden rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
-        style={{
-          width: TILE_W,
-          height: TILE_H,
-          borderColor: selected ? tile.color : withThemeAlpha(tile.color, 0.27),
-          background: HUD.bg.panelFill,
-          boxShadow: selected
-            ? `0 0 14px ${withThemeAlpha(tile.color, 0.33)}`
-            : 'none',
-          opacity: entered ? (tile.live ? 1 : 0.55) : 0,
-          transform: entered
-            ? selected
-              ? 'scale(1.02)'
-              : 'none'
-            : 'translateY(10px) scale(0.97)',
-          transitionDelay: entered ? `${Math.min(index * 18, 300)}ms` : '0ms',
-        }}
-      >
-        {goalVisualsEnabled && (
-          <GoalVisualBackdrop
-            visual={goalVisuals[tile.durableSessionId] ?? null}
-            fallbackIdentity={tile.durableSessionId}
-            projectColor={tile.color}
-          />
-        )}
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-          <SessionOverviewCardContent
-            title={display.primary}
-            context={display.context}
-            titleIsContext={display.primaryKind === 'context'}
-            color={tile.color}
-            harness={tile.harness}
-            glyphState={glyphState}
-            attention={attentionSignal}
-            delegation={tileDelegation}
-            agentType={agentTypeByTab[tile.tabId] ?? null}
-            initiative={initiative}
-            fault={fault}
-            lifecycleLabel={tile.stateLabel}
-            current={current}
-            next={roadmap?.label ?? 'No plan reported'}
-            nextProgress={roadmap?.fraction ?? null}
-            consumption={consumption}
-          />
-          {roadmap && (
-            <span
-              data-expose-roadmap-item
-              data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
-              className="sr-only"
-            >
-              {roadmap.label}
-            </span>
+        <button
+          ref={node => {
+            if (node) tileRefs.current.set(tile.tabId, node);
+            else tileRefs.current.delete(tile.tabId);
+          }}
+          data-expose-tile
+          data-expose-tab={tile.tabId}
+          data-selected={selected || undefined}
+          tabIndex={selected ? 0 : -1}
+          // The tile subtree is presentational to AT (an aria-label'd button),
+          // so the delegation census must ride the accessible name — it is the
+          // only place a screen-reader user hears the team at all (ENG-023).
+          //
+          // ENG-033 H2: the accessible name says the SAME word the tile now
+          // prints beside the mark, from the same projection. It used to run a
+          // second vocabulary keyed on turn state behind a hand-written
+          // live/needs-you guard, which had already drifted: a live tile whose
+          // Agent had failed announced "result ready" while its light was red.
+          // A stopped tile keeps its word for the reason an unreachable remote
+          // Agent keeps its own — that IS the last work state Exawatt saw — and
+          // the lifecycle label right behind it says the process is not running.
+          aria-label={`${display.primary}, ${tile.projectName}, ${stateWord}${
+            tile.stateLabel ? `, ${tile.stateLabel}` : ''
+          }${
+            delegationCensus ? `, ${delegationCensus}` : ''
+          }${initiative ? `, Initiative ${initiative.name}` : ''}${
+            consumption ? `, ${formatTokens(consumption.rawTokens)} tokens` : ''
+          }`}
+          onClick={() => onPick(tile.dir, tile.tabId)}
+          onMouseMove={event => {
+            if (pointerClaims(event)) setSel(index);
+          }}
+          onFocus={() => setSel(index)}
+          className="relative isolate flex flex-col overflow-hidden rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+          style={{
+            width: TILE_W,
+            height: TILE_H,
+            borderColor: selected
+              ? tile.color
+              : withThemeAlpha(tile.color, 0.27),
+            background: HUD.bg.panelFill,
+            boxShadow: selected
+              ? `0 0 14px ${withThemeAlpha(tile.color, 0.33)}`
+              : 'none',
+            opacity: entered ? (tile.live ? 1 : 0.55) : 0,
+            transform: entered
+              ? selected
+                ? 'scale(1.02)'
+                : 'none'
+              : 'translateY(10px) scale(0.97)',
+            transitionDelay: entered ? `${Math.min(index * 18, 300)}ms` : '0ms',
+          }}
+        >
+          {goalVisualsEnabled && (
+            <GoalVisualBackdrop
+              visual={goalVisuals[tile.durableSessionId] ?? null}
+              fallbackIdentity={tile.durableSessionId}
+              projectColor={tile.color}
+            />
           )}
-        </div>
-      </button>
+          <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+            <SessionOverviewCardContent
+              title={display.primary}
+              context={display.context}
+              titleIsContext={display.primaryKind === 'context'}
+              color={tile.color}
+              harness={tile.harness}
+              glyphState={glyphState}
+              attention={attentionSignal}
+              delegation={tileDelegation}
+              agentType={agentTypeByTab[tile.tabId] ?? null}
+              initiative={initiative}
+              fault={fault}
+              lifecycleLabel={tile.stateLabel}
+              current={current}
+              next={roadmap?.label ?? 'No plan reported'}
+              nextProgress={roadmap?.fraction ?? null}
+              consumption={consumption}
+            />
+            {roadmap && (
+              <span
+                data-expose-roadmap-item
+                data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
+                className="sr-only"
+              >
+                {roadmap.label}
+              </span>
+            )}
+          </div>
+        </button>
       </div>
     );
   };
@@ -951,8 +1227,14 @@ export function ExposeOverlay({
               const projectTiles = tiles.filter(
                 tile => tile.dir === project.dir
               );
+              const projectCoworkers = openCoworkers.filter(
+                item => item.dir === project.dir
+              );
               const emptyIndex = items.findIndex(
-                item => item.tabId === null && item.dir === project.dir
+                item =>
+                  !isCoworkerItem(item) &&
+                  item.tabId === null &&
+                  item.dir === project.dir
               );
               const emptySelected = emptyIndex === sel;
               return (
@@ -965,7 +1247,11 @@ export function ExposeOverlay({
                   data-handoff-card=""
                   data-handoff-label={project.name}
                   data-handoff-color={project.color}
-                  aria-label={`${project.name}, ${projectTiles.length} Sessions`}
+                  aria-label={`${project.name}, ${projectTiles.length} Sessions${
+                    projectCoworkers.length > 0
+                      ? `, ${projectCoworkers.length} connected`
+                      : ''
+                  }`}
                 >
                   <div
                     className="mb-2 flex items-center gap-2 border-b pb-2"
@@ -992,8 +1278,11 @@ export function ExposeOverlay({
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-2.5">
-                    {projectTiles.length > 0 ? (
-                      projectTiles.map(sessionTile)
+                    {projectTiles.length > 0 || projectCoworkers.length > 0 ? (
+                      <>
+                        {projectTiles.map(sessionTile)}
+                        {projectCoworkers.map(coworkerTile)}
+                      </>
                     ) : (
                       <button
                         ref={node => {
@@ -1047,6 +1336,41 @@ export function ExposeOverlay({
                 </section>
               );
             })}
+            {/* Connected (ENG-033 H2): coworkers this workspace observes that
+                have no view open yet. They are not filed under a Project
+                group because the Project a coworker was mapped to need not be
+                one this workspace has open, and opening one is the same
+                gesture as opening a Session: Enter, or click. */}
+            {unopenedCoworkers.length > 0 && (
+              <section
+                data-expose-connected
+                aria-label={`Connected, ${unopenedCoworkers.length} ${
+                  unopenedCoworkers.length === 1 ? 'coworker' : 'coworkers'
+                }`}
+              >
+                <div
+                  className="mb-2 flex items-center gap-2 border-b pb-2"
+                  style={{ borderColor: HUD.strokeFaint }}
+                >
+                  <h3
+                    className="truncate font-sans text-sm font-semibold"
+                    style={{ color: HUD.text }}
+                  >
+                    Connected
+                  </h3>
+                  <span
+                    className="font-mono text-xs tabular-nums"
+                    style={{ color: HUD.textDim }}
+                  >
+                    {unopenedCoworkers.length}{' '}
+                    {unopenedCoworkers.length === 1 ? 'Agent' : 'Agents'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {unopenedCoworkers.map(coworkerTile)}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       </div>

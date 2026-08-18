@@ -12,10 +12,11 @@ import {
   resolveStageLayout,
   tabIsPinnable,
 } from './split-layout';
-import type { WorkspaceTab } from './use-workspace-state';
+import type { SessionTab, WorkspaceTab } from './use-workspace-state';
 
-const tab = (id: string, over: Partial<WorkspaceTab> = {}): WorkspaceTab => ({
+const tab = (id: string, over: Partial<SessionTab> = {}): SessionTab => ({
   id,
+  kind: 'session' as const,
   durableSessionId: `${id}-durable`,
   harness: 'claude',
   title: 'Agent',

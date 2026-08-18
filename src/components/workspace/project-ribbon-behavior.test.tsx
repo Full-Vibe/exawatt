@@ -11,11 +11,12 @@ vi.mock('next/navigation', () => ({
 import { TabStrip } from './tab-strip';
 import { fleetAttention, mergeFleetAttention } from './session-status';
 import { DEFAULT_RIBBON_POLICY } from './project-ribbon-layout';
-import type { Project, WorkspaceTab } from './use-workspace-state';
+import type { Project, SessionTab } from './use-workspace-state';
 
-function tab(id: string): WorkspaceTab {
+function tab(id: string): SessionTab {
   return {
     id,
+    kind: 'session' as const,
     durableSessionId: `durable-${id}`,
     harness: 'claude',
     title: `Initiative ${id}`,
@@ -31,7 +32,7 @@ function tab(id: string): WorkspaceTab {
   };
 }
 
-function project(dir: string, tabs: WorkspaceTab[]): Project {
+function project(dir: string, tabs: SessionTab[]): Project {
   return {
     dir,
     name: dir.slice(1),

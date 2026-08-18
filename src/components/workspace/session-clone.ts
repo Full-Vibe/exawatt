@@ -14,10 +14,19 @@ import type { LaunchTarget } from '@exawatt/core';
 const MAX_HANDOFF_CHARS = 2_400;
 const MAX_FIELD_CHARS = 1_000;
 
+/**
+ * Clone starts a NEW local Agent from bounded Exawatt-owned context.
+ *
+ * A connected coworker is never a clone source: its context belongs to its
+ * source, and Exawatt holds no authority to spawn anything there. Handing its
+ * conversation to a local Agent would also copy someone else's work into this
+ * machine under a name the source never agreed to.
+ */
 export function tabCanClone(
   tab: WorkspaceTab,
   input: { engaged?: boolean; contextSummary?: string | null } = {}
 ): boolean {
+  if (tab.kind === 'remote-agent') return false;
   return (
     tab.harness !== 'shell' &&
     tab.lifecycle !== 'draft' &&

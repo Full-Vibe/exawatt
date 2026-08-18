@@ -17,6 +17,7 @@ const fleet = (signals: Record<string, SessionAttentionSignal>) =>
 const tab = (over: Partial<WorkspaceTab>): WorkspaceTab =>
   ({
     id: 't1',
+    kind: 'session' as const,
     durableSessionId: 'd1',
     sessionId: 's1',
     harness: 'claude',
