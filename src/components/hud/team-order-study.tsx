@@ -20,7 +20,7 @@
 import { ExposeOverlay } from '@/components/workspace/expose-overlay';
 import type {
   Project,
-  WorkspaceTab,
+  SessionTab,
 } from '@/components/workspace/use-workspace-state';
 import {
   fleetAttention,
@@ -38,25 +38,25 @@ const tab = (
   id: string,
   title: string,
   startedAt: number,
-  over: Partial<WorkspaceTab> = {}
-): WorkspaceTab =>
-  ({
-    id,
-    durableSessionId: `durable-${id}`,
-    sessionId: `session-${id}`,
-    harness: 'claude',
-    title,
-    titleKind: 'operator',
-    cwd: '/workspace',
-    resumeState: 'live',
-    lifecycle: 'running',
-    exitCode: null,
-    harnessSessionId: null,
-    initialTask: null,
-    startedAt,
-    roadmapItemId: null,
-    ...over,
-  }) as WorkspaceTab;
+  over: Partial<SessionTab> = {}
+): SessionTab => ({
+  kind: 'session',
+  id,
+  durableSessionId: `durable-${id}`,
+  sessionId: `session-${id}`,
+  harness: 'claude',
+  title,
+  titleKind: 'operator',
+  cwd: '/workspace',
+  resumeState: 'live',
+  lifecycle: 'running',
+  exitCode: null,
+  harnessSessionId: null,
+  initialTask: null,
+  startedAt,
+  roadmapItemId: null,
+  ...over,
+});
 
 const FLEET: Project[] = [
   {
