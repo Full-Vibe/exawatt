@@ -9,7 +9,10 @@ import { ConnectedGatewaySession } from './connected-gateway';
 import {
   ConnectedSourceRuntime,
   FileConnectedAgentProjectionPlanStore,
+  MAX_MESSAGE_CHARACTERS,
   type AgentMappingInput,
+  type ConversationRequest,
+  type SendToAgentOptions,
 } from './connected-source-runtime';
 import {
   createSshRemoteExec,
@@ -28,10 +31,13 @@ import { broadcastToWindows } from './window-broadcast';
  * belongs. It never receives connection material: every read goes through a
  * view projection, and the OS keychain lives entirely on this side.
  *
- * There is deliberately still no command channel. H1 observes; nothing here
- * can send, steer, abort, or schedule, and `ConnectedGatewaySession`'s method
- * allowlist plus the source's own `operator.read` scope remain the two locks
- * that make that true rather than merely intended.
+ * ENG-033 H2 opens exactly one command channel and no more: the operator can
+ * ask a source for write access, read a coworker's primary conversation, send
+ * to that conversation, and follow the reply. Three locks keep it that narrow.
+ * The source grants the scope; `ConnectedGatewaySession` allows four write
+ * methods and no admin method at all; and the send API here takes an Exawatt
+ * Agent id, never a session key, so no renderer call can address a context
+ * other than the coworker's primary conversation.
  */
 
 let store: ConnectedSourceStore | null = null;
@@ -72,6 +78,20 @@ function sourceRuntime(): ConnectedSourceRuntime {
       BrowserWindow.getAllWindows(),
       'connected-sources:changed',
       change
+    );
+  });
+  /*
+   * Unlike `changed`, this one carries content, because a reply the operator
+   * is waiting for is the one thing a pull cannot deliver in time. It stays
+   * bounded per run in the runtime, and it is ordered by Exawatt's own
+   * counter rather than by a Gateway frame sequence that resets per
+   * connection.
+   */
+  created.onConversationUpdate(update => {
+    broadcastToWindows(
+      BrowserWindow.getAllWindows(),
+      'connected-sources:conversation-updated',
+      update
     );
   });
   runtime = created;
@@ -124,6 +144,44 @@ function readMappingInputs(value: unknown): AgentMappingInput[] {
           : null,
     };
   });
+}
+
+/**
+ * The paging request, narrowed. Only two fields exist, and neither of them
+ * can name a context: which conversation is read follows from the Agent id.
+ */
+function readConversationRequest(value: unknown): ConversationRequest {
+  if (!value || typeof value !== 'object') return {};
+  const row = value as Record<string, unknown>;
+  return {
+    limit: typeof row.limit === 'number' ? row.limit : undefined,
+    beforeTurnId:
+      typeof row.beforeTurnId === 'string' ? row.beforeTurnId : undefined,
+  };
+}
+
+/**
+ * The outbound message, kept bounded across the boundary without swallowing
+ * the runtime's own limit.
+ *
+ * One character past the limit is deliberate: cutting exactly at the limit
+ * would make an over-long message arrive as a silently shortened one that
+ * passes, and quietly sending most of what the operator wrote is worse than
+ * telling them it was too long. The runtime refuses it with a sentence.
+ */
+function readMessageText(value: unknown): string {
+  return typeof value === 'string'
+    ? value.slice(0, MAX_MESSAGE_CHARACTERS + 1)
+    : '';
+}
+
+function readSendOptions(value: unknown): SendToAgentOptions {
+  if (!value || typeof value !== 'object') return {};
+  const row = value as Record<string, unknown>;
+  return {
+    idempotencyKey:
+      typeof row.idempotencyKey === 'string' ? row.idempotencyKey : undefined,
+  };
 }
 
 export function registerConnectedSourcesIPC(): void {
@@ -205,6 +263,60 @@ export function registerConnectedSourcesIPC(): void {
       sourceRuntime().mapAgents(
         assertString(id, 'source id'),
         readMappingInputs(mappings)
+      )
+  );
+
+  /** What Exawatt may do with each source. Reads state; asks nothing. */
+  handleTrusted('connected-sources:command-authority', async () =>
+    sourceRuntime().commandAuthority()
+  );
+
+  /**
+   * Ask one source to raise Exawatt from observation to conversation
+   * (ENG-033 H2). The Gateway may answer that a person has to approve the
+   * device on the source itself, which is an answer rather than a failure.
+   */
+  handleTrusted(
+    'connected-sources:request-command-authority',
+    async (_event, id: unknown) =>
+      sourceRuntime().requestCommandAuthority(assertString(id, 'source id'))
+  );
+
+  /** Hand write access back and keep observing. */
+  handleTrusted(
+    'connected-sources:relinquish-command-authority',
+    async (_event, id: unknown) =>
+      sourceRuntime().relinquishCommandAuthority(assertString(id, 'source id'))
+  );
+
+  /**
+   * One coworker's primary conversation, bounded. `chat.history` is a read, so
+   * this needs no command authority and works on a read-only source.
+   */
+  handleTrusted(
+    'connected-sources:conversation',
+    async (_event, agentId: unknown, request: unknown) =>
+      sourceRuntime().conversation(
+        assertString(agentId, 'Agent id'),
+        readConversationRequest(request)
+      )
+  );
+
+  /**
+   * Send to that conversation and nothing else.
+   *
+   * The channel takes an Exawatt Agent id, and the runtime resolves the
+   * address from the projection. There is deliberately no session-key
+   * parameter here or anywhere above it: a renderer that opens a cron run or
+   * a delegated child to read it still has no way to aim a message at one.
+   */
+  handleTrusted(
+    'connected-sources:send',
+    async (_event, agentId: unknown, text: unknown, options: unknown) =>
+      sourceRuntime().send(
+        assertString(agentId, 'Agent id'),
+        readMessageText(text),
+        readSendOptions(options)
       )
   );
 

@@ -1022,3 +1022,522 @@ describe('adaptOpenClawTopology feeds the projection kernel', () => {
     ).toEqual(['alpha', 'researcher', 'scheduler']);
   });
 });
+
+/**
+ * One `cron.list` job as a live Gateway shapes it: identity and ownership on
+ * the entry, run state nested under `state`.
+ */
+function cronJob(
+  name: string,
+  agentId: string,
+  state: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    name,
+    agentId,
+    enabled: true,
+    schedule: '0 * * * *',
+    prompt: 'Sweep the invented queue and report.',
+    state: {
+      lastRunAtMs: OBSERVED_AT - 10 * MINUTE_MS,
+      lastStatus: 'ok',
+      nextRunAtMs: OBSERVED_AT + 50 * MINUTE_MS,
+      delivery: 'session',
+      ...state,
+    },
+    ...overrides,
+  };
+}
+
+function cronPayload(jobs: readonly unknown[]): Record<string, unknown> {
+  return { ts: OBSERVED_AT, count: jobs.length, jobs };
+}
+
+function statusPayload(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    runtimeVersion: '0.0.0-invented',
+    agents: [{ id: 'writer', heartbeat: { everyMs: 900_000 } }],
+    tasks: {
+      total: 12,
+      active: 1,
+      terminal: 11,
+      failures: 2,
+      byStatus: { running: 1, succeeded: 9, failed: 2 },
+      byRuntime: { cron: 10, subagent: 2 },
+      ...overrides,
+    },
+    taskAudit: { warnings: 3, errors: 1 },
+  };
+}
+
+function automations(
+  snapshot: AgentSourceTopologySnapshot
+): NonNullable<AgentSourceTopologySnapshot['automations']> {
+  return snapshot.automations ?? [];
+}
+
+describe('adaptOpenClawTopology automations', () => {
+  it('carries an observed automation fault and nothing about its configuration', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        sessionLists: [
+          {
+            nativeAgentId: 'writer',
+            payload: sessionsPayload([
+              sessionEntry('agent:writer:cron:invented-job-1'),
+            ]),
+          },
+        ],
+        cronList: cronPayload([
+          cronJob('invented-nightly', 'writer', {
+            lastStatus: 'error',
+            sessionTarget: 'agent:writer:cron:invented-job-1',
+          }),
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    expect(codes(result)).toEqual([]);
+    expect(automations(snapshot)).toEqual([
+      {
+        configuredSourceId: SOURCE_ID,
+        nativeAgentId: 'writer',
+        nativeAutomationId: 'invented-nightly',
+        enabled: true,
+        lastOutcome: 'failed',
+        lastRunAt: OBSERVED_AT - 10 * MINUTE_MS,
+        targetContextId: 'agent:writer:cron:invented-job-1',
+      },
+    ]);
+    // Schedule, prompt, and delivery are configuration, not evidence.
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain('0 * * * *');
+    expect(serialized).not.toContain('Sweep the invented queue');
+    expect(serialized).not.toContain('delivery');
+    expect(serialized).not.toContain('nextRun');
+  });
+
+  it('separates never asked from asked and empty', () => {
+    const base = {
+      agentsList: { agents: [agentEntry('writer')] },
+      sessionLists: [],
+    };
+    expect(
+      adapted(adaptOpenClawTopology(input(base))).automations
+    ).toBeUndefined();
+    expect(
+      adapted(
+        adaptOpenClawTopology(input({ ...base, cronList: cronPayload([]) }))
+      ).automations
+    ).toEqual([]);
+  });
+
+  it('reads only outcome words it knows, and never guesses at the rest', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        cronList: cronPayload([
+          cronJob('invented-a', 'writer', { lastStatus: 'ok' }),
+          cronJob('invented-b', 'writer', { lastStatus: 'success' }),
+          cronJob('invented-c', 'writer', { lastStatus: 'error' }),
+          cronJob('invented-d', 'writer', { lastStatus: 'failed' }),
+          // Words this build does not know, in every unusable shape.
+          cronJob('invented-e', 'writer', { lastStatus: 'running' }),
+          cronJob('invented-f', 'writer', { lastStatus: 'catastrophe' }),
+          cronJob('invented-g', 'writer', { lastStatus: '' }),
+          cronJob('invented-h', 'writer', { lastStatus: 1 }),
+          cronJob('invented-i', 'writer', { lastStatus: undefined }),
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    const outcomes = Object.fromEntries(
+      automations(snapshot).map(entry => [
+        entry.nativeAutomationId,
+        entry.lastOutcome,
+      ])
+    );
+    expect(outcomes['invented-a']).toBe('succeeded');
+    expect(outcomes['invented-b']).toBe('succeeded');
+    expect(outcomes['invented-c']).toBe('failed');
+    expect(outcomes['invented-d']).toBe('failed');
+    // Unknown never becomes healthy, and never becomes a fault either.
+    for (const suffix of ['e', 'f', 'g', 'h', 'i']) {
+      expect(outcomes[`invented-${suffix}`]).toBeUndefined();
+    }
+    expect(codes(result)).toEqual([]);
+  });
+
+  it('leaves enablement unknown rather than defaulting it', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        cronList: cronPayload([
+          cronJob('invented-on', 'writer', {}, { enabled: true }),
+          cronJob('invented-off', 'writer', {}, { enabled: false }),
+          cronJob('invented-silent', 'writer', {}, { enabled: undefined }),
+          cronJob('invented-truthy', 'writer', {}, { enabled: 'yes' }),
+        ]),
+      })
+    );
+    const enabled = Object.fromEntries(
+      automations(adapted(result)).map(entry => [
+        entry.nativeAutomationId,
+        entry.enabled,
+      ])
+    );
+    expect(enabled['invented-on']).toBe(true);
+    expect(enabled['invented-off']).toBe(false);
+    expect(enabled['invented-silent']).toBeUndefined();
+    expect(enabled['invented-truthy']).toBeUndefined();
+  });
+
+  it('reads run state whether the Gateway nests it or flattens it', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        cronList: cronPayload([
+          {
+            name: 'invented-flat',
+            agentId: 'writer',
+            enabled: true,
+            lastStatus: 'failed',
+            lastRunAtMs: OBSERVED_AT - MINUTE_MS,
+          },
+        ]),
+      })
+    );
+    expect(automations(adapted(result))[0]).toMatchObject({
+      lastOutcome: 'failed',
+      lastRunAt: OBSERVED_AT - MINUTE_MS,
+    });
+  });
+
+  it('never lets an automation conjure the Agent it names', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        cronList: cronPayload([
+          cronJob('invented-job', 'ghost', { lastStatus: 'error' }),
+          cronJob('invented-kept', 'writer'),
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    expect(codes(result)).toEqual(['orphan-automation-agent']);
+    expect(snapshot.agents.map(entry => entry.nativeAgentId)).toEqual([
+      'writer',
+    ]);
+    expect(
+      automations(snapshot).map(entry => entry.nativeAutomationId)
+    ).toEqual(['invented-kept']);
+  });
+
+  it('never lets an automation attach to a retired Agent', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        retiredNativeAgentIds: ['researcher'],
+        cronList: cronPayload([
+          cronJob('invented-job', 'researcher', { lastStatus: 'error' }),
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    expect(codes(result)).toEqual(['orphan-automation-agent']);
+    expect(automations(snapshot)).toEqual([]);
+  });
+
+  it('drops automation entries with no usable identity or owner', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        cronList: cronPayload([
+          cronJob('invented-kept', 'writer'),
+          'not-a-record',
+          { agentId: 'writer' },
+          { name: 'invented-ownerless' },
+          { name: '   ', agentId: 'writer' },
+          { name: 'invented-bad-owner', agentId: 42 },
+          // An identity longer than the kernel's own bound: dropped here so it
+          // can never be handed downstream and rejected there.
+          { name: 'x'.repeat(4_097), agentId: 'writer' },
+          { name: 'invented-long-owner', agentId: 'y'.repeat(4_097) },
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    expect(codes(result)).toEqual(
+      Array.from({ length: 7 }, () => 'invalid-cron-entry')
+    );
+    expect(automations(snapshot)).toHaveLength(1);
+  });
+
+  it('keeps the first of two identical automation names, per Agent', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: {
+          agents: [agentEntry('writer'), agentEntry('alpha')],
+        },
+        cronList: cronPayload([
+          cronJob('invented-shared', 'writer', { lastStatus: 'ok' }),
+          cronJob('invented-shared', 'writer', { lastStatus: 'error' }),
+          cronJob('invented-shared', 'alpha', { lastStatus: 'error' }),
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    expect(codes(result)).toEqual(['duplicate-automation']);
+    expect(
+      automations(snapshot).map(entry => [
+        entry.nativeAgentId,
+        entry.lastOutcome,
+      ])
+    ).toEqual([
+      ['alpha', 'failed'],
+      ['writer', 'succeeded'],
+    ]);
+  });
+
+  it('resolves an automation target only inside the same Agent', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: {
+          agents: [agentEntry('writer'), agentEntry('alpha')],
+        },
+        sessionLists: [
+          {
+            nativeAgentId: 'writer',
+            payload: sessionsPayload([
+              sessionEntry('agent:writer:cron:invented-job-1'),
+            ]),
+          },
+          {
+            nativeAgentId: 'alpha',
+            payload: sessionsPayload([sessionEntry('agent:alpha:main')]),
+          },
+        ],
+        cronList: cronPayload([
+          cronJob('invented-own', 'writer', {
+            sessionTarget: 'agent:writer:cron:invented-job-1',
+          }),
+          cronJob('invented-foreign', 'writer', {
+            sessionTarget: 'agent:alpha:main',
+          }),
+          cronJob('invented-vanished', 'writer', {
+            sessionTarget: 'agent:writer:cron:invented-gone',
+          }),
+          cronJob('invented-unaddressable', 'writer', {
+            sessionTarget: 'writer-main',
+          }),
+          cronJob('invented-silent', 'writer', { sessionTarget: undefined }),
+        ]),
+      })
+    );
+    const snapshot = adapted(result);
+    const targets = Object.fromEntries(
+      automations(snapshot).map(entry => [
+        entry.nativeAutomationId,
+        entry.targetContextId,
+      ])
+    );
+    expect(targets['invented-own']).toBe('agent:writer:cron:invented-job-1');
+    for (const suffix of ['foreign', 'vanished', 'unaddressable', 'silent']) {
+      expect(targets[`invented-${suffix}`]).toBeNull();
+    }
+  });
+
+  it('degrades rather than failing when the automation listing is malformed', () => {
+    for (const cronList of [null, 'jobs', { jobs: {} }, []]) {
+      const result = adaptOpenClawTopology(
+        input({
+          agentsList: { agents: [agentEntry('writer')] },
+          cronList,
+        })
+      );
+      const snapshot = adapted(result);
+      expect(codes(result)).toEqual(['invalid-cron-payload']);
+      // A payload Exawatt cannot read leaves automations unknown, never empty.
+      expect(snapshot.automations).toBeUndefined();
+    }
+  });
+
+  it('caps automations without evicting the evidence', () => {
+    const jobs = [
+      ...Array.from({ length: 2_400 }, (_unused, index) =>
+        cronJob(`invented-bulk-${String(index).padStart(4, '0')}`, 'writer', {
+          lastRunAtMs: OBSERVED_AT - index * MINUTE_MS,
+        })
+      ),
+      // Oldest run of the lot, and the only fault: it must survive anyway.
+      cronJob('invented-fault', 'writer', {
+        lastStatus: 'failed',
+        lastRunAtMs: 1,
+      }),
+    ];
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        cronList: cronPayload(jobs),
+      })
+    );
+    const snapshot = adapted(result);
+    expect(codes(result)).toContain('automation-cap-exceeded');
+    expect(automations(snapshot)).toHaveLength(2_000);
+    expect(
+      automations(snapshot).find(
+        entry => entry.nativeAutomationId === 'invented-fault'
+      )?.lastOutcome
+    ).toBe('failed');
+  });
+});
+
+describe('adaptOpenClawTopology source-wide task totals', () => {
+  it('carries the totals the source reports about itself', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        statusPayload: statusPayload(),
+      })
+    );
+    expect(adapted(result).taskFacts).toEqual({
+      total: 12,
+      active: 1,
+      terminal: 11,
+      failures: 2,
+      byStatus: { running: 1, succeeded: 9, failed: 2 },
+      byRuntime: { subagent: 2, cron: 10 },
+      auditWarnings: 3,
+      auditErrors: 1,
+    });
+    expect(codes(result)).toEqual([]);
+  });
+
+  it('keeps only buckets it knows and counts it can vouch for', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        statusPayload: statusPayload({
+          byStatus: { succeeded: 9, invented: 3, failed: -1, lost: 1.5 },
+          byRuntime: { cli: 4, invented: 'many' },
+        }),
+      })
+    );
+    expect(adapted(result).taskFacts).toMatchObject({
+      byStatus: { succeeded: 9 },
+      byRuntime: { cli: 4 },
+    });
+  });
+
+  it('leaves the totals unknown when the source reports none it can vouch for', () => {
+    for (const payload of [
+      null,
+      'status',
+      {},
+      { tasks: { total: 4 } },
+      { tasks: { total: -1, active: 0, terminal: 0, failures: 0 } },
+      { tasks: { total: 1.5, active: 0, terminal: 0, failures: 0 } },
+    ]) {
+      const result = adaptOpenClawTopology(
+        input({
+          agentsList: { agents: [agentEntry('writer')] },
+          statusPayload: payload,
+        })
+      );
+      const snapshot = adapted(result);
+      expect(codes(result)).toEqual(['invalid-status-payload']);
+      expect(snapshot.taskFacts).toBeUndefined();
+    }
+  });
+
+  it('separates never asked from asked and unreadable', () => {
+    const result = adaptOpenClawTopology(
+      input({ agentsList: { agents: [agentEntry('writer')] } })
+    );
+    expect(adapted(result).taskFacts).toBeUndefined();
+    expect(codes(result)).toEqual([]);
+  });
+
+  it('never copies the runtime version or heartbeat configuration', () => {
+    const result = adaptOpenClawTopology(
+      input({
+        agentsList: { agents: [agentEntry('writer')] },
+        statusPayload: statusPayload(),
+      })
+    );
+    const serialized = JSON.stringify(adapted(result));
+    expect(serialized).not.toContain('0.0.0-invented');
+    expect(serialized).not.toContain('heartbeat');
+  });
+});
+
+describe('adaptOpenClawTopology work-state evidence reaches the kernel', () => {
+  /** The realistic Gateway, plus the automation and status reads. */
+  function fullInput(): OpenClawTopologyInput {
+    return input({
+      ...realisticInput(),
+      cronList: cronPayload([
+        cronJob('invented-alpha-sweep', 'alpha', { lastStatus: 'ok' }),
+        cronJob('invented-writer-nightly', 'writer', {
+          lastStatus: 'error',
+          sessionTarget: 'agent:writer:cron:invented-job-1',
+        }),
+      ]),
+      statusPayload: statusPayload(),
+    });
+  }
+
+  it('derives working, error, and nothing else from a whole observation', () => {
+    const snapshot = adapted(adaptOpenClawTopology(fullInput()));
+    const projection = projectAgentTopology([snapshot], planFor(snapshot));
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    const byNative = new Map(
+      projection.projection.agents.map(agent => [agent.nativeAgentId, agent])
+    );
+    // A spawned context of alpha's is mid-run and its automation is healthy.
+    expect(byNative.get('alpha')?.workState).toBe('working');
+    expect(byNative.get('alpha')?.hasActiveRun).toBe(true);
+    // Nothing writer owns is running and its scheduled job last failed.
+    expect(byNative.get('writer')?.workState).toBe('error');
+    expect(byNative.get('writer')?.hasActiveRun).toBe(false);
+    expect(byNative.get('writer')?.automations).toEqual([
+      {
+        configuredSourceId: SOURCE_ID,
+        nativeAgentId: 'writer',
+        nativeAutomationId: 'invented-writer-nightly',
+        enabled: true,
+        lastOutcome: 'failed',
+        lastRunAt: OBSERVED_AT - 10 * MINUTE_MS,
+        targetContextId: 'agent:writer:cron:invented-job-1',
+      },
+    ]);
+  });
+
+  it('leaves the run signal exactly as it was before automations existed', () => {
+    const withAutomations = adapted(adaptOpenClawTopology(fullInput()));
+    const withoutAutomations = adapted(adaptOpenClawTopology(realisticInput()));
+    expect(withAutomations.contexts).toEqual(withoutAutomations.contexts);
+  });
+
+  it('produces identical output regardless of automation and bucket order', () => {
+    const base = fullInput();
+    const jobs = (base.cronList as { jobs: unknown[] }).jobs;
+    const reordered: OpenClawTopologyInput = {
+      ...base,
+      cronList: { ...(base.cronList as object), jobs: [...jobs].reverse() },
+      statusPayload: statusPayload({
+        byStatus: { failed: 2, succeeded: 9, running: 1 },
+        byRuntime: { subagent: 2, cron: 10 },
+      }),
+    };
+    const first = adaptOpenClawTopology(base);
+    const second = adaptOpenClawTopology(reordered);
+    expect(second).toEqual(first);
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+});

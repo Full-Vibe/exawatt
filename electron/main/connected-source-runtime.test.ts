@@ -5,17 +5,28 @@ import {
   type AgentSourceTopologySnapshot,
   type ConnectedSourceRecord,
   type ConnectionStatus,
+  type SourceAuthority,
   type SourceContextRecord,
 } from '@exawatt/core';
 import {
   ConnectedSourceRuntime,
   EMPTY_PROJECTION_PLAN,
+  MAX_CONVERSATION_CHARACTERS,
+  MAX_CONVERSATION_TURNS,
+  MAX_TURN_CHARACTERS,
+  MAX_UPDATES_PER_RUN,
+  MAX_UPDATE_CHARACTERS,
   deriveRemoteAgentId,
   type ConnectedAgentProjectionPlan,
   type ConnectedAgentProjectionPlanStore,
   type ConnectedSourceSession,
+  type ConversationUpdate,
+  type SendToAgentOptions,
 } from './connected-source-runtime';
-import type { ConnectedGatewayPhase } from './connected-gateway';
+import type {
+  AuthorityRequestResult,
+  ConnectedGatewayPhase,
+} from './connected-gateway';
 
 /**
  * ENG-010 C2. The runtime that owns every configured source.
@@ -112,6 +123,9 @@ function record(
     transport: { kind: 'ssh-alias', alias: `alias-${id}`, remotePort: 1337 },
     credentialOwner: 'source-owned-ssh',
     hasDeviceCredential: true,
+    // Observation is the floor every source starts at. H2 tests that need to
+    // talk say so explicitly, so no fixture ever grants authority by accident.
+    grantedAuthority: 'read',
     createdAt: 1,
     ...overrides,
   };
@@ -153,6 +167,14 @@ interface SessionScript {
   snapshots?: AgentSourceTopologySnapshot[];
   failure?: { failure: 'host-unreachable' | 'gateway-down'; message: string };
   status?: ConnectionStatus;
+  /** `chat.history` payloads, by the session key the read asks for. */
+  history?: Record<string, unknown>;
+  /** What `chat.send` answers with. */
+  sendResult?: unknown;
+  /** ...or throws. */
+  sendError?: Error;
+  /** What the source says when asked to raise Exawatt's authority. */
+  authorityResult?: AuthorityRequestResult;
 }
 
 class FakeSession implements ConnectedSourceSession {
@@ -230,6 +252,65 @@ class FakeSession implements ConnectedSourceSession {
     this.phaseListeners.add(listener);
     return () => this.phaseListeners.delete(listener);
   });
+
+  authority: SourceAuthority = 'read';
+
+  /** Every read this session was asked for, in order. */
+  readonly reads: { method: string; params?: unknown }[] = [];
+  /** Every write. The read-only tests assert this stays empty. */
+  readonly writes: { method: string; params?: unknown }[] = [];
+
+  read = vi.fn(async (method: string, params?: unknown) => {
+    this.reads.push({ method, params });
+    if (method !== 'chat.history') return {};
+    const key = (params as { sessionKey?: string } | undefined)?.sessionKey;
+    return (
+      this.script.history?.[key ?? ''] ?? { sessionKey: key, messages: [] }
+    );
+  });
+
+  write = vi.fn(async (method: string, params?: unknown) => {
+    this.writes.push({ method, params });
+    if (this.script.sendError) throw this.script.sendError;
+    return this.script.sendResult ?? { runId: 'run-1', status: 'ok' };
+  });
+
+  requestWriteAuthority = vi.fn(
+    async (): Promise<AuthorityRequestResult> =>
+      this.script.authorityResult ?? {
+        outcome: 'granted',
+        authority: 'write',
+        message: 'This source granted Exawatt write authority.',
+      }
+  );
+
+  relinquishWriteAuthority = vi.fn(
+    async (): Promise<AuthorityRequestResult> => ({
+      outcome: 'granted',
+      authority: 'read',
+      message: 'Exawatt handed write access back to this source.',
+    })
+  );
+
+  private readonly eventHandlers = new Map<
+    string,
+    Set<(payload: unknown) => void>
+  >();
+
+  onGatewayEvent = vi.fn(
+    (eventName: string, handler: (payload: unknown) => void) => {
+      const handlers = this.eventHandlers.get(eventName) ?? new Set();
+      handlers.add(handler);
+      this.eventHandlers.set(eventName, handlers);
+      return () => handlers.delete(handler);
+    }
+  );
+
+  emitGatewayEvent(eventName: string, payload: unknown): void {
+    for (const handler of this.eventHandlers.get(eventName) ?? []) {
+      handler(payload);
+    }
+  }
 
   setStatus(status: ConnectionStatus): void {
     this.currentStatus = status;
@@ -1011,5 +1092,628 @@ describe('ConnectedSourceRuntime — projected coworker shape', () => {
     expect(scout?.source).toEqual({ id: 'alpha', displayName: 'Source alpha' });
     // A source that declares no Home never gets a fabricated one.
     expect(byNative.get('tyler')?.primaryContextId).toBeNull();
+  });
+});
+
+/* ---- ENG-033 H2: talking to a connected coworker -------------------------- */
+
+/**
+ * Everything below is still hermetic. The session double answers `chat.history`
+ * and `chat.send` from a script and records every call, so a test can assert
+ * not only what Exawatt asked for but that a refusal asked for nothing at all.
+ */
+
+const MAIN_KEY = 'agent:scout:main';
+const HELPER_KEY = 'agent:scout:helper:0';
+
+function transcript(
+  ...rows: readonly {
+    role?: string;
+    content?: unknown;
+    timestamp?: number;
+    runId?: string;
+  }[]
+) {
+  return {
+    sessionKey: MAIN_KEY,
+    messages: rows.map((row, index) => ({
+      role: row.role ?? (index % 2 === 0 ? 'user' : 'assistant'),
+      content: row.content ?? `turn ${index}`,
+      timestamp: row.timestamp ?? 1_000 + index,
+      ...(row.runId === undefined ? {} : { runId: row.runId }),
+    })),
+  };
+}
+
+interface TalkFixture {
+  runtime: ConnectedSourceRuntime;
+  session: FakeSession;
+  plans: MemoryPlanStore;
+  updates: ConversationUpdate[];
+  agentId: string;
+}
+
+/** A connected source, one mapped coworker, and a place for its updates. */
+async function talkingTo(
+  specs: readonly AgentSpec[] = [
+    { nativeAgentId: 'scout', displayName: 'scout', helpers: 1 },
+  ],
+  script: Omit<SessionScript, 'snapshots'> = {},
+  authority: SourceAuthority = 'write'
+): Promise<TalkFixture> {
+  const { runtime, sessions, plans } = harness(
+    { alpha: { snapshots: [snapshot('alpha', specs)], ...script } },
+    [record('alpha', { grantedAuthority: authority })]
+  );
+  const connected = await runtime.connect('alpha');
+  if (!connected.ok) throw new Error('fixture failed to connect');
+  await mapAll(runtime, 'alpha', connected.agents);
+  const updates: ConversationUpdate[] = [];
+  runtime.onConversationUpdate(update => updates.push(update));
+  const session = sessions.get('alpha');
+  if (!session) throw new Error('fixture has no session');
+  return {
+    runtime,
+    session,
+    plans,
+    updates,
+    agentId: deriveRemoteAgentId('alpha', specs[0].nativeAgentId),
+  };
+}
+
+describe('ConnectedSourceRuntime — reading a primary conversation', () => {
+  it('reads the source-declared address and returns turns oldest to newest', async () => {
+    const { runtime, session, agentId } = await talkingTo(undefined, {
+      history: { [MAIN_KEY]: transcript({}, {}, {}) },
+    });
+
+    const result = await runtime.conversation(agentId);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.contextId).toBe(MAIN_KEY);
+    expect(result.turns.map(turn => turn.text)).toEqual([
+      'turn 0',
+      'turn 1',
+      'turn 2',
+    ]);
+    expect(result.turns.map(turn => turn.role)).toEqual([
+      'operator',
+      'agent',
+      'operator',
+    ]);
+    expect(result.hasMore).toBe(false);
+    // The address came from the projection, and the read is bounded at source.
+    expect(session.reads).toEqual([
+      {
+        method: 'chat.history',
+        params: { sessionKey: MAIN_KEY, limit: MAX_CONVERSATION_TURNS + 1 },
+      },
+    ]);
+  });
+
+  it('pages from the newest turn backward and reports that more exists', async () => {
+    const rows = Array.from({ length: 8 }, () => ({}));
+    const { runtime, agentId } = await talkingTo(undefined, {
+      history: { [MAIN_KEY]: transcript(...rows) },
+    });
+
+    const page = await runtime.conversation(agentId, { limit: 3 });
+    if (!page.ok) throw new Error('expected a conversation');
+    expect(page.turns.map(turn => turn.text)).toEqual([
+      'turn 5',
+      'turn 6',
+      'turn 7',
+    ]);
+    expect(page.hasMore).toBe(true);
+
+    // ...and the cursor walks further back rather than restarting.
+    const older = await runtime.conversation(agentId, {
+      limit: 3,
+      beforeTurnId: page.turns[0].id,
+    });
+    if (!older.ok) throw new Error('expected a conversation');
+    expect(older.turns.map(turn => turn.text)).toEqual([
+      'turn 2',
+      'turn 3',
+      'turn 4',
+    ]);
+    expect(older.hasMore).toBe(true);
+  });
+
+  it('spends a character budget from the newest turn backward', async () => {
+    const long = 'x'.repeat(MAX_TURN_CHARACTERS);
+    const rows = Array.from({ length: 40 }, (_, index) => ({
+      content: `${index}${long}`.slice(0, MAX_TURN_CHARACTERS + 200),
+    }));
+    const { runtime, agentId } = await talkingTo(undefined, {
+      history: { [MAIN_KEY]: transcript(...rows) },
+    });
+
+    const page = await runtime.conversation(agentId, { limit: 40 });
+    if (!page.ok) throw new Error('expected a conversation');
+    expect(page.characterCount).toBeLessThanOrEqual(
+      MAX_CONVERSATION_CHARACTERS
+    );
+    expect(page.turns.length).toBeLessThan(40);
+    expect(page.hasMore).toBe(true);
+    // The newest end survives; the oldest is what the budget drops.
+    expect(page.turns[page.turns.length - 1].text.startsWith('39')).toBe(true);
+    for (const turn of page.turns) {
+      expect(turn.text.length).toBeLessThanOrEqual(MAX_TURN_CHARACTERS);
+      expect(turn.clipped).toBe(true);
+    }
+  });
+
+  it('caps how much of a very long transcript it takes from the source', async () => {
+    const rows = Array.from({ length: MAX_CONVERSATION_TURNS + 50 }, () => ({
+      content: 'brief',
+    }));
+    const { runtime, agentId } = await talkingTo(undefined, {
+      history: { [MAIN_KEY]: transcript(...rows) },
+    });
+
+    const page = await runtime.conversation(agentId, {
+      limit: MAX_CONVERSATION_TURNS,
+    });
+    if (!page.ok) throw new Error('expected a conversation');
+    expect(page.turns.length).toBeLessThanOrEqual(MAX_CONVERSATION_TURNS);
+    expect(page.hasMore).toBe(true);
+  });
+
+  it('answers a coworker with no conversation explicitly, never with silence', async () => {
+    const { runtime, session } = await talkingTo([
+      { nativeAgentId: 'tyler', displayName: 'Tyler', primary: false },
+    ]);
+    const agentId = deriveRemoteAgentId('alpha', 'tyler');
+
+    const result = await runtime.conversation(agentId);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe('no-primary-conversation');
+    expect(result.message).toMatch(/no conversation on its source/i);
+    // An absent conversation is known from the projection, so nothing is asked.
+    expect(session.reads).toEqual([]);
+  });
+
+  it('refuses an Agent Exawatt has never mapped', async () => {
+    const { runtime, session } = await talkingTo();
+    const result = await runtime.conversation('remote-nobody');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe('unknown-agent');
+    expect(session.reads).toEqual([]);
+  });
+
+  it('reports a source this launch never opened as disconnected, not as a missing coworker', async () => {
+    const { runtime, session, agentId } = await talkingTo(undefined, {
+      history: { [MAIN_KEY]: transcript({}) },
+    });
+    await runtime.dispose();
+
+    const result = await runtime.conversation(agentId);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe('disconnected');
+    expect(session.reads).toEqual([]);
+  });
+
+  it('gives one turn the same id on every read, so a reread reconciles', async () => {
+    const { runtime, agentId } = await talkingTo(undefined, {
+      history: { [MAIN_KEY]: transcript({}, {}, { content: 'turn 0' }) },
+    });
+
+    const first = await runtime.conversation(agentId);
+    const second = await runtime.conversation(agentId);
+    if (!first.ok || !second.ok) throw new Error('expected conversations');
+    expect(first.turns.map(turn => turn.id)).toEqual(
+      second.turns.map(turn => turn.id)
+    );
+    // Two identical turns are still two turns, with two ids.
+    expect(new Set(first.turns.map(turn => turn.id)).size).toBe(3);
+  });
+});
+
+describe('ConnectedSourceRuntime — sending to the primary conversation', () => {
+  it('reaches chat.send on the address the projection resolved', async () => {
+    const { runtime, session, agentId } = await talkingTo(undefined, {
+      sendResult: { runId: 'run-77', status: 'queued' },
+    });
+
+    const result = await runtime.send(agentId, 'Any progress on the draft?');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result).toMatchObject({
+      agentId,
+      sourceId: 'alpha',
+      contextId: MAIN_KEY,
+      runId: 'run-77',
+      status: 'queued',
+    });
+    expect(session.writes).toHaveLength(1);
+    expect(session.writes[0].method).toBe('chat.send');
+    expect(session.writes[0].params).toMatchObject({
+      sessionKey: MAIN_KEY,
+      text: 'Any progress on the draft?',
+      idempotencyKey: result.idempotencyKey,
+    });
+  });
+
+  it('has no parameter a caller could aim at another context', async () => {
+    // The address is not an argument. Two positional parameters, and the third
+    // is options that carry an idempotency key and nothing addressable.
+    expect(ConnectedSourceRuntime.prototype.send.length).toBe(2);
+
+    const { runtime, session, agentId } = await talkingTo();
+    await runtime.send(agentId, 'hello', {
+      idempotencyKey: 'key-1',
+      // A caller trying to smuggle an address in. It is not in the type, and
+      // it does not survive into the call either.
+      sessionKey: HELPER_KEY,
+    } as unknown as SendToAgentOptions);
+
+    expect(session.writes[0].params).toEqual({
+      sessionKey: MAIN_KEY,
+      text: 'hello',
+      idempotencyKey: 'key-1',
+    });
+  });
+
+  it('reuses one idempotency key so a retry cannot double-post', async () => {
+    const { runtime, session, agentId } = await talkingTo();
+    const [first, second] = await Promise.all([
+      runtime.send(agentId, 'ping', { idempotencyKey: 'retry-me' }),
+      runtime.send(agentId, 'ping', { idempotencyKey: 'retry-me' }),
+    ]);
+    expect(session.writes).toHaveLength(1);
+    expect(first).toEqual(second);
+    // ...and the key the Gateway sees is the operator's, not a fresh one.
+    expect(session.writes[0].params).toMatchObject({
+      idempotencyKey: 'retry-me',
+    });
+  });
+
+  it('mints a key when the caller supplies none, and never reuses it', async () => {
+    const { runtime, agentId } = await talkingTo();
+    const first = await runtime.send(agentId, 'one');
+    const second = await runtime.send(agentId, 'two');
+    if (!first.ok || !second.ok) throw new Error('expected two sends');
+    expect(first.idempotencyKey).not.toBe(second.idempotencyKey);
+  });
+
+  it('refuses a read-only source for every message, and the client sees nothing', async () => {
+    const { runtime, session, agentId } = await talkingTo(
+      undefined,
+      {},
+      'read'
+    );
+
+    for (const text of ['hello', 'are you there', 'status?']) {
+      const result = await runtime.send(agentId, text);
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.outcome).toBe('read-only-source');
+      expect(result.message).toMatch(/write access/i);
+    }
+    expect(session.writes).toEqual([]);
+    expect(session.write).not.toHaveBeenCalled();
+  });
+
+  it('separates a standing approval request from a source never asked', async () => {
+    const { runtime, session, agentId } = await talkingTo(
+      undefined,
+      {
+        authorityResult: {
+          outcome: 'approval-required',
+          authority: 'read',
+          message: 'This source needs its own operator to approve the device.',
+        },
+      },
+      'read'
+    );
+
+    const before = await runtime.send(agentId, 'hello');
+    expect(before.ok ? null : before.outcome).toBe('read-only-source');
+
+    const asked = await runtime.requestCommandAuthority('alpha');
+    expect(asked.outcome).toBe('approval-required');
+    expect(runtime.commandAuthority()).toEqual([
+      {
+        sourceId: 'alpha',
+        displayName: 'Source alpha',
+        authority: 'read',
+        awaitingApproval: true,
+      },
+    ]);
+
+    const after = await runtime.send(agentId, 'hello');
+    expect(after.ok).toBe(false);
+    if (after.ok) return;
+    expect(after.outcome).toBe('approval-pending');
+    expect(after.message).toMatch(/approve/i);
+    // Still no message left this process.
+    expect(session.writes).toEqual([]);
+  });
+
+  it('stops waiting once the source answers the request another way', async () => {
+    const { runtime, agentId } = await talkingTo(
+      undefined,
+      {
+        authorityResult: {
+          outcome: 'refused',
+          authority: 'read',
+          message: 'This source refused write access.',
+        },
+      },
+      'read'
+    );
+    await runtime.requestCommandAuthority('alpha');
+    expect(runtime.commandAuthority()[0].awaitingApproval).toBe(false);
+    const result = await runtime.send(agentId, 'hello');
+    expect(result.ok ? null : result.outcome).toBe('read-only-source');
+  });
+
+  it('refuses a coworker with no conversation, an unknown one, and a closed source distinctly', async () => {
+    const { runtime, session } = await talkingTo([
+      { nativeAgentId: 'scout', displayName: 'scout' },
+      { nativeAgentId: 'tyler', displayName: 'Tyler', primary: false },
+    ]);
+
+    const noHome = await runtime.send(
+      deriveRemoteAgentId('alpha', 'tyler'),
+      'hello'
+    );
+    expect(noHome.ok ? null : noHome.outcome).toBe('no-primary-conversation');
+
+    const unknown = await runtime.send('remote-nobody', 'hello');
+    expect(unknown.ok ? null : unknown.outcome).toBe('unknown-agent');
+
+    const empty = await runtime.send(
+      deriveRemoteAgentId('alpha', 'scout'),
+      '   '
+    );
+    expect(empty.ok ? null : empty.outcome).toBe('invalid-message');
+
+    await runtime.dispose();
+    const closed = await runtime.send(
+      deriveRemoteAgentId('alpha', 'scout'),
+      'hello'
+    );
+    expect(closed.ok ? null : closed.outcome).toBe('disconnected');
+
+    expect(session.writes).toEqual([]);
+  });
+
+  it('reports a Gateway refusal without claiming anything about the coworker', async () => {
+    const { runtime, agentId } = await talkingTo(undefined, {
+      sendError: new Error('The Gateway rejected the request.'),
+    });
+    const result = await runtime.send(agentId, 'hello');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe('refused');
+  });
+});
+
+describe('ConnectedSourceRuntime — following the reply', () => {
+  it('forwards deltas in order, keyed to the Agent and the run', async () => {
+    const { session, updates, agentId } = await talkingTo();
+
+    for (const delta of ['Look', 'ing ', 'now']) {
+      session.emitGatewayEvent('chat.segment', {
+        sessionKey: MAIN_KEY,
+        runId: 'run-9',
+        delta,
+        done: false,
+      });
+    }
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: MAIN_KEY,
+      runId: 'run-9',
+      delta: '',
+      done: true,
+    });
+
+    expect(updates.map(update => update.kind)).toEqual([
+      'delta',
+      'delta',
+      'delta',
+      'complete',
+    ]);
+    expect(updates.map(update => update.text).join('')).toBe('Looking now');
+    for (const update of updates) {
+      expect(update.agentId).toBe(agentId);
+      expect(update.sourceId).toBe('alpha');
+      expect(update.contextId).toBe(MAIN_KEY);
+      expect(update.runId).toBe('run-9');
+    }
+    const ordinals = updates.map(update => update.ordinal);
+    expect(ordinals).toEqual([...ordinals].sort((a, b) => a - b));
+    expect(new Set(ordinals).size).toBe(ordinals.length);
+  });
+
+  it('forwards nothing for a context other than the primary conversation', async () => {
+    const { session, updates } = await talkingTo();
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: HELPER_KEY,
+      runId: 'run-9',
+      delta: 'side work',
+      done: false,
+    });
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: 'agent:scout:cron',
+      runId: 'run-9',
+      delta: 'a scheduled run',
+      done: false,
+    });
+    expect(updates).toEqual([]);
+  });
+
+  it('bounds one run and says so instead of streaming without end', async () => {
+    const { session, updates } = await talkingTo();
+    for (let index = 0; index < MAX_UPDATES_PER_RUN + 25; index += 1) {
+      session.emitGatewayEvent('chat.segment', {
+        sessionKey: MAIN_KEY,
+        runId: 'run-long',
+        delta: `${index} `,
+        done: false,
+      });
+    }
+    const kinds = updates.map(update => update.kind);
+    expect(kinds.filter(kind => kind === 'delta')).toHaveLength(
+      MAX_UPDATES_PER_RUN
+    );
+    expect(kinds.filter(kind => kind === 'bounded')).toHaveLength(1);
+    expect(kinds[kinds.length - 1]).toBe('bounded');
+  });
+
+  it('clips one update to its own budget', async () => {
+    const { session, updates } = await talkingTo();
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: MAIN_KEY,
+      runId: 'run-9',
+      delta: 'y'.repeat(MAX_UPDATE_CHARACTERS * 3),
+      done: false,
+    });
+    expect(updates[0].text.length).toBe(MAX_UPDATE_CHARACTERS);
+  });
+
+  it('never carries a transport sequence and never stores one as a cursor', async () => {
+    const { session, updates, plans } = await talkingTo();
+    const writesBefore = plans.writes;
+
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: MAIN_KEY,
+      runId: 'run-9',
+      delta: 'hi',
+      done: true,
+      // The Gateway resets these per connection and replays nothing, so they
+      // must not reach the renderer and must not be persisted.
+      seq: 4_211,
+      stateVersion: 88,
+    });
+
+    for (const update of updates) {
+      expect(Object.keys(update).sort()).toEqual([
+        'agentId',
+        'at',
+        'contextId',
+        'kind',
+        'ordinal',
+        'runId',
+        'sourceId',
+        'text',
+      ]);
+    }
+    expect(plans.writes).toBe(writesBefore);
+    expect(JSON.stringify(plans.plan)).not.toContain('4211');
+    expect(JSON.stringify(plans.plan).toLowerCase()).not.toContain('seq');
+  });
+
+  it('recovers a reply in flight from history on reconnect, never from replay', async () => {
+    const { runtime, session, updates, agentId } = await talkingTo(undefined, {
+      history: {
+        [MAIN_KEY]: transcript(
+          { role: 'user', content: 'Any progress?' },
+          { role: 'assistant', content: 'Posted it.', runId: 'run-9' }
+        ),
+      },
+    });
+
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: MAIN_KEY,
+      runId: 'run-9',
+      delta: 'Post',
+      done: false,
+    });
+    expect(updates.map(update => update.kind)).toEqual(['delta']);
+
+    // The connection drops mid-reply and comes back. The Agent never stopped.
+    session.emitPhase('reconnecting');
+    session.emitPhase('connected');
+
+    expect(updates.map(update => update.kind)).toEqual(['delta', 'resnapshot']);
+    // Nothing was replayed: the only new update says "read it again".
+    expect(updates.filter(update => update.kind === 'delta')).toHaveLength(1);
+
+    const recovered = await runtime.conversation(agentId);
+    if (!recovered.ok) throw new Error('expected a conversation');
+    expect(recovered.turns.map(turn => turn.text)).toEqual([
+      'Any progress?',
+      'Posted it.',
+    ]);
+    expect(recovered.turns[1].runId).toBe('run-9');
+  });
+
+  it('stops forwarding once Exawatt has quit', async () => {
+    const { runtime, session, updates } = await talkingTo();
+    await runtime.dispose();
+    session.emitGatewayEvent('chat.segment', {
+      sessionKey: MAIN_KEY,
+      runId: 'run-9',
+      delta: 'anything',
+      done: false,
+    });
+    expect(updates).toEqual([]);
+  });
+});
+
+describe('ConnectedSourceRuntime — H2 says nothing about remote work', () => {
+  it('never implies that work stopped, paused, or was lost', async () => {
+    const sentences: string[] = [];
+    const collect = (result: { ok: boolean; message?: string }) => {
+      if (!result.ok && result.message) sentences.push(result.message);
+    };
+
+    const readOnly = await talkingTo(
+      [
+        { nativeAgentId: 'scout', displayName: 'scout' },
+        { nativeAgentId: 'tyler', displayName: 'Tyler', primary: false },
+      ],
+      {
+        authorityResult: {
+          outcome: 'approval-required',
+          authority: 'read',
+          message: 'approval needed',
+        },
+      },
+      'read'
+    );
+    const scout = deriveRemoteAgentId('alpha', 'scout');
+    const tyler = deriveRemoteAgentId('alpha', 'tyler');
+
+    collect(await readOnly.runtime.send(scout, 'hello'));
+    await readOnly.runtime.requestCommandAuthority('alpha');
+    collect(await readOnly.runtime.send(scout, 'hello'));
+    collect(await readOnly.runtime.send(tyler, 'hello'));
+    collect(await readOnly.runtime.send('remote-nobody', 'hello'));
+    collect(await readOnly.runtime.send(scout, ' '));
+    collect(await readOnly.runtime.conversation(tyler));
+    collect(await readOnly.runtime.conversation('remote-nobody'));
+
+    const failing = await talkingTo(undefined, {
+      sendError: new Error('The Gateway rejected the request.'),
+    });
+    collect(await failing.runtime.send(scout, 'hello'));
+    await failing.runtime.dispose();
+    collect(await failing.runtime.send(scout, 'hello'));
+    collect(await failing.runtime.conversation(scout));
+
+    expect(sentences.length).toBeGreaterThan(8);
+    const rendered = sentences.join(' ').toLowerCase();
+    for (const word of [
+      'stopped',
+      'paused',
+      'lost',
+      'ended',
+      'finished',
+      'halted',
+      'killed',
+      'terminated',
+      'crashed',
+      'offline',
+      'dead',
+    ]) {
+      expect(rendered).not.toContain(word);
+    }
   });
 });

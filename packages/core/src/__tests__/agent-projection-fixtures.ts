@@ -125,6 +125,29 @@ export const CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES = [
         lastActiveAt: FIXTURE_OBSERVED_AT - MINUTE_MS,
       },
     ],
+    automations: [
+      // Marcus schedules one job and its last run was fine.
+      {
+        configuredSourceId: SOURCE_A,
+        nativeAgentId: 'primary',
+        nativeAutomationId: 'fixture-automation-marcus-sweep',
+        enabled: true,
+        lastOutcome: 'succeeded',
+        lastRunAt: FIXTURE_OBSERVED_AT - 45 * MINUTE_MS,
+        targetContextId: 'fixture:cron:marcus:one',
+      },
+      // Scout's job failed and the operator switched it off. A failure the
+      // operator already answered is history, not the coworker's state.
+      {
+        configuredSourceId: SOURCE_A,
+        nativeAgentId: 'calendar',
+        nativeAutomationId: 'fixture-automation-scout-digest',
+        enabled: false,
+        lastOutcome: 'failed',
+        lastRunAt: FIXTURE_OBSERVED_AT - 900 * MINUTE_MS,
+        targetContextId: null,
+      },
+    ],
   },
   {
     configuredSourceId: SOURCE_B,
@@ -211,6 +234,35 @@ export const CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES = [
         lastActiveAt: FIXTURE_OBSERVED_AT - 3_900 * MINUTE_MS,
       },
     ],
+    automations: [
+      // Tyler's only automation is scheduled and its last run failed. Nothing
+      // of his is running, so this is the one thing his source knows about his
+      // work, and it is a fault someone has to answer.
+      {
+        configuredSourceId: SOURCE_B,
+        nativeAgentId: 'primary',
+        nativeAutomationId: 'fixture-automation-tyler-interval',
+        enabled: true,
+        lastOutcome: 'failed',
+        lastRunAt: FIXTURE_OBSERVED_AT - 21 * MINUTE_MS,
+        targetContextId: 'fixture:cron:tyler:one',
+      },
+    ],
+    /*
+     * The Gateway's own totals. Two failures somewhere on this box, and
+     * deliberately not attributable: the payload buckets by status and
+     * runtime, never by Agent, so no coworker is blamed for them.
+     */
+    taskFacts: {
+      total: 14,
+      active: 1,
+      terminal: 13,
+      failures: 2,
+      byStatus: { running: 1, succeeded: 11, failed: 2 },
+      byRuntime: { cron: 12, subagent: 2 },
+      auditWarnings: 1,
+      auditErrors: 0,
+    },
   },
 ] as const satisfies readonly AgentSourceTopologySnapshot[];
 

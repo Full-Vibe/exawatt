@@ -34,6 +34,87 @@ export type SourceContextKind = (typeof SOURCE_CONTEXT_KINDS)[number];
 export const SOURCE_CONTEXT_ROLES = ['primary-conversation'] as const;
 export type SourceContextRole = (typeof SOURCE_CONTEXT_ROLES)[number];
 
+/**
+ * How a source's most recent automation run ended, once it has been read into
+ * a vocabulary Exawatt understands.
+ *
+ * Only two values, and no `unknown` member: a token the adapter cannot read
+ * leaves the fact absent instead of naming a third state, so "the source used
+ * a word we do not know" can never be mistaken for an outcome it reported.
+ */
+export const SOURCE_AUTOMATION_OUTCOMES = ['succeeded', 'failed'] as const;
+export type SourceAutomationOutcome =
+  (typeof SOURCE_AUTOMATION_OUTCOMES)[number];
+
+/** Task statuses a source may bucket its own task totals by. */
+export const SOURCE_TASK_STATUSES = [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'timed_out',
+  'cancelled',
+  'lost',
+] as const;
+export type SourceTaskStatus = (typeof SOURCE_TASK_STATUSES)[number];
+
+/** Runtimes a source may bucket its own task totals by. */
+export const SOURCE_TASK_RUNTIMES = ['subagent', 'acp', 'cli', 'cron'] as const;
+export type SourceTaskRuntime = (typeof SOURCE_TASK_RUNTIMES)[number];
+
+/**
+ * D40 work states the projection kernel can derive from source evidence today.
+ *
+ * `error` — an enabled automation the source attributes to this Agent reports
+ * its most recent run as failed. That is a fault the source observed and
+ * reported, not one Exawatt inferred from silence.
+ * `working` — some context of this Agent reports a run in flight.
+ * `idle` — no context reports a run in flight and at least one context
+ * explicitly reports that it has none. `idle` claims only that no work is
+ * running; it never claims that nothing is wrong.
+ */
+export const PROJECTED_WORK_STATES = ['error', 'working', 'idle'] as const;
+export type ProjectedWorkState = (typeof PROJECTED_WORK_STATES)[number];
+
+/**
+ * D40 work states no read-scoped source payload evidences yet, listed by name
+ * so that adding evidence is a deliberate edit rather than a silent drift.
+ *
+ * `blocked` needs an open human gate attributed to an Agent. Nothing in
+ * `agents.list`, `sessions.list`, `cron.list`, or `status` reports one: a
+ * cron job's delivery mode says where output goes, not that anyone is being
+ * waited on. Closing it needs a read-scoped approvals listing whose records
+ * carry the Agent (and ideally the session key) plus an open/answered state,
+ * or a per-session pending-approval field on `sessions.list`. It must
+ * distinguish an open gate from a historical one, or Exawatt would show a
+ * coworker blocked forever.
+ *
+ * `complete` needs a turn that finished, and no payload reports a turn
+ * boundary. A run that was in flight and no longer is means only that Exawatt
+ * stopped seeing it, which is the same observation as cancelled, lost (a
+ * status the source's own task vocabulary carries), archived, or restarted.
+ * Deriving it would also require comparing two snapshots, and a snapshot is
+ * defined as a pure function of one observation. Closing it needs a per-turn
+ * terminal record attributable to a context: a session reporting its last
+ * run's id and disposition, or task records carrying both the Agent and the
+ * session key. The distinction that matters is `succeeded` versus
+ * `lost`/`cancelled`, and the source-wide task totals supply neither per
+ * Agent.
+ *
+ * `reviewing` needs a finished turn whose result no one has looked at, so it
+ * inherits everything `complete` is missing. `sessions.list` does carry an
+ * `unread` flag, and it is deliberately not read as review state: it is the
+ * source's own read cursor for the source's own client, so adopting it would
+ * make an Exawatt coworker's work state change because a person opened a
+ * message somewhere else.
+ */
+export const UNEVIDENCED_WORK_STATES = [
+  'blocked',
+  'complete',
+  'reviewing',
+] as const;
+export type UnevidencedWorkState = (typeof UNEVIDENCED_WORK_STATES)[number];
+
 /*
  * Sets make untrusted boundary checks cheap; their values come only from the
  * exported tuples above, so runtime validation cannot drift from the unions.
@@ -55,6 +136,15 @@ const SOURCE_CONTEXT_KIND_SET: ReadonlySet<string> = new Set(
 );
 const SOURCE_CONTEXT_ROLE_SET: ReadonlySet<string> = new Set(
   SOURCE_CONTEXT_ROLES
+);
+const SOURCE_AUTOMATION_OUTCOME_SET: ReadonlySet<string> = new Set(
+  SOURCE_AUTOMATION_OUTCOMES
+);
+const SOURCE_TASK_STATUS_SET: ReadonlySet<string> = new Set(
+  SOURCE_TASK_STATUSES
+);
+const SOURCE_TASK_RUNTIME_SET: ReadonlySet<string> = new Set(
+  SOURCE_TASK_RUNTIMES
 );
 
 /**
@@ -106,6 +196,68 @@ export interface SourceContextRecord extends SourceContextRef {
   lastActiveAt?: number;
 }
 
+export interface SourceAutomationRef extends SourceAgentRef {
+  /** The source's own identity for this automation, kept whole. */
+  nativeAutomationId: string;
+}
+
+/**
+ * One scheduled automation the source attributes to one of its Agents.
+ *
+ * Deliberately narrow. Schedule text, prompt, and delivery mode are the
+ * automation's configuration, not evidence about work, and they are the
+ * fields most likely to carry a path or an address, so the snapshot has
+ * nowhere to put them.
+ */
+export interface SourceAutomationRecord extends SourceAutomationRef {
+  /**
+   * Whether the source will run this automation again on its schedule.
+   *
+   * Tri-state for the same reason `hasActiveRun` is: absent is the source
+   * saying nothing, not the source saying no. Enablement decides whether a
+   * failure is present state or history the operator already answered, so a
+   * value nobody reported may not be filled in either direction.
+   */
+  enabled?: boolean;
+  /**
+   * How the most recent run ended, when the source used a word Exawatt can
+   * read. Absent means the source said nothing readable, which is unknown and
+   * never success: a Gateway that invents a new failure token degrades to
+   * unknown rather than to healthy.
+   */
+  lastOutcome?: SourceAutomationOutcome;
+  /** When the most recent run happened, when the source reported it. */
+  lastRunAt?: number;
+  /**
+   * The context this automation runs in, when the source names one that is
+   * present in the same snapshot and belongs to the same Agent. Null covers
+   * "named none", "named one we dropped", and "named someone else's".
+   */
+  targetContextId: string | null;
+}
+
+/**
+ * Task counters a source reports about ITSELF.
+ *
+ * Source-wide and not attributable to any one Agent: the payload buckets by
+ * status and runtime, never by Agent. That is why nothing here may derive an
+ * Agent's work state — a failure count proves some task failed somewhere on
+ * that Gateway, and blaming the coworker an operator happens to be looking at
+ * would be an invented fault. Carried because the totals are honest evidence
+ * about the source itself.
+ */
+export interface SourceTaskFacts {
+  total: number;
+  active: number;
+  terminal: number;
+  failures: number;
+  /** Only buckets whose name the vocabulary above knows; may be partial. */
+  byStatus: Readonly<Partial<Record<SourceTaskStatus, number>>>;
+  byRuntime: Readonly<Partial<Record<SourceTaskRuntime, number>>>;
+  auditWarnings?: number;
+  auditErrors?: number;
+}
+
 export interface AgentSourceTopologySnapshot {
   configuredSourceId: string;
   adapterId: AgentSourceAdapterId;
@@ -116,6 +268,14 @@ export interface AgentSourceTopologySnapshot {
   evidenceBasis: AgentSourceEvidenceBasis;
   agents: readonly SourceAgentRecord[];
   contexts: readonly SourceContextRecord[];
+  /**
+   * Absent and empty are different answers: absent means the source was never
+   * asked about automations or answered unusably, empty means it was asked and
+   * has none.
+   */
+  automations?: readonly SourceAutomationRecord[];
+  /** Absent means the source reported no readable totals about itself. */
+  taskFacts?: SourceTaskFacts;
 }
 
 export interface AgentProjectionMapping extends SourceAgentRef {
@@ -154,7 +314,28 @@ export interface ProjectedAgent extends SourceAgentRef {
    * nothing about any of them". Neither is a claim that work stopped.
    */
   hasActiveRun: boolean;
+  /**
+   * This Agent's D40 work state, or null when the source has evidenced none.
+   *
+   * The derivation is stated here, once, so that no surface re-invents it and
+   * none can drift. Null is unknown and must never render as a positive state;
+   * a surface that has nothing to show says so.
+   *
+   * Precedence is `error`, then `working`, then `idle`. A fault outranks a run
+   * in flight because a failed automation is a thing the operator has leverage
+   * on and a running turn is not, and because a later unrelated run does not
+   * clear it. Nothing is lost by that order: `hasActiveRun` and `automations`
+   * both stay on the record, so a surface that wants "working, and something
+   * failed" has both facts.
+   *
+   * The connection is not an input. An Agent last observed working is still
+   * working as far as anyone knows; how old that knowledge is belongs to the
+   * connection lens, not here.
+   */
+  workState: ProjectedWorkState | null;
   contexts: readonly SourceContextRecord[];
+  /** Automations the source attributes to this Agent, in stable key order. */
+  automations: readonly SourceAutomationRecord[];
 }
 
 export interface AgentProjectionV1 {
@@ -175,6 +356,10 @@ export type AgentProjectionIssueCode =
   | 'invalid-context'
   | 'duplicate-context'
   | 'orphan-context-agent'
+  | 'invalid-automation'
+  | 'duplicate-automation'
+  | 'orphan-automation-agent'
+  | 'invalid-task-facts'
   | 'cross-source-parent'
   | 'cross-agent-parent'
   | 'orphan-parent-context'
@@ -223,6 +408,15 @@ export function sourceContextKey(ref: SourceContextRef): string {
     ref.configuredSourceId,
     ref.nativeAgentId,
     ref.nativeContextId,
+  ])}`;
+}
+
+/** Collision-safe, deterministic key for one source-native automation. */
+export function sourceAutomationKey(ref: SourceAutomationRef): string {
+  return `source-automation:v1:${JSON.stringify([
+    ref.configuredSourceId,
+    ref.nativeAgentId,
+    ref.nativeAutomationId,
   ])}`;
 }
 
@@ -315,6 +509,73 @@ function copyContext(context: SourceContextRecord): SourceContextRecord {
       ? {}
       : { lastActiveAt: context.lastActiveAt }),
   };
+}
+
+function copyAutomation(
+  automation: SourceAutomationRecord
+): SourceAutomationRecord {
+  return {
+    configuredSourceId: automation.configuredSourceId,
+    nativeAgentId: automation.nativeAgentId,
+    nativeAutomationId: automation.nativeAutomationId,
+    ...(automation.enabled === undefined
+      ? {}
+      : { enabled: automation.enabled }),
+    ...(automation.lastOutcome === undefined
+      ? {}
+      : { lastOutcome: automation.lastOutcome }),
+    ...(automation.lastRunAt === undefined
+      ? {}
+      : { lastRunAt: automation.lastRunAt }),
+    targetContextId: automation.targetContextId,
+  };
+}
+
+/** Non-negative, finite, whole: anything else is not a count of anything. */
+function validCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function validCountBuckets(
+  value: unknown,
+  allowed: ReadonlySet<string>
+): boolean {
+  if (!isRecord(value)) return false;
+  return Object.entries(value).every(
+    ([key, count]) => allowed.has(key) && validCount(count)
+  );
+}
+
+/**
+ * One coworker's D40 work state from the evidence carried on its own records.
+ *
+ * Every branch is a positive report from the source. Nothing here reads
+ * absence: an Agent whose contexts and automations all said nothing gets null,
+ * because unknown is an answer and none of the six states is.
+ */
+function deriveWorkState(
+  contexts: readonly SourceContextRecord[],
+  automations: readonly SourceAutomationRecord[]
+): ProjectedWorkState | null {
+  /*
+   * An observed fault. `enabled` must be an explicit yes: disabling a job is
+   * an operator act that stops it recurring, so a disabled job's old failure
+   * is history they already answered, and pinning a coworker to `error` with
+   * no way to clear it would be worse than saying nothing. A source that never
+   * reported enablement gets the same treatment as one that said no, because
+   * unknown is not a yes.
+   */
+  if (
+    automations.some(
+      automation =>
+        automation.enabled === true && automation.lastOutcome === 'failed'
+    )
+  ) {
+    return 'error';
+  }
+  if (contexts.some(context => context.hasActiveRun === true)) return 'working';
+  if (contexts.some(context => context.hasActiveRun === false)) return 'idle';
+  return null;
 }
 
 function copyMapping(mapping: AgentProjectionMapping): AgentProjectionMapping {
@@ -413,6 +674,7 @@ export function projectAgentTopology(
   const sourceById = new Map<string, AgentSourceTopologySnapshot>();
   const agentByKey = new Map<string, SourceAgentRecord>();
   const contextByKey = new Map<string, SourceContextRecord>();
+  const automationByKey = new Map<string, SourceAutomationRecord>();
 
   const snapshotValues: readonly unknown[] = Array.isArray(snapshots)
     ? snapshots
@@ -600,6 +862,114 @@ export function projectAgentTopology(
         contextByKey.set(key, copyContext(context));
       }
     }
+
+    /*
+     * Automations are optional evidence. Absent is unknown and costs nothing;
+     * present but not an array is a source claiming something it cannot back,
+     * which fails closed exactly as a malformed context does.
+     */
+    const rawAutomations: unknown = candidateSnapshot.automations;
+    if (rawAutomations !== undefined && !Array.isArray(rawAutomations)) {
+      issues.push(
+        issue(
+          'error',
+          'invalid-automation',
+          `${sourcePath}.automations`,
+          'Source automations must be an array when present.'
+        )
+      );
+    }
+    const sourceAutomations: readonly unknown[] = Array.isArray(rawAutomations)
+      ? rawAutomations
+      : [];
+    for (const [index, candidateAutomation] of sourceAutomations.entries()) {
+      if (!isRecord(candidateAutomation)) {
+        issues.push(
+          issue(
+            'error',
+            'invalid-automation',
+            `${sourcePath}.automations.${index}`,
+            'Source automation must be a record.'
+          )
+        );
+        continue;
+      }
+      const automationValid =
+        candidateAutomation.configuredSourceId ===
+          snapshot.configuredSourceId &&
+        validText(candidateAutomation.nativeAgentId) &&
+        validText(candidateAutomation.nativeAutomationId) &&
+        (candidateAutomation.enabled === undefined ||
+          typeof candidateAutomation.enabled === 'boolean') &&
+        // Absent is unknown and allowed; present must name a known outcome, so
+        // an unreadable word can never be read as a run that failed or passed.
+        (candidateAutomation.lastOutcome === undefined ||
+          (typeof candidateAutomation.lastOutcome === 'string' &&
+            SOURCE_AUTOMATION_OUTCOME_SET.has(
+              candidateAutomation.lastOutcome
+            ))) &&
+        (candidateAutomation.lastRunAt === undefined ||
+          validTimestamp(candidateAutomation.lastRunAt)) &&
+        (candidateAutomation.targetContextId === null ||
+          validText(candidateAutomation.targetContextId));
+      if (!automationValid) {
+        issues.push(
+          issue(
+            'error',
+            'invalid-automation',
+            `${sourcePath}.automations.${index}`,
+            'Source automation identity, enablement, outcome, or target is invalid.'
+          )
+        );
+        continue;
+      }
+      const automation =
+        candidateAutomation as unknown as SourceAutomationRecord;
+      const key = sourceAutomationKey(automation);
+      if (automationByKey.has(key)) {
+        issues.push(
+          issue(
+            'error',
+            'duplicate-automation',
+            `automations.${key}`,
+            'Source-qualified automation identity appears more than once.'
+          )
+        );
+      } else {
+        automationByKey.set(key, copyAutomation(automation));
+      }
+    }
+
+    /*
+     * Source-wide totals. Validated as strictly as anything else even though
+     * nothing derives from them, because carrying a number Exawatt cannot
+     * vouch for is how an invented claim gets a second life downstream.
+     */
+    const rawTaskFacts: unknown = candidateSnapshot.taskFacts;
+    if (rawTaskFacts !== undefined) {
+      const factsValid =
+        isRecord(rawTaskFacts) &&
+        validCount(rawTaskFacts.total) &&
+        validCount(rawTaskFacts.active) &&
+        validCount(rawTaskFacts.terminal) &&
+        validCount(rawTaskFacts.failures) &&
+        validCountBuckets(rawTaskFacts.byStatus, SOURCE_TASK_STATUS_SET) &&
+        validCountBuckets(rawTaskFacts.byRuntime, SOURCE_TASK_RUNTIME_SET) &&
+        (rawTaskFacts.auditWarnings === undefined ||
+          validCount(rawTaskFacts.auditWarnings)) &&
+        (rawTaskFacts.auditErrors === undefined ||
+          validCount(rawTaskFacts.auditErrors));
+      if (!factsValid) {
+        issues.push(
+          issue(
+            'error',
+            'invalid-task-facts',
+            `${sourcePath}.taskFacts`,
+            'Source task totals must be whole non-negative counts in known buckets.'
+          )
+        );
+      }
+    }
   }
 
   for (const [key, context] of contextByKey) {
@@ -640,6 +1010,42 @@ export function projectAgentTopology(
             'orphan-parent-context',
             `${contextPath}.parent`,
             'Context parent is absent from the source snapshot.'
+          )
+        );
+      }
+    }
+  }
+
+  for (const [key, automation] of automationByKey) {
+    const automationPath = `automations.${key}`;
+    /*
+     * Exactly the orphan rule contexts already live under: evidence about an
+     * Agent nobody listed cannot conjure the Agent, because a fault has to
+     * belong to a coworker who exists before anyone can be shown it.
+     */
+    if (!agentByKey.has(sourceAgentKey(automation))) {
+      issues.push(
+        issue(
+          'error',
+          'orphan-automation-agent',
+          automationPath,
+          'Automation refers to a source Agent that is absent from the snapshot.'
+        )
+      );
+    }
+    if (automation.targetContextId !== null) {
+      const target = sourceContextKey({
+        configuredSourceId: automation.configuredSourceId,
+        nativeAgentId: automation.nativeAgentId,
+        nativeContextId: automation.targetContextId,
+      });
+      if (!contextByKey.has(target)) {
+        issues.push(
+          issue(
+            'error',
+            'invalid-automation',
+            `${automationPath}.targetContextId`,
+            'Automation target context is absent from the source snapshot.'
           )
         );
       }
@@ -755,6 +1161,19 @@ export function projectAgentTopology(
       compareText(sourceContextKey(left), sourceContextKey(right))
     );
   }
+  const automationsByAgent = new Map<string, SourceAutomationRecord[]>();
+  for (const automation of automationByKey.values()) {
+    const key = sourceAgentKey(automation);
+    const automations = automationsByAgent.get(key) ?? [];
+    automations.push(copyAutomation(automation));
+    automationsByAgent.set(key, automations);
+  }
+  for (const automations of automationsByAgent.values()) {
+    automations.sort((left, right) =>
+      compareText(sourceAutomationKey(left), sourceAutomationKey(right))
+    );
+  }
+
   for (const [key, contexts] of contextsByAgent) {
     const primaryContextCount = contexts.filter(context =>
       context.roles.includes('primary-conversation')
@@ -779,6 +1198,7 @@ export function projectAgentTopology(
     const source = sourceById.get(mapping.configuredSourceId);
     if (!sourceAgent || !source) continue;
     const contexts = contextsByAgent.get(key) ?? [];
+    const automations = automationsByAgent.get(key) ?? [];
     const primaryContexts = contexts.filter(context =>
       context.roles.includes('primary-conversation')
     );
@@ -808,7 +1228,9 @@ export function projectAgentTopology(
       primaryConversation:
         primaryContexts.length === 1 ? copyContext(primaryContexts[0]!) : null,
       hasActiveRun: contexts.some(context => context.hasActiveRun === true),
+      workState: deriveWorkState(contexts, automations),
       contexts: contexts.map(copyContext),
+      automations: automations.map(copyAutomation),
     });
   }
 

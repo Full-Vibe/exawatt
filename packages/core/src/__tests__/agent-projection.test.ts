@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   AGENT_PROJECTION_VERSION,
+  PROJECTED_WORK_STATES,
+  UNEVIDENCED_WORK_STATES,
   projectAgentTopology,
   sourceAgentKey,
+  sourceAutomationKey,
   sourceContextKey,
   type AgentProjectionPlanV1,
   type AgentProjectionResult,
   type AgentSourceTopologySnapshot,
+  type ProjectedWorkState,
   type SourceAgentRecord,
+  type SourceAutomationRecord,
   type SourceContextRecord,
+  type UnevidencedWorkState,
 } from '../index';
+import type { AgentStatus } from '../types/agent';
 import {
   CONNECTED_OPENCLAW_PROJECTION_PLAN,
   CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES,
@@ -71,7 +78,8 @@ function context(
 function topology(
   configuredSourceId: string,
   agents: SourceAgentRecord[],
-  contexts: SourceContextRecord[]
+  contexts: SourceContextRecord[],
+  extra: Partial<AgentSourceTopologySnapshot> = {}
 ): AgentSourceTopologySnapshot {
   return {
     configuredSourceId,
@@ -82,6 +90,24 @@ function topology(
     evidenceBasis: 'observed',
     agents,
     contexts,
+    ...extra,
+  };
+}
+
+function automation(
+  configuredSourceId: string,
+  nativeAgentId: string,
+  nativeAutomationId: string,
+  overrides: Partial<SourceAutomationRecord> = {}
+): SourceAutomationRecord {
+  return {
+    configuredSourceId,
+    nativeAgentId,
+    nativeAutomationId,
+    enabled: true,
+    lastRunAt: 5_000,
+    targetContextId: null,
+    ...overrides,
   };
 }
 
@@ -1064,6 +1090,33 @@ describe('agent topology projection (ENG-010 C0)', () => {
       'exawattAgentId',
       'projectId',
       'displayNameOverride',
+      'automations',
+      'nativeAutomationId',
+      'enabled',
+      'lastOutcome',
+      'lastRunAt',
+      'targetContextId',
+      'taskFacts',
+      'total',
+      'active',
+      'terminal',
+      'failures',
+      'byStatus',
+      'byRuntime',
+      'auditWarnings',
+      'auditErrors',
+      // Task bucket names are keys, and the vocabulary is closed on purpose.
+      'queued',
+      'running',
+      'succeeded',
+      'failed',
+      'timed_out',
+      'cancelled',
+      'lost',
+      'subagent',
+      'acp',
+      'cli',
+      'cron',
     ]);
     const keys = new Set<string>();
     const stringValues: string[] = [];
@@ -1113,5 +1166,617 @@ describe('agent topology projection (ENG-010 C0)', () => {
     for (const [label, pattern] of forbiddenValues) {
       expect(serializedValues, label).not.toMatch(pattern);
     }
+  });
+});
+
+/*
+ * D40's work-state vocabulary, restated here so this file breaks if a state is
+ * ever added or renamed. The Record type makes the list exhaustive at compile
+ * time; the partition assertion below makes it exhaustive at run time.
+ */
+const D40_WORK_STATES: Record<AgentStatus, true> = {
+  working: true,
+  blocked: true,
+  idle: true,
+  reviewing: true,
+  complete: true,
+  error: true,
+};
+
+describe('D40 work state derived from source evidence (ENG-010/033 H2)', () => {
+  it('states which D40 states the source evidences and which it does not', () => {
+    // Compile-time proof that the kernel speaks D40's vocabulary and no other.
+    type WorkStatesAreD40 = [
+      ProjectedWorkState | UnevidencedWorkState,
+    ] extends [AgentStatus]
+      ? true
+      : false;
+    const workStatesAreD40: WorkStatesAreD40 = true;
+    expect(workStatesAreD40).toBe(true);
+
+    // The two lists partition D40 exactly: no state is claimed twice, and none
+    // is quietly missing. A slice that finds evidence for `blocked`,
+    // `complete`, or `reviewing` has to move the name across on purpose.
+    expect([...PROJECTED_WORK_STATES].sort()).toEqual([
+      'error',
+      'idle',
+      'working',
+    ]);
+    expect([...UNEVIDENCED_WORK_STATES].sort()).toEqual([
+      'blocked',
+      'complete',
+      'reviewing',
+    ]);
+    expect(
+      [...PROJECTED_WORK_STATES, ...UNEVIDENCED_WORK_STATES].sort()
+    ).toEqual(Object.keys(D40_WORK_STATES).sort());
+    expect(
+      PROJECTED_WORK_STATES.filter(state =>
+        (UNEVIDENCED_WORK_STATES as readonly string[]).includes(state)
+      )
+    ).toEqual([]);
+  });
+
+  it('derives error from a failed run of an enabled automation', () => {
+    const sourceId = 'source-work-state-error';
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'scheduler')],
+            [
+              context(sourceId, 'scheduler', 'agent:scheduler:cron', {
+                kind: 'cron',
+                nativeKind: 'cron',
+                roles: [],
+                hasActiveRun: false,
+              }),
+            ],
+            {
+              automations: [
+                automation(sourceId, 'scheduler', 'nightly', {
+                  lastOutcome: 'failed',
+                  targetContextId: 'agent:scheduler:cron',
+                }),
+              ],
+            }
+          ),
+        ],
+        plan([mapping(sourceId, 'scheduler')])
+      )
+    );
+    const projected = result.projection.agents[0]!;
+    expect(projected.workState).toBe('error');
+    // The fault is pointable, and it never invents a run in flight.
+    expect(projected.hasActiveRun).toBe(false);
+    expect(projected.automations).toEqual([
+      {
+        configuredSourceId: sourceId,
+        nativeAgentId: 'scheduler',
+        nativeAutomationId: 'nightly',
+        enabled: true,
+        lastOutcome: 'failed',
+        lastRunAt: 5_000,
+        targetContextId: 'agent:scheduler:cron',
+      },
+    ]);
+  });
+
+  it('refuses to call a failure an error when the source answered it or never said', () => {
+    const sourceId = 'source-work-state-fault-guards';
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [
+              agent(sourceId, 'switched-off'),
+              agent(sourceId, 'enablement-unknown'),
+              agent(sourceId, 'outcome-unknown'),
+            ],
+            [
+              context(sourceId, 'switched-off', 'agent:switched-off:main', {
+                hasActiveRun: false,
+              }),
+              context(
+                sourceId,
+                'enablement-unknown',
+                'agent:enablement-unknown:main',
+                { hasActiveRun: false }
+              ),
+              context(
+                sourceId,
+                'outcome-unknown',
+                'agent:outcome-unknown:main',
+                { hasActiveRun: false }
+              ),
+            ],
+            {
+              automations: [
+                // Answered: the operator switched it off.
+                automation(sourceId, 'switched-off', 'job', {
+                  enabled: false,
+                  lastOutcome: 'failed',
+                }),
+                // The source never said whether it still runs.
+                {
+                  configuredSourceId: sourceId,
+                  nativeAgentId: 'enablement-unknown',
+                  nativeAutomationId: 'job',
+                  lastOutcome: 'failed',
+                  targetContextId: null,
+                },
+                // The source ran it and said nothing readable about how it went.
+                automation(sourceId, 'outcome-unknown', 'job'),
+              ],
+            }
+          ),
+        ],
+        plan([
+          mapping(sourceId, 'switched-off'),
+          mapping(sourceId, 'enablement-unknown'),
+          mapping(sourceId, 'outcome-unknown'),
+        ])
+      )
+    );
+    for (const projected of result.projection.agents) {
+      expect(projected.workState).toBe('idle');
+    }
+  });
+
+  it('lets a fault outrank a run in flight without hiding either fact', () => {
+    const sourceId = 'source-work-state-precedence';
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'busy')],
+            [
+              context(sourceId, 'busy', 'agent:busy:main', {
+                hasActiveRun: true,
+              }),
+            ],
+            {
+              automations: [
+                automation(sourceId, 'busy', 'job', { lastOutcome: 'failed' }),
+              ],
+            }
+          ),
+        ],
+        plan([mapping(sourceId, 'busy')])
+      )
+    );
+    const projected = result.projection.agents[0]!;
+    expect(projected.workState).toBe('error');
+    // Precedence costs a surface nothing: both facts are still on the record.
+    expect(projected.hasActiveRun).toBe(true);
+    expect(projected.automations[0]?.lastOutcome).toBe('failed');
+  });
+
+  it('derives working from a run in flight and idle only from an explicit no', () => {
+    const sourceId = 'source-work-state-runs';
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [
+              agent(sourceId, 'running'),
+              agent(sourceId, 'resting'),
+              agent(sourceId, 'silent'),
+              agent(sourceId, 'contextless'),
+            ],
+            [
+              context(sourceId, 'running', 'agent:running:main', {
+                hasActiveRun: false,
+              }),
+              context(sourceId, 'running', 'agent:running:helper', {
+                kind: 'helper',
+                nativeKind: 'helper',
+                roles: [],
+                hasActiveRun: true,
+              }),
+              context(sourceId, 'resting', 'agent:resting:main', {
+                hasActiveRun: false,
+              }),
+              // Said nothing about this one at all.
+              context(sourceId, 'silent', 'agent:silent:main'),
+            ],
+            { automations: [] }
+          ),
+        ],
+        plan([
+          mapping(sourceId, 'running'),
+          mapping(sourceId, 'resting'),
+          mapping(sourceId, 'silent'),
+          mapping(sourceId, 'contextless'),
+        ])
+      )
+    );
+    const byNative = new Map(
+      result.projection.agents.map(projected => [
+        projected.nativeAgentId,
+        projected,
+      ])
+    );
+    expect(byNative.get('running')!.workState).toBe('working');
+    expect(byNative.get('resting')!.workState).toBe('idle');
+    // Unknown stays unknown. Neither silence nor an empty roster of contexts
+    // is allowed to become a state a surface would render as fact.
+    expect(byNative.get('silent')!.workState).toBeNull();
+    expect(byNative.get('contextless')!.workState).toBeNull();
+  });
+
+  it('never attributes the source-wide task totals to any one Agent', () => {
+    const sourceId = 'source-task-facts';
+    const snapshot = topology(
+      sourceId,
+      [agent(sourceId, 'alpha'), agent(sourceId, 'beta')],
+      [
+        context(sourceId, 'alpha', 'agent:alpha:main', { hasActiveRun: false }),
+        context(sourceId, 'beta', 'agent:beta:main'),
+      ],
+      {
+        automations: [],
+        taskFacts: {
+          total: 9,
+          active: 0,
+          terminal: 9,
+          failures: 4,
+          byStatus: { succeeded: 5, failed: 4 },
+          byRuntime: { cron: 9 },
+        },
+      }
+    );
+    const result = successful(
+      projectAgentTopology(
+        [snapshot],
+        plan([mapping(sourceId, 'alpha'), mapping(sourceId, 'beta')])
+      )
+    );
+    const byNative = new Map(
+      result.projection.agents.map(projected => [
+        projected.nativeAgentId,
+        projected,
+      ])
+    );
+    // Four failures on this Gateway, and nobody is blamed for them: the
+    // payload buckets by status and runtime, never by Agent.
+    expect(byNative.get('alpha')!.workState).toBe('idle');
+    expect(byNative.get('beta')!.workState).toBeNull();
+    expect(
+      result.projection.agents.some(
+        projected => projected.workState === 'error'
+      )
+    ).toBe(false);
+  });
+
+  it('cannot derive blocked, complete, or reviewing from any evidence the source carries', () => {
+    const sourceId = 'source-unreachable-states';
+    /*
+     * Every carried fact at once, in every position it can hold: runs
+     * reported, denied, and unreported; automations enabled, disabled, failed,
+     * succeeded, and unknown; source-wide totals full of terminal and failed
+     * tasks. A turn boundary, a human gate, and an unreviewed result have no
+     * representation among them, so no combination can produce one.
+     */
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [
+              agent(sourceId, 'one'),
+              agent(sourceId, 'two'),
+              agent(sourceId, 'three'),
+            ],
+            [
+              context(sourceId, 'one', 'agent:one:main', {
+                hasActiveRun: true,
+              }),
+              context(sourceId, 'two', 'agent:two:main', {
+                hasActiveRun: false,
+              }),
+              context(sourceId, 'three', 'agent:three:main'),
+            ],
+            {
+              automations: [
+                automation(sourceId, 'one', 'a', { lastOutcome: 'failed' }),
+                automation(sourceId, 'two', 'b', {
+                  lastOutcome: 'succeeded',
+                }),
+                automation(sourceId, 'three', 'c', { enabled: false }),
+              ],
+              taskFacts: {
+                total: 40,
+                active: 0,
+                terminal: 40,
+                failures: 12,
+                byStatus: {
+                  succeeded: 20,
+                  failed: 12,
+                  timed_out: 3,
+                  cancelled: 3,
+                  lost: 2,
+                },
+                byRuntime: { subagent: 10, acp: 10, cli: 10, cron: 10 },
+                auditWarnings: 4,
+                auditErrors: 2,
+              },
+            }
+          ),
+        ],
+        plan([
+          mapping(sourceId, 'one'),
+          mapping(sourceId, 'two'),
+          mapping(sourceId, 'three'),
+        ])
+      )
+    );
+    const derived = result.projection.agents.map(
+      projected => projected.workState
+    );
+    // Agents come back in Exawatt-id order: one, three, two.
+    expect(derived).toEqual(['error', null, 'idle']);
+    for (const state of UNEVIDENCED_WORK_STATES) {
+      expect(derived).not.toContain(state);
+    }
+    for (const state of derived) {
+      expect(
+        state === null ||
+          (PROJECTED_WORK_STATES as readonly string[]).includes(state)
+      ).toBe(true);
+    }
+  });
+
+  it('keeps work state independent of how old the observation is', () => {
+    const sourceId = 'source-freshness-independence';
+    const build = (observedAt: number): AgentProjectionResult =>
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'alpha'), agent(sourceId, 'beta')],
+            [
+              context(sourceId, 'alpha', 'agent:alpha:main', {
+                hasActiveRun: true,
+              }),
+              context(sourceId, 'beta', 'agent:beta:main', {
+                hasActiveRun: false,
+              }),
+            ],
+            {
+              observedAt,
+              automations: [
+                automation(sourceId, 'beta', 'job', { lastOutcome: 'failed' }),
+              ],
+            }
+          ),
+        ],
+        plan([mapping(sourceId, 'alpha'), mapping(sourceId, 'beta')])
+      );
+    const fresh = successful(build(10_000));
+    // The same bytes observed long ago. A connection going stale is not a work
+    // event: the last observed state stands, and saying how old it is belongs
+    // to the presentation layer.
+    const ancient = successful(build(1));
+    expect(ancient.projection.agents.map(a => a.workState)).toEqual(
+      fresh.projection.agents.map(a => a.workState)
+    );
+    expect(fresh.projection.agents.map(a => a.workState)).toEqual([
+      'working',
+      'error',
+    ]);
+  });
+
+  it('reads the authored fixture the same way, coworker by coworker', () => {
+    const result = successful(
+      projectAgentTopology(
+        CONNECTED_OPENCLAW_TOPOLOGY_FIXTURES,
+        CONNECTED_OPENCLAW_PROJECTION_PLAN
+      )
+    );
+    const byName = new Map(
+      result.projection.agents.map(projected => [
+        projected.displayName,
+        projected,
+      ])
+    );
+    // Marcus has a run in flight and a healthy automation.
+    expect(byName.get('Marcus')!.workState).toBe('working');
+    // Scout's source said nothing about any run of his, and his one failed
+    // automation is switched off. Two kinds of silence are still silence.
+    expect(byName.get('Scout')!.workState).toBeNull();
+    expect(byName.get('Scout')!.automations[0]?.enabled).toBe(false);
+    // Tyler is quiet and his scheduled automation last failed.
+    expect(byName.get('Tyler')!.workState).toBe('error');
+    expect(byName.get('Tyler')!.hasActiveRun).toBe(false);
+  });
+});
+
+describe('agent topology projection validates automation evidence', () => {
+  const sourceId = 'source-automation-validation';
+
+  function projectWithAutomations(automations: unknown): AgentProjectionResult {
+    return projectAgentTopology(
+      [
+        topology(
+          sourceId,
+          [agent(sourceId, 'alpha')],
+          [context(sourceId, 'alpha', 'agent:alpha:main')],
+          {
+            automations:
+              automations as AgentSourceTopologySnapshot['automations'],
+          }
+        ),
+      ],
+      plan([mapping(sourceId, 'alpha')])
+    );
+  }
+
+  it('fails closed on an automation collection that is not an array', () => {
+    for (const automations of ['nope', 42, {}, null]) {
+      const result = projectWithAutomations(automations);
+      expect(result.ok).toBe(false);
+      expect(issueCodes(result)).toContain('invalid-automation');
+    }
+  });
+
+  it('fails closed on an automation record it cannot vouch for', () => {
+    const invalid: unknown[] = [
+      'not-a-record',
+      { ...automation(sourceId, 'alpha', 'job'), configuredSourceId: 'other' },
+      { ...automation(sourceId, 'alpha', 'job'), nativeAutomationId: '  ' },
+      { ...automation(sourceId, 'alpha', 'job'), enabled: 'yes' },
+      // An outcome outside the vocabulary is never quietly accepted.
+      { ...automation(sourceId, 'alpha', 'job'), lastOutcome: 'ok' },
+      { ...automation(sourceId, 'alpha', 'job'), lastOutcome: 'running' },
+      { ...automation(sourceId, 'alpha', 'job'), lastRunAt: Number.NaN },
+      { ...automation(sourceId, 'alpha', 'job'), targetContextId: 7 },
+    ];
+    for (const candidate of invalid) {
+      const result = projectWithAutomations([candidate]);
+      expect(result.ok).toBe(false);
+      expect(issueCodes(result)).toContain('invalid-automation');
+    }
+  });
+
+  it('fails closed on a duplicate automation identity', () => {
+    const result = projectWithAutomations([
+      automation(sourceId, 'alpha', 'job'),
+      automation(sourceId, 'alpha', 'job', { lastOutcome: 'failed' }),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(issueCodes(result)).toContain('duplicate-automation');
+  });
+
+  it('keeps the same automation name distinct across two Agents', () => {
+    const result = successful(
+      projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'alpha'), agent(sourceId, 'beta')],
+            [
+              context(sourceId, 'alpha', 'agent:alpha:main'),
+              context(sourceId, 'beta', 'agent:beta:main'),
+            ],
+            {
+              automations: [
+                automation(sourceId, 'alpha', 'job'),
+                automation(sourceId, 'beta', 'job', { lastOutcome: 'failed' }),
+              ],
+            }
+          ),
+        ],
+        plan([mapping(sourceId, 'alpha'), mapping(sourceId, 'beta')])
+      )
+    );
+    const byNative = new Map(
+      result.projection.agents.map(projected => [
+        projected.nativeAgentId,
+        projected,
+      ])
+    );
+    expect(byNative.get('alpha')!.workState).toBeNull();
+    expect(byNative.get('beta')!.workState).toBe('error');
+    expect(
+      sourceAutomationKey(byNative.get('alpha')!.automations[0]!)
+    ).not.toBe(sourceAutomationKey(byNative.get('beta')!.automations[0]!));
+  });
+
+  it('fails closed when an automation names an Agent nobody listed', () => {
+    const result = projectWithAutomations([
+      automation(sourceId, 'ghost', 'job', { lastOutcome: 'failed' }),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(issueCodes(result)).toContain('orphan-automation-agent');
+  });
+
+  it('fails closed when an automation targets a context nobody listed', () => {
+    const result = projectWithAutomations([
+      automation(sourceId, 'alpha', 'job', {
+        targetContextId: 'agent:alpha:vanished',
+      }),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(issueCodes(result)).toContain('invalid-automation');
+  });
+
+  it('fails closed on task totals it cannot vouch for', () => {
+    const valid = {
+      total: 3,
+      active: 1,
+      terminal: 2,
+      failures: 1,
+      byStatus: { failed: 1 },
+      byRuntime: { cron: 3 },
+    };
+    const invalid: unknown[] = [
+      'nope',
+      { ...valid, total: -1 },
+      { ...valid, active: 1.5 },
+      { ...valid, terminal: Number.NaN },
+      { ...valid, failures: '1' },
+      // A bucket the vocabulary does not know never reaches the kernel.
+      { ...valid, byStatus: { invented: 1 } },
+      { ...valid, byRuntime: { invented: 1 } },
+      { ...valid, byStatus: { failed: -1 } },
+      { ...valid, auditErrors: 'two' },
+    ];
+    for (const taskFacts of invalid) {
+      const result = projectAgentTopology(
+        [
+          topology(
+            sourceId,
+            [agent(sourceId, 'alpha')],
+            [context(sourceId, 'alpha', 'agent:alpha:main')],
+            {
+              taskFacts: taskFacts as AgentSourceTopologySnapshot['taskFacts'],
+            }
+          ),
+        ],
+        plan([mapping(sourceId, 'alpha')])
+      );
+      expect(result.ok).toBe(false);
+      expect(issueCodes(result)).toContain('invalid-task-facts');
+    }
+  });
+
+  it('derives the same work state however the evidence is ordered', () => {
+    const build = (
+      automations: SourceAutomationRecord[],
+      contexts: SourceContextRecord[]
+    ): AgentProjectionResult =>
+      projectAgentTopology(
+        [
+          topology(sourceId, [agent(sourceId, 'alpha')], contexts, {
+            automations,
+          }),
+        ],
+        plan([mapping(sourceId, 'alpha')])
+      );
+    const contexts = [
+      context(sourceId, 'alpha', 'agent:alpha:main', { hasActiveRun: false }),
+      context(sourceId, 'alpha', 'agent:alpha:helper', {
+        kind: 'helper',
+        nativeKind: 'helper',
+        roles: [],
+        hasActiveRun: true,
+      }),
+    ];
+    const automations = [
+      automation(sourceId, 'alpha', 'a', { lastOutcome: 'succeeded' }),
+      automation(sourceId, 'alpha', 'b', { lastOutcome: 'failed' }),
+      automation(sourceId, 'alpha', 'c', { enabled: false }),
+    ];
+    const forward = successful(build(automations, contexts));
+    const reversed = successful(
+      build([...automations].reverse(), [...contexts].reverse())
+    );
+    expect(reversed).toEqual(forward);
+    expect(forward.projection.agents[0]!.workState).toBe('error');
   });
 });
