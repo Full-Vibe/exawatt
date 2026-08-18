@@ -1,10 +1,4 @@
-export {
-  readGatewayToken,
-  readGatewayConfig,
-  readGatewayConnection,
-  resolveGatewayConnection,
-} from './oc/gateway-config';
-export type { OCGatewayConnection } from './oc/gateway-config';
+export { readGatewayConfig } from './oc/gateway-config';
 export type { OCGatewayConfig } from './oc/auth';
 export {
   NodeConsumptionFileSystem,

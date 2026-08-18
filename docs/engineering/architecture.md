@@ -94,16 +94,16 @@ public tree keeps the typed request/response contracts and answers 404, and the
 runtime census in `src/lib/distribution/community-runtime.test.ts` spans both
 trees: an entrypoint must be declared on exactly one side, and nothing under
 `src/` may import across the boundary. Agent Source WebSockets are separate from service origins and remain
-available to community builds for operator-configured Gateways. Local/LAN
-OpenClaw is an Electron-main capability: main reads the source-owned config,
-keeps the Gateway secret, device key/token, endpoint selection, and
-authenticated WebSocket, then gives one WebContents an opaque
-fleet/chat/schedule grant. The ordinary socket requests only read/write scope;
-the four named cron mutations use a separate lazy admin client, so admin
-authority can never ride through `chat.send`. The bridge rejects generic RPC,
-auth, pairing, approval, config, update, token, and plugin method names and
-validates each permitted payload. Browser builds have no equivalent credential
-route and remain in Demo Mode.
+available to community builds for operator-configured Gateways. A configured
+Agent Source is an Electron-main capability: main reads the source-owned
+config, keeps the Gateway secret, device key/token, SSH tunnel, endpoint
+selection, and authenticated WebSocket, and the renderer receives view
+projections only. There is no renderer-reachable Gateway bridge and no command
+channel at all: `ConnectedGatewaySession`'s method allowlist and the source's
+own `operator.read` scope are the two locks that make H1 read-only, so
+`chat.send`, steering, abort, and cron mutation have no code path in the
+process. Browser builds have no equivalent credential route and remain in
+Demo Mode.
 
 Renderer product-service callers consume only the corresponding versioned
 `services.*` endpoint. Product feedback and operator-stat publication check

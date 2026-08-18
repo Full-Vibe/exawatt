@@ -123,7 +123,6 @@
     "eval:electron:turn-truth": "node scripts/electron-turn-truth-eval.mjs",
     "eval:electron:tenancy": "node scripts/electron-workspace-tenancy-eval.mjs",
     "eval:electron:operator-stats": "node scripts/electron-operator-stats-eval.mjs",
-    "eval:electron:openclaw-security": "node scripts/electron-openclaw-security-eval.mjs",
     "eval:roadmap:rail": "node scripts/roadmap-rail-eval.mjs",
     "electron:build:dogfood:official": "EXAWATT_DISTRIBUTION_PROFILE=official node scripts/build-dogfood.mjs"
   },
