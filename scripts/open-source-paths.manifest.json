@@ -318,6 +318,16 @@
       "reason": "community defaults with official identity supplied by overlay"
     },
     {
+      "path": "electron/resources/icon-community-master.png",
+      "classification": "PUBLIC",
+      "reason": "source master for the community mark"
+    },
+    {
+      "path": "electron/resources/icon-community.icns",
+      "classification": "PUBLIC",
+      "reason": "the community mark ships in the public tree; the Exawatt mark does not"
+    },
+    {
       "path": "electron/resources/icon-master.png",
       "classification": "PUBLIC",
       "reason": "community mark derives from the reviewed official source"

@@ -7,6 +7,22 @@
   ],
   "assets": [
     {
+      "path": "electron/resources/icon-community-master.png",
+      "status": "included",
+      "kind": "community brand master",
+      "sha256": "10522b173be7b4ea60c8b3c5e3590f2fbb57484d28ca8b06a97ffe9168d10cbc",
+      "origin": "Derived 2026-08-18 from electron/resources/icon-master.png, which is Exawatt-original: desaturated, black point raised to 30 percent, and tinted 10 percent toward slate, then packaged with iconutil. Same geometry, one neutral hue, following Chromium's community-mark shape so a community build is distinguishable from the official one in a Dock. No third-party input. Regenerate with the command recorded in docs/engineering/projects/open-source-readiness.md.",
+      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
+    },
+    {
+      "path": "electron/resources/icon-community.icns",
+      "status": "included",
+      "kind": "community macOS package icon",
+      "sha256": "02b92b92ffba42c22dcf2d77ab77555d43eaaed716d0b58c7ffa8154cd4c3e55",
+      "origin": "Derived 2026-08-18 from electron/resources/icon-master.png, which is Exawatt-original: desaturated, black point raised to 30 percent, and tinted 10 percent toward slate, then packaged with iconutil. Same geometry, one neutral hue, following Chromium's community-mark shape so a community build is distinguishable from the official one in a Dock. No third-party input. Regenerate with the command recorded in docs/engineering/projects/open-source-readiness.md.",
+      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
+    },
+    {
       "path": "electron/resources/icon-master.png",
       "status": "included",
       "kind": "macOS application-icon source",
@@ -52,7 +68,7 @@
       "status": "included",
       "kind": "vendored variable webfont",
       "sha256": "4a259dde317e08aa5d37e6eb684e222ae833516b2a0fccba36ee5e36224f16be",
-      "origin": "Exo 2 normal variable weight 100–900 Latin subset from the versioned Google Fonts v26 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "origin": "Exo 2 normal variable weight 100\u2013900 Latin subset from the versioned Google Fonts v26 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
       "distributionBasis": "SIL Open Font License 1.1; license text is LICENSES/fonts/Exo-2-OFL-1.1.txt."
     },
     {
@@ -60,7 +76,7 @@
       "status": "included",
       "kind": "vendored variable webfont",
       "sha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
-      "origin": "Geist Sans normal variable weight 100–900 Latin subset from the versioned Google Fonts v5 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "origin": "Geist Sans normal variable weight 100\u2013900 Latin subset from the versioned Google Fonts v5 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
       "distributionBasis": "SIL Open Font License 1.1; shared Geist license text is LICENSES/fonts/Geist-OFL-1.1.txt."
     },
     {
@@ -68,7 +84,7 @@
       "status": "included",
       "kind": "vendored variable webfont",
       "sha256": "684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc",
-      "origin": "Geist Mono normal variable weight 100–900 Latin subset from the versioned Google Fonts v6 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "origin": "Geist Mono normal variable weight 100\u2013900 Latin subset from the versioned Google Fonts v6 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
       "distributionBasis": "SIL Open Font License 1.1; shared Geist license text is LICENSES/fonts/Geist-OFL-1.1.txt."
     },
     {

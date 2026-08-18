@@ -37,7 +37,14 @@ test('the packaged bundle and its owed capabilities come from the contract', asy
   assert.equal(community.identity.productName, 'Exawatt Community');
   assert.equal(community.identity.appId, 'ai.exawatt.community');
   assert.equal(community.identity.protocolScheme, null);
-  assert.equal(community.identity.iconPath, null);
+  // A community build carries its OWN mark rather than none: absence left it
+  // wearing Electron's default, which is correct on trademark and unfinished
+  // as a product. The Exawatt mark is not in the public tree, so this cannot
+  // become the official icon by accident.
+  assert.equal(
+    community.identity.iconPath,
+    'electron/resources/icon-community.icns'
+  );
   assert.equal(community.identity.updateChannel, null);
   assert.equal(
     community.executablePath,

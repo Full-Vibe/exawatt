@@ -105,7 +105,7 @@ test('tampering with the prepared artifact fails its digest check', async () => 
   await assert.rejects(readPreparedDistribution(root), /digest/i);
 });
 
-test('community Electron packaging has neutral identity and no protocol, feed, or branded icon', async () => {
+test('community Electron packaging has neutral identity, its own mark, and no protocol or feed', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
   const prepared = await prepareDistribution({ root, inputJson: undefined });
   const config = electronBuilderDistributionConfig(
@@ -128,7 +128,13 @@ test('community Electron packaging has neutral identity and no protocol, feed, o
   assert.equal(config.productName, 'Exawatt Community');
   assert.equal(config.protocols, undefined);
   assert.equal(config.publish, undefined);
-  assert.equal(config.mac.icon, undefined);
+  // Its OWN mark, never the Exawatt one and never Electron's default. This is
+  // the trademark boundary as a fact about the artifact rather than a promise
+  // in a policy: the graphite variant is a public-tree asset, the Exawatt mark
+  // is not, so a community build cannot wear the official identity even by
+  // accident.
+  assert.equal(config.mac.icon, 'electron/resources/icon-community.icns');
+  assert.notEqual(config.mac.icon, 'electron/resources/icon.icns');
   assert.equal(config.copyright, 'Copyright © 2024 Exawatt Community');
   assert.equal(
     config.mac.extendInfo.NSDocumentsFolderUsageDescription,
