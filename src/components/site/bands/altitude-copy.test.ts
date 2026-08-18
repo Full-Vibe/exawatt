@@ -71,6 +71,31 @@ describe('altitude panel copy', () => {
     }
   });
 
+  it('states a fact or a control in every panel, never a confession', () => {
+    // "Headings state a fact or a control, never a confession"
+    // (`marketing.md`, "Disclosure is not apology"). The literal shapes that
+    // shipped and had to be pulled off `/download` are what this catches; the
+    // idea itself lives in the doc comment, because a phrase list cannot
+    // police an idea. Moved here from `narrative-copy.test.ts` in W10, when
+    // the band that file was named for came off the page: the panels' own
+    // claims and codas were already the only thing it read.
+    const confessions = [
+      'unsandboxed',
+      'we do not',
+      'we cannot',
+      'not yet',
+      'no opt-out',
+      'is missing',
+      'limitation',
+    ];
+    for (const panel of ALTITUDE_PANELS) {
+      const prose = [...panel.copy, panel.coda ?? ''].join(' ').toLowerCase();
+      for (const shape of confessions) {
+        expect(prose, panel.id).not.toContain(shape);
+      }
+    }
+  });
+
   it('never hardcodes a fixture name the capture owns', () => {
     // The subject's name comes from `hero-board-highlight.ts`, off the frozen
     // capture, so a regenerated capture can never leave the copy lying.

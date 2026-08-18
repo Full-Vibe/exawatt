@@ -45,16 +45,36 @@ export const FRAMING_TIGHTNESS = {
    *  is still an individual rather than a pixel. */
   clusterRadius: 0.5,
   /**
-   * One step closer on the same centre (ENG-031 W9).
+   * THE FIRST SCROLL MOVES THE CAMERA (ENG-031 W10, operator: "I do want some
+   * sort of camera change / zoom / animation on the first scroll section -
+   * right now the scene is static").
+   *
+   * W9 held the fold's crop through the attention panel, on the reasoning that
+   * a still camera over a changing board is the beat a competitor cannot
+   * screenshot. Read from the top of the page that reasoning inverts: the
+   * reader's FIRST scroll is where they find out whether the picture is alive,
+   * and a board that answers it by holding still reads as a screenshot no
+   * matter what the marks are doing. So the attention panel takes its own rung
+   * ten percent in from the fold.
+   *
+   * Ten percent, not thirty: the crop is the fold's own composition and the
+   * panel beside it is about what the COLOURS mean, so the move has to be
+   * unmistakable as travel and small enough to leave the frame recognisable.
+   * The pointer lean composes on top of it, so a reader with a mouse on the
+   * board sees the glide and the parallax together.
+   */
+  clusterInRadius: 0.45,
+  /**
+   * One step closer again, on the same centre (ENG-031 W9).
    *
    * The lens panels are where the picture changes meaning rather than place,
    * so the camera may not make a journey of them. But it may not sit still for
    * two whole panels either: the run's promise is that it travels in one
    * direction, and a camera that stops for a third of the page reads as a
-   * stall rather than as a hold. Sixteen percent is enough to feel like
-   * forward travel and small enough that the lens is still the event.
+   * stall rather than as a hold. Eleven percent is enough to feel like forward
+   * travel and small enough that the lens is still the event.
    */
-  clusterCloseRadius: 0.42,
+  clusterCloseRadius: 0.4,
 } as const;
 
 /**
@@ -113,15 +133,18 @@ export interface HeroBoardFraming {
  * `cluster` is the FLEET framing cropped, on the same centre (ENG-031 W6b). It
  * is not a product altitude and it does not pretend to be one: it exists so
  * the fold can open on a board whose individual marks are legible inside a
- * column that is 58% of the viewport, and the whole run now opens AND holds
- * there, because it is the widest thing the reader is ever shown.
+ * column that is 58% of the viewport, and it is the widest thing the reader is
+ * ever shown.
  *
- * `cluster-close` is that same crop one step in (W9), for the panels whose
- * subject is the MEANING of the marks rather than their place.
+ * `cluster-in` is that crop one step in (W10), and it exists so the reader's
+ * FIRST scroll produces a real camera move. `cluster-close` is one step in
+ * again (W9), for the panels whose subject is the MEANING of the marks rather
+ * than their place.
  */
 export type HeroAltitude =
   | 'fleet'
   | 'cluster'
+  | 'cluster-in'
   | 'cluster-close'
   | 'team'
   | 'agent';
@@ -136,11 +159,7 @@ export type HeroAltitude =
  * consecutive panels may share an altitude, which makes the camera hold while
  * the board itself makes the argument.
  */
-export const HERO_DEFAULT_LADDER: HeroAltitude[] = [
-  'cluster',
-  'team',
-  'agent',
-];
+export const HERO_DEFAULT_LADDER: HeroAltitude[] = ['cluster', 'team', 'agent'];
 
 /** Board-model coordinates centred on the origin and laid into world XZ, so
  *  camera-controls' Y-up spherical maths applies without any hand-derived
@@ -200,6 +219,12 @@ export function heroBoardFramings(
     cluster: {
       center: narrow ? team : fleet,
       radius: fleetRadius * FRAMING_TIGHTNESS.clusterRadius,
+      tightness: FRAMING_TIGHTNESS.fleet,
+      narrowCrop: 1,
+    },
+    'cluster-in': {
+      center: narrow ? team : fleet,
+      radius: fleetRadius * FRAMING_TIGHTNESS.clusterInRadius,
       tightness: FRAMING_TIGHTNESS.fleet,
       narrowCrop: 1,
     },

@@ -37,13 +37,16 @@ export interface SiteNavLink {
 /**
  * The nav, beside the one download button.
  *
- * `Changelog` is an in-page anchor rather than a route, because the dated list
- * IS on this page: `proof` renders five landed milestones on the day each one
- * landed, and links out to the rest. Pointing a nav item at a real dated list
- * beats pointing it at a page that has to be written first.
+ * `Changelog` LEAVES THE PAGE (ENG-031 W10, operator: "Remove the What shipped
+ * ... section"). It used to be an in-page anchor, because the dated list was
+ * on the page. The list is gone, so the item points at the releases page,
+ * which is where `The full changelog` already sent anyone who wanted more than
+ * five rows, and where every milestone carries its artifacts. An anchor to a
+ * band that no longer renders is the stale front door this file exists to
+ * prevent.
  */
 export const SITE_NAV_LINKS: SiteNavLink[] = [
-  { label: 'Changelog', href: '#proof' },
+  { label: 'Changelog', href: `${GITHUB_URL}/releases`, external: true },
   { label: 'GitHub', href: GITHUB_URL, external: true },
 ];
 

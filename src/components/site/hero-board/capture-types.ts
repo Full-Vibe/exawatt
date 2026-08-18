@@ -74,8 +74,15 @@ export interface HeroBoardDelegation {
   overflow: number;
 }
 
-/** One harness on the board: what the launcher calls it, in its own colour. */
+/** One harness on the board: what the launcher calls it, in its own colour,
+ *  under its own declared id (ENG-031 W10).
+ *
+ *  `adapterId` is `contracts/agent-sources.json`'s own key, carried here so
+ *  the identity card and the lens legend can draw the harness's BRAND MARK
+ *  without matching on a display label. A label is copy and may be rewritten;
+ *  an adapter id is the launcher's contract. */
 export interface HeroBoardSource {
+  adapterId: string;
   label: string;
   color: string;
 }

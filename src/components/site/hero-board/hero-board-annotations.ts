@@ -61,9 +61,22 @@ export interface HeroAnnotationBridge {
   /** Frame size in CSS pixels. */
   width: number;
   height: number;
-  /** Unit indices that currently own a DOM node. The projector measures an
-   *  exact on-screen radius for these and only a centre for the rest. */
+  /** Unit indices the projector measures an EXACT on-screen radius for. After
+   *  W10 that is at most one: the mark the card is open on, whose radius sets
+   *  the ring's size and the card's offset. Everything else needs a centre. */
   tracked: number[];
+  /**
+   * A mark's on-screen radius at the centre of the frame, in CSS pixels
+   * (ENG-031 W10).
+   *
+   * Hit testing is delegated now: one handler over the board resolves the
+   * NEAREST projected mark, so it needs to know how big a mark is at the
+   * current framing to decide whether the pointer is on one. Every mark in the
+   * capture is the same world size and they all lie on one plane, so one
+   * projection at the camera's own target is the right estimate for all 173
+   * and costs one projection a frame rather than 173.
+   */
+  markRadius: number;
   /** Called by the projector at the end of every rendered frame. */
   onProject: (() => void) | null;
   /** Called when the scheduler moves one unit to a new status. */
@@ -121,6 +134,7 @@ export function createHeroAnnotationBridge(
     width: 0,
     height: 0,
     tracked: [],
+    markRadius: 0,
     onProject: null,
     onStatusChange: null,
     pointer: { x: 0, y: 0, active: false },
@@ -128,53 +142,44 @@ export function createHeroAnnotationBridge(
 }
 
 /**
- * Below this altitude progress a mark is population rather than an individual.
+ * How many Agents own a KEYBOARD stop (ENG-031 W10).
  *
- * AMENDED 2026-08-17 (W9, operator: "mouseover effects on the agents just to
- * show that it's a real thing"). It no longer decides whether a mark can be
- * POINTED AT: hit targets now exist at every altitude, so the board answers a
- * mouse wherever the reader is on the page. What is still gated is the CARD,
- * and it is gated on the mark's own projected radius rather than on this
- * number, because "is this mark an individual" is a question about pixels and
- * not about scroll position. This constant survives as the point past which a
- * hovered mark is worth SELECTING, which is a semantic act rather than a
- * glance.
+ * Pointer coverage is total: one delegated handler over the board resolves the
+ * nearest projected mark, so every one of the 173 marks is hoverable and
+ * clickable at every altitude, which is what the operator asked for ("It looks
+ * like not all the agents are hoverable and clickable"). That costs no DOM per
+ * mark and no per-frame write per mark.
+ *
+ * The tab order is a different question, and it is bounded on purpose. A
+ * marketing hero that puts 173 stops between the header and the download
+ * button is a worse outcome for a keyboard or screen-reader visitor than a
+ * sample is, and the page's claim does not depend on reaching every Agent: it
+ * depends on being able to reach REAL ones and read their real identity. The
+ * marks nearest the centre of the frame get the stops, re-chosen as the camera
+ * travels, and each one opens the same card the pointer opens.
+ *
+ * PREVIOUSLY (W9) this number capped the pointer targets too, which is the
+ * defect the operator saw: 36 of 173 marks answered a mouse and the rest were
+ * dead. Hit targets and tab stops are now two different things with two
+ * different reasons.
  */
-export const AGENT_AFFORDANCE_PROGRESS = 0.3;
+export const AGENT_KEYBOARD_LIMIT = 24;
 
-/** How many units may own a DOM hit target at once. The cap is what keeps the
- *  overlay's per-frame transform writes bounded regardless of altitude. Raised
- *  from 20 with W9's every-altitude hover: the fold's crop puts far more marks
- *  on screen than the closest framing does, and a hover affordance that only
- *  covered the middle fifth of them would read as broken rather than as
- *  bounded. Still a hard cap, still a bounded write pass. */
-export const AGENT_TRACK_LIMIT = 36;
-
-/** Hit targets and their labels are re-chosen at this interval, not per frame.
- *  Positions still follow the camera every frame; only the SET is throttled. */
+/** Keyboard stops are re-chosen at this interval, not per frame. Positions
+ *  still follow the camera every frame; only the SET is throttled. */
 export const AGENT_TRACK_INTERVAL_MS = 150;
 
 /**
- * The on-screen radius at which a mark stops being population and becomes an
- * individual, in CSS pixels.
+ * How far outside a mark's own radius the pointer still counts as on it, in
+ * CSS pixels (ENG-031 W10).
  *
- * ONE number decides two things, because they are the same question (W9).
- * Below it, hit targets are invisible until pointed at and a hover gets a
- * target ring plus its Project's name lifted to full strength: that is the
- * honest amount of detail a mark this size can carry, and three dozen visible
- * hairline rings over the fold would be the "pile of icons" verdict returning
- * as chrome. At or above it the rings are the aimable affordance they always
- * were and the card opens with the Agent's name, its Project, its contract and
- * its live status.
- *
- * MEASURED, not guessed. At 1440x900 the run projects marks at radius 12 for
- * the fold and the attention beat, 14 to 15 for the two lens panels, 20 at the
- * delegation framing and 41 at the dive; at 390x844 it is 11, 11, 15 and 18.
- * Seventeen separates "a dot in a fleet" from "a thing you are looking at" on
- * both, with every mark in a given frame on the same side of it, so the board
- * never offers two different affordances in one picture.
+ * The delegated handler takes the NEAREST mark and then asks whether the
+ * pointer is close enough to it. At the fold's crop a mark projects at about
+ * twelve pixels and its neighbours sit about twenty-four away, so a little
+ * slop makes a seven-pixel dot aimable without letting one mark claim its
+ * neighbour's ground. Nearest-wins is what keeps the answer unambiguous.
  */
-export const AGENT_TRACK_MIN_RADIUS_PX = 17;
+export const AGENT_HOVER_SLOP_PX = 9;
 
 /**
  * How far the camera may lean towards the pointer (ENG-031 W9).

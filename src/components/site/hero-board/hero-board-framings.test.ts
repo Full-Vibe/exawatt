@@ -82,8 +82,28 @@ describe('hero board framings', () => {
     expect(ladder[0]).toBe('cluster');
     expect(ladder.at(-1)).toBe('agent');
     expect(bandById(heroCameraAnchors()[0]!.id).headingRole).toBe('headline');
-    // The pinned panels themselves start one rung after the fold's frame.
-    expect(pinnedAltitudeLadder()[0]).toBe('cluster');
+    // The pinned panels themselves start one rung IN from the fold's frame.
+    expect(pinnedAltitudeLadder()[0]).toBe('cluster-in');
+  });
+
+  it('glides on the first scroll, by enough to see and little enough to keep the fold', () => {
+    // THE MAGNITUDE THE OPERATOR ASKED FOR (ENG-031 W10: "I do want some sort
+    // of camera change / zoom / animation on the first scroll section - right
+    // now the scene is static").
+    //
+    // Two failure modes, one window. Too small and the first scroll reads as
+    // the screenshot the note is about; too large and the fold's own crop,
+    // which is tuned so three or four Project clusters fill a 58% column and a
+    // single mark is still an individual, is gone by the second panel. Eight
+    // to fifteen percent is the band, and the ladder sits at ten.
+    for (const narrow of [false, true]) {
+      const framings = heroBoardFramings(capture, ladder, narrow);
+      const step =
+        framingDistanceScale(framings[1]!, narrow) /
+        framingDistanceScale(framings[0]!, narrow);
+      expect(step, `narrow=${narrow}`).toBeLessThanOrEqual(0.92);
+      expect(step, `narrow=${narrow}`).toBeGreaterThanOrEqual(0.85);
+    }
   });
 
   it('holds the fold crop on a phone, and crops the rest harder', () => {
@@ -94,6 +114,7 @@ describe('hero board framings', () => {
     // `cluster` is ALREADY a crop, so it opts out of the portrait crop rather
     // than being cropped twice and putting its own subject outside the frame.
     expect(byAltitude.get('cluster')!.narrowCrop).toBe(1);
+    expect(byAltitude.get('cluster-in')!.narrowCrop).toBe(1);
     expect(byAltitude.get('cluster-close')!.narrowCrop).toBe(1);
     expect(byAltitude.get('agent')!.narrowCrop).toBeLessThan(1);
     // And a phone centres the opening crop on the Project the dive is heading
