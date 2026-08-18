@@ -17,8 +17,8 @@ import {
   type ConnectedGatewaySessionDeps,
 } from './connected-gateway';
 import type {
-  bootstrapGatewayCredential,
   GatewayBootstrapFailure,
+  resolveGatewayCredential,
 } from './gateway-bootstrap';
 import type {
   openSshTunnel,
@@ -45,6 +45,12 @@ const ALIAS = 'workshop-north';
 const REMOTE_PORT = 4501;
 const LOCAL_PORT = 45_017;
 const LOOPBACK_PORT = 4599;
+
+/** Invented server access for the manual transport. Never a real server. */
+const MANUAL_HOST = 'workshop-south.invalid';
+const MANUAL_USER = 'workshop';
+const MANUAL_SSH_PORT = 2202;
+const MANUAL_KEY_PATH = '/home/workshop/keys/id_fixture';
 
 /** Invented. Never a real credential, and never persisted by the session. */
 const SHARED_SECRET = 'shared-secret-fixture-9f2c';
@@ -281,6 +287,23 @@ function sshAliasRecord(): ConnectedSourceRecord {
   };
 }
 
+function manualRecord(): ConnectedSourceRecord {
+  return {
+    ...sshAliasRecord(),
+    id: 'src-southwind-01',
+    displayName: 'South workshop',
+    transport: {
+      kind: 'ssh-manual',
+      host: MANUAL_HOST,
+      user: MANUAL_USER,
+      port: MANUAL_SSH_PORT,
+      identityFile: MANUAL_KEY_PATH,
+      remotePort: REMOTE_PORT,
+    },
+    credentialOwner: 'exawatt-keychain',
+  };
+}
+
 function loopbackRecord(): ConnectedSourceRecord {
   return {
     ...sshAliasRecord(),
@@ -326,7 +349,7 @@ function createHarness(options: HarnessOptions = {}) {
     return { ok: true, tunnel: handle.tunnel };
   });
 
-  const bootstrap = vi.fn<typeof bootstrapGatewayCredential>(async () => {
+  const resolveCredential = vi.fn<typeof resolveGatewayCredential>(async () => {
     if (options.bootstrapFailure) {
       return {
         ok: false,
@@ -350,7 +373,7 @@ function createHarness(options: HarnessOptions = {}) {
   const deps: ConnectedGatewaySessionDeps = {
     store,
     openTunnel,
-    bootstrap,
+    resolveCredential,
     remoteExec,
     createClient: (config: OCClientConfig) => {
       const client = new FakeGatewayClient(
@@ -384,7 +407,7 @@ function createHarness(options: HarnessOptions = {}) {
     clients,
     phases,
     openTunnel,
-    bootstrap,
+    resolveCredential,
     remoteExec,
     session,
     advance: (ms: number) => {
@@ -408,6 +431,7 @@ describe('ConnectedGatewaySession — connecting', () => {
     expect(result.ok).toBe(true);
     expect(harness.session.phase).toBe('connected');
     expect(harness.openTunnel).toHaveBeenCalledWith({
+      kind: 'ssh-alias',
       alias: ALIAS,
       remotePort: REMOTE_PORT,
     });
@@ -468,6 +492,76 @@ describe('ConnectedGatewaySession — connecting', () => {
       `ws://127.0.0.1:${LOOPBACK_PORT}`
     );
   });
+
+  it('resolves the local credential from the transport, with no alias in sight', async () => {
+    const record = loopbackRecord();
+    const harness = createHarness({ record });
+
+    await harness.session.connect();
+
+    // The seam is handed the transport itself, so the local path can read this
+    // machine's own configuration instead of being passed an empty alias.
+    expect(harness.resolveCredential).toHaveBeenCalledWith(record.transport, {
+      exec: harness.remoteExec,
+    });
+    expect(harness.phases).toEqual([
+      'bootstrapping',
+      'pairing',
+      'discovering',
+      'connected',
+    ]);
+  });
+
+  it('opens a tunnel to a manually entered server and connects through it', async () => {
+    const record = manualRecord();
+    const harness = createHarness({ record });
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.session.phase).toBe('connected');
+    // Every field the record holds reaches the tunnel owner, which is the only
+    // place that decides whether they are safe to hand to ssh.
+    expect(harness.openTunnel).toHaveBeenCalledWith({
+      kind: 'ssh-manual',
+      host: MANUAL_HOST,
+      user: MANUAL_USER,
+      port: MANUAL_SSH_PORT,
+      identityFile: MANUAL_KEY_PATH,
+      remotePort: REMOTE_PORT,
+    });
+    expect(harness.clients[0]?.config.url).toBe(`ws://127.0.0.1:${LOCAL_PORT}`);
+    expect(harness.resolveCredential).toHaveBeenCalledWith(record.transport, {
+      exec: harness.remoteExec,
+    });
+  });
+
+  it('opens a tunnel to an alias server with only the alias and the port', async () => {
+    const harness = createHarness();
+
+    await harness.session.connect();
+
+    expect(harness.openTunnel).toHaveBeenCalledWith({
+      kind: 'ssh-alias',
+      alias: ALIAS,
+      remotePort: REMOTE_PORT,
+    });
+  });
+
+  it('reconnects a manually entered server the same way it first connected', async () => {
+    const harness = createHarness({
+      record: manualRecord(),
+      storedTokens: { 'src-southwind-01': DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+
+    harness.tunnels[0]!.drop({ class: 'host-unreachable', message: 'lost' });
+    harness.timers.fireNext();
+
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    expect(harness.openTunnel).toHaveBeenCalledTimes(2);
+    expect(harness.tunnels).toHaveLength(2);
+  });
 });
 
 describe('ConnectedGatewaySession — credential custody', () => {
@@ -479,7 +573,7 @@ describe('ConnectedGatewaySession — credential custody', () => {
     const result = await harness.session.connect();
 
     expect(result.ok).toBe(true);
-    expect(harness.bootstrap).toHaveBeenCalledTimes(0);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(0);
     expect(harness.clients[0]?.presentedToken).toBe(DEVICE_TOKEN);
     expect(harness.clients[0]?.config.token).toBeUndefined();
     expect(harness.store.writes).toEqual([]);
@@ -491,8 +585,11 @@ describe('ConnectedGatewaySession — credential custody', () => {
 
     const result = await harness.session.connect();
 
-    expect(harness.bootstrap).toHaveBeenCalledTimes(1);
-    expect(harness.bootstrap).toHaveBeenCalledWith(ALIAS, harness.remoteExec);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
+    expect(harness.resolveCredential).toHaveBeenCalledWith(
+      harness.record.transport,
+      { exec: harness.remoteExec }
+    );
     expect(harness.clients[0]?.presentedToken).toBe(SHARED_SECRET);
     expect(harness.store.writes).toEqual([
       { id: SOURCE_ID, token: DEVICE_TOKEN },
@@ -595,7 +692,7 @@ describe('ConnectedGatewaySession — failure classification', () => {
       );
       expect(harness.session.phase).toBe('failed');
       expect(harness.session.status().state).toBe('unavailable');
-      expect(harness.bootstrap).not.toHaveBeenCalled();
+      expect(harness.resolveCredential).not.toHaveBeenCalled();
     }
   );
 

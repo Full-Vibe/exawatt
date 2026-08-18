@@ -14,13 +14,19 @@ import { stopChildProcess } from './child-process-lifecycle';
  *
  * Two properties matter more than anything else here.
  *
- * 1. Nothing operator-controlled may reach `ssh` as an option. An SSH alias is
- *    a string the operator types or picks, and `ssh` reads a leading dash as an
- *    option, so an unvalidated alias is remote code execution on this machine
- *    (see `isSafeAlias`).
+ * 1. Nothing operator-controlled may reach `ssh` as an option. Every part of a
+ *    destination is a string the operator types or picks, and `ssh` reads a
+ *    leading dash as an option, so an unvalidated alias, host, user, or key
+ *    path is remote code execution on this machine (see
+ *    `resolveSshDestination`).
  * 2. No failure detail may carry infrastructure identity. `ssh` stderr names
  *    hosts, users, ports, and key paths; those never leave this module. Each
  *    failure class maps to one fixed operator-facing sentence instead.
+ *
+ * This module also owns the SSH DESTINATION model, which `gateway-bootstrap.ts`
+ * shares. Both modules hand operator-supplied server access to `ssh`, and the
+ * validation that keeps it inert is the one thing neither may reimplement: a
+ * second copy is a second chance to get it wrong.
  */
 
 export type SshTunnelFailureClass =
@@ -41,15 +47,32 @@ export interface SshTunnelFailure {
   message: string;
 }
 
-export interface SshTunnelTarget {
-  /** An alias from the operator's own SSH config. */
-  alias: string;
+/**
+ * How to reach one server, in the two shapes a configured source can hold.
+ *
+ * The discriminants match `SourceTransport`'s so the persisted record and the
+ * thing handed to `ssh` are read with the same vocabulary. The alias case is
+ * the ordinary one: the operator's own SSH configuration supplies host, user,
+ * port, and key. The manual case is for an operator with no config entry, and
+ * every field it carries is one more argument that has to be proved inert.
+ */
+export type SshDestination =
+  | { kind: 'ssh-alias'; alias: string }
+  | {
+      kind: 'ssh-manual';
+      host: string;
+      user: string;
+      port: number;
+      identityFile: string | null;
+    };
+
+export type SshTunnelTarget = SshDestination & {
   /** Port the Gateway listens on, on the remote loopback interface. */
   remotePort: number;
   /** Defaults to 127.0.0.1. */
   remoteHost?: string;
   connectTimeoutSeconds?: number;
-}
+};
 
 export interface SshTunnel {
   /** Loopback port on this machine that now forwards to the remote Gateway. */
@@ -112,11 +135,11 @@ const MESSAGE_MAX = 200;
  */
 const FAILURE_MESSAGES: Record<SshTunnelFailureClass, string> = {
   'invalid-target':
-    'That SSH target cannot be used. Check the alias, remote host, and remote port, then try again.',
+    'That SSH target cannot be used. Check the server details and the Gateway port, then try again.',
   'host-unreachable':
     'Could not reach that server over SSH. Check that it is online and reachable from this machine.',
   'auth-rejected':
-    'The server refused the SSH login. Check that your key is loaded and authorized for this alias.',
+    'The server refused the SSH login. Check that your key is loaded and authorized for that login.',
   'gateway-down':
     'The server was reached but the Gateway port did not forward. Check that the Gateway is running there.',
   unknown:
@@ -126,8 +149,17 @@ const FAILURE_MESSAGES: Record<SshTunnelFailureClass, string> = {
 const INVALID_TARGET_REASONS = {
   alias:
     'That SSH alias is not usable. Use an alias from your SSH config made of letters, numbers, dots, dashes, or underscores.',
-  host: 'That remote host is not usable. Use the loopback address the Gateway listens on, normally 127.0.0.1.',
-  port: 'That remote port is not usable. Use the port the Gateway listens on, between 1 and 65535.',
+  server_host:
+    'That server address is not usable. Use a hostname or an IPv4 address with no other characters.',
+  user: 'That login name is not usable. Use a name made of letters, numbers, dots, dashes, or underscores.',
+  ssh_port:
+    'That SSH port is not usable. Use the port the server accepts SSH on, between 1 and 65535.',
+  identity_file:
+    'That key file path is not usable. Use the full path to the private key file, starting with a slash.',
+  remote_host:
+    'That remote host is not usable. Use the loopback address the Gateway listens on, normally 127.0.0.1.',
+  remote_port:
+    'That remote port is not usable. Use the port the Gateway listens on, between 1 and 65535.',
   timeout: `That connect timeout is not usable. Use a whole number of seconds between 1 and ${MAX_CONNECT_TIMEOUT_SECONDS}.`,
   port_allocation:
     'Could not reserve a local port for the tunnel. Close other software holding loopback ports and try again.',
@@ -163,6 +195,10 @@ const IPV4_PATTERN =
 const HOSTNAME_PATTERN =
   /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
 
+const USER_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+/** Absolute, and nothing a terminal, a log line, or `ssh` could reinterpret. */
+const IDENTITY_FILE_PATTERN = /^\/[^\u0000-\u0020\u007f]{1,511}$/;
+
 /**
  * An alias is operator-supplied text that we hand to `ssh` as a bare argument,
  * and `ssh` parses any argument beginning with `-` as an OPTION. So an alias of
@@ -170,8 +206,9 @@ const HOSTNAME_PATTERN =
  * on this machine. The character class also excludes whitespace, quotes, and
  * shell metacharacters so the value stays inert if it is ever logged or echoed.
  *
- * This check runs before anything is spawned, and `buildSshArgs` additionally
- * places `--` ahead of the alias so neither guard alone is load-bearing.
+ * This check runs before anything is spawned, and `buildDestinationArgs`
+ * additionally places `--` ahead of the destination so neither guard alone is
+ * load-bearing.
  */
 function isSafeAlias(alias: unknown): alias is string {
   return (
@@ -181,7 +218,7 @@ function isSafeAlias(alias: unknown): alias is string {
   );
 }
 
-function isSafeRemoteHost(host: unknown): host is string {
+function isSafeHost(host: unknown): host is string {
   if (typeof host !== 'string' || host.startsWith('-')) return false;
   // An all-numeric host is an address, so hold it to address rules. DNS syntax
   // would happily accept `999.1.1.1` as a hostname, and accepting a mistyped
@@ -189,6 +226,29 @@ function isSafeRemoteHost(host: unknown): host is string {
   // operator never meant to send anywhere.
   if (/^[0-9.]+$/.test(host)) return IPV4_PATTERN.test(host);
   return HOSTNAME_PATTERN.test(host);
+}
+
+/**
+ * The login name travels as the left half of `user@host`, so it is held to the
+ * same rule as the alias: no leading dash, and none of the characters that
+ * would let it grow a second destination, an option, or a shell word.
+ */
+function isSafeUser(user: unknown): user is string {
+  return (
+    typeof user === 'string' && !user.startsWith('-') && USER_PATTERN.test(user)
+  );
+}
+
+/**
+ * A key path reaches `ssh` as the value of `-i`, so a relative path or one
+ * beginning with a dash is refused outright: requiring a leading slash rejects
+ * every option-shaped value by construction. Whitespace and control characters
+ * are refused for the reason the alias grammar refuses them: the value stays
+ * one inert word wherever it is later printed, and a path that looks like two
+ * arguments never reads as two.
+ */
+function isSafeIdentityFile(path: unknown): path is string {
+  return typeof path === 'string' && IDENTITY_FILE_PATTERN.test(path);
 }
 
 function isPort(value: unknown): value is number {
@@ -199,8 +259,108 @@ function isPort(value: unknown): value is number {
   );
 }
 
+/** Which part of a destination was refused. One reason, one fixed sentence. */
+export type SshDestinationFault =
+  | 'alias'
+  | 'server_host'
+  | 'user'
+  | 'ssh_port'
+  | 'identity_file';
+
+/**
+ * Validate one destination and rebuild it as a fresh literal, so unknown fields
+ * on the input are dropped rather than carried toward `ssh`.
+ */
+export function resolveSshDestination(
+  value: unknown
+):
+  | { ok: true; destination: SshDestination }
+  | { ok: false; fault: SshDestinationFault } {
+  if (!value || typeof value !== 'object') {
+    return { ok: false, fault: 'alias' };
+  }
+  const candidate = value as Partial<Record<string, unknown>>;
+
+  if (candidate.kind === 'ssh-manual') {
+    if (!isSafeHost(candidate.host)) {
+      return { ok: false, fault: 'server_host' };
+    }
+    if (!isSafeUser(candidate.user)) return { ok: false, fault: 'user' };
+    if (!isPort(candidate.port)) return { ok: false, fault: 'ssh_port' };
+    const identityFile = candidate.identityFile ?? null;
+    if (identityFile !== null && !isSafeIdentityFile(identityFile)) {
+      return { ok: false, fault: 'identity_file' };
+    }
+    return {
+      ok: true,
+      destination: {
+        kind: 'ssh-manual',
+        host: candidate.host,
+        user: candidate.user,
+        port: candidate.port,
+        identityFile,
+      },
+    };
+  }
+
+  if (!isSafeAlias(candidate.alias)) return { ok: false, fault: 'alias' };
+  return {
+    ok: true,
+    destination: { kind: 'ssh-alias', alias: candidate.alias },
+  };
+}
+
+/**
+ * The tail of every `ssh` argument vector: the options a destination needs,
+ * then `--`, then the destination itself.
+ *
+ * - `-p` carries the SSH port for a manually entered server; an alias takes its
+ *   port from the operator's own SSH configuration.
+ * - `IdentitiesOnly=yes` accompanies `-i` so `ssh` offers the named key and
+ *   nothing else. Without it an agent holding several keys offers them all and
+ *   the server closes the connection with "too many authentication failures",
+ *   which reads as a refused login rather than as the wrong key.
+ * - `--` ends option parsing, so neither an alias nor a `user@host` can be read
+ *   as an option even if validation above were ever weakened.
+ *
+ * Throws on an unusable destination. Callers validate first; the throw is the
+ * last line of defence for anyone else.
+ */
+export function buildDestinationArgs(
+  destination: SshDestination
+): readonly string[] {
+  const resolved = resolveSshDestination(destination);
+  if (!resolved.ok) {
+    throw new Error('Refusing to build an ssh command for an unusable target');
+  }
+  if (resolved.destination.kind === 'ssh-alias') {
+    return ['--', resolved.destination.alias];
+  }
+  const { host, user, port, identityFile } = resolved.destination;
+  return [
+    '-p',
+    String(port),
+    ...(identityFile === null
+      ? []
+      : ['-o', 'IdentitiesOnly=yes', '-i', identityFile]),
+    '--',
+    `${user}@${host}`,
+  ];
+}
+
+const DESTINATION_FAULT_REASONS: Record<
+  SshDestinationFault,
+  InvalidTargetReason
+> = {
+  alias: 'alias',
+  server_host: 'server_host',
+  user: 'user',
+  ssh_port: 'ssh_port',
+  identity_file: 'identity_file',
+};
+
 interface ResolvedTarget {
-  alias: string;
+  destination: SshDestination;
   remoteHost: string;
   remotePort: number;
   connectTimeoutSeconds: number;
@@ -214,15 +374,19 @@ function resolveTarget(
   if (!target || typeof target !== 'object') {
     return { ok: false, failure: invalidTarget('alias') };
   }
-  if (!isSafeAlias(target.alias)) {
-    return { ok: false, failure: invalidTarget('alias') };
+  const destination = resolveSshDestination(target);
+  if (!destination.ok) {
+    return {
+      ok: false,
+      failure: invalidTarget(DESTINATION_FAULT_REASONS[destination.fault]),
+    };
   }
   const remoteHost = target.remoteHost ?? LOOPBACK_HOST;
-  if (!isSafeRemoteHost(remoteHost)) {
-    return { ok: false, failure: invalidTarget('host') };
+  if (!isSafeHost(remoteHost)) {
+    return { ok: false, failure: invalidTarget('remote_host') };
   }
   if (!isPort(target.remotePort)) {
-    return { ok: false, failure: invalidTarget('port') };
+    return { ok: false, failure: invalidTarget('remote_port') };
   }
   const connectTimeoutSeconds =
     target.connectTimeoutSeconds ?? DEFAULT_CONNECT_TIMEOUT_SECONDS;
@@ -236,7 +400,7 @@ function resolveTarget(
   return {
     ok: true,
     target: {
-      alias: target.alias,
+      destination: destination.destination,
       remoteHost,
       remotePort: target.remotePort,
       connectTimeoutSeconds,
@@ -259,15 +423,25 @@ function resolveTarget(
  * - `ConnectTimeout` bounds the TCP/handshake phase inside `ssh` itself.
  * - `StrictHostKeyChecking=accept-new` accepts a first-sight host key but still
  *   refuses a CHANGED one, which is the case that means interception.
- * - `--` ends option parsing so the alias can never be read as an option.
+ * - The destination tail from `buildDestinationArgs` ends with `--`, so neither
+ *   an alias nor a `user@host` can ever be read as an option.
  */
 export function buildSshArgs(
   target: SshTunnelTarget,
   localPort: number
 ): readonly string[] {
-  const remoteHost = target.remoteHost ?? LOOPBACK_HOST;
-  const connectTimeoutSeconds =
-    target.connectTimeoutSeconds ?? DEFAULT_CONNECT_TIMEOUT_SECONDS;
+  const resolved = resolveTarget(target);
+  if (!resolved.ok) {
+    throw new Error('Refusing to build an ssh command for an unusable target');
+  }
+  return buildArgsFor(resolved.target, localPort);
+}
+
+function buildArgsFor(
+  target: ResolvedTarget,
+  localPort: number
+): readonly string[] {
+  const { remoteHost, connectTimeoutSeconds } = target;
   return [
     '-N',
     '-T',
@@ -294,8 +468,7 @@ export function buildSshArgs(
     'ControlPath=none',
     '-L',
     `${LOOPBACK_HOST}:${localPort}:${remoteHost}:${target.remotePort}`,
-    '--',
-    target.alias,
+    ...buildDestinationArgs(target.destination),
   ];
 }
 
@@ -335,6 +508,19 @@ const STDERR_PATTERNS: ReadonlyArray<{
     pattern: /host key verification failed/i,
     failureClass: 'auth-rejected',
   },
+  /*
+   * Only the manual path can produce these: an alias takes its key from the
+   * operator's own SSH configuration, while a manually entered server names a
+   * key file that may be missing, unreadable, or the wrong one. Without them a
+   * bad key path exits with an unclassifiable stderr and the operator is told
+   * to open diagnostics instead of to check the key file they just typed.
+   */
+  { pattern: /no such identity/i, failureClass: 'auth-rejected' },
+  {
+    pattern: /identity file .* not accessible/i,
+    failureClass: 'auth-rejected',
+  },
+  { pattern: /bad permissions/i, failureClass: 'auth-rejected' },
 
   { pattern: /could not resolve hostname/i, failureClass: 'host-unreachable' },
   { pattern: /name or service not known/i, failureClass: 'host-unreachable' },
@@ -527,7 +713,7 @@ export async function openSshTunnel(
     return { ok: false, failure: invalidTarget('port_allocation') };
   }
 
-  const args = buildSshArgs(resolved.target, localPort);
+  const args = buildArgsFor(resolved.target, localPort);
 
   let child: ChildProcess;
   try {

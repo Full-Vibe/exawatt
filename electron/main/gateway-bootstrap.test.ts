@@ -1,15 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  bootstrapGatewayCredential,
+  bootstrapGatewayCredentialOverSsh,
+  bootstrapLocalGatewayCredential,
   buildRemoteExecArgs,
   createSshRemoteExec,
   FALLBACK_GATEWAY_PORT,
   parseConfigToken,
   parseGatewayPort,
   parseOpenClawVersion,
+  resolveGatewayCredential,
+  type LocalGatewaySource,
   type RemoteExec,
   type RemoteExecResult,
 } from './gateway-bootstrap';
+import type { SshDestination } from './ssh-tunnel';
+import type { OCGatewayConfig, SourceTransport } from '@exawatt/core';
 
 vi.mock('electron', () => ({}));
 
@@ -21,8 +26,22 @@ vi.mock('electron', () => ({}));
 const ALIAS = 'build-box';
 const FAKE_HOST = 'build-box.invalid';
 const FAKE_USER = 'fixture-operator';
+const FAKE_KEY_PATH = '/home/fixture-operator/keys/id_fixture';
+const FAKE_SSH_PORT = 2202;
 const CLI_TOKEN = 'cli-fixture-token-0001';
 const FILE_TOKEN = 'file-fixture-token-0002';
+const LOCAL_TOKEN = 'local-fixture-token-0003';
+const SECRET_FILE_TOKEN = 'secret-file-fixture-token-0004';
+
+/** The two ways a remote source is reached. */
+const ALIAS_DESTINATION: SshDestination = { kind: 'ssh-alias', alias: ALIAS };
+const MANUAL_DESTINATION: SshDestination = {
+  kind: 'ssh-manual',
+  host: FAKE_HOST,
+  user: FAKE_USER,
+  port: FAKE_SSH_PORT,
+  identityFile: FAKE_KEY_PATH,
+};
 
 const VERSION_PRINT = 'OpenClaw 2026.7.1-2 (abc1234)\n';
 
@@ -44,7 +63,7 @@ const INDIRECTION_CONFIG = JSON.stringify({
 });
 
 interface ExecCall {
-  alias: string;
+  destination: SshDestination;
   argv: readonly string[];
 }
 
@@ -61,8 +80,8 @@ function fakeExec(responder: Responder): {
   calls: ExecCall[];
 } {
   const calls: ExecCall[] = [];
-  const exec: RemoteExec = async (alias, argv) => {
-    calls.push({ alias, argv });
+  const exec: RemoteExec = async (destination, argv) => {
+    calls.push({ destination, argv });
     const answer = responder(argv) ?? {};
     return {
       // Explicit null means "killed at the deadline" and must survive here.
@@ -92,7 +111,10 @@ function healthyResponder(overrides: Responder = () => undefined): Responder {
 
 describe('buildRemoteExecArgs', () => {
   it('places -- before the alias and the remote command after it', () => {
-    const args = buildRemoteExecArgs(ALIAS, ['openclaw', '--version']);
+    const args = buildRemoteExecArgs(ALIAS_DESTINATION, [
+      'openclaw',
+      '--version',
+    ]);
     expect(args).toEqual([
       '-T',
       '-o',
@@ -110,7 +132,10 @@ describe('buildRemoteExecArgs', () => {
   });
 
   it('never prompts and never allocates a TTY', () => {
-    const args = buildRemoteExecArgs(ALIAS, ['openclaw', '--version']);
+    const args = buildRemoteExecArgs(ALIAS_DESTINATION, [
+      'openclaw',
+      '--version',
+    ]);
     expect(args).toContain('-T');
     expect(args).toContain('BatchMode=yes');
     expect(args.some(arg => arg.startsWith('ConnectTimeout='))).toBe(true);
@@ -126,7 +151,9 @@ describe('buildRemoteExecArgs', () => {
     '',
     'x'.repeat(256),
   ])('refuses to build a command for alias %j', alias => {
-    expect(() => buildRemoteExecArgs(alias, ['openclaw'])).toThrow();
+    expect(() =>
+      buildRemoteExecArgs({ kind: 'ssh-alias', alias }, ['openclaw'])
+    ).toThrow();
   });
 
   it.each([
@@ -147,19 +174,21 @@ describe('buildRemoteExecArgs', () => {
     '~/x',
     '#x',
   ])('refuses a remote argument containing %j', argument => {
-    expect(() => buildRemoteExecArgs(ALIAS, ['cat', argument])).toThrow();
+    expect(() =>
+      buildRemoteExecArgs(ALIAS_DESTINATION, ['cat', argument])
+    ).toThrow();
   });
 
   it('refuses an empty or oversized remote command', () => {
-    expect(() => buildRemoteExecArgs(ALIAS, [])).toThrow();
+    expect(() => buildRemoteExecArgs(ALIAS_DESTINATION, [])).toThrow();
     expect(() =>
-      buildRemoteExecArgs(ALIAS, new Array(64).fill('openclaw'))
+      buildRemoteExecArgs(ALIAS_DESTINATION, new Array(64).fill('openclaw'))
     ).toThrow();
   });
 
   it('accepts the punctuation the bootstrap commands actually need', () => {
     expect(() =>
-      buildRemoteExecArgs(ALIAS, [
+      buildRemoteExecArgs(ALIAS_DESTINATION, [
         'openclaw',
         'config',
         'get',
@@ -167,7 +196,7 @@ describe('buildRemoteExecArgs', () => {
       ])
     ).not.toThrow();
     expect(() =>
-      buildRemoteExecArgs(ALIAS, ['cat', '.openclaw/openclaw.json'])
+      buildRemoteExecArgs(ALIAS_DESTINATION, ['cat', '.openclaw/openclaw.json'])
     ).not.toThrow();
   });
 });
@@ -280,7 +309,7 @@ describe('parseOpenClawVersion', () => {
   });
 });
 
-describe('bootstrapGatewayCredential alias validation', () => {
+describe('bootstrapGatewayCredentialOverSsh destination validation', () => {
   it.each([
     ['a proxy-command option', '-oProxyCommand=id'],
     ['a bare option', '-J'],
@@ -293,7 +322,10 @@ describe('bootstrapGatewayCredential alias validation', () => {
     ['a leading dash', '-build-box'],
   ])('rejects %s before running anything', async (_label, alias) => {
     const { exec, calls } = fakeExec(healthyResponder());
-    const result = await bootstrapGatewayCredential(alias, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      { kind: 'ssh-alias', alias },
+      exec
+    );
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.failure).toBe('invalid-target');
     // The point of the packet: nothing reached ssh at all.
@@ -302,19 +334,29 @@ describe('bootstrapGatewayCredential alias validation', () => {
 
   it('accepts an ordinary alias', async () => {
     const { exec, calls } = fakeExec(healthyResponder());
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok).toBe(true);
-    expect(calls.every(call => call.alias === ALIAS)).toBe(true);
+    // Rebuilt, not passed through: the destination that reaches ssh is a
+    // fresh literal, so nothing extra on the caller's object can travel.
+    for (const call of calls) {
+      expect(call.destination).toEqual(ALIAS_DESTINATION);
+    }
   });
 });
 
-describe('bootstrapGatewayCredential token acquisition', () => {
+describe('bootstrapGatewayCredentialOverSsh token acquisition', () => {
   it('prefers the config file, which is where the real token lives', async () => {
     // Against a live Gateway, `config get gateway.auth.token` answered with a
     // short masked value rather than the credential, and pairing failed while
     // a working token sat in the file. Secret-reading CLIs mask by default.
     const { exec, calls } = fakeExec(healthyResponder());
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -334,14 +376,16 @@ describe('bootstrapGatewayCredential token acquisition', () => {
 
   it('runs only remote arguments that survive the allowlist', async () => {
     const { exec, calls } = fakeExec(healthyResponder());
-    await bootstrapGatewayCredential(ALIAS, exec);
+    await bootstrapGatewayCredentialOverSsh(ALIAS_DESTINATION, exec);
     for (const call of calls) {
       for (const argument of call.argv) {
         expect(argument).toMatch(/^[A-Za-z0-9._:@+,=/-]+$/);
       }
       // Every command this module runs must also be buildable, which is the
       // guard the default exec relies on.
-      expect(() => buildRemoteExecArgs(call.alias, call.argv)).not.toThrow();
+      expect(() =>
+        buildRemoteExecArgs(call.destination, call.argv)
+      ).not.toThrow();
     }
   });
 
@@ -356,7 +400,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
           : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
     expect(result.ok && result.facts.tokenSource).toBe('config-file');
   });
@@ -369,7 +416,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
           : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.tokenSource).toBe('config-file');
   });
 
@@ -381,7 +431,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
           argv.includes('get') ? { stdout } : undefined
         )
       );
-      const result = await bootstrapGatewayCredential(ALIAS, exec);
+      const result = await bootstrapGatewayCredentialOverSsh(
+        ALIAS_DESTINATION,
+        exec
+      );
       expect(result.ok && result.facts.tokenSource).toBe('config-file');
     }
   );
@@ -392,7 +445,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
         argv.includes('get') ? { code: 1, stderr: 'unknown key' } : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
   });
 
@@ -406,7 +462,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
         return undefined;
       })
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.sharedToken).toBe(CLI_TOKEN);
     expect(result.ok && result.facts.tokenSource).toBe('cli');
   });
@@ -419,7 +478,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
         return undefined;
       })
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.failure).toBe('token-unavailable');
     expect(result.ok === false && result.message).toMatch(/paste the token/i);
@@ -440,7 +502,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
         return undefined;
       })
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok === false && result.failure).toBe('unreadable-config');
   });
 
@@ -452,7 +517,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
         return undefined;
       })
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok === false && result.failure).toBe('unreadable-config');
   });
 
@@ -462,7 +530,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
         argv[0] === 'cat' ? { code: 2, stderr: 'is a directory' } : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.sharedToken).toBe(CLI_TOKEN);
     // The port is the only thing the failed read cost us.
     expect(result.ok && result.facts.gatewayPort).toBe(FALLBACK_GATEWAY_PORT);
@@ -480,7 +551,10 @@ describe('bootstrapGatewayCredential token acquisition', () => {
           : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.gatewayPort).toBe(FALLBACK_GATEWAY_PORT);
   });
 
@@ -492,13 +566,16 @@ describe('bootstrapGatewayCredential token acquisition', () => {
           : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok && result.facts.version).toBeNull();
     expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
   });
 });
 
-describe('bootstrapGatewayCredential failure classification', () => {
+describe('bootstrapGatewayCredentialOverSsh failure classification', () => {
   /** [label, remote exit code, stderr, expected failure] */
   const cases: ReadonlyArray<[string, number, string, string]> = [
     // A missing binary is the REMOTE shell's status, never ssh's own 255.
@@ -592,7 +669,10 @@ describe('bootstrapGatewayCredential failure classification', () => {
         argv.includes('--version') ? { code, stderr } : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.failure).toBe(expected);
   });
@@ -605,7 +685,10 @@ describe('bootstrapGatewayCredential failure classification', () => {
           : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok === false && result.failure).toBe('auth-rejected');
   });
 
@@ -622,7 +705,10 @@ describe('bootstrapGatewayCredential failure classification', () => {
         return undefined;
       })
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok === false && result.failure).toBe('unreachable');
   });
 
@@ -632,7 +718,10 @@ describe('bootstrapGatewayCredential failure classification', () => {
         argv.includes('--version') ? { code: null, stderr: '' } : undefined
       )
     );
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok === false && result.failure).toBe('unreachable');
   });
 
@@ -640,21 +729,24 @@ describe('bootstrapGatewayCredential failure classification', () => {
     const exec: RemoteExec = async () => {
       throw new Error(`ssh to ${FAKE_HOST} blew up`);
     };
-    const result = await bootstrapGatewayCredential(ALIAS, exec);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
     expect(result.ok === false && result.failure).toBe('unknown');
     expect(result.ok === false && result.message).not.toContain(FAKE_HOST);
   });
 
   it('returns unknown rather than throwing when no exec is supplied', async () => {
-    const result = await bootstrapGatewayCredential(
-      ALIAS,
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
       undefined as unknown as RemoteExec
     );
     expect(result.ok === false && result.failure).toBe('unknown');
   });
 });
 
-describe('bootstrapGatewayCredential redaction', () => {
+describe('bootstrapGatewayCredentialOverSsh redaction', () => {
   it('never echoes infrastructure identity or a token into a message', async () => {
     const noisy = [
       `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`,
@@ -681,7 +773,10 @@ describe('bootstrapGatewayCredential redaction', () => {
           return undefined;
         })
       );
-      const result = await bootstrapGatewayCredential(ALIAS, exec);
+      const result = await bootstrapGatewayCredentialOverSsh(
+        ALIAS_DESTINATION,
+        exec
+      );
       expect(result.ok).toBe(false);
       const message = result.ok === false ? result.message : '';
       expect(message).not.toContain(FAKE_HOST);
@@ -708,11 +803,305 @@ describe('bootstrapGatewayCredential redaction', () => {
           argv.includes('--version') ? { code, stderr } : undefined
         )
       );
-      const result = await bootstrapGatewayCredential(ALIAS, exec);
+      const result = await bootstrapGatewayCredentialOverSsh(
+        ALIAS_DESTINATION,
+        exec
+      );
       if (result.ok === false) seen.set(result.failure, result.message);
     }
     expect(seen.size).toBe(3);
     expect(new Set(seen.values()).size).toBe(3);
+  });
+});
+
+/**
+ * The local Gateway is the operator's own machine. Nothing is executed for it,
+ * so every test here asserts a read and none of them supplies an exec.
+ */
+function fakeLocal(
+  config: unknown,
+  secrets: Record<string, string> = {}
+): { source: LocalGatewaySource; reads: string[] } {
+  const reads: string[] = [];
+  return {
+    reads,
+    source: {
+      readConfig: () => config as OCGatewayConfig | null,
+      readSecret: name => {
+        reads.push(name);
+        return secrets[name] ?? null;
+      },
+    },
+  };
+}
+
+describe('bootstrapLocalGatewayCredential', () => {
+  it('reads a literal token straight out of this machine configuration', async () => {
+    const { source, reads } = fakeLocal({
+      gateway: { port: 4242, auth: { mode: 'token', token: LOCAL_TOKEN } },
+    });
+
+    const result = await bootstrapLocalGatewayCredential(source);
+
+    expect(result).toEqual({
+      ok: true,
+      facts: {
+        // No local command is run, so no version is claimed. The Gateway
+        // reports its own on `status` once the session is up.
+        version: null,
+        gatewayPort: 4242,
+        sharedToken: LOCAL_TOKEN,
+        tokenSource: 'config-file',
+      },
+    });
+    // A literal token is the whole answer: no secret file is opened.
+    expect(reads).toEqual([]);
+  });
+
+  it('resolves the indirection by reading the secret file it names', async () => {
+    // The shape the live probe found on the operator's own machine: the config
+    // says WHERE the secret is, not what it is.
+    const { source, reads } = fakeLocal(
+      {
+        gateway: {
+          port: 4242,
+          auth: {
+            mode: 'token',
+            token: {
+              source: 'file',
+              provider: 'gateway_auth_token',
+              id: 'value',
+            },
+          },
+        },
+      },
+      { 'gateway-auth-token': `${SECRET_FILE_TOKEN}\n` }
+    );
+
+    const result = await bootstrapLocalGatewayCredential(source);
+
+    expect(result.ok && result.facts.sharedToken).toBe(SECRET_FILE_TOKEN);
+    expect(result.ok && result.facts.tokenSource).toBe('secret-file');
+    expect(result.ok && result.facts.gatewayPort).toBe(4242);
+    // Both spellings of the SAME provider name, and nothing else.
+    expect(reads).toEqual(['gateway_auth_token', 'gateway-auth-token']);
+  });
+
+  it('reports token-unavailable when the named secret is not there', async () => {
+    const { source } = fakeLocal({
+      gateway: {
+        auth: {
+          token: {
+            source: 'file',
+            provider: 'gateway_auth_token',
+            id: 'value',
+          },
+        },
+      },
+    });
+
+    const result = await bootstrapLocalGatewayCredential(source);
+
+    // Distinct from unreadable-config on purpose: the configuration was read
+    // fine, so the operator supplies a token rather than fixing a permission.
+    expect(result.ok === false && result.failure).toBe('token-unavailable');
+    expect(result.ok === false && result.message).toMatch(/paste the token/i);
+  });
+
+  it.each([
+    [
+      'an unimplemented secret source',
+      { source: 'keychain', provider: 'gateway_auth_token', id: 'value' },
+    ],
+    [
+      'a field selector it cannot honour',
+      { source: 'file', provider: 'gateway_auth_token', id: 'inner.field' },
+    ],
+    [
+      'a provider that names a path',
+      { source: 'file', provider: '../../etc/passwd', id: 'value' },
+    ],
+    [
+      'a provider with a traversal segment',
+      { source: 'file', provider: '..', id: 'value' },
+    ],
+    ['no provider at all', { source: 'file', id: 'value' }],
+  ])('refuses to guess at %s', async (_label, token) => {
+    const { source, reads } = fakeLocal(
+      { gateway: { auth: { token } } },
+      { 'gateway-auth-token': SECRET_FILE_TOKEN }
+    );
+
+    const result = await bootstrapLocalGatewayCredential(source);
+
+    expect(result.ok === false && result.failure).toBe('token-unavailable');
+    // Nothing was opened: config text never chooses which file gets read.
+    expect(reads).toEqual([]);
+  });
+
+  it('ignores an empty or oversized secret file rather than pairing with it', async () => {
+    const { source } = fakeLocal(
+      {
+        gateway: {
+          auth: {
+            token: {
+              source: 'file',
+              provider: 'gateway_auth_token',
+              id: 'value',
+            },
+          },
+        },
+      },
+      { 'gateway-auth-token': '   \n' }
+    );
+
+    const result = await bootstrapLocalGatewayCredential(source);
+    expect(result.ok === false && result.failure).toBe('token-unavailable');
+  });
+
+  it.each([
+    ['no configuration at all', null],
+    ['a configuration with no gateway section', {}],
+    ['a gateway section that is not a record', { gateway: 'local' }],
+  ])('reports unreadable-config for %s', async (_label, config) => {
+    const { source } = fakeLocal(config);
+    const result = await bootstrapLocalGatewayCredential(source);
+    expect(result.ok === false && result.failure).toBe('unreadable-config');
+  });
+
+  it('falls back to the documented port when none is declared', async () => {
+    const { source } = fakeLocal({
+      gateway: { auth: { mode: 'token', token: LOCAL_TOKEN } },
+    });
+    const result = await bootstrapLocalGatewayCredential(source);
+    expect(result.ok && result.facts.gatewayPort).toBe(FALLBACK_GATEWAY_PORT);
+  });
+
+  it('fails closed when the reader itself throws', async () => {
+    const source: LocalGatewaySource = {
+      readConfig: () => {
+        throw new Error(`cannot read ${FAKE_KEY_PATH}`);
+      },
+      readSecret: () => null,
+    };
+    const result = await bootstrapLocalGatewayCredential(source);
+    expect(result.ok === false && result.failure).toBe('unreadable-config');
+    expect(result.ok === false && result.message).not.toContain(FAKE_KEY_PATH);
+  });
+});
+
+describe('resolveGatewayCredential', () => {
+  const localSource = () =>
+    fakeLocal({
+      gateway: { port: 4242, auth: { mode: 'token', token: LOCAL_TOKEN } },
+    });
+
+  it('sends an alias source over SSH as an alias destination', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+
+    const result = await resolveGatewayCredential(
+      { kind: 'ssh-alias', alias: ALIAS, remotePort: 4242 },
+      { exec }
+    );
+
+    expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
+    expect(calls[0]?.destination).toEqual({ kind: 'ssh-alias', alias: ALIAS });
+  });
+
+  it('sends a manually entered source over SSH as a manual destination', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+    const transport: SourceTransport = {
+      kind: 'ssh-manual',
+      host: FAKE_HOST,
+      user: FAKE_USER,
+      port: FAKE_SSH_PORT,
+      identityFile: FAKE_KEY_PATH,
+      remotePort: 4242,
+    };
+
+    const result = await resolveGatewayCredential(transport, { exec });
+
+    expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      // The forward port is connection material for the tunnel, not part of
+      // the destination the bootstrap logs into.
+      expect(call.destination).toEqual(MANUAL_DESTINATION);
+    }
+  });
+
+  it('reads the local source here, and executes nothing at all', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+    const local = localSource();
+
+    const result = await resolveGatewayCredential(
+      { kind: 'local-loopback', port: 4599 },
+      { exec, local: local.source }
+    );
+
+    expect(result.ok && result.facts.sharedToken).toBe(LOCAL_TOKEN);
+    expect(result.ok && result.facts.tokenSource).toBe('config-file');
+    // The whole point of the local path: no ssh, no remote command, no hop.
+    expect(calls).toEqual([]);
+  });
+
+  it('fails closed on a transport kind it does not know', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+
+    const result = await resolveGatewayCredential(
+      { kind: 'carrier-pigeon' } as unknown as SourceTransport,
+      { exec }
+    );
+
+    expect(result.ok === false && result.failure).toBe('invalid-target');
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('buildRemoteExecArgs for a manually entered server', () => {
+  it('carries the port, the key, and the end-of-options marker', () => {
+    expect(
+      buildRemoteExecArgs(MANUAL_DESTINATION, ['openclaw', '--version'])
+    ).toEqual([
+      '-T',
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=10',
+      '-o',
+      'StrictHostKeyChecking=accept-new',
+      '-p',
+      String(FAKE_SSH_PORT),
+      '-o',
+      'IdentitiesOnly=yes',
+      '-i',
+      FAKE_KEY_PATH,
+      '--',
+      `${FAKE_USER}@${FAKE_HOST}`,
+      'openclaw',
+      '--version',
+    ]);
+  });
+
+  it.each([
+    ['a host', { host: '-oProxyCommand=id' }],
+    ['a login', { user: 'fixture operator' }],
+    ['an SSH port', { port: 0 }],
+    ['a key file', { identityFile: 'keys/id_fixture' }],
+  ])('refuses to build a command for an unusable %s', (_label, overrides) => {
+    expect(() =>
+      buildRemoteExecArgs({ ...MANUAL_DESTINATION, ...overrides }, ['openclaw'])
+    ).toThrow();
+  });
+
+  it('refuses a manual destination before any command is run', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+    const result = await bootstrapGatewayCredentialOverSsh(
+      { ...MANUAL_DESTINATION, host: '-oProxyCommand=id' },
+      exec
+    );
+    expect(result.ok === false && result.failure).toBe('invalid-target');
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -724,7 +1113,10 @@ describe('createSshRemoteExec', () => {
 
   it('refuses an unusable alias without spawning ssh', async () => {
     const exec = createSshRemoteExec();
-    const result = await exec('-oProxyCommand=id', ['openclaw', '--version']);
+    const result = await exec(
+      { kind: 'ssh-alias', alias: '-oProxyCommand=id' },
+      ['openclaw', '--version']
+    );
     expect(result.code).toBeNull();
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('exawatt:ssh-launch-failed');
@@ -732,7 +1124,7 @@ describe('createSshRemoteExec', () => {
 
   it('refuses an unsafe remote argument without spawning ssh', async () => {
     const exec = createSshRemoteExec();
-    const result = await exec(ALIAS, ['cat', '/etc/passwd; id']);
+    const result = await exec(ALIAS_DESTINATION, ['cat', '/etc/passwd; id']);
     expect(result.code).toBeNull();
     expect(result.stderr).toContain('exawatt:ssh-launch-failed');
   });
@@ -741,8 +1133,12 @@ describe('createSshRemoteExec', () => {
     const exec = createSshRemoteExec();
     // The launch sentinel is what bootstrapGatewayCredential sees; route it
     // through the classifier by injecting the same shape.
-    const injected: RemoteExec = async () => await exec('-bad', ['openclaw']);
-    const result = await bootstrapGatewayCredential(ALIAS, injected);
+    const injected: RemoteExec = async () =>
+      await exec({ kind: 'ssh-alias', alias: '-bad' }, ['openclaw']);
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      injected
+    );
     expect(result.ok === false && result.failure).toBe('unknown');
   });
 });
