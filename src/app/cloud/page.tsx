@@ -95,7 +95,7 @@ export default function CloudPage() {
       surfaceId="cloud"
       width="wide"
       owner="ENG-033"
-      today="Every Agent runs locally today. The Session shown is Voltaic demo content."
+      today="Exawatt runs Agents on this machine and connects to Agents on servers you run. Exawatt-hosted placement is what this page previews. The Session shown is Voltaic demo content."
     >
       {/* The one action, before and after. */}
       <section
