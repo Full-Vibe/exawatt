@@ -165,7 +165,8 @@ All worktrees in one clone resolve the same state root:
 ├── ci-batch-worker.lock/
 ├── dogfood-request.json          # present only while work remains
 ├── dogfood-request.lock/
-└── dogfood-worker.lock/
+├── dogfood-worker.lock/
+└── public-source-lock.jsonl     # present only once a public remote is configured
 ```
 
 The short admission lock advances the counter before writing the ticket. A
@@ -232,7 +233,9 @@ Success output distinguishes:
 - `ci=queued|unsupported-remote|queue-failed`: whether the superseding hosted
   evidence request was accepted; it is not a hosted verdict;
 - `installed=not-requested|queued|queue-failed`: post-integration request state,
-  not proof that the app is already installed.
+  not proof that the app is already installed;
+- `public=published|pending|refused`: what the public projection did. The field
+  is absent entirely when no public remote is configured, which is the default.
 
 ## Batched hosted CI
 
@@ -294,6 +297,50 @@ For closeout requiring installation proof, check either the metric stream or
 the machine-local update state and compare its `installedSha` to the requested
 integrated SHA. A landing's `installed=queued` line alone is insufficient.
 
+## Public projection
+
+ENG-030's two-repository mechanism gives the landing one more step, and only
+when a Git remote named `public` exists. **No such remote means no projection,
+no output, and no state**: the landing is the landing it was before the step
+existed. That is the configuration today.
+
+When one is configured, the step runs after the private `master` push and
+before the ticket closes, **inside the delivery lock** that already serializes
+`master` pushes, so two landings cannot race the public remote. It projects
+the exact integrated SHA with `scripts/lib/public-projection.mjs` (Gate A
+decides what is public; recipes render the GENERATED variants), asserts the
+public remote's `master` is an ancestor of the projection, pushes without
+force, and appends the `{privateSha, publicSha}` pair to the source lock.
+
+Three outcomes, and none of them fails the landing, because the private push
+already succeeded and is the source of truth:
+
+| Outcome     | Meaning                                                                                | Response                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `published` | the public repository holds the projection of this exact private commit                | none; the report names what it did NOT receive (recipes with no renderer yet)              |
+| `pending`   | the pair is recorded and the push did not happen (network, outage, missing dependency) | none; the next landing's projection fast-forwards past both                                |
+| `refused`   | the projection does not descend from public `master`                                   | a manifest reclassified history; `pnpm open-source:reseed` is the only path that may force |
+
+The source lock is `public-source-lock.jsonl` under the delivery state root,
+not a tracked file: the projector runs after the private push, so a tracked
+lock would need a commit after the landing — dirtying the landed tree and
+demanding a projection of its own. It is provenance, not authority; the
+mapping is recomputable, because projection is a pure function of source
+history.
+
+`pnpm open-source:reseed` is the deliberate non-fast-forward path. It requires
+`EXAWATT_OPEN_SOURCE_ALLOW_RESEED=1`, the exact `--confirm reseed-public-history`
+token, and a written `--reason`; it refuses when the projection would
+fast-forward; it forces exactly once, leased against the tip it observed; and
+it records the reason in the source lock.
+
+`pnpm contribution:pull -- <pr-number>` is the inbound path. Public `master` is
+never merged into by a human — that would end the fast-forward property — so an
+approved pull request is fetched, refused unless its CLA check is green,
+applied onto a fresh `agent/contrib-<n>` worktree with `git am --3way`, and
+handed to the normal landing floor. `git am` preserves authorship, so the
+contributor's own commit is what the projector publishes.
+
 ## Metrics and rollout verdict
 
 `metrics.jsonl` is append-only schema version 1. Current event types are:
@@ -309,6 +356,8 @@ integrated SHA. A landing's `installed=queued` line alone is insufficient.
 | `ci_batch_requested` / `ci_batch_started` / `ci_batch_superseded` / `ci_batch_dispatched` / `ci_batch_failed` | desired/dispatched SHA, sequence, freshness, supersession, or failure    |
 | `dogfood_requested` / `dogfood_started` / `dogfood_superseded` / `dogfood_installed` / `dogfood_failed`       | desired SHA, sequence, freshness, supersession, or failure               |
 | `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                 |
+| `public_projection`                                                                                           | projection state, private/public SHA pair, duration                      |
+| `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason       |
 
 `summarizeDeliveryMetrics` computes integrated and failed counts, queue p50/p95,
 lock p95, stale-stop and floor-failure counts, Actions minutes, and dogfood
@@ -341,6 +390,8 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | CI batch request remains after a failure                         | Inspect `ci_batch_failed`; a later normal landing restarts the detached worker. For urgent evidence, manually dispatch `CI` at `master`. Do not delete request or cadence state to manufacture a green signal.  |
 | Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                      |
 | A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                        |
+| A landing reports `public=pending`                               | Nothing. The private landing is integrated; the next landing's projection fast-forwards past both. Investigate only if it repeats, and read the reason in the source lock.                                      |
+| A landing reports `public=refused`                               | The projection no longer descends from public `master`. Establish which manifest change reclassified history, then run `pnpm open-source:reseed` with that reason. Never force the public remote by hand.       |
 
 Do not hand-edit `next-ticket.json`, ticket files, ownership epochs, terminal
 results, or request state during ordinary recovery. These are durable machine
@@ -378,8 +429,15 @@ verification, or a live owner's ticket.
 - `scripts/lib/dogfood-queue.mjs`, `scripts/dogfood-worker.mjs`, and
   `scripts/install-dogfood.mjs`: superseding request, detached consumption, and
   verified atomic install.
+- `scripts/lib/public-delivery.mjs`, `scripts/lib/public-projection.mjs`,
+  `scripts/lib/public-source-lock.mjs`, and `scripts/open-source-reseed.mjs`:
+  the outbound projection, its fast-forward refusal, the recorded SHA pairs,
+  and the single deliberate force path.
+- `scripts/contribution-pull.mjs`: the inbound contribution path and its CLA
+  refusal.
 - `scripts/agent-land.test.mjs`, `scripts/ci-batch.test.mjs`,
   `scripts/delivery-queue.test.mjs`, `scripts/delivery-policy.test.mjs`,
-  `scripts/dogfood-queue.test.mjs`, and `scripts/dogfood-delivery.test.mjs`:
+  `scripts/dogfood-queue.test.mjs`, `scripts/dogfood-delivery.test.mjs`,
+  `scripts/public-delivery.test.mjs`, and `scripts/contribution-pull.test.mjs`:
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.

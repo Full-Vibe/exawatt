@@ -255,6 +255,16 @@ async function requestCi(root, sourceSha) {
   return ciBatch.requestCiBatch(root, sourceSha);
 }
 
+/**
+ * The public projection (ENG-030 WP6-D). Loaded only when the integration
+ * point is reached, exactly as the CI and dogfood requests are, so a landing
+ * with no public remote configured pays nothing and prints nothing.
+ */
+async function projectPublic(root, integratedSha) {
+  const publicDelivery = await import('./lib/public-delivery.mjs');
+  return publicDelivery.projectToPublicRemote(root, { integratedSha });
+}
+
 async function directLand(root, branch, options) {
   if (process.env.EXAWATT_AGENT_LAND_ALLOW_DIRECT !== '1') {
     throw new Error(
@@ -377,6 +387,7 @@ async function main() {
   });
   console.log(`[agent-land] admitted ticket ${ticket.number} (${ticket.id})`);
 
+  let publicProjection = { state: 'inert' };
   let heartbeatBusy = false;
   const heartbeat = setInterval(async () => {
     if (heartbeatBusy) return;
@@ -507,6 +518,18 @@ async function main() {
           integrated &&
           (await isAncestor(root, integrationSha, 'origin/master'));
         if (!integrated) continue;
+        // The public projection runs here, inside the delivery lock that
+        // already serializes master pushes, so two landings cannot race the
+        // public remote. It never fails the landing: the private push above is
+        // the source of truth and has already succeeded.
+        publicProjection = await projectPublic(root, integrationSha).catch(
+          error => {
+            console.warn(
+              `[agent-land] integration succeeded; the public projection step failed: ${error.message}`
+            );
+            return { state: 'pending', reason: error.message };
+          }
+        );
         ticket = await finishTicket(
           root,
           await readTicket(root, ticket.id),
@@ -518,11 +541,22 @@ async function main() {
             queueWaitMs:
               new Date(ticket.headAt).getTime() -
               new Date(ticket.admittedAt).getTime(),
+            ...(publicProjection.state === 'inert'
+              ? {}
+              : {
+                  publicState: publicProjection.state,
+                  publicSha: publicProjection.publicSha ?? null,
+                }),
           }
         );
         await appendDeliveryMetric(root, 'integration_lock', {
           ticketId: ticket.id,
           durationMs: Date.now() - lockStartedAt,
+          // The projection is inside this lock, so its cost is stated
+          // separately rather than hidden inside the hold time.
+          ...(publicProjection.state === 'inert'
+            ? {}
+            : { publicProjectionMs: publicProjection.durationMs ?? 0 }),
         });
         break;
       } finally {
@@ -580,8 +614,15 @@ async function main() {
     }
   }
 
+  // An unconfigured public remote leaves the status line exactly as it was
+  // before the projector existed; the field appears only when there is a
+  // public repository to report on.
+  const publicState =
+    publicProjection.state === 'inert'
+      ? ''
+      : ` public=${publicProjection.state}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${publicState}`
   );
   if (masterWorktree) {
     console.log(
