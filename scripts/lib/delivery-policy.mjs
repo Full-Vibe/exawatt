@@ -347,7 +347,11 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
         file === 'next.config.ts' ||
         file === 'scripts/prepare-distribution.mjs' ||
         file === 'scripts/lib/distribution-build.mjs' ||
-        file === 'scripts/run-next-with-distribution.mjs'
+        file === 'scripts/lib/company-composition.mjs' ||
+        file === 'scripts/run-next-with-distribution.mjs' ||
+        // The build now composes the tree it builds, so a change to what the
+        // overlay declares is a change to what a community build must NOT have.
+        file === 'company/overlay-manifest.json'
     )
   ) {
     checks.push({
@@ -378,6 +382,10 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
         file.startsWith('src/lib/distribution/') ||
         file.startsWith('src/lib/shortcuts/') ||
         file.startsWith('packages/core/src/distribution/') ||
+        // ENG-030 WP3: the census spans the composition boundary, so an agent
+        // adding a hosted route to the company overlay meets the same
+        // obligation to declare what it does with no account service.
+        file.startsWith('company/') ||
         file === 'scripts/distribution.official.example.json'
     )
   ) {
