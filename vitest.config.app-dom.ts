@@ -15,7 +15,7 @@ export default defineConfig({
       // See vitest.config.app-node.ts: the company overlay's own tests.
       'company/overlay/web/src/**/*.{test,spec}.tsx',
     ],
-    exclude: ['**/node_modules/**'],
+    exclude: ['**/node_modules/**', '.company-build/**'],
   },
   resolve: {
     alias: {
