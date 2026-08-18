@@ -209,7 +209,11 @@ function claimBlocks(source: string): string[] {
     current = [];
   };
   for (const line of source.split('\n')) {
-    if (/^\s*$/.test(line) || /^\s*[-*+]\s/.test(line) || /^#{1,6}\s/.test(line)) {
+    if (
+      /^\s*$/.test(line) ||
+      /^\s*[-*+]\s/.test(line) ||
+      /^#{1,6}\s/.test(line)
+    ) {
       flush();
       if (/^#{1,6}\s/.test(line)) {
         heading = line;
@@ -276,6 +280,12 @@ describe('no public-bound document says a switched behavior cannot be switched',
       'company/overlay/web/src/app/privacy/page.tsx',
       'company/overlay/web/src/app/terms/page.tsx',
       'company/overlay/web/src/app/download/page.tsx',
+      // ENG-030 WP3: `/download`'s machine-behaviour prose moved into a shared
+      // component when the public tree gained its own download page, so the
+      // sentences this scan is about live here now for BOTH surfaces. Listing
+      // the page alone would have quietly stopped auditing them.
+      'src/components/download/machine-disclosures.tsx',
+      'src/app/download/community/page.tsx',
     ];
     const offenders: string[] = [];
     for (const file of surfaces) {
@@ -510,15 +520,18 @@ describe('the goal-visual contract does not read as a shipped guarantee', () => 
     // a privacy boundary in the present tense. The shipped client sends the
     // accepted context label. Until the client-derived-key migration lands,
     // the README has to say so.
-    const schema = JSON.parse(read('contracts/services/v1/schemas/goal-visuals.schema.json'));
+    const schema = JSON.parse(
+      read('contracts/services/v1/schemas/goal-visuals.schema.json')
+    );
     const contractProperties = Object.keys(
       schema.$defs.request.properties as Record<string, unknown>
     ).sort();
     expect(contractProperties).toEqual(['identityKey', 'schemaVersion']);
 
-    const clientSendsLabel = /interface GoalVisualRequest \{[\s\S]*?\blabel\b[\s\S]*?\n\}/.test(
-      read('electron/main/pty/context-summarizer.ts')
-    );
+    const clientSendsLabel =
+      /interface GoalVisualRequest \{[\s\S]*?\blabel\b[\s\S]*?\n\}/.test(
+        read('electron/main/pty/context-summarizer.ts')
+      );
     if (clientSendsLabel) {
       const readme = read('contracts/README.md');
       expect(

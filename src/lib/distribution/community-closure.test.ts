@@ -115,6 +115,12 @@ const DECLARED_HOST_LITERALS: Record<string, string> = {
   // `mailto:` contact addresses. They moved to the company overlay on
   // 2026-08-18 because a fork must not inherit one operator's legal pages, so
   // the public tree no longer contains them and no declaration is owed.
+  //
+  // Prose naming the official distributor so a community build cannot be
+  // mistaken for one (decision `0021`). Not a URL, not a link, never a request:
+  // the page's own test asserts it offers no artifact.
+  'src/app/download/community/page.tsx':
+    'prose naming the official distribution',
   // Canonical public website origin for sitemap/robots. The module's own
   // comment pins it: never an analytics fallback.
   'src/lib/analytics/config.ts': 'sitemap/robots origin',

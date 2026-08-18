@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { NextConfig } from 'next';
 import { parseDistributionContractJson } from '@exawatt/core/distribution';
 import {
+  compositionRewrites,
   distributionContentSecurityPolicy,
   distributionRewrites,
 } from './src/lib/distribution/next-policy';
@@ -83,8 +84,12 @@ const nextConfig: NextConfig = {
   // Absolute is load-bearing because packaged Electron serves Next on a
   // random loopback port, where a relative ingest path would use the wrong
   // network identity (ENG-016 D17, incident `0002`).
+  //
+  // Returning an ARRAY is load-bearing for `compositionRewrites`: Next applies
+  // an array after checking the filesystem, so `/download` reaches the public
+  // page only in a tree where the company overlay did not supply its own.
   async rewrites() {
-    return distributionRewrites(distribution);
+    return [...distributionRewrites(distribution), ...compositionRewrites()];
   },
   // PostHog's ingest paths are trailing-slash sensitive; Next's redirect would
   // turn a capture into a 308 the SDK does not follow.

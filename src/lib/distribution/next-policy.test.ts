@@ -4,6 +4,7 @@ import {
   parseDistributionContract,
 } from '@exawatt/core/distribution';
 import {
+  compositionRewrites,
   distributionContentSecurityPolicy,
   distributionRewrites,
 } from './next-policy';
@@ -27,6 +28,28 @@ const CUSTOM_ANALYTICS = parseDistributionContract({
 describe('distribution Next policy', () => {
   it('removes the ingest proxy entirely from community builds', () => {
     expect(distributionRewrites(COMMUNITY_DISTRIBUTION)).toEqual([]);
+  });
+
+  it('routes /download to the public page in every distribution', () => {
+    // The composition owns this, not the contract: an `official-web` tree has
+    // its own `/download` page and wins on the filesystem, because Next applies
+    // an array of rewrites AFTER filesystem routes. So the same unconditional
+    // entry is correct for a community build, a public clone, and the hosted
+    // site, and no environment-derived boolean can disagree with the tree.
+    expect(compositionRewrites()).toEqual([
+      { source: '/download', destination: '/download/community' },
+    ]);
+    expect(compositionRewrites()).toEqual(compositionRewrites());
+  });
+
+  it('keeps the composition rewrite out of the contract-driven list', () => {
+    for (const contract of [COMMUNITY_DISTRIBUTION, CUSTOM_ANALYTICS]) {
+      expect(
+        distributionRewrites(contract).some(rewrite =>
+          rewrite.source.startsWith('/download')
+        )
+      ).toBe(false);
+    }
   });
 
   it('adds both trailing-slash-sensitive PostHog rewrites only when configured', () => {
