@@ -9,17 +9,19 @@ import {
   type OCGatewayOperatorScope,
   type OpenClawTopologyIssue,
   type SourceFailureClass,
+  type SourceTransport,
 } from '@exawatt/core';
 import type { ConnectedSourceStore } from './connected-source-store';
 import type {
-  bootstrapGatewayCredential,
   GatewayBootstrapFailure,
   RemoteExec,
+  resolveGatewayCredential,
 } from './gateway-bootstrap';
 import type {
   openSshTunnel,
   SshTunnel,
   SshTunnelFailureClass,
+  SshTunnelTarget,
 } from './ssh-tunnel';
 
 /**
@@ -170,7 +172,7 @@ export interface ConnectedGatewaySessionDeps {
     'readDeviceToken' | 'writeDeviceToken' | 'clearDeviceToken'
   >;
   openTunnel: typeof openSshTunnel;
-  bootstrap: typeof bootstrapGatewayCredential;
+  resolveCredential: typeof resolveGatewayCredential;
   remoteExec: RemoteExec;
   createClient: (config: OCClientConfig) => ConnectedGatewayClient;
   now: () => number;
@@ -219,6 +221,33 @@ export const BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE: Readonly<
   'unreadable-config': 'unknown',
   unknown: 'unknown',
 };
+
+/**
+ * The persisted transport, as the tunnel owner's target.
+ *
+ * Explicit field by field rather than a spread: the record and the target are
+ * two models that happen to agree today, and a spread would carry any field a
+ * later record shape adds straight into an `ssh` argument vector.
+ */
+export function tunnelTargetFor(
+  transport: Exclude<SourceTransport, { kind: 'local-loopback' }>
+): SshTunnelTarget {
+  if (transport.kind === 'ssh-alias') {
+    return {
+      kind: 'ssh-alias',
+      alias: transport.alias,
+      remotePort: transport.remotePort,
+    };
+  }
+  return {
+    kind: 'ssh-manual',
+    host: transport.host,
+    user: transport.user,
+    port: transport.port,
+    identityFile: transport.identityFile,
+    remotePort: transport.remotePort,
+  };
+}
 
 /** Bounded exponential backoff. Exported so copy and tests share one number. */
 export const RECONNECT_BASE_DELAY_MS = 1_000;
@@ -570,6 +599,10 @@ export class ConnectedGatewaySession {
    * more configured source now rather than a special case. It already listens
    * on this machine's loopback, so a tunnel would forward loopback to itself:
    * an extra `ssh` process that can only add failure modes.
+   *
+   * Both SSH transports open the same way. An alias and a manually entered
+   * server differ in what they hand `ssh`, which is the tunnel owner's business
+   * and validated there; from here they are one path.
    */
   private async openTransport(): Promise<
     | { ok: true; port: number }
@@ -581,27 +614,8 @@ export class ConnectedGatewaySession {
       return { ok: true, port: transport.port };
     }
 
-    if (transport.kind === 'ssh-manual') {
-      /*
-       * C1's tunnel owner is alias-first by decision: it takes an alias and
-       * lets the operator's own SSH configuration, agent, and keys do the rest.
-       * A manually entered server needs host/user/key material out of the OS
-       * keychain, which is a later slice. Failing here with a sentence is the
-       * honest answer; guessing an alias from a hostname is not.
-       */
-      return {
-        ok: false,
-        failure: 'unknown',
-        message:
-          'This source was saved with a manually entered server, which this transport does not open yet.',
-      };
-    }
-
     this.setPhase('opening-tunnel');
-    const opened = await this.deps.openTunnel({
-      alias: transport.alias,
-      remotePort: transport.remotePort,
-    });
+    const opened = await this.deps.openTunnel(tunnelTargetFor(transport));
     if (!opened.ok) {
       return {
         ok: false,
@@ -633,18 +647,13 @@ export class ConnectedGatewaySession {
 
     this.setPhase('bootstrapping');
     /*
-     * `local-loopback` has no SSH alias: its Gateway is on this machine, and
-     * the tunnel step was skipped for the same reason. The bootstrap contract
-     * takes an alias, so the empty string carries "no remote hop" rather than
-     * inventing a sentinel the bootstrapper does not know. A bootstrapper that
-     * rejects it fails closed with a classified message, which is the correct
-     * outcome for a local source that has not been taught a local read yet.
+     * One seam for every transport. It reads the source's own configuration
+     * over SSH for a server, and on this machine for the operator's own
+     * Gateway, which has no alias because it has no hop.
      */
-    const alias =
-      this.record.transport.kind === 'ssh-alias'
-        ? this.record.transport.alias
-        : '';
-    const result = await this.deps.bootstrap(alias, this.deps.remoteExec);
+    const result = await this.deps.resolveCredential(this.record.transport, {
+      exec: this.deps.remoteExec,
+    });
     if (!result.ok) {
       return {
         ok: false,

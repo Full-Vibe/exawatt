@@ -109,7 +109,15 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   private shouldReconnect = false;
   private devicePrivateKey: string | null = null;
   private devicePublicKey: string | null = null;
-  private deviceToken: string | null = null;
+  /**
+   * The scoped credential the Gateway issues on a successful pairing.
+   *
+   * Public because custody lives outside this client: the caller persists it
+   * to the OS keychain and presents it on the next launch so the
+   * admin-capable shared secret is never read again. Keeping it private only
+   * forced that caller to cast, which hid the seam rather than protecting it.
+   */
+  deviceToken: string | null = null;
   private _ocEventHandlers = new Map<string, Set<(payload: unknown) => void>>();
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;

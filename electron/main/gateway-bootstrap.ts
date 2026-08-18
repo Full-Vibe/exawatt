@@ -1,16 +1,35 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import type { SourceTransport } from '@exawatt/core';
+import { readGatewayConfig, type OCGatewayConfig } from '@exawatt/core/server';
 import { stopChildProcess } from './child-process-lifecycle';
+import {
+  buildDestinationArgs,
+  resolveSshDestination,
+  type SshDestination,
+} from './ssh-tunnel';
 
 /**
  * ENG-010 C1: the one-time, bounded credential bootstrap for a source's own
  * loopback Gateway.
  *
- * The Gateway on a customer-hosted server listens on loopback and authenticates
- * with a shared token that lives in that server's own OpenClaw configuration.
- * Exawatt must not make the operator go find and paste it, so this module asks
- * the source's own tooling for its declared token over the SSH connection the
- * operator already authorized, hands it back in memory, and forgets it.
+ * The Gateway a source runs listens on loopback and authenticates with a shared
+ * token that lives in that machine's own OpenClaw configuration. Exawatt must
+ * not make the operator go find and paste it, so this module reads the token
+ * the source declares, hands it back in memory, and forgets it.
+ *
+ * A configured source is reached one of two ways, and `resolveGatewayCredential`
+ * is the single seam that picks between them:
+ *
+ * - **Over SSH**, for a server the operator reaches with an alias or with
+ *   manually entered host, login, port, and key. The read happens on the far
+ *   side, over the connection the operator already authorized.
+ * - **Locally**, for the operator's own machine, whose Gateway is one more
+ *   configured source. There is no hop, no `ssh`, and nothing to execute: the
+ *   configuration is right here, so it is simply read.
  *
  * THIS IS A BOOTSTRAP READ, NOT THE FLEET CONTRACT.
  *
@@ -23,7 +42,7 @@ import { stopChildProcess } from './child-process-lifecycle';
  * answer is a Gateway method, not another command here.
  *
  * The credential's custody is documented in the project brief: the shared
- * secret returned by `bootstrapGatewayCredential` is held in process memory for
+ * secret returned by a credential resolution is held in process memory for
  * one pairing and used once, to mint a scoped, per-device, revocable Gateway
  * token. That device token is what gets persisted. The shared secret is
  * admin-capable and must never be written to disk, to the keychain, to
@@ -33,7 +52,10 @@ import { stopChildProcess } from './child-process-lifecycle';
  * `ssh-tunnel.ts`:
  *
  * 1. Nothing operator-controlled or source-supplied may reach `ssh` as an
- *    option or as shell syntax (see `isSafeAlias` and `isSafeRemoteArgument`).
+ *    option or as shell syntax. Destinations are validated by
+ *    `resolveSshDestination`, which `ssh-tunnel.ts` owns so there is exactly
+ *    one copy of that rule; remote arguments are validated here (see
+ *    `isSafeRemoteArgument`).
  * 2. No failure detail may carry infrastructure identity. `ssh` stderr names
  *    hosts, users, ports, and key paths; it never leaves this module. Each
  *    failure class maps to one fixed operator-facing sentence instead.
@@ -48,12 +70,26 @@ export interface RemoteExecResult {
 
 /** Runs one bounded, non-interactive command on the source over SSH. */
 export type RemoteExec = (
-  alias: string,
+  destination: SshDestination,
   argv: readonly string[]
 ) => Promise<RemoteExecResult>;
 
+/**
+ * This machine's own OpenClaw installation, as the local path reads it.
+ *
+ * Injected so the local credential path is testable without touching the
+ * operator's real configuration or their real secrets. The default reads the
+ * same files OpenClaw itself does.
+ */
+export interface LocalGatewaySource {
+  /** Parsed `openclaw.json`, or null when it cannot be read or parsed. */
+  readConfig(): OCGatewayConfig | null;
+  /** Bounded read of one named secret file, or null when there is not one. */
+  readSecret(name: string): string | null;
+}
+
 export type GatewayBootstrapFailure =
-  /** Rejected before anything was executed: the alias itself is not usable. */
+  /** Rejected before anything ran: the target itself is not usable. */
   | 'invalid-target'
   /** DNS, routing, refused, or a connect timeout. */
   | 'unreachable'
@@ -84,8 +120,13 @@ export interface GatewayBootstrapFacts {
    * renderer state.
    */
   sharedToken: string;
-  /** How the token was obtained, for the source-detail evidence surface. */
-  tokenSource: 'cli' | 'config-file';
+  /**
+   * How the token was obtained, for the source-detail evidence surface.
+   *
+   * `secret-file` is the indirection case: the configuration named where the
+   * secret lives rather than holding it, and the named file was read.
+   */
+  tokenSource: 'cli' | 'config-file' | 'secret-file';
 }
 
 export type GatewayBootstrapResult =
@@ -119,6 +160,17 @@ export const FALLBACK_GATEWAY_PORT = 1337;
  */
 const REMOTE_CONFIG_PATH = '.openclaw/openclaw.json';
 
+/** Where OpenClaw keeps the secrets its configuration points at. */
+const LOCAL_STATE_DIR_NAME = '.openclaw';
+const LOCAL_SECRETS_DIR_NAME = 'secrets';
+
+/**
+ * A secret name becomes a filename, so it is held to an identifier grammar with
+ * no dot and no separator. `..` cannot be spelled, so no configuration value
+ * can walk out of the secrets directory.
+ */
+const SECRET_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
 const MAX_REMOTE_ARGV = 16;
 const MESSAGE_MAX = 200;
 
@@ -136,7 +188,7 @@ const SSH_LAUNCH_FAILED = 'exawatt:ssh-launch-failed';
  */
 const FAILURE_MESSAGES: Record<GatewayBootstrapFailure, string> = {
   'invalid-target':
-    'That SSH alias is not usable. Use an alias from your SSH config made of letters, numbers, dots, dashes, or underscores.',
+    'That server target is not usable. Check the SSH alias, or the host, login, port, and key file you entered.',
   unreachable:
     'Could not reach that server over SSH. Check that it is online and reachable from this machine.',
   'auth-rejected':
@@ -144,9 +196,9 @@ const FAILURE_MESSAGES: Record<GatewayBootstrapFailure, string> = {
   'openclaw-missing':
     'OpenClaw was not found on that server. Check that it is installed for this login and try again.',
   'token-unavailable':
-    'That server did not report a Gateway token. You can paste the token from its OpenClaw configuration instead.',
+    'No Gateway token could be read from that OpenClaw configuration. You can paste the token from it instead.',
   'unreadable-config':
-    'Could not read the OpenClaw configuration on that server. Check that this login can read it, then try again.',
+    'Could not read the OpenClaw configuration for that source. Check that it exists and is readable, then try again.',
   unknown:
     'The Gateway credential could not be read for an unrecognized reason. Open source diagnostics for the connection detail.',
 };
@@ -159,26 +211,6 @@ function bounded(text: string): string {
 
 function failed(failure: GatewayBootstrapFailure): GatewayBootstrapResult {
   return { ok: false, failure, message: bounded(FAILURE_MESSAGES[failure]) };
-}
-
-const ALIAS_PATTERN = /^[A-Za-z0-9._-]{1,255}$/;
-
-/**
- * An alias is operator-supplied text handed to `ssh` as a bare argument, and
- * `ssh` parses any argument beginning with `-` as an OPTION. So an alias of
- * `-oProxyCommand=id` is not a bad hostname, it is arbitrary command execution
- * on THIS machine. The character class also excludes whitespace, quotes, and
- * shell metacharacters so the value stays inert if it is ever echoed.
- *
- * This runs before anything is executed, and `buildRemoteExecArgs` separately
- * places `--` ahead of the alias, so neither guard alone is load-bearing.
- */
-function isSafeAlias(alias: unknown): alias is string {
-  return (
-    typeof alias === 'string' &&
-    !alias.startsWith('-') &&
-    ALIAS_PATTERN.test(alias)
-  );
 }
 
 /**
@@ -216,18 +248,17 @@ function isSafeRemoteArgument(value: unknown): value is string {
  *   common failure is classified by `ssh` rather than by our outer deadline.
  * - `StrictHostKeyChecking=accept-new` accepts a first-sight host key but still
  *   refuses a CHANGED one, which is the case that means interception.
- * - `--` ends option parsing so the alias can never be read as an option.
+ * - The destination tail from `buildDestinationArgs` ends with `--`, so the
+ *   destination can never be read as an option and the remote command follows
+ *   it as ordinary arguments.
  *
- * Throws on an unusable alias or remote argument. Callers in this module
+ * Throws on an unusable destination or remote argument. Callers in this module
  * validate first; the throw is the last line of defence for anyone else.
  */
 export function buildRemoteExecArgs(
-  alias: string,
+  destination: SshDestination,
   argv: readonly string[]
 ): readonly string[] {
-  if (!isSafeAlias(alias)) {
-    throw new Error('Refusing to run a remote command for an unusable alias');
-  }
   if (
     !Array.isArray(argv) ||
     argv.length === 0 ||
@@ -244,8 +275,7 @@ export function buildRemoteExecArgs(
     `ConnectTimeout=${CONNECT_TIMEOUT_SECONDS}`,
     '-o',
     'StrictHostKeyChecking=accept-new',
-    '--',
-    alias,
+    ...buildDestinationArgs(destination),
     ...argv,
   ];
 }
@@ -291,9 +321,19 @@ function boundedToken(value: unknown): string | null {
  * Total by construction: garbage in, null out, never a throw.
  */
 export function parseConfigToken(configText: string): string | null {
-  const gateway = asRecord(parseJsonObject(configText)?.gateway);
-  if (!gateway) return null;
+  return literalTokenIn(asRecord(parseJsonObject(configText)?.gateway));
+}
 
+/**
+ * The same read, over an already-parsed `gateway` section. The remote path
+ * parses config TEXT it captured over SSH; the local path is handed the parsed
+ * object by OpenClaw's own reader. Both end here, so there is one description
+ * of where a Gateway token lives rather than two that can drift.
+ */
+function literalTokenIn(
+  gateway: Record<string, unknown> | null
+): string | null {
+  if (!gateway) return null;
   const auth = gateway.auth;
   const authRecord = asRecord(auth);
   if (authRecord) return boundedToken(authRecord.token);
@@ -304,6 +344,39 @@ export function parseConfigToken(configText: string): string | null {
 }
 
 /**
+ * The indirection the live probe found on the operator's own machine:
+ *
+ *   "token": { "source": "file", "provider": "gateway_auth_token", "id": "value" }
+ *
+ * The literal secret is not in the configuration at all; the object names the
+ * secret OpenClaw keeps beside it. This returns the provider name and nothing
+ * else, and only for the exact shape observed:
+ *
+ * - `source` must be `file`. Any other source names a mechanism Exawatt does
+ *   not implement, and guessing at one would be inventing a credential path.
+ * - `id` must select the whole value. A field selector would mean the secret is
+ *   structured, and reading the wrong field out of a structure is how a
+ *   confident pairing failure gets built.
+ * - the provider name must be a plain identifier. It becomes a filename, so the
+ *   character class is what keeps config text from choosing a path: no slashes,
+ *   no dots, and therefore no traversal.
+ */
+function secretProviderIn(
+  gateway: Record<string, unknown> | null
+): string | null {
+  const auth = asRecord(gateway?.auth);
+  const indirection = asRecord(auth?.token);
+  if (!indirection) return null;
+  if (indirection.source !== 'file') return null;
+  if (indirection.id !== undefined && indirection.id !== 'value') return null;
+  const provider = indirection.provider;
+  if (typeof provider !== 'string' || !SECRET_NAME_PATTERN.test(provider)) {
+    return null;
+  }
+  return provider;
+}
+
+/**
  * The declared loopback Gateway port, falling back only when the source does
  * not declare a usable one. Reading it matters: a source on a non-default port
  * would otherwise get a tunnel pointed at nothing.
@@ -311,7 +384,10 @@ export function parseConfigToken(configText: string): string | null {
  * Total by construction: garbage in, documented default out, never a throw.
  */
 export function parseGatewayPort(configText: string): number {
-  const gateway = asRecord(parseJsonObject(configText)?.gateway);
+  return gatewayPortIn(asRecord(parseJsonObject(configText)?.gateway));
+}
+
+function gatewayPortIn(gateway: Record<string, unknown> | null): number {
   const port = gateway?.port;
   if (
     Number.isInteger(port) &&
@@ -443,7 +519,7 @@ interface RunOutcome {
 
 async function runRemote(
   exec: RemoteExec,
-  alias: string,
+  destination: SshDestination,
   argv: readonly string[]
 ): Promise<RunOutcome | { ok: false; failure: GatewayBootstrapFailure }> {
   // Re-checked here rather than trusted from the call site, so this stays true
@@ -457,7 +533,7 @@ async function runRemote(
   }
   let result: RemoteExecResult;
   try {
-    result = await exec(alias, argv);
+    result = await exec(destination, argv);
   } catch {
     // The injected exec is Exawatt's own code; a rejection is a defect here,
     // not an operator-actionable condition, so it stays 'unknown'.
@@ -477,29 +553,30 @@ async function runRemote(
 }
 
 /**
- * Ask the source, once, for the credential its own Gateway expects.
+ * Ask a remote source, once, for the credential its own Gateway expects.
  *
  * Three bounded reads over the connection the operator already authorized:
  * the source's version, its CLI's answer for the Gateway token, and its
- * configuration file. The CLI is asked FIRST because on some installs the
- * config file holds an indirection object rather than the literal secret, so
- * the file is authoritative for the port but not always for the token.
+ * configuration file.
  *
  * Fails closed at every step. Nothing here retries, nothing here writes, and
  * the returned token is never logged.
  */
-export async function bootstrapGatewayCredential(
-  alias: string,
+export async function bootstrapGatewayCredentialOverSsh(
+  destination: SshDestination,
   exec: RemoteExec
 ): Promise<GatewayBootstrapResult> {
-  // Before ANY execution: a leading dash would make ssh read the alias as an
-  // option, and `-oProxyCommand=…` is remote code execution on this machine.
-  if (!isSafeAlias(alias)) return failed('invalid-target');
+  // Before ANY execution: a leading dash would make ssh read part of the
+  // destination as an option, and `-oProxyCommand=…` is remote code execution
+  // on this machine.
+  const resolved = resolveSshDestination(destination);
+  if (!resolved.ok) return failed('invalid-target');
+  const target = resolved.destination;
   if (typeof exec !== 'function') return failed('unknown');
 
   // 1. Version. Also the cheapest proof that the login works and OpenClaw is
   //    there, so its failure classification stands in for the whole session.
-  const versionRun = await runRemote(exec, alias, ['openclaw', '--version']);
+  const versionRun = await runRemote(exec, target, ['openclaw', '--version']);
   if (!versionRun.ok) return failed(versionRun.failure);
   let version: string | null = null;
   if (versionRun.result.code === 0) {
@@ -516,7 +593,7 @@ export async function bootstrapGatewayCredential(
 
   // 2. The source's own CLI resolves the token even when the config file only
   //    points at where it lives.
-  const cliRun = await runRemote(exec, alias, [
+  const cliRun = await runRemote(exec, target, [
     'openclaw',
     'config',
     'get',
@@ -533,7 +610,7 @@ export async function bootstrapGatewayCredential(
 
   // 3. The config file. Read even when the CLI already answered, because it is
   //    the only place the declared Gateway port appears.
-  const configRun = await runRemote(exec, alias, ['cat', REMOTE_CONFIG_PATH]);
+  const configRun = await runRemote(exec, target, ['cat', REMOTE_CONFIG_PATH]);
   if (!configRun.ok) return failed(configRun.failure);
   let configText: string | null = null;
   let configFailure: GatewayBootstrapFailure | null = null;
@@ -602,6 +679,182 @@ export async function bootstrapGatewayCredential(
 }
 
 /**
+ * Read this machine's own OpenClaw configuration for the credential its Gateway
+ * expects.
+ *
+ * The operator's own machine runs a Gateway too, and it is one more configured
+ * source rather than a special case. What is genuinely different is the
+ * resolution: there is no hop to authorize, no login to refuse, and no remote
+ * shell to protect, so nothing is executed at all. The configuration is on this
+ * disk and it is simply read.
+ *
+ * Two shapes are handled, both observed on real installations:
+ *
+ * - a literal token in the configuration, which is read directly;
+ * - the indirection object, where the configuration names a secret OpenClaw
+ *   keeps beside it. The named file is read under the state directory's own
+ *   secrets folder, bounded, and never logged.
+ *
+ * Anything else fails closed as `token-unavailable`, which is the actionable
+ * answer: the operator can supply the token. It never invents one, and it never
+ * lets configuration text choose which file gets read.
+ */
+export async function bootstrapLocalGatewayCredential(
+  source: LocalGatewaySource = defaultLocalGatewaySource()
+): Promise<GatewayBootstrapResult> {
+  let config: OCGatewayConfig | null;
+  try {
+    config = source.readConfig();
+  } catch {
+    // The reader already fails closed; this is the belt for an injected one.
+    return failed('unreadable-config');
+  }
+  const gateway = asRecord(asRecord(config)?.gateway);
+  if (!gateway) return failed('unreadable-config');
+
+  const gatewayPort = gatewayPortIn(gateway);
+
+  const literal = literalTokenIn(gateway);
+  if (literal) {
+    return {
+      ok: true,
+      facts: {
+        // Reporting a version would mean running the local CLI, which is a
+        // second mechanism for a fact this bootstrap does not need. The
+        // Gateway reports its own version on `status` once the session is up.
+        version: null,
+        gatewayPort,
+        sharedToken: literal,
+        tokenSource: 'config-file',
+      },
+    };
+  }
+
+  const provider = secretProviderIn(gateway);
+  if (provider !== null) {
+    for (const name of secretFileCandidates(provider)) {
+      let contents: string | null;
+      try {
+        contents = source.readSecret(name);
+      } catch {
+        contents = null;
+      }
+      const token = boundedToken(contents);
+      if (token) {
+        return {
+          ok: true,
+          facts: {
+            version: null,
+            gatewayPort,
+            sharedToken: token,
+            tokenSource: 'secret-file',
+          },
+        };
+      }
+    }
+  }
+
+  return failed('token-unavailable');
+}
+
+/**
+ * The file names one provider can legitimately have.
+ *
+ * The configuration spells a provider in snake_case (`gateway_auth_token`)
+ * while the observed store file is kebab-case (`gateway-auth-token`). Both
+ * spellings of the SAME name are tried and nothing else is: this is two
+ * candidate file names inside one fixed directory, not a search.
+ */
+function secretFileCandidates(provider: string): readonly string[] {
+  const dashed = provider.replace(/_/g, '-');
+  return dashed === provider ? [provider] : [provider, dashed];
+}
+
+/**
+ * The real local installation: OpenClaw's own configuration reader, plus a
+ * bounded read of one file in its secrets directory.
+ */
+export function defaultLocalGatewaySource(
+  stateDir: string = join(homedir(), LOCAL_STATE_DIR_NAME)
+): LocalGatewaySource {
+  return {
+    readConfig: () => readGatewayConfig(stateDir),
+    readSecret: name => {
+      // Re-checked at the boundary: the caller validates, and this seam is
+      // exported, so a future caller cannot turn a name into a path.
+      if (!SECRET_NAME_PATTERN.test(name)) return null;
+      return readBoundedFile(join(stateDir, LOCAL_SECRETS_DIR_NAME, name));
+    },
+  };
+}
+
+/**
+ * Bounded on both axes a file can surprise us with. `isFile` refuses a device
+ * or a pipe, whose read would never end, and the size check refuses anything
+ * larger than a credential could be before a byte is read.
+ */
+function readBoundedFile(path: string): string | null {
+  try {
+    const stats = statSync(path);
+    if (!stats.isFile() || stats.size > MAX_TOKEN_LENGTH) return null;
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+export interface GatewayCredentialDependencies {
+  /** Runs one bounded command on a remote source. The local path uses none. */
+  exec: RemoteExec;
+  /** This machine's own installation. Defaults to the real one. */
+  local?: LocalGatewaySource;
+}
+
+/**
+ * The one seam a caller uses: resolve the Gateway credential for a configured
+ * source, whatever transport it was saved with.
+ *
+ * Dispatch is on the transport kind rather than on a flag, because the two
+ * paths are not one path with a switch inside it. The SSH path runs bounded
+ * commands on another machine and classifies transport failures; the local path
+ * executes nothing and reads a file. A boolean parameter would have forced one
+ * function to be both, and the shared half would have been the half that
+ * matters least.
+ */
+export async function resolveGatewayCredential(
+  transport: SourceTransport,
+  deps: GatewayCredentialDependencies
+): Promise<GatewayBootstrapResult> {
+  if (!transport || typeof transport !== 'object') {
+    return failed('invalid-target');
+  }
+  switch (transport.kind) {
+    case 'ssh-alias':
+      return await bootstrapGatewayCredentialOverSsh(
+        { kind: 'ssh-alias', alias: transport.alias },
+        deps.exec
+      );
+    case 'ssh-manual':
+      return await bootstrapGatewayCredentialOverSsh(
+        {
+          kind: 'ssh-manual',
+          host: transport.host,
+          user: transport.user,
+          port: transport.port,
+          identityFile: transport.identityFile,
+        },
+        deps.exec
+      );
+    case 'local-loopback':
+      return await bootstrapLocalGatewayCredential(deps.local);
+    default:
+      // A record that survived persistence with an unknown kind. Fail closed
+      // rather than picking a transport for it.
+      return failed('invalid-target');
+  }
+}
+
+/**
  * Default `RemoteExec` built on `child_process.spawn`. Injected in tests, which
  * never spawn a real `ssh`: a test that shelled out would reach a real network.
  *
@@ -619,11 +872,11 @@ export function createSshRemoteExec(
       )
     : DEFAULT_EXEC_TIMEOUT_MS;
 
-  return (alias, argv) =>
+  return (destination, argv) =>
     new Promise<RemoteExecResult>(resolve => {
       let args: readonly string[];
       try {
-        args = buildRemoteExecArgs(alias, argv);
+        args = buildRemoteExecArgs(destination, argv);
       } catch {
         resolve({ code: null, stdout: '', stderr: SSH_LAUNCH_FAILED });
         return;

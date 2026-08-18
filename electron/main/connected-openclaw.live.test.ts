@@ -7,7 +7,7 @@ import {
 } from '@exawatt/core';
 import { OCClient } from '@exawatt/core';
 import {
-  bootstrapGatewayCredential,
+  bootstrapGatewayCredentialOverSsh,
   createSshRemoteExec,
 } from './gateway-bootstrap';
 import { describeExawattClient } from './connected-gateway';
@@ -33,6 +33,11 @@ const ALIASES = (process.env.EXAWATT_LIVE_OPENCLAW_ALIASES ?? '')
   .split(',')
   .map(value => value.trim())
   .filter(Boolean);
+
+/** Every call in this probe addresses an alias from the operator's own config. */
+function sshTarget(alias: string) {
+  return { kind: 'ssh-alias' as const, alias };
+}
 
 /**
  * The production client and the production identity, not a hand-rolled socket
@@ -60,7 +65,12 @@ async function connectReadOnly(localPort: number, token: string) {
 /** Device ids the source currently has paired. */
 async function pairedDeviceIds(alias: string): Promise<Set<string>> {
   const exec = createSshRemoteExec();
-  const listed = await exec(alias, ['openclaw', 'devices', 'list', '--json']);
+  const listed = await exec(sshTarget(alias), [
+    'openclaw',
+    'devices',
+    'list',
+    '--json',
+  ]);
   const ids = new Set<string>();
   if (listed.code !== 0) return ids;
   try {
@@ -81,7 +91,7 @@ async function pairedDeviceScopes(
   alias: string,
   deviceId: string
 ): Promise<string[] | null> {
-  const listed = await createSshRemoteExec()(alias, [
+  const listed = await createSshRemoteExec()(sshTarget(alias), [
     'openclaw',
     'devices',
     'list',
@@ -118,7 +128,7 @@ async function removeDevicesCreatedDuringRun(
   const exec = createSshRemoteExec();
   for (const id of await pairedDeviceIds(alias)) {
     if (before.has(id)) continue;
-    await exec(alias, ['openclaw', 'devices', 'remove', id]);
+    await exec(sshTarget(alias), ['openclaw', 'devices', 'remove', id]);
   }
 }
 
@@ -126,15 +136,15 @@ describe.skipIf(ALIASES.length === 0)('live OpenClaw source', () => {
   it.each(ALIASES)(
     'observes %s read-only and projects its coworkers',
     async alias => {
-      const bootstrap = await bootstrapGatewayCredential(
-        alias,
+      const bootstrap = await bootstrapGatewayCredentialOverSsh(
+        sshTarget(alias),
         createSshRemoteExec()
       );
       expect(bootstrap.ok, JSON.stringify(bootstrap)).toBe(true);
       if (!bootstrap.ok) return;
 
       const opened = await openSshTunnel({
-        alias,
+        ...sshTarget(alias),
         remotePort: bootstrap.facts.gatewayPort,
       });
       expect(opened.ok, JSON.stringify(opened)).toBe(true);
