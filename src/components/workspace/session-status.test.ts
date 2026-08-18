@@ -19,10 +19,17 @@ import {
   sessionGlyphCopy,
   sessionGlyphState,
   sessionLensTurnState,
+  sessionStateWord,
   sessionStatusLightState,
   sessionTurnFacts,
   type SessionAttentionSignal,
+  type SessionGlyphState,
 } from './session-status';
+import {
+  AGENT_STATUS_LIGHT_STATE,
+  STATUS_LIGHT_STATES,
+  statusLightWord,
+} from '@/components/status-light/protocol';
 
 describe('sessionStatusLightState', () => {
   it('distinguishes results from human gates without replacing Session truth', () => {
@@ -155,9 +162,13 @@ describe('delegated work', () => {
     ).toBe('done');
     expect(sessionDelegationBusy(null)).toBe(false);
     expect(sessionDelegationBusy(undefined)).toBe(false);
-    expect(sessionDelegationBusy({ ownTurn: 'available', blockedOn: null, children: [] })).toBe(
-      false
-    );
+    expect(
+      sessionDelegationBusy({
+        ownTurn: 'available',
+        blockedOn: null,
+        children: [],
+      })
+    ).toBe(false);
   });
 
   it('explains a quiet delegating Session honestly', () => {
@@ -198,7 +209,9 @@ describe('delegated work', () => {
       })
     ).toBe('1 delegated agent working');
     expect(delegationCopy(null)).toBeNull();
-    expect(delegationCopy({ ownTurn: 'available', blockedOn: null, children: [] })).toBeNull();
+    expect(
+      delegationCopy({ ownTurn: 'available', blockedOn: null, children: [] })
+    ).toBeNull();
   });
 });
 
@@ -339,7 +352,9 @@ describe('delegation elapsed labels', () => {
   it('renders minute granularity, never a stopwatch', () => {
     const start = 1_000_000;
     expect(delegationElapsedLabel(start + 30_000, start)).toBe('<1m');
-    expect(delegationElapsedLabel(start + 3 * 60_000 + 19_000, start)).toBe('3m');
+    expect(delegationElapsedLabel(start + 3 * 60_000 + 19_000, start)).toBe(
+      '3m'
+    );
     expect(delegationElapsedLabel(start + 72 * 60_000, start)).toBe('1h 12m');
   });
 
@@ -362,7 +377,7 @@ describe('attention eligibility is one rule (BUG-009)', () => {
     mergeFleetAttention(fleetAttention('pty', signals));
 
   it('paints exactly what the queue will visit', () => {
-    const attention = fleet({ 's1': bell });
+    const attention = fleet({ s1: bell });
     const live = { sessionId: 's1', live: true };
     const dead = { sessionId: 's1', live: false };
     expect(paintsAttention(live, attention)).toBe(true);
@@ -373,14 +388,14 @@ describe('attention eligibility is one rule (BUG-009)', () => {
 
   it('reaches a marked Session whose process already exited', () => {
     // the exact shape of the regression: adopted, still `live`, exit code set
-    const attention = fleet({ 's1': bell });
+    const attention = fleet({ s1: bell });
     expect(
       attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
     ).toEqual(['s1']);
   });
 
   it('never navigates to a Session carrying no visible marker', () => {
-    const attention = fleet({ 's1': bell });
+    const attention = fleet({ s1: bell });
     // s2 has no signal at all; s3 is not live
     const queue = attentionJumpQueue(
       [
@@ -395,7 +410,7 @@ describe('attention eligibility is one rule (BUG-009)', () => {
   });
 
   it('keeps the oldest-first order and skips where you already are', () => {
-    const attention = fleet({ 's1': bell, 's2': older });
+    const attention = fleet({ s1: bell, s2: older });
     const candidates = [
       { sessionId: 's1', live: true },
       { sessionId: 's2', live: true },
@@ -408,7 +423,7 @@ describe('attention eligibility is one rule (BUG-009)', () => {
   });
 
   it('a finished turn is a result to read, not an operator gate', () => {
-    const attention = fleet({ 's1': { kind: 'turn-end' as const, since: 1 } });
+    const attention = fleet({ s1: { kind: 'turn-end' as const, since: 1 } });
     expect(
       attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
     ).toEqual([]);
@@ -443,7 +458,10 @@ describe('a producer declares its scope (BUG-026)', () => {
 
   it('narrows the whole view: one blind producer blinds the merge', () => {
     const view = mergeAttention(pty, narrow);
-    expect(view.scope).toEqual({ kind: 'sessions', sessionIds: new Set(['b1']) });
+    expect(view.scope).toEqual({
+      kind: 'sessions',
+      sessionIds: new Set(['b1']),
+    });
     // and coverage is the INTERSECTION, not the union
     const other = scopedAttention('other', {}, ['b1', 'c1']);
     expect(mergeAttention(narrow, other).scope).toEqual({
@@ -467,16 +485,19 @@ describe('a producer declares its scope (BUG-026)', () => {
   });
 
   it('stays complete when every producer covers the fleet', () => {
-    const view = mergeAttention(pty, fleetAttention('roadmap', { b1: blocked }));
+    const view = mergeAttention(
+      pty,
+      fleetAttention('roadmap', { b1: blocked })
+    );
     expect(view.scope).toEqual({ kind: 'fleet' });
     expect(attentionAt(view, 'a1')).toEqual({ known: true, signal: undefined });
     const signals = mergeFleetAttention(
       pty,
       fleetAttention('roadmap', { b1: blocked })
     );
-    expect(attentionJumpQueue([{ sessionId: 'b1', live: true }], signals, null)).toEqual(
-      ['b1']
-    );
+    expect(
+      attentionJumpQueue([{ sessionId: 'b1', live: true }], signals, null)
+    ).toEqual(['b1']);
   });
 });
 
@@ -537,11 +558,14 @@ describe('shared turn facts', () => {
   });
 
   it('reports a shell as a shell and an absent process as unstarted', () => {
+    expect(sessionTurnFacts({ ...tab, harness: 'shell' }, empty).agent).toBe(
+      false
+    );
     expect(
-      sessionTurnFacts({ ...tab, harness: 'shell' }, empty).agent
-    ).toBe(false);
-    expect(
-      sessionTurnFacts({ ...tab, sessionId: null }, { ...empty, activity: { s1: true } })
+      sessionTurnFacts(
+        { ...tab, sessionId: null },
+        { ...empty, activity: { s1: true } }
+      )
     ).toMatchObject({ working: false, started: false });
   });
 
@@ -549,7 +573,11 @@ describe('shared turn facts', () => {
     const lens = (
       sources: Parameters<typeof sessionTurnFacts>[1],
       attention?: SessionAttentionSignal
-    ) => sessionLensTurnState({ facts: sessionTurnFacts(tab, sources), attention });
+    ) =>
+      sessionLensTurnState({
+        facts: sessionTurnFacts(tab, sources),
+        attention,
+      });
 
     // The case the lens used to get wrong: mid-tool-call, no bytes, open turn.
     expect(lens({ ...empty, delegation: { s1: generating } })).toBe('working');
@@ -566,5 +594,90 @@ describe('shared turn facts', () => {
     expect(lens({ ...empty, activity: { s1: true } })).toBe('working');
     expect(lens({ ...empty, engaged: { s1: true } })).toBe('waiting');
     expect(lens(empty, { kind: 'bell', since: 1 })).toBe('needs-you');
+  });
+});
+
+describe('the D40 word (ENG-033 H2)', () => {
+  const GLYPH_STATES: SessionGlyphState[] = [
+    'working',
+    'blocked',
+    'done',
+    'fresh',
+    'quiet',
+  ];
+
+  it('gives every D40 signal exactly one operator-facing word', () => {
+    const words = STATUS_LIGHT_STATES.map(statusLightWord);
+    // Exhaustive by construction: STATUS_LIGHT_STATES is pinned to the union,
+    // so a sixth signal fails to compile rather than rendering blank here.
+    expect(words).toHaveLength(5);
+    expect(new Set(words).size).toBe(5);
+    for (const word of words) {
+      expect(word.trim()).toBe(word);
+      expect(word.length).toBeGreaterThan(0);
+      // Product copy, not an enum: no screaming case, no punctuation smell.
+      expect(word).not.toBe(word.toUpperCase());
+      expect(word).not.toContain('—');
+      expect(word).not.toMatch(/[_-]/);
+    }
+  });
+
+  it('speaks the same words for a remote Agent status as for a local one', () => {
+    // Every AgentStatus the roster can carry, local or remote, lands on a word.
+    const spoken = Object.entries(AGENT_STATUS_LIGHT_STATE).map(
+      ([status, light]) => [status, statusLightWord(light)] as const
+    );
+    expect(Object.fromEntries(spoken)).toEqual({
+      idle: 'Idle',
+      working: 'Working',
+      reviewing: 'Working',
+      complete: 'Result ready',
+      blocked: 'Needs you',
+      error: 'Error',
+    });
+  });
+
+  it('derives every local state word from the projection the mark uses', () => {
+    for (const state of GLYPH_STATES) {
+      for (const attention of [
+        undefined,
+        { kind: 'bell', since: 1 } as const,
+        { kind: 'turn-end', since: 1 } as const,
+      ]) {
+        for (const fault of [false, true]) {
+          const input = { state, attention, fault };
+          // One state in, one mark and one word out: the word is nothing but
+          // the name of the light the same inputs draw.
+          expect(sessionStateWord(input)).toBe(
+            statusLightWord(sessionStatusLightState(input))
+          );
+        }
+      }
+    }
+  });
+
+  it('never renders a blank word for a state the local path can produce', () => {
+    for (const state of GLYPH_STATES) {
+      expect(sessionStateWord({ state })).toBeTruthy();
+    }
+    expect(sessionStateWord({ state: 'working' })).toBe('Working');
+    expect(sessionStateWord({ state: 'blocked' })).toBe('Needs you');
+    expect(sessionStateWord({ state: 'done' })).toBe('Result ready');
+    expect(sessionStateWord({ state: 'fresh' })).toBe('Idle');
+    expect(sessionStateWord({ state: 'quiet' })).toBe('Idle');
+    expect(sessionStateWord({ state: 'working', fault: true })).toBe('Error');
+  });
+
+  it('reports the work state and never the connection state', () => {
+    // A remote Agent whose connection has gone stale keeps the last work
+    // state Exawatt saw. Freshness is a separate readout and must not leak
+    // into this word.
+    const lastKnown = sessionStateWord({ state: 'working' });
+    expect(lastKnown).toBe('Working');
+    for (const light of STATUS_LIGHT_STATES) {
+      expect(statusLightWord(light)).not.toMatch(
+        /stale|reconnect|unavailable|offline|disconnected/i
+      );
+    }
   });
 });

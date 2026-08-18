@@ -5,6 +5,7 @@ export {
   STATUS_LIGHT_STATES,
   deriveStatusLightState,
   statusLightStateForAgentStatus,
+  statusLightWord,
 } from './protocol';
 export type { StatusLightSignals, StatusLightState } from './protocol';
 export { StatusLight, StatusLightMark } from './status-light';

@@ -30,6 +30,7 @@ import {
   delegationElapsedLabel,
   delegationRailRows,
   sessionGlyphCopy,
+  sessionStateWord,
   sessionStatusLightState,
 } from './session-status';
 import type {
@@ -56,6 +57,7 @@ export {
   sessionGlyphState,
   sessionLensTurnState,
   sessionReportedBlocked,
+  sessionStateWord,
   sessionStatusLightState,
   sessionTurnFacts,
 } from './session-status';
@@ -330,5 +332,65 @@ export function SessionStatusGlyph({
         <StatusLight decorative size="compact" state={lightState} />
       </span>
     </StatusTooltip>
+  );
+}
+
+/**
+ * The mark AND the word (ENG-033 H2).
+ *
+ * A roster has to be readable with the colour switched off. That was always
+ * the accessibility requirement; remote Agents made it sharper, because a
+ * remote Agent's state is not guessable from the context around it the way a
+ * local one you just started is. The word is what turns "reads without
+ * colour" from an assertion into something the surface proves.
+ *
+ * A SIBLING rather than a prop on `SessionStatusGlyph`, because only this
+ * caller wants the word. The tab strip, the ⌘K switcher, and the shortcut
+ * legend all mount the mark in a row whose width belongs to the Session
+ * title; a second text run there would be taken out of the title, which is
+ * the one thing on those rows the operator cannot do without. The comparison
+ * tile is the surface with room and the surface that has to be scanned.
+ *
+ * The word is derived from the same `sessionStatusLightState` projection the
+ * mark inside is drawn from, so there is one state in and one mark and one
+ * word out — the word can never become a second status channel that
+ * disagrees with the light. It reports WORK state only: a remote Agent whose
+ * connection has gone stale keeps its last known work word here, and
+ * connection freshness stays a separate readout.
+ */
+export function SessionStatusReadout({
+  state,
+  attention,
+  delegation,
+  fault = false,
+}: {
+  state: SessionGlyphState;
+  attention?: SessionAttentionSignal | null;
+  delegation?: SessionDelegation | null;
+  fault?: boolean;
+}) {
+  const word = sessionStateWord({ state, attention, fault });
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1.5"
+      data-session-state-word={word}
+    >
+      <SessionStatusGlyph
+        state={state}
+        attention={attention}
+        delegation={delegation}
+        fault={fault}
+      />
+      {/* chrome-meta is the secondary-metadata rung (design system, D39 type
+          scale); `whitespace-nowrap` keeps the widest word — "Result ready" —
+          on one line at the tile's fixed 272px, where wrapping would push the
+          header row into the identity band below it. */}
+      <span
+        className="whitespace-nowrap font-sans text-chrome-meta leading-4"
+        style={{ color: HUD.text }}
+      >
+        {word}
+      </span>
+    </span>
   );
 }

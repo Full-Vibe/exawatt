@@ -454,7 +454,8 @@ export function sessionStatusLightState({
     // it. Inference no longer raises one over a reported-open turn, and this
     // keeps the surface honest if some future producer does.
     hasResult:
-      state === 'done' || (attention?.kind === 'turn-end' && state !== 'working'),
+      state === 'done' ||
+      (attention?.kind === 'turn-end' && state !== 'working'),
     active: state === 'working',
   });
 }
@@ -479,7 +480,10 @@ export const ATTENTION_GLYPH_COPY =
 export const FAULT_GLYPH_COPY =
   'Agent failed — open the Session for error details or recovery.';
 
-/** Compact state words for visible labels and accessible names. */
+/** Compact turn-state words for the tab strip's and ⌘K's own vocabularies.
+ *  Keyed on the TURN state, so it is not the word a status light may carry —
+ *  a Session can be mid-turn and still need you. Anything drawn beside a
+ *  D40 mark uses `sessionStateWord` instead (ENG-033 H2). */
 export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
   working: 'working',
   blocked: 'needs you',
@@ -487,6 +491,28 @@ export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
   fresh: 'new',
   quiet: 'quiet',
 };
+
+/**
+ * The word a local Session's status light carries (ENG-033 H2).
+ *
+ * One state in, one mark and one word out: this reads the SAME projection
+ * `SessionStatusGlyph` draws the mark from, so the two cannot disagree. The
+ * word it hands back is the word remote Agents already show in
+ * `/hud-gallery/connected-source`, because both go through the single owner
+ * in the status-light protocol.
+ *
+ * It says the WORK state and only the work state. Connection freshness is a
+ * separate fact with its own readout: a remote Agent Exawatt cannot currently
+ * reach still reports the work it was last seen doing, and this word never
+ * turns into "Stale".
+ */
+export function sessionStateWord(input: {
+  state: SessionGlyphState;
+  attention?: SessionAttentionSignal | null;
+  fault?: boolean;
+}): string {
+  return statusLightWord(sessionStatusLightState(input));
+}
 
 /**
  * How many dots a delegation cluster draws before it stops counting up
@@ -516,7 +542,8 @@ export const SESSION_BLOCKED_COPY: Record<
   NonNullable<SessionDelegation['blockedOn']>,
   string
 > = {
-  question: 'Needs you — the Agent asked a question and is waiting on your answer.',
+  question:
+    'Needs you — the Agent asked a question and is waiting on your answer.',
   permission: 'Needs you — the Agent is waiting on a permission decision.',
   elicitation: 'Needs you — a tool is waiting on input from you.',
 };
@@ -560,9 +587,10 @@ export interface DelegationRailRow {
   startedAt: number;
 }
 
-export function delegationRailRows(
-  delegation?: SessionDelegation | null
-): { rows: DelegationRailRow[]; overflow: number } {
+export function delegationRailRows(delegation?: SessionDelegation | null): {
+  rows: DelegationRailRow[];
+  overflow: number;
+} {
   const children = delegation?.children ?? [];
   const shown =
     children.length > DELEGATION_RAIL_ROW_CAP
@@ -617,6 +645,7 @@ export function sessionGlyphCopy(
 }
 import {
   deriveStatusLightState,
+  statusLightWord,
   type StatusLightState,
 } from '@/components/status-light/protocol';
 import type { SessionDelegation } from '@/types/electron';

@@ -14,7 +14,7 @@ import { SessionGoalSummary } from './session-goal-summary';
 import {
   DelegationDots,
   DelegationRail,
-  SessionStatusGlyph,
+  SessionStatusReadout,
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from './status-glyphs';
@@ -163,9 +163,12 @@ export function SessionOverviewCardContent({
             </span>
           )}
         </span>
-        <span className="inline-flex items-center gap-1.5">
+        {/* `shrink-0`: the state readout carries a word now (ENG-033 H2), and
+            the identity run to its left is the side that yields — it already
+            truncates, the state does not. */}
+        <span className="inline-flex shrink-0 items-center gap-1.5">
           <DelegationDots color={color} delegation={delegation} />
-          <SessionStatusGlyph
+          <SessionStatusReadout
             state={glyphState}
             attention={attention}
             delegation={delegation}

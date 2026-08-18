@@ -35,7 +35,16 @@ describe('SessionStateTileStudy', () => {
     const workingTile = screen.getByRole('button', {
       name: /^Open Complete MMHC conversion and secure BAA at the Agent altitude/,
     });
-    expect(within(workingTile).queryByText('Working')).not.toBeInTheDocument();
+    // ENG-033 H2: the D40 word now stands beside the mark, so the tile reads
+    // without colour. It is the mark's own label, not an eyebrow — the Agent
+    // Source stays condensed to its glyph as before.
+    const readout = workingTile.querySelector('[data-session-state-word]');
+    expect(readout?.getAttribute('data-session-state-word')).toBe('Working');
+    expect(within(readout as HTMLElement).getByText('Working')).toBeVisible();
+    expect(readout?.querySelector('[data-status-light]')).toHaveAttribute(
+      'data-status-light',
+      'active'
+    );
     expect(
       within(workingTile).queryByText('Claude Code')
     ).not.toBeInTheDocument();

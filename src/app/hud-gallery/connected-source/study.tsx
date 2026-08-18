@@ -17,6 +17,11 @@
  *
  * Colour is switchable off because the acceptance criterion is that remote
  * state stays comprehensible without colour, hover, or animation.
+ *
+ * The work-state word comes from `statusLightWord`, the same owner production
+ * Team tiles read (ENG-033 H2). The operator reviewed the word here and
+ * adopted it there; sharing the owner is what keeps the study and the shipped
+ * roster from drifting apart again.
  */
 import { useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
@@ -35,8 +40,8 @@ import {
   resolveConnectionStatus,
 } from '@exawatt/core';
 import {
-  STATUS_LIGHT_META,
   StatusLight,
+  statusLightWord,
   type StatusLightState,
 } from '@/components/status-light';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
@@ -174,7 +179,7 @@ function WorkLine({
         </span>
       ) : null}
       <span style={{ color: HUD.text, opacity: lastKnown ? 0.62 : 1 }}>
-        {STATUS_LIGHT_META[work].label}
+        {statusLightWord(work)}
       </span>
       <span style={{ color: HUD.textDim, opacity: lastKnown ? 0.62 : 1 }}>
         {workLine}

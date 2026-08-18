@@ -778,3 +778,29 @@ nothing requested, requested and awaiting approval on the machine that runs the
 Agent, and granted. The write allowlist gates on what the Gateway granted, never
 on what Exawatt asked for, so a surface that runs ahead of an approval is
 refused locally before it can produce a confusing server-side rejection.
+
+### 2026-08-18 — what the approval actually looks like, measured
+
+The entry above establishes that Exawatt cannot widen its own authority. It
+left open what the operator does about it, and the answer changes the copy, so
+it was measured rather than assumed.
+
+A refused upgrade **enqueues a pending pairing request**. Listing the source's
+devices immediately after shows a `pending` entry carrying the requested scopes
+and a request id, alongside the unchanged `paired` record still at
+`operator.read`. So the operator approves a request that is waiting for them,
+which is a materially different sentence from asking them to re-pair a device,
+and the surface says the true one.
+
+Two further facts came out of the same pass, both of a kind no fixture would
+have produced.
+
+`sessions.subscribe` and `sessions.messages.subscribe` are accepted at
+`operator.read`. Following a conversation as it arrives is observation, not
+command, so streaming needs no authority beyond what H1 already holds and the
+subscription joins the read allowlist rather than waiting for write.
+
+`chat.history` takes `sessionKey`, not `key`, while the subscribe methods take
+`key`. The parameter name is not uniform across the protocol, and a fixture
+written from the shape of one method would have been confidently wrong about
+the other.

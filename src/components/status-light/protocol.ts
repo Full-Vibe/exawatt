@@ -98,6 +98,25 @@ export const STATUS_LIGHT_META = {
 >;
 
 /**
+ * The one operator-facing WORD for a D40 signal (ENG-033 H2).
+ *
+ * The roster has to be readable with the colour switched off. That was always
+ * the accessibility requirement, and remote Agents sharpened it: a remote
+ * Agent's state cannot be guessed from context the way a local one you just
+ * started can, so the mark alone is an assertion of legibility rather than a
+ * proof of it. The word is the proof.
+ *
+ * `STATUS_LIGHT_META` already owns the words the operator reviewed in
+ * `/hud-gallery/connected-source`; this is the named door onto them so no
+ * surface has to reach into the meta record — or worse, keep its own copy —
+ * to write one. `AGENT_STATUS_LIGHT_STATE` projects every `AgentStatus` here,
+ * so local and remote Agents get the same six-into-five vocabulary.
+ */
+export function statusLightWord(state: StatusLightState): string {
+  return STATUS_LIGHT_META[state].label;
+}
+
+/**
  * A single-light priority encoder, matching the physical status-light model.
  * Durable truth stays in its owning models; compact surfaces consume only this
  * deterministic projection.
