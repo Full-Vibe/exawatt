@@ -20,9 +20,9 @@ as product canon (operator-stated intent, not third-party research).
   own git worktree** — typically a couple at a time per initiative, 1–6
   agents across the machine.
 - **Context switching = switching Spaces/windows.** Moving from (say)
-  Exawatt work to Cortex EHR work is a full mental context swap keyed to the
-  window switch. Within a window, several parallel workstreams (tabs) share
-  that one context.
+  Exawatt work to another company's work is a full mental context swap keyed
+  to the window switch. Within a window, several parallel workstreams (tabs)
+  share that one context.
 
 This is agent fleet management done in a really crappy, really contrived
 way — which is exactly why it is the right thing to replace first. In the
