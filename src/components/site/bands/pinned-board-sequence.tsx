@@ -29,8 +29,18 @@
  * MECHANICS, and the constraints each one answers:
  *
  * - **Native scroll only.** No wheel handler, no `preventDefault`, no
- *   `scrollTo`, no snap, no scroll library. `position: sticky` does the
- *   pinning and the board reads a fraction of a FIXED range.
+ *   `scrollTo`, no scroll library. `position: sticky` does the pinning and the
+ *   board reads a fraction of a FIXED range.
+ * - **The page SETTLES on its steps, and the browser does it** (ENG-031 W9,
+ *   operator: "could you have it snap slightly more so scroll settles in the
+ *   steps, instead of being able to get stuck in between"). Native CSS scroll
+ *   snap, `y proximity`, declared on the document scroller in `globals.css`
+ *   and targeted by one zero-height sentinel per panel. PROXIMITY, not
+ *   mandatory: it nudges a finger that has almost arrived and leaves a
+ *   deliberate stop alone, which is what "snap slightly more" asks for.
+ *   Doing it in CSS is what keeps the no-scroll-jacking rule intact: the
+ *   browser owns the scroll from first paint, this file never calls
+ *   `scrollTo`, and a reader who wants to sit between two panels still can.
  * - **It reads the same going up.** Everything visual is a pure function of
  *   scroll POSITION. No one-shot reveal, no direction test, no latch.
  * - **Nothing renders React at scroll frequency** (guide rule 14). One
@@ -134,6 +144,25 @@ const SAFE_BAND_CLASS =
   'md:sticky md:top-[calc(50svh+1.5rem)] md:h-0 motion-reduce:md:static motion-reduce:md:h-auto';
 /** How much of the frame the board takes on a desktop split. */
 const BOARD_FRAME_CLASS = 'md:left-[40%] motion-reduce:md:left-0';
+
+/**
+ * WHERE A PANEL'S SNAP POINT IS, derived rather than tuned (ENG-031 W9).
+ *
+ * `pinned-scroll.ts` puts panel k's keyframe at the scroll position where the
+ * panel's CENTRE crosses the centre of the pinned box, which is not the same
+ * place as the panel box's own top edge: the box is `screens` viewport heights
+ * tall and the pinned box is one viewport minus the site header. Working the
+ * difference through, the keyframe sits `(screens * 100svh - stickyHeight) / 2`
+ * below the panel's top, and that is exactly this expression.
+ *
+ * Snapping the panel BOX instead would have been up to 114px off the altitude
+ * at 1.2 screens, which is a settle that lands the camera between two steps:
+ * the defect, not the fix. A zero-height sentinel at the computed offset means
+ * the browser's rest position and the camera's keyframe are the same number,
+ * with no measurement, no JavaScript, and nothing to keep in step.
+ */
+const SNAP_SENTINEL_TOP =
+  'calc((var(--panel-screens) * 100svh - (100svh - 3rem)) / 2)';
 
 export interface PinnedBoardSequenceProps {
   /** The run of pinned bands, in page order. The fold leads it when the page
@@ -299,6 +328,7 @@ export function PinnedBoardSequence({
       )}
       style={{ ...sequenceStyle, backgroundColor: ground }}
       data-pinned-board-sequence
+      data-pinned-snap="proximity"
       data-pinned-panels={bands.length}
       data-pinned-active={bands[active]?.id}
       data-public-exhibition-surface="true"
@@ -366,8 +396,19 @@ export function PinnedBoardSequence({
       {/* The explanations. Real DOM in reading order: over the left of the
           board when the sequence is pinned, and under the board card when it
           is not. */}
+      {/* THE WHOLE PANEL LAYER IS TRANSPARENT TO THE POINTER (ENG-031 W9).
+          The reading COLUMN has been `pointer-events-none` since W4, but the
+          panel boxes it sits in are full width and full height, and the layer
+          is pulled up over the board at `z-10`, so on every desktop viewport
+          an invisible box covered the entire board and swallowed every hover.
+          The board's Agent hit targets have been unreachable on this page for
+          as long as the page has existed; they only ever worked in the study,
+          which has no panel layer over it. Found while wiring the operator's
+          "show that it's a real thing" pass, and it is the reason that pass
+          could not have worked without this line. Conversion affordances opt
+          back in with `pointer-events-auto`, and `DownloadCta` already did. */}
       <div
-        className={`relative z-10 ${PANELS_PULLUP_CLASS}`}
+        className={`pointer-events-none relative z-10 ${PANELS_PULLUP_CLASS}`}
         data-pinned-panels-layer
       >
         {bands.map((band, index) => (
@@ -454,7 +495,7 @@ function PinnedPanel({
         // Stacked: an ordinary block, as tall as its copy, at full strength.
         // Pinned: a box sized in viewport heights whose presence is a function
         // of scroll position.
-        'w-full opacity-100 md:h-[calc(var(--panel-screens)*100svh)] md:opacity-[var(--panel-opacity)] motion-reduce:md:h-auto motion-reduce:md:opacity-100',
+        'relative w-full opacity-100 md:h-[calc(var(--panel-screens)*100svh)] md:opacity-[var(--panel-opacity)] motion-reduce:md:h-auto motion-reduce:md:opacity-100',
         isFold ? 'pt-9 pb-12' : 'py-9',
         'md:py-0 motion-reduce:md:py-10'
       )}
@@ -462,6 +503,22 @@ function PinnedPanel({
       data-pinned-panel={band.id}
       data-pinned-panel-active={active ? 'true' : undefined}
     >
+      {/* THE SNAP POINT, and only where snapping helps. The fold has none: it
+          is the top of the document, the reader's resting place there is
+          scroll zero, and a snap point 24px below it would fight the one
+          position every page already has. Every later panel gets one, so a
+          finger that stops between two claims settles onto the nearer one.
+          `md:` only, so the phone's document-flow reading column is never
+          nudged mid-sentence, and off under reduced motion, where the sequence
+          is unpinned and there are no steps to settle on. */}
+      {index === 0 ? null : (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 h-px md:snap-start motion-reduce:md:snap-align-none"
+          style={{ top: SNAP_SENTINEL_TOP }}
+          data-pinned-snap-point={band.id}
+        />
+      )}
       {/* THE SAFE BAND. Pinned, the column lives in a nested sticky box that is
           exactly the viewport minus the site header and centres its content
           inside it, so a sentence cannot reach the header at any scroll offset

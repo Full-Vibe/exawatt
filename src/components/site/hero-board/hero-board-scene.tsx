@@ -52,6 +52,12 @@ import {
 import type { HeroBoardCapture } from './capture-types';
 import { HERO_STATUS_ORDER } from './capture-types';
 import { IDLE_BUDGET, STATUS_CHANGES_PER_SECOND } from './hero-board-budget';
+import {
+  POINTER_LEAN_AZIMUTH_DEG,
+  POINTER_LEAN_LAMBDA,
+  POINTER_LEAN_POLAR_DEG,
+  POINTER_LEAN_SETTLE,
+} from './hero-board-annotations';
 import type { HeroAnchor, HeroBridgeAccess } from './hero-board-annotations';
 import {
   HERO_DIM,
@@ -60,6 +66,14 @@ import {
   type HeroHighlight,
 } from './hero-board-highlight';
 import type { HeroLens } from './hero-board-lens';
+import {
+  boardCenter,
+  heroBoardFramings,
+  HERO_DEFAULT_LADDER,
+  MARK_SCALE,
+  NARROW_FRAME_PX,
+  type HeroAltitude,
+} from './hero-board-framings';
 import { heroBoardSubjects } from './hero-board-subjects';
 
 const TAU = Math.PI * 2;
@@ -73,50 +87,6 @@ const noopRaycast = () => null;
 const BASE_AZIMUTH = -12 * DEG;
 const BASE_POLAR = 40 * DEG;
 
-/** How tightly each altitude frames its bounding sphere. Below 1 crops in.
- *  Fleet opened out from 0.66 once the Projects were named (2026-08-17): a
- *  crop that carries scale is worth having, a crop that cuts two Project
- *  labels off the bottom edge is not. */
-const FRAMING_TIGHTNESS = {
-  fleet: 0.74,
-  team: 0.86,
-  agent: 0.95,
-  /** The fold's crop, as a share of the fleet's own bounding sphere. Tuned so
-   *  three to four Project clusters fill a 58%-width column and a single mark
-   *  is still an individual rather than a pixel. */
-  clusterRadius: 0.5,
-} as const;
-
-/**
- * How much harder a PORTRAIT viewport crops (ENG-031 W5, operator: the phone
- * is a demo surface, not a fallback).
- *
- * Fitting a wide board into a tall frame is the wrong instinct: it satisfies
- * the geometry and produces a postage stamp with two thirds of the screen
- * empty, which is exactly the "just a pile of icons" failure at a smaller
- * size. The brief already states the correct rule for conveying scale, and it
- * is the opposite one: density and crop carry scale, and Palantir's board
- * bleeds past all four edges of its frame. So on a phone the board fills the
- * width and runs off the top and bottom, and the marks stay the size a thumb
- * can actually resolve.
- *
- * KEYED ON A NARROW FRAME, NOT ON `height > width` (ENG-031 W6c). The phone's
- * board is a fixed card of `44svh + 2rem`, which at 390x844 is 403px tall: it
- * cleared the portrait test by thirteen pixels, and on a shorter phone, in
- * landscape, or after any change to the card's height it would have failed it
- * and silently served the desktop framing to a 390px frame. The condition the
- * crop is actually about is that the frame is NARROW relative to the board's
- * own spread, so that is what it now tests, with the aspect test kept for a
- * genuinely tall frame at any width.
- */
-const PORTRAIT_CROP = 0.62;
-
-/** A frame this narrow gets the phone's crop whatever its aspect. Matches the
- *  overlay's own `COMPACT_FRAME_PX`, which decides how many Projects a frame
- *  that size can name. */
-const NARROW_FRAME_PX = 560;
-
-const MARK_SCALE = 1.7;
 const STATUS_TRANSITION_SECONDS = 0.85;
 
 /**
@@ -201,132 +171,6 @@ function mulberry32(seed: number): () => number {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-/** Board-model coordinates centred on the origin and laid into world XZ, so
- *  camera-controls' Y-up spherical maths applies without any hand-derived
- *  rotation of our own. */
-function boardCenter(capture: HeroBoardCapture) {
-  return {
-    x: capture.bounds.x + capture.bounds.width / 2,
-    y: capture.bounds.y + capture.bounds.height / 2,
-  };
-}
-
-export interface HeroBoardFraming {
-  center: THREE.Vector3;
-  radius: number;
-  tightness: number;
-  /**
-   * How this altitude answers a NARROW frame (ENG-031 W6c).
-   *
-   * The phone crops rather than fits, but `cluster` is ALREADY the fleet
-   * framing cropped, and multiplying the two put the fold's own Project half
-   * outside a 390px frame with its name faded out beside it. A board whose
-   * circles carry no names is the "pile of rotating icons" verdict returning
-   * at a smaller size, so the altitude that exists to be a crop opts out of
-   * the second one and says so here rather than in a branch at the call site.
-   */
-  narrowCrop: number;
-}
-
-/**
- * The altitudes the board can hold. Spelled locally rather than imported from
- * the band manifest so the scene never depends on the site.
- *
- * `cluster` is the FLEET framing cropped, on the same centre (ENG-031 W6b). It
- * is not a product altitude and it does not pretend to be one: it exists so
- * the fold can open on a board whose individual marks are legible inside a
- * column that is 58% of the viewport, and so the first scroll move is the crop
- * opening out to the whole fleet, which is the scale claim made as a camera
- * move instead of as a screen of type.
- */
-export type HeroAltitude = 'fleet' | 'cluster' | 'team' | 'agent';
-
-/**
- * The default ladder: Fleet, one real Project, one Agent inside it that needs
- * a human.
- *
- * The PAGE overrides it (ENG-031 W5). The pinned run declares its own ordered
- * altitudes in `manifest.ts`, and two properties of that ladder are invisible
- * unless the camera is derived from it rather than hardcoded here: two
- * consecutive panels may share an altitude, which makes the camera hold while
- * the board itself makes the argument, and the ladder is NOT monotonic,
- * because the last panel opens back out.
- */
-export const HERO_DEFAULT_LADDER: HeroAltitude[] = ['fleet', 'team', 'agent'];
-
-export function heroBoardFramings(
-  capture: HeroBoardCapture,
-  ladder: readonly HeroAltitude[] = HERO_DEFAULT_LADDER,
-  /**
-   * A phone-width frame. It changes exactly one thing: what `cluster` is
-   * centred on (ENG-031 W6c).
-   *
-   * On a wide frame `cluster` is the fleet framing cropped on the fleet's own
-   * centre, and whichever Projects happen to fall in the column are the ones
-   * the fold shows. In a 390px frame that lottery put the ONE Project the fold
-   * emphasizes into the top-left corner, half outside the frame, so its name
-   * faded out and the phone's first screen was a board with nothing named on
-   * it. The fold's crop is now centred on the Project the fold is actually
-   * pointing at, which is the same subject `hero-board-subjects.ts` gives the
-   * highlight and the copy, so the phone opens on a named, centred Project and
-   * the first scroll move is still the crop opening out to the whole fleet.
-   */
-  narrow = false
-): HeroBoardFraming[] {
-  const center = boardCenter(capture);
-  const fleet = new THREE.Vector3(0, 0, 0);
-  const fleetRadius =
-    Math.hypot(capture.bounds.width, capture.bounds.height) / 2;
-
-  // The Project and the Agent the camera flies to are the SAME two the panels
-  // name and the highlight emphasizes, so the copy and the camera cannot
-  // disagree. One decision, in `hero-board-subjects.ts`.
-  const subjects = heroBoardSubjects(capture);
-  const zone = capture.zones[subjects.teamZone]!;
-  const team = new THREE.Vector3(zone.x - center.x, 0, zone.y - center.y);
-
-  const agentUnit = capture.units[subjects.agentUnit]!;
-  const agent = new THREE.Vector3(
-    agentUnit.x - center.x,
-    0,
-    agentUnit.y - center.y
-  );
-
-  const byAltitude: Record<HeroAltitude, HeroBoardFraming> = {
-    fleet: {
-      center: fleet,
-      radius: fleetRadius,
-      tightness: FRAMING_TIGHTNESS.fleet,
-      narrowCrop: PORTRAIT_CROP,
-    },
-    cluster: {
-      center: narrow ? team : fleet,
-      radius: fleetRadius * FRAMING_TIGHTNESS.clusterRadius,
-      tightness: FRAMING_TIGHTNESS.fleet,
-      narrowCrop: 1,
-    },
-    team: {
-      center: team,
-      radius: zone.radius * 1.5,
-      tightness: FRAMING_TIGHTNESS.team,
-      narrowCrop: PORTRAIT_CROP,
-    },
-    agent: {
-      center: agent,
-      radius: 4.4,
-      tightness: FRAMING_TIGHTNESS.agent,
-      narrowCrop: PORTRAIT_CROP,
-    },
-  };
-
-  const resolved = (ladder.length > 1 ? ladder : HERO_DEFAULT_LADDER).map(
-    altitude => byAltitude[altitude]
-  );
-  // Vectors are shared between repeated altitudes on purpose: the rig reads
-  // each framing into its own keyframe and never mutates the framing.
-  return resolved;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1316,6 +1160,19 @@ function HeroCameraRig({
   const scratchTarget = useRef(new THREE.Vector3());
   const progress = useRef(0);
   const ready = useRef(false);
+  /**
+   * THE POINTER LEAN (ENG-031 W9). Two damped angles, in radians, composed on
+   * top of whatever framing the scroll has reached.
+   *
+   * `damp` is the right tool here and the guide says why (rule 4b): the target
+   * is still moving, because it is a mouse. It is NOT a semantic transition,
+   * so it needs no duration and no shared clock, and it re-aims every frame
+   * rather than restarting. The one thing it must do that `damp` does not is
+   * ARRIVE: the lean settles to exactly zero below a threshold, because a
+   * camera asymptotically approaching zero would keep the whole board
+   * repainting for nobody and spend an idle budget the page has to pass.
+   */
+  const lean = useRef({ azimuth: 0, polar: 0 });
 
   /** World anchors, hoisted: nothing allocates inside the frame loop. */
   const anchors = useMemo(() => {
@@ -1373,7 +1230,15 @@ function HeroCameraRig({
     const a = keyframes.current[segment]!;
     const b = keyframes.current[segment + 1]!;
     const target = scratchTarget.current.lerpVectors(a.target, b.target, eased);
-    rig.rotateTo(BASE_AZIMUTH, BASE_POLAR, false);
+    // The planted three-quarter view, plus however far the reader's mouse has
+    // leaned it. Angles only: the lean can never touch distance, so it cannot
+    // reverse the run's monotonic zoom, and it can never touch progress, so it
+    // cannot change which step the reader is on.
+    rig.rotateTo(
+      BASE_AZIMUTH + lean.current.azimuth,
+      BASE_POLAR + lean.current.polar,
+      false
+    );
     rig.moveTo(target.x, target.y, target.z, false);
     // Distance is a RATIO, so it interpolates in log space (guide rule 4c):
     // the Fleet-to-Agent journey spans more than an order of magnitude and a
@@ -1513,14 +1378,54 @@ function HeroCameraRig({
         5.5,
         step
       );
+      // The lean follows the pointer and unwinds to rest when it leaves.
+      const pointer = getBridge().pointer;
+      const wantAzimuth = pointer.active
+        ? -THREE.MathUtils.clamp(pointer.x, -1, 1) *
+          POINTER_LEAN_AZIMUTH_DEG *
+          DEG
+        : 0;
+      const wantPolar = pointer.active
+        ? THREE.MathUtils.clamp(pointer.y, -1, 1) * POINTER_LEAN_POLAR_DEG * DEG
+        : 0;
+      const current = lean.current;
+      current.azimuth = THREE.MathUtils.damp(
+        current.azimuth,
+        wantAzimuth,
+        POINTER_LEAN_LAMBDA,
+        step
+      );
+      current.polar = THREE.MathUtils.damp(
+        current.polar,
+        wantPolar,
+        POINTER_LEAN_LAMBDA,
+        step
+      );
+      // ARRIVE, rather than approach forever. Below the settle floor the lean
+      // is set to the target outright, so a board nobody is touching is
+      // pixel-identical to the board the idle budget was measured on.
+      if (Math.abs(current.azimuth - wantAzimuth) < POINTER_LEAN_SETTLE) {
+        current.azimuth = wantAzimuth;
+      }
+      if (Math.abs(current.polar - wantPolar) < POINTER_LEAN_SETTLE) {
+        current.polar = wantPolar;
+      }
       applyProgress(progress.current);
       getBridge().progress = progress.current;
       // camera-controls writes the camera on its own update() at priority -1,
       // which is next frame. Flush it now so the marks and their labels are
       // one composition rather than two a frame apart.
       rig.update(0);
-      // Park when the camera has caught up with the scroll position.
-      if (Math.abs(progress.current - target) > 0.0004) state.invalidate();
+      // Park when the camera has caught up with the scroll position AND the
+      // lean has finished unwinding. Either one still moving is a reason to
+      // keep painting; both settled is a reason to stop.
+      if (
+        Math.abs(progress.current - target) > 0.0004 ||
+        current.azimuth !== wantAzimuth ||
+        current.polar !== wantPolar
+      ) {
+        state.invalidate();
+      }
     }
     projectAll();
   });

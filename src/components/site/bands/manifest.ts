@@ -82,6 +82,23 @@
  *    became eleven and about 12 screens, and eight of those eleven are one
  *    continuous graphic rather than eight separate stops.
  *
+ * AMENDED 2026-08-17 (ENG-031 W9, operator): THE CAMERA ONLY EVER CLOSES IN.
+ *
+ * > "I think the zoom is a little bouncy, I like it when it goes only one
+ * > direction smoothly across multiple steps."
+ *
+ * W8's order made the camera reverse three times in six panels: out of the
+ * fold's crop to the whole fleet, in to one agent, then out to the fleet again
+ * for delegation and for both lens panels. Each reversal is a real change of
+ * direction, so no easing could have hidden it. The rows are reordered so the
+ * path holds or closes in at every step and never once opens out, and
+ * `BAND_ALTITUDE_DEPTH` plus `manifest.test.ts` make that a property the
+ * manifest ENFORCES rather than one it happens to have.
+ *
+ * The dive is also the finale now. `altitude-agent` is the deepest rung and
+ * therefore the last panel over the board, which puts the best frame on the
+ * page immediately above the dated list and the call to action.
+ *
  * THE LENS SEAM. `boardLens` is the extension point the operator asked for:
  * "we can gradually build our actual product surface into that and make a
  * homepage version more illustrative over time." A lens says what the marks
@@ -146,13 +163,50 @@ export type BandHeadingRole = 'none' | 'headline' | 'section' | 'closing';
  * `cluster` is the ONE addition that is not a product altitude, and it says so
  * (ENG-031 W6b): it is the FLEET altitude cropped, centred on the same point,
  * close enough that three or four Project clusters fill the frame and an
- * individual mark is legible. It exists because the fold now shares the
- * board with the rest of the page, and a fold that opened on the whole fleet
- * inside a 58% column showed marks two pixels wide. Reading down, the first
- * move is the crop opening out to the whole fleet, which is the scale claim
- * made as a camera move instead of as a sentence.
+ * individual mark is legible. It exists because the fold now shares the board
+ * with the rest of the page, and a fold that opened on the whole fleet inside
+ * a 58% column showed marks two pixels wide.
+ *
+ * AMENDED 2026-08-17 (W9): `cluster` is where the run OPENS AND HOLDS, and it
+ * is the widest frame the reader is ever shown. `cluster-close` is that same
+ * crop one step in, for the panels whose subject is what the marks MEAN rather
+ * than where they are. The run no longer opens out to `fleet` at all, because
+ * the camera now only ever travels one direction; see `BAND_ALTITUDE_DEPTH`.
  */
-export type BandAltitude = 'agent' | 'team' | 'fleet' | 'cluster';
+export type BandAltitude =
+  | 'agent'
+  | 'team'
+  | 'fleet'
+  | 'cluster'
+  | 'cluster-close';
+
+/**
+ * HOW DEEP EACH ALTITUDE IS, and therefore which direction the camera is
+ * travelling between two bands (ENG-031 W9).
+ *
+ * The operator's note on the assembled run: "I think the zoom is a little
+ * bouncy, I like it when it goes only one direction smoothly across multiple
+ * steps." The old ladder pulled OUT to the fleet after the fold's crop, dove
+ * IN to one agent, and pulled OUT again for the last three panels. Easing
+ * cannot rescue a path that turns around, because each reversal is a real
+ * change of direction and the eye is right to notice it.
+ *
+ * So depth is DECLARED here and asserted by `manifest.test.ts`: across the
+ * bands that anchor the camera, in page order, this number may only rise. The
+ * bounce cannot come back by reordering a row or by giving a new panel a
+ * convenient framing, because either one fails the test rather than shipping.
+ *
+ * `hero-board-framings.ts` holds the same ordering in world units and asserts
+ * the fitted distances agree with it, so the manifest's claim and the camera's
+ * behaviour cannot drift apart.
+ */
+export const BAND_ALTITUDE_DEPTH: Record<BandAltitude, number> = {
+  fleet: 0,
+  cluster: 1,
+  'cluster-close': 2,
+  team: 3,
+  agent: 4,
+};
 
 /**
  * What the pinned board COLOURS BY while this band is the active panel
@@ -303,7 +357,9 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     heading: 'Exawatt',
     copyBudget: { max: 24 },
     medium: 'board',
-    // The opening crop the dive starts from, and the seat the reader is put in.
+    // F0: the crop the whole run opens on, holds on, and dives from, and the
+    // seat the reader is put in. It is the WIDEST frame the page ever shows,
+    // which is what makes the rest of the run a straight line in (W9).
     altitudeAnchor: 'cluster',
     // THE FOLD IS THE FIRST FRAME OF THE GRAPHIC (ENG-031 W6b), which is why
     // it is the one band outside `medium: 'pinned-board'` that declares a lens
@@ -340,6 +396,14 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
   // argument is over (operator, W8: "move the interactive thing to the second
   // section, right after the fold ... I don't see why we shouldn't keep it
   // onscreen to help communicate some of the other points too").
+  //
+  // ITS ORDER IS THE CAMERA PATH (W9). The rows below run in the order a
+  // camera that only closes in can visit them: hold the fold's crop while the
+  // board recedes to what needs you, step in once while the lens re-reads the
+  // same marks twice, step in again onto the Project where delegation is
+  // legible, and dive to one agent as the last thing the page shows. Every
+  // panel's copy already stood alone, so the reorder is a resequencing of
+  // claims rather than a rewrite of any of them.
   {
     id: 'thesis',
     job: 'WHY. The claim and the foil, said over the board rather than one screen before it.',
@@ -369,20 +433,25 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     heading: 'Your tools were built for one agent',
     copyBudget: { min: 60, max: 110 },
     medium: 'pinned-board',
-    altitudeAnchor: 'fleet',
+    // HELD AT F0, NOT PULLED OUT TO IT (W9). The run's camera only ever closes
+    // in, so there is no wider frame for a scale panel to occupy: if this row
+    // is ever promoted it holds the fold's crop while its copy carries the
+    // count, and the crop is what says the rest of the fleet runs past the
+    // frame edge.
+    altitudeAnchor: 'cluster',
     boardLens: 'status',
     boardHighlight: 'whole-fleet',
     screens: 1.2,
     status: 'reserved',
     // RESERVED 2026-08-17 (W6b, operator): "eight panels to four or five". The
     // scale claim is the first thing the page DOES now rather than the first
-    // thing it says: the fold opens on a crop and the next panel's camera
-    // pulls out to the whole fleet, so a screen of type explaining that a
-    // fleet fits on one screen was describing a camera move the reader had
-    // just watched. The foil it carried spends at 72px at the close instead,
-    // which is where the brief already puts the world claim.
+    // thing it says: the fold opens on a crop dense enough that the fleet
+    // obviously continues past the frame, so a screen of type explaining that
+    // a fleet fits on one screen was describing a picture the reader was
+    // already looking at. The foil it carried spends at 72px at the close
+    // instead, which is where the brief already puts the world claim.
     reservedUntil:
-      'The pull-out from the fold no longer reads as the scale claim on its own.',
+      'The fold crop no longer reads as the scale claim on its own.',
   },
   {
     id: 'altitude-attention',
@@ -393,10 +462,12 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // for a rewrite, not room for a second idea.
     copyBudget: { min: 22, max: 42 },
     medium: 'pinned-board',
-    // The SAME altitude as the panel before it, deliberately. The argument is
-    // made by the board changing under a still camera, which is the one beat
-    // on the page a competitor cannot screenshot.
-    altitudeAnchor: 'fleet',
+    // THE CAMERA HOLDS AT F0, exactly where the fold left it (W9). The
+    // argument is made by the board changing under a STILL camera, which is
+    // the one beat on the page a competitor cannot screenshot, and it was
+    // being spent on a pull-out that arrived at the same moment. Only the
+    // agents waiting on a person stay bright; the crop is unchanged.
+    altitudeAnchor: 'cluster',
     boardLens: 'status',
     boardHighlight: 'needs-you',
     screens: 1.2,
@@ -406,107 +477,6 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // operator named this exact case: "the colour section clearly would
     // benefit with that copy appearing alongside the actual product fleet
     // board - why take it away".
-  },
-  {
-    id: 'altitude-team',
-    job: 'CONTINUITY. One project, closer in, every agent in it still an individual.',
-    headingRole: 'section',
-    heading: 'One project',
-    copyBudget: { min: 20, max: 32 },
-    medium: 'pinned-board',
-    altitudeAnchor: 'team',
-    boardLens: 'status',
-    boardHighlight: 'one-project',
-    screens: 1,
-    status: 'reserved',
-    // W8: one dive, not two. The camera passing THROUGH the team framing on
-    // its way to one agent says everything this panel said, and it says it
-    // without a stop. The row stays so the stop can come back as a data edit
-    // if the dive ever reads too fast.
-    reservedUntil:
-      'The dive from fleet to one agent reads too fast without a stop at the project framing.',
-  },
-  {
-    id: 'altitude-agent',
-    job: 'DEPTH. Into one project and down to one agent, with a status that changes while you read it.',
-    headingRole: 'section',
-    heading: 'Down to one agent',
-    copyBudget: { min: 22, max: 40 },
-    medium: 'pinned-board',
-    altitudeAnchor: 'agent',
-    boardLens: 'status',
-    boardHighlight: 'one-agent',
-    screens: 1,
-    status: 'proposed',
-  },
-  {
-    id: 'altitude-delegation',
-    job: 'TRAJECTORY. Agents run agents, so the camera opens back out while the fleet blooms.',
-    headingRole: 'section',
-    heading: 'Agents run agents',
-    copyBudget: { min: 18, max: 36 },
-    medium: 'pinned-board',
-    // Back OUT to the FLEET framing, which is the only anchor in the run that
-    // reverses, and it reverses all the way: the mechanism by which ten
-    // becomes ten thousand is the last thing the board says at this altitude,
-    // so the sequence opens out rather than bottoming out on one mark.
-    altitudeAnchor: 'fleet',
-    boardLens: 'status',
-    boardHighlight: 'delegation',
-    screens: 1,
-    status: 'proposed',
-  },
-  {
-    id: 'any-lab',
-    job: 'PROVENANCE. Whose agents these are, coloured by the harness that runs each one.',
-    headingRole: 'section',
-    heading: 'Agents from any lab',
-    copyBudget: { min: 30, max: 48 },
-    // W8 promoted this from a card chapter to a LENS. A harness is a property
-    // of every mark on the board, so the claim proves itself the moment the
-    // fleet recolours by source.
-    medium: 'pinned-board',
-    altitudeAnchor: 'fleet',
-    boardLens: 'source',
-    boardHighlight: 'whole-fleet',
-    screens: 1,
-    status: 'proposed',
-  },
-  {
-    id: 'cost',
-    job: 'SPEND. What the fleet is burning, read off the same marks.',
-    headingRole: 'section',
-    heading: 'What it spent, beside what it did',
-    copyBudget: { min: 60, max: 150 },
-    medium: 'pinned-board',
-    altitudeAnchor: 'fleet',
-    boardLens: 'burn',
-    boardHighlight: 'whole-fleet',
-    screens: 1,
-    status: 'reserved',
-    // RESERVED 2026-08-17 (W6b, operator): "eight panels to four or five",
-    // and this is the panel the named four leave out. Cross-vendor spend is
-    // still the thing nobody else in the category shows, so the LENS stays
-    // built and resolved: promoting the row back is a status edit, not a
-    // rebuild. It comes back on a page that has room for a sixth claim.
-    reservedUntil:
-      'The page has room for a sixth claim. The burn lens is built and resolves today.',
-  },
-  {
-    id: 'trust',
-    job: 'OWNERSHIP. Whose machine this runs on, and the switch attached to every outbound thing.',
-    headingRole: 'section',
-    heading: 'Your machine, your keys, your repo',
-    copyBudget: { min: 30, max: 46 },
-    medium: 'pinned-board',
-    altitudeAnchor: 'fleet',
-    // Declared `permission` and resolved as `status` until the fixture carries
-    // a per-Agent approval mode. Declaring the intent in the manifest and
-    // resolving it honestly in the lens is the whole point of the seam.
-    boardLens: 'permission',
-    boardHighlight: 'whole-fleet',
-    screens: 1,
-    status: 'proposed',
   },
   {
     id: 'observability',
@@ -528,23 +498,119 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
       'The truthful-status mechanisms outgrow the `altitude-attention` panel and need their own screen.',
   },
   {
-    id: 'open-source',
-    job: 'The AGPL app and the Apache-2.0 spec, in a human voice.',
+    id: 'any-lab',
+    job: 'PROVENANCE. Whose agents these are, coloured by the harness that runs each one.',
     headingRole: 'section',
-    heading: 'Open source, on purpose',
-    copyBudget: { min: 60, max: 130 },
-    medium: 'type',
-    altitudeAnchor: null,
-    boardLens: null,
-    boardHighlight: null,
+    heading: 'Agents from any lab',
+    copyBudget: { min: 30, max: 48 },
+    // W8 promoted this from a card chapter to a LENS. A harness is a property
+    // of every mark on the board, so the claim proves itself the moment the
+    // fleet recolours by source.
+    medium: 'pinned-board',
+    // ONE STEP IN FROM F0 (W9). The subject here is what a mark MEANS, not
+    // where it is, so the lens is the event and the camera only keeps the run
+    // moving forward rather than making a journey of it.
+    altitudeAnchor: 'cluster-close',
+    boardLens: 'source',
+    boardHighlight: 'whole-fleet',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'cost',
+    job: 'SPEND. What the fleet is burning, read off the same marks.',
+    headingRole: 'section',
+    heading: 'What it spent, beside what it did',
+    copyBudget: { min: 60, max: 150 },
+    medium: 'pinned-board',
+    // Beside `any-lab` at the same rung: another lens on the same marks.
+    altitudeAnchor: 'cluster-close',
+    boardLens: 'burn',
+    boardHighlight: 'whole-fleet',
     screens: 1,
     status: 'reserved',
-    // W8 moved this to the FOOTER column, which is where the research put it:
-    // open source belongs as a band and a footer column, never the headline,
-    // and the page had one screen too many. `site-footer.tsx` states the split
-    // once, plainly.
+    // RESERVED 2026-08-17 (W6b, operator): "eight panels to four or five",
+    // and this is the panel the named four leave out. Cross-vendor spend is
+    // still the thing nobody else in the category shows, so the LENS stays
+    // built and resolved: promoting the row back is a status edit, not a
+    // rebuild. It comes back on a page that has room for a sixth claim.
     reservedUntil:
-      'The two-license split needs more than the footer column states. It is stated once in `site-footer.tsx` today.',
+      'The page has room for a sixth claim. The burn lens is built and resolves today.',
+  },
+  {
+    id: 'trust',
+    job: 'OWNERSHIP. Whose machine this runs on, and the switch attached to every outbound thing.',
+    headingRole: 'section',
+    heading: 'Your machine, your keys, your repo',
+    copyBudget: { min: 30, max: 46 },
+    medium: 'pinned-board',
+    // HELD BESIDE `any-lab`, and ahead of the dive (W9). Ownership is a claim
+    // about every mark, so it belongs while the whole crop is in frame; and it
+    // may not come AFTER the dive, because getting back out to say it would be
+    // the reversal this run exists to remove.
+    altitudeAnchor: 'cluster-close',
+    // Declared `permission` and resolved as `status` until the fixture carries
+    // a per-Agent approval mode. Declaring the intent in the manifest and
+    // resolving it honestly in the lens is the whole point of the seam.
+    boardLens: 'permission',
+    boardHighlight: 'whole-fleet',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'altitude-team',
+    job: 'CONTINUITY. One project, closer in, every agent in it still an individual.',
+    headingRole: 'section',
+    heading: 'One project',
+    copyBudget: { min: 20, max: 32 },
+    medium: 'pinned-board',
+    altitudeAnchor: 'team',
+    boardLens: 'status',
+    boardHighlight: 'one-project',
+    screens: 1,
+    status: 'reserved',
+    // W8: one dive, not two. W9 gave the Project framing back to
+    // `altitude-delegation`, which holds it for a full panel, so the dive
+    // stops there on the way down whether or not this row is ever promoted.
+    reservedUntil:
+      'The dive needs a second stop at the project framing, beyond the one `altitude-delegation` already holds.',
+  },
+  {
+    id: 'altitude-delegation',
+    job: 'TRAJECTORY. Agents run agents, so the camera opens back out while the fleet blooms.',
+    headingRole: 'section',
+    heading: 'Agents run agents',
+    copyBudget: { min: 18, max: 36 },
+    medium: 'pinned-board',
+    // IN A STEP, onto the Project the dive is already heading for (W9). This
+    // panel used to pull all the way back out to the fleet, which was the
+    // single largest reversal in the run and the one the operator felt most.
+    // The bloom does not need distance; it needs to be LEGIBLE, and a child
+    // mark blooming out of its parent is legible at the Project framing and
+    // invisible at the fleet's. The rest of the fleet is still there, receded,
+    // saying that this is happening everywhere.
+    altitudeAnchor: 'team',
+    boardLens: 'status',
+    boardHighlight: 'delegation',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'altitude-agent',
+    job: 'DEPTH. All the way down to one agent, with a status that changes while you read it.',
+    headingRole: 'section',
+    heading: 'Down to one agent',
+    copyBudget: { min: 22, max: 40 },
+    medium: 'pinned-board',
+    // THE FINALE OF THE RUN (W9). Both design reviews called this the best
+    // frame on the page, and it used to arrive in the middle and be left
+    // behind. It is the deepest rung, so it can only be last, and it hands
+    // straight to the dated list and the call to action underneath it.
+    altitudeAnchor: 'agent',
+    boardLens: 'status',
+    boardHighlight: 'one-agent',
+    screens: 1,
+    status: 'proposed',
   },
   {
     id: 'security',
@@ -564,6 +630,25 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // deficiency promotes the deficiency.
     reservedUntil:
       'Exawatt mediates a high-impact action itself. Until then the honest half lives in `trust`.',
+  },
+  {
+    id: 'open-source',
+    job: 'The AGPL app and the Apache-2.0 spec, in a human voice.',
+    headingRole: 'section',
+    heading: 'Open source, on purpose',
+    copyBudget: { min: 60, max: 130 },
+    medium: 'type',
+    altitudeAnchor: null,
+    boardLens: null,
+    boardHighlight: null,
+    screens: 1,
+    status: 'reserved',
+    // W8 moved this to the FOOTER column, which is where the research put it:
+    // open source belongs as a band and a footer column, never the headline,
+    // and the page had one screen too many. `site-footer.tsx` states the split
+    // once, plainly.
+    reservedUntil:
+      'The two-license split needs more than the footer column states. It is stated once in `site-footer.tsx` today.',
   },
   {
     id: 'proof',
@@ -661,14 +746,31 @@ export function pinnedBoardBands(
  *
  * - consecutive panels may share an altitude, which makes the camera hold
  *   while the board itself makes the argument;
- * - the ladder is NOT monotonic. It dives to one agent and opens back out for
- *   delegation and for the three lens panels, so the sequence ends on the
- *   whole fleet rather than bottoming out on one mark.
+ * - the ladder is MONOTONIC (W9). Depth never decreases, so the reader is
+ *   only ever taken further in, and the run ends on the one agent it has been
+ *   travelling towards. `pinnedAltitudeDepths()` is what a test asserts on.
  */
 export function pinnedAltitudeLadder(
   bands: HomepageBand[] = proposedBands()
 ): BandAltitude[] {
   return pinnedBoardBands(bands).map(band => band.altitudeAnchor ?? 'fleet');
+}
+
+/**
+ * How deep the camera is at each band that anchors it, in page order, the fold
+ * included (ENG-031 W9).
+ *
+ * This is the sequence the monotonicity test reads. The FOLD has to be in it:
+ * it is the graphic's first frame, `bandRuns()` merges it into the run, and the
+ * single worst reversal the page ever shipped was the one between the fold's
+ * crop and the panel directly after it.
+ */
+export function pinnedAltitudeDepths(
+  bands: HomepageBand[] = proposedBands()
+): number[] {
+  return heroCameraAnchors(bands).map(
+    anchor => BAND_ALTITUDE_DEPTH[anchor.altitude]
+  );
 }
 
 /**

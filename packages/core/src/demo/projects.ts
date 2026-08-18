@@ -9,6 +9,19 @@
  * work a person would say out loud. Every surface that shows a Project to a
  * human reads `name`; everything that resolves, groups, or links reads `key`.
  *
+ * AMENDED 2026-08-17 (ENG-031 W9, operator, reviewing the marketing board a
+ * second time): NAMES ARE WORK A STRANGER RECOGNIZES, NOT THIS COMPANY'S
+ * DOMAIN. "Make one 'Social Marketing Team' no 'Battery Dispatch' - not sure
+ * what that means." Voltaic is a virtual-power-plant startup, so `Battery
+ * Dispatch`, `Device Telemetry`, `Gateway Firmware` and `Installer Portal`
+ * were jargon to every reader outside it, and the homepage board is read
+ * almost entirely by people outside it. The display names are now the kinds of
+ * team any founder, VC or developer runs: Web Platform, Partner API, Customer
+ * App, Data Pipeline, Mobile App, Design System, Cloud Platform, Market
+ * Research, Social Marketing Team, Customer Support. `key` and `dir` are
+ * untouched, so every roadmap reference, checkout path and cross-reference
+ * still resolves; only `name` and the human `summary` beside it moved.
+ *
  * Ten Projects, majority coding: seven engineering functions carry
  * `readiness: 'live'` because commanding coding agents is what Exawatt ships
  * today; the three non-coding functions (research, marketing, support) are
@@ -26,14 +39,14 @@ const HOME = '~/Code/voltaic';
 export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   {
     key: 'dispatch-engine',
-    name: 'Battery Dispatch',
+    name: 'Web Platform',
     dir: `${HOME}/dispatch-engine`,
     color: '#50E6FF',
     function: 'backend',
     agentType: 'Engineer',
     readiness: 'live',
     summary:
-      'Battery dispatch optimizer and market bidder — decides when every enrolled site charges, holds, or sells.',
+      'The web platform and the services behind it: scheduling, pricing, and the decisions the product makes on its own.',
   },
   {
     key: 'grid-api',
@@ -59,36 +72,36 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'telemetry-ingest',
-    name: 'Device Telemetry',
+    name: 'Data Pipeline',
     dir: `${HOME}/telemetry-ingest`,
     color: '#B9A6FF',
     function: 'data',
     agentType: 'Engineer',
     readiness: 'live',
     summary:
-      'Device telemetry pipeline — per-second battery, inverter, and charger readings from every enrolled site.',
+      'The data pipeline: per-second readings from every enrolled site, cleaned, warehoused, and queryable.',
   },
   {
     key: 'edge-gateway',
-    name: 'Gateway Firmware',
+    name: 'Mobile App',
     dir: `${HOME}/edge-gateway`,
     color: '#FF9ECF',
     function: 'firmware',
     agentType: 'Engineer',
     readiness: 'live',
     summary:
-      'On-site gateway software — vendor protocol adapters, local safety limits, and over-the-air updates.',
+      'The mobile app: setup, notifications, and control that keeps working when the network does not.',
   },
   {
     key: 'partner-portal',
-    name: 'Installer Portal',
+    name: 'Design System',
     dir: `${HOME}/partner-portal`,
     color: '#7FD4B8',
     function: 'frontend',
     agentType: 'Engineer',
     readiness: 'live',
     summary:
-      'Installer and utility portal — site commissioning, fleet health, and settlement statements.',
+      'The design system: components, tokens, and the patterns every surface is built from.',
   },
   {
     key: 'platform-infra',
@@ -114,7 +127,7 @@ export const DEMO_PROJECTS: DemoWorkspaceProject[] = [
   },
   {
     key: 'demand-gen',
-    name: 'Growth Marketing',
+    name: 'Social Marketing Team',
     dir: `${HOME}/demand-gen`,
     color: '#FFB08A',
     function: 'marketing',

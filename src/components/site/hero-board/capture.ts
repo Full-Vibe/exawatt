@@ -18,15 +18,15 @@ import type {
 
 // prettier-ignore
 const ZONES: HeroBoardZone[] = [
-  {"label":"Growth Marketing","x":14,"y":14,"radius":9.053,"agentCount":8,"needsAttention":true,"needsYou":1},
-  {"label":"Battery Dispatch","x":44,"y":14,"radius":11.885,"agentCount":28,"needsAttention":true,"needsYou":5},
-  {"label":"Gateway Firmware","x":74,"y":14,"radius":10.103,"agentCount":14,"needsAttention":true,"needsYou":2},
+  {"label":"Social Marketing Team","x":14,"y":14,"radius":9.053,"agentCount":8,"needsAttention":true,"needsYou":1},
+  {"label":"Web Platform","x":44,"y":14,"radius":11.885,"agentCount":28,"needsAttention":true,"needsYou":5},
+  {"label":"Mobile App","x":74,"y":14,"radius":10.103,"agentCount":14,"needsAttention":true,"needsYou":2},
   {"label":"Partner API","x":104,"y":14,"radius":10.813,"agentCount":19,"needsAttention":true,"needsYou":3},
   {"label":"Market Research","x":14,"y":42,"radius":9.437,"agentCount":10,"needsAttention":true,"needsYou":1},
-  {"label":"Installer Portal","x":44,"y":42,"radius":9.784,"agentCount":12,"needsAttention":true,"needsYou":2},
+  {"label":"Design System","x":44,"y":42,"radius":9.784,"agentCount":12,"needsAttention":true,"needsYou":2},
   {"label":"Cloud Platform","x":74,"y":42,"radius":11.07,"agentCount":21,"needsAttention":true,"needsYou":1},
   {"label":"Customer Support","x":104,"y":42,"radius":9.784,"agentCount":12,"needsAttention":true,"needsYou":2},
-  {"label":"Device Telemetry","x":14,"y":70,"radius":11.55,"agentCount":25,"needsAttention":true,"needsYou":5},
+  {"label":"Data Pipeline","x":14,"y":70,"radius":11.55,"agentCount":25,"needsAttention":true,"needsYou":5},
   {"label":"Customer App","x":44,"y":70,"radius":11.434,"agentCount":24,"needsAttention":true,"needsYou":3},
 ];
 
