@@ -109,9 +109,7 @@ async function main() {
     });
   }
 
-  process.stdout.write(
-    `${JSON.stringify({ ...proof, boundary }, null, 2)}\n`
-  );
+  process.stdout.write(`${JSON.stringify({ ...proof, boundary }, null, 2)}\n`);
 }
 
 main().catch(error => {

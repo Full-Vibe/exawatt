@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import {
   chmod,
   copyFile,
@@ -17,7 +17,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 
 import {
@@ -318,7 +317,12 @@ async function readGitBlob(repo, object) {
 export async function resolveCompositionSource(repo, ref = 'HEAD') {
   const root = path.resolve(repo);
   const commit = (
-    await git(root, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])
+    await git(root, [
+      'rev-parse',
+      '--verify',
+      '--end-of-options',
+      `${ref}^{commit}`,
+    ])
   ).trim();
   const tree = (await git(root, ['rev-parse', `${commit}^{tree}`])).trim();
   const records = await git(root, ['ls-tree', '-rz', '--full-tree', commit], {
@@ -335,7 +339,9 @@ export async function resolveCompositionSource(repo, ref = 'HEAD') {
       (await readGitBlob(root, manifestBlob)).toString('utf8')
     );
   } catch (error) {
-    fail(`${OPEN_SOURCE_PATH_MANIFEST} at ${commit} is invalid: ${error.message}`);
+    fail(
+      `${OPEN_SOURCE_PATH_MANIFEST} at ${commit} is invalid: ${error.message}`
+    );
   }
   validatePathManifest(manifest);
   const classified = validateTrackedPathCoverage(manifest, entries);
@@ -458,45 +464,34 @@ function assertAddOnlyTargets(manifest, source) {
   }
 }
 
-function collectStderr(stream) {
-  const chunks = [];
-  stream.on('data', chunk => chunks.push(Buffer.from(chunk)));
-  return () => Buffer.concat(chunks).toString('utf8').trim();
-}
-
-function processExit(child, label, stderr) {
-  return new Promise((resolve, reject) => {
-    child.once('error', error =>
-      reject(new Error(`${label}: ${error.message}`))
-    );
-    child.once('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error(`${label} exited ${code}: ${stderr()}`));
-    });
-  });
-}
-
+/**
+ * Stages a commit's files (or a subset) into `destination`.
+ *
+ * Deliberately NOT `git archive | tar -x`. That pipeline is two processes
+ * racing a shared stream: when `tar` finishes and exits at the same moment the
+ * writable side is still settling, Node rejects with `ERR_STREAM_PREMATURE_CLOSE`
+ * and the composition fails for a reason that has nothing to do with its
+ * inputs. It surfaced on a loaded machine during a landing, which is exactly
+ * when a deterministic step must not be probabilistic. Writing the archive to a
+ * file first makes the two steps sequential and the result a pure function of
+ * the commit.
+ */
 async function extractGitArchive(repo, commit, destination, paths = []) {
   await mkdir(destination, { recursive: true });
-  const archiveArgs = ['archive', '--format=tar', commit];
-  if (paths.length > 0) archiveArgs.push('--', ...paths);
-  const archive = spawn('git', archiveArgs, {
-    cwd: repo,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const extractor = spawn('tar', ['-xf', '-', '-C', destination], {
-    stdio: ['pipe', 'ignore', 'pipe'],
-  });
-  const archiveStderr = collectStderr(archive.stderr);
-  const extractorStderr = collectStderr(extractor.stderr);
+  const staging = await mkdtemp(
+    path.join(tmpdir(), 'exawatt-company-archive-')
+  );
+  const tarball = path.join(staging, 'tree.tar');
   try {
-    await Promise.all([
-      pipeline(archive.stdout, extractor.stdin),
-      processExit(archive, 'git archive', archiveStderr),
-      processExit(extractor, 'tar extraction', extractorStderr),
-    ]);
+    const archiveArgs = ['archive', '--format=tar', '-o', tarball, commit];
+    if (paths.length > 0) archiveArgs.push('--', ...paths);
+    await execFileAsync('git', archiveArgs, { cwd: repo });
+    await execFileAsync('tar', ['-xf', tarball, '-C', destination]);
   } catch (error) {
-    fail(`archive staging failed: ${error.message}`);
+    const detail = String(error.stderr ?? error.message).trim();
+    fail(`archive staging failed: ${detail}`);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
   }
 }
 
@@ -575,8 +570,13 @@ function safeOutputDirectory(outputDir, sourceRepo) {
   if (output === source) fail('output cannot replace the source repository');
   const relative = path.relative(source, output);
   if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
-    if (relative !== '.company-build' && !relative.startsWith('.company-build/')) {
-      fail('output inside the source repository must live under .company-build');
+    if (
+      relative !== '.company-build' &&
+      !relative.startsWith('.company-build/')
+    ) {
+      fail(
+        'output inside the source repository must live under .company-build'
+      );
     }
   }
   return output;
@@ -704,7 +704,9 @@ export async function composeCompanyProfile({
         entries: outputEntries,
       },
     };
-    const compositionManifestDigest = sha256(canonicalJson(compositionManifest));
+    const compositionManifestDigest = sha256(
+      canonicalJson(compositionManifest)
+    );
     const compositionDigest = sha256(
       canonicalJson({ outputTreeDigest, compositionManifestDigest })
     );
@@ -734,7 +736,9 @@ export async function proveCompanyComposition({
   ref = 'HEAD',
 }) {
   for (const profile of profiles) assertCompanyProfile(profile);
-  const proofRoot = await mkdtemp(path.join(tmpdir(), 'exawatt-company-proof-'));
+  const proofRoot = await mkdtemp(
+    path.join(tmpdir(), 'exawatt-company-proof-')
+  );
   try {
     const results = [];
     for (const profile of profiles) {
@@ -921,7 +925,10 @@ export async function applyCompanyOverlayInPlace({ root, profile }) {
     applied: applied.sort((a, b) => a.target.localeCompare(b.target)),
     removed,
   };
-  const statePath = path.join(repoRoot, ...COMPANY_COMPOSITION_STATE.split('/'));
+  const statePath = path.join(
+    repoRoot,
+    ...COMPANY_COMPOSITION_STATE.split('/')
+  );
   await mkdir(path.dirname(statePath), { recursive: true });
   await writeFile(statePath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
   return record;
