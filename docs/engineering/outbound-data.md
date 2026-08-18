@@ -24,18 +24,18 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 
 ## Summary
 
-| Destination | Category | Default | Off switch |
-| --- | --- | --- | --- |
-| Distribution `analytics.ingestOrigin`; official: `www.exawatt.ai/ingest` → PostHog (`us.i.posthog.com`, `us-assets.i.posthog.com`) | Product analytics | Off in community; on in configured production distributions | Runtime opt-out; set distribution `analytics: null`; configure another absolute PostHog-compatible sink |
-| `www.exawatt.ai/api/context-labels` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Session context labels; `EXAWATT_CONTEXT_LABELS=0` |
-| `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
-| `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
-| `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in) | Own-account feature (re-entry recap) | On | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0` |
+| Destination                                                                                                                                               | Category                                         | Default                                                                                                                                          | Off switch                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Distribution `analytics.ingestOrigin`; official: `www.exawatt.ai/ingest` → PostHog (`us.i.posthog.com`, `us-assets.i.posthog.com`)                        | Product analytics                                | Off in community; on in configured production distributions                                                                                      | Runtime opt-out; set distribution `analytics: null`; configure another absolute PostHog-compatible sink                                                                                                  |
+| `www.exawatt.ai/api/context-labels` → `api.anthropic.com`                                                                                                 | Hosted feature                                   | On when signed in                                                                                                                                | Settings → Privacy → Session context labels; `EXAWATT_CONTEXT_LABELS=0`                                                                                                                                  |
+| `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com`                                                                                        | Hosted feature                                   | On when signed in                                                                                                                                | Settings → Privacy → Conversation summaries                                                                                                                                                              |
+| `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media`                                                                                              | Hosted feature                                   | On when signed in                                                                                                                                | Settings → Privacy → Agent tile backgrounds                                                                                                                                                              |
+| `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in)                                                                               | Own-account feature (re-entry recap)             | On                                                                                                                                               | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0`                                                                                                                                        |
 | Signed Exawatt Chromium network stack → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On in packaged builds whose distribution declares `ownAccount.claudePlanUsage: 'stable-signed'`; off in community builds, development, and tests | Settings → Privacy → Claude plan usage (a build without the declaration shows "Not configured in this build" instead of a switch); focused integration testing only: `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` |
-| `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
-| `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
-| Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
-| `<project>.supabase.co` (`product_feedback.context.diagnostics`) | Anonymized diagnostics attached to a bug report | Never automatic; per-report opt-in on ⌘⇧F → Bug → ⌘D | Leave the toggle off, or use Settings → Privacy → Diagnostics to save the same report to a file instead |
+| `<project>.supabase.co`                                                                                                                                   | Account, sync, feedback, stats                   | On when signed in                                                                                                                                | Sign out; individual features listed below                                                                                                                                                               |
+| `<project>.supabase.co/storage/.../desktop-updates`                                                                                                       | App updates                                      | Always on in signed builds                                                                                                                       | No user switch (known gap)                                                                                                                                                                               |
+| Locally spawned agent harnesses                                                                                                                           | User's own tools                                 | On user action                                                                                                                                   | Do not launch an Agent                                                                                                                                                                                   |
+| `<project>.supabase.co` (`product_feedback.context.diagnostics`)                                                                                          | Anonymized diagnostics attached to a bug report  | Never automatic; per-report opt-in on ⌘⇧F → Bug → ⌘D                                                                                             | Leave the toggle off, or use Settings → Privacy → Diagnostics to save the same report to a file instead                                                                                                  |
 
 Signed out, the desktop app is nearly silent: context labels, goal visuals,
 conversation summaries, Project sync, feedback, and stats all short-circuit on
@@ -62,30 +62,30 @@ the user's machine (ENG-016 D17, incident `0002`), not deniability.
 
 **Host resolution** (`src/lib/analytics/config.ts`):
 
-| Distribution | `api_host` | Why |
-| --- | --- | --- |
-| Community (`analytics: null`) | none; SDK is not imported | No analytics capability or Exawatt fallback |
-| Official web and desktop | `https://www.exawatt.ai/ingest` | One stable outbound identity; absolute also works from packaged Electron's loopback renderer |
-| Downstream/self-hosted | exact `analytics.ingestOrigin` | Distributor-controlled redirect or self-host without patching product code |
+| Distribution                  | `api_host`                      | Why                                                                                          |
+| ----------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
+| Community (`analytics: null`) | none; SDK is not imported       | No analytics capability or Exawatt fallback                                                  |
+| Official web and desktop      | `https://www.exawatt.ai/ingest` | One stable outbound identity; absolute also works from packaged Electron's loopback renderer |
+| Downstream/self-hosted        | exact `analytics.ingestOrigin`  | Distributor-controlled redirect or self-host without patching product code                   |
 
 **What is sent.** Four events and nothing else. The complete property set:
 
-| Event | Properties |
-| --- | --- |
-| `app_launched` | `allowlist_version`, `surface` (`desktop`\|`web`), `platform` (`darwin`\|`win32`\|`linux`\|`web`\|`unknown`), `delivery` (`signed`\|`dogfood`\|`hosted`\|`unknown`), `app_version` (version-shaped string or null), `signed_in` (boolean) |
-| `sign_in_attempted` | `allowlist_version`, `surface`, `method` (`google`\|`github`\|`password`\|`unknown`), `outcome` (`started`\|`succeeded`\|`failed`\|`unknown`), `failure` (closed enum or null) |
+| Event                | Properties                                                                                                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `app_launched`       | `allowlist_version`, `surface` (`desktop`\|`web`), `platform` (`darwin`\|`win32`\|`linux`\|`web`\|`unknown`), `delivery` (`signed`\|`dogfood`\|`hosted`\|`unknown`), `app_version` (version-shaped string or null), `signed_in` (boolean)                          |
+| `sign_in_attempted`  | `allowlist_version`, `surface`, `method` (`google`\|`github`\|`password`\|`unknown`), `outcome` (`started`\|`succeeded`\|`failed`\|`unknown`), `failure` (closed enum or null)                                                                                     |
 | `hosted_call_failed` | `allowlist_version`, `surface`, `service` (closed enum of the hosted endpoints above), `failure` (`network`\|`timeout`\|`unauthorized`\|`rate_limited`\|`quota_exhausted`\|`server_error`\|`invalid_response`\|`unknown`), `status_code` (integer 100–599 or null) |
-| `app_crashed` | `allowlist_version`, `surface`, `scope` (`renderer`\|`main`\|`gpu`\|`utility`\|`agent_harness`), `reason` (`crashed`\|`killed`\|`out_of_memory`\|`launch_failed`\|`unresponsive`\|`unknown`), `app_version` |
+| `app_crashed`        | `allowlist_version`, `surface`, `scope` (`renderer`\|`main`\|`gpu`\|`utility`\|`agent_harness`), `reason` (`crashed`\|`killed`\|`out_of_memory`\|`launch_failed`\|`unresponsive`\|`unknown`), `app_version`                                                        |
 
 Plus PostHog's `$exception` event, which `capture_exceptions` produces for an
 uncaught renderer error. It is allowlisted the same way the four events above
 are: exactly two crash payload properties may leave, and both are rebuilt
 rather than forwarded.
 
-| Property | What survives |
-| --- | --- |
-| `$exception_list` | Per exception: `type`, `value` (always `'<redacted>'`), `mechanism` (`type`, `handled`, `synthetic`), and `stacktrace.frames` reduced to `function`, `filename`, `lineno`, `colno`, `in_app`, `platform`, `lang` |
-| `$exception_level` | One of `fatal`, `error`, `warning`, `log`, `info`, `debug`; anything else becomes `error` |
+| Property           | What survives                                                                                                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$exception_list`  | Per exception: `type`, `value` (always `'<redacted>'`), `mechanism` (`type`, `handled`, `synthetic`), and `stacktrace.frames` reduced to `function`, `filename`, `lineno`, `colno`, `in_app`, `platform`, `lang` |
+| `$exception_level` | One of `fatal`, `error`, `warning`, `log`, `info`, `debug`; anything else becomes `error`                                                                                                                        |
 
 The message text is **removed** before send (`value: '<redacted>'`), and stack
 frame locations are reduced to a path, so neither an error string nor a machine
@@ -136,11 +136,11 @@ test builds.
 
 **How to turn it off.**
 
-| Control | Effect |
-| --- | --- |
-| Runtime opt-out (`setAnalyticsOptOut(true)`, persisted at `exawatt.analytics.opt-out.v1`) | PostHog is never initialized on the next launch, and emission stops immediately in the current one |
-| Distribution `analytics: null` at build time | Same, for a whole distribution; this is the community default |
-| Distribution `analytics: { ingestOrigin, projectKey }` | Events go only to that distributor-selected sink; Exawatt receives nothing unless its endpoint is selected |
+| Control                                                                                   | Effect                                                                                                     |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Runtime opt-out (`setAnalyticsOptOut(true)`, persisted at `exawatt.analytics.opt-out.v1`) | PostHog is never initialized on the next launch, and emission stops immediately in the current one         |
+| Distribution `analytics: null` at build time                                              | Same, for a whole distribution; this is the community default                                              |
+| Distribution `analytics: { ingestOrigin, projectKey }`                                    | Events go only to that distributor-selected sink; Exawatt receives nothing unless its endpoint is selected |
 
 All four suppress **initialization and emission**, not merely ingestion: when
 analytics are off, `posthog-js` is never imported, so there is no queue and
@@ -186,7 +186,7 @@ is dashboard state and is not verifiable from this repository.
   filter, not anonymization: prose you typed leaves as prose.
 - **Onward**: the request JSON is forwarded verbatim as the user message to
   `api.anthropic.com/v1/messages` (`ANTHROPIC_CONTEXT_MODEL ??
-  ANTHROPIC_SUMMARY_MODEL ?? claude-haiku-4-5`), using Exawatt's key.
+ANTHROPIC_SUMMARY_MODEL ?? claude-haiku-4-5`), using Exawatt's key.
 - **Purpose**: the label on an Agent tab and Session.
 - **Default**: on, and only when signed in.
 - **Off**: Settings → Privacy → **Session context labels**
@@ -213,7 +213,7 @@ is dashboard state and is not verifiable from this repository.
   `AIza`/`AKIA` tokens, JWTs, and `password:`/`api_key=`/`authorization:`
   values).
 - **Onward**: `api.anthropic.com/v1/messages` (`ANTHROPIC_SUMMARY_MODEL ??
-  claude-haiku-4-5`).
+claude-haiku-4-5`).
 - **Purpose**: titles and short summaries in the conversation browser.
 - **Default**: on when signed in.
 - **Off**: Settings → Preferences → automatic hosted summaries
@@ -243,15 +243,15 @@ Project `NEXT_PUBLIC_SUPABASE_URL`. Reached by the renderer
 (`src/lib/supabase/client.ts`) and by Electron main
 (`electron/main/auth-coordinator.ts`).
 
-| Surface | Sent | Default |
-| --- | --- | --- |
-| OAuth (Google/GitHub) and email/password | PKCE exchange; the provider consent page opens in the **system browser**, not in the app | On explicit user action |
-| Session refresh | refresh token | Signed in |
-| Project registry (`src/lib/projects/registry.ts`) | Project name, **full absolute local path**, color, order, last opened | Signed in, on every Project open |
-| Product feedback ⌘⇧F (`services.productFeedback` V1; official endpoint `/api/feedback`) | Message text, kind, sentiment, surface, app version, build SHA, platform, context (URL, viewport, Project name, durable session id), optional **screenshot of the app window** | Only when the user submits; a build with no configured endpoint does not inspect account auth or send |
-| Operator profile / stats (`services.operatorStats` V1; official endpoint `/api/operator-stats`) | `POST`: GitHub identity plus numeric day and Run aggregates; authenticated owner-only `GET`: enabled state plus consent/sync timestamps; no Project, path, or prompt data | **Off by default, switch-governed** (decision `0029` amended 2026-08-10 and repaired 2026-08-16): the Publishing switch (leaderboard panel, and Settings → Privacy → Public operator profile — `operatorProfile.autoPublish`) is the consent act; while on, syncs run automatically (shortly after launch, then ~6-hourly, `src/lib/operator-stats/auto-sync.ts`) from the shared incremental Consumption service; off or absent means nothing is scanned or sent; the metadata `GET` runs only when a legacy enabled preference lacks its durable consent anchor; `DELETE` removes the profile and pauses publishing. A build with no configured endpoint installs no schedule, reads no account auth, scans nothing, and renders publishing unavailable |
-| Public leaderboard/profile reads | nothing outbound; anonymous reads | Only when visiting `/leaderboard` or `/operator/<handle>` |
-| Quota RPCs | `claim_*_quota` calls for the three hosted features | With those features |
+| Surface                                                                                         | Sent                                                                                                                                                                           | Default                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OAuth (Google/GitHub) and email/password                                                        | PKCE exchange; the provider consent page opens in the **system browser**, not in the app                                                                                       | On explicit user action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Session refresh                                                                                 | refresh token                                                                                                                                                                  | Signed in                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Project registry (`src/lib/projects/registry.ts`)                                               | Project name, **full absolute local path**, color, order, last opened                                                                                                          | Signed in, on every Project open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Product feedback ⌘⇧F (`services.productFeedback` V1; official endpoint `/api/feedback`)         | Message text, kind, sentiment, surface, app version, build SHA, platform, context (URL, viewport, Project name, durable session id), optional **screenshot of the app window** | Only when the user submits; a build with no configured endpoint does not inspect account auth or send                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Operator profile / stats (`services.operatorStats` V1; official endpoint `/api/operator-stats`) | `POST`: GitHub identity plus numeric day and Run aggregates; authenticated owner-only `GET`: enabled state plus consent/sync timestamps; no Project, path, or prompt data      | **Off by default, switch-governed** (decision `0029` amended 2026-08-10 and repaired 2026-08-16): the Publishing switch (leaderboard panel, and Settings → Privacy → Public operator profile — `operatorProfile.autoPublish`) is the consent act; while on, syncs run automatically (shortly after launch, then ~6-hourly, `src/lib/operator-stats/auto-sync.ts`) from the shared incremental Consumption service; off or absent means nothing is scanned or sent; the metadata `GET` runs only when a legacy enabled preference lacks its durable consent anchor; `DELETE` removes the profile and pauses publishing. A build with no configured endpoint installs no schedule, reads no account auth, scans nothing, and renders publishing unavailable |
+| Public leaderboard/profile reads                                                                | nothing outbound; anonymous reads                                                                                                                                              | Only when visiting `/leaderboard` or `/operator/<handle>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Quota RPCs                                                                                      | `claim_*_quota` calls for the three hosted features                                                                                                                            | With those features                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Turn all of it off by signing out; the app remains fully usable for local Agent
 work and Demo Mode without an account.
@@ -297,7 +297,7 @@ identifiers of its own, but `summarizer.jsonl` lines carry a durable Session
 **id** (an opaque uuid, under the key `session`) alongside outcome metadata
 (`relationship`, `confidence`, `reason`, `revision`, `retryMs`, `error`), and
 `auth.jsonl` lines carry request metadata (host, path, query and header
-*names*). Those are identifiers and shapes, never the labelled text, the
+_names_). Those are identifiers and shapes, never the labelled text, the
 prompt, or the Project the Session belongs to. Reviewers checking this claim
 should read values, not key names: an earlier version of the exclusion test
 asserted on key names the logs do not use and could never have failed.
@@ -392,13 +392,14 @@ OAuth token Claude Code already stores in the macOS Keychain
 
 Everything else is local. The retired `/api/oc/token` route returns `410` and
 never reads config, account state, or credentials. In Electron, main owns the
-OpenClaw config read, token/device identity, endpoint selection, and
-authenticated local/LAN WebSocket. The renderer receives only an opaque,
-WebContents-bound capability for a validated fleet/chat/schedule vocabulary;
-no Gateway credential appears in a URL, Next response, IPC result, or event.
+Agent Source config read, token/device identity, endpoint selection, and
+authenticated local/LAN/tunnelled WebSocket. The renderer receives only view
+projections of a configured source, over a control plane with no command
+channel; no Gateway credential appears in a URL, Next response, IPC result,
+or event.
 `/api/dev-identity` exists only in development.
 
-## 8. What the client does *not* do
+## 8. What the client does _not_ do
 
 - No advertising, attribution, or third-party analytics beyond the single
   PostHog stream described in section 1.
@@ -419,7 +420,7 @@ no Gateway credential appears in a URL, Next response, IPC result, or event.
 - Host split: the same suite asserts the desktop `api_host` is the absolute
   hosted origin and never a loopback address.
 - Claude plan usage: `pnpm vitest run
-  electron/main/consumption/claude-plan-account.test.ts`. The tests pin the
+electron/main/consumption/claude-plan-account.test.ts`. The tests pin the
   single host, refused redirects, the never-send-expired-token rule, the
   token's absence from persisted state and the served view, and every failure
   mode degrading to absence. They also pin the installed-vs-unpackaged runtime
@@ -456,7 +457,7 @@ no Gateway credential appears in a URL, Next response, IPC result, or event.
   against `OUTBOUND_CONTROLS`, and `src/app/legal-surfaces.test.ts` now pins
   the load-bearing claims to the same contracts, so the pages cannot silently
   drift from the code again. That audit also corrected two stale sentences in
-  section 2 of *this* file; a manifest declared canon still has to be read
+  section 2 of _this_ file; a manifest declared canon still has to be read
   against the source.
 - Retention windows for PostHog and for Anthropic API traffic are vendor
   settings and are not verifiable from this repository.

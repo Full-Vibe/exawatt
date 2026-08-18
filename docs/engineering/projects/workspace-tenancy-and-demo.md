@@ -20,7 +20,7 @@ So: introduce Workspace as a real, switchable product concept now, with **Person
 - **Demo** is representative truth: a populated fleet with Projects, Agents, Sessions, roadmaps, and consumption history, served from a demo source. No LLM calls, no PTYs, no network.
 - Team Workspaces are `preview` (ENG-026 grammar) until ENG-012 makes them real.
 
-The switcher lives in the account/avatar menu. It is a context switch, not a mode toggle: the word *Demo* never appears as a global app state chip that could read as "the product is fake" — it appears as the identity of the Workspace you are in.
+The switcher lives in the account/avatar menu. It is a context switch, not a mode toggle: the word _Demo_ never appears as a global app state chip that could read as "the product is fake" — it appears as the identity of the Workspace you are in.
 
 ## Non-negotiable constraints
 
@@ -39,7 +39,7 @@ The demo work therefore pays for itself architecturally rather than accreting de
 
 **What it portrays** (operator, 2026-08-02): one plausible multi-function startup, **majority coding**. Frontend, API, infra, and design-engineering Projects dominate; a minority of marketing, research, and support work shows the Agent Types vision (ENG-028) without implying those capabilities ship today. Non-coding Agents must read as ENG-026 `preview` content — the demo may show the future, but it may not fake the present.
 
-The demo fleet must support the full altitude sweep across *different* Projects, Agents, and roadmaps:
+The demo fleet must support the full altitude sweep across _different_ Projects, Agents, and roadmaps:
 
 - 6–12 Projects with distinct identities, colors, and real-looking roadmaps that parse under the published roadmap convention (ENG-017's parser reads them unmodified)
 - a spread of Agent states across the five-signal status protocol (ENG-016 D40) including delegation (ENG-023) so the fleet does not read as uniformly idle
@@ -63,7 +63,7 @@ The honest authored fleet tops out at **~209 board entities** (173 Agents + 36 d
 
 ## Recorded contradiction: demo scale vs parked V2.1
 
-ENG-004 V2.1 (*Scale & Truth* — density and interaction budgets at 1k/10k, viewport culling, label budgets, frame instrumentation) is **parked** as of 2026-07-24, when Spatial was reframed as a demo asset rather than a daily-driver surface.
+ENG-004 V2.1 (_Scale & Truth_ — density and interaction budgets at 1k/10k, viewport culling, label budgets, frame instrumentation) is **parked** as of 2026-07-24, when Spatial was reframed as a demo asset rather than a daily-driver surface.
 
 W4 needs part of that work: the demo's "zoom out to thousands" moment is precisely a rendering-density claim.
 
@@ -94,8 +94,8 @@ A verified code review of the W1 landing (and the decision-0023 rename) surfaced
 
 **View-state correctness.**
 
-- *Boot-restore race (MEDIUM).* Child effects run before parent effects, so `CommandAltitudeNav`'s one-shot surface restore ran before the tenancy provider resolved the persisted tenant — a relaunch inside a non-personal tenant read Personal's surface memory, consumed the one-shot against it, and polluted Personal's key. The provider now exposes `hydrated` (false until the persisted choice resolves post-mount); the nav's restore-and-record effect waits on it, so the restore runs exactly once against the correct tenant's key. The provider also accepts `initialWorkspaces` — tenants that must survive a relaunch as the boot Workspace have to be present at mount, because the dev registration event arrives after resolution.
-- *Transient cross-tenant write (LOW).* On switch, the memory key flips before navigation lands, so the OLD tenant's surface was briefly written under the NEW tenant's key. The nav now tracks which key each recorded address was written under and skips the write when only the tenant changed; recording resumes when navigation lands.
+- _Boot-restore race (MEDIUM)._ Child effects run before parent effects, so `CommandAltitudeNav`'s one-shot surface restore ran before the tenancy provider resolved the persisted tenant — a relaunch inside a non-personal tenant read Personal's surface memory, consumed the one-shot against it, and polluted Personal's key. The provider now exposes `hydrated` (false until the persisted choice resolves post-mount); the nav's restore-and-record effect waits on it, so the restore runs exactly once against the correct tenant's key. The provider also accepts `initialWorkspaces` — tenants that must survive a relaunch as the boot Workspace have to be present at mount, because the dev registration event arrives after resolution.
+- _Transient cross-tenant write (LOW)._ On switch, the memory key flips before navigation lands, so the OLD tenant's surface was briefly written under the NEW tenant's key. The nav now tracks which key each recorded address was written under and skips the write when only the tenant changed; recording resumes when navigation lands.
 - Regression tests: `src/components/nav/command-altitude-nav.test.tsx` (boot restore under a persisted non-personal tenant, no fallback to Personal memory, scope-aware validation, the transient-write skip).
 
 **Scope-gate coverage (MEDIUM).**
@@ -303,6 +303,10 @@ The demo-arc closing review verified findings against the landed W2; fixes:
 - **`connectToRealOC` retry is cancellable** (`cancelOcRetryRef`), cancelled
   by the fleet source effect's cleanup — a tenant switch or unmount can no
   longer let a late resolve wire the OC client into a stale manager.
+  _(Superseded by ENG-010: `connectToRealOC`, `useConnectToOC`, and the
+  renderer's OpenClaw client are deleted. The renderer no longer opens a
+  Gateway connection at all, so there is no retry to cancel; connecting a
+  source happens in Electron main behind the connected-source runtime.)_
 - **Fleet metrics bar spend honesty.** "$0.00 today" rendered from transports
   that deliberately report no cost read as a claim of zero spend; the spend
   segment now renders only when a source actually reports cost.
@@ -384,7 +388,7 @@ group with its current, available, and preview states.
 ## Open questions
 
 - ~~Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough?~~ ANSWERED 2026-08-03 (feedback row `486a87e1-5a3b-40e0-9ff3-85799072f339`): yes — Workspace switching belongs in ⌘K. Operator: "Org switching should be available in Command K so I should be able to type a different organization or 'personal' and be able to switch to that org via Command K. In general everything that one can do as a first-class citizen in the UI should be in command-K and that should be a general invariant." The earlier hazard leaning is overruled; W9 landed on the same tenant-gate path the account menu uses, so the no-lifecycle-side-effects guarantee is unchanged.
-- Should the Demo Workspace be seeded from *recorded* real sessions (redacted) rather than authored fixtures? Recording is more convincing and more work; authored is controllable and safe. Leaning: authored for W3, recording as a later upgrade once the pane content source exists.
+- Should the Demo Workspace be seeded from _recorded_ real sessions (redacted) rather than authored fixtures? Recording is more convincing and more work; authored is controllable and safe. Leaning: authored for W3, recording as a later upgrade once the pane content source exists.
 - Whether a shared/read-only Workspace link is the natural first multiplayer primitive (ENG-034) once W2 lands.
 
 ## Landed follow-up (triage 2026-08-03)
