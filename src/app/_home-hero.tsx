@@ -1,8 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import {
   BandContent,
   BandCopy,
@@ -16,21 +13,27 @@ import { HeroBg } from './_hero-bg';
 // (ENG-031 W1); the hero owns what is inside it.
 const FOLD = bandById('fold');
 
+/**
+ * The shipped fold's interior: ground, heading, subhead. Nothing else.
+ *
+ * THE FOLD CARRIES NO CALL TO ACTION (operator, 2026-08-17). It held a 3D
+ * command key switch, then briefly a plain `Architecture` button, and both
+ * came off. `/architecture` is still one click from here — the sticky header
+ * carries it on every marketing route — so removing the in-fold control
+ * orphans nothing; it stops the fold from spending its one loud moment on a
+ * project artifact. The readiness state and its fade went with the button:
+ * they existed only to reveal it, and `HeroBg` fades itself.
+ */
 export function HomeHero() {
   const reducedMotion = usePrefersReducedMotion();
-  const [backgroundReady, setBackgroundReady] = useState(false);
 
   return (
     <div
       className="relative flex flex-1 items-center justify-center bg-black pt-12"
-      data-background-ready={backgroundReady ? 'true' : 'false'}
       data-home-hero
       data-public-exhibition-surface="true"
     >
-      <HeroBg
-        onFadeInComplete={() => setBackgroundReady(true)}
-        reducedMotion={reducedMotion}
-      />
+      <HeroBg reducedMotion={reducedMotion} />
       <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
       <BandContent className="home-hero-content" data-home-hero-content>
         <BandHeading
@@ -44,25 +47,6 @@ export function HomeHero() {
             Exawatt is the command interface for billions of agents.
           </span>
         </BandCopy>
-        <div
-          aria-hidden={!backgroundReady}
-          data-home-architecture-cta
-          style={{
-            opacity: backgroundReady ? 1 : 0,
-            transitionDuration: reducedMotion ? '0ms' : '500ms',
-            transitionProperty: 'opacity',
-            transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <Button
-            asChild
-            className="h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90"
-            data-home-architecture-button
-            tabIndex={backgroundReady ? undefined : -1}
-          >
-            <Link href="/architecture">Architecture</Link>
-          </Button>
-        </div>
       </BandContent>
     </div>
   );

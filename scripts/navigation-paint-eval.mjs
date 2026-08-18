@@ -122,8 +122,11 @@ page.on('console', message => {
 
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load', timeout: 30_000 });
-  const command = page.locator('[data-home-architecture-button]');
-  await command.waitFor({ state: 'attached' });
+  // The sticky header is the ONLY route from `/` to `/architecture` now: the
+  // fold carries no call to action of its own (operator, 2026-08-17), so this
+  // is the real reader's path rather than a convenient handle.
+  const command = page.locator('#site-header a[href="/architecture"]');
+  await command.waitFor({ state: 'visible' });
   await page.waitForFunction(
     () => document.documentElement.dataset.exaTheme === 'exawatt-air-light'
   );

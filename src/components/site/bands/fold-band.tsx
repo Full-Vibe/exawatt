@@ -12,11 +12,15 @@ import type { HomepageBand } from './manifest';
  * that mounts a second `HeroBoard` is the defect this pass removed.
  *
  * `/` is the page the proposal is compared against, so it must not move under
- * the comparison. The homepage 3D command key switch has already come off of
- * `HomeHero` (operator, 2026-08-17), which is the one piece of this fold's
- * interior the proposed fold also does differently — the rest of this
- * component still stands apart from flipping `HOMEPAGE_ARRANGEMENT` to
- * `proposed`. Its `t8-home-keyswitch` R3F battery retired with it. `t7`
+ * the comparison. Its interior has stopped carrying a call to action at all
+ * (operator, 2026-08-17): the 3D command key switch came off, the plain
+ * `Architecture` button that briefly replaced it came off too, and the sticky
+ * header is now the only route from here to `/architecture`. That converges
+ * with the proposed fold on ONE point and no more — the proposed fold spends
+ * the slot on `DownloadCta` rather than leaving it empty, so flipping
+ * `HOMEPAGE_ARRANGEMENT` to `proposed` is still a real change to this band.
+ *
+ * The `t8-home-keyswitch` R3F battery retired with the key switch. `t7`
  * (material workbench) and `t9` (agent-start eval) stay, along with the
  * `/hud-gallery` workbench itself: decision
  * `0025-reactivate-keyswitch-gallery-study` keeps that surface as the
