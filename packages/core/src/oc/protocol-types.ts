@@ -1,7 +1,8 @@
 // ============================================================
-// OC Protocol v3 — Wire format types (INTERNAL — not exported)
-// These represent the raw JSON frames over WebSocket.
-// Protocol: req/res/event (NOT JSON-RPC 2.0)
+// OC Gateway wire format (INTERNAL — not exported)
+// Raw JSON frames over WebSocket: req/res/event, NOT JSON-RPC 2.0.
+// The protocol VERSION is negotiated per connection; see MIN_PROTOCOL and
+// MAX_PROTOCOL below rather than assuming a single number here.
 // ============================================================
 
 // Base frame types
@@ -34,11 +35,18 @@ export interface OCConnectChallenge {
   ts: number;
 }
 
-// Device identity for auth
+/**
+ * Device identity for auth. Encodings are the Gateway's, not ours: it decodes
+ * base64url and derives the id as SHA-256 over the raw key bytes. Sending hex
+ * here is what "device identity mismatch" means on the wire.
+ */
 export interface OCDeviceIdentity {
-  id: string; // device fingerprint
-  publicKey: string; // hex-encoded Ed25519 public key
-  signature: string; // hex-encoded signature of the auth payload
+  /** SHA-256 of the raw public key bytes, hex. */
+  id: string;
+  /** base64url raw Ed25519 public key, unpadded. */
+  publicKey: string;
+  /** base64url signature over the UTF-8 auth payload. */
+  signature: string;
   signedAt: number; // unix ms timestamp
   nonce: string; // echo back the server's nonce
 }
@@ -192,4 +200,3 @@ export interface PresencePayload {
   online: boolean;
   sessionCount: number;
 }
-
