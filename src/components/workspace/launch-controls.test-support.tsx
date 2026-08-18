@@ -78,8 +78,12 @@ export async function settled<T>(read: () => T): Promise<T> {
   return read();
 }
 
-export async function composerReady() {
-  await settled(() => expect(setupDrawerHandle()).not.toBeDisabled());
+export async function composerReady(): Promise<HTMLElement> {
+  return settled(() => {
+    const handle = setupDrawerHandle();
+    expect(handle).not.toBeDisabled();
+    return handle;
+  });
 }
 
 export type LauncherAxisLabel = 'Engine' | 'Model' | 'Thinking' | 'Permission';
@@ -92,11 +96,12 @@ export function launcherAxis(label: LauncherAxisLabel): HTMLElement {
 
 /** Open the drawer that holds Engine, Model, Thinking and Permission. */
 export async function openSetupDrawer() {
-  await composerReady();
-  const handle = setupDrawerHandle();
-  if (handle.getAttribute('aria-expanded') !== 'true') {
-    fireEvent.click(handle);
-  }
+  const handle = await composerReady();
+  // Already open: the axes are on screen, and re-proving it costs another
+  // accessible-name sweep of the whole composer. Those sweeps, not the waiting,
+  // are what made this family the slowest in the renderer (BUG-057).
+  if (handle.getAttribute('aria-expanded') === 'true') return;
+  fireEvent.click(handle);
   await settled(() => expect(launcherAxis('Engine')).toBeInTheDocument());
 }
 
