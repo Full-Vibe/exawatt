@@ -43,10 +43,27 @@ export interface OCDeviceIdentity {
   nonce: string; // echo back the server's nonce
 }
 
+/**
+ * Gateway protocol range Exawatt negotiates.
+ *
+ * These were pinned at 3/3 until a live connection to a current OpenClaw
+ * install (2026.7.x) was rejected with "protocol mismatch": that server
+ * accepts an operator client only when `maxProtocol >= 4 && minProtocol <= 4`.
+ * A pinned client could not reach it at all.
+ *
+ * Advertising a RANGE rather than a single number is what keeps both eras
+ * reachable: a v3 gateway sees a max at or above its own version, a v4 gateway
+ * sees a min at or below its own, and each picks what it speaks. Widen
+ * `MAX_PROTOCOL` only alongside evidence that the newer protocol's frames are
+ * actually handled here.
+ */
+export const MIN_PROTOCOL = 3 as const;
+export const MAX_PROTOCOL = 4 as const;
+
 // Connect request params
 export interface OCConnectParams {
-  minProtocol: 3;
-  maxProtocol: 3;
+  minProtocol: typeof MIN_PROTOCOL;
+  maxProtocol: typeof MAX_PROTOCOL;
   role: string;
   scopes: string[];
   auth?: { token?: string; deviceToken?: string; password?: string };

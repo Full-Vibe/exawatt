@@ -14,7 +14,7 @@ vi.mock('../oc/auth', async () => {
     buildDeviceAuthPayload: vi.fn(() => 'signed-payload'),
     signDevicePayload: vi.fn(async () => 'c'.repeat(128)),
     signChallenge: vi.fn(async () => 'legacy-signature'),
-    deriveDeviceId: vi.fn(() => 'd'.repeat(32)),
+    deriveDeviceId: vi.fn(async () => 'd'.repeat(64)),
   };
 });
 
@@ -139,8 +139,10 @@ describe('OCClient', () => {
     };
 
     expect(connectRequest.method).toBe('connect');
+    // A RANGE, not a pin. A current Gateway refuses an operator client unless
+    // maxProtocol reaches 4, and a v3 Gateway still matches on the minimum.
     expect(connectRequest.params.minProtocol).toBe(3);
-    expect(connectRequest.params.maxProtocol).toBe(3);
+    expect(connectRequest.params.maxProtocol).toBe(4);
     expect(connectRequest.params.role).toBe('operator');
     expect(connectRequest.params.scopes).toEqual([
       'operator.read',
@@ -159,7 +161,7 @@ describe('OCClient', () => {
 
     expect(auth.buildDeviceAuthPayload).toHaveBeenCalledWith(
       expect.objectContaining({
-        deviceId: 'd'.repeat(32),
+        deviceId: 'd'.repeat(64),
         clientId: 'webchat',
         clientMode: 'webchat',
         role: 'operator',

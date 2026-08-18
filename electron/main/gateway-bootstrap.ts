@@ -546,21 +546,16 @@ export async function bootstrapGatewayCredential(
   const gatewayPort =
     configText === null ? FALLBACK_GATEWAY_PORT : parseGatewayPort(configText);
 
-  if (cliToken) {
-    // A failed config read costs the declared port and nothing else once the
-    // CLI has answered. Failing the whole bootstrap over it would be worse.
-    return {
-      ok: true,
-      facts: {
-        version,
-        gatewayPort,
-        sharedToken: cliToken,
-        tokenSource: 'cli',
-      },
-    };
-  }
-
   if (configText !== null) {
+    // The config file wins when it declares a literal token.
+    //
+    // The CLI was tried first in the original draft, on the theory that the
+    // source should resolve its own indirection. A live run disproved it: on
+    // OpenClaw 2026.7.x `config get gateway.auth.token` answers with a short
+    // masked value, not the credential, and pairing failed with "gateway token
+    // mismatch" while a perfectly good token sat in the file. Secret-reading
+    // CLIs mask by default, so the file is the trustworthy source and the CLI
+    // is only worth trying when the file has nothing literal to give.
     const fileToken = parseConfigToken(configText);
     if (fileToken) {
       return {
@@ -573,11 +568,34 @@ export async function bootstrapGatewayCredential(
         },
       };
     }
-    // Reached the config and read it, and it declares no literal token. This is
-    // the indirection case the CLI was supposed to resolve. Distinct from an
-    // unreadable config, because the operator's next step is different: paste a
-    // token rather than fix a permission.
+    if (cliToken) {
+      return {
+        ok: true,
+        facts: {
+          version,
+          gatewayPort,
+          sharedToken: cliToken,
+          tokenSource: 'cli',
+        },
+      };
+    }
+    // Reached the config and read it, and neither it nor the CLI yielded a
+    // usable token. This is the indirection case. Distinct from an unreadable
+    // config, because the operator's next step is different: supply a token
+    // rather than fix a permission.
     return failed('token-unavailable');
+  }
+
+  if (cliToken) {
+    return {
+      ok: true,
+      facts: {
+        version,
+        gatewayPort,
+        sharedToken: cliToken,
+        tokenSource: 'cli',
+      },
+    };
   }
 
   return failed(configFailure ?? 'unreadable-config');

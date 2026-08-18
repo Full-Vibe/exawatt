@@ -5,6 +5,7 @@ import {
   buildDeviceAuthPayload,
   signDevicePayload,
 } from './auth';
+import { MAX_PROTOCOL, MIN_PROTOCOL } from './protocol-types';
 import type {
   OCRequest,
   OCResponse,
@@ -343,7 +344,7 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       return;
     }
 
-    const deviceId = deriveDeviceId(this.devicePublicKey);
+    const deviceId = await deriveDeviceId(this.devicePublicKey);
     const signedAtMs = Date.now();
     const clientId = this.config.clientId ?? 'webchat';
     const clientMode = this.config.clientMode ?? 'webchat';
@@ -379,8 +380,8 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     }
 
     const connectParams: OCConnectParams = {
-      minProtocol: 3,
-      maxProtocol: 3,
+      minProtocol: MIN_PROTOCOL,
+      maxProtocol: MAX_PROTOCOL,
       role,
       scopes,
       auth: Object.keys(auth).length > 0 ? auth : undefined,
