@@ -180,40 +180,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           typeof window !== 'undefined' ? window.electron?.openClaw : undefined;
         setOcAvailable(Boolean(openClawBridge));
 
-        // A focused desktop run may choose the configured local/LAN Gateway
-        // instead of the normal terminal-session source. The credential and
-        // authenticated socket remain in Electron main; the renderer receives
-        // only a bounded fleet/chat/schedule capability.
-        if (
-          openClawBridge &&
-          process.env.NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC === 'true'
-        ) {
-          const client = new ElectronOpenClawClient(openClawBridge);
-          ocClientRef.current = client;
-          const methods = new OCMethods(client);
-          manager.connect(client, methods);
-          client.on('connection:status', status => {
-            if (!mounted) return;
-            const previous = prevConnectionStatusRef.current;
-            setConnectionStatus(status);
-            if (status === 'disconnected') {
-              pushConnectionToast('Connection lost. Reconnecting...');
-            }
-            if (status === 'connected' && previous === 'disconnected') {
-              pushConnectionToast('Reconnected. State refreshed.');
-            }
-            prevConnectionStatusRef.current = status;
-          });
-          client.on('connection:error', error => {
-            console.warn('[Exawatt] OpenClaw capability error:', error.message);
-          });
-          await client.connect();
-          if (!mounted) return;
-          setIsDemo(false);
-          setIsLocal(false);
-          return;
-        }
-
         // Desktop app: LIVE LOCAL TRUTH (ENG-002 W0.3). The Agent Terminal
         // Workspace's real PTY sessions ARE the fleet. The web app keeps the
         // demo posture / OC below, unchanged.

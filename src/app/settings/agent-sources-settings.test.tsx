@@ -96,7 +96,10 @@ describe('Agent Source Settings', () => {
     );
     expect(screen.getByText('Available now')).toBeInTheDocument();
     expect(screen.getByText('Future sources')).toBeInTheDocument();
-    expect(screen.getByText('Hosted OpenClaw')).toBeInTheDocument();
+    // Placement is a fact on a configured source (decision 0037), so there is
+    // no separate hosted OpenClaw adapter to advertise. Custom harness is.
+    expect(screen.queryByText('Hosted OpenClaw')).not.toBeInTheDocument();
+    expect(screen.getByText('Custom harness')).toBeInTheDocument();
     // Unconfigurable adapters carry the shared readiness marker (ENG-026
     // grammar): sentence-case "Coming soon", never a bespoke "Soon" pill.
     expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0);

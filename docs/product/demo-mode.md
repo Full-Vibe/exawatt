@@ -31,11 +31,11 @@ an honest, non-activatable preview linking to `/organization`.
 
 The web app (no Electron, no OS-owned Agent Source boundary) always starts on
 the same honest Demo Workspace source, so public demos do not emit live-source
-token probes, auth redirects, or connection errors on page load. A focused
-Electron run may opt into its configured local/LAN OpenClaw source with
-`NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; the authenticated socket and every
-credential remain Electron-main owned. Browsers never receive a token-returning
-fallback route.
+token probes, auth redirects, or connection errors on page load. Live sources
+are a desktop capability: the terminal Sessions are the fleet, and an OpenClaw
+Gateway connects only through Electron main, which keeps every credential and
+the authenticated socket and hands the renderer a bounded fleet, chat, and
+schedule capability. Browsers never receive a token-returning fallback route.
 
 ### Retired to eval-only: the mock fleet simulation
 
