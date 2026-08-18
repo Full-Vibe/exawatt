@@ -137,8 +137,14 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // stays internal.
     label: 'Agent tile backgrounds',
     purpose: 'Generates the ambient imagery behind Team tiles.',
+    // CORRECTED 2026-08-19. This read "No text you wrote", which is true of
+    // what fal.ai receives and false of what EXAWATT receives: the request is
+    // `{ schemaVersion, projectKey, label }` and that label is the accepted
+    // Session label, which the operator may have typed himself. The intended
+    // protocol sends an opaque `identityKey` instead, and until it ships this
+    // sentence must describe the request that actually leaves the machine.
     sends:
-      'No text you wrote. A prompt assembled from a fixed word list in Exawatt’s source, chosen by a one-way hash of the goal.',
+      'The Session label, which may be text you typed, plus a Project key. Exawatt turns it into a prompt from a fixed word list in its own source; that prompt, and no text of yours, is what reaches fal.ai.',
     destination: 'Exawatt, then fal.ai',
     cost: 'Tiles use a plain background; images already generated stay.',
     defaultEnabled: true,
