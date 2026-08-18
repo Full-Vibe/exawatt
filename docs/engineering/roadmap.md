@@ -1810,6 +1810,21 @@ Milestones:
 - M4 Measured rollout (planned): extend slice by slice only while the 30-landing no-escape and feedback-time gates stay green.
 
 Sequencing: future developer-platform work after ENG-022 H11 establishes the delivery-loop baseline; it may begin earlier only as bounded refactors demanded by active product work.
+## Backlog
+
+Defect and small-fix records are kept in the private engineering repository
+rather than published here. They are post-mortem detail about defects that
+are already fixed, and publishing them would map the product's weak points
+without helping anyone contribute.
+
+Two consequences worth stating plainly, because a reader will notice both:
+
+- **Milestone entries above cite internal ids** such as `BUG-041` or
+  `FIX-002`. Those reference the private records, and they are kept because
+  removing them would damage the history they explain. Nothing above depends
+  on reading them.
+- **Defects in the public project are tracked as GitHub Issues**, in the
+  open, from the first one filed. This section is history, not process.
 
 ## Amendment chain
 
