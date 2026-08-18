@@ -260,6 +260,95 @@ describe('ConnectedSourceStore', () => {
     });
   });
 
+  describe('granted authority', () => {
+    it('starts every source read-only', () => {
+      const target = store();
+      addOne(target);
+      expect(target.get('source-1')?.grantedAuthority).toBe('read');
+    });
+
+    it('round-trips a granted authority to disk', () => {
+      const target = store();
+      addOne(target);
+
+      expect(target.setGrantedAuthority('source-1', 'write')).toBe(true);
+
+      // A second store reads the same files, so this is persistence rather
+      // than one instance remembering its own call.
+      expect(store().get('source-1')?.grantedAuthority).toBe('write');
+      expect(store().list()[0].grantedAuthority).toBe('write');
+    });
+
+    it('takes authority back again', () => {
+      const target = store();
+      addOne(target);
+      target.setGrantedAuthority('source-1', 'write');
+
+      expect(target.setGrantedAuthority('source-1', 'read')).toBe(true);
+      expect(store().get('source-1')?.grantedAuthority).toBe('read');
+    });
+
+    it('reports false for an unknown source and writes nothing', () => {
+      const target = store();
+      addOne(target);
+
+      expect(target.setGrantedAuthority('missing', 'write')).toBe(false);
+      expect(store().get('source-1')?.grantedAuthority).toBe('read');
+    });
+
+    it('reads a hand-written authority the vocabulary does not contain as read', () => {
+      const target = store();
+      addOne(target);
+      const file = path.join(dir, 'connected-sources.json');
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+        sources: Record<string, unknown>[];
+      };
+      parsed.sources[0].grantedAuthority = 'admin';
+      fs.writeFileSync(file, JSON.stringify(parsed));
+
+      // Fail closed without dropping the source: the operator keeps the
+      // connection and loses only authority they cannot prove was granted.
+      expect(store().list()).toHaveLength(1);
+      expect(store().get('source-1')?.grantedAuthority).toBe('read');
+    });
+
+    it('survives a record written before authority existed', () => {
+      const target = store();
+      addOne(target);
+      const file = path.join(dir, 'connected-sources.json');
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+        sources: Record<string, unknown>[];
+      };
+      delete parsed.sources[0].grantedAuthority;
+      fs.writeFileSync(file, JSON.stringify(parsed));
+
+      expect(store().get('source-1')?.grantedAuthority).toBe('read');
+    });
+
+    it('is preserved by the other writers that rewrite the record', () => {
+      const target = store();
+      addOne(target);
+      target.setGrantedAuthority('source-1', 'write');
+
+      target.writeDeviceToken('source-1', 'device-token-value');
+      target.rename('source-1', 'Renamed box');
+
+      const record = store().get('source-1');
+      expect(record?.grantedAuthority).toBe('write');
+      expect(record?.hasDeviceCredential).toBe(true);
+      expect(record?.displayName).toBe('Renamed box');
+    });
+
+    it('goes away with the source it belonged to', () => {
+      const target = store();
+      addOne(target);
+      target.setGrantedAuthority('source-1', 'write');
+
+      expect(target.remove('source-1')).toBe(true);
+      expect(store().get('source-1')).toBeNull();
+    });
+  });
+
   it('renderer views carry no connection material', () => {
     const target = store();
     target.add({

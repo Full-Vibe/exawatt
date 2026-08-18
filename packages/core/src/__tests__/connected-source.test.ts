@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONNECTION_STALE_AFTER_MS,
+  SOURCE_AUTHORITIES,
   SOURCE_CONNECTION_STATES,
   SOURCE_FAILURE_CLASSES,
   describeConnectionStatus,
   parseConnectedSourceRecord,
+  readGrantedAuthority,
   resolveConnectionStatus,
   toConnectedSourceView,
   type ConnectedSourceRecord,
@@ -26,6 +28,7 @@ const ALIAS_RECORD: ConnectedSourceRecord = {
   transport: { kind: 'ssh-alias', alias: 'workshop-box', remotePort: 18_789 },
   credentialOwner: 'source-owned-ssh',
   hasDeviceCredential: true,
+  grantedAuthority: 'read',
   createdAt: NOW - 86_400_000,
 };
 
@@ -48,6 +51,9 @@ const MANUAL_RECORD: ConnectedSourceRecord = {
   },
   credentialOwner: 'exawatt-keychain',
   hasDeviceCredential: false,
+  // The one fixture holding write authority, so the round trips below prove a
+  // granted upgrade survives persistence rather than only proving the default.
+  grantedAuthority: 'write',
   createdAt: NOW - 3_600_000,
 };
 
@@ -59,6 +65,7 @@ const LOOPBACK_RECORD: ConnectedSourceRecord = {
   transport: { kind: 'local-loopback', port: 18_791 },
   credentialOwner: 'exawatt-keychain',
   hasDeviceCredential: false,
+  grantedAuthority: 'read',
   createdAt: NOW,
 };
 
@@ -588,5 +595,87 @@ describe('parseConnectedSourceRecord', () => {
       createdAt: -5,
     });
     expect(issues.length).toBeGreaterThanOrEqual(9);
+  });
+});
+
+/*
+ * Granted authority (ENG-033 H2). Every assertion here is about one rule: the
+ * record may describe authority the Gateway granted, and nothing else may
+ * produce a value other than read-only.
+ */
+describe('granted authority', () => {
+  it('has exactly two values and no way to say admin', () => {
+    expect([...SOURCE_AUTHORITIES]).toEqual(['read', 'write']);
+    expect(SOURCE_AUTHORITIES).not.toContain('admin');
+    expect(SOURCE_AUTHORITIES).not.toContain('operator.admin');
+  });
+
+  it('reads the two known values and nothing else', () => {
+    expect(readGrantedAuthority('read')).toBe('read');
+    expect(readGrantedAuthority('write')).toBe('write');
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['null', null],
+    ['admin', 'admin'],
+    ['a gateway scope', 'operator.write'],
+    ['uppercase', 'WRITE'],
+    ['padded', ' write '],
+    ['a number', 2],
+    ['an object', { authority: 'write' }],
+    ['an array', ['write']],
+    ['true', true],
+  ])('fails closed to read on %s', (_label, value) => {
+    expect(readGrantedAuthority(value)).toBe('read');
+  });
+
+  it('round-trips a granted write authority through a parse', () => {
+    const result = parseConnectedSourceRecord(
+      JSON.parse(JSON.stringify(MANUAL_RECORD))
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.record.grantedAuthority).toBe('write');
+  });
+
+  it('reads a record written before authority existed as read-only', () => {
+    const legacy: Record<string, unknown> = {
+      ...JSON.parse(JSON.stringify(ALIAS_RECORD)),
+    };
+    delete legacy.grantedAuthority;
+
+    const result = parseConnectedSourceRecord(legacy);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.record.grantedAuthority).toBe('read');
+  });
+
+  it.each([['admin'], ['operator.admin'], [7], [null], [{ write: true }]])(
+    'downgrades a corrupt authority to read instead of losing the source (%s)',
+    value => {
+      const result = parseConnectedSourceRecord({
+        ...ALIAS_RECORD,
+        grantedAuthority: value,
+      });
+
+      // The rest of the record has no safe answer when it is corrupt, so it is
+      // refused. This field has exactly one, and it is the floor.
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.record.grantedAuthority).toBe('read');
+    }
+  );
+
+  it('never lets a record claim more than write', () => {
+    const result = parseConnectedSourceRecord({
+      ...ALIAS_RECORD,
+      grantedAuthority: 'admin',
+      scopes: ['operator.admin'],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result.record)).not.toContain('admin');
   });
 });
