@@ -1185,8 +1185,7 @@ async function promptWindowManagementRestart(): Promise<void> {
     type: 'info',
     title: message,
     message,
-    detail:
-      `After ${distributionIdentity.productName} has been open a long time, macOS can stop sharing its window with tools like Divvy, Rectangle, and Hammerspoon, so their shortcuts do nothing and you hear an error sound. This is a known macOS issue with Electron apps that ${distributionIdentity.productName} cannot detect or repair on its own.\n\nRestarting fixes it. Projects, Sessions, and terminal history are saved and restored; running agents stop and can be resumed afterwards.`,
+    detail: `After ${distributionIdentity.productName} has been open a long time, macOS can stop sharing its window with tools like Divvy, Rectangle, and Hammerspoon, so their shortcuts do nothing and you hear an error sound. This is a known macOS issue with Electron apps that ${distributionIdentity.productName} cannot detect or repair on its own.\n\nRestarting fixes it. Projects, Sessions, and terminal history are saved and restored; running agents stop and can be resumed afterwards.`,
     buttons: ['Cancel', `Restart ${distributionIdentity.productName}`],
     defaultId: 1,
     cancelId: 0,
@@ -1341,6 +1340,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     import('./auth-coordinator'),
     import('./auth-diagnostics'),
     import('./openclaw-gateway-ipc'),
+    import('./connected-sources-ipc'),
   ]).then(
     ([
       agentSourcesIpc,
@@ -1355,6 +1355,7 @@ async function bootstrapCommandSurface(): Promise<void> {
       auth,
       authDiagnostics,
       openClawGatewayIpc,
+      connectedSourcesIpc,
     ]) => {
       updateStartupScreen({
         progress: 0.36,
@@ -1374,6 +1375,7 @@ async function bootstrapCommandSurface(): Promise<void> {
         auth,
         authDiagnostics,
         openClawGatewayIpc,
+        connectedSourcesIpc,
       };
     }
   );
@@ -1451,6 +1453,7 @@ async function bootstrapCommandSurface(): Promise<void> {
 
   runtime.agentSourcesIpc.registerAgentSourcesIPC();
   runtime.openClawGatewayIpc.registerOpenClawGatewayIPC();
+  runtime.connectedSourcesIpc.registerConnectedSourcesIPC();
   runtime.ptyIpc.registerPtyIPC(
     distribution.contract,
     recovery.previousRunInterrupted
