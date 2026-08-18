@@ -36,5 +36,10 @@ fetchable by anyone who knows the object URL.
   Exawatt spawns unsandboxed local agent processes running as the user, reads
   harness transcripts under `~/.claude/projects` and `~/.codex/sessions`,
   triggers macOS folder-access prompts attributed to Exawatt, and forwards
-  short Session excerpts to Anthropic's API for Session labels with no opt-out
-  yet. No analytics, tracking pixels, or third-party scripts are added.
+  short Session excerpts for Session labels when that hosted capability is
+  configured and enabled. CORRECTED 2026-08-18: this bullet said "with no
+  opt-out yet", which OS1.5 made false when it gave context labels their own
+  switch on the Privacy surface. A stale privacy claim is worse published than
+  unpublished, and this document is public-bound, so it is fixed at the source
+  rather than in the rendered variant. No analytics, tracking pixels, or
+  third-party scripts are added.

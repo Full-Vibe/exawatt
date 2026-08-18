@@ -52,6 +52,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
 | ENG-038 | Provider consumption accounts                    | active-build | Slice 1 landed — Claude plan windows (session + weeklies) read from the operator's own account render in the meter and `/usage`; spend-class UI and other vendors remain.              |
 | ENG-040 | Semantic agent search                            | planned      | UNSHAPED pending a design pass — reach the Agent by what it did, not by tab title, from `⌘K` and Fleet.                                                                                |
+| ENG-041 | Public defect communication                       | planned      | UNSHAPED pending a design pass — an industry-standard public way to collect, represent, and communicate defects, replacing the private backlog for outside readers. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
@@ -1811,6 +1812,35 @@ Milestones:
 - M4 Measured rollout (planned): extend slice by slice only while the 30-landing no-escape and feedback-time gates stay green.
 
 Sequencing: future developer-platform work after ENG-022 H11 establishes the delivery-loop baseline; it may begin earlier only as bounded refactors demanded by active product work.
+### ENG-041 Public defect communication
+
+Status: planned — deliberately unshaped pending a design pass. Created
+2026-08-18 alongside the operator's decision to keep the `BUG-*`/`FIX-*`
+backlog and the incident post-mortems private.
+
+That decision is right for the records themselves: they are post-mortem detail
+on already-fixed defects, they map the product's weak points, and several
+describe security boundaries. But it leaves the public project with no way to
+show what it knows about its own defects, which a serious open-source project
+owes its readers.
+
+Direction (operator, 2026-08-18): "figure out some community-ish industry
+standard way of collecting, representing, and communicating bugs", and
+likewise "establish some sort of public thing" for incidents.
+
+Scope is deliberately not fixed here. Shape it in a design pass. The obvious
+candidates to weigh, not a chosen answer: GitHub Issues as the collection
+surface with labels and templates; a published security policy and advisory
+path for the subset that are vulnerabilities; a public changelog or release
+notes carrying user-visible fixes; and a periodic public write-up for the rare
+incident worth teaching from, authored for outsiders rather than projected
+from the private record.
+
+Exit criteria: a public reader can see what defects exist, report one, and
+learn what was fixed, without the private backlog being published, and the
+public roadmap's Backlog note points at that surface instead of only saying
+the records are private.
+
 ## Backlog
 
 Defect and small-fix records are kept in the private engineering repository
@@ -1824,8 +1854,9 @@ Two consequences worth stating plainly, because a reader will notice both:
   `FIX-002`. Those reference the private records, and they are kept because
   removing them would damage the history they explain. Nothing above depends
   on reading them.
-- **Defects in the public project are tracked as GitHub Issues**, in the
-  open, from the first one filed. This section is history, not process.
+- **Defects in the public project are tracked in the open.** ENG-041
+  shapes that surface; until it lands, GitHub Issues is the place to
+  report one. This section is history, not process.
 
 ## Amendment chain
 
