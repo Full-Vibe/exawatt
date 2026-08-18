@@ -21,7 +21,6 @@ export type AgentSourceAdapterId = (typeof AGENT_SOURCE_ADAPTER_IDS)[number];
 
 export const AGENT_SOURCE_CATALOG_IDS = [
   ...AGENT_SOURCE_ADAPTER_IDS,
-  'hosted-openclaw',
   'custom',
 ] as const;
 export type AgentSourceCatalogId = (typeof AGENT_SOURCE_CATALOG_IDS)[number];

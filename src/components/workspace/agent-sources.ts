@@ -246,7 +246,7 @@ function fallbackOpenClawSource(): AgentSourceSnapshot {
   const declaration = agentSourceDeclaration('openclaw');
   const fact = fallbackFact(
     'Unknown',
-    'Open the Electron desktop app to inspect the local gateway.'
+    'Open the desktop app to inspect this gateway.'
   );
   return {
     ...declaration,
@@ -255,7 +255,9 @@ function fallbackOpenClawSource(): AgentSourceSnapshot {
     launchable: false,
     state: 'unknown',
     stateLabel: 'Unknown',
-    summary: 'Local gateway status is available through the desktop bridge.',
+    // ENG-010 C1: a Gateway may run on this machine or on a server the
+    // operator hosts, so the web fallback no longer asserts either one.
+    summary: 'Gateway status is available in the desktop app.',
     observedAt: fallbackObservedAt,
     unobservedProbes: ['installation', 'gateway'],
     facts: {

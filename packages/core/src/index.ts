@@ -1,6 +1,11 @@
 export * from './types/index';
 export * from './agent-sources';
 export * from './agent-projection';
+// ENG-010 C1: configured remote sources, their transport candidates, and the
+// adapter that turns observed Gateway payloads into projection input.
+export * from './sources/connected-source';
+export * from './oc/ssh-config';
+export * from './oc/topology-adapter';
 export { TypedEmitter } from './events/emitter';
 export type { CoreEventMap, CoreEmitter } from './events/emitter';
 export {

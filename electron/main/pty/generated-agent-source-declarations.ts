@@ -91,10 +91,11 @@ export const AGENT_SOURCE_DECLARATIONS = [
     adapterId: 'openclaw',
     harness: null,
     label: 'OpenClaw',
-    connectionName: 'Local gateway',
+    connectionName: 'Gateway',
     color: '#8BB9ED',
     installationGuideUrl: 'https://docs.openclaw.ai/install',
-    description: 'Connect a local OpenClaw gateway.',
+    description:
+      'Use an OpenClaw gateway on this machine or a server you host.',
     capabilities: {
       interactiveLaunch: false,
       initialTask: true,
@@ -128,12 +129,6 @@ export const AGENT_SOURCE_DECLARATIONS = [
 ] as const satisfies readonly AgentSourceDeclaration[];
 
 export const FUTURE_AGENT_SOURCE_CATALOG = [
-  {
-    adapterId: 'hosted-openclaw',
-    label: 'Hosted OpenClaw',
-    description: 'Connect a remote or managed gateway.',
-    availability: 'coming-soon',
-  },
   {
     adapterId: 'custom',
     label: 'Custom harness',
