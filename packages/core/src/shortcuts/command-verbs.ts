@@ -323,6 +323,32 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
       section: 'file',
     },
   },
+  {
+    // ENG-010 C2. Attaching a Gateway the operator already runs is the same
+    // class of act as opening a Project from disk: it names something that
+    // exists elsewhere and gives it a home here. That is why the File menu
+    // owns it beside Open Project, and why the ⌘N chooser presents it as a
+    // peer route rather than a setting buried in a pane.
+    id: 'connect-agent-source',
+    label: 'Connect existing Agent',
+    description:
+      'Attach a server you already run so its Agents appear beside local ones',
+    keys: null,
+    keyboardDiscoverability:
+      '⌘N already opens the chooser this route lives on, where Connect stands beside opening a known Project and adding one from disk. A second chord would split one door into two and spend a remaining single-modifier combo on a per-server act the operator performs once and then leaves alone.',
+    // Discovery and mapping write into PERSONAL-workspace truth and open the
+    // Agent there, so the verb rides the same tenant gate as Open Project
+    // rather than firing against Personal while a Demo tenant is on screen.
+    tenantScope: 'personal-workspace',
+    palette: null,
+    paletteDiscoverability:
+      'The palette presses one row, and this is one of three peer routes on the ⌘N chooser the palette already lists; a row that jumped straight into the connect flow would hide the two routes an operator weighs it against at the moment of choosing. Sources that already exist are managed in Settings, which the palette reaches as a destination.',
+    menu: {
+      commandId: 'connect-agent-source',
+      label: 'Connect Existing Agent…',
+      section: 'file',
+    },
+  },
   // The pointer-only verbs D44 named and D57 left for last: both lived in the
   // Project strip's context menu alone, which is the exact shape of the defect
   // the manifest exists to forbid. A Project is the File menu's object, so
@@ -472,7 +498,11 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     palette: null,
     paletteDiscoverability:
       "The shell is a launch configuration and appears in the palette's Start group beside the Agent sources, carrying the same unavailable reason.",
-    menu: { commandId: 'launch-shell', label: 'Open Shell', section: 'session' },
+    menu: {
+      commandId: 'launch-shell',
+      label: 'Open Shell',
+      section: 'session',
+    },
   },
   {
     id: 'workspace-reopen-closed-tab',
@@ -681,7 +711,8 @@ export function menuCommandVerbs(
 ): readonly (CommandVerb & { menu: CommandVerbMenu })[] {
   return COMMAND_VERBS.filter(
     (verb): verb is CommandVerb & { menu: CommandVerbMenu } =>
-      verb.menu !== null && (section === undefined || verb.menu.section === section)
+      verb.menu !== null &&
+      (section === undefined || verb.menu.section === section)
   );
 }
 

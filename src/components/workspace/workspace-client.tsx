@@ -73,7 +73,9 @@ import {
   CLOSE_ACTIVE_PROJECT_EVENT,
   REVEAL_ACTIVE_PATH_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
+  OPEN_CONNECT_SOURCE_EVENT,
   OPEN_PROJECT_PICKER_EVENT,
+  consumePendingConnectAgentSource,
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
   hasPendingAgentComposer,
@@ -252,6 +254,9 @@ export function WorkspaceClient() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [resumeNoticeDismissed, setResumeNoticeDismissed] = useState(false);
   const [projectOpenerOpen, setProjectOpenerOpen] = useState(false);
+  const [projectOpenerRoute, setProjectOpenerRoute] = useState<
+    'projects' | 'connect'
+  >('projects');
   // One spoken channel for the workspace. It began as reorder-only; ⌘J's
   // no-op is the second caller, and D44's contract is that a command never
   // just silently does nothing.
@@ -486,12 +491,30 @@ export function WorkspaceClient() {
     if (!inElectron) return;
     const openPicker = () => {
       consumePendingProjectPicker();
+      setProjectOpenerRoute('projects');
+      setProjectOpenerOpen(true);
+    };
+    // Connect is a route ON the chooser, so the File menu opens the chooser
+    // already there rather than a second door onto the same flow.
+    const openConnect = () => {
+      consumePendingConnectAgentSource();
+      setProjectOpenerRoute('connect');
       setProjectOpenerOpen(true);
     };
     window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openPicker);
-    if (consumePendingProjectPicker()) setProjectOpenerOpen(true);
-    return () =>
+    window.addEventListener(OPEN_CONNECT_SOURCE_EVENT, openConnect);
+    if (consumePendingProjectPicker()) {
+      setProjectOpenerRoute('projects');
+      setProjectOpenerOpen(true);
+    }
+    if (consumePendingConnectAgentSource()) {
+      setProjectOpenerRoute('connect');
+      setProjectOpenerOpen(true);
+    }
+    return () => {
       window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openPicker);
+      window.removeEventListener(OPEN_CONNECT_SOURCE_EVENT, openConnect);
+    };
   }, [inElectron]);
 
   useEffect(() => {
@@ -2057,6 +2080,7 @@ export function WorkspaceClient() {
       )}
       <ProjectOpener
         open={projectOpenerOpen}
+        initialRoute={projectOpenerRoute}
         onOpenChange={setProjectOpenerOpen}
         workspaceProjects={projects}
         onOpenProject={openProject}

@@ -14,9 +14,11 @@ import {
 import { STATIC_PALETTE_ROW_IDS } from '@/components/shortcuts/command-palette';
 import { DIALOG_PRIMARY_ACTION_SHORTCUT_ID } from '@/components/ui/dialog-primary-action';
 import {
+  DISPATCHED_MENU_COMMAND_IDS,
   LIVE_WORKSPACE_MENU_COMMANDS,
   WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS,
 } from '@/components/shortcuts/shortcut-provider';
+import { FEEDBACK_MENU_COMMAND_IDS } from '@/components/feedback/product-feedback-provider';
 import { EMPTY_WORKSPACE_COMMAND_AVAILABILITY } from '@/components/workspace/workspace-command-availability';
 import { NAVIGATION_SURFACES } from '@/components/nav/surfaces';
 import { defaultShortcuts } from './defaults';
@@ -120,7 +122,9 @@ describe('command verb manifest', () => {
         );
       }
       if (verb.palette === null) {
-        expect(isWrittenReason(verb.paletteDiscoverability), verb.id).toBe(true);
+        expect(isWrittenReason(verb.paletteDiscoverability), verb.id).toBe(
+          true
+        );
       }
       if (verb.menu === null) {
         expect(isWrittenReason(verb.menuDiscoverability), verb.id).toBe(true);
@@ -387,5 +391,44 @@ describe('application identity', () => {
     const build = labels.indexOf('Build abcdef123456');
     expect(version).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(version);
+  });
+});
+
+/**
+ * The rung the manifest did not previously reach.
+ *
+ * A menu verb passes every other join here by declaring a section, an
+ * accelerator, and a tenant gate, and can still do nothing when invoked:
+ * dispatch is a switch, and a missing case is silent. Dispatch has more than
+ * one owner, so each publishes what it handles and this joins the union to the
+ * manifest in both directions.
+ */
+describe('every menu verb reaches a dispatch', () => {
+  const dispatched = new Set([
+    ...DISPATCHED_MENU_COMMAND_IDS,
+    ...FEEDBACK_MENU_COMMAND_IDS,
+  ]);
+
+  it('is dispatched by some owner', () => {
+    const undispatched = menuCommandVerbs()
+      .map(verb => verb.menu.commandId)
+      .filter(commandId => !dispatched.has(commandId));
+
+    expect(undispatched).toEqual([]);
+  });
+
+  it('dispatches nothing that no menu declares', () => {
+    // The fixed Session families are menu items without rebindable verbs, so
+    // they are declared there rather than in the verb manifest.
+    const declared = new Set([
+      ...menuCommandVerbs().map(verb => verb.menu.commandId),
+      ...FIXED_SESSION_MENU_COMMANDS.map(command => command.id),
+      ...AGENT_LAUNCH_MENU_COMMANDS.map(entry => entry.commandId),
+    ]);
+    const orphaned = [...dispatched].filter(
+      commandId => !declared.has(commandId)
+    );
+
+    expect(orphaned).toEqual([]);
   });
 });

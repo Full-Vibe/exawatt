@@ -45,6 +45,12 @@ export const LAUNCH_EVENT = 'exawatt:launch';
 /** Open a known Project by directory, resolving it without creating a PTY. */
 export const OPEN_PROJECT_EVENT = 'exawatt:open-project';
 export const OPEN_PROJECT_PICKER_EVENT = 'exawatt:open-project-picker';
+/**
+ * ENG-010 C2. Connect lives on the ⌘N chooser as a peer route, so entering it
+ * from the File menu opens the chooser already on that route rather than
+ * opening a second door to the same place.
+ */
+export const OPEN_CONNECT_SOURCE_EVENT = 'exawatt:open-connect-source';
 export const FOCUS_AGENT_COMPOSER_EVENT = 'exawatt:focus-agent-composer';
 /** Active Project publishes the exact frozen ribbon catalog to global command
  * surfaces. Empty detail clears stale rows when the composer unmounts. */
@@ -109,6 +115,7 @@ let pendingSession: Pending<string> | null = null;
 let pendingLaunch: Pending<PtyHarness> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
 let pendingProjectPicker: Pending<true> | null = null;
+let pendingConnectSource: Pending<true> | null = null;
 let pendingAgentComposer: Pending<AgentComposerRequest> | null = null;
 let pendingReopenLastClosed: Pending<true> | null = null;
 
@@ -205,6 +212,18 @@ export function requestProjectPicker(): void {
 export function consumePendingProjectPicker(): boolean {
   const pending = take(pendingProjectPicker);
   pendingProjectPicker = null;
+  return pending === true;
+}
+
+export function requestConnectAgentSource(): void {
+  if (!launchVerbsAvailable()) return;
+  pendingConnectSource = { value: true, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(OPEN_CONNECT_SOURCE_EVENT));
+}
+
+export function consumePendingConnectAgentSource(): boolean {
+  const pending = take(pendingConnectSource);
+  pendingConnectSource = null;
   return pending === true;
 }
 
