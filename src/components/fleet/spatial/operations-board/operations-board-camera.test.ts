@@ -13,6 +13,7 @@ import {
   createBoardProjectionScratch,
   fittedBoardCameraTarget,
   relaxBoardCameraTargetInPlace,
+  fitBoardZoom,
   semanticBoardCameraTarget,
   softFollowBoardPoint,
   softFollowBoardRect,
@@ -75,24 +76,47 @@ describe('operations board camera policy', () => {
   });
 
   it('bounds semantic zoom and preserves off-center composition', () => {
+    // A tiny rect would fit at a huge zoom; the move is bounded to the policy
+    // ratio of where the camera is now, so one keystroke never teleports.
     const next = semanticBoardCameraTarget(
       target,
       { x: 55, y: 20, width: 4, height: 4 },
       size
     );
-    expect(next.zoom).toBeCloseTo(target.zoom * 1.45);
+    expect(next.zoom).toBeCloseTo(
+      target.zoom * BOARD_CAMERA_POLICY.semanticZoomRatio
+    );
     expect(next.x).toBeGreaterThan(0);
     expect(next.x).toBeLessThan(57);
   });
 
+  it('reaches a Project\'s actual fit from Fleet under one geometry (V3.7)', () => {
+    // Units no longer grow when a Project is focused, so the camera alone
+    // must supply the room. From a Fleet zoom, a Voltaic-sized Project circle
+    // (radius ~10, viewport 1440x900) must land on its FIT, not on a bounded
+    // fraction of it -- 1.45x used to leave 12px hexes at Project altitude.
+    const fleet = { x: 0, y: 0, zoom: 9.2, tilt: 0 };
+    const rect = { x: 3.75, y: 3.75, width: 20.5, height: 20.5 };
+    const viewport = { width: 1440, height: 900 };
+    const next = semanticBoardCameraTarget(fleet, rect, viewport);
+    expect(next.zoom).toBeCloseTo(fitBoardZoom(rect, viewport), 6);
+    expect(next.zoom).toBeGreaterThan(fleet.zoom * 2.5);
+  });
+
   it('allows more semantic zoom on compact viewports for touch targets', () => {
-    const next = semanticBoardCameraTarget(
-      target,
-      { x: 0, y: 0, width: 4, height: 4 },
-      { width: 600, height: 700 }
-    );
-    expect(next.zoom).toBeCloseTo(
+    // A compact viewport may zoom further per move than a desktop one, so
+    // 44px direct-touch Agent targets separate. Here the rect's fit is within
+    // that allowance, so the move lands on the fit; on desktop with the same
+    // starting zoom the ceiling would be lower.
+    const compact = { width: 600, height: 700 };
+    const rect = { x: 0, y: 0, width: 4, height: 4 };
+    const next = semanticBoardCameraTarget(target, rect, compact);
+    expect(next.zoom).toBeCloseTo(fitBoardZoom(rect, compact), 6);
+    expect(next.zoom).toBeLessThanOrEqual(
       target.zoom * BOARD_CAMERA_POLICY.compactViewportSemanticZoomRatio
+    );
+    expect(BOARD_CAMERA_POLICY.compactViewportSemanticZoomRatio).toBeGreaterThan(
+      BOARD_CAMERA_POLICY.semanticZoomRatio
     );
   });
 });

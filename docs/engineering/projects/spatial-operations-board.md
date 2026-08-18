@@ -263,6 +263,15 @@ the canvas layer tree both touch). Every slice: read
   full-layer remounts (assert via a transition-frame eval that samples
   `__EVAL_GL__` frame gaps — no gap >100ms during the settle window);
   reduced-motion snaps; input is never blocked mid-transition.
+  AMENDED 2026-08-17 (V3.7, one world): "zones/pieces morph position, scale,
+  and visibility ... while the camera flies" is superseded. Board geometry no
+  longer depends on altitude or focus, so there is nothing to morph on a
+  semantic move: the camera flies, neighbours recede, detail reveals at the
+  same anchor. The morph machinery survives for what still changes — the
+  lattice on live data, and the dots -> hexes reveal above the individual
+  boundary — and `eval:spatial:motion` is the transition-frame eval this
+  acceptance asked for (no cut, first motion within 60ms, no mid-flight
+  hitch, no rewind, on the real client and the 1k fixture).
 - **S3 — The tiled board (F4 tile family + F5 in-world identity).**
   Scope: replace zone rectangles and cylinder pieces with the approved shape
   hierarchy from the `board-tile-study` prototype — beveled hex Agent tiles

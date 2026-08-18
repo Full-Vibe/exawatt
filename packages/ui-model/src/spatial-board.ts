@@ -187,9 +187,7 @@ const BOARD = {
   zoneLabelClearance: 3.2,
   zonePadding: 1.4,
   fleetPieceSize: 2.2,
-  projectPieceHeight: 2.15,
   fleetHexPitch: 1.3,
-  projectHexPitch: 2.75,
 } as const;
 
 /**
@@ -640,45 +638,6 @@ function hexRingForCount(count: number): number {
   return ring;
 }
 
-function projectZoneRect(
-  slotIndex: number,
-  agentCount: number,
-  radius: number,
-  scale = 1
-): SpatialBoardRect {
-  // Semantic altitude changes resolution, not address. Keep the focused
-  // Project on its Fleet-lattice center so the camera and contents can carry
-  // their current viewport through Fleet → Project → Agent.
-  const fleetRect = fleetZoneRect(slotIndex, agentCount, undefined, scale);
-  return circleRect(
-    fleetRect.x + fleetRect.width / 2,
-    fleetRect.y + fleetRect.height / 2,
-    radius
-  );
-}
-
-/** Circular footprint for aggregate density at focused Project altitude. */
-function densityZoneRect(
-  slotIndex: number,
-  agentCount: number,
-  scale = 1
-): SpatialBoardRect {
-  const contentRadius = Math.sqrt(
-    (Math.min(agentCount, 4_000) * SPATIAL_DENSITY_ZONE_PITCH ** 2 * 1.25) /
-      Math.PI
-  );
-  const radius = Math.max(
-    BOARD.fleetMinRadius,
-    contentRadius + BOARD.zoneLabelClearance + BOARD.zonePadding
-  );
-  const fleetRect = fleetZoneRect(slotIndex, agentCount, undefined, scale);
-  return circleRect(
-    fleetRect.x + fleetRect.width / 2,
-    fleetRect.y + fleetRect.height / 2,
-    radius
-  );
-}
-
 /**
  * Where slot `slotIndex` sits, in world units, relative to its Project's
  * centre.
@@ -880,7 +839,12 @@ function attachZoneBurn(
   });
 }
 
-function fleetSlotPosition(
+/**
+ * Where a slot sits inside its Project, at every altitude. The small downward
+ * nudge keeps the constellation clear of the Project's label chip; it is the
+ * same at every altitude because the position IS the address.
+ */
+function slotPosition(
   zone: SpatialBoardProjectZone,
   slotIndex: number
 ): { x: number; y: number } {
@@ -893,21 +857,9 @@ function fleetSlotPosition(
   };
 }
 
-function projectSlotPosition(
-  zone: SpatialBoardProjectZone,
-  slotIndex: number
-): { x: number; y: number } {
-  const offset = axialSlotOffset(slotIndex, zone.slotPitch);
-  return {
-    x: round4(zone.rect.x + zone.radius + offset.x),
-    y: round4(zone.rect.y + zone.radius + offset.y),
-  };
-}
-
 function individualPieces(
   zone: SpatialBoardProjectZone,
   state: FleetState,
-  altitude: SpatialBoardAltitude,
   selectedAgentId: string | null,
   visibleAgentIds: ReadonlySet<string> | undefined,
   labelLimit: number,
@@ -915,7 +867,7 @@ function individualPieces(
   burnView: FleetBurnView
 ): SpatialBoardPiece[] {
   const previousSlots = new Map<string, number>();
-  if (previousLayout?.altitude === altitude) {
+  if (previousLayout) {
     for (const piece of previousLayout.pieces) {
       if (piece.kind === 'agent' && piece.projectId === zone.id) {
         previousSlots.set(piece.id, piece.slotIndex);
@@ -929,10 +881,7 @@ function individualPieces(
     const agent = state.agents[agentId]!;
     const selected = agentId === selectedAgentId;
     const slotIndex = slots.get(id)!;
-    const position =
-      altitude === 'fleet'
-        ? fleetSlotPosition(zone, slotIndex)
-        : projectSlotPosition(zone, slotIndex);
+    const position = slotPosition(zone, slotIndex);
     const showByBudget = index < labelLimit;
     const delegated = agent.delegation?.children ?? [];
     const latestActivity = [...(agent.activities ?? [])]
@@ -983,19 +932,13 @@ function individualPieces(
   });
 }
 
-function aggregatePieces(
-  zone: SpatialBoardProjectZone,
-  altitude: SpatialBoardAltitude
-): SpatialBoardPiece[] {
+function aggregatePieces(zone: SpatialBoardProjectZone): SpatialBoardPiece[] {
   const pieces: SpatialBoardPiece[] = [];
   const marks = STATUS_ORDER.filter(status => zone.statusCounts[status] > 0);
   for (const status of marks) {
     const count = zone.statusCounts[status];
     const slotIndex = pieces.length;
-    const position =
-      altitude === 'fleet'
-        ? fleetSlotPosition(zone, slotIndex)
-        : projectSlotPosition(zone, slotIndex);
+    const position = slotPosition(zone, slotIndex);
     pieces.push({
       id: `aggregate:${zone.id}:${status}`,
       slotIndex,
@@ -1135,20 +1078,13 @@ export function selectSpatialBoardLayout(
   // says how much is running, and letting delegation drive it would make a
   // small busy Project look bigger than a large quiet one. Delegation is
   // absorbed inside the slot instead — see `delegationFitFor`.
-  const zoneFootprint = (group: ContextGroup, pieceSize: number, base: number) => ({
-    pitch: base,
-    radius:
-      pieceSize === BOARD.fleetPieceSize
-        ? fleetZoneRadius(group.agentIds.length)
-        : Math.max(
-            7,
-            5.2 + hexRingForCount(group.agentIds.length) * base * 1.5
-          ),
-  });
   const fleetFootprints = new Map(
     groups.map(group => [
       group.clusterId,
-      zoneFootprint(group, BOARD.fleetPieceSize, BOARD.fleetHexPitch),
+      {
+        pitch: BOARD.fleetHexPitch,
+        radius: fleetZoneRadius(group.agentIds.length),
+      },
     ] as const)
   );
   // Unit size is a property of the BOARD, not of a Project. Sizing it per
@@ -1161,11 +1097,6 @@ export function selectSpatialBoardLayout(
     BOARD.fleetHexPitch,
     anyDelegating
   );
-  const detailedUnitSize = slotPieceSizeFor(
-    BOARD.projectPieceHeight,
-    BOARD.projectHexPitch,
-    anyDelegating
-  );
   const latticeScale = Math.max(
     1,
     ...[...fleetFootprints.values()].map(
@@ -1173,42 +1104,35 @@ export function selectSpatialBoardLayout(
     )
   );
 
+  // ONE geometry for every altitude (V3.7). A Project's circle, its slot
+  // pitch, and its unit size are what they are at Fleet, and stay that way at
+  // Project and Agent altitude: altitude changes what is SHOWN -- labels,
+  // activity, which neighbours recede, dots becoming hexes at scale -- never
+  // where anything sits or how big it is. Focusing used to swap the focused
+  // circle to a larger radius, pitch, and unit in one frame while the camera
+  // was still standing still, which is what read as a cut before every
+  // flight; the room a focused Project needs comes from the camera zooming
+  // in, which is where a game gets it too.
   const zones = groups.map(group => {
     const slotIndex =
       altitude === 'fleet'
         ? fleetSlots.get(group.clusterId)!
         : addressSlots.get(group.clusterId)!;
     const isAggregate = group.clusterId === 'aggregate:remaining-projects';
-    const detailed =
-      altitude !== 'fleet' && group.clusterId === focusedProjectId;
     const fleetFootprint = fleetFootprints.get(group.clusterId)!;
-    const projectFootprint = zoneFootprint(
-      group,
-      BOARD.projectPieceHeight,
-      BOARD.projectHexPitch
+    const rect = fleetZoneRect(
+      slotIndex,
+      group.agentIds.length,
+      fleetFootprint.radius,
+      latticeScale
     );
-    const rect = !detailed
-      ? fleetZoneRect(
-          slotIndex,
-          group.agentIds.length,
-          fleetFootprint.radius,
-          latticeScale
-        )
-      : group.agentIds.length > maxProjectPiecesBudget
-        ? densityZoneRect(slotIndex, group.agentIds.length, latticeScale)
-        : projectZoneRect(
-            slotIndex,
-            group.agentIds.length,
-            projectFootprint.radius,
-            latticeScale
-          );
     return projectZone(
       group,
       state,
       slotIndex,
       rect,
-      detailed ? projectFootprint.pitch : fleetFootprint.pitch,
-      detailed ? detailedUnitSize : fleetUnitSize,
+      fleetFootprint.pitch,
+      fleetUnitSize,
       fleetFootprint.radius,
       latticeScale,
       selectedAgentId,
@@ -1230,36 +1154,35 @@ export function selectSpatialBoardLayout(
   const showFleetIndividuals = sourceAgentCount <= maxFleetPieces;
   const pieces: SpatialBoardPiece[] = [];
   for (const zone of zones) {
-    const detailed = altitude !== 'fleet' && zone.id === focusedProjectId;
-    if (altitude !== 'fleet' && !detailed) {
-      pieces.push(...aggregatePieces(zone, 'fleet'));
-      continue;
-    }
-    const pieceAltitude = detailed ? altitude : 'fleet';
-    const individualLimit =
-      pieceAltitude === 'fleet' ? maxFleetPiecesPerZone : maxProjectPieces;
+    // Focus changes what a Project SHOWS, not what it is. At individual scale
+    // every Project keeps its hexes at every altitude, focused or not, so a
+    // focus change never flips a neighbour between hexes and dots; the
+    // neighbours recede by dimming and losing their labels instead. Above the
+    // individual boundary the focused Project alone reveals its Agents, and
+    // the renderer cross-fades that reveal at unchanged geometry.
+    const focused = altitude !== 'fleet' && zone.id === focusedProjectId;
+    const individualLimit = focused ? maxProjectPieces : maxFleetPiecesPerZone;
     const showIndividuals =
       !zone.isAggregate &&
       zone.agentCount <= individualLimit &&
-      (pieceAltitude !== 'fleet' || showFleetIndividuals);
+      (focused || showFleetIndividuals);
     if (showIndividuals) {
       pieces.push(
         ...individualPieces(
           zone,
           state,
-          pieceAltitude,
           selectedAgentId,
           options.visibleAgentIds,
-          pieceAltitude === 'fleet'
-            ? (options.fleetAgentLabelLimit ?? DEFAULTS.fleetAgentLabelLimit)
-            : (options.projectAgentLabelLimit ??
-                DEFAULTS.projectAgentLabelLimit),
+          focused
+            ? (options.projectAgentLabelLimit ??
+                DEFAULTS.projectAgentLabelLimit)
+            : (options.fleetAgentLabelLimit ?? DEFAULTS.fleetAgentLabelLimit),
           options.previousLayout,
           burnView
         )
       );
     } else {
-      pieces.push(...aggregatePieces(zone, pieceAltitude));
+      pieces.push(...aggregatePieces(zone));
     }
   }
 

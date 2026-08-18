@@ -134,18 +134,40 @@ await touchPage.waitForFunction(() => {
 });
 await touchPage.waitForTimeout(1200);
 const touchCanvas = await touchPage.locator('canvas').boundingBox();
+// A "clear" touch point must be clear of DOM controls by more than the
+// browser's touch-target adjustment radius, not merely hit-test to the
+// canvas: Chrome snaps a touch that lands within ~10-20px of a button onto
+// that button, so a pan started just beside a zone chip is delivered to the
+// chip and the camera never hears it. Measured: a start 7px above a chip's
+// box produced pointer events on the chip and a pan of exactly 0.
+const TOUCH_ADJUSTMENT_MARGIN = 28;
 const readClearTouchPoints = () =>
-  touchPage.evaluate(() => {
+  touchPage.evaluate(margin => {
     const canvas = document.querySelector('canvas');
     const rect = canvas.getBoundingClientRect();
+    const controls = Array.from(
+      document.querySelectorAll('button, a, [role=button], input, [data-board-zone]')
+    )
+      .map(el => el.getBoundingClientRect())
+      .filter(r => r.width > 0 && r.height > 0);
+    const nearControl = (x, y) =>
+      controls.some(
+        r =>
+          x >= r.left - margin &&
+          x <= r.right + margin &&
+          y >= r.top - margin &&
+          y <= r.bottom + margin
+      );
     const points = [];
     for (let y = rect.top + 18; y < rect.bottom - 18; y += 24) {
       for (let x = rect.left + 18; x < rect.right - 18; x += 24) {
-        if (document.elementFromPoint(x, y) === canvas) points.push({ x, y });
+        if (document.elementFromPoint(x, y) !== canvas) continue;
+        if (nearControl(x, y)) continue;
+        points.push({ x, y });
       }
     }
     return points;
-  });
+  }, TOUCH_ADJUSTMENT_MARGIN);
 const clearTouchPoints = await readClearTouchPoints();
 if (clearTouchPoints.length < 2) {
   throw new Error('Touch fixture has no clear board background gesture area');

@@ -2,7 +2,22 @@
 
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  moveBoardRoute,
+  readBoardRoute,
+  sameBoardRoute,
+  writeBoardRoute,
+  type BoardRoute,
+} from './board-route';
 import { Crosshair, Keyboard, RadioTower, Search } from 'lucide-react';
 import {
   useConnectToOC,
@@ -83,17 +98,20 @@ export function SpatialFleetClient() {
   );
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rawAltitude = searchParams.get('altitude');
-  const altitude: Altitude =
-    rawAltitude === 'project' || rawAltitude === 'agent'
-      ? rawAltitude
-      : 'fleet';
-  const focusedProjectId = searchParams.get('project');
-  const selectedAgentId = searchParams.get('agent');
-  const projection: SpatialBoardProjection =
-    searchParams.get('projection') === 'fixed-angle'
-      ? 'fixed-angle'
-      : 'top-down';
+  // The semantic address is STATE here and the URL mirrors it (see
+  // `board-route.ts`): a hotkey moves the camera on its own frame instead of
+  // after a router round-trip. A URL arriving from outside re-syncs it.
+  const [route, setRoute] = useState<BoardRoute>(() =>
+    readBoardRoute(searchParams)
+  );
+  useEffect(() => {
+    const fromUrl = readBoardRoute(searchParams);
+    setRoute(previous => (sameBoardRoute(previous, fromUrl) ? previous : fromUrl));
+  }, [searchParams]);
+  const altitude: Altitude = route.altitude;
+  const focusedProjectId = route.projectId;
+  const selectedAgentId = route.agentId;
+  const projection: SpatialBoardProjection = route.projection;
   const { fleetState, projects } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
@@ -105,9 +123,21 @@ export function SpatialFleetClient() {
 
   // Semantic filters live in the URL so a Spatial address survives route and
   // session handoffs. Camera position remains renderer-session state.
+  // Memoised by VALUE. `useSearchParams` returns a fresh object on every
+  // navigation -- including the board's own route writes -- and keying the
+  // filters on its identity re-derived the filtered fleet, the visible ids,
+  // and the whole board layout each time the URL merely caught up with a
+  // move already made, which landed a full re-render in the middle of the
+  // camera flight.
+  const filterQuery = searchParams.get('q') ?? '';
+  const filterStatusKey = searchParams.get('status') ?? '';
   const { query, statuses: statusFilter } = useMemo(
-    () => readSpatialFilters(searchParams),
-    [searchParams]
+    () =>
+      readSpatialFilters({
+        get: key =>
+          key === 'q' ? filterQuery : key === 'status' ? filterStatusKey : null,
+      }),
+    [filterQuery, filterStatusKey]
   );
   // Router replacement is asynchronous; keep the latest requested filters
   // synchronously so two quick pill presses compose instead of the second
@@ -320,7 +350,7 @@ export function SpatialFleetClient() {
     (next: { query: string; statuses: typeof statusFilter }) => {
       requestedFiltersRef.current = next;
       const params = writeSpatialFilters(
-        new URLSearchParams(searchParams.toString()),
+        new URLSearchParams(window.location.search),
         next
       );
       const value = params.toString();
@@ -328,7 +358,7 @@ export function SpatialFleetClient() {
         scroll: false,
       });
     },
-    [router, searchParams]
+    [router]
   );
 
   const toggleStatusSignal = (
@@ -357,30 +387,40 @@ export function SpatialFleetClient() {
 
   // Drive zoom-resolution + selection through the URL (deep-linkable). The
   // selector resolves the effective altitude (ascends if a focus is stale).
+  // Latest-route ref, written in a layout effect and never during render.
+  // The URL writers below read the CURRENT address bar at call time rather
+  // than closing over `searchParams`: rebuilt on every URL change, they made
+  // every consumer re-render each time the URL caught up with a move.
+  const routeRef = useRef(route);
+  useLayoutEffect(() => {
+    routeRef.current = route;
+  }, [route]);
+  const commitRoute = useCallback(
+    (next: BoardRoute) => {
+      if (sameBoardRoute(routeRef.current, next)) return;
+      routeRef.current = next;
+      // Non-urgent on purpose. A keydown is a discrete event, so React would
+      // flush this render synchronously -- before the browser paints -- and
+      // the camera the hotkey just started would wait behind an 80ms commit.
+      // As a transition, the camera frame paints first and the board's
+      // re-render follows.
+      startTransition(() => setRoute(next));
+      const params = writeBoardRoute(
+        new URLSearchParams(window.location.search),
+        next
+      );
+      const q = params.toString();
+      router.replace(`/fleet/spatial${q ? `?${q}` : ''}`, { scroll: false });
+    },
+    [router]
+  );
   const navigate = useCallback(
     (next: {
       altitude?: Altitude;
       project?: string | null;
       agent?: string | null;
-    }) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if ('altitude' in next) {
-        if (next.altitude && next.altitude !== 'fleet')
-          params.set('altitude', next.altitude);
-        else params.delete('altitude');
-      }
-      if ('project' in next) {
-        if (next.project) params.set('project', next.project);
-        else params.delete('project');
-      }
-      if ('agent' in next) {
-        if (next.agent) params.set('agent', next.agent);
-        else params.delete('agent');
-      }
-      const q = params.toString();
-      router.replace(`/fleet/spatial${q ? `?${q}` : ''}`, { scroll: false });
-    },
-    [router, searchParams]
+    }) => commitRoute(moveBoardRoute(routeRef.current, next)),
+    [commitRoute]
   );
 
   const ascend = useCallback(() => {
@@ -407,16 +447,9 @@ export function SpatialFleetClient() {
   );
 
   const changeProjection = useCallback(
-    (next: SpatialBoardProjection) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === 'fixed-angle') params.set('projection', next);
-      else params.delete('projection');
-      const queryString = params.toString();
-      router.replace(`/fleet/spatial${queryString ? `?${queryString}` : ''}`, {
-        scroll: false,
-      });
-    },
-    [router, searchParams]
+    (next: SpatialBoardProjection) =>
+      commitRoute(moveBoardRoute(routeRef.current, { projection: next })),
+    [commitRoute]
   );
 
   // Clicking an agent drills to the agent (with its owning Project as the

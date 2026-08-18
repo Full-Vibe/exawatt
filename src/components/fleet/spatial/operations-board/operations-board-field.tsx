@@ -17,6 +17,7 @@ import {
   beginBoardTransition,
   cancelBoardTransition,
   boardFieldPoseAt,
+  boardTransitionEase,
   boardFieldPoseMoved,
   boardTransitionProgress,
   carryBoardFieldPose,
@@ -84,11 +85,13 @@ export function useBoardTransitionActive(): () => boolean {
 export function BoardField({
   pieces,
   altitude,
+  focusedProjectId,
   reduced,
   children,
 }: {
   pieces: readonly SpatialBoardPiece[];
   altitude: SpatialBoardAltitude;
+  focusedProjectId: string | null;
   reduced: boolean;
   children: ReactNode;
 }) {
@@ -96,7 +99,10 @@ export function BoardField({
   const clock = useBoardTransitionClock();
   const invalidate = useThree(state => state.invalidate);
   const carry = useRef<BoardFieldPose>(BOARD_FIELD_IDENTITY);
-  const previousAltitude = useRef(altitude);
+  // The semantic address: altitude AND focus. Either changing is one
+  // semantic move, and the field is the single owner that starts its clock.
+  const address = `${altitude}:${focusedProjectId ?? ''}`;
+  const previousAddress = useRef(address);
   /** The transition this field last saw, so it can tell when the shared clock
    *  was restarted underneath it by the camera. */
   const seenStart = useRef<number | null>(null);
@@ -108,12 +114,12 @@ export function BoardField({
       pieces.map(piece => [piece.id, { x: piece.x, y: -piece.y }])
     );
     const node = group.current;
-    const altitudeChanged = previousAltitude.current !== altitude;
-    previousAltitude.current = altitude;
+    const addressChanged = previousAddress.current !== address;
+    previousAddress.current = address;
     const previous = previousPositions.current;
     previousPositions.current = next;
 
-    if (!node || reduced || !altitudeChanged || !clock) return;
+    if (!node || reduced || !addressChanged || !clock) return;
 
     // Fit against the pose the field is drawn at right now, so a change that
     // lands mid-flight continues from what the operator can see.
@@ -127,16 +133,22 @@ export function BoardField({
       pieces.map(piece => ({ id: piece.id, x: piece.x, y: -piece.y })),
       actual
     );
-    // No shared pieces means no continuity to preserve: cut rather than invent
-    // a relationship between two unrelated boards.
-    if (!fitted) return;
-
-    carry.current = fitted;
-    node.position.set(fitted.x, fitted.y, 0);
-    node.scale.set(fitted.scale, fitted.scale, 1);
-    beginBoardTransition(clock.current, performance.now());
+    // Under one geometry (V3.7) the fit is identity on every semantic move:
+    // nothing moved, and the field's job is to START the shared clock that
+    // the camera, the recession, and the reveals all sample. It still carries
+    // a real pose when the lattice itself changed underneath the move.
+    carry.current = fitted ?? BOARD_FIELD_IDENTITY;
+    node.position.set(carry.current.x, carry.current.y, 0);
+    node.scale.set(carry.current.scale, carry.current.scale, 1);
+    // The camera is the primary owner: a hotkey starts its flight on the
+    // keystroke's frame, and this commit arrives a few frames later. Join a
+    // clock that is already running rather than restarting it under the
+    // camera; start one only if nothing else has.
+    if (!isBoardTransitionActive(clock.current, performance.now())) {
+      beginBoardTransition(clock.current, performance.now());
+    }
     invalidate();
-  }, [altitude, clock, invalidate, pieces, reduced]);
+  }, [address, clock, invalidate, pieces, reduced]);
 
   // Reduced motion can be switched on mid-flight. A field left frozen partway
   // through a carry would keep the whole board at the wrong size in the wrong
@@ -193,4 +205,65 @@ export function BoardField({
       {children}
     </group>
   );
+}
+
+/**
+ * How far each Project has receded from focus, 0 (in focus, or nothing is
+ * focused) to 1 (a neighbour of the focused Project).
+ *
+ * V3.7: focus changes what a Project SHOWS, never where it sits. Neighbours
+ * keep their hexes and recede -- bodies, plates, edges, and tethers mix
+ * toward the board -- and the recession cross-fades on the shared transition
+ * clock so it arrives with the camera rather than snapping ahead of it.
+ * Status lights stay at full: attention is truth, and a blocked Agent next
+ * door is still blocked.
+ *
+ * Returns a sampler for `useFrame`; it allocates nothing per frame.
+ */
+export function useBoardFocusRecession(
+  zoneIds: readonly string[],
+  altitude: SpatialBoardAltitude,
+  focusedProjectId: string | null,
+  reduced: boolean
+): (zoneId: string, nowMs: number) => number {
+  const clock = useBoardTransitionClock();
+  // from/to per zone; `from` is re-read at the moment the target changes so a
+  // change mid-fade continues from what is on screen.
+  const state = useRef(new Map<string, { from: number; to: number }>());
+  const seenStart = useRef<number | null>(null);
+  const targetFor = (zoneId: string) =>
+    altitude !== 'fleet' && focusedProjectId !== null && zoneId !== focusedProjectId
+      ? 1
+      : 0;
+  const sample = useMemo(() => {
+    return (zoneId: string, nowMs: number): number => {
+      const entry = state.current.get(zoneId);
+      if (!entry) return 0;
+      if (reduced || !clock) return entry.to;
+      const progress = boardTransitionProgress(clock.current, nowMs);
+      const eased = boardTransitionEase(progress);
+      return entry.from + (entry.to - entry.from) * eased;
+    };
+  }, [clock, reduced]);
+  useLayoutEffect(() => {
+    const now = performance.now();
+    const map = state.current;
+    for (const zoneId of zoneIds) {
+      const to = targetFor(zoneId);
+      const entry = map.get(zoneId);
+      if (!entry) {
+        map.set(zoneId, { from: to, to });
+        continue;
+      }
+      if (entry.to === to) continue;
+      entry.from = sample(zoneId, now);
+      entry.to = to;
+    }
+    for (const zoneId of [...map.keys()]) {
+      if (!zoneIds.includes(zoneId)) map.delete(zoneId);
+    }
+    seenStart.current = clock?.current.startedAt ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- targetFor closes over altitude/focus, listed below
+  }, [altitude, focusedProjectId, zoneIds, sample, clock]);
+  return sample;
 }
