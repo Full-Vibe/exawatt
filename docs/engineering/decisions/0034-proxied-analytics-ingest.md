@@ -12,8 +12,7 @@ allowlist, with a real off switch and a configurable host and project key. It
 assumed the ordinary integration shape: the client initializes PostHog against
 a PostHog host, which a distributor may redirect.
 
-That shape is correct for a website. It is wrong for this desktop app, for a
-reason the web-only projects in the same portfolio do not have.
+That shape is correct for a website. It is wrong for this desktop app.
 
 Exawatt ships as a signed macOS application that spawns unsandboxed local agent
 processes. Its users run identity-based firewall tooling — that is not
@@ -28,8 +27,7 @@ was invited to trust — is a trust cost out of all proportion to the telemetry'
 value.
 
 The operator's framing (2026-08-06): the client should look like it is talking
-to a heartbeat endpoint, using the same proxy pattern already used elsewhere in
-the portfolio.
+to a heartbeat endpoint.
 
 ## Decision
 
@@ -37,10 +35,9 @@ The client reaches PostHog **only** through an Exawatt-owned reverse proxy. The
 desktop application's sole analytics destination is `exawatt.ai`.
 
 - The proxy is a rewrite from an Exawatt-owned path to the PostHog ingest and
-  asset hosts. This is the same mechanism the sibling Full Vibe projects use;
-  Exawatt differs only in that the desktop renderer is served from a
-  package-local origin, so its ingest path must resolve to the hosted origin
-  rather than to the loopback server.
+  asset hosts. The desktop renderer is served from a package-local origin, so
+  its ingest path must resolve to the hosted origin rather than to the
+  loopback server.
 - The client is never configured with a PostHog hostname in ordinary builds.
 - Decision `0031`'s requirements survive **unchanged in substance**: one
   public versioned event allowlist; no autocapture, session replay, prompt or

@@ -115,8 +115,8 @@ unmodified OSI license texts, an off-the-shelf license-grant CLA with the
 perpetual-OSI commitment, template-derived trademark policy, and mechanical
 dependency-license and asset-provenance scans. Qualified counsel is engaged
 when a trigger fires: the first commercial license or paid tier, an
-enterprise customer requiring legal assurance, a live dispute, or fundraise
-diligence. Refined 2026-08-14 after external review: "off-the-shelf" means
+enterprise customer requiring legal assurance, or a live dispute. Refined
+2026-08-14 after external review: "off-the-shelf" means
 **verbatim adoption of a proven instrument** — Element's published CLA
 already carries the perpetual-OSI commitment and is the default choice. If
 the CLA text ends up requiring any custom drafting, that adds one earlier
