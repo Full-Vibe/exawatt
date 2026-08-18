@@ -1,0 +1,87 @@
+# Generated for the public repository by the "community-brand" recipe.
+appId: com.exawatt.app
+productName: Exawatt
+copyright: Copyright © 2024 Exawatt
+protocols:
+  - name: Exawatt
+    schemes:
+      - exawatt
+
+directories:
+  output: release
+  buildResources: electron/resources
+
+files:
+  - dist-electron/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+asarUnpack:
+  - dist-electron/node_modules/node-pty/build/Release/**/*
+
+extraResources:
+  - from: dist-renderer-archive
+    to: renderer
+    filter:
+      - "**/*"
+  - from: LICENSE
+    to: licenses/AGPL-3.0.txt
+  - from: LICENSING.md
+    to: licenses/LICENSING.md
+  - from: THIRD_PARTY_NOTICES.md
+    to: licenses/THIRD_PARTY_NOTICES.md
+  - from: LICENSES
+    to: licenses
+    filter:
+      - "**/*"
+  - from: node_modules/electron/dist/LICENSE
+    to: licenses/Electron-LICENSE
+  - from: node_modules/electron/dist/LICENSES.chromium.html
+    to: licenses/LICENSES.chromium.html
+
+mac:
+  category: public.app-category.developer-tools
+  icon: electron/resources/icon.icns
+  # TCC prompts are attributed to Exawatt when an agent's PTY touches a
+  # protected folder (Desktop/Documents/Downloads/volumes). Purposeful usage
+  # strings replace the generic OS copy so the prompt explains itself
+  # (ENG-016 D18); grants persist across builds via the stable D17 identity.
+  extendInfo:
+    NSDocumentsFolderUsageDescription: >-
+      Agents you launch in Exawatt read and write the project folders you
+      open. Allow access so agents can work on projects stored in Documents.
+    NSDesktopFolderUsageDescription: >-
+      Agents you launch in Exawatt read and write the project folders you
+      open. Allow access so agents can work on projects stored on the
+      Desktop.
+    NSDownloadsFolderUsageDescription: >-
+      Agents you launch in Exawatt read and write the project folders you
+      open. Allow access so agents can work on projects stored in Downloads.
+    NSRemovableVolumesUsageDescription: >-
+      Agents you launch in Exawatt read and write the project folders you
+      open, including projects on external drives.
+    NSNetworkVolumesUsageDescription: >-
+      Agents you launch in Exawatt read and write the project folders you
+      open, including projects on network volumes.
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
