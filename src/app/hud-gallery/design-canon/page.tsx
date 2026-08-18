@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import {
   WORKSPACE_HUD as HUD,
@@ -8,26 +9,19 @@ import {
   ALTITUDES,
   BOARD_RULES,
   COLOR_CHANNELS,
+  KERNEL_RULES,
   LINK_GROUPS,
-  MOTION_RULES,
   OPEN_ITEMS,
   PRESETS,
   PRODUCT_RULES,
-  SCALE_RULES,
   SECTIONS,
   SITE_MEASUREMENTS,
   SITE_RULES,
-  SPACING_RULES,
   STATUS_PROTOCOL,
-  STATUS_RULES,
   THEME_RULES,
-  TYPE_RULES,
   TYPE_SCALE,
-  VOICE_RULES,
   WORKBENCH_ROUTES,
-  WORKING_AGREEMENT,
   type CanonSection,
-  type CanonState,
   type Rule,
 } from './canon';
 
@@ -35,49 +29,17 @@ export const metadata: Metadata = {
   title: 'Design canon',
 };
 
-const STATE_TONE: Record<CanonState, { color: string; label: string }> = {
-  canon: { color: HUD.cyan, label: 'Decided' },
-  open: { color: HUD.amber, label: 'Open' },
-  retired: { color: HUD.idle, label: 'Retired' },
-};
-
-function StateChip({ state }: { state: CanonState }) {
-  const tone = STATE_TONE[state];
+function Dot({ open = false }: { open?: boolean }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 font-mono text-chrome-micro uppercase tracking-[0.12em]"
-      style={{
-        color: tone.color,
-        borderColor: withThemeAlpha(tone.color, 0.35),
-        backgroundColor: withThemeAlpha(tone.color, 0.08),
-      }}
-    >
-      {tone.label}
-    </span>
+      aria-hidden
+      className="mt-2 size-1.5 shrink-0 rounded-full"
+      style={{ backgroundColor: open ? HUD.amber : HUD.cyan }}
+    />
   );
 }
 
-function Panel({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`rounded-lg border p-4 ${className}`}
-      style={{
-        borderColor: HUD.strokeFaint,
-        backgroundColor: HUD.bg.panelFill,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function GroupLabel({ children }: { children: React.ReactNode }) {
+function GroupLabel({ children }: { children: ReactNode }) {
   return (
     <p
       className="font-mono text-chrome-micro uppercase tracking-[0.16em]"
@@ -90,20 +52,21 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 function RuleList({ rules }: { rules: Rule[] }) {
   return (
-    <ul className="flex flex-col gap-3">
+    <ul className="flex flex-col gap-2.5">
       {rules.map(rule => (
-        <li key={rule.claim} className="flex flex-col gap-1.5">
-          <div className="flex items-start gap-2">
-            <StateChip state={rule.state} />
-            <p className="text-sm font-medium" style={{ color: HUD.text }}>
-              {rule.claim}
-            </p>
-          </div>
-          <p
-            className="max-w-[78ch] pl-1 text-chrome-title leading-relaxed"
-            style={{ color: HUD.textDim }}
-          >
-            {rule.because}
+        <li key={rule.claim} className="flex items-start gap-2.5">
+          <Dot open={rule.state === 'open'} />
+          <p className="text-sm" style={{ color: HUD.text }}>
+            {rule.claim}
+            {rule.note ? (
+              <span
+                className="text-chrome-title"
+                style={{ color: HUD.textDim }}
+              >
+                {'  '}
+                {rule.note}
+              </span>
+            ) : null}
           </p>
         </li>
       ))}
@@ -111,55 +74,45 @@ function RuleList({ rules }: { rules: Rule[] }) {
   );
 }
 
-function SectionHeader({ section }: { section: CanonSection }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <h2 className="text-surface-title font-semibold" style={{ color: HUD.text }}>
-        {section.title}
-      </h2>
-      <p className="max-w-[80ch] text-reading" style={{ color: HUD.text }}>
-        {section.lede}
-      </p>
-      <p
-        className="font-mono text-chrome-micro"
-        style={{ color: withThemeAlpha(HUD.textDim, 0.8) }}
-      >
-        {section.sources.join('  ·  ')}
-      </p>
-    </div>
-  );
-}
-
-function Section({
-  id,
-  children,
-}: {
-  id: string;
-  children: React.ReactNode;
-}) {
-  const section = SECTIONS.find(s => s.id === id);
+function Section({ id, children }: { id: string; children: ReactNode }) {
+  const section = SECTIONS.find((s: CanonSection) => s.id === id);
   if (!section) return null;
   return (
     <section
       id={id}
       aria-labelledby={`${id}-h`}
-      className="scroll-mt-8 flex flex-col gap-5 border-t pt-8"
+      className="scroll-mt-8 flex flex-col gap-5 border-t pt-7"
       style={{ borderColor: HUD.divider }}
     >
-      <div id={`${id}-h`}>
-        <SectionHeader section={section} />
+      <div className="flex flex-col gap-1">
+        <h2
+          id={`${id}-h`}
+          className="text-surface-title font-semibold"
+          style={{ color: HUD.text }}
+        >
+          {section.title}
+        </h2>
+        <p className="max-w-[74ch] text-sm" style={{ color: HUD.text }}>
+          {section.lede}
+        </p>
+        <p
+          className="font-mono text-chrome-micro"
+          style={{ color: withThemeAlpha(HUD.textDim, 0.8) }}
+        >
+          {section.source}
+        </p>
       </div>
       {children}
     </section>
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children: ReactNode }) {
   return (
     <th
       scope="col"
-      className="whitespace-nowrap px-3 py-2 text-left font-mono text-chrome-micro font-medium uppercase tracking-[0.12em]"
-      style={{ color: HUD.textDim, borderColor: HUD.divider }}
+      className="whitespace-nowrap px-3 py-1.5 text-left font-mono text-chrome-micro font-medium uppercase tracking-[0.12em]"
+      style={{ color: HUD.textDim }}
     >
       {children}
     </th>
@@ -171,13 +124,13 @@ function Td({
   mono = false,
   dim = false,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   mono?: boolean;
   dim?: boolean;
 }) {
   return (
     <td
-      className={`px-3 py-2 align-top ${mono ? 'font-mono text-chrome-label whitespace-nowrap' : 'text-chrome-title'}`}
+      className={`px-3 py-1.5 align-top ${mono ? 'whitespace-nowrap font-mono text-chrome-label' : 'text-chrome-title'}`}
       style={{ color: dim ? HUD.textDim : HUD.text }}
     >
       {children}
@@ -185,7 +138,7 @@ function Td({
   );
 }
 
-function Table({ children }: { children: React.ReactNode }) {
+function Table({ children }: { children: ReactNode }) {
   return (
     <div
       className="overflow-x-auto rounded-lg border"
@@ -194,6 +147,10 @@ function Table({ children }: { children: React.ReactNode }) {
       <table className="w-full border-collapse text-left">{children}</table>
     </div>
   );
+}
+
+function Row({ children }: { children: ReactNode }) {
+  return <tr style={{ borderTop: `1px solid ${HUD.divider}` }}>{children}</tr>;
 }
 
 export default function DesignCanonPage() {
@@ -205,8 +162,8 @@ export default function DesignCanonPage() {
         color: HUD.text,
       }}
     >
-      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-8">
-        <header className="flex flex-col gap-5">
+      <div className="mx-auto flex w-full max-w-[1060px] flex-col gap-7">
+        <header className="flex flex-col gap-4">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="flex flex-col gap-1">
               <GroupLabel>HUD Gallery / Reference</GroupLabel>
@@ -226,349 +183,220 @@ export default function DesignCanonPage() {
             </Link>
           </div>
 
-          <Panel>
-            <div className="flex flex-col gap-3">
-              <p className="max-w-[80ch] text-reading" style={{ color: HUD.text }}>
-                Everything Exawatt has decided about how it looks, moves and
-                speaks, in one place, with the evidence attached and the open
-                questions marked.
-              </p>
-              <p
-                className="max-w-[80ch] text-sm leading-relaxed"
-                style={{ color: HUD.textDim }}
-              >
-                Two things make this page useful rather than tidy. The first is
-                that a rule here is a rule the product already follows, measured
-                from shipped code and operator review, so building against it
-                costs nothing to land. The second is that everything genuinely
-                undecided is labelled{' '}
-                <span style={{ color: HUD.amber }}>Open</span> rather than
-                quietly implied, because those are the places where a design
-                decision changes the product instead of matching it.
-              </p>
-              <div className="flex flex-wrap items-center gap-4 pt-1">
-                <span className="flex items-center gap-2">
-                  <StateChip state="canon" />
-                  <span
-                    className="text-chrome-meta"
-                    style={{ color: HUD.textDim }}
-                  >
-                    settled, cite it
-                  </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <StateChip state="open" />
-                  <span
-                    className="text-chrome-meta"
-                    style={{ color: HUD.textDim }}
-                  >
-                    deliberately unshaped
-                  </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <StateChip state="retired" />
-                  <span
-                    className="text-chrome-meta"
-                    style={{ color: HUD.textDim }}
-                  >
-                    tried, killed, do not revive
-                  </span>
-                </span>
-              </div>
-            </div>
-          </Panel>
+          <p className="max-w-[74ch] text-reading" style={{ color: HUD.text }}>
+            What Exawatt has settled about how it looks, moves and speaks, and
+            what it has left open on purpose.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-5">
+            <span className="flex items-center gap-2">
+              <Dot />
+              <span className="text-chrome-title" style={{ color: HUD.textDim }}>
+                settled, build against it
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              <Dot open />
+              <span className="text-chrome-title" style={{ color: HUD.textDim }}>
+                open, yours to decide
+              </span>
+            </span>
+          </div>
 
           <nav aria-label="Sections" className="flex flex-wrap gap-2">
-            {SECTIONS.map((section, index) => (
+            {SECTIONS.map((section: CanonSection) => (
               <a
                 key={section.id}
                 href={`#${section.id}`}
-                className="inline-flex min-h-9 items-center gap-2 rounded border px-3 py-1.5 text-chrome-label"
+                className="inline-flex min-h-9 items-center rounded border px-3 py-1.5 text-chrome-label"
                 style={{
                   color: HUD.text,
                   borderColor: HUD.strokeFaint,
                   backgroundColor: HUD.fill,
                 }}
               >
-                <span
-                  className="font-mono text-chrome-nano"
-                  style={{ color: HUD.cyan }}
-                >
-                  {String(index + 1).padStart(2, '0')}
-                </span>
                 {section.title}
               </a>
             ))}
           </nav>
         </header>
 
-        {/* 1. Product ------------------------------------------------------ */}
+        {/* The product ----------------------------------------------------- */}
         <Section id="product">
           <Table>
             <thead>
-              <tr style={{ borderBottom: `1px solid ${HUD.divider}` }}>
+              <tr>
                 <Th>Altitude</Th>
-                <Th>What you are looking at</Th>
+                <Th>What you see</Th>
                 <Th>Renderer</Th>
               </tr>
             </thead>
             <tbody>
               {ALTITUDES.map(altitude => (
-                <tr
-                  key={altitude.key}
-                  style={{ borderTop: `1px solid ${HUD.divider}` }}
-                >
+                <Row key={altitude.name}>
                   <Td mono>{altitude.name}</Td>
                   <Td>{altitude.looking}</Td>
                   <Td dim>{altitude.renderer}</Td>
-                </tr>
+                </Row>
               ))}
             </tbody>
           </Table>
-          <Panel>
-            <RuleList rules={PRODUCT_RULES} />
-          </Panel>
+          <RuleList rules={PRODUCT_RULES} />
         </Section>
 
-        {/* 2. Kernel ------------------------------------------------------- */}
+        {/* The kernel ------------------------------------------------------ */}
         <Section id="kernel">
-          <div className="flex flex-col gap-3">
-            <GroupLabel>Type: the named scale, and nothing between the rungs</GroupLabel>
-            <Table>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${HUD.divider}` }}>
-                  <Th>Rung</Th>
-                  <Th>px / line</Th>
-                  <Th>Utility</Th>
-                  <Th>Use for</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {TYPE_SCALE.map(rung => (
-                  <tr
-                    key={rung.rung}
-                    style={{ borderTop: `1px solid ${HUD.divider}` }}
-                  >
-                    <Td mono>{rung.rung}</Td>
-                    <Td mono dim>
-                      {rung.size}
-                    </Td>
-                    <Td mono dim>
-                      {rung.utility}
-                    </Td>
-                    <Td>{rung.use}</Td>
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <GroupLabel>Type, and nothing between the rungs</GroupLabel>
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Rung</Th>
+                    <Th>px</Th>
+                    <Th>Utility</Th>
+                    <Th>Use</Th>
                   </tr>
+                </thead>
+                <tbody>
+                  {TYPE_SCALE.map(rung => (
+                    <Row key={rung.rung}>
+                      <Td mono>{rung.rung}</Td>
+                      <Td mono dim>
+                        {rung.size}
+                      </Td>
+                      <Td mono dim>
+                        {rung.utility}
+                      </Td>
+                      <Td>{rung.use}</Td>
+                    </Row>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-2">
+                <GroupLabel>
+                  Colour channels never impersonate each other
+                </GroupLabel>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Channel</Th>
+                      <Th>Owns</Th>
+                      <Th>Never</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {COLOR_CHANNELS.map(channel => (
+                      <Row key={channel.channel}>
+                        <Td mono>{channel.channel}</Td>
+                        <Td>{channel.owns}</Td>
+                        <Td dim>{channel.never}</Td>
+                      </Row>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <GroupLabel>Status, five signals</GroupLabel>
+                <Table>
+                  <tbody>
+                    {STATUS_PROTOCOL.map(state => (
+                      <Row key={state.state}>
+                        <Td mono>{state.state}</Td>
+                        <Td dim>{state.meaning}</Td>
+                      </Row>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            </div>
+          </div>
+
+          <RuleList rules={KERNEL_RULES} />
+
+          <div className="flex flex-col gap-2">
+            <GroupLabel>Appearance</GroupLabel>
+            <Table>
+              <tbody>
+                {PRESETS.map(preset => (
+                  <Row key={preset.id}>
+                    <Td mono>{preset.id}</Td>
+                    <Td dim>{preset.role}</Td>
+                  </Row>
                 ))}
               </tbody>
             </Table>
-            <Panel>
-              <RuleList rules={TYPE_RULES} />
-            </Panel>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <GroupLabel>Spacing, radii, density</GroupLabel>
-            <Panel>
-              <RuleList rules={SPACING_RULES} />
-            </Panel>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <GroupLabel>
-              Colour is five channels, and they never impersonate each other
-            </GroupLabel>
-            <Table>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${HUD.divider}` }}>
-                  <Th>Channel</Th>
-                  <Th>Owns</Th>
-                  <Th>Never owns</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {COLOR_CHANNELS.map(channel => (
-                  <tr
-                    key={channel.channel}
-                    style={{ borderTop: `1px solid ${HUD.divider}` }}
-                  >
-                    <Td mono>{channel.channel}</Td>
-                    <Td>{channel.owns}</Td>
-                    <Td dim>{channel.neverOwns}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <GroupLabel>Status is a five-signal protocol</GroupLabel>
-            <Table>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${HUD.divider}` }}>
-                  <Th>State</Th>
-                  <Th>Meaning</Th>
-                  <Th>Priority</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {STATUS_PROTOCOL.map(state => (
-                  <tr
-                    key={state.state}
-                    style={{ borderTop: `1px solid ${HUD.divider}` }}
-                  >
-                    <Td mono>{state.state}</Td>
-                    <Td>{state.meaning}</Td>
-                    <Td mono dim>
-                      {state.priority}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-            <Panel>
-              <RuleList rules={STATUS_RULES} />
-            </Panel>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <GroupLabel>Motion</GroupLabel>
-            <Panel>
-              <RuleList rules={MOTION_RULES} />
-            </Panel>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <GroupLabel>Voice</GroupLabel>
-            <Panel>
-              <RuleList rules={VOICE_RULES} />
-            </Panel>
+            <div className="pt-1">
+              <RuleList rules={THEME_RULES} />
+            </div>
           </div>
         </Section>
 
-        {/* 3. Appearance --------------------------------------------------- */}
-        <Section id="themes">
+        {/* The board ------------------------------------------------------- */}
+        <Section id="board">
+          <RuleList rules={BOARD_RULES} />
+        </Section>
+
+        {/* The site -------------------------------------------------------- */}
+        <Section id="site">
           <Table>
             <thead>
-              <tr style={{ borderBottom: `1px solid ${HUD.divider}` }}>
-                <Th>Preset</Th>
-                <Th>Role</Th>
-                <Th>Typography today</Th>
+              <tr>
+                <Th>Constraint</Th>
+                <Th>Value</Th>
+                <Th>Measured</Th>
               </tr>
             </thead>
             <tbody>
-              {PRESETS.map(preset => (
-                <tr
-                  key={preset.id}
-                  style={{ borderTop: `1px solid ${HUD.divider}` }}
-                >
-                  <Td mono>{preset.id}</Td>
-                  <Td>{preset.role}</Td>
-                  <Td dim>{preset.typography}</Td>
-                </tr>
+              {SITE_MEASUREMENTS.map(measurement => (
+                <Row key={measurement.metric}>
+                  <Td>{measurement.metric}</Td>
+                  <Td mono>{measurement.value}</Td>
+                  <Td dim>{measurement.source}</Td>
+                </Row>
               ))}
             </tbody>
           </Table>
-          <Panel>
-            <RuleList rules={THEME_RULES} />
-          </Panel>
+          <RuleList rules={SITE_RULES} />
         </Section>
 
-        {/* 4. Board -------------------------------------------------------- */}
-        <Section id="board">
-          <Panel>
-            <RuleList rules={BOARD_RULES} />
-          </Panel>
-        </Section>
-
-        {/* 5. Site --------------------------------------------------------- */}
-        <Section id="site">
-          <div className="flex flex-col gap-3">
-            <GroupLabel>
-              Measured on 2026-08-14, headless Chromium at 1440x900
-            </GroupLabel>
-            <Table>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${HUD.divider}` }}>
-                  <Th>Constraint</Th>
-                  <Th>Value</Th>
-                  <Th>Where it comes from</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {SITE_MEASUREMENTS.map(measurement => (
-                  <tr
-                    key={measurement.metric}
-                    style={{ borderTop: `1px solid ${HUD.divider}` }}
-                  >
-                    <Td>{measurement.metric}</Td>
-                    <Td mono>{measurement.value}</Td>
-                    <Td dim>{measurement.source}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </div>
-          <Panel>
-            <RuleList rules={SITE_RULES} />
-          </Panel>
-          <div className="flex flex-col gap-3">
-            <GroupLabel>Showing scale without lying about it</GroupLabel>
-            <Panel>
-              <RuleList rules={SCALE_RULES} />
-            </Panel>
-          </div>
-        </Section>
-
-        {/* 6. References --------------------------------------------------- */}
+        {/* References ------------------------------------------------------ */}
         <Section id="references">
-          <div className="flex flex-col gap-8">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {LINK_GROUPS.map(group => (
-              <div key={group.id} id={group.id} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <h3
-                    className="text-base font-semibold"
-                    style={{ color: HUD.text }}
-                  >
-                    {group.title}
-                  </h3>
-                  <p
-                    className="max-w-[80ch] text-chrome-title leading-relaxed"
-                    style={{ color: HUD.textDim }}
-                  >
-                    {group.lede}
-                  </p>
-                </div>
-                <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div key={group.id} className="flex flex-col gap-2">
+                <GroupLabel>{group.title}</GroupLabel>
+                <ul className="flex flex-col">
                   {group.links.map(link => (
-                    <li key={link.url}>
+                    <li
+                      key={link.url}
+                      className="border-b last:border-b-0"
+                      style={{ borderColor: HUD.divider }}
+                    >
                       <a
                         href={link.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex h-full flex-col gap-1.5 rounded-lg border p-3 transition-colors"
-                        style={{
-                          borderColor: HUD.strokeFaint,
-                          backgroundColor: HUD.bg.panelFill,
-                        }}
+                        className="flex flex-wrap items-baseline gap-x-2 py-1.5"
                       >
                         <span
-                          className="text-chrome-title font-medium underline underline-offset-4"
+                          className="text-chrome-title underline underline-offset-4"
                           style={{ color: HUD.cyan }}
                         >
                           {link.label}
                         </span>
-                        <span
-                          className="font-mono text-chrome-micro break-all"
-                          style={{ color: withThemeAlpha(HUD.textDim, 0.75) }}
-                        >
-                          {link.url.replace(/^https?:\/\//, '')}
-                        </span>
-                        <span
-                          className="text-chrome-title leading-relaxed"
-                          style={{ color: HUD.textDim }}
-                        >
-                          {link.note}
-                        </span>
+                        {link.note ? (
+                          <span
+                            className="text-chrome-meta"
+                            style={{ color: HUD.textDim }}
+                          >
+                            {link.note}
+                          </span>
+                        ) : null}
                       </a>
                     </li>
                   ))}
@@ -578,101 +406,79 @@ export default function DesignCanonPage() {
           </div>
         </Section>
 
-        {/* 7. Open --------------------------------------------------------- */}
+        {/* Open ------------------------------------------------------------ */}
         <Section id="open">
-          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
             {OPEN_ITEMS.map(item => (
-              <li key={item.title}>
-                <Panel className="h-full">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-start gap-2">
-                      <StateChip state="open" />
-                      <h3
-                        className="text-chrome-title font-semibold"
-                        style={{ color: HUD.text }}
-                      >
-                        {item.title}
-                      </h3>
-                    </div>
-                    <p
-                      className="text-chrome-title leading-relaxed"
-                      style={{ color: HUD.textDim }}
-                    >
-                      {item.detail}
-                    </p>
-                    <p
-                      className="font-mono text-chrome-micro"
-                      style={{ color: withThemeAlpha(HUD.cyan, 0.75) }}
-                    >
-                      {item.where}
-                    </p>
-                  </div>
-                </Panel>
+              <li key={item.title} className="flex items-start gap-2.5">
+                <Dot open />
+                <div className="flex flex-col gap-0.5">
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: HUD.text }}
+                  >
+                    {item.title}
+                  </p>
+                  <p
+                    className="text-chrome-title"
+                    style={{ color: HUD.textDim }}
+                  >
+                    {item.detail}
+                  </p>
+                  <p
+                    className="font-mono text-chrome-micro"
+                    style={{ color: withThemeAlpha(HUD.cyan, 0.75) }}
+                  >
+                    {item.where}
+                  </p>
+                </div>
               </li>
             ))}
           </ul>
-          <div className="flex flex-col gap-3">
-            <GroupLabel>How the work runs</GroupLabel>
-            <Panel>
-              <RuleList rules={WORKING_AGREEMENT} />
-            </Panel>
+
+          <div className="flex flex-col gap-2 pt-1">
+            <GroupLabel>Live studies</GroupLabel>
+            <ul className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+              {WORKBENCH_ROUTES.map(route => (
+                <li
+                  key={route.href}
+                  className="border-b last:border-b-0 md:last:border-b"
+                  style={{ borderColor: HUD.divider }}
+                >
+                  <Link
+                    href={route.href}
+                    className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5"
+                  >
+                    <span
+                      className="text-chrome-title"
+                      style={{ color: HUD.text }}
+                    >
+                      {route.title}
+                    </span>
+                    <span
+                      className="font-mono text-chrome-micro"
+                      style={{ color: HUD.cyan }}
+                    >
+                      {route.href}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         </Section>
 
-        {/* 8. Workbench ---------------------------------------------------- */}
-        <Section id="workbench">
-          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {WORKBENCH_ROUTES.map(route => (
-              <li key={route.href}>
-                <Link
-                  href={route.href}
-                  className="flex h-full flex-col gap-1.5 rounded-lg border p-3"
-                  style={{
-                    borderColor: HUD.strokeFaint,
-                    backgroundColor: HUD.bg.panelFill,
-                  }}
-                >
-                  <span
-                    className="text-chrome-title font-medium"
-                    style={{ color: HUD.text }}
-                  >
-                    {route.title}
-                  </span>
-                  <span
-                    className="font-mono text-chrome-micro"
-                    style={{ color: HUD.cyan }}
-                  >
-                    {route.href}
-                  </span>
-                  <span
-                    className="text-chrome-title leading-relaxed"
-                    style={{ color: HUD.textDim }}
-                  >
-                    {route.note}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Section>
-
         <footer
-          className="border-t pt-6 pb-4"
+          className="border-t pt-5 pb-4"
           style={{ borderColor: HUD.divider }}
         >
           <p
-            className="max-w-[80ch] text-chrome-title leading-relaxed"
+            className="max-w-[74ch] text-chrome-title"
             style={{ color: HUD.textDim }}
           >
-            Source of truth is the repository, not this page.
-            <span className="font-mono">
-              {' '}
-              docs/engineering/design-system.md{' '}
-            </span>
-            owns the kernel and carries the amendment log;{' '}
-            <span className="font-mono">docs/product/marketing.md</span> owns
-            voice and positioning; each decision record owns its own reversal.
-            A change either cites a rung or amends one in the same commit.
+            The repository is the source of truth. Each section names the
+            document that owns it, and a change either cites a rung or amends
+            one.
           </p>
         </footer>
       </div>
