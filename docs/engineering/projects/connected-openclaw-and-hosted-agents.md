@@ -324,7 +324,11 @@ simulated evidence.
   role, a versioned projection plan/output, and pure mappings for the
   operator-confirmed two-Gateway conceptual topology. All technical fixture
   data is invented. No network or UI writes.
-- **C1 Saved remote source and read-only transport — next.** Extend the source
+- **C1 Saved remote source and read-only transport — LANDED 2026-08-17**, and
+  proved end to end against both operator Gateways. See the milestone log entry
+  for what the live run corrected. The renderer seam ships; the Connect flow
+  and the roster surface that give it content are C2, so C1 adds no new UI.
+  Original scope, all delivered: extend the source
   registry with customer-hosted placement, OS-owned connection material, bounded
   Gateway discovery, capability/freshness truth, authoritative reconnect
   snapshots, subscriptions, and optional source-declared replay positions.
@@ -340,8 +344,7 @@ simulated evidence.
   via `agents.list` and topology via `sessions.list`, classified by key
   segment, plus `cron.list` and `status`; (e) an authoritative resnapshot on
   every reconnect; (f) deletion of the environment-flag single-Gateway path
-  and the `hosted-openclaw` coming-soon adapter. C1 has no UI beyond Settings
-  → Agent Sources showing the connected source and its health.
+  and the `hosted-openclaw` coming-soon adapter.
 - **C2 Connect flow and coworker projection.** Prototype the cross-surface state
   in `/hud-gallery`, then wire **⌘N → Connect existing Agent…**, explicit
   Project mapping, and read-only Marcus/Scout/Tyler Agent + Team views with a
@@ -621,3 +624,62 @@ which is a worse posture than holding a read-only, per-device, revocable
 token. The rule is now: shared secret in memory only and used once; scoped
 device token persisted in the OS keychain. H2 upgrades that token's scope
 explicitly rather than re-pairing.
+
+### 2026-08-17 — C1 landed, and four things only a live run could find
+
+C1 is implemented and proved against both operator Gateways: SSH tunnel,
+credential bootstrap, read-scoped pairing, `agents.list` and `sessions.list`
+discovery, the topology adapter, and the C0 projection kernel, end to end, with
+a write method refused by the source. The proof is committed as an opt-in test
+that names no infrastructure; alias names come from the environment.
+
+Four defects surfaced only because the run was real. Each had passed its own
+unit tests, and none could have been caught by a fixture, because in every case
+the fixture would have encoded the same wrong assumption as the code.
+
+- **The protocol was pinned.** The client advertised `minProtocol: 3,
+maxProtocol: 3`. A current Gateway accepts an operator client only when
+  `maxProtocol >= 4 && minProtocol <= 4`, so Exawatt could not have connected to
+  any up-to-date OpenClaw at all. It now advertises a range, which both eras
+  accept.
+- **Device identity was the wrong shape.** Exawatt sent hex public keys and
+  derived the device id as the key's first 32 characters. The Gateway decodes
+  base64url and derives SHA-256 over the raw key bytes, so every connect was
+  rejected as an identity mismatch. The auth tests now verify against Node's
+  own crypto rather than restating Exawatt's encoding: the previous tests were
+  green throughout, because they asserted what the code did rather than what
+  the protocol required.
+- **The CLI masks the credential.** `openclaw config get gateway.auth.token`
+  answers with a short masked value, not the token. Preferring it produced a
+  confident pairing failure while a working token sat in the config file. The
+  file is now preferred and the CLI is the fallback for the indirection case.
+- **SSH multiplexing stole the forward.** Under the operator's `ControlMaster
+auto`, `ssh -N -L` hands the forward to an existing master and exits 0. That
+  read as a failure, but the dangerous half is the opposite reading: had it been
+  treated as success, the forward would have outlived Exawatt's child process,
+  leaving a port open to the operator's server after Exawatt believed it had
+  detached. Exawatt now refuses multiplexing so `close()` means what it says.
+
+**The credential model is confirmed, with a correction to how Exawatt
+introduces itself.** Connecting as a `backend` client makes the Gateway treat a
+tunneled connection as a local self-connection and skip device pairing
+entirely; no device token is issued, and every launch would have to re-read the
+admin-capable shared secret. Connecting as a UI client pairs properly. Verified
+on a live Gateway: the resulting device record carries `operator.read` and
+nothing else, sits beside the operator's own admin device, and is revocable
+with the source's own tooling. The Gateway's client-id vocabulary is a closed
+set with no Exawatt member, so Exawatt identifies as the platform's UI client
+and carries its real identity in `clientVersion`. The probe's device was
+removed after the run; both servers hold only the operator's own devices.
+
+**Scope note.** C1 ships the main-process capability and the renderer seam.
+The Settings surface named in the original C1 description moves to C2: with no
+Connect flow there is nothing for it to show, and building a surface that
+cannot be reached is the unreachable-navigation mistake the repo already has a
+rule against. C2 lands the Connect route and the surface together.
+
+Follow-ups for C2, both recorded rather than worked around: a `local-loopback`
+source has no SSH alias, so the bootstrap cannot yet resolve a credential for
+the operator's own machine-local Gateway; and `ssh-manual` transport is
+accepted by the record model but not yet by the tunnel owner, which is
+alias-only and fails closed with a plain sentence.
