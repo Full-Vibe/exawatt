@@ -16,6 +16,7 @@ import {
   type OwnAccountFeatureId,
   type PublicSharingFeatureId,
 } from '@/lib/hosted-features/contract';
+import { isOutboundControlConfigured } from '@/lib/hosted-features/distribution-availability';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import type { ElectronSettingsApi, ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
@@ -61,26 +62,44 @@ function OutboundDisclosure({ control }: { control: OutboundControl }) {
   );
 }
 
+/**
+ * A control whose capability this distribution never configured has nothing to
+ * switch. It keeps its row and its disclosure — the manifest still states what
+ * the behavior would send — and says plainly that this build does not carry
+ * it, rather than offering a toggle that changes nothing (incident `0017`: an
+ * absent capability must never render as ordinary product state).
+ */
 function OutboundControlRow({
   control,
   checked,
   disabled = false,
+  unavailable = false,
   onChange,
 }: {
   control: OutboundControl;
   checked: boolean;
   disabled?: boolean;
+  unavailable?: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div data-outbound-control={control.id}>
+    <div
+      data-outbound-control={control.id}
+      data-outbound-state={unavailable ? 'unconfigured' : 'configured'}
+    >
       <SettingRow title={control.label} description={control.purpose}>
-        <SettingSwitch
-          checked={checked}
-          disabled={disabled}
-          label={control.label}
-          onChange={onChange}
-        />
+        {unavailable ? (
+          <p className="shrink-0 font-ui text-chrome-meta text-[var(--settings-faint)]">
+            Not configured in this build
+          </p>
+        ) : (
+          <SettingSwitch
+            checked={checked}
+            disabled={disabled}
+            label={control.label}
+            onChange={onChange}
+          />
+        )}
       </SettingRow>
       <OutboundDisclosure control={control} />
     </div>
@@ -219,9 +238,18 @@ export function PrivacySettings() {
               checked={isReentryRecapEnabled(preferences)}
               onChange={next => void setFeature('reentryRecap', next)}
             />
+            {/* BUG-060: the plan read leaves through Exawatt's own network
+                stack, so only a distribution declaring a stable signed
+                identity may make it automatically. A community build has no
+                switch here because it has nothing to switch. */}
             <OutboundControlRow
               control={OUTBOUND_CONTROLS.claudePlanWindows}
               checked={isClaudePlanWindowsEnabled(preferences)}
+              unavailable={
+                !isOutboundControlConfigured(
+                  OUTBOUND_CONTROLS.claudePlanWindows
+                )
+              }
               onChange={next => void setFeature('claudePlanWindows', next)}
             />
           </SettingsGroup>

@@ -1,10 +1,10 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import type { DistributionContractV1 } from '@exawatt/core/distribution';
+import type { DistributionContractV2 } from '@exawatt/core/distribution';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 export async function createOptionalServerClient(
-  distribution: DistributionContractV1
+  distribution: DistributionContractV2
 ) {
   const account = distribution.account;
   if (!account) return null;

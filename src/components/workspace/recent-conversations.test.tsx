@@ -2,13 +2,13 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
 const mocks = vi.hoisted(() => ({
   createOptionalClient: vi.fn(),
   getSession: vi.fn(),
-  distribution: { current: null as DistributionContractV1 | null },
+  distribution: { current: null as DistributionContractV2 | null },
 }));
 
 vi.mock('@/lib/distribution/resolved', () => ({
@@ -49,7 +49,7 @@ const OFFICIAL_SUMMARY_DISTRIBUTION = {
       protocolVersion: 1,
     },
   },
-} satisfies DistributionContractV1;
+} satisfies DistributionContractV2;
 
 describe('Recent Conversations distribution boundary', () => {
   beforeEach(() => {

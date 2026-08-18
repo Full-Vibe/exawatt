@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "brand": {
     "appId": "ai.exawatt.desktop",
     "productName": "Exawatt",
@@ -45,5 +45,8 @@
   },
   "updates": {
     "feedUrl": "https://updates.exawatt.ai/macos/arm64"
+  },
+  "ownAccount": {
+    "claudePlanUsage": "stable-signed"
   }
 }

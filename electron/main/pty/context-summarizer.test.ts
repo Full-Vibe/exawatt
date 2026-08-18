@@ -15,7 +15,7 @@ import {
 } from '../analytics-bridge';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
 const OFFICIAL_ENRICHMENT_DISTRIBUTION = {
@@ -39,7 +39,7 @@ const OFFICIAL_ENRICHMENT_DISTRIBUTION = {
       protocolVersion: 1,
     },
   },
-} satisfies DistributionContractV1;
+} satisfies DistributionContractV2;
 
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();

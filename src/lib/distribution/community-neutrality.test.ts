@@ -12,6 +12,12 @@ import { handleElectronCallback } from '@/app/auth/electron-callback/route';
 // The packaging projection is plain Node ESM shared with electron-builder, so
 // this gate reads the same answer electron-builder is given.
 import { electronBuilderDistributionConfig } from '../../../scripts/lib/distribution-build.mjs';
+// The own-account boundary lives in Electron main, but it is a distribution
+// property, so it is asserted here beside every other capability the
+// community contract withholds.
+import { isClaudePlanRemoteReadAllowed } from '../../../electron/main/consumption/claude-plan-account';
+import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
+import { isOutboundControlConfigured } from '@/lib/hosted-features/distribution-availability';
 
 describe('community distribution neutrality', () => {
   it('projects no Exawatt service, account, update, or protocol capability', () => {
@@ -32,6 +38,9 @@ describe('community distribution neutrality', () => {
         projects: false,
         preferences: false,
         accountData: false,
+      },
+      ownAccount: {
+        claudePlanUsage: false,
       },
     });
     expect(resolveDistributionIdentity(COMMUNITY_DISTRIBUTION)).toMatchObject({
@@ -102,6 +111,59 @@ describe('community distribution neutrality', () => {
         delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalKey;
     }
+  });
+
+  // BUG-060. This is the OTHER outbound family: not an Exawatt service, but a
+  // credentialed read against the operator's own vendor account that leaves
+  // through Exawatt's own network stack and therefore carries this build's
+  // code signature. Incident `0011` is what that costs from an ad-hoc-signed
+  // artifact, and `app.isPackaged` stops being the boundary the moment a
+  // contributor packages the public repository: their build is packaged too.
+  it('permits no automatic own-account read from a packaged community build', () => {
+    expect(COMMUNITY_DISTRIBUTION.ownAccount).toBeNull();
+    const stableSignedIdentity = distributionCapabilities(
+      COMMUNITY_DISTRIBUTION
+    ).ownAccount.claudePlanUsage;
+    expect(stableSignedIdentity).toBe(false);
+
+    // Packaged, not a test run, no developer opt-in: the exact shape of a
+    // contributor's ad-hoc `pnpm electron:build` artifact on a real desktop.
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity,
+        packaged: true,
+        testMode: false,
+        developmentOptIn: undefined,
+      })
+    ).toBe(false);
+
+    // And the grant is real in the other direction, so this asserts a
+    // boundary rather than a disabled feature: a distribution that declares
+    // the stable signed identity gets the read in its packaged build.
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: true,
+        packaged: true,
+        testMode: false,
+        developmentOptIn: undefined,
+      })
+    ).toBe(true);
+  });
+
+  it('offers no dead Claude plan switch on a community Privacy surface', () => {
+    const capabilities = distributionCapabilities(COMMUNITY_DISTRIBUTION);
+    expect(
+      isOutboundControlConfigured(
+        OUTBOUND_CONTROLS.claudePlanWindows,
+        capabilities
+      )
+    ).toBe(false);
+    // The recap is the control on the same group that no distribution
+    // capability gates: it runs the operator's own `claude` CLI, a separate
+    // program with its own firewall identity, so it stays switchable here.
+    expect(
+      isOutboundControlConfigured(OUTBOUND_CONTROLS.reentryRecap, capabilities)
+    ).toBe(true);
   });
 
   it('short-circuits a null product service before auth or fetch', async () => {

@@ -10,7 +10,7 @@ import {
 } from '../analytics-bridge';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 import { SessionScopedState } from './session-scoped-state';
 
@@ -102,7 +102,7 @@ interface HostedGoalVisual {
 
 export interface ContextSummarizerOptions {
   /** Resolved once by Electron main from the packaged/development contract. */
-  distribution?: DistributionContractV1;
+  distribution?: DistributionContractV2;
   recapAwayMs?: number;
   recapMinChars?: number;
   now?: () => number;

@@ -8,7 +8,7 @@
  */
 
 import type { AnalyticsSurface } from './events';
-import type { DistributionContractV1 } from '@exawatt/core/distribution';
+import type { DistributionContractV2 } from '@exawatt/core/distribution';
 
 /** Public website origin used by sitemap/robots; never an analytics fallback. */
 export const EXAWATT_HOSTED_ORIGIN = 'https://www.exawatt.ai';
@@ -44,7 +44,7 @@ function normalizeHost(host: string): string {
  * against its loopback renderer and make the user's machine proxy PostHog.
  */
 export function resolveDistributionAnalyticsDecision(
-  distribution: DistributionContractV1,
+  distribution: DistributionContractV2,
   runtime: AnalyticsRuntime,
   nodeEnv: string | undefined
 ): AnalyticsDecision {

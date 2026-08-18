@@ -8,7 +8,7 @@
  * parser into the runtime dependency set.
  */
 
-import type { DistributionContractV1 } from '@exawatt/core/distribution';
+import type { DistributionContractV2 } from '@exawatt/core/distribution';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 export interface DesktopBuild {
@@ -75,7 +75,7 @@ export function parseLatestMacFeed(
 }
 
 export async function fetchDesktopBuild(
-  distribution: DistributionContractV1 = resolvedDistribution(),
+  distribution: DistributionContractV2 = resolvedDistribution(),
   fetchImpl: typeof fetch = fetch
 ): Promise<DesktopBuild | null> {
   const feedUrl = distribution.updates?.feedUrl;

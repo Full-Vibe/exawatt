@@ -1,6 +1,6 @@
 import {
   distributionConnectSources,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
 export interface DistributionRewrite {
@@ -17,7 +17,7 @@ const POSTHOG_STATIC_INGEST = 'https://us-assets.i.posthog.com/static/:path*';
  * even when a stale PostHog key or host remains in the launching shell.
  */
 export function distributionRewrites(
-  contract: DistributionContractV1
+  contract: DistributionContractV2
 ): DistributionRewrite[] {
   if (!contract.analytics) return [];
   return [
@@ -39,7 +39,7 @@ export function distributionRewrites(
  * remote and is selected at runtime rather than by the distributor.
  */
 export function distributionContentSecurityPolicy(
-  contract: DistributionContractV1,
+  contract: DistributionContractV2,
   options: { development: boolean }
 ): string {
   const connectSources = distributionConnectSources(contract).join(' ');

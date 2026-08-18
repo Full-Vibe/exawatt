@@ -1,4 +1,14 @@
-export const DISTRIBUTION_SCHEMA_VERSION = 1 as const;
+/**
+ * The version this build EMITS. The parser still accepts schema 1 documents
+ * and upgrades them in memory (see `parseDistributionContract`), because the
+ * stored copies of the official contract live outside the repository and
+ * cannot be rewritten by the same commit that changes the schema. Incident
+ * `0017` is what a code/config window costs when it is not planned for.
+ */
+export const DISTRIBUTION_SCHEMA_VERSION = 2 as const;
+
+/** Every document version this build can read. Order is oldest-first. */
+export const SUPPORTED_DISTRIBUTION_SCHEMA_VERSIONS = [1, 2] as const;
 
 export interface DistributionBrandV1 {
   appId: string;
@@ -30,7 +40,8 @@ export interface DistributionServicesV1 {
   operatorStats: DistributionEndpointRefV1 | null;
   projects: DistributionEndpointRefV1 | null;
   preferences: DistributionEndpointRefV1 | null;
-  /** Reserved until a public account-data protocol exists; V1 requires null. */
+  /** Reserved until a public account-data protocol exists; every schema
+   *  version to date requires null. */
   accountData: null;
 }
 
@@ -49,7 +60,31 @@ export interface DistributionUpdatesV1 {
   feedUrl: string;
 }
 
-export interface DistributionContractV1 {
+/**
+ * Schema V2's only addition, and the reason the version moved.
+ *
+ * Decision `0036` §6 (amended 2026-08-16 after incident `0011`): an automatic
+ * credentialed read against the operator's OWN vendor account has to be gated
+ * on a durable network identity, and packaging is not that. A contributor's
+ * ad-hoc package reports `app.isPackaged === true` and presents Little Snitch
+ * a new CDHash on every Electron revision, so an automatic read from it
+ * recreates the approval churn `0011` recorded.
+ *
+ * The DISTRIBUTOR therefore declares whether it supplies a stable signed
+ * identity for Exawatt-owned own-account traffic. `'stable-signed'` is the
+ * only value: this is a declaration, not a scale. It controls local behaviour
+ * only, and is never proof of officiality or authorization to use any Exawatt
+ * service.
+ */
+export interface DistributionOwnAccountV2 {
+  claudePlanUsage: 'stable-signed';
+}
+
+/**
+ * V2 = V1 plus `ownAccount`. Every other member keeps its V1 shape unchanged,
+ * which is why those interfaces keep their V1 names: they did not move.
+ */
+export interface DistributionContractV2 {
   schemaVersion: typeof DISTRIBUTION_SCHEMA_VERSION;
   brand: DistributionBrandV1 | null;
   account: DistributionAccountV1 | null;
@@ -57,6 +92,8 @@ export interface DistributionContractV1 {
   enrichment: DistributionEnrichmentV1;
   analytics: DistributionAnalyticsV1 | null;
   updates: DistributionUpdatesV1 | null;
+  /** Absent declaration means no automatic own-account read. Fail-safe. */
+  ownAccount: DistributionOwnAccountV2 | null;
 }
 
 export interface DistributionIdentity {
@@ -85,7 +122,7 @@ const COMMUNITY_ENRICHMENT: DistributionEnrichmentV1 = Object.freeze({
   goalVisuals: null,
 });
 
-export const COMMUNITY_DISTRIBUTION: DistributionContractV1 = Object.freeze({
+export const COMMUNITY_DISTRIBUTION: DistributionContractV2 = Object.freeze({
   schemaVersion: DISTRIBUTION_SCHEMA_VERSION,
   brand: null,
   account: null,
@@ -93,6 +130,9 @@ export const COMMUNITY_DISTRIBUTION: DistributionContractV1 = Object.freeze({
   enrichment: COMMUNITY_ENRICHMENT,
   analytics: null,
   updates: null,
+  // Community supplies no signing custody, so it declares no own-account
+  // capability. This is the value that closes BUG-060.
+  ownAccount: null,
 });
 
 export const COMMUNITY_IDENTITY: DistributionIdentity = Object.freeze({
@@ -299,7 +339,7 @@ function services(value: unknown): DistributionServicesV1 {
   );
   if (parsed.accountData !== null) {
     throw new TypeError(
-      'Invalid distribution config: services.accountData is reserved and must be null in schema v1'
+      'Invalid distribution config: services.accountData is reserved and must be null'
     );
   }
   return Object.freeze({
@@ -362,28 +402,61 @@ function updates(value: unknown): DistributionUpdatesV1 | null {
   });
 }
 
-export function parseDistributionContract(
-  value: unknown
-): DistributionContractV1 {
-  const parsed = record(value, 'root');
-  exactKeys(
-    parsed,
-    [
-      'schemaVersion',
-      'brand',
-      'account',
-      'services',
-      'enrichment',
-      'analytics',
-      'updates',
-    ],
-    'root'
-  );
-  if (parsed.schemaVersion !== DISTRIBUTION_SCHEMA_VERSION) {
+function ownAccount(value: unknown): DistributionOwnAccountV2 | null {
+  if (value === null) return null;
+  const parsed = record(value, 'ownAccount');
+  exactKeys(parsed, ['claudePlanUsage'], 'ownAccount');
+  if (parsed.claudePlanUsage !== 'stable-signed') {
     throw new TypeError(
-      `Invalid distribution config: schemaVersion must be ${DISTRIBUTION_SCHEMA_VERSION}`
+      "Invalid distribution config: ownAccount.claudePlanUsage must be 'stable-signed' or ownAccount must be null"
     );
   }
+  return Object.freeze({ claudePlanUsage: 'stable-signed' as const });
+}
+
+/** Root keys per document version. Each version stays exact-key-strict for
+ *  its OWN shape: a V1 document carrying `ownAccount` is as invalid as a V2
+ *  document missing it. Strictness is what makes an absent or half-written
+ *  input select community rather than half-configure an official build. */
+const ROOT_KEYS_V1 = [
+  'schemaVersion',
+  'brand',
+  'account',
+  'services',
+  'enrichment',
+  'analytics',
+  'updates',
+] as const;
+const ROOT_KEYS_V2 = [...ROOT_KEYS_V1, 'ownAccount'] as const;
+
+/**
+ * Accepts every supported document version and returns the CURRENT one.
+ *
+ * A schema-1 document is upgraded in memory with `ownAccount: null`. That
+ * direction is deliberate and fail-safe: a contract written before the
+ * declaration existed does not get the capability it never declared. It is
+ * also what lets the schema change land before the stored copies of the
+ * official contract are rewritten, since those live in Vercel, a GitHub
+ * secret, and operator custody rather than in this repository.
+ */
+export function parseDistributionContract(
+  value: unknown
+): DistributionContractV2 {
+  const parsed = record(value, 'root');
+  const documentVersion = parsed.schemaVersion;
+  if (
+    documentVersion !== 1 &&
+    documentVersion !== DISTRIBUTION_SCHEMA_VERSION
+  ) {
+    throw new TypeError(
+      `Invalid distribution config: schemaVersion must be one of ${SUPPORTED_DISTRIBUTION_SCHEMA_VERSIONS.join(', ')}`
+    );
+  }
+  exactKeys(
+    parsed,
+    documentVersion === 1 ? ROOT_KEYS_V1 : ROOT_KEYS_V2,
+    'root'
+  );
   const contract = Object.freeze({
     schemaVersion: DISTRIBUTION_SCHEMA_VERSION,
     brand: brand(parsed.brand),
@@ -392,6 +465,7 @@ export function parseDistributionContract(
     enrichment: enrichment(parsed.enrichment),
     analytics: analytics(parsed.analytics),
     updates: updates(parsed.updates),
+    ownAccount: documentVersion === 1 ? null : ownAccount(parsed.ownAccount),
   });
   const authenticatedEndpoints = [
     contract.services.productFeedback,
@@ -415,7 +489,7 @@ export function parseDistributionContract(
 
 export function parseDistributionContractJson(
   value: string
-): DistributionContractV1 {
+): DistributionContractV2 {
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
@@ -429,13 +503,13 @@ export function parseDistributionContractJson(
 
 /** Stable key order is part of the cross-process digest agreement. */
 export function serializeDistributionContract(
-  contract: DistributionContractV1 | unknown
+  contract: DistributionContractV2 | unknown
 ): string {
   return JSON.stringify(parseDistributionContract(contract));
 }
 
 export function resolveDistributionIdentity(
-  contract: DistributionContractV1
+  contract: DistributionContractV2
 ): DistributionIdentity {
   if (!contract.brand) return COMMUNITY_IDENTITY;
   return Object.freeze({
@@ -451,7 +525,7 @@ function endpointOrigin(value: string, output: Set<string>): void {
 }
 
 export function distributionConnectSources(
-  contract: DistributionContractV1
+  contract: DistributionContractV2
 ): string[] {
   const sources = new Set<string>(["'self'", ...AGENT_SOURCE_CONNECT_SOURCES]);
   if (contract.account) {

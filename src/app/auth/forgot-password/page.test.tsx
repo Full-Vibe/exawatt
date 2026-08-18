@@ -8,7 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 import ForgotPasswordPage from './page';
 
@@ -19,7 +19,7 @@ const CONFIGURED_DISTRIBUTION = {
     supabaseAnonKey: 'public-test-key',
     recoveryOrigin: 'https://app.example.test',
   },
-} satisfies DistributionContractV1;
+} satisfies DistributionContractV2;
 
 const { createOptionalClient, distributionState, resetPasswordForEmail } =
   vi.hoisted(() => ({

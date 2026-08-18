@@ -99,10 +99,12 @@ function externalRefs(value: unknown, output: string[] = []): string[] {
 describe('Apache compatibility contracts', () => {
   it('compiles every standalone schema as JSON Schema 2020-12', async () => {
     const validator = ajv();
-    const distribution = await json<AnySchema>(
-      `${CONTRACT_ROOT}distribution/v1/schema.json`
-    );
-    expect(() => validator.addSchema(distribution)).not.toThrow();
+    for (const version of ['v1', 'v2']) {
+      const distribution = await json<AnySchema>(
+        `${CONTRACT_ROOT}distribution/${version}/schema.json`
+      );
+      expect(() => validator.addSchema(distribution)).not.toThrow();
+    }
     for (const file of SERVICE_SCHEMAS) {
       const schema = await json<AnySchema>(`${SCHEMA_ROOT}${file}`);
       expect(() => validator.addSchema(schema)).not.toThrow();
@@ -210,7 +212,67 @@ describe('Apache compatibility contracts', () => {
     }
   });
 
-  it('is structurally identical to the landed V1 runtime contract', async () => {
+  // BUG-060. V2 is the version this build emits, and V1 is still accepted so
+  // that stored copies of the official contract keep working while their
+  // custodians rewrite them. Both halves of that have to be true of the
+  // published schema as well as of the runtime parser, or the compatibility
+  // surface is describing a client that no longer exists.
+  it('publishes V2 and keeps V1 readable as an ownAccount-free upgrade', async () => {
+    const validator = ajv();
+    const v2 = validator.compile(
+      await json<AnySchema>(`${CONTRACT_ROOT}distribution/v2/schema.json`)
+    );
+    const v1 = validator.compile(
+      await json<AnySchema>(`${CONTRACT_ROOT}distribution/v1/schema.json`)
+    );
+
+    const community = await json<JsonObject>(
+      `${CONTRACT_ROOT}distribution/v2/fixtures/community.json`
+    );
+    const custom = await json<JsonObject>(
+      `${CONTRACT_ROOT}distribution/v2/fixtures/custom-distributor.json`
+    );
+    const invalidOwnAccount = await json<JsonObject>(
+      `${CONTRACT_ROOT}distribution/v2/fixtures/invalid-own-account-value.json`
+    );
+
+    expect(v2(community), formatErrors(v2.errors)).toBe(true);
+    expect(parseDistributionContract(community)).toEqual(
+      COMMUNITY_DISTRIBUTION
+    );
+    expect(v2(custom), formatErrors(v2.errors)).toBe(true);
+    expect(parseDistributionContract(custom).ownAccount).toEqual({
+      claudePlanUsage: 'stable-signed',
+    });
+
+    // Only 'stable-signed' declares the capability; nothing else does.
+    expect(v2(invalidOwnAccount)).toBe(false);
+    expect(() => parseDistributionContract(invalidOwnAccount)).toThrow();
+
+    // Exact-key strictness is PER VERSION. Neither schema accepts the other's
+    // key set, and neither does the parser.
+    const v1Fixture = await json<JsonObject>(
+      `${CONTRACT_ROOT}distribution/v1/fixtures/custom-distributor.json`
+    );
+    expect(v2({ ...v1Fixture, schemaVersion: 2 })).toBe(false);
+    expect(() =>
+      parseDistributionContract({ ...v1Fixture, schemaVersion: 2 })
+    ).toThrow();
+    expect(v1({ ...custom, schemaVersion: 1 })).toBe(false);
+    expect(() =>
+      parseDistributionContract({ ...custom, schemaVersion: 1 })
+    ).toThrow();
+
+    // A V1 document is accepted by the V1 schema and by the runtime, and the
+    // runtime upgrade withholds the capability rather than inventing it.
+    expect(v1(v1Fixture), formatErrors(v1.errors)).toBe(true);
+    expect(parseDistributionContract(v1Fixture)).toMatchObject({
+      schemaVersion: 2,
+      ownAccount: null,
+    });
+  });
+
+  it('keeps the published V1 schema in step with the runtime parser', async () => {
     const validator = ajv();
     const schema = await json<AnySchema>(
       `${CONTRACT_ROOT}distribution/v1/schema.json`

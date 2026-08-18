@@ -36,6 +36,10 @@ async function renderSettings() {
   return view;
 }
 
+function outboundRow(id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-outbound-control="${id}"]`);
+}
+
 // Overrides are per-device state, not account state (BUG-044): what a rebind
 // has to reach is the device store, and the account sync behind it is
 // best-effort. Asserting the store call is asserting the durable act.
@@ -237,14 +241,19 @@ describe('shortcut settings policy', () => {
       screen.getByRole('switch', { name: 'Native macOS notifications' })
     ).toBeVisible();
     for (const control of Object.values(OUTBOUND_CONTROLS)) {
-      expect(screen.queryByRole('switch', { name: control.label })).toBeNull();
+      expect(outboundRow(control.id)).toBeNull();
     }
 
     fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
     await act(async () => undefined);
     expect(screen.getByRole('heading', { name: 'Privacy' })).toBeVisible();
+    // Every control gets its row and its disclosure here. WHETHER a row also
+    // carries a switch is the distribution's business rather than this
+    // section's — a capability this build does not configure renders as "not
+    // configured" instead (BUG-060) — and `privacy-settings.test.tsx` owns
+    // that distinction. This test is about which section is showing.
     for (const control of Object.values(OUTBOUND_CONTROLS)) {
-      expect(screen.getByRole('switch', { name: control.label })).toBeVisible();
+      expect(outboundRow(control.id)).not.toBeNull();
     }
   });
 

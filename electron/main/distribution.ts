@@ -6,11 +6,11 @@ import {
   parseDistributionContractJson,
   resolveDistributionIdentity,
   serializeDistributionContract,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
 export interface ResolvedDistribution {
-  contract: DistributionContractV1;
+  contract: DistributionContractV2;
   canonical: string;
   digest: string;
 }
@@ -20,7 +20,7 @@ function digest(value: string): string {
 }
 
 export function resolveDistribution(
-  contract: DistributionContractV1
+  contract: DistributionContractV2
 ): ResolvedDistribution {
   const canonical = serializeDistributionContract(contract);
   return { contract, canonical, digest: digest(canonical) };
@@ -31,7 +31,7 @@ export function assertDistributionAgreement(input: {
   contractDigest: string;
   rendererDigest: string;
   buildInfoDigest: string;
-}): DistributionContractV1 {
+}): DistributionContractV2 {
   const contract = parseDistributionContractJson(input.contractJson);
   const canonical = serializeDistributionContract(contract);
   const computed = digest(canonical);
@@ -122,7 +122,7 @@ export function assertRendererCompositionAgreement(input: {
   }
 }
 
-export function distributionIpcCapabilities(contract: DistributionContractV1) {
+export function distributionIpcCapabilities(contract: DistributionContractV2) {
   const identity = resolveDistributionIdentity(contract);
   return {
     updates: contract.updates !== null,
@@ -140,7 +140,7 @@ export function distributionIpcCapabilities(contract: DistributionContractV1) {
  * app-id namespace, which lets it coexist with the official app.
  */
 export function distributionDataPathOverrides(
-  contract: DistributionContractV1,
+  contract: DistributionContractV2,
   current: { userData: string; sessionData: string }
 ): { userData?: string; sessionData?: string } {
   if (contract.brand) return {};

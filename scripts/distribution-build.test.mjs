@@ -35,11 +35,39 @@ test('a valid official overlay is canonicalized before Next', async () => {
   const prepared = await prepareDistribution({ root, inputJson });
   assert.equal(prepared.contract.brand.productName, 'Exawatt');
   assert.equal(prepared.contract.services.projects, null);
+  assert.deepEqual(prepared.contract.ownAccount, {
+    claudePlanUsage: 'stable-signed',
+  });
+});
+
+// BUG-060. Every stored copy of the official contract is a schema-1 document
+// until its custodian rewrites it, and those live in Vercel, a GitHub secret,
+// and an operator's home directory rather than in this repository. The build
+// must keep accepting them, and the upgrade must go the fail-safe way.
+test('a stored schema-1 official contract still builds, without the own-account grant', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
+  const { ownAccount, ...v1 } = JSON.parse(
+    await readFile(officialFixture, 'utf8')
+  );
+  assert.deepEqual(ownAccount, { claudePlanUsage: 'stable-signed' });
+  const prepared = await prepareDistribution({
+    root,
+    inputJson: JSON.stringify({ ...v1, schemaVersion: 1 }),
+  });
+  assert.equal(prepared.contract.schemaVersion, 2);
+  assert.equal(prepared.contract.brand.productName, 'Exawatt');
+  assert.equal(prepared.contract.ownAccount, null);
+  assert.deepEqual(await readPreparedDistribution(root), prepared);
 });
 
 test('a present invalid config fails instead of falling back', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
-  for (const inputJson of ['', '   ', '{"schemaVersion":2}']) {
+  for (const inputJson of [
+    '',
+    '   ',
+    '{"schemaVersion":2}',
+    '{"schemaVersion":3}',
+  ]) {
     await assert.rejects(
       prepareDistribution({ root, inputJson }),
       /distribution/i
@@ -142,7 +170,7 @@ test('operator custody is opt-in, fails loudly, and never downgrades', async t =
   t.after(() => rm(dir, { recursive: true, force: true }));
   const custody = nodePath.join(dir, 'distribution.official.json');
   const official = JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     brand: {
       appId: 'ai.exawatt.app',
       productName: 'Exawatt',
@@ -165,6 +193,7 @@ test('operator custody is opt-in, fails loudly, and never downgrades', async t =
     },
     analytics: null,
     updates: null,
+    ownAccount: { claudePlanUsage: 'stable-signed' },
   });
   await writeFile(custody, official, { mode: 0o600 });
 

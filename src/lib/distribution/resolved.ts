@@ -1,17 +1,17 @@
 import {
   COMMUNITY_DISTRIBUTION,
   parseDistributionContractJson,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
-let cached: DistributionContractV1 | null = null;
+let cached: DistributionContractV2 | null = null;
 
 /**
  * Next replaces this literal member expression at build time. Ambient legacy
  * service variables are intentionally not consulted: only the one resolved,
  * validated contract can enable a distribution capability.
  */
-export function resolvedDistribution(): DistributionContractV1 {
+export function resolvedDistribution(): DistributionContractV2 {
   if (cached) return cached;
   const serialized = process.env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON;
   cached = serialized

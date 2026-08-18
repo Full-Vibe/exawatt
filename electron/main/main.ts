@@ -1488,10 +1488,15 @@ async function bootstrapCommandSurface(): Promise<void> {
     stateDir: path.join(app.getPath('userData'), 'consumption-plan'),
     enabled: isClaudePlanWindowsEnabled(loadSettings()),
     // Chromium owns the request in installed builds, so Little Snitch sees
-    // Exawatt's stable Developer ID instead of Node or an ad-hoc Electron
-    // helper. Routine unpackaged and automated test launches stay local; the
-    // narrow override deliberately exercises this exact account integration.
+    // a stable Developer ID instead of Node or an ad-hoc Electron helper.
+    // WHICH builds those are is the distribution's declaration, not
+    // `app.isPackaged` — an ad-hoc community package is packaged too
+    // (BUG-060, decision `0036` §6). Routine unpackaged and automated test
+    // launches stay local; the narrow override deliberately exercises this
+    // exact account integration.
     remoteReadAllowed: isClaudePlanRemoteReadAllowed({
+      stableSignedIdentity:
+        distribution.contract.ownAccount?.claudePlanUsage === 'stable-signed',
       packaged: app.isPackaged,
       testMode: isTest,
       developmentOptIn: process.env.EXAWATT_DEV_CLAUDE_PLAN_NETWORK,

@@ -89,22 +89,78 @@ const USAGE_RESPONSE = {
 const OBSERVED_AT = '2026-08-11T21:00:00.000Z';
 
 describe('Claude plan runtime network boundary', () => {
-  it('allows installed builds and keeps routine unpackaged launches local', () => {
-    expect(isClaudePlanRemoteReadAllowed({ packaged: true })).toBe(true);
-    expect(isClaudePlanRemoteReadAllowed({ packaged: false })).toBe(false);
-    expect(isClaudePlanRemoteReadAllowed({
-      packaged: true,
-      testMode: true,
-    })).toBe(false);
-    expect(isClaudePlanRemoteReadAllowed({
-      packaged: false,
-      testMode: true,
-      developmentOptIn: '1',
-    })).toBe(true);
-    expect(isClaudePlanRemoteReadAllowed({
-      packaged: false,
-      developmentOptIn: 'true',
-    })).toBe(false);
+  // BUG-060: the grant is the distribution's declaration, not packaging.
+  // Packaging alone was the pre-split proxy, and a contributor's ad-hoc
+  // package satisfies it while presenting Little Snitch a new CDHash on every
+  // Electron revision (incident `0011`).
+  it('requires a distribution-declared stable signed identity, not packaging', () => {
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: false,
+        packaged: true,
+      })
+    ).toBe(false);
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: true,
+        packaged: true,
+      })
+    ).toBe(true);
+  });
+
+  it('keeps routine unpackaged and automated launches local', () => {
+    // Declared identity, unpackaged run: still ad-hoc-signed Electron, so
+    // still incident `0011`. The declaration describes the distributor's
+    // packaged artifact, never the dev runtime that read its contract.
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: true,
+        packaged: false,
+      })
+    ).toBe(false);
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: true,
+        packaged: true,
+        testMode: true,
+      })
+    ).toBe(false);
+  });
+
+  // The guard above is only the boundary if main.ts actually asks it the
+  // contract's question. Nothing else covers that construction site, and
+  // BUG-060 was precisely a correct-looking call site passing the wrong input.
+  it('is wired in main.ts from the resolved contract, not a literal', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'main.ts'),
+      'utf8'
+    );
+    const call = source.slice(
+      source.indexOf('remoteReadAllowed: isClaudePlanRemoteReadAllowed({'),
+      source.indexOf('fetchFn: electronNetworkFetch')
+    );
+    expect(call).toContain(
+      "distribution.contract.ownAccount?.claudePlanUsage === 'stable-signed'"
+    );
+    expect(call).not.toMatch(/stableSignedIdentity:\s*(true|false)/);
+  });
+
+  it('honours only the exact developer opt-in', () => {
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: false,
+        packaged: false,
+        testMode: true,
+        developmentOptIn: '1',
+      })
+    ).toBe(true);
+    expect(
+      isClaudePlanRemoteReadAllowed({
+        stableSignedIdentity: false,
+        packaged: false,
+        developmentOptIn: 'true',
+      })
+    ).toBe(false);
   });
 });
 
@@ -180,7 +236,9 @@ describe('parseClaudeUsage', () => {
       'claude-session',
       'claude-weekly-all',
     ]);
-    expect(parsed.windows.every(w => w.origin === 'provider-account')).toBe(true);
+    expect(parsed.windows.every(w => w.origin === 'provider-account')).toBe(
+      true
+    );
   });
 
   it('never parses the churning experiment codename buckets', () => {
@@ -193,7 +251,14 @@ describe('parseClaudeUsage', () => {
   });
 
   it('drifted or empty schema parses to absence, never a throw', () => {
-    for (const drift of [null, 42, 'nope', {}, { limits: 'wat' }, { limits: [{}] }]) {
+    for (const drift of [
+      null,
+      42,
+      'nope',
+      {},
+      { limits: 'wat' },
+      { limits: [{}] },
+    ]) {
       const parsed = parseClaudeUsage(drift, OBSERVED_AT, null);
       expect(parsed.windows).toEqual([]);
     }
@@ -203,8 +268,18 @@ describe('parseClaudeUsage', () => {
     const parsed = parseClaudeUsage(
       {
         limits: [
-          { kind: 'monthly_mystery', group: 'monthly', percent: 10, resets_at: OBSERVED_AT },
-          { kind: 'session', group: 'session', percent: 5, resets_at: OBSERVED_AT },
+          {
+            kind: 'monthly_mystery',
+            group: 'monthly',
+            percent: 10,
+            resets_at: OBSERVED_AT,
+          },
+          {
+            kind: 'session',
+            group: 'session',
+            percent: 5,
+            resets_at: OBSERVED_AT,
+          },
         ],
       },
       OBSERVED_AT,
@@ -235,11 +310,15 @@ describe('readClaudeCredential', () => {
   });
 
   it('returns null on a failed read, non-JSON, or a signed-out payload', async () => {
-    expect(await readClaudeCredential(async () => Promise.reject(new Error('x')))).toBeNull();
+    expect(
+      await readClaudeCredential(async () => Promise.reject(new Error('x')))
+    ).toBeNull();
     expect(await readClaudeCredential(async () => 'not json')).toBeNull();
     expect(await readClaudeCredential(async () => '{}')).toBeNull();
     expect(
-      await readClaudeCredential(async () => JSON.stringify({ claudeAiOauth: {} }))
+      await readClaudeCredential(async () =>
+        JSON.stringify({ claudeAiOauth: {} })
+      )
     ).toBeNull();
   });
 });
@@ -252,7 +331,9 @@ describe('ClaudePlanAccountService', () => {
   let stateDir: string;
   let nowMs: number;
 
-  const credential = (over: Partial<ClaudeOauthCredential> = {}): ClaudeOauthCredential => ({
+  const credential = (
+    over: Partial<ClaudeOauthCredential> = {}
+  ): ClaudeOauthCredential => ({
     accessToken: FAKE_TOKEN,
     expiresAtMs: nowMs + 3_600_000,
     subscriptionType: 'max',
@@ -260,15 +341,19 @@ describe('ClaudePlanAccountService', () => {
   });
 
   const okFetch = () =>
-    vi.fn(async () => new Response(JSON.stringify(USAGE_RESPONSE), { status: 200 }));
+    vi.fn(
+      async () => new Response(JSON.stringify(USAGE_RESPONSE), { status: 200 })
+    );
 
-  const service = (over: {
-    fetchFn?: typeof fetch;
-    readCredential?: () => Promise<ClaudeOauthCredential | null>;
-    enabled?: boolean;
-    remoteReadAllowed?: boolean;
-    minFetchIntervalMs?: number;
-  } = {}) =>
+  const service = (
+    over: {
+      fetchFn?: typeof fetch;
+      readCredential?: () => Promise<ClaudeOauthCredential | null>;
+      enabled?: boolean;
+      remoteReadAllowed?: boolean;
+      minFetchIntervalMs?: number;
+    } = {}
+  ) =>
     new ClaudePlanAccountService({
       stateDir,
       enabled: over.enabled ?? true,
@@ -310,7 +395,10 @@ describe('ClaudePlanAccountService', () => {
     const svc = service({ fetchFn: fetchFn as unknown as typeof fetch });
     await svc.maybeRefresh();
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
     expect(url).toBe(CLAUDE_USAGE_ENDPOINT);
     expect(new URL(url).host).toBe('api.anthropic.com');
     expect(init.redirect).toBe('error');
@@ -344,9 +432,17 @@ describe('ClaudePlanAccountService', () => {
 
   it('degrades to absence on network failure, missing credential, and 401', async () => {
     for (const broken of [
-      service({ fetchFn: vi.fn(async () => Promise.reject(new Error('offline'))) as unknown as typeof fetch }),
+      service({
+        fetchFn: vi.fn(async () =>
+          Promise.reject(new Error('offline'))
+        ) as unknown as typeof fetch,
+      }),
       service({ readCredential: async () => null }),
-      service({ fetchFn: vi.fn(async () => new Response('{}', { status: 401 })) as unknown as typeof fetch }),
+      service({
+        fetchFn: vi.fn(
+          async () => new Response('{}', { status: 401 })
+        ) as unknown as typeof fetch,
+      }),
     ]) {
       await broken.maybeRefresh();
       const view = broken.view();
@@ -357,12 +453,17 @@ describe('ClaudePlanAccountService', () => {
 
   it('keeps the last observation at its TRUE age when the endpoint later drifts', async () => {
     const fetchFn = okFetch();
-    const svc = service({ fetchFn: fetchFn as unknown as typeof fetch, minFetchIntervalMs: 0 });
+    const svc = service({
+      fetchFn: fetchFn as unknown as typeof fetch,
+      minFetchIntervalMs: 0,
+    });
     await svc.maybeRefresh();
     const firstObservedAt = new Date(nowMs).toISOString();
 
     nowMs += 10 * 60_000;
-    fetchFn.mockImplementation(async () => new Response('{"shape":"changed"}', { status: 200 }));
+    fetchFn.mockImplementation(
+      async () => new Response('{"shape":"changed"}', { status: 200 })
+    );
     await svc.maybeRefresh();
 
     const view = svc.view();
@@ -370,13 +471,18 @@ describe('ClaudePlanAccountService', () => {
     // The old windows survive with their old observedAt — the freshness rule
     // judges them; nothing pretends the failed fetch produced a fresh figure.
     expect(view.windows).toHaveLength(3);
-    expect(view.windows.every(w => w.observedAt === firstObservedAt)).toBe(true);
+    expect(view.windows.every(w => w.observedAt === firstObservedAt)).toBe(
+      true
+    );
     expect(view.account.observedAt).toBe(firstObservedAt);
   });
 
   it('disabled serves absence and constructs no request; re-enabling recovers', async () => {
     const fetchFn = okFetch();
-    const svc = service({ fetchFn: fetchFn as unknown as typeof fetch, enabled: false });
+    const svc = service({
+      fetchFn: fetchFn as unknown as typeof fetch,
+      enabled: false,
+    });
     await svc.maybeRefresh();
     expect(fetchFn).not.toHaveBeenCalled();
     expect(svc.view().account.status).toBe('disabled');
@@ -442,19 +548,28 @@ describe('ClaudePlanAccountService', () => {
 
   it('window rates become observable from two spaced vendor observations', async () => {
     const fetchFn = okFetch();
-    const svc = service({ fetchFn: fetchFn as unknown as typeof fetch, minFetchIntervalMs: 0 });
+    const svc = service({
+      fetchFn: fetchFn as unknown as typeof fetch,
+      minFetchIntervalMs: 0,
+    });
     await svc.maybeRefresh();
 
     nowMs += 60 * 60_000; // one hour later the weekly-all window moved 38 → 40
-    const later = JSON.parse(JSON.stringify(USAGE_RESPONSE)) as typeof USAGE_RESPONSE & {
+    const later = JSON.parse(
+      JSON.stringify(USAGE_RESPONSE)
+    ) as typeof USAGE_RESPONSE & {
       limits: Array<{ kind: string; percent: number }>;
     };
     later.limits.find(l => l.kind === 'weekly_all')!.percent = 40;
-    fetchFn.mockImplementation(async () => new Response(JSON.stringify(later), { status: 200 }));
+    fetchFn.mockImplementation(
+      async () => new Response(JSON.stringify(later), { status: 200 })
+    );
     await svc.maybeRefresh();
 
     const view = svc.view();
-    const weeklyAll = view.windows.find(w => w.limitId === 'claude-weekly-all')!;
+    const weeklyAll = view.windows.find(
+      w => w.limitId === 'claude-weekly-all'
+    )!;
     expect(view.rates[planWindowKey(weeklyAll)]).toBeCloseTo(2, 5);
   });
 });
@@ -489,7 +604,8 @@ describe('ProviderPlanCompositeSource', () => {
       },
       push(rev: number) {
         const state = scannerSnapshot(rev).scanState;
-        for (const listener of listeners) listener({ revision: rev, scanState: state });
+        for (const listener of listeners)
+          listener({ revision: rev, scanState: state });
       },
     };
     return scanner;

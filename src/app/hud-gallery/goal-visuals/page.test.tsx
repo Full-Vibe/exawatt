@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   COMMUNITY_DISTRIBUTION,
-  type DistributionContractV1,
+  type DistributionContractV2,
 } from '@exawatt/core/distribution';
 
 const { getSession, distributionState } = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ const OFFICIAL_GOAL_VISUAL_DISTRIBUTION = {
       protocolVersion: 1,
     },
   },
-} satisfies DistributionContractV1;
+} satisfies DistributionContractV2;
 
 vi.mock('@/lib/supabase/client', () => ({
   createOptionalClient: () => ({
