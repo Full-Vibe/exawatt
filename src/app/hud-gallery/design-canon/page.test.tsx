@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest';
 import DesignCanonPage from './page';
 import { LINK_GROUPS, SECTIONS, WORKBENCH_ROUTES } from './canon';
 
+/** Words a reader actually confronts, which is the budget the operator set. */
+function renderedWordCount(root: HTMLElement): number {
+  return (root.textContent ?? '').trim().split(/\s+/).filter(Boolean).length;
+}
+
 describe('design canon briefing', () => {
   it('renders every declared section with an anchor the nav can reach', () => {
     const { container } = render(<DesignCanonPage />);
@@ -12,19 +17,17 @@ describe('design canon briefing', () => {
       expect(
         screen.getByRole('heading', { name: section.title })
       ).toBeInTheDocument();
-      expect(
-        container.querySelector(`a[href="#${section.id}"]`)
-      ).not.toBeNull();
+      expect(container.querySelector(`a[href="#${section.id}"]`)).not.toBeNull();
     }
   });
 
-  it('marks the deliberately unshaped work rather than implying it is decided', () => {
-    render(<DesignCanonPage />);
+  it('stays sendable: the whole page is under 1,000 rendered words', () => {
+    // The first version ran past 5,000 and the operator would not send it.
+    // This is the guard, not a style preference: a briefing that has to be
+    // read in full is not a briefing.
+    const { container } = render(<DesignCanonPage />);
 
-    // The page is only useful to a design partner if `Open` is visible state,
-    // not a reading exercise: every open item carries the chip.
-    expect(screen.getAllByText('Open').length).toBeGreaterThan(5);
-    expect(screen.getAllByText('Decided').length).toBeGreaterThan(20);
+    expect(renderedWordCount(container)).toBeLessThan(1000);
   });
 
   it('keeps every external reference an absolute https link that opens away', () => {
