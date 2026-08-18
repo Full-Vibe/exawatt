@@ -109,7 +109,8 @@ function fixtureFiles(overrides = {}) {
       'export function GET() { return new Response("hosted"); }\n',
     'company/overlay/web/src/lib/invites/store.ts':
       'export const store = () => null;\n',
-    'company/overlay/desktop/config/brand.json': '{ "productName": "Exawatt" }\n',
+    'company/overlay/desktop/config/brand.json':
+      '{ "productName": "Exawatt" }\n',
     ...overrides,
   };
 }
@@ -244,7 +245,8 @@ test('a declared overlay source that is not tracked fails the composition', asyn
     profile: 'official-web',
     mode: 'add',
   });
-  files['company/overlay-manifest.json'] = `${JSON.stringify(manifest, null, 2)}\n`;
+  files['company/overlay-manifest.json'] =
+    `${JSON.stringify(manifest, null, 2)}\n`;
   await withRepository(files, async root => {
     await assert.rejects(
       compose(root, 'official-web'),
@@ -257,7 +259,8 @@ test('an overlay target the public tree already owns is refused', async () => {
   const files = fixtureFiles();
   const manifest = JSON.parse(files['company/overlay-manifest.json']);
   manifest.entries[1].target = 'src/lib/invites/contract.ts';
-  files['company/overlay-manifest.json'] = `${JSON.stringify(manifest, null, 2)}\n`;
+  files['company/overlay-manifest.json'] =
+    `${JSON.stringify(manifest, null, 2)}\n`;
   await withRepository(files, async root => {
     await assert.rejects(
       compose(root, 'official-web'),
@@ -370,7 +373,8 @@ test('in-place composition refuses a target the public tree tracks', async () =>
   const files = fixtureFiles();
   const manifest = JSON.parse(files['company/overlay-manifest.json']);
   manifest.entries[1].target = 'src/lib/invites/contract.ts';
-  files['company/overlay-manifest.json'] = `${JSON.stringify(manifest, null, 2)}\n`;
+  files['company/overlay-manifest.json'] =
+    `${JSON.stringify(manifest, null, 2)}\n`;
   await withRepository(files, async root => {
     await assert.rejects(
       applyCompanyOverlayInPlace({ root, profile: 'official-web' }),
@@ -419,13 +423,19 @@ test('a checkout with no overlay manifest composes nothing and says so', async (
     });
     assert.equal(result.overlay, 'absent');
     assert.deepEqual(result.applied, []);
-    assert.equal(await exists(path.join(root, COMPANY_COMPOSITION_STATE)), false);
+    assert.equal(
+      await exists(path.join(root, COMPANY_COMPOSITION_STATE)),
+      false
+    );
   });
 });
 
 test('the composition profile follows the distribution unless a build declares one', () => {
   assert.equal(
-    resolveCompositionProfile({ env: {}, distributionSource: 'community-default' }),
+    resolveCompositionProfile({
+      env: {},
+      distributionSource: 'community-default',
+    }),
     'community'
   );
   // Incident `0017`: a hosted deployment that cannot say what it is must not
