@@ -742,3 +742,39 @@ listing taken beforehand. Matching on client id or scopes would have been
 simpler and eventually deleted the very device production is meant to keep.
 Both dogfood Gateways pass, and both finish holding only the operator's own
 device.
+
+### 2026-08-18 — write authority is granted on the server, not taken
+
+H2 was shaped around a line in the credential entry above: "H2 upgrades that
+token's scope explicitly rather than re-pairing." A live probe says that is not
+a thing Exawatt can do, and the correction improves the posture rather than
+costing anything.
+
+Two experiments, each on a freshly paired throwaway device that was removed
+afterwards. A device approved at `operator.read` reconnected with its own
+device token asking for `operator.write`, and was refused: `device token scope
+mismatch (re-pair or approve scope upgrade)`. The same device then presented
+the admin-capable shared secret, which Exawatt deliberately does not persist,
+and was refused again: `pairing required: device is asking for more scopes than
+currently approved`. Asking for a scope at or below the approved baseline
+succeeds, so narrowing is free and widening is not.
+
+The asymmetry is the point. First pairing at a given scope is silently approved
+for a loopback-local connection, which is what makes connecting a server the
+operator already reaches feel like one click. Raising an approved device's
+authority is not, and completing it needs `operator.pairing` authority that
+Exawatt refuses to hold. So Exawatt can ask for write authority and can never
+grant itself write authority, and no bug in Exawatt can change that.
+
+That puts a real waiting state between read-only and able to send, and the
+design brief already named it: **Approval required**, listed in Key states as
+"the Gateway/device approval needed and how to complete it", explicitly
+distinct from bad credentials or an offline Agent. It was written as an
+edge case for connecting. It is in fact the normal path to write authority, and
+an operator will sit in it every time they give a coworker a voice.
+
+H2 therefore models three authority states rather than two: read-only with
+nothing requested, requested and awaiting approval on the machine that runs the
+Agent, and granted. The write allowlist gates on what the Gateway granted, never
+on what Exawatt asked for, so a surface that runs ahead of an approval is
+refused locally before it can produce a confusing server-side rejection.
