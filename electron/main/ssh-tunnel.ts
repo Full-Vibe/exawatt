@@ -279,6 +279,19 @@ export function buildSshArgs(
     `ConnectTimeout=${connectTimeoutSeconds}`,
     '-o',
     'StrictHostKeyChecking=accept-new',
+    // Exawatt owns its own connection, never a shared multiplexed one.
+    //
+    // Found against a real server: with `ControlMaster auto` and a live
+    // control socket, `ssh -N -L ...` hands the forward to the existing master
+    // and exits 0 immediately. That looked like a failure here, but the worse
+    // half is what happens when it looks like success: the forward belongs to
+    // the master, so killing this child would leave a port open to the
+    // operator's server after Exawatt believed it had detached. Owning the
+    // connection is what makes close() mean what it says.
+    '-o',
+    'ControlMaster=no',
+    '-o',
+    'ControlPath=none',
     '-L',
     `${LOOPBACK_HOST}:${localPort}:${remoteHost}:${target.remotePort}`,
     '--',

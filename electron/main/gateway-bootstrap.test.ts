@@ -309,7 +309,10 @@ describe('bootstrapGatewayCredential alias validation', () => {
 });
 
 describe('bootstrapGatewayCredential token acquisition', () => {
-  it('prefers the source CLI and records where the token came from', async () => {
+  it('prefers the config file, which is where the real token lives', async () => {
+    // Against a live Gateway, `config get gateway.auth.token` answered with a
+    // short masked value rather than the credential, and pairing failed while
+    // a working token sat in the file. Secret-reading CLIs mask by default.
     const { exec, calls } = fakeExec(healthyResponder());
     const result = await bootstrapGatewayCredential(ALIAS, exec);
 
@@ -318,8 +321,8 @@ describe('bootstrapGatewayCredential token acquisition', () => {
       facts: {
         version: '2026.7.1-2',
         gatewayPort: 4242,
-        sharedToken: CLI_TOKEN,
-        tokenSource: 'cli',
+        sharedToken: FILE_TOKEN,
+        tokenSource: 'config-file',
       },
     });
     expect(calls.map(call => call.argv.join(' '))).toEqual([
@@ -394,10 +397,14 @@ describe('bootstrapGatewayCredential token acquisition', () => {
   });
 
   it('unwraps a JSON-quoted single-line token from the CLI', async () => {
+    // The CLI is the fallback now, so the config must offer nothing literal
+    // for its answer to be reached.
     const { exec } = fakeExec(
-      healthyResponder(argv =>
-        argv.includes('get') ? { stdout: `"${CLI_TOKEN}"\n` } : undefined
-      )
+      healthyResponder(argv => {
+        if (argv.includes('get')) return { stdout: `"${CLI_TOKEN}"\n` };
+        if (argv[0] === 'cat') return { stdout: INDIRECTION_CONFIG };
+        return undefined;
+      })
     );
     const result = await bootstrapGatewayCredential(ALIAS, exec);
     expect(result.ok && result.facts.sharedToken).toBe(CLI_TOKEN);
@@ -487,7 +494,7 @@ describe('bootstrapGatewayCredential token acquisition', () => {
     );
     const result = await bootstrapGatewayCredential(ALIAS, exec);
     expect(result.ok && result.facts.version).toBeNull();
-    expect(result.ok && result.facts.sharedToken).toBe(CLI_TOKEN);
+    expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
   });
 });
 

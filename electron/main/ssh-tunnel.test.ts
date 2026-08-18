@@ -131,11 +131,23 @@ describe('buildSshArgs', () => {
       'ConnectTimeout=10',
       '-o',
       'StrictHostKeyChecking=accept-new',
+      '-o',
+      'ControlMaster=no',
+      '-o',
+      'ControlPath=none',
       '-L',
       `127.0.0.1:${LOCAL_PORT}:127.0.0.1:8722`,
       '--',
       ALIAS,
     ]);
+  });
+
+  it('refuses connection multiplexing so close() owns the forward', () => {
+    // With a shared control master the forward outlives this child, so a
+    // detach would leave a port open to the operator's server.
+    const args = buildSshArgs({ alias: ALIAS, remotePort: 8722 }, LOCAL_PORT);
+    expect(args).toContain('ControlMaster=no');
+    expect(args).toContain('ControlPath=none');
   });
 
   it('puts the alias last and behind the end-of-options marker', () => {
