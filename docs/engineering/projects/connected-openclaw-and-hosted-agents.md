@@ -359,7 +359,7 @@ simulated evidence.
   placement orthogonal and keeps ENG-010/011/012 as execution owners.
 - **H1 Observe existing infrastructure.** ENG-010 C0–C3; customer-hosted
   OpenClaw, read-only first.
-- **H2 Command connected Agents.** Send/follow up through the configured Agent's
+- **H2 Command connected Agents — LANDED 2026-08-18.** Send/follow up through the configured Agent's
   primary conversation (OpenClaw `main`), then add exact
   steer/abort/schedule/context verbs only where OpenClaw reports support and
   outcome evidence. Generic remote Pause is not a prerequisite: it lands only
@@ -804,3 +804,46 @@ subscription joins the read allowlist rather than waiting for write.
 `key`. The parameter name is not uniform across the protocol, and a fixture
 written from the shape of one method would have been confidently wrong about
 the other.
+
+### 2026-08-18 — H2 landed: a voice you grant, and a tab that admits what it is
+
+An operator can now open a connected coworker, read its own conversation, ask
+for the authority to reply, and reply once the server grants it.
+
+Authority is the spine. A source records what the Gateway granted, never what
+Exawatt asked for; the write tier of the allowlist gates on the grant, so a
+surface that runs ahead of an approval is refused locally before it can produce
+a confusing server-side rejection. Send, abort, steer, and cancel are the whole
+write vocabulary. There is no Pause, because the doc defers a generic remote
+Pause until a source can prove a named halted scope, and a verb that merely
+looked like one would be the approximation it forbids.
+
+Sending addresses the Agent, not a session key, and the address is resolved
+from the projection at every layer. That is the doc's rule about never silently
+retargeting the composer, made unavailable rather than merely discouraged.
+History is bounded twice, by turns and characters, and an Agent with no primary
+conversation gets an explicit answer instead of an empty transcript that would
+read as silence from the coworker. A reply in flight across a reconnect is
+recovered from authoritative history, because the Gateway replays nothing, and
+a retry reuses its idempotency key so a message that landed cannot post twice.
+
+Work state gained its second evidence source: a cron job the source attributes
+to an Agent, enabled, whose last run failed, makes `error` reachable. The task
+totals in `status` deliberately do not, being source-wide with no per-Agent
+axis. `complete`, `blocked`, and `reviewing` remain unreachable and are listed
+by name so that adding evidence has to be deliberate.
+
+The workspace now models two honest kinds of tab. A coworker has no working
+directory, no harness, no exit code, and no Session to resume, so `WorkspaceTab`
+became a discriminated union and the compiler walked every consumer that had
+assumed otherwise. Cloning, reviving, splitting, resuming, and worktrees are
+session verbs and now say so. The layout schema is v7, migrating every tab a v6
+file holds to a session, which is all v6 could have meant. Opening a coworker
+from Team opens its conversation, so the surface is reachable rather than
+latent.
+
+One correction to production came with the status word the operator chose. The
+Team tile drew its mark from the status projection and its label from the turn
+vocabulary, two channels that could disagree and did: a tile whose Agent had
+failed announced "result ready" beside a red light. Both now derive from one
+projection.

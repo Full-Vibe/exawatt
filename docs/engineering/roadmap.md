@@ -1569,7 +1569,7 @@ Milestones:
   projection over preserved source topology; placement orthogonal; detach
   non-destructive.
 - H1 Observe existing infrastructure — ENG-010 C0–C3, read-only first.
-- H2 Command connected Agents — main-context conversation first; steer, abort,
+- H2 Command connected Agents — LANDED 2026-08-18: main-context conversation first; steer, abort,
   schedule, and context controls only through exact observed capabilities.
   Generic remote Pause is deferred until OpenClaw can verify a named halted
   scope and resume the same preserved work; prompts, cron edits, Gateway stops,
