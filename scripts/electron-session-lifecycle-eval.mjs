@@ -17,10 +17,7 @@ import {
   openShellFromLauncher,
   startAgentFromLauncher,
 } from './lib/electron-eval.mjs';
-import {
-  claudeProbeSh,
-  codexProbeSh,
-} from './lib/harness-probe-fixture.mjs';
+import { claudeProbeSh, codexProbeSh } from './lib/harness-probe-fixture.mjs';
 import { packagedExecutable } from './lib/packaged-app.mjs';
 
 // The packaged bundle is named by the distribution contract, not by a literal
@@ -280,8 +277,15 @@ try {
     readFileSync(join(userData, 'workspace.json'), 'utf8')
   );
   const tabs = persisted.projects.flatMap(project => project.tabs);
-  if (persisted.v !== 6 || tabs.length !== 5)
-    throw new Error('Workspace v6 checkpoint missing');
+  // v7 (ENG-033 H2) is the layout that distinguishes a local Session tab from a
+  // connected coworker. Every tab this eval starts is a Session, so the shape
+  // it checks below is unchanged; only the version it must see moved.
+  if (persisted.v !== 7 || tabs.length !== 5)
+    throw new Error('Workspace v7 checkpoint missing');
+  if (tabs.some(tab => tab.kind !== 'session'))
+    throw new Error(
+      `Every tab this eval starts is a local Session: ${JSON.stringify(tabs.map(t => t.kind))}`
+    );
   if (
     tabs.some(
       tab => tab.lifecycle !== 'stopped-clean' || tab.sessionId !== null
