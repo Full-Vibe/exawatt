@@ -5,13 +5,20 @@ import {
 } from '../agent-sources';
 import {
   AGENT_SOURCE_PLACEMENTS,
+  SOURCE_TASK_RUNTIMES,
+  SOURCE_TASK_STATUSES,
   type AgentSourcePlacement,
   type AgentSourceTopologySnapshot,
   type SourceAgentRecord,
+  type SourceAutomationOutcome,
+  type SourceAutomationRecord,
   type SourceContextKind,
   type SourceContextRecord,
   type SourceContextRef,
   type SourceContextRole,
+  type SourceTaskFacts,
+  type SourceTaskRuntime,
+  type SourceTaskStatus,
 } from '../agent-projection';
 
 /**
@@ -43,6 +50,7 @@ const MAX_LABEL_LENGTH = 512;
 const MAX_AGENTS = 500;
 const MAX_CONTEXTS_PER_AGENT = 2_000;
 const MAX_CONTEXTS_TOTAL = 20_000;
+const MAX_AUTOMATIONS_TOTAL = 2_000;
 
 /** Session keys are `agent:<nativeAgentId>:<discriminator>[:<rest>]`. */
 const SESSION_KEY_PREFIX = 'agent';
@@ -79,6 +87,30 @@ const CONTEXT_KIND_BY_KEY_SEGMENT: ReadonlyMap<string, SourceContextKind> =
 /** Any segment Exawatt does not recognise is a helper thread, not an unknown. */
 const FALLBACK_CONTEXT_KIND: SourceContextKind = 'helper';
 
+/*
+ * How `cron.list` names the outcome of a job's most recent run.
+ *
+ * A live Gateway was observed answering `ok`; the synonyms are here because
+ * each is unambiguous, not because any of them was seen. Everything else,
+ * including a word this table does not contain and including absence, reads
+ * as unknown: the fact is simply not set. That asymmetry is the point. An
+ * unreadable token must never become success, or a Gateway that renames its
+ * failure state would silently report every Agent healthy; and it must never
+ * become failure either, or a renamed success state would accuse every Agent
+ * of a fault it does not have.
+ */
+const AUTOMATION_OUTCOME_BY_STATUS: ReadonlyMap<
+  string,
+  SourceAutomationOutcome
+> = new Map<string, SourceAutomationOutcome>([
+  ['ok', 'succeeded'],
+  ['success', 'succeeded'],
+  ['succeeded', 'succeeded'],
+  ['error', 'failed'],
+  ['failed', 'failed'],
+  ['failure', 'failed'],
+]);
+
 export interface OpenClawTopologyInput {
   configuredSourceId: string;
   gatewayId: string;
@@ -89,6 +121,14 @@ export interface OpenClawTopologyInput {
   agentsList: unknown;
   /** Raw `sessions.list` results, one entry per configured Agent. */
   sessionLists: readonly { nativeAgentId: string; payload: unknown }[];
+  /**
+   * Raw `cron.list` result. Omit it when the source was not asked; the
+   * snapshot then carries no automations at all rather than an empty list,
+   * because "never asked" and "has none" are different answers.
+   */
+  cronList?: unknown;
+  /** Raw `status` result. Omitted the same way, for the same reason. */
+  statusPayload?: unknown;
   /** Native Agent ids the operator explicitly kept as retired history. */
   retiredNativeAgentIds?: readonly string[];
 }
@@ -105,6 +145,12 @@ export type OpenClawTopologyIssueCode =
   | 'multiple-main-contexts'
   | 'context-cap-exceeded'
   | 'agent-cap-exceeded'
+  | 'invalid-cron-payload'
+  | 'invalid-cron-entry'
+  | 'duplicate-automation'
+  | 'orphan-automation-agent'
+  | 'automation-cap-exceeded'
+  | 'invalid-status-payload'
   /*
    * Not a Gateway-payload fault: the caller's own source identity is unusable.
    * Reported separately so a configuration bug is never mistaken for a bad
@@ -260,6 +306,115 @@ function compareForRetention(left: DraftContext, right: DraftContext): number {
     compareText(left.nativeAgentId, right.nativeAgentId) ||
     compareText(left.nativeContextId, right.nativeContextId)
   );
+}
+
+/** An automation in flight, before its target context is resolved. */
+interface DraftAutomation {
+  nativeAgentId: string;
+  nativeAutomationId: string;
+  enabled?: boolean;
+  lastOutcome?: SourceAutomationOutcome;
+  lastRunAt?: number;
+  /** Unresolved session key; resolved only after capping decides what survives. */
+  targetContextId: string | null;
+}
+
+/**
+ * Cap ordering for automations: a failed enabled job first, because it is the
+ * one record that changes what an operator is told, then most recent run, then
+ * identity for a deterministic tie. Evicting the evidence would be the worst
+ * possible thing a bound could do.
+ */
+function compareAutomationForRetention(
+  left: DraftAutomation,
+  right: DraftAutomation
+): number {
+  const leftFault =
+    left.enabled === true && left.lastOutcome === 'failed' ? 0 : 1;
+  const rightFault =
+    right.enabled === true && right.lastOutcome === 'failed' ? 0 : 1;
+  return (
+    leftFault - rightFault ||
+    (right.lastRunAt ?? -1) - (left.lastRunAt ?? -1) ||
+    compareText(left.nativeAgentId, right.nativeAgentId) ||
+    compareText(left.nativeAutomationId, right.nativeAutomationId)
+  );
+}
+
+function validCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * Read a group of fields that a Gateway may nest or may flatten.
+ *
+ * The live payload nests a cron job's run state under `state` and the task
+ * totals under `tasks`. Older shapes put the same fields on the parent. Both
+ * are read, and nothing is invented either way: if the nested record is
+ * absent, the parent is simply where the fields are looked for.
+ */
+function readGroup(
+  entry: Record<string, unknown>,
+  nestedKey: string
+): Record<string, unknown> {
+  const nested: unknown = entry[nestedKey];
+  return isRecord(nested) ? nested : entry;
+}
+
+/**
+ * Keep only the buckets whose name is in the vocabulary, read in tuple order
+ * so the same payload always serializes identically.
+ *
+ * A bucket name this build does not know is version skew, not a fault: the
+ * remaining totals stay usable and the view is simply partial, which is why
+ * these buckets are never guaranteed to sum to `total`.
+ */
+function readCountBuckets<Key extends string>(
+  value: unknown,
+  allowedOrder: readonly Key[]
+): Partial<Record<Key, number>> {
+  const buckets: Partial<Record<Key, number>> = {};
+  if (!isRecord(value)) return buckets;
+  for (const name of allowedOrder) {
+    const count: unknown = value[name];
+    if (validCount(count)) buckets[name] = count;
+  }
+  return buckets;
+}
+
+/**
+ * Read the source's own task totals, or null when it reported none Exawatt can
+ * vouch for. These are source-wide; nothing here is attributable to an Agent.
+ */
+function readTaskFacts(statusPayload: unknown): SourceTaskFacts | null {
+  if (!isRecord(statusPayload)) return null;
+  const totals = readGroup(statusPayload, 'tasks');
+  if (
+    !validCount(totals.total) ||
+    !validCount(totals.active) ||
+    !validCount(totals.terminal) ||
+    !validCount(totals.failures)
+  ) {
+    return null;
+  }
+  const audit = readGroup(statusPayload, 'taskAudit');
+  const facts: SourceTaskFacts = {
+    total: totals.total,
+    active: totals.active,
+    terminal: totals.terminal,
+    failures: totals.failures,
+    byStatus: readCountBuckets<SourceTaskStatus>(
+      totals.byStatus,
+      SOURCE_TASK_STATUSES
+    ),
+    byRuntime: readCountBuckets<SourceTaskRuntime>(
+      totals.byRuntime,
+      SOURCE_TASK_RUNTIMES
+    ),
+  };
+  if (validCount(audit.warnings)) facts.auditWarnings = audit.warnings;
+  if (validCount(audit.errors)) facts.auditErrors = audit.errors;
+  return facts;
 }
 
 function readParentKey(entry: Record<string, unknown>): string | null {
@@ -697,6 +852,201 @@ export function adaptOpenClawTopology(
     );
   }
 
+  // ---- Automations --------------------------------------------------------
+
+  /*
+   * Absent input stays absent all the way to the snapshot. An empty array is a
+   * claim ("this Gateway schedules nothing") and Exawatt only makes it when
+   * the Gateway actually answered.
+   */
+  let automationRecords: SourceAutomationRecord[] | null = null;
+  if (input.cronList !== undefined) {
+    const cronList: unknown = input.cronList;
+    if (!isRecord(cronList) || !Array.isArray(cronList.jobs)) {
+      issues.push(
+        issue(
+          'warning',
+          'invalid-cron-payload',
+          'cronList',
+          'Gateway automation listing must be a record containing a jobs array.'
+        )
+      );
+    } else {
+      const draftsByAgent = new Map<string, Map<string, DraftAutomation>>();
+      for (const [index, candidate] of (
+        cronList.jobs as readonly unknown[]
+      ).entries()) {
+        const jobPath = `cronList.jobs.${index}`;
+        if (!isRecord(candidate)) {
+          issues.push(
+            issue(
+              'warning',
+              'invalid-cron-entry',
+              jobPath,
+              'Automation entry must be a record.'
+            )
+          );
+          continue;
+        }
+        /*
+         * `name` is the only identity `cron.list` reports, so it is the
+         * automation's id. Nothing else about the job is read: schedule,
+         * prompt, and delivery are configuration rather than evidence, and
+         * they are the fields most likely to carry a path or an address.
+         */
+        if (!validText(candidate.name) || !validText(candidate.agentId)) {
+          issues.push(
+            issue(
+              'warning',
+              'invalid-cron-entry',
+              jobPath,
+              'Automation entry declares no usable identity or owning Agent.'
+            )
+          );
+          continue;
+        }
+        const nativeAgentId = candidate.agentId;
+        /*
+         * Exactly the orphan-session rule: evidence naming an Agent the roster
+         * does not contain is dropped, never allowed to conjure the Agent.
+         */
+        if (!configuredAgentIds.has(nativeAgentId)) {
+          issues.push(
+            issue(
+              'warning',
+              'orphan-automation-agent',
+              `${jobPath}.agentId`,
+              'Automation names an Agent absent from the Gateway roster; it is dropped.'
+            )
+          );
+          continue;
+        }
+        const drafts =
+          draftsByAgent.get(nativeAgentId) ??
+          new Map<string, DraftAutomation>();
+        draftsByAgent.set(nativeAgentId, drafts);
+        const nativeAutomationId = candidate.name;
+        if (drafts.has(nativeAutomationId)) {
+          issues.push(
+            issue(
+              'warning',
+              'duplicate-automation',
+              `automations.${nativeAgentId}.${nativeAutomationId}`,
+              'Automation identity appears more than once for this Agent; the first entry wins.'
+            )
+          );
+          continue;
+        }
+
+        const state = readGroup(candidate, 'state');
+        const draft: DraftAutomation = {
+          nativeAgentId,
+          nativeAutomationId,
+          targetContextId: validText(state.sessionTarget)
+            ? state.sessionTarget
+            : null,
+        };
+        /*
+         * Enablement decides whether a failure is present state or answered
+         * history, so a non-boolean is unknown rather than a default. Nothing
+         * downstream turns unknown into a fault, so the honest cost of a
+         * Gateway that stops reporting `enabled` is a fault Exawatt declines
+         * to claim, never one it invents.
+         */
+        if (typeof candidate.enabled === 'boolean') {
+          draft.enabled = candidate.enabled;
+        }
+        const outcome =
+          typeof state.lastStatus === 'string'
+            ? AUTOMATION_OUTCOME_BY_STATUS.get(state.lastStatus)
+            : undefined;
+        if (outcome !== undefined) draft.lastOutcome = outcome;
+        if (validTimestamp(state.lastRunAtMs)) {
+          draft.lastRunAt = state.lastRunAtMs;
+        }
+        drafts.set(nativeAutomationId, draft);
+      }
+
+      const drafted: DraftAutomation[] = [];
+      for (const [, drafts] of [...draftsByAgent.entries()].sort(
+        ([left], [right]) => compareText(left, right)
+      )) {
+        drafted.push(...drafts.values());
+      }
+      let kept = drafted;
+      if (drafted.length > MAX_AUTOMATIONS_TOTAL) {
+        issues.push(
+          issue(
+            'warning',
+            'automation-cap-exceeded',
+            'automations',
+            `Gateway reported more than ${MAX_AUTOMATIONS_TOTAL} automations; only the most significant are projected.`
+          )
+        );
+        kept = [...drafted]
+          .sort(compareAutomationForRetention)
+          .slice(0, MAX_AUTOMATIONS_TOTAL);
+      }
+
+      automationRecords = kept
+        .map(automation => {
+          const siblings = keptKeysByAgent.get(automation.nativeAgentId);
+          /*
+           * A target is only meaningful if it belongs to the same Agent and
+           * actually survived. Anything else becomes null rather than a
+           * dangling pointer the kernel would reject.
+           */
+          let targetContextId: string | null = null;
+          if (automation.targetContextId && siblings) {
+            const targetClass = classifySessionKey(automation.targetContextId);
+            if (
+              targetClass?.nativeAgentId === automation.nativeAgentId &&
+              siblings.has(automation.targetContextId)
+            ) {
+              targetContextId = automation.targetContextId;
+            }
+          }
+          return {
+            configuredSourceId,
+            nativeAgentId: automation.nativeAgentId,
+            nativeAutomationId: automation.nativeAutomationId,
+            ...(automation.enabled === undefined
+              ? {}
+              : { enabled: automation.enabled }),
+            ...(automation.lastOutcome === undefined
+              ? {}
+              : { lastOutcome: automation.lastOutcome }),
+            ...(automation.lastRunAt === undefined
+              ? {}
+              : { lastRunAt: automation.lastRunAt }),
+            targetContextId,
+          } satisfies SourceAutomationRecord;
+        })
+        .sort(
+          (left, right) =>
+            compareText(left.nativeAgentId, right.nativeAgentId) ||
+            compareText(left.nativeAutomationId, right.nativeAutomationId)
+        );
+    }
+  }
+
+  // ---- Source-wide task totals --------------------------------------------
+
+  let taskFacts: SourceTaskFacts | null = null;
+  if (input.statusPayload !== undefined) {
+    taskFacts = readTaskFacts(input.statusPayload);
+    if (taskFacts === null) {
+      issues.push(
+        issue(
+          'warning',
+          'invalid-status-payload',
+          'statusPayload',
+          'Gateway status reported no readable task totals.'
+        )
+      );
+    }
+  }
+
   /*
    * A single main context is the only thing that can carry the primary role. No
    * main is normal (an Agent driven purely by automations has never been
@@ -786,6 +1136,8 @@ export function adaptOpenClawTopology(
         compareText(left.nativeAgentId, right.nativeAgentId)
       ),
     contexts: contextRecords,
+    ...(automationRecords === null ? {} : { automations: automationRecords }),
+    ...(taskFacts === null ? {} : { taskFacts }),
   };
 
   return { ok: true, snapshot, issues: sortedIssues(issues) };

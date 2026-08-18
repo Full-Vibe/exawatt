@@ -21,6 +21,7 @@ import type {
   AgentSourcePlacement,
   ConnectedSourceView,
   SourceAgentDiscoveryState,
+  SourceAuthority,
   SourceConnectionState,
   SourceCredentialOwner,
   SourceFailureClass,
@@ -868,6 +869,165 @@ export interface ConnectedSourceChange {
   snapshotRevision: number;
 }
 
+/* ---- Talking to a connected coworker (ENG-033 H2) ------------------------ */
+
+/** Who said it. The product's vocabulary, not the protocol's. */
+export type ConversationRole = 'operator' | 'agent';
+
+export interface ConversationTurnView {
+  /**
+   * Stable across reads and across a reconnect, because it is derived from the
+   * turn rather than minted per read. That is what lets an authoritative
+   * resnapshot reconcile instead of duplicating.
+   */
+  id: string;
+  role: ConversationRole;
+  text: string;
+  at: number;
+  runId: string | null;
+  /** `text` was clipped to the per-turn budget. */
+  clipped: boolean;
+}
+
+/**
+ * `no-primary-conversation` is the explicit answer for a coworker whose source
+ * declares no conversation at all. It is never an empty transcript, which
+ * would read as silence from someone who has never been spoken to.
+ */
+export type ConversationRefusal =
+  | 'unknown-agent'
+  | 'no-primary-conversation'
+  | 'disconnected'
+  | 'unreadable';
+
+export type ConversationResult =
+  | {
+      ok: true;
+      agentId: string;
+      sourceId: string;
+      contextId: string;
+      /** Oldest to newest, in the order the source retains them. */
+      turns: ConversationTurnView[];
+      /** Older turns exist beyond this page. Bounding is never silent. */
+      hasMore: boolean;
+      characterCount: number;
+      observedAt: number;
+      connection: ConnectedSourceConnectionView;
+    }
+  | {
+      ok: false;
+      agentId: string;
+      outcome: ConversationRefusal;
+      message: string;
+    };
+
+export interface ConversationRequest {
+  /** Turns to return, newest backward. Clamped in main. */
+  limit?: number;
+  /** Page further back: the turns older than this one. */
+  beforeTurnId?: string;
+}
+
+export interface SendToAgentOptions {
+  /**
+   * Reused verbatim on a retry, so a retry after a dropped connection
+   * resolves to the same run rather than posting the message twice.
+   */
+  idempotencyKey?: string;
+}
+
+/**
+ * Every way a send declines, each distinct because the next step differs.
+ * `read-only-source` means ask this source for write access;
+ * `approval-pending` means the ask is standing and someone has to approve the
+ * Exawatt device on the source. None of them is a claim about the coworker.
+ */
+export type SendRefusal =
+  | 'unknown-agent'
+  | 'read-only-source'
+  | 'approval-pending'
+  | 'no-primary-conversation'
+  | 'disconnected'
+  | 'invalid-message'
+  | 'refused';
+
+export type SendToAgentResult =
+  | {
+      ok: true;
+      agentId: string;
+      sourceId: string;
+      contextId: string;
+      runId: string | null;
+      status: 'sent' | 'queued';
+      idempotencyKey: string;
+      at: number;
+    }
+  | {
+      ok: false;
+      agentId: string;
+      outcome: SendRefusal;
+      message: string;
+    };
+
+export type ConversationUpdateKind =
+  | 'delta'
+  | 'complete'
+  | 'bounded'
+  | 'resnapshot';
+
+export interface ConversationUpdate {
+  agentId: string;
+  sourceId: string;
+  contextId: string;
+  runId: string | null;
+  /**
+   * `bounded` says this run produced more than Exawatt forwards live; read
+   * the conversation for the rest. `resnapshot` says observation reattached
+   * and the authoritative history is the truth now, which is how a reply that
+   * was in flight across a drop comes back.
+   */
+  kind: ConversationUpdateKind;
+  /** Reply text for `delta`; empty for every other kind. */
+  text: string;
+  /**
+   * Order within the desktop process. Exawatt's own counter, never the
+   * Gateway's frame sequence, which resets per connection and replays
+   * nothing. Never a catch-up cursor.
+   */
+  ordinal: number;
+  at: number;
+}
+
+/**
+ * What Exawatt may do with one source (ENG-033 H2), kept apart from freshness.
+ * A read-only source is not a degraded connection: observation is perfect and
+ * the coworker is working. This says only what Exawatt may say back.
+ */
+export interface SourceCommandAuthorityView {
+  sourceId: string;
+  displayName: string;
+  authority: SourceAuthority;
+  /**
+   * A write request is standing, waiting for someone to approve the Exawatt
+   * device on the source itself. Exawatt cannot approve its own scope.
+   */
+  awaitingApproval: boolean;
+}
+
+/** What an authority request came back with. `approval-required` is an answer. */
+export type AuthorityRequestOutcome =
+  | 'granted'
+  | 'approval-required'
+  | 'refused'
+  | 'unchanged';
+
+export interface AuthorityRequestResult {
+  outcome: AuthorityRequestOutcome;
+  /** The authority Exawatt holds now, granted truth in every branch. */
+  authority: SourceAuthority;
+  message: string;
+}
+
 export interface ElectronConnectedSourcesApi {
   list: () => Promise<ConnectedSourceView[]>;
   /** Reads SSH config text only. Listing a server is not contacting it. */
@@ -903,6 +1063,33 @@ export interface ElectronConnectedSourcesApi {
   /** Removes Exawatt's record only; the remote installation is untouched. */
   detach: (id: string) => Promise<{ ok: boolean }>;
   onChanged: (handler: (change: ConnectedSourceChange) => void) => () => void;
+  /** What Exawatt may do with each source. Not a freshness signal. */
+  commandAuthority: () => Promise<SourceCommandAuthorityView[]>;
+  /** Asks the source to raise Exawatt from observation to conversation. */
+  requestCommandAuthority: (id: string) => Promise<AuthorityRequestResult>;
+  /** Hands write access back; observation continues. */
+  relinquishCommandAuthority: (id: string) => Promise<AuthorityRequestResult>;
+  /** One coworker's primary conversation, bounded. A read, not a command. */
+  conversation: (
+    agentId: string,
+    request?: ConversationRequest
+  ) => Promise<ConversationResult>;
+  /**
+   * Sends to that coworker's primary conversation.
+   *
+   * There is no session-key parameter, and that is the design rule rather than
+   * an omission: the address follows from the Agent, so opening a cron run or
+   * a delegated child to read it can never retarget this call.
+   */
+  send: (
+    agentId: string,
+    text: string,
+    options?: SendToAgentOptions
+  ) => Promise<SendToAgentResult>;
+  /** Bounded, ordered reply updates keyed by Agent and run. */
+  onConversationUpdate: (
+    handler: (update: ConversationUpdate) => void
+  ) => () => void;
 }
 
 export interface ExawattBuildInfo {

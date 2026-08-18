@@ -15,11 +15,13 @@ import {
   type ConnectedSourceRecord,
   type ProjectedAgent,
   type SourceAgentDiscoveryState,
+  type SourceAuthority,
   type SourceConnectionState,
   type SourceContextRecord,
   type SourceFailureClass,
 } from '@exawatt/core';
 import type {
+  AuthorityRequestResult,
   ConnectedGatewayPhase,
   ConnectedGatewaySession,
 } from './connected-gateway';
@@ -56,6 +58,15 @@ import type { ConnectedSourceStore } from './connected-source-store';
  *
  * Every dependency is injected, so the tests never open a socket, never read
  * the operator's SSH configuration, and never touch `userData`.
+ *
+ * ENG-033 H2 adds one more rule, and it is a product rule rather than an
+ * implementation convenience:
+ *
+ * 6. **A message goes to the coworker's primary conversation and nowhere
+ *    else.** `send` takes an Exawatt Agent id and resolves the address itself
+ *    from the projection. No caller may hand over a session key, so no caller
+ *    can aim a message at a cron run, a helper context, or a delegated child,
+ *    and viewing recent work can never silently retarget the composer.
  */
 
 /* ---- Projection plan ----------------------------------------------------- */
@@ -321,6 +332,27 @@ export interface RemoteAgentView {
   projectionVersion: typeof AGENT_PROJECTION_VERSION;
 }
 
+/**
+ * What Exawatt may do with one source, kept apart from freshness on purpose.
+ *
+ * Placement, connection, work state, and source context are already four
+ * independent dimensions and authority is a fifth. Folding it into the
+ * freshness view would invite a surface to read a read-only source as a
+ * degraded connection, which it is not: observation is perfect and the
+ * coworker is working. This says only what Exawatt is allowed to say back.
+ */
+export interface SourceCommandAuthorityView {
+  sourceId: string;
+  displayName: string;
+  /** What the Gateway granted on the last completed handshake. */
+  authority: SourceAuthority;
+  /**
+   * A write request is standing, waiting for someone to approve the Exawatt
+   * device on the source itself. Exawatt cannot approve its own scope.
+   */
+  awaitingApproval: boolean;
+}
+
 export type ConnectSourceResult =
   | {
       ok: true;
@@ -355,6 +387,170 @@ export interface ConnectedSourceChange {
   snapshotRevision: number;
 }
 
+/* ---- Command authority (H2) ---------------------------------------------- */
+
+/**
+ * Authority is the source's answer, and the runtime only ever reads it.
+ *
+ * `record.grantedAuthority` is what the Gateway granted on the last completed
+ * handshake, so the send path consults the record rather than remembering a
+ * decision of its own. Nothing here is a statement about the remote Agent: a
+ * source Exawatt may only watch holds a coworker working exactly as it was.
+ *
+ * There is a third thing an operator can be waiting on, and it is not an
+ * authority. A device already approved at `operator.read` cannot raise its own
+ * scope: verified live, the Gateway refuses the ask whether Exawatt presents
+ * its own device token or the admin-capable shared secret, and the raise is an
+ * approval performed on the source by the person who owns it. So "asked, and
+ * waiting for that approval" is a fact about a request Exawatt made this
+ * session, not a property of the source, and it lives in memory here for
+ * exactly as long as it stays true.
+ */
+const AWAITING_APPROVAL_MESSAGE =
+  'Approve the Exawatt device for write access with the source device tooling, then send again.';
+
+/* ---- Conversation bounds ------------------------------------------------- */
+
+/** The most turns one read returns, however many the source retained. */
+export const MAX_CONVERSATION_TURNS = 200;
+/** What a caller gets when it names no page size. */
+export const DEFAULT_CONVERSATION_TURNS = 50;
+/** One turn's character budget. A longer turn is clipped and says so. */
+export const MAX_TURN_CHARACTERS = 4_000;
+/** The page's character budget, spent from the newest turn backward. */
+export const MAX_CONVERSATION_CHARACTERS = 60_000;
+/** The longest message Exawatt hands to a Gateway. */
+export const MAX_MESSAGE_CHARACTERS = 32_000;
+/** One streamed update's character budget. */
+export const MAX_UPDATE_CHARACTERS = 2_000;
+/** How many live updates one run forwards before the renderer re-reads. */
+export const MAX_UPDATES_PER_RUN = 400;
+
+/**
+ * Who said it. The product vocabulary, not the protocol's: Exawatt says
+ * Conversation, and the two voices in one are the operator and the coworker.
+ */
+export type ConversationRole = 'operator' | 'agent';
+
+export interface ConversationTurnView {
+  /**
+   * Stable identity, derived from the turn's own content and its position
+   * among identical siblings rather than minted per read. An authoritative
+   * resnapshot must produce the same id for the same turn, because that is
+   * what lets a reconnect reconcile instead of duplicating.
+   */
+  id: string;
+  role: ConversationRole;
+  text: string;
+  at: number;
+  /** The run that produced it, when the source names one. */
+  runId: string | null;
+  /** True when `text` was clipped to the per-turn budget. */
+  clipped: boolean;
+}
+
+export type ConversationRefusal =
+  | 'unknown-agent'
+  | 'no-primary-conversation'
+  | 'disconnected'
+  | 'unreadable';
+
+export type ConversationResult =
+  | {
+      ok: true;
+      agentId: string;
+      sourceId: string;
+      contextId: string;
+      /** Oldest to newest, in the order the source retains them. */
+      turns: readonly ConversationTurnView[];
+      /** Older turns exist beyond this page. Bounding is never silent. */
+      hasMore: boolean;
+      characterCount: number;
+      observedAt: number;
+      connection: SourceConnectionView;
+    }
+  | {
+      ok: false;
+      agentId: string;
+      outcome: ConversationRefusal;
+      message: string;
+    };
+
+export interface ConversationRequest {
+  /** Turns to return, newest backward. Clamped to `MAX_CONVERSATION_TURNS`. */
+  limit?: number;
+  /** Page further back: the turns older than this one. */
+  beforeTurnId?: string;
+}
+
+export interface SendToAgentOptions {
+  /**
+   * Reused verbatim on a retry. The Gateway accepts it on `chat.send`, so a
+   * retry after a dropped connection resolves to the same run rather than
+   * posting the message twice.
+   */
+  idempotencyKey?: string;
+}
+
+/**
+ * Every way a send declines, each distinct because the operator's next step
+ * differs. `read-only-source` says how to ask for authority;
+ * `approval-pending` says the request is waiting on the Gateway. Neither is an
+ * error, and none of them is a statement about the remote Agent.
+ */
+export type SendRefusal =
+  | 'unknown-agent'
+  | 'read-only-source'
+  | 'approval-pending'
+  | 'no-primary-conversation'
+  | 'disconnected'
+  | 'invalid-message'
+  | 'refused';
+
+export type SendToAgentResult =
+  | {
+      ok: true;
+      agentId: string;
+      sourceId: string;
+      contextId: string;
+      runId: string | null;
+      status: 'sent' | 'queued';
+      idempotencyKey: string;
+      at: number;
+    }
+  | {
+      ok: false;
+      agentId: string;
+      outcome: SendRefusal;
+      message: string;
+    };
+
+export type ConversationUpdateKind =
+  | 'delta'
+  | 'complete'
+  | 'bounded'
+  | 'resnapshot';
+
+export interface ConversationUpdate {
+  agentId: string;
+  sourceId: string;
+  contextId: string;
+  runId: string | null;
+  kind: ConversationUpdateKind;
+  /** Reply text for `delta`; empty for every other kind. */
+  text: string;
+  /**
+   * Order within this process, monotonic across every source.
+   *
+   * Deliberately Exawatt's own counter. The Gateway's frame sequence resets
+   * per connection and events are never replayed, so storing one as a
+   * catch-up cursor would ask a reconnect for a position it cannot honour.
+   * This number is never written to disk and never sent to a source.
+   */
+  ordinal: number;
+  at: number;
+}
+
 /* ---- Runtime ------------------------------------------------------------- */
 
 /**
@@ -362,9 +558,29 @@ export interface ConnectedSourceChange {
  * the test drives a hand-written double, so no test in this file can open a
  * tunnel, read an SSH configuration, or reach a network.
  */
+/**
+ * The streaming half of that surface, declared here rather than picked from
+ * `ConnectedGatewaySession` because it is capability-declared: a session whose
+ * transport proves no event stream simply does not carry it, and the operator
+ * still sees the reply on the next authoritative read. Absence is a quieter
+ * surface, never a crash and never a silent no-op.
+ */
+export interface ConnectedSourceCommandSurface {
+  /** One Gateway event stream, unsubscribed by the returned disposer. */
+  onGatewayEvent?(
+    eventName: string,
+    handler: (payload: unknown) => void
+  ): () => void;
+}
+
 export type ConnectedSourceSession = Pick<
   ConnectedGatewaySession,
   | 'connect'
+  | 'read'
+  | 'write'
+  | 'authority'
+  | 'requestWriteAuthority'
+  | 'relinquishWriteAuthority'
   | 'resnapshot'
   | 'status'
   | 'disconnect'
@@ -372,7 +588,8 @@ export type ConnectedSourceSession = Pick<
   | 'snapshot'
   | 'phase'
   | 'identityDrift'
->;
+> &
+  ConnectedSourceCommandSurface;
 
 export interface ConnectedSourceRuntimeDeps {
   store: Pick<ConnectedSourceStore, 'list' | 'get'>;
@@ -386,7 +603,16 @@ interface SessionEntry {
   session: ConnectedSourceSession;
   snapshotRevision: number;
   offPhase: () => void;
+  offEvents: () => void;
   closed: boolean;
+  /**
+   * Live updates forwarded per run this connection. Cleared whenever
+   * observation drops, because a half-streamed reply is unverified once
+   * Exawatt stops watching and history is what restores it.
+   */
+  forwardedByRun: Map<string, number>;
+  /** Set while a dropped connection is waiting for its authoritative reread. */
+  awaitingResnapshot: boolean;
 }
 
 export class ConnectedSourceRuntime {
@@ -395,6 +621,28 @@ export class ConnectedSourceRuntime {
   private readonly listeners = new Set<
     (change: ConnectedSourceChange) => void
   >();
+  private readonly conversationListeners = new Set<
+    (update: ConversationUpdate) => void
+  >();
+  /**
+   * In-flight sends, keyed by source, address, and idempotency key. Two
+   * simultaneous retries of one message share one Gateway call; the key
+   * itself, which travels to the source, is what protects a retry issued
+   * after this process forgot the first one.
+   */
+  private readonly inflightSends = new Map<
+    string,
+    Promise<SendToAgentResult>
+  >();
+  /**
+   * Sources whose last authority request came back "a person must approve
+   * this on the server". In memory by design: it records a request Exawatt
+   * made, not something the source granted, and the source's own record stays
+   * the only place granted authority is read from.
+   */
+  private readonly awaitingApproval = new Set<string>();
+  /** Process-local update order. Never persisted, never a transport sequence. */
+  private updateOrdinal = 0;
   private resumeStarted = false;
   private disposed = false;
 
@@ -406,6 +654,23 @@ export class ConnectedSourceRuntime {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Follow replies as they arrive (ENG-033 H2).
+   *
+   * Unlike `onChange`, these updates do carry content, because a reply the
+   * operator is waiting for is the one thing a pull cannot deliver in time.
+   * They stay bounded per run and they are ordered by Exawatt's own counter,
+   * never by a transport sequence that resets on the next connection.
+   */
+  onConversationUpdate(
+    listener: (update: ConversationUpdate) => void
+  ): () => void {
+    this.conversationListeners.add(listener);
+    return () => {
+      this.conversationListeners.delete(listener);
     };
   }
 
@@ -498,6 +763,21 @@ export class ConnectedSourceRuntime {
     );
   }
 
+  /**
+   * What Exawatt may do with each source, so a surface can decide whether to
+   * offer a composer at all rather than offering one and collecting a
+   * refusal. A separate read from `status`, because authority is not
+   * freshness and a read-only source is not a degraded one.
+   */
+  commandAuthority(): SourceCommandAuthorityView[] {
+    return this.deps.store.list().map(record => ({
+      sourceId: record.id,
+      displayName: record.displayName,
+      authority: record.grantedAuthority,
+      awaitingApproval: this.awaitingApproval.has(record.id),
+    }));
+  }
+
   /** Per-source freshness, for Settings and the roster. */
   status(): ConnectedSourceStatusView[] {
     return this.deps.store
@@ -567,6 +847,236 @@ export class ConnectedSourceRuntime {
       );
     }
     return views;
+  }
+
+  /**
+   * One coworker's primary conversation, bounded (ENG-033 H2).
+   *
+   * `chat.history` is already in the read allowlist, so this needs no new
+   * authority: an operator who can see a coworker can read what was said to
+   * it. The read is bounded three ways at once, and every bound reports
+   * itself: at most `MAX_CONVERSATION_TURNS` come back from the source, at
+   * most `limit` turns come back to the caller, and the page spends a
+   * character budget from the newest turn backward. Anything older sets
+   * `hasMore`, because a page that quietly stops is indistinguishable from a
+   * conversation that quietly stopped.
+   *
+   * A coworker whose source declares no primary conversation gets the explicit
+   * `no-primary-conversation` answer. One of the operator's own Agents is
+   * exactly that: automations only, never conversed with. Returning an empty
+   * transcript for it would render as silence from someone who has never been
+   * spoken to.
+   */
+  async conversation(
+    agentId: string,
+    request: ConversationRequest = {}
+  ): Promise<ConversationResult> {
+    const resolved = this.resolveTarget(agentId);
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        agentId,
+        outcome: resolved.outcome,
+        message: resolved.message,
+      };
+    }
+    const { entry, contextId } = resolved;
+
+    let payload: unknown;
+    try {
+      payload = await entry.session.read('chat.history', {
+        sessionKey: contextId,
+        // One bounded read, asking for one past the cap so that "older turns
+        // exist" is observed rather than guessed.
+        limit: MAX_CONVERSATION_TURNS + 1,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        agentId,
+        outcome: 'unreadable',
+        message: messageOf(error, 'The Gateway did not answer that read.'),
+      };
+    }
+
+    const page = boundConversation(readTranscript(payload, contextId), request);
+    return {
+      ok: true,
+      agentId,
+      sourceId: entry.record.id,
+      contextId,
+      turns: page.turns,
+      hasMore: page.hasMore,
+      characterCount: page.characterCount,
+      observedAt: this.deps.now(),
+      connection: this.connectionFor(entry),
+    };
+  }
+
+  /**
+   * Ask one source to raise Exawatt from observation to conversation.
+   *
+   * The operator act that precedes any send. Three answers matter and the
+   * runtime keeps the third: `granted` and a plain `refused` both settle the
+   * question, while `approval-required` leaves a request standing on the
+   * server, which is what lets a later send say "waiting for your approval"
+   * instead of "read-only" and send the operator somewhere useful.
+   */
+  async requestCommandAuthority(
+    sourceId: string
+  ): Promise<AuthorityRequestResult> {
+    const record = this.deps.store.get(sourceId);
+    if (!record) {
+      return {
+        outcome: 'refused',
+        authority: 'read',
+        message: 'That source is no longer configured.',
+      };
+    }
+    const entry = this.sessions.get(sourceId);
+    if (!entry) {
+      return {
+        outcome: 'refused',
+        authority: record.grantedAuthority,
+        message: `Exawatt is not observing ${record.displayName} right now, so there is nothing to ask.`,
+      };
+    }
+    const result = await entry.session.requestWriteAuthority();
+    if (result.outcome === 'approval-required') {
+      this.awaitingApproval.add(sourceId);
+    } else {
+      this.awaitingApproval.delete(sourceId);
+    }
+    entry.record = this.deps.store.get(sourceId) ?? entry.record;
+    this.emit(entry);
+    return result;
+  }
+
+  /**
+   * Hand write authority back and keep observing.
+   *
+   * The operator's way to a read-only source without detaching it. It changes
+   * what Exawatt may do and nothing about what the coworker is doing.
+   */
+  async relinquishCommandAuthority(
+    sourceId: string
+  ): Promise<AuthorityRequestResult> {
+    const record = this.deps.store.get(sourceId);
+    if (!record) {
+      return {
+        outcome: 'refused',
+        authority: 'read',
+        message: 'That source is no longer configured.',
+      };
+    }
+    const entry = this.sessions.get(sourceId);
+    if (!entry) {
+      return {
+        outcome: 'refused',
+        authority: record.grantedAuthority,
+        message: `Exawatt is not observing ${record.displayName} right now, so there is nothing to hand back.`,
+      };
+    }
+    const result = await entry.session.relinquishWriteAuthority();
+    this.awaitingApproval.delete(sourceId);
+    entry.record = this.deps.store.get(sourceId) ?? entry.record;
+    this.emit(entry);
+    return result;
+  }
+
+  /**
+   * Say something to a coworker (ENG-033 H2).
+   *
+   * The signature is the design rule. It takes an Exawatt Agent id and
+   * resolves the address from the projection, so there is no parameter a
+   * caller could use to aim a message at a cron context, a helper session, or
+   * a delegated child. Opening a subordinate context to read it therefore
+   * cannot retarget this call, whatever the surface above does.
+   *
+   * Authority is checked before the connection is, so a source Exawatt only
+   * watches declines every send without the Gateway client ever seeing the
+   * method name.
+   */
+  async send(
+    agentId: string,
+    text: string,
+    options: SendToAgentOptions = {}
+  ): Promise<SendToAgentResult> {
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return {
+        ok: false,
+        agentId,
+        outcome: 'invalid-message',
+        message: 'Write a message to send.',
+      };
+    }
+    if (text.length > MAX_MESSAGE_CHARACTERS) {
+      return {
+        ok: false,
+        agentId,
+        outcome: 'invalid-message',
+        message: `One message carries up to ${MAX_MESSAGE_CHARACTERS} characters.`,
+      };
+    }
+
+    const mapping = this.mappingFor(agentId);
+    const record = mapping
+      ? this.deps.store.get(mapping.configuredSourceId)
+      : null;
+    if (!mapping || !record) {
+      return {
+        ok: false,
+        agentId,
+        outcome: 'unknown-agent',
+        message: 'Exawatt has no coworker with that id.',
+      };
+    }
+
+    if (record.grantedAuthority !== 'write') {
+      return this.awaitingApproval.has(record.id)
+        ? {
+            ok: false,
+            agentId,
+            outcome: 'approval-pending',
+            message: `Exawatt has asked ${record.displayName} for write access. ${AWAITING_APPROVAL_MESSAGE}`,
+          }
+        : {
+            ok: false,
+            agentId,
+            outcome: 'read-only-source',
+            message: `Exawatt observes ${record.displayName}. Ask this source for write access to talk here.`,
+          };
+    }
+
+    const resolved = this.resolveTarget(agentId);
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        agentId,
+        outcome: resolved.outcome,
+        message: resolved.message,
+      };
+    }
+    const { entry, contextId } = resolved;
+
+    const idempotencyKey = validText(options.idempotencyKey, MAX_ID_LENGTH)
+      ? options.idempotencyKey
+      : randomUUID();
+    const inflightKey = `${entry.record.id}\0${contextId}\0${idempotencyKey}`;
+    const running = this.inflightSends.get(inflightKey);
+    if (running) return running;
+
+    const attempt = this.postMessage(
+      entry,
+      agentId,
+      contextId,
+      text,
+      idempotencyKey
+    ).finally(() => {
+      this.inflightSends.delete(inflightKey);
+    });
+    this.inflightSends.set(inflightKey, attempt);
+    return attempt;
   }
 
   /**
@@ -684,11 +1194,16 @@ export class ConnectedSourceRuntime {
     const entries = [...this.sessions.values()];
     this.sessions.clear();
     this.listeners.clear();
+    this.conversationListeners.clear();
+    this.inflightSends.clear();
+    this.awaitingApproval.clear();
     await Promise.allSettled(
       entries.map(async entry => {
         if (entry.closed) return;
         entry.closed = true;
         entry.offPhase();
+        entry.offEvents();
+        entry.forwardedByRun.clear();
         await entry.session.disconnect();
       })
     );
@@ -708,14 +1223,275 @@ export class ConnectedSourceRuntime {
       session,
       snapshotRevision: 0,
       offPhase: () => {},
+      offEvents: () => {},
       closed: false,
+      forwardedByRun: new Map(),
+      awaitingResnapshot: false,
     };
     // Phase movement is freshness news, not new content, so it never bumps
     // the snapshot revision: a renderer that only cares about topology can
     // ignore a reconnect ladder entirely.
-    entry.offPhase = session.onPhaseChange(() => this.emit(entry));
+    entry.offPhase = session.onPhaseChange(phase => {
+      this.followPhase(entry, phase);
+      this.emit(entry);
+    });
+    // Streaming is capability-declared. A session that exposes no event
+    // stream forwards nothing, and the operator still sees the reply on the
+    // next authoritative read.
+    entry.offEvents =
+      session.onGatewayEvent?.('chat.segment', payload =>
+        this.forwardSegment(entry, payload)
+      ) ?? (() => {});
     this.sessions.set(record.id, entry);
     return entry;
+  }
+
+  /**
+   * A connection moved. Two transitions matter to a conversation.
+   *
+   * Losing observation invalidates every half-streamed reply: Exawatt has no
+   * idea what arrived while it was not watching, and the Gateway replays
+   * nothing. Regaining it means the session has already resnapshotted
+   * authoritatively, so the renderer is told to read history again. That is
+   * how a reply in flight across a drop is recovered: from the source's own
+   * record of it, reconciled by stable turn identity, never from a replayed
+   * frame or a stored sequence.
+   *
+   * None of this says anything about the remote Agent, which kept working
+   * throughout.
+   */
+  private followPhase(entry: SessionEntry, phase: ConnectedGatewayPhase): void {
+    if (phase === 'reconnecting' || phase === 'failed' || phase === 'idle') {
+      entry.forwardedByRun.clear();
+      entry.awaitingResnapshot = true;
+      return;
+    }
+    if (phase !== 'connected' || !entry.awaitingResnapshot) return;
+    entry.awaitingResnapshot = false;
+    for (const target of this.primaryTargetsOf(entry)) {
+      this.publish({
+        agentId: target.agentId,
+        sourceId: entry.record.id,
+        contextId: target.contextId,
+        runId: null,
+        kind: 'resnapshot',
+        text: '',
+        ordinal: this.nextOrdinal(),
+        at: this.deps.now(),
+      });
+    }
+  }
+
+  /**
+   * One streamed reply fragment, forwarded if and only if it belongs to a
+   * mapped coworker's primary conversation. An event for any other context is
+   * a work record: H2's conversation surface has one address, and this is the
+   * transport-side half of that promise.
+   */
+  private forwardSegment(entry: SessionEntry, payload: unknown): void {
+    if (this.disposed || entry.closed) return;
+    if (!payload || typeof payload !== 'object') return;
+    const row = payload as Record<string, unknown>;
+    if (!validText(row.sessionKey, MAX_ID_LENGTH)) return;
+    const sessionKey = row.sessionKey;
+    const target = this.primaryTargetsOf(entry).find(
+      candidate => candidate.contextId === sessionKey
+    );
+    if (!target) return;
+
+    const runId = validText(row.runId, MAX_ID_LENGTH) ? row.runId : null;
+    const runKey = runId ?? sessionKey;
+    const forwarded = entry.forwardedByRun.get(runKey) ?? 0;
+    const base = {
+      agentId: target.agentId,
+      sourceId: entry.record.id,
+      contextId: target.contextId,
+      runId,
+      at: this.deps.now(),
+    };
+
+    if (forwarded > MAX_UPDATES_PER_RUN) return;
+    if (forwarded === MAX_UPDATES_PER_RUN) {
+      // Said once, then quiet. The renderer reads the conversation for the
+      // rest rather than receiving an unbounded stream.
+      entry.forwardedByRun.set(runKey, forwarded + 1);
+      this.publish({
+        ...base,
+        kind: 'bounded',
+        text: '',
+        ordinal: this.nextOrdinal(),
+      });
+      return;
+    }
+    entry.forwardedByRun.set(runKey, forwarded + 1);
+
+    const delta = typeof row.delta === 'string' ? row.delta : '';
+    if (delta.length > 0) {
+      this.publish({
+        ...base,
+        kind: 'delta',
+        text: delta.slice(0, MAX_UPDATE_CHARACTERS),
+        ordinal: this.nextOrdinal(),
+      });
+    }
+    if (row.done === true) {
+      entry.forwardedByRun.delete(runKey);
+      this.publish({
+        ...base,
+        kind: 'complete',
+        text: '',
+        ordinal: this.nextOrdinal(),
+      });
+    }
+  }
+
+  /**
+   * Every mapped coworker on this source that has a primary conversation,
+   * with the exact address the source declared for it. The one place a
+   * session key is derived, and it is derived from the projection.
+   */
+  private primaryTargetsOf(
+    entry: SessionEntry
+  ): { agentId: string; contextId: string }[] {
+    const snapshot = entry.session.snapshot;
+    if (!snapshot) return [];
+    const targets: { agentId: string; contextId: string }[] = [];
+    for (const mapping of this.deps.plans.read().mappings) {
+      if (mapping.configuredSourceId !== entry.record.id) continue;
+      const primary = snapshot.contexts.find(
+        context =>
+          context.nativeAgentId === mapping.nativeAgentId &&
+          isPrimaryConversation(context)
+      );
+      if (!primary) continue;
+      targets.push({
+        agentId: mapping.exawattAgentId,
+        contextId: primary.nativeContextId,
+      });
+    }
+    return targets;
+  }
+
+  private mappingFor(agentId: string): ConnectedAgentMapping | null {
+    if (!validText(agentId, MAX_ID_LENGTH)) return null;
+    return (
+      this.deps.plans
+        .read()
+        .mappings.find(mapping => mapping.exawattAgentId === agentId) ?? null
+    );
+  }
+
+  /**
+   * Resolve a coworker's conversation address, or say precisely why there is
+   * none. The mapping is durable and the snapshot is not, which is why an
+   * unopened source answers `disconnected` rather than losing the coworker.
+   */
+  private resolveTarget(agentId: string):
+    | { ok: true; entry: SessionEntry; contextId: string }
+    | {
+        ok: false;
+        outcome: 'unknown-agent' | 'no-primary-conversation' | 'disconnected';
+        message: string;
+      } {
+    const mapping = this.mappingFor(agentId);
+    if (!mapping) {
+      return {
+        ok: false,
+        outcome: 'unknown-agent',
+        message: 'Exawatt has no coworker with that id.',
+      };
+    }
+    const record = this.deps.store.get(mapping.configuredSourceId);
+    if (!record) {
+      return {
+        ok: false,
+        outcome: 'unknown-agent',
+        message: "That coworker's source is no longer configured.",
+      };
+    }
+    const entry = this.sessions.get(mapping.configuredSourceId);
+    const snapshot = entry?.session.snapshot ?? null;
+    if (!entry || !snapshot) {
+      return {
+        ok: false,
+        outcome: 'disconnected',
+        message: `Exawatt is not observing ${record.displayName} right now. Reconnect to catch up.`,
+      };
+    }
+    if (
+      !snapshot.agents.some(
+        agent => agent.nativeAgentId === mapping.nativeAgentId
+      )
+    ) {
+      return {
+        ok: false,
+        outcome: 'unknown-agent',
+        message: "That coworker is not in the source's current configuration.",
+      };
+    }
+    const primary = snapshot.contexts.find(
+      context =>
+        context.nativeAgentId === mapping.nativeAgentId &&
+        isPrimaryConversation(context)
+    );
+    if (!primary) {
+      return {
+        ok: false,
+        outcome: 'no-primary-conversation',
+        message:
+          'This coworker holds no conversation on its source. Its automations and results are where it reports.',
+      };
+    }
+    return { ok: true, entry, contextId: primary.nativeContextId };
+  }
+
+  /** The one place `chat.send` is formed, behind every check above it. */
+  private async postMessage(
+    entry: SessionEntry,
+    agentId: string,
+    contextId: string,
+    text: string,
+    idempotencyKey: string
+  ): Promise<SendToAgentResult> {
+    let payload: unknown;
+    try {
+      payload = await entry.session.write('chat.send', {
+        sessionKey: contextId,
+        text,
+        idempotencyKey,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        agentId,
+        outcome: 'refused',
+        message: messageOf(error, 'The Gateway did not accept that message.'),
+      };
+    }
+    const result =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    return {
+      ok: true,
+      agentId,
+      sourceId: entry.record.id,
+      contextId,
+      runId: validText(result.runId, MAX_ID_LENGTH) ? result.runId : null,
+      status: result.status === 'queued' ? 'queued' : 'sent',
+      idempotencyKey,
+      at: this.deps.now(),
+    };
+  }
+
+  private nextOrdinal(): number {
+    this.updateOrdinal += 1;
+    return this.updateOrdinal;
+  }
+
+  private publish(update: ConversationUpdate): void {
+    if (this.disposed) return;
+    for (const listener of this.conversationListeners) listener(update);
   }
 
   private connectionFor(entry: SessionEntry | null): SourceConnectionView {
@@ -775,6 +1551,143 @@ export class ConnectedSourceRuntime {
 
 function isPrimaryConversation(context: SourceContextRecord): boolean {
   return context.roles.includes('primary-conversation');
+}
+
+function messageOf(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message.slice(0, MAX_TEXT_LENGTH);
+  }
+  return fallback;
+}
+
+/**
+ * One turn's stable id.
+ *
+ * A digest of the address, the voice, the moment, and the exact words, plus
+ * which repeat it is among identical siblings. Deliberately derived rather
+ * than minted: the same turn read twice, or read again after a reconnect,
+ * must carry the same id so the renderer reconciles instead of duplicating.
+ * It carries no hostname, no native session key in the clear, and it is safe
+ * in a URL.
+ */
+function conversationTurnId(fingerprint: string, occurrence: number): string {
+  const digest = createHash('sha256')
+    .update(`${fingerprint}\0${occurrence}`)
+    .digest('hex');
+  return `turn-${digest.slice(0, 24)}`;
+}
+
+/**
+ * Read one `chat.history` row. Fails closed per row, exactly as the projection
+ * plan does: one malformed entry costs that entry, never the transcript.
+ */
+function readConversationTurn(
+  value: unknown,
+  contextId: string,
+  seen: Map<string, number>
+): ConversationTurnView | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const role: ConversationRole | null =
+    row.role === 'user'
+      ? 'operator'
+      : row.role === 'assistant'
+        ? 'agent'
+        : null;
+  if (role === null) return null;
+  if (typeof row.content !== 'string') return null;
+  const content = row.content;
+  const at =
+    typeof row.timestamp === 'number' && Number.isFinite(row.timestamp)
+      ? row.timestamp
+      : 0;
+  const fingerprint = [contextId, role, String(at), content].join('\0');
+  const occurrence = (seen.get(fingerprint) ?? 0) + 1;
+  seen.set(fingerprint, occurrence);
+  return {
+    id: conversationTurnId(fingerprint, occurrence),
+    role,
+    text: content.slice(0, MAX_TURN_CHARACTERS),
+    at,
+    runId: validText(row.runId, MAX_ID_LENGTH) ? row.runId : null,
+    clipped: content.length > MAX_TURN_CHARACTERS,
+  };
+}
+
+/**
+ * The `chat.history` payload as turns, in the order the source retains them.
+ *
+ * Exawatt does not re-sort by timestamp. The source owns the order of its own
+ * conversation, and a clock Exawatt does not own is the wrong authority to
+ * rearrange someone's words by.
+ */
+export function readTranscript(
+  payload: unknown,
+  contextId: string
+): ConversationTurnView[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const messages = (payload as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return [];
+  const seen = new Map<string, number>();
+  const turns: ConversationTurnView[] = [];
+  for (const row of messages.slice(0, MAX_CONVERSATION_TURNS + 1)) {
+    const turn = readConversationTurn(row, contextId, seen);
+    if (turn) turns.push(turn);
+  }
+  return turns;
+}
+
+/**
+ * Page from the newest turn backward, and say when there is more.
+ *
+ * Two budgets apply at once, turns and characters, and whichever binds first
+ * sets `hasMore`. Reading backward is what makes the bound honest: the turns
+ * an operator most needs are the recent ones, so a clipped page loses the
+ * oldest end and admits it rather than losing the newest end silently.
+ */
+export function boundConversation(
+  all: readonly ConversationTurnView[],
+  request: ConversationRequest = {}
+): {
+  turns: ConversationTurnView[];
+  hasMore: boolean;
+  characterCount: number;
+} {
+  const requested =
+    typeof request.limit === 'number' && Number.isFinite(request.limit)
+      ? Math.floor(request.limit)
+      : DEFAULT_CONVERSATION_TURNS;
+  const limit = Math.max(1, Math.min(MAX_CONVERSATION_TURNS, requested));
+
+  let window = all;
+  if (validText(request.beforeTurnId, MAX_ID_LENGTH)) {
+    const index = all.findIndex(turn => turn.id === request.beforeTurnId);
+    // A cursor this page no longer holds reads from the newest end rather
+    // than answering nothing, so a stale cursor never looks like an empty
+    // conversation.
+    if (index >= 0) window = all.slice(0, index);
+  }
+
+  const newestFirst: ConversationTurnView[] = [];
+  let characterCount = 0;
+  for (let index = window.length - 1; index >= 0; index -= 1) {
+    const turn = window[index];
+    if (newestFirst.length >= limit) break;
+    if (
+      newestFirst.length > 0 &&
+      characterCount + turn.text.length > MAX_CONVERSATION_CHARACTERS
+    ) {
+      break;
+    }
+    newestFirst.push(turn);
+    characterCount += turn.text.length;
+  }
+  newestFirst.reverse();
+  return {
+    turns: newestFirst,
+    hasMore: newestFirst.length < window.length,
+    characterCount,
+  };
 }
 
 /**

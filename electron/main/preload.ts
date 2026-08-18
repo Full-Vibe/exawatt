@@ -58,8 +58,13 @@ contextBridge.exposeInMainWorld('electron', {
   },
   // ENG-010 C1. Configured sources are saved connections to a Gateway, local
   // or hosted. The renderer sees names and health; SSH material and the OS
-  // keychain never cross this boundary, and there is no command channel here
-  // because H1 is read-only.
+  // keychain never cross this boundary.
+  //
+  // ENG-033 H2 adds one command channel and no more: ask a source for write
+  // access, read a coworker's primary conversation, send to it, follow the
+  // reply. Nothing here reaches an admin method, and `send` takes an Agent
+  // id rather than a session key, so no renderer call can address any context
+  // other than that coworker's primary conversation.
   connectedSources: {
     list: () => ipcRenderer.invoke('connected-sources:list'),
     /** Passive: reads SSH config text, never contacts a server. */
@@ -84,6 +89,29 @@ contextBridge.exposeInMainWorld('electron', {
     detach: (id: string) => ipcRenderer.invoke('connected-sources:detach', id),
     /** Which source moved and how fresh it is — never a topology payload. */
     onChanged: subscribe<unknown>('connected-sources:changed'),
+    /** What Exawatt may do with each source. Never a freshness signal. */
+    commandAuthority: () =>
+      ipcRenderer.invoke('connected-sources:command-authority'),
+    /** Asks the source to raise Exawatt from observation to conversation. */
+    requestCommandAuthority: (id: string) =>
+      ipcRenderer.invoke('connected-sources:request-command-authority', id),
+    /** Hands write access back; observation continues. */
+    relinquishCommandAuthority: (id: string) =>
+      ipcRenderer.invoke('connected-sources:relinquish-command-authority', id),
+    /** One coworker's primary conversation, bounded. A read, not a command. */
+    conversation: (agentId: string, request?: unknown) =>
+      ipcRenderer.invoke('connected-sources:conversation', agentId, request),
+    /**
+     * Sends to that coworker's primary conversation. There is no session-key
+     * parameter by design: the address follows from the Agent, so no caller
+     * can aim a message at a cron run, a helper context, or a delegated child.
+     */
+    send: (agentId: string, text: string, options?: unknown) =>
+      ipcRenderer.invoke('connected-sources:send', agentId, text, options),
+    /** Bounded, ordered reply updates keyed by Agent and run. */
+    onConversationUpdate: subscribe<unknown>(
+      'connected-sources:conversation-updated'
+    ),
   },
   operatorStats: {
     scan: (since: string, timezone: string) =>
