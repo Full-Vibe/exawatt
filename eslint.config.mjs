@@ -58,6 +58,8 @@ const eslintConfig = [
       "build/**",
       "dist/**",
       "dist-electron/**",
+      // Composed company output is a COPY of files linted at their real path.
+      ".company-build/**",
       "next-env.d.ts",
     ],
   },

@@ -16,7 +16,11 @@ export default defineConfig({
       // the glob matches nothing in a public checkout.
       'company/overlay/web/src/**/*.{test,spec}.ts',
     ],
-    exclude: ['src/**/*.dom.{test,spec}.ts', '**/node_modules/**'],
+    exclude: [
+      'src/**/*.dom.{test,spec}.ts',
+      '**/node_modules/**',
+      '.company-build/**',
+    ],
   },
   resolve: {
     alias: {
