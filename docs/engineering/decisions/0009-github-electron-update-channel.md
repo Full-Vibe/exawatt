@@ -29,7 +29,7 @@ never silently restart it while sessions are live.
   app and hidden renderer signatures and timestamps, notarizes and staples the
   app, rebuilds the distribution containers, runs the normal release checks,
   publishes, and deletes the temporary private asset.
-- The private `Full-Vibe/exawatt` GitHub Release remains the source-linked CI
+- The private `Full-Vibe/exawatt-company` GitHub Release remains the source-linked CI
   archive. It cannot be the installed app's feed: anonymous clients receive
   `404`, while a private GitHub updater would require a reusable repository
   token on every Mac.
