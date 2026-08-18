@@ -20,6 +20,7 @@ test('agent instructions describe the queued delivery contract, not the retired 
   assert.match(agents, /every tracked path has an open-source disposition/);
   assert.match(agents, /only PUBLIC\/GENERATED paths/);
   assert.match(agents, /PRIVATE\/EXCLUDED paths remain classified/);
+  assert.match(agents, /open a pull request against `master`/);
   assert.doesNotMatch(
     agents,
     /reports that `origin\/master` moved, rebase the agent branch/
