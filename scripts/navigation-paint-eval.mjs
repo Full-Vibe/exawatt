@@ -122,7 +122,7 @@ page.on('console', message => {
 
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load', timeout: 30_000 });
-  const command = page.locator('[data-command-key-button]');
+  const command = page.locator('[data-home-architecture-button]');
   await command.waitFor({ state: 'attached' });
   await page.waitForFunction(
     () => document.documentElement.dataset.exaTheme === 'exawatt-air-light'
@@ -134,8 +134,6 @@ try {
     .getAttribute('data-public-dark-chrome');
   const samples = [];
 
-  // Use the real pointer path: the command control owns a physical-release
-  // contract before it asks Next to navigate.
   navigationArmed = true;
   await command.click({ noWaitAfter: true });
   const startedAt = performance.now();

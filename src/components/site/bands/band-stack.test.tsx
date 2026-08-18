@@ -18,10 +18,6 @@ vi.mock('@/app/_hero-bg', () => ({
   HeroBg: () => <div data-testid="hero-bg" />,
 }));
 
-vi.mock('@/components/hud/webgl/keyswitch-study', () => ({
-  CommandKeySwitchButton: () => <div data-testid="command-key" />,
-}));
-
 describe('homepage band composition', () => {
   it('registers a component for every shipped band', () => {
     // The converse is deliberately NOT asserted after W5. A registered
