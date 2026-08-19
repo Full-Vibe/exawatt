@@ -1005,3 +1005,48 @@ probe is a counted failure there, so a few suite runs would have banned the
 operator from their own production machine. That probe is now opt-in behind its
 own flag; every other failure case uses a name that never resolves or a port
 nothing answers, so none of them reach sshd at all.
+
+### 2026-08-19 — three ways an absence passed for a fact
+
+A live run against both dogfood Gateways failed five tests, and the failures
+were worth more than the pass would have been. None of them were in a product
+path. All of them were in the checks that guard the safety claims, which is the
+worse place to be wrong.
+
+`deviceListing` answered an unreadable listing with an empty listing. Its
+comment defended the choice -- an unreadable listing means no cleanup target,
+never a guess -- and that reasoning holds in exactly one direction. The same
+helper takes the BEFORE snapshot that cleanup subtracts against, so a single
+swallowed SSH failure empties `devicesBefore`, and every device on the server
+then looks like one this run created. The operator's own `operator.admin`
+credential is on that list. It also feeds the untouched-server comparison,
+where two failed reads compare empty to empty and report a clean result: the
+strongest claim this project makes, satisfiable without ever reading the
+server. The listing now retries and then throws, and cleanup refuses to delete
+on evidence it could not read.
+
+The out-of-band verifier hit our own deadline. `observeSource` reads server
+state through the source's CLI rather than through the Gateway socket under
+test, on purpose: asking the path under test whether the path under test
+changed anything is asking the suspect for an alibi. The cost is that it runs
+`openclaw` on a live production box while that box is also serving the
+connection being tested, and those invocations are sometimes slower than one
+exec deadline. The symptom was `exit null` -- not a server error, our own kill
+-- on commands that take three seconds when asked on their own. Retried now,
+for the same reason: "the command did not finish" and "there are no cron jobs"
+must never arrive looking alike.
+
+The read-only proof cannot tell refusal from silence. Three writes are attempted
+and asserted to reject, under a comment claiming the server refuses rather than
+Exawatt declining. But `call` times out after ten seconds, so a Gateway that
+simply never answers satisfies the assertion identically. Both dogfood servers
+do refuse properly, which is why this has never shown as red. It is still a
+proof of the wrong thing.
+
+One measurement worth keeping: disabling SSH multiplexing, which C1 correctly
+required so a detach cannot hand its forward to someone else's master, costs
+connections. One suite run now opens over five hundred authenticated SSH
+sessions against a single server. Neither dogfood box throttles at that rate
+and production opens a handful per source, so nothing needs changing -- but the
+number is the kind that stops being free at a customer's scale, and it should
+be known before it is discovered.

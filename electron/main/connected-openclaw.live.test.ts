@@ -16,6 +16,7 @@ import {
   bootstrapGatewayCredentialOverSsh,
   createSshRemoteExec,
   resolveGatewayCredential,
+  type RemoteExecResult,
 } from './gateway-bootstrap';
 import {
   ConnectedGatewaySession,
@@ -100,27 +101,58 @@ async function connectReadOnly(localPort: number, token: string) {
  * second copy of the cleanup for the second transport would be a second chance
  * to leave a dead device on someone's server.
  */
+const DEVICE_LISTING_ATTEMPTS = 3;
+const DEVICE_LISTING_RETRY_MS = 750;
+
+/**
+ * Read the source's own device listing, or fail loudly.
+ *
+ * This used to answer an unreadable listing with an empty one, reasoning that
+ * no listing means no cleanup target. That is true in one direction and
+ * catastrophic in the other: the same helper takes the BEFORE snapshot that
+ * `removeDevicesCreatedOn` subtracts against, so one swallowed SSH failure
+ * makes `devicesBefore` empty, and every device on the server then looks like
+ * one this run created -- including the operator's own `operator.admin`
+ * credential. A run that cannot see the server must not proceed to delete
+ * things on it, so this throws and the callers decide.
+ *
+ * Transient SSH failures are retried rather than fatal, because a flaky
+ * network should not read as a missing device.
+ */
 async function deviceListing(destination: SshDestination): Promise<{
   pending: unknown[];
   paired: { deviceId?: string; scopes?: string[] }[];
 }> {
-  const listed = await createSshRemoteExec()(destination, [
-    'openclaw',
-    'devices',
-    'list',
-    '--json',
-  ]);
-  if (listed.code !== 0) return { pending: [], paired: [] };
-  try {
-    const parsed = JSON.parse(listed.stdout) as {
-      pending?: unknown[];
-      paired?: { deviceId?: string; scopes?: string[] }[];
-    };
-    return { pending: parsed.pending ?? [], paired: parsed.paired ?? [] };
-  } catch {
-    // An unreadable listing means no cleanup target, never a guess.
-    return { pending: [], paired: [] };
+  let lastProblem = 'no attempt was made';
+  for (let attempt = 1; attempt <= DEVICE_LISTING_ATTEMPTS; attempt += 1) {
+    const listed = await createSshRemoteExec()(destination, [
+      'openclaw',
+      'devices',
+      'list',
+      '--json',
+    ]);
+    if (listed.code === 0) {
+      try {
+        const parsed = JSON.parse(listed.stdout) as {
+          pending?: unknown[];
+          paired?: { deviceId?: string; scopes?: string[] }[];
+        };
+        return { pending: parsed.pending ?? [], paired: parsed.paired ?? [] };
+      } catch {
+        lastProblem = 'the listing was not JSON';
+      }
+    } else {
+      lastProblem = `the listing command exited ${listed.code}`;
+    }
+    if (attempt < DEVICE_LISTING_ATTEMPTS) {
+      await new Promise(resolve =>
+        setTimeout(resolve, DEVICE_LISTING_RETRY_MS * attempt)
+      );
+    }
   }
+  throw new Error(
+    `Could not read the device listing after ${DEVICE_LISTING_ATTEMPTS} attempts: ${lastProblem}.`
+  );
 }
 
 /** Device ids the source currently has paired, addressed by destination. */
@@ -171,7 +203,18 @@ async function removeDevicesCreatedOn(
   before: Set<string>
 ): Promise<void> {
   const exec = createSshRemoteExec();
-  for (const id of await pairedDeviceIdsOn(destination)) {
+  let current: Set<string>;
+  try {
+    current = await pairedDeviceIdsOn(destination);
+  } catch (error) {
+    // Leaving a dead read-only device behind is untidy. Deleting a device on
+    // evidence we could not read is unrecoverable, so this stops and says so.
+    console.warn(
+      `[live] device cleanup skipped: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return;
+  }
+  for (const id of current) {
     if (before.has(id)) continue;
     await exec(destination, ['openclaw', 'devices', 'remove', id]);
   }
@@ -182,6 +225,35 @@ async function removeDevicesCreatedDuringRun(
   before: Set<string>
 ): Promise<void> {
   await removeDevicesCreatedOn(sshTarget(alias), before);
+}
+
+/**
+ * A write must be REFUSED, and a refusal is not the same as silence.
+ *
+ * `expect(...).rejects.toThrow()` is satisfied identically by a server that
+ * denies the call and by one that never answers it, because `call` gives up
+ * after its own timeout and rejects either way. The claim this project makes
+ * is that read scope is the source's enforcement rather than Exawatt's
+ * restraint, and a client-side timeout proves the opposite of that: it proves
+ * only that we stopped waiting. Both dogfood Gateways do refuse properly,
+ * which is exactly why this distinction has never shown as red.
+ */
+async function expectServerRefusal(
+  call: Promise<unknown>,
+  method: string
+): Promise<void> {
+  let refusal: unknown;
+  try {
+    await call;
+  } catch (error) {
+    refusal = error;
+  }
+  expect(refusal, `${method} was allowed, not refused`).toBeDefined();
+  const message = refusal instanceof Error ? refusal.message : String(refusal);
+  expect(
+    /timed out/i.test(message),
+    `${method} did not answer at all; a client timeout is not a refusal (${message})`
+  ).toBe(false);
 }
 
 describe.skipIf(ALIASES.length === 0)('live OpenClaw source', () => {
@@ -356,13 +428,18 @@ describe.skipIf(ALIASES.length === 0)('live OpenClaw source', () => {
         // refused by the server rather than merely skipped by Exawatt. Both
         // the conversation path and the automation path are checked, because
         // H2 and H3 arrive separately and neither may leak in early.
-        await expect(
-          gateway.call('chat.send', { key: 'agent:none:main', text: 'x' })
-        ).rejects.toThrow();
-        await expect(
-          gateway.call('cron.add', { name: 'probe', schedule: '0 0 * * *' })
-        ).rejects.toThrow();
-        await expect(gateway.call('sessions.create', {})).rejects.toThrow();
+        await expectServerRefusal(
+          gateway.call('chat.send', { key: 'agent:none:main', text: 'x' }),
+          'chat.send'
+        );
+        await expectServerRefusal(
+          gateway.call('cron.add', { name: 'probe', schedule: '0 0 * * *' }),
+          'cron.add'
+        );
+        await expectServerRefusal(
+          gateway.call('sessions.create', {}),
+          'sessions.create'
+        );
       } finally {
         gateway.disconnect();
         await opened.tunnel.close();
@@ -468,17 +545,75 @@ interface ObservedSourceState {
  * `stderr` is deliberately not in the thrown message: it names hosts, users,
  * and key paths, and this repository is public.
  */
+/**
+ * Budgets, not guesses: these reads take about three seconds against both
+ * dogfood servers, and `observeSource` makes five of them inside hooks that
+ * allow two minutes. One retry at fifteen seconds keeps the worst realistic
+ * case (one killed command, the rest normal) near forty seconds, where a
+ * three-attempt budget would have blown the hook it runs in -- which is
+ * exactly what happened when this retry was first written.
+ */
+/**
+ * These hooks read a live production server through its own CLI, and that CLI
+ * serializes behind the agent's real work: when the dogfood Reddit agent is
+ * mid-turn with a browser open, `openclaw agents list` can block for minutes
+ * where it normally answers in three seconds. No retry budget can promise
+ * otherwise, so the budget is generous and the failure, when it comes, says
+ * what it means instead of looking like a product fault.
+ */
+const LIVE_HOOK_TIMEOUT_MS = 300_000;
+
+const SOURCE_READ_ATTEMPTS = 2;
+const SOURCE_READ_RETRY_MS = 1_000;
+const SOURCE_READ_TIMEOUT_MS = 15_000;
+
+/**
+ * Read server state out of band, through the source's own CLI.
+ *
+ * This deliberately does NOT go through the Gateway socket the product uses:
+ * the question it answers is "did Exawatt change anything here", and asking
+ * that through the path under test would be asking the suspect for an alibi.
+ * The cost is that it runs `openclaw` on a live production box while the same
+ * box is serving the connection under test, and those invocations are
+ * occasionally slower than one exec deadline -- observed against a real
+ * dogfood server as `exit null`, our own deadline killing a command that takes
+ * three seconds when asked on its own.
+ *
+ * A killed command is retried rather than believed, because "the command did
+ * not finish" and "the server has no cron jobs" must never look alike: this
+ * helper feeds the untouched-server comparison, where a wrong empty answer on
+ * either side reads as a clean result.
+ */
 async function readFromSource(
   alias: string,
   argv: readonly string[]
 ): Promise<string> {
-  const result = await createSshRemoteExec()(sshTarget(alias), argv);
-  if (result.code !== 0) {
-    throw new Error(
-      `Read-only source command failed: ${argv.join(' ')} (exit ${String(result.code)})`
-    );
+  let last: RemoteExecResult | null = null;
+  for (let attempt = 1; attempt <= SOURCE_READ_ATTEMPTS; attempt += 1) {
+    last = await createSshRemoteExec({
+      timeoutMs: SOURCE_READ_TIMEOUT_MS,
+    })(sshTarget(alias), argv);
+    if (last.code === 0) return last.stdout;
+    // Only our own deadline is worth a second ask. A command that ran and
+    // exited non-zero answered the question, and asking again just delays a
+    // real failure.
+    if (last.code !== null) break;
+    if (attempt < SOURCE_READ_ATTEMPTS) {
+      await new Promise(resolve =>
+        setTimeout(resolve, SOURCE_READ_RETRY_MS * attempt)
+      );
+    }
   }
-  return result.stdout;
+  throw new Error(
+    `Read-only source command failed after ${SOURCE_READ_ATTEMPTS} attempts: ` +
+      `${argv.join(' ')} (exit ${String(last?.code)}). ` +
+      (last?.code === null
+        ? 'Exit null is this harness killing the command at its own deadline, ' +
+          'not the server refusing: the source CLI serializes behind agent ' +
+          'work, so a busy agent can outlast the budget. Check whether the ' +
+          'source was mid-turn before reading this as a defect.'
+        : 'The command ran and exited non-zero, so the server answered.')
+  );
 }
 
 function jsonFromSource(text: string): unknown {
@@ -950,7 +1085,7 @@ describe.skipIf(ALIASES.length === 0)('live OpenClaw lifecycle', () => {
       const added = launch.store.add(context.sourceInput);
       expect(added.ok, JSON.stringify(added)).toBe(true);
       if (added.ok) context.sourceId = added.record.id;
-    }, 120_000);
+    }, LIVE_HOOK_TIMEOUT_MS);
 
     afterAll(async () => {
       await closeLaunch(context);
@@ -961,7 +1096,7 @@ describe.skipIf(ALIASES.length === 0)('live OpenClaw lifecycle', () => {
       if (context.userDataDir) {
         fs.rmSync(context.userDataDir, { recursive: true, force: true });
       }
-    }, 120_000);
+    }, LIVE_HOOK_TIMEOUT_MS);
 
     it('observes the source and places its configured coworkers', async () => {
       const launch = launchOf(context);
@@ -1910,12 +2045,14 @@ describe.skipIf(!MANUAL_CONFIGURED)('live OpenClaw manual transport', () => {
 
         // Read scope is the source's enforcement, not Exawatt's restraint, and
         // the transport does not change who enforces it.
-        await expect(
-          gateway.call('chat.send', { key: 'agent:none:main', text: 'x' })
-        ).rejects.toThrow();
-        await expect(
-          gateway.call('cron.add', { name: 'probe', schedule: '0 0 * * *' })
-        ).rejects.toThrow();
+        await expectServerRefusal(
+          gateway.call('chat.send', { key: 'agent:none:main', text: 'x' }),
+          'chat.send'
+        );
+        await expectServerRefusal(
+          gateway.call('cron.add', { name: 'probe', schedule: '0 0 * * *' }),
+          'cron.add'
+        );
       } finally {
         gateway.disconnect();
       }
