@@ -30,6 +30,18 @@ import { SITE_GROUND } from './site-ground';
  *   carry it. Below `md` there is no column beside the image, so there is no
  *   wash either.
  *
+ * A PHONE LETTERBOXES RATHER THAN CROPS (ENG-031 W13, operator: "at least
+ * just constrain it, it's fine, mobile users are used to watching landscape
+ * videos in portrait anyway"). The asset is 3:2 and the fold's frame on a
+ * phone is portrait, so `cover` either trims the raised hands off the sides or
+ * the head off the top depending on which way the box leans. `contain` against
+ * the page's own ground keeps the whole composition, and because the ground
+ * behind it is the same colour the board paints, the bars are not bars: the
+ * picture simply ends. It is held to the TOP of its band so the type the fold
+ * prints over it lands on the picture's lower edge rather than on empty
+ * ground. Above `md` the fold is a landscape frame with the type beside the
+ * board, so `cover` is right there and stays.
+ *
  * SIZES. Rendered full-bleed in its box at every viewport, so `100vw` is the
  * honest hint and the optimizer serves one derivative per real breakpoint.
  * `next/image` negotiates AVIF then WebP and falls back to the PNG, which is
@@ -60,11 +72,7 @@ export function FoldGestureImage({
         sizes="100vw"
         priority={priority}
         loading={priority ? undefined : 'lazy'}
-        className="object-cover"
-        // Cover crops the vertical on a wide frame. Held above centre so the
-        // figure's head and raised hands stay inside the frame rather than
-        // being trimmed by the top edge.
-        style={{ objectPosition: 'center 32%' }}
+        className="object-contain object-top md:object-cover md:object-[center_32%]"
         data-fold-gesture-image
       />
       <div
@@ -81,6 +89,30 @@ export function FoldGestureImage({
             SITE_GROUND,
             0.4
           )} 74%, ${spatialColorWithAlpha(SITE_GROUND, 0.88)} 100%)`,
+        }}
+      />
+      {/* THE PORTRAIT WASH (W13). The desktop fold gives its type a column and
+          washes the picture left to right behind it; a phone has no column, so
+          the same idea turns ninety degrees and the wash comes UP from the
+          bottom under the words. It starts at the picture's own lower edge and
+          is opaque by the time it reaches the button, so the headline sits on
+          the image with nothing dimmed above it. Phone only, for the same
+          reason the left wash is desktop only: each answers a layout the other
+          does not have. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 md:hidden"
+        style={{
+          background: `linear-gradient(to top, ${spatialColorWithAlpha(
+            SITE_GROUND,
+            0.97
+          )} 0%, ${spatialColorWithAlpha(
+            SITE_GROUND,
+            0.9
+          )} 34%, ${spatialColorWithAlpha(
+            SITE_GROUND,
+            0.45
+          )} 56%, ${spatialColorWithAlpha(SITE_GROUND, 0)} 74%)`,
         }}
       />
       <div

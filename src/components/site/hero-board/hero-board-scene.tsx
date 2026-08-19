@@ -70,6 +70,9 @@ import {
   boardCenter,
   heroBoardFramings,
   HERO_DEFAULT_LADDER,
+  DELEGATION_OVERFLOW_SCALE,
+  heroDelegationPosition,
+  MARK_GLYPH_RADIUS,
   MARK_SCALE,
   NARROW_FRAME_PX,
   type HeroAltitude,
@@ -427,15 +430,31 @@ function HeroZones({
 const MARK_BY_STATUS = [3, 4, 1, 1, 0, 2] as const;
 
 /**
- * The mark every unit takes while a non-status LENS is on (ENG-031 W8).
+ * A LENS OWNS THE COLOUR; STATUS ALWAYS OWNS THE SHAPE (ENG-031 W13,
+ * superseding W8's `LENS_MARK`).
  *
- * Mark SHAPE is a second status channel: a blocked agent is a different glyph
- * from an idle one, which is what keeps the board readable without colour.
- * Under a burn or source lens the colour no longer means status, so leaving
- * the shape meaning status would put two different claims on one mark. Every
- * unit takes the plain mark and the lens owns the reading.
+ * W8 flattened every mark to the plain ring while a burn or source lens was
+ * on, reasoning that colour and shape both meaning status would put two claims
+ * on one mark. Read on the assembled page that is backwards, and the operator
+ * found it at the panel it hurts most: "at the Cloud Platform framing I see 21
+ * agents, 19 active, and nearly every mark renders grey with three red. Looks
+ * bland and broken without blue spinning and green checks."
+ *
+ * The measurement behind it. At that framing the `source` lens was on, so
+ * every mark was a plain ring and the fleet was painted by harness. The demo
+ * fixture then carried two harnesses, and Cloud Platform's twenty-one Agents
+ * were eighteen Codex (declared `#ECECEC`) and three Claude Code (declared
+ * `#DD896F`): eighteen near-white rings and three salmon ones, exactly as
+ * reported, while the DOM label beside them kept printing a live "N active"
+ * read off a status channel the picture had stopped drawing. Two fixes meet
+ * here: the fixture now spans five harnesses, and the shape channel stays.
+ *
+ * Colour answers "whose agent is this" and shape answers "what is it doing".
+ * Those are two questions, not two answers to one, and the legend beside the
+ * panel names only the colours. So the arcs still turn, the checks still land,
+ * the working-to-done pop still fires, and the count under a Project is about
+ * something the board is visibly drawing at every framing.
  */
-const LENS_MARK = 0;
 
 function HeroUnits({
   theme,
@@ -716,7 +735,9 @@ function HeroUnits({
     for (let index = 0; index < count; index += 1) {
       const status = statuses[index] ?? capture.units[index]!.status;
       const ordinal = lens.channel ? (lens.channel[index] ?? 0) : status;
-      const mark = lens.channel ? LENS_MARK : MARK_BY_STATUS[status]!;
+      // The mark is the STATUS glyph under every lens. Only the palette
+      // ordinal changes when the board is re-read by harness or by burn.
+      const mark = MARK_BY_STATUS[status]!;
       markFrom.setX(index, markTo.getX(index));
       statusFrom.setX(index, statusTo.getX(index));
       markTo.setX(index, mark);
@@ -744,18 +765,7 @@ function HeroUnits({
     const next = options[Math.floor(random() * options.length)]!;
     if (next === from) return;
     bridge.statuses[index] = next;
-    // Under a non-status lens the colour and the mark mean something else, so
-    // a turn must not repaint them. The TRUTH still moves: the bridge carries
-    // the live status, so the hover card and the needs-you emphasis stay
-    // correct, and returning to the status lens paints the fleet as it is now
-    // rather than as it was when the lens came on.
-    if (lensRef.current.channel !== null) {
-      if (followsStatus.current) {
-        retargetFocus(index, focusTargetFor(index, next));
-      }
-      bridge.onStatusChange?.(index);
-      return;
-    }
+    const lensed = lensRef.current.channel !== null;
     const markFrom = geometry.getAttribute(
       'aMarkFrom'
     ) as THREE.InstancedBufferAttribute;
@@ -775,7 +785,13 @@ function HeroUnits({
     markFrom.setX(index, markTo.getX(index));
     statusFrom.setX(index, statusTo.getX(index));
     markTo.setX(index, MARK_BY_STATUS[next]!);
-    statusTo.setX(index, next);
+    // UNDER A LENS THE COLOUR HOLDS AND ONLY THE GLYPH TURNS. Writing the new
+    // status into the palette ordinal here would repaint a harness or a burn
+    // band as a status colour; writing the ordinal the unit already has means
+    // the shader's own crossfade resolves to no colour change at all, so one
+    // code path serves both regimes and there is no second transition to keep
+    // in step.
+    statusTo.setX(index, lensed ? statusTo.getX(index) : next);
     changeAt.setX(index, elapsed.current);
     // WORKING TO DONE, and only that (W10). It is the ONE state change on this
     // board that is unambiguously good news, so it is the one that celebrates:
@@ -1099,6 +1115,7 @@ function HeroDelegations({
       uBloom: { value: 0 },
       uChild: { value: new THREE.Color(theme.label) },
       uQuad: { value: DELEGATION_QUAD },
+      uGlyph: { value: MARK_GLYPH_RADIUS },
       uStagger: { value: DELEGATION_STAGGER },
     }),
     [theme]
@@ -1127,8 +1144,11 @@ function HeroDelegations({
         child.size *
         MARK_SCALE *
         DELEGATION_QUAD *
-        (child.overflow > 0 ? 1.3 : 1);
-      scratch.position.set(child.x - center.x, 0.035, child.y - center.y);
+        (child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1);
+      // The DRAWN slot, one fifth further out than the packed one, so the
+      // lineage spoke has a run and two siblings do not merge (W13).
+      const slot = heroDelegationPosition(capture, index);
+      scratch.position.set(slot.x - center.x, 0.035, slot.y - center.y);
       scratch.scale.set(quad, 1, quad);
       scratch.updateMatrix();
       mesh.current!.setMatrixAt(index, scratch.matrix);
@@ -1136,20 +1156,35 @@ function HeroDelegations({
       const owner = capture.units[child.parent];
       parent.setXY(
         index,
-        (owner?.x ?? child.x) - child.x,
-        (owner?.y ?? child.y) - child.y
+        (owner?.x ?? slot.x) - slot.x,
+        (owner?.y ?? slot.y) - slot.y
       );
-      // Tether endpoints in the quad's own normalized space, so the fragment
-      // shader draws lineage without knowing anything about the board.
-      tetherA.setXY(
-        index,
-        (child.tether.x2 - child.x) / quad,
-        (child.tether.y2 - child.y) / quad
-      );
+      // THE SPOKE RUNS BETWEEN THE MARKS THAT ARE PAINTED (W13). The capture's
+      // own tether endpoints are the parent's and the child's LAYOUT edges,
+      // which is a different pair of circles from the ones the shader draws:
+      // the parent's ink started over its own end of the spoke and the spoke
+      // stopped short of the child. Derived from the drawn radii instead, so
+      // lineage is exactly the clear gap between the two bodies and cannot
+      // drift if either mark's glyph radius changes.
+      const dx = slot.x - (owner?.x ?? slot.x);
+      const dy = slot.y - (owner?.y ?? slot.y);
+      const run = Math.hypot(dx, dy) || 1;
+      const ux = dx / run;
+      const uy = dy / run;
+      const parentEdge =
+        MARK_GLYPH_RADIUS * (owner?.size ?? child.size) * MARK_SCALE;
+      const childEdge =
+        MARK_GLYPH_RADIUS *
+        child.size *
+        MARK_SCALE *
+        (child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1);
+      // Endpoints in the quad's own normalized space, so the fragment shader
+      // draws lineage without knowing anything about the board.
+      tetherA.setXY(index, (-ux * childEdge) / quad, (-uy * childEdge) / quad);
       tetherB.setXY(
         index,
-        (child.tether.x1 - child.x) / quad,
-        (child.tether.y1 - child.y) / quad
+        (-ux * (run - parentEdge)) / quad,
+        (-uy * (run - parentEdge)) / quad
       );
       delay.setX(index, count > 1 ? index / (count - 1) : 0);
     });
@@ -1238,6 +1273,7 @@ function HeroDelegations({
         fragmentShader={`
           uniform vec3 uChild;
           uniform float uQuad;
+          uniform float uGlyph;
           varying vec2 vUv;
           varying vec2 vTetherA;
           varying vec2 vTetherB;
@@ -1251,12 +1287,19 @@ function HeroDelegations({
           }
 
           void main() {
-            float radius = 0.27 / uQuad;
+            // THE UNIT FIELD'S OWN GLYPH RADIUS (ENG-031 W13). Every mark on
+            // this board is drawn at 0.30 of its footprint; the child was at
+            // 0.27, so a child came out at 0.83 of its parent where the board
+            // model's D3c ratio says 0.92. One number, read from the same
+            // place the unit shader reads it.
+            float radius = uGlyph / uQuad;
             float d = length(vUv) - radius;
             float w = fwidth(d);
             float mark = 1.0 - smoothstep(-w, w, d);
 
-            float line = sdSegment(vUv, vTetherA, vTetherB) - 0.02 / uQuad;
+            // A hairline, but a hairline that survives a 26px-per-unit
+            // framing. Lineage only: it implies no message flow (ENG-023 D3c).
+            float line = sdSegment(vUv, vTetherA, vTetherB) - 0.03 / uQuad;
             float lw = fwidth(line);
             float tether = 1.0 - smoothstep(-lw, lw, line);
 

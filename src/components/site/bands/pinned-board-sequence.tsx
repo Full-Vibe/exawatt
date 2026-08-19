@@ -111,6 +111,7 @@ import { altitudePanel } from './altitude-copy';
 import { BandHeading } from './band-section';
 import { FoldGestureImage } from './fold-gesture-image';
 import { FoldHero } from './fold-hero';
+import { SequenceScrollCue } from './sequence-scroll-cue';
 import type { BandId, HomepageBand } from './manifest';
 import {
   foldBoardInteractive,
@@ -137,9 +138,39 @@ import {
  * at `md` and up it is the full height under the site header. Reduced motion
  * takes the phone's shape at every width.
  */
+/**
+ * THE PHONE'S BOARD CARD, and why it grew (ENG-031 W13).
+ *
+ * The operator demos this page on a phone. At 390px the fold rendered as two
+ * stacked things: a picture in the card and the headline underneath it, so a
+ * reader scrolled PAST a photograph to reach the words and the dissolve read
+ * as one block replacing another rather than as one frame becoming another.
+ * The fold's type has to sit ON the image, which is what it already does at
+ * every width above `md`.
+ *
+ * That needs room, and the arithmetic is what sets this number. The gesture
+ * asset is 3:2, and it is LETTERBOXED rather than cropped on a phone
+ * (operator: "at least just constrain it, it's fine, mobile users are used to
+ * watching landscape videos in portrait anyway"), so at 390 wide it is 260px
+ * tall and the whole composition survives. The fold's own block is about
+ * 320px of headline, subhead, button and requirement. Stacked inside a
+ * 44svh card the type would have covered all but 80px of the picture; at
+ * 58svh it covers the bottom fifth of it and the figure is intact above the
+ * words. The panels below keep 270px of reading area at 390x844, which is
+ * more than any of them needs.
+ */
 const STICKY_CLASS =
-  'sticky top-12 h-[calc(44svh+2rem)] md:h-[calc(100svh-3rem)] motion-reduce:md:h-[calc(44svh+2rem)]';
+  'sticky top-12 h-[calc(58svh+2rem)] md:h-[calc(100svh-3rem)] motion-reduce:md:h-[calc(58svh+2rem)]';
 const PANELS_PULLUP_CLASS = 'md:-mt-[calc(100svh-3rem)] motion-reduce:md:mt-0';
+/**
+ * THE PHONE'S FOLD IS ONE FRAME (W13). It is pulled up over the board card so
+ * the type is drawn on the picture, and it is a whole screen tall so the fold
+ * owns the first screen: the panel after it starts below the fold rather than
+ * competing with it, and the reading centre the stacked pass measures still
+ * lands inside the fold at scroll zero.
+ */
+const FOLD_PHONE_FRAME_CLASS =
+  '-mt-[calc(58svh+2rem)] min-h-[calc(100svh-3rem)] md:mt-0 md:min-h-0';
 /**
  * WHERE A READING COLUMN IS ALLOWED TO BE, on a pinned desktop layout.
  *
@@ -295,11 +326,16 @@ export function PinnedBoardSequence({
           window.scrollY - sequenceTop,
           pinned.offsetHeight
         );
-        pinned.style.setProperty(
+        // WRITTEN ON THE SECTION, NOT ON THE STICKY BOX (W13). Two layers now
+        // read the image's own opacity: the picture, and the phone's fold
+        // copy, which is drawn on the picture and has to leave with it. They
+        // are in different subtrees, so the value is set on their common
+        // ancestor and inherited rather than written twice.
+        element.style.setProperty(
           '--fold-image-opacity',
           String(foldImageOpacity(crossfade))
         );
-        pinned.style.setProperty(
+        element.style.setProperty(
           '--fold-board-opacity',
           String(foldBoardOpacity(crossfade))
         );
@@ -518,8 +554,17 @@ export function PinnedBoardSequence({
           "show that it's a real thing" pass, and it is the reason that pass
           could not have worked without this line. Conversion affordances opt
           back in with `pointer-events-auto`, and `DownloadCta` already did. */}
+      {/* THE LAYER DOES NOT OWN A STACKING CONTEXT ON A PHONE (ENG-031 W13).
+          Stacked, the board card is deliberately ON TOP so a panel scrolling
+          past it goes UNDER it rather than over it, which is the whole of the
+          W6b phone rule. The fold is the one panel that has to break that: its
+          type is drawn ON the picture. A `z-10` here would trap every panel
+          below the card, so the layer stays unpositioned below `md` and each
+          panel declares its own relationship to the card: the fold above it,
+          every other panel under it. Above `md` the layer is pulled over the
+          board and the old ordering is exactly as it was. */}
       <div
-        className={`pointer-events-none relative z-10 ${PANELS_PULLUP_CLASS}`}
+        className={`pointer-events-none relative md:z-10 ${PANELS_PULLUP_CLASS}`}
         data-pinned-panels-layer
       >
         {bands.map((band, index) => (
@@ -615,8 +660,12 @@ function PinnedPanel({
         // Pinned: a box sized in viewport heights whose presence is a function
         // of scroll position.
         'relative w-full opacity-100 md:h-[calc(var(--panel-screens)*100svh)] md:opacity-[var(--panel-opacity)] motion-reduce:md:h-auto motion-reduce:md:opacity-100',
-        isFold ? 'pt-9 pb-12' : 'py-9',
-        'md:py-0 motion-reduce:md:py-10'
+        isFold ? 'pb-12 md:pt-9' : 'py-9',
+        'md:py-0 motion-reduce:md:py-10',
+        isFold && FOLD_PHONE_FRAME_CLASS,
+        // Stacked, the fold sits ABOVE the board card and every other panel
+        // sits under it. See the note on the panels layer.
+        isFold ? 'z-30 md:z-auto' : 'z-0 md:z-auto'
       )}
       style={style}
       data-pinned-panel={band.id}
@@ -645,7 +694,25 @@ function PinnedPanel({
           and cannot reach the board's own chip either. Stacked, this is an
           ordinary block and the copy simply flows. */}
       <div
-        className={`flex w-full items-center ${SAFE_BAND_CLASS}`}
+        className={cn(
+          'flex w-full items-center',
+          // THE PHONE'S FOLD COPY SITS ON THE PICTURE (W13). The box is the
+          // board card's own height and the copy is bottom-aligned in it, so
+          // the type lands over the letterboxed image's lower edge and the
+          // figure stays whole above it. It also fades out with the picture:
+          // the fold's words belong to the fold's frame, so they leave when it
+          // does rather than sliding over the board that replaces it.
+          isFold &&
+            cn(
+              'h-[calc(58svh+2rem)] items-end md:h-auto md:items-center',
+              // The fade is a VARIABLE rather than an inline opacity so the
+              // desktop layout can win: above `md` the copy is beside the
+              // board, not on the picture, and it must not fade with it.
+              '[--fold-copy-fade:var(--fold-image-opacity,1)] md:[--fold-copy-fade:1]',
+              'opacity-[var(--fold-copy-fade)]'
+            ),
+          SAFE_BAND_CLASS
+        )}
         data-pinned-panel-safe-band
       >
         <div
@@ -656,12 +723,12 @@ function PinnedPanel({
           data-pinned-panel-column
         >
           {isFold ? (
-            <FoldHero nextStepBandId={nextBandId} />
+            <FoldHero />
           ) : (
             <>
               <BandHeading
                 band={band}
-                className="tracking-tight"
+                className="pointer-events-auto tracking-tight"
                 style={{ color: theme.muted }}
                 data-pinned-panel-heading
               />
@@ -671,7 +738,7 @@ function PinnedPanel({
                   paragraphs, and the measure stays where a reader's eye can
                   return to the left edge without hunting. */}
               <div
-                className="mt-3 flex flex-col gap-3 text-[17px] leading-relaxed font-medium text-pretty sm:text-xl sm:leading-relaxed lg:text-[22px] lg:leading-relaxed"
+                className="pointer-events-auto mt-3 flex flex-col gap-3 text-[17px] leading-relaxed font-medium text-pretty sm:text-xl sm:leading-relaxed lg:text-[22px] lg:leading-relaxed"
                 style={{ color: theme.label }}
                 data-pinned-panel-copy
               >
@@ -765,6 +832,24 @@ function PinnedPanel({
           )}
         </div>
       </div>
+      {/* THE WAY DOWN, at the bottom of the fold's own frame (W13). Centred,
+          nowhere near the download button, and unmistakably a scroll cue
+          rather than the menu half of a split button. It is outside the
+          reading column on purpose: it is a property of the FRAME, and on a
+          phone the column is bottom-aligned inside the board card while the
+          frame runs to the bottom of the screen. */}
+      {isFold && nextBandId ? (
+        <div
+          // Above `md` the fold's box is a full viewport tall and starts under
+          // the 3rem header, so its own bottom edge sits a header's height
+          // BELOW the fold. The offset clears both, which is why it is not the
+          // same number at the two widths.
+          className="pointer-events-none absolute inset-x-0 bottom-10 flex justify-center md:bottom-24"
+          data-fold-scroll-cue-slot
+        >
+          <SequenceScrollCue targetBandId={nextBandId} />
+        </div>
+      ) : null}
     </div>
   );
 }

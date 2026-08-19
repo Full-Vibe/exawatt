@@ -500,10 +500,16 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // `Only what needs you` was the panel's whole heading and it named the
     // half a reader arrives caring about second. The number goes first now
     // and the needs-you idea is one plain sentence under it.
-    heading: 'A hundred agents, one screen',
-    // W6c: one claim, no coda. The budget is the claim's own size plus room
-    // for a rewrite, not room for a second idea.
-    copyBudget: { min: 22, max: 42 },
+    //
+    // W13, the operator's own edit: `A hundred agents, one screen` becomes
+    // `Hundreds of agents`. The pair was a construction, and the half that
+    // does the work is the count; a reader who is looking at the screen does
+    // not need the screen named. Plural also stops the heading being a claim
+    // the board has to match unit for unit.
+    heading: 'Hundreds of agents',
+    // W6c: one claim, no coda. W13 lifts the ceiling by the closing line the
+    // operator wrote for this panel and nothing else.
+    copyBudget: { min: 22, max: 46 },
     medium: 'pinned-board',
     // THE FIRST SCROLL GLIDES (W10, operator: "I do want some sort of camera
     // change / zoom / animation on the first scroll section - right now the
@@ -552,6 +558,15 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // Floor 30 to 26 in W12. The rewrite that NAMES the harnesses is shorter
     // than the abstraction it replaced, and a floor is never a target.
     copyBudget: { min: 26, max: 48 },
+    // W13: the fifth harness joins the named set (operator: OpenClaw "is
+    // presently underway or done"). ENG-003 S1 landed OpenClaw discovery and
+    // normalization into production Settings and S1.1 added its protocol
+    // probe, so it is a source Exawatt commands today. What it is NOT is a
+    // fifth `⌘T` row: `contracts/agent-sources.json` declares
+    // `interactiveLaunch: false` for it, because it connects as a Gateway
+    // rather than spawning a local CLI. So the verb changed with the list.
+    // `Launch` would have been false for one of the five; `Command` is true
+    // for all five and is the product's own word for what it does to them.
     // W8 promoted this from a card chapter to a LENS. A harness is a property
     // of every mark on the board, so the claim proves itself the moment the
     // fleet recolours by source.
@@ -585,29 +600,6 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // rebuild. It comes back on a page that has room for a sixth claim.
     reservedUntil:
       'The page has room for a sixth claim. The burn lens is built and resolves today.',
-  },
-  {
-    id: 'trust',
-    job: 'OWNERSHIP. Whose machine this runs on, whose account, whose keys, and where the work stays.',
-    headingRole: 'section',
-    heading: 'Your machine, your keys, your repo',
-    // Floor 30 to 26 in W12, because the coda came off (operator: "kill ...
-    // such overpedantic hyperpolite copy lines") and the two claims that
-    // remain are 31 words. The floor sits under what is written, as always.
-    copyBudget: { min: 26, max: 46 },
-    medium: 'pinned-board',
-    // HELD BESIDE `any-lab`, and ahead of the dive (W9). Ownership is a claim
-    // about every mark, so it belongs while the whole crop is in frame; and it
-    // may not come AFTER the dive, because getting back out to say it would be
-    // the reversal this run exists to remove.
-    altitudeAnchor: 'cluster-close',
-    // Declared `permission` and resolved as `status` until the fixture carries
-    // a per-Agent approval mode. Declaring the intent in the manifest and
-    // resolving it honestly in the lens is the whole point of the seam.
-    boardLens: 'permission',
-    boardHighlight: 'whole-fleet',
-    screens: 1,
-    status: 'proposed',
   },
   {
     id: 'altitude-team',
@@ -648,6 +640,31 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     status: 'proposed',
   },
   {
+    id: 'altitude-agent',
+    job: 'DEPTH. All the way down to one agent, with a status that changes while you read it.',
+    headingRole: 'section',
+    heading: 'Down to one agent',
+    copyBudget: { min: 22, max: 40 },
+    medium: 'pinned-board',
+    // THE DIVE, MOVED UP SO THE PAGE ZOOMS IN CLOSER, FASTER (ENG-031 W13,
+    // operator: move `Down to one agent` up one). It was the last panel over
+    // the board; it is now the ARRIVAL the last three panels share.
+    //
+    // Why the naive reorder was not available. The operator also asked for
+    // `Your machine, your keys` to be the LAST section, and the camera may
+    // only ever close in (W9). Putting a wide framing after the dive is a
+    // reversal, so the resolution is that the dive happens once and the two
+    // panels after it HOLD the frame it arrived on. That is the stronger
+    // reading anyway: the reader is looking at one agent when the page says
+    // push this agent to the cloud, and ownership lands last, on the one
+    // Agent the whole run travelled to, immediately above the button.
+    altitudeAnchor: 'agent',
+    boardLens: 'status',
+    boardHighlight: 'one-agent',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
     id: 'cloud',
     job: 'DURATION. The long work leaves your laptop and keeps going without you.',
     headingRole: 'section',
@@ -656,36 +673,51 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     // without this test asking for it back.
     copyBudget: { min: 26, max: 44 },
     medium: 'pinned-board',
-    // HOLDS THE PROJECT FRAMING, and that is the honest composition (ENG-033).
-    // Delegation is scale ACROSS the fleet and this is scale THROUGH TIME, so
-    // the two belong at the same distance and the camera has no reason to
-    // move; holding also keeps the dive's arrival as the one camera event left
-    // on the page. The board may not prove this claim, either: hosted
-    // placement is not a property the frozen capture carries, and lighting a
-    // real agent as though it were already hosted is the false present-tense
-    // claim `marketing.md` records twice. So the picture returns the whole
-    // Project to full strength after the delegation bloom and the SENTENCE
-    // carries the future tense, which is the register `marketing.md` ->
-    // "Aspiration is half the message" makes first-class.
-    altitudeAnchor: 'team',
+    // HOLDS THE AGENT FRAMING (ENG-031 W13; it held the Project framing in
+    // W12, before the dive moved up). The camera neither moves nor reverses,
+    // and the reader is looking at exactly one running agent while the page
+    // says push a running agent to the cloud. The sentence and the picture
+    // are about the same thing for the first time.
+    //
+    // The board still does not PRETEND to prove it: hosted placement is not a
+    // property the frozen capture carries, and lighting a mark as though it
+    // were already running somewhere else would be a claim the picture cannot
+    // make. It holds the agent it already has, and the words do the work.
+    altitudeAnchor: 'agent',
     boardLens: 'status',
+    // THE FLEET COMES BACK UP AROUND THE ONE AGENT. The dive lit one mark and
+    // receded the rest; here the rest return to full strength while the
+    // sentence says the long work leaves the laptop. That is a claim the
+    // picture can honestly make (everything around this agent is still
+    // running) and it is what keeps the run's last three panels three
+    // pictures rather than one held for a third of the page.
     boardHighlight: 'whole-fleet',
     screens: 1,
     status: 'proposed',
   },
   {
-    id: 'altitude-agent',
-    job: 'DEPTH. All the way down to one agent, with a status that changes while you read it.',
+    id: 'trust',
+    job: 'OWNERSHIP. Whose machine this runs on, whose account, whose keys, and where the work stays.',
     headingRole: 'section',
-    heading: 'Down to one agent',
-    copyBudget: { min: 22, max: 40 },
+    heading: 'Your machine, your keys, your repo',
+    // Floor 30 to 26 in W12, because the coda came off (operator: "kill ...
+    // such overpedantic hyperpolite copy lines") and the two claims that
+    // remain are 31 words. The floor sits under what is written, as always.
+    copyBudget: { min: 26, max: 46 },
     medium: 'pinned-board',
-    // THE FINALE OF THE RUN (W9). Both design reviews called this the best
-    // frame on the page, and it used to arrive in the middle and be left
-    // behind. It is the deepest rung, so it can only be last, and it hands
-    // straight to the dated list and the call to action underneath it.
+    // THE LAST THING THE PAGE SAYS OVER THE BOARD (ENG-031 W13, operator:
+    // move `Your machine, your keys` to be the last section). W9 held it
+    // beside `any-lab` and argued it could not come after the dive, because
+    // getting back OUT to say it would be the reversal the run exists to
+    // remove. That argument was about a framing, not about a position: it
+    // does not have to get back out, it can HOLD the dive's frame. So it
+    // does, and ownership is now the last claim before the call to action,
+    // which is where a closing reassurance belongs.
     altitudeAnchor: 'agent',
-    boardLens: 'status',
+    // Declared `permission` and resolved as `status` until the fixture carries
+    // a per-Agent approval mode. Declaring the intent in the manifest and
+    // resolving it honestly in the lens is the whole point of the seam.
+    boardLens: 'permission',
     boardHighlight: 'one-agent',
     screens: 1,
     status: 'proposed',

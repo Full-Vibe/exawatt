@@ -102,7 +102,10 @@ describe('pinned board sequence', () => {
     const panel = container.querySelector('[data-pinned-panel]')!;
     const section = container.querySelector('[data-pinned-board-sequence]')!;
 
-    expect(board.className).toContain('h-[calc(44svh+2rem)]');
+    // W13 grew the card from 44svh so the FOLD can be one frame: the phone's
+    // type is drawn on a letterboxed picture inside this band, and 44svh left
+    // 80px of the picture showing above the words.
+    expect(board.className).toContain('h-[calc(58svh+2rem)]');
     // The card is ABOVE the copy when stacked and below it when pinned.
     expect(board.className).toContain('z-20');
     expect(board.className).toContain('md:z-0');
@@ -111,6 +114,61 @@ describe('pinned board sequence', () => {
     expect(panel.className).toContain('opacity-100');
     expect(panel.className).not.toMatch(/(^|\s)h-\[calc\(var/u);
     expect(section.className).not.toMatch(/(^|\s)min-h-\[calc/u);
+
+    // THE FOLD IS THE ONE PANEL THAT SITS ON THE BOARD CARD (W13, operator:
+    // at 390px "the headline currently renders BELOW the gesture image ... the
+    // type must sit ON the image the way it does on desktop"). It is pulled up
+    // over the card and declares itself above it; every other panel declares
+    // itself under it, which is what keeps the W6b rule intact for the rest of
+    // the run. The layer itself must NOT carry a z-index below `md`, or a
+    // panel could not sit above the card at all.
+    const fold = container.querySelector('[data-pinned-panel="fold"]')!;
+    const next = container.querySelector(
+      '[data-pinned-panel]:not([data-pinned-panel="fold"])'
+    )!;
+    expect(panels.className).not.toMatch(/(^|\s)z-\d/u);
+    expect(panels.className).toContain('md:z-10');
+    expect(fold.className).toContain('z-30');
+    expect(fold.className).toContain('-mt-[calc(58svh+2rem)]');
+    expect(fold.className).toContain('md:mt-0');
+    expect(next.className).toContain('z-0');
+  });
+
+  it('puts the way down at the bottom of the fold frame, not beside the button', () => {
+    // Operator, W13: "the down arrow looks too much like a dropdown button and
+    // combobox. Make it a clearly separate action so people know to scroll."
+    // The control left the download's row entirely, so the split-button
+    // reading cannot come back by restyling it.
+    const { container } = render(<PinnedBoardSequence bands={bands} />);
+    const download = container.querySelector('[data-band-download]')!;
+    const cue = container.querySelector('[data-fold-scroll-cue]')!;
+    const slot = container.querySelector('[data-fold-scroll-cue-slot]')!;
+
+    expect(cue).toBeTruthy();
+    expect(download.parentElement!.contains(cue)).toBe(false);
+    expect(slot.contains(cue)).toBe(true);
+    expect(slot.className).toContain('absolute');
+    expect(slot.className).toContain('justify-center');
+    // Its mechanism is unchanged and is asserted where it always was, in
+    // `gives the fold a way down that lands on the next panel snap point`.
+  });
+
+  it('lets a reader select every word of prose', () => {
+    // Operator, W13: "let me select the text on the page, right now there's no
+    // text selection." The panel layer is transparent to the pointer so the
+    // board keeps its hover targets, and an element the pointer passes through
+    // is invisible to SELECTION hit testing too. The prose opts back in; the
+    // empty space around it does not.
+    const { container } = render(<PinnedBoardSequence bands={bands} />);
+    for (const node of Array.from(
+      container.querySelectorAll(
+        '[data-pinned-panel-heading], [data-pinned-panel-copy], [data-fold-headline], [data-fold-subhead]'
+      )
+    )) {
+      expect(node.className, node.outerHTML.slice(0, 80)).toContain(
+        'pointer-events-auto'
+      );
+    }
   });
 
   it('unpins for reduced motion, in the same DOM', () => {
@@ -122,7 +180,7 @@ describe('pinned board sequence', () => {
     const panels = container.querySelector('[data-pinned-panels-layer]')!;
     const panel = container.querySelector('[data-pinned-panel]')!;
 
-    expect(board.className).toContain('motion-reduce:md:h-[calc(44svh+2rem)]');
+    expect(board.className).toContain('motion-reduce:md:h-[calc(58svh+2rem)]');
     expect(panels.className).toContain('motion-reduce:md:mt-0');
     expect(panel.className).toContain('motion-reduce:md:h-auto');
     expect(panel.className).not.toContain('max-md:h-auto');
@@ -328,10 +386,19 @@ describe('pinned board sequence', () => {
   it('carries no sub-headed mechanism trios', () => {
     // Operator, W6b: "I don't want to read all the text on that page." A
     // mechanism list is documentation and belongs in the docs.
+    //
+    // WHAT THIS GUARDS IS STRUCTURE, NOT LINE COUNT (W13). The shape it
+    // exists to keep out is a claim followed by sub-headed mechanisms in
+    // cards, which is the thing that took the page to 1,216 words. A third
+    // plain sentence is not that shape, and the operator wrote one for the
+    // attention panel himself. Volume is held where it belongs, by each
+    // band's declared `copyBudget` in `altitude-copy.test.ts`; three is the
+    // ceiling here so a panel cannot quietly grow a list again.
     const { container } = render(<PinnedBoardSequence bands={bands} />);
     expect(container.querySelector('[data-pinned-panel-cards]')).toBeNull();
+    expect(container.querySelector('[data-pinned-panel-copy] h3')).toBeNull();
     for (const panel of ALTITUDE_PANELS) {
-      expect(panel.copy.length, panel.id).toBeLessThanOrEqual(2);
+      expect(panel.copy.length, panel.id).toBeLessThanOrEqual(3);
     }
   });
 

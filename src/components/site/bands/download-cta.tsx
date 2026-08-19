@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,12 +19,14 @@ import {
  * - ONE primary CTA, not two. The measured ceiling is two with one primary,
  *   and persistent conversion already lives in the sticky header, so a second
  *   inline CTA would spend attention without adding a destination.
- * - A `trailing` SLOT, filled only by the fold (ENG-031 W12, operator: "put a
- *   second CTA next to download like an arrow button to indicate
- *   scrollability"). It sits in the button's own row rather than under it, so
- *   the requirement line still reads as belonging to the download and the two
- *   controls read as one row. The close leaves it empty: there is nothing
- *   below the close to point at.
+ * - NOTHING SITS BESIDE THE BUTTON. W12 added a `trailing` slot and the fold
+ *   put its scroll chevron in it; the operator read the pair as a split
+ *   button with a menu half ("the down arrow looks too much like a dropdown
+ *   button and combobox"), which is what a labelled pill plus a same-height
+ *   chevron square IS on every platform. The slot is deleted rather than left
+ *   empty, per burn-bridges: an available slot beside a primary CTA is an
+ *   invitation to rebuild the same defect. The way down is a labelled cue at
+ *   the bottom of the fold's frame; see `sequence-scroll-cue.tsx`.
  * - FLAT DOM. The 3D key switch comes off the site (operator); no premium hero
  *   in the 16-site set makes its primary conversion action a mesh. This is a
  *   real anchor: hit-testable, keyboard-focusable, and legible to a crawler.
@@ -43,15 +44,12 @@ export function DownloadCta({
   className,
   size = 'fold',
   align = 'center',
-  trailing,
 }: {
   className?: string;
   /** The close repeats the fold's button; only the leading rhythm differs. */
   size?: 'fold' | 'close';
   /** The fold is a left column now; the close is still centred type. */
   align?: 'center' | 'start';
-  /** A quiet second control beside the button. The fold's way down. */
-  trailing?: ReactNode;
 }) {
   return (
     <div
@@ -62,7 +60,7 @@ export function DownloadCta({
       )}
       {...{ [BAND_AFFORDANCE_ATTR]: 'download' }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center">
         <Button
           asChild
           className={cn(
@@ -73,7 +71,6 @@ export function DownloadCta({
         >
           <Link href={DOWNLOAD_HREF}>{DOWNLOAD_LABEL}</Link>
         </Button>
-        {trailing}
       </div>
       <p
         className="text-[13px] leading-snug text-white/50"

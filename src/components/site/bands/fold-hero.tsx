@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils';
 import { BandCopy, BandHeading } from './band-section';
 import { DownloadCta } from './download-cta';
-import { SequenceScrollCue } from './sequence-scroll-cue';
 import {
   DEFAULT_FOLD_CLOSE_VARIANT,
   foldCloseVariant,
@@ -52,10 +51,18 @@ const FOLD = bandById('fold');
  * and the sentence is untouched. Below `sm` it still wraps, which is a phone
  * and is allowed.
  *
- * THE SECOND CONTROL IS THE WAY DOWN (W12, operator: "put a second CTA next to
- * download like an arrow button to indicate scrollability"). It is quiet by
- * construction and it lives in `sequence-scroll-cue.tsx`; the fold only knows
- * which panel follows it.
+ * THE WAY DOWN IS NOT IN THIS COLUMN (W13). W12 put it in the download's own
+ * row and the operator read the pair as a split button. It is a labelled cue
+ * centred at the bottom of the fold's FRAME now, which is a property of the
+ * frame rather than of the reading column, so `PinnedBoardSequence` places it
+ * and this component no longer knows about it.
+ *
+ * EVERY WORD HERE IS SELECTABLE (W13, operator: "let me select the text on the
+ * page, right now there's no text selection"). The panel layer is transparent
+ * to the pointer so the board keeps its own hover targets, and an element the
+ * pointer passes through is invisible to selection hit testing as well, which
+ * is why a drag over the headline selected nothing. The prose opts back in;
+ * see `pinned-board-sequence.tsx` for the whole rule.
  *
  * Under 26 words of reading copy, enforced in `fold-copy.test.ts` rather than
  * intended. The short-viewport rules (`globals.css`, `max-height: 520px`) are
@@ -63,16 +70,8 @@ const FOLD = bandById('fold');
  */
 export function FoldHero({
   variant = DEFAULT_FOLD_CLOSE_VARIANT,
-  nextStepBandId,
 }: {
   variant?: FoldCloseVariantId;
-  /**
-   * The band the fold's scroll affordance lands on, or undefined where there
-   * is nothing after the fold. The pinned sequence passes the panel that
-   * follows it; the `/hud-gallery` study renders the fold alone and passes
-   * nothing, so the control never points at an id that is not on the page.
-   */
-  nextStepBandId?: string;
 }) {
   const copy = foldCloseVariant(variant);
   const lastHeadlineLine = copy.headline.length - 1;
@@ -85,14 +84,14 @@ export function FoldHero({
       data-fold-variant={copy.id}
     >
       {copy.kicker ? (
-        <p className="text-base text-white/55" data-fold-kicker>
+        <p className="pointer-events-auto text-base text-white/55" data-fold-kicker>
           {copy.kicker}
         </p>
       ) : null}
 
       <BandHeading
         band={FOLD}
-        className="home-hero-title text-balance text-white"
+        className="home-hero-title pointer-events-auto text-balance text-white"
         data-fold-headline
       >
         {copy.headline.map((line, index) => (
@@ -106,7 +105,7 @@ export function FoldHero({
       </BandHeading>
 
       <BandCopy
-        className="home-hero-copy text-[17px] leading-relaxed text-white/70 lg:text-lg lg:leading-relaxed"
+        className="home-hero-copy pointer-events-auto text-[17px] leading-relaxed text-white/70 lg:text-lg lg:leading-relaxed"
         data-fold-subhead
       >
         {copy.subhead.map(line => (
@@ -119,15 +118,7 @@ export function FoldHero({
       {/* The one thing on the panel layer a pointer may reach. Everything else
           in the reading column is `pointer-events-none` so the board keeps its
           own hover targets. */}
-      <DownloadCta
-        align="start"
-        className="pointer-events-auto pt-1"
-        trailing={
-          nextStepBandId ? (
-            <SequenceScrollCue targetBandId={nextStepBandId} />
-          ) : undefined
-        }
-      />
+      <DownloadCta align="start" className="pointer-events-auto pt-1" />
     </div>
   );
 }

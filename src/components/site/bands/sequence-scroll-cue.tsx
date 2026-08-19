@@ -4,28 +4,34 @@ import { BAND_AFFORDANCE_ATTR } from './download';
 import { panelStepId } from './pinned-scroll';
 
 /**
- * The fold's second control: the way down (ENG-031 W12).
+ * The fold's way down (ENG-031 W12, rebuilt W13).
  *
- * The operator: "Put a second CTA next to download like an arrow button to
- * indicate scrollability which scrolls down to the next frame."
+ * The operator asked for it: "put a second CTA next to download like an arrow
+ * button to indicate scrollability which scrolls down to the next frame." W12
+ * put an outline chevron at the download button's own height, in its row. He
+ * rejected the result on sight: "the down arrow looks too much like a dropdown
+ * button and combobox. Make it a clearly separate action so people know to
+ * scroll."
  *
- * WHY IT IS AN ORDINARY LINK AND NOT A CLICK HANDLER. The sequence's whole
- * mechanism rule is that the browser owns the scroll: no wheel handler, no
- * `preventDefault`, no `scrollTo`, no scroll library. A button that called
- * `window.scrollTo` would be the first exception to that rule and would also
- * have to reproduce the snap geometry in JavaScript. An `<a href="#step-...">`
- * needs neither. It targets the panel's own snap sentinel, which is the exact
- * position a scroll settle parks at, so the affordance and the browser's own
- * rest position are the same number by construction rather than by tuning.
- * Smoothness and its reduced-motion opt-out are `scroll-behavior` in
- * `globals.css`, which is the platform's answer to both.
+ * He is right, and the reason is a convention nobody can opt out of. A pill
+ * with a label and a same-height outline square carrying a down-chevron
+ * immediately beside it is the SPLIT BUTTON, on every platform: the square is
+ * the menu half. Nothing about the control's own styling could have overridden
+ * that reading, because the reading comes from the pairing.
  *
- * WHY IT IS QUIET. The measured ceiling for a fold is two controls with ONE
- * primary, and `Download for Mac` is the primary. This is an outline: no fill,
- * no shadow, muted ink, and it takes the button's height so the pair reads as
- * one row rather than as two offers. It is a real anchor, so it is
- * keyboard-reachable and carries a real name; "See the fleet" says what is
- * down there, where "Scroll down" would only describe the gesture.
+ * SO IT LEAVES THE ROW. It is a labelled cue centred at the bottom of the
+ * fold's own frame, which is where a page has put "there is more below" since
+ * long before this one. Three things now say scroll rather than menu: it is
+ * nowhere near the download button, it is at the bottom edge of the first
+ * screen, and it moves. The label says what is down there, not what the
+ * gesture is.
+ *
+ * WHAT DID NOT CHANGE. It is still an ordinary `<a href>` at the next panel's
+ * own snap sentinel, so the browser owns the scroll, the settle position and
+ * the affordance are the same number by construction, and the
+ * no-scroll-jacking rule is intact. It is still keyboard-reachable, still
+ * carries a real accessible name, and is still marked as an affordance so it
+ * never spends the band's reading words.
  */
 export function SequenceScrollCue({
   targetBandId,
@@ -39,9 +45,9 @@ export function SequenceScrollCue({
     <a
       aria-label="See the fleet"
       className={cn(
-        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md',
-        'border border-white/25 text-white/70 transition-colors',
-        'hover:border-white/50 hover:text-white',
+        'group pointer-events-auto inline-flex flex-col items-center gap-2',
+        'text-[13px] font-medium tracking-wide text-white/65 transition-colors',
+        'hover:text-white focus-visible:text-white',
         'focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none',
         className
       )}
@@ -49,16 +55,23 @@ export function SequenceScrollCue({
       data-fold-scroll-cue={targetBandId}
       {...{ [BAND_AFFORDANCE_ATTR]: 'scroll-cue' }}
     >
+      <span aria-hidden>See the fleet</span>
       {/* The nudge IS the affordance rather than decoration on it: a static
-          chevron says a direction, and a chevron that moves says there is
-          something below to move to. Three pixels, two and a half seconds, and
-          `motion-safe` so a reader who asked for stillness gets the same
-          control without it. */}
-      <ChevronDown
+          chevron says a direction, a chevron that moves says there is
+          something below to move to. `motion-safe` so a reader who asked for
+          stillness gets the same control without it. */}
+      <span
         aria-hidden
-        className="h-5 w-5 motion-safe:animate-[fold-cue-nudge_2.4s_ease-in-out_infinite]"
-        strokeWidth={2}
-      />
+        className={cn(
+          'flex h-9 w-9 items-center justify-center rounded-full',
+          'border border-white/30 transition-colors group-hover:border-white/60'
+        )}
+      >
+        <ChevronDown
+          className="h-5 w-5 motion-safe:animate-[fold-cue-nudge_2.4s_ease-in-out_infinite]"
+          strokeWidth={2}
+        />
+      </span>
     </a>
   );
 }

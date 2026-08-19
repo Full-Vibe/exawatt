@@ -67,33 +67,27 @@ export function demoWorkspaceFleetState(): FleetState {
  * two runs on two machines produce byte-identical output.
  */
 /**
- * Harness id to the label and the colour the PRODUCT already uses (ENG-031
- * W8). The `source` lens colours the board by this, so the marketing board and
- * the launcher name the same harness the same way and in the same colour.
- * `ConsumptionSourceId` is the consumption spelling; `adapterId` is the
- * launcher's. They differ for exactly one entry.
+ * The harness that runs each Agent, named and coloured by the launcher's own
+ * declaration (ENG-031 W8, corrected W13).
+ *
+ * THE JOIN IS NOW ON `adapterId` AND NOTHING IS TRANSLATED. Until W13 the
+ * capture read `DemoFleetAgent.source`, which is a CONSUMPTION LEDGER, and
+ * translated it into an adapter id through a three-entry table. That table was
+ * the visible end of a conflated fixture field: the demo fleet could only ever
+ * report the harnesses that happen to own a ledger, so a homepage panel naming
+ * five harnesses stood over a legend that could only ever show two. The
+ * fixture now carries `harness` separately (`packages/core/src/demo/types.ts`)
+ * and this module reads it directly, so a widened fleet widens the legend with
+ * no site-side mapping at all.
  */
-const SOURCE_ADAPTER: Record<string, string> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  grok: 'grok',
-};
-
-/** The launcher's own id for a consumption source id. One entry differs. */
-export function heroSourceAdapterId(sourceId: string): string {
-  return SOURCE_ADAPTER[sourceId] ?? sourceId;
-}
-
-export function heroSourceLabel(sourceId: string): string {
-  const adapterId = SOURCE_ADAPTER[sourceId] ?? sourceId;
+export function heroSourceLabel(adapterId: string): string {
   return (
     AGENT_SOURCE_DECLARATIONS.find(entry => entry.adapterId === adapterId)
-      ?.label ?? sourceId
+      ?.label ?? adapterId
   );
 }
 
-export function heroSourceColor(sourceId: string): string {
-  const adapterId = SOURCE_ADAPTER[sourceId] ?? sourceId;
+export function heroSourceColor(adapterId: string): string {
   return (
     AGENT_SOURCE_DECLARATIONS.find(entry => entry.adapterId === adapterId)
       ?.color ?? '#8B8B8B'
@@ -106,12 +100,18 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
   // the mapped `ExawattAgent`, so the raw fleet is read once for the join.
   // Burn comes through the mapped Agent, because `normalizedTokens` is core's
   // own E3 compute proxy and the site must not re-derive it.
-  const sourceByAgentId = new Map(
+  const harnessByAgentId = new Map(
     demoFleetAgents('scale', { nowMs: DEMO_WORKSPACE_NOW_MS }).map(
-      agent => [agent.id, agent.source] as const
+      agent => [agent.id, agent.harness] as const
     )
   );
-  const sourceIds = Array.from(new Set(sourceByAgentId.values())).sort();
+  // Ordinal order is the declaration order in `contracts/agent-sources.json`,
+  // not alphabetical: the legend then reads in the same order the launcher
+  // lists its sources, and adding a harness to the fixture cannot reshuffle
+  // the colours of the ones already on the board.
+  const declared = AGENT_SOURCE_DECLARATIONS.map(entry => entry.adapterId);
+  const present = new Set(harnessByAgentId.values());
+  const sourceIds = declared.filter(adapterId => present.has(adapterId));
   const layout = selectSpatialBoardLayout(state, {
     projects: demoWorkspaceProjectCatalog(),
   });
@@ -136,7 +136,7 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
   // a real identity off a real unit instead of a coloured dot.
   const units: HeroBoardUnit[] = layout.pieces.map(piece => {
     const sourceId = piece.agentId
-      ? sourceByAgentId.get(piece.agentId)
+      ? harnessByAgentId.get(piece.agentId)
       : undefined;
     // The Demo corpus reports a work state for every Agent, so the frozen
     // capture never carries a unit nobody has reported. The board has a band
@@ -229,10 +229,10 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
         0
       ),
     },
-    sources: sourceIds.map(id => ({
-      adapterId: heroSourceAdapterId(id),
-      label: heroSourceLabel(id),
-      color: heroSourceColor(id),
+    sources: sourceIds.map(adapterId => ({
+      adapterId,
+      label: heroSourceLabel(adapterId),
+      color: heroSourceColor(adapterId),
     })),
     // `burnIntensity` is already normalized against the hottest reporting
     // Agent, so the ceiling is 1 by construction. Carried anyway, because a

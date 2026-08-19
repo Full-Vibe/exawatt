@@ -28,6 +28,7 @@
  * ENG-004 V3.1's milestone, not this module's.
  */
 
+import type { AgentSourceAdapterId } from '../agent-sources';
 import type {
   DemoDelegatedRun,
   DemoFleetAgent,
@@ -542,6 +543,63 @@ const FAULT_STEMS = [
   'Output validation failed twice on the same schema field; the agent stopped rather than loosen the check.',
 ];
 
+/**
+ * WHICH HARNESS RUNS A GENERATED AGENT (ENG-031 W13).
+ *
+ * `harness` and `source` are two axes and this is the one the product means
+ * by "whose agent is this" (`types.ts` carries the contract). Before this the
+ * fixture had one field for both, typed as a consumption ledger, so the whole
+ * 173-Agent fleet could only ever be Claude Code and Codex, and every surface
+ * that reads provenance -- the launcher, the Fleet board's source lens, the
+ * marketing capture -- inherited that ceiling from a consumption type.
+ *
+ * TWO RULES DECIDE THE SPREAD, and both are read off
+ * `contracts/agent-sources.json` rather than chosen for variety:
+ *
+ * 1. **A harness may only run models its own catalog serves.** So the ledger
+ *    narrows the candidates: a Claude-family Session may be launched by Claude
+ *    Code, by an OpenClaw gateway, or by the multi-provider OpenCode CLI, and
+ *    a GPT-family Session by Codex, OpenCode, or Grok Build. The one loose
+ *    pairing this leaves is recorded in `types.ts` with its reason.
+ * 2. **Only a harness that OBSERVES delegation may parent one.** Claude Code
+ *    reports lifecycle events, Codex reports app-server parent/child, and an
+ *    OpenClaw gateway reports protocol events. OpenCode's PTY reports nothing
+ *    and Grok Build reports only to hooks Exawatt cannot inject per launch, so
+ *    neither may carry children here. The demo must not fake a record the real
+ *    source cannot produce, which is the same rule that already kept Codex
+ *    children out of this file.
+ *
+ * Weights are the operator mix the consumption corpus cites, unchanged: the
+ * two native CLIs stay the majority and the other three are the long tail.
+ */
+const HARNESS_BY_LEDGER: Record<
+  DemoFleetAgent['source'],
+  readonly AgentSourceAdapterId[]
+> = {
+  'claude-code': ['claude', 'claude', 'claude', 'claude', 'openclaw', 'opencode'],
+  codex: ['codex', 'codex', 'codex', 'codex', 'opencode', 'grok'],
+  grok: ['grok'],
+};
+
+/** Harnesses that can report a delegated run, per the source contract. */
+const DELEGATION_OBSERVING: readonly AgentSourceAdapterId[] = [
+  'claude',
+  'codex',
+  'openclaw',
+];
+
+function harnessFor(
+  id: string,
+  ledger: DemoFleetAgent['source'],
+  delegates: boolean
+): AgentSourceAdapterId {
+  const candidates = HARNESS_BY_LEDGER[ledger].filter(
+    adapter => !delegates || DELEGATION_OBSERVING.includes(adapter)
+  );
+  const pool = candidates.length > 0 ? candidates : HARNESS_BY_LEDGER[ledger];
+  return pool[Math.floor(unit(`${id}:harness`) * pool.length)] ?? pool[0]!;
+}
+
 function synthesizeAgent(
   projectKey: string,
   name: string,
@@ -604,6 +662,15 @@ function synthesizeAgent(
   const interventions =
     Math.floor(unit(`${id}:interventions`) * 3) + (authoredBlocker ? 1 : 0);
 
+  const delegated = delegatedFor(
+    id,
+    source,
+    status,
+    name,
+    startedAtMs,
+    project.function
+  );
+
   const agent: DemoFleetAgent = {
     id,
     name,
@@ -612,6 +679,7 @@ function synthesizeAgent(
     contextLabel,
     status,
     source,
+    harness: harnessFor(id, source, delegated.length > 0),
     model,
     effort,
     gitBranch:
@@ -625,7 +693,7 @@ function synthesizeAgent(
     turns,
     interventions,
     usage: usageFor(id, source, turns),
-    delegated: delegatedFor(id, source, status, name, startedAtMs, project.function),
+    delegated,
     readiness: project.readiness,
     tier: 'scale',
     initiativeId: demoInitiativeIdForWork(projectKey, roadmapItemId),

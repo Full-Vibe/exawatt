@@ -22,6 +22,7 @@ import type { AgentStatus } from '../types/agent';
 import { SOURCE_CAPABILITIES } from '../consumption/types';
 import { rollupByProject, rollupWorkspace } from '../consumption/rollup';
 import { isOperatorEntrypoint } from '../consumption/types';
+import { AGENT_SOURCE_ADAPTER_IDS } from '../agent-sources';
 import {
   CODING_FUNCTIONS,
   DEMO_BASE_AGENTS,
@@ -230,6 +231,63 @@ describe('five-signal status protocol coverage (W3, ENG-016 D40)', () => {
     expect(types).toContain('Explore');
     expect(types).toContain('general-purpose');
     expect(types).toContain('fork');
+  });
+
+  /**
+   * HARNESS AND LEDGER ARE TWO AXES (ENG-031 W13).
+   *
+   * `source` is the consumption ledger a Session's spend is read from and
+   * `harness` is the Agent Source that launched it. They were one field typed
+   * as a ledger, which capped the whole fleet at the harnesses that happen to
+   * own one. These assertions are the contract that keeps them apart.
+   */
+  it('every Agent declares a harness the launcher actually ships', () => {
+    const declared = new Set<string>(AGENT_SOURCE_ADAPTER_IDS);
+    for (const agent of demoFleetAgents('scale')) {
+      expect(declared.has(agent.harness), agent.id).toBe(true);
+      // Demo Mode is a data source, never a harness that launches an Agent.
+      expect(agent.harness, agent.id).not.toBe('demo');
+    }
+  });
+
+  it('the fleet spans every launchable Agent Source', () => {
+    const harnesses = new Set(
+      demoFleetAgents('scale').map(agent => agent.harness)
+    );
+    for (const adapterId of [
+      'claude',
+      'codex',
+      'opencode',
+      'grok',
+      'openclaw',
+    ] as const) {
+      expect(harnesses, adapterId).toContain(adapterId);
+    }
+  });
+
+  it('only a harness that observes delegation ever parents a run', () => {
+    // `contracts/agent-sources.json`: OpenCode's PTY reports no delegated work
+    // and Grok Build reports only to hooks Exawatt cannot inject per launch.
+    for (const agent of demoFleetAgents('scale')) {
+      if (agent.delegated.length === 0) continue;
+      expect(['claude', 'codex', 'openclaw'], agent.id).toContain(
+        agent.harness
+      );
+    }
+  });
+
+  it('splitting the harness out did not move the spend story', () => {
+    // The ledger decides every consumption number in Demo Mode, so a widened
+    // harness axis must leave the ledger mix byte-identical. These are the
+    // counts the corpus carried before the split.
+    const ledgers = new Map<string, number>();
+    for (const agent of demoFleetAgents('scale')) {
+      ledgers.set(agent.source, (ledgers.get(agent.source) ?? 0) + 1);
+    }
+    expect(Object.fromEntries(ledgers)).toEqual({
+      'claude-code': 85,
+      codex: 88,
+    });
   });
 });
 

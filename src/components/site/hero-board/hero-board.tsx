@@ -231,7 +231,13 @@ export function HeroBoard({
   return (
     <div
       ref={frame}
-      className={`relative isolate h-full w-full overflow-hidden ${className ?? ''}`}
+      // THE BOARD KEEPS `user-select: none`, AND ONLY THE BOARD (ENG-031 W13,
+      // operator: "the board and its overlay may keep it, dragging a canvas
+      // should not select"). Everything a reader might want to copy is prose
+      // in the band layer and is selectable there; what is in here is a
+      // canvas, its projected Project labels and its identity card, and a
+      // drag across them is someone looking at the fleet, not reading.
+      className={`relative isolate h-full w-full overflow-hidden select-none ${className ?? ''}`}
       data-hero-board
       data-hero-board-mode={mode}
       data-hero-board-animating={animating ? 'true' : 'false'}

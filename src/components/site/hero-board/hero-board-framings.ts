@@ -109,6 +109,140 @@ export const NARROW_FRAME_PX = 560;
 /** Mark size multiplier, shared by the unit field and the zoom cap. */
 export const MARK_SCALE = 1.7;
 
+/**
+ * THE GLYPH RADIUS EVERY MARK IS DRAWN AT, as a share of its own footprint.
+ *
+ * The unit shader draws its ring at `R = 0.30` inside a coordinate space it
+ * scales back up by the quad pad, so a mark's drawn radius is always
+ * `0.30 * size * MARK_SCALE`. It is named here because the delegation
+ * geometry below has to reason about the marks that are actually PAINTED
+ * rather than about the layout footprints the board model packed.
+ */
+export const MARK_GLYPH_RADIUS = 0.3;
+
+/**
+ * HOW FAR OUT THE DRAWN ROSETTE SITS, against the board model's own orbit
+ * (ENG-031 W13).
+ *
+ * The operator on the delegation panel: the bloom "renders children as a tight
+ * scribble of overlapping white dots on top of their parents, with no readable
+ * lineage".
+ *
+ * Measured against the capture at the model's own orbit, drawn: the lineage
+ * spoke has 0.14 world units of clear run between the parent's disc and the
+ * child's, and two children of one parent are 0.06 apart. At the panel's
+ * framing that is under four pixels of spoke and under two pixels between
+ * siblings, which is why three children read as one blob with a smudge under
+ * it. The board model is not wrong; it is TANGENT BY CONSTRUCTION. Its rosette
+ * puts neighbouring children at `2 * orbit * sin(maxStep / 2)` and their own
+ * diameters at `childScale`, which for D3c's 1.14, 46 degrees and 0.92 come
+ * out within three percent of touching. That reads fine at the product's
+ * Project altitude, where an operator can hover a child and read it; on a
+ * marketing board the picture is the entire read.
+ *
+ * So the drawn orbit gains a fifth. It is the smallest opening that gives the
+ * spoke a real run without letting a constellation reach into the Agent next
+ * door, and all three margins are asserted rather than eyeballed
+ * (`heroDelegationClearance`, held positive in `hero-board-framings.test.ts`):
+ * parent 0.34, sibling 0.24, neighbour 0.17. It changes no ratio the model
+ * declares between parent and child, which stay at D3c's 0.92 size parity and
+ * its deterministic slot angles; it serves the reason the model gives for the
+ * orbit in the first place, that "a spoke with no visible run carries
+ * nothing".
+ *
+ * It lives here and not in `spatial-board.ts` because it is a property of how
+ * this board DRAWS, not of how the fleet is packed. The tangency it works
+ * around is a real observation about the shared policy and is recorded for
+ * ENG-004 / ENG-023 in the ENG-031 milestone log rather than fixed here, where
+ * it would change the product board's accepted delegation geometry as a side
+ * effect of a marketing pass.
+ */
+export const DELEGATION_ORBIT_GAIN = 1.2;
+
+/** Units that carry at least one delegated child, by index. */
+export function heroDelegationParents(capture: HeroBoardCapture): Set<number> {
+  return new Set(capture.delegations.map(child => child.parent));
+}
+
+/** Where a delegated child's mark is actually drawn, in board coordinates. */
+export function heroDelegationPosition(
+  capture: HeroBoardCapture,
+  index: number
+): { x: number; y: number } {
+  const child = capture.delegations[index]!;
+  const parent = capture.units[child.parent]!;
+  return {
+    x: parent.x + (child.x - parent.x) * DELEGATION_ORBIT_GAIN,
+    y: parent.y + (child.y - parent.y) * DELEGATION_ORBIT_GAIN,
+  };
+}
+
+/**
+ * The three margins a legible constellation needs, in world units, at the
+ * scales and positions the board actually draws.
+ *
+ * Positive means clear. `parent` is the run the lineage spoke has between the
+ * parent's disc and the child's; `sibling` is the gap between two children of
+ * one parent; `neighbour` is the gap between a child and the nearest mark that
+ * is not its own parent, which is what stops a constellation reaching into the
+ * Agent next door.
+ */
+export function heroDelegationClearance(capture: HeroBoardCapture): {
+  parent: number;
+  sibling: number;
+  neighbour: number;
+} {
+  const unitRadius = (index: number): number =>
+    MARK_GLYPH_RADIUS * capture.units[index]!.size * MARK_SCALE;
+  const children = capture.delegations.map((child, index) => ({
+    ...heroDelegationPosition(capture, index),
+    parent: child.parent,
+    radius:
+      MARK_GLYPH_RADIUS *
+      child.size *
+      MARK_SCALE *
+      (child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1),
+  }));
+
+  let parent = Infinity;
+  let sibling = Infinity;
+  let neighbour = Infinity;
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    const owner = capture.units[child.parent]!;
+    parent = Math.min(
+      parent,
+      Math.hypot(child.x - owner.x, child.y - owner.y) -
+        unitRadius(child.parent) -
+        child.radius
+    );
+    for (let other = 0; other < capture.units.length; other += 1) {
+      if (other === child.parent) continue;
+      const unit = capture.units[other]!;
+      neighbour = Math.min(
+        neighbour,
+        Math.hypot(child.x - unit.x, child.y - unit.y) -
+          unitRadius(other) -
+          child.radius
+      );
+    }
+    for (let next = index + 1; next < children.length; next += 1) {
+      const peer = children[next]!;
+      const gap =
+        Math.hypot(child.x - peer.x, child.y - peer.y) -
+        child.radius -
+        peer.radius;
+      if (peer.parent === child.parent) sibling = Math.min(sibling, gap);
+      else neighbour = Math.min(neighbour, gap);
+    }
+  }
+  return { parent, sibling, neighbour };
+}
+
+/** An overflow lobe stands for several Agents, so it is drawn larger than one
+ *  child. It is the exact census, never a decoration. */
+export const DELEGATION_OVERFLOW_SCALE = 1.25;
+
 export interface HeroBoardFraming {
   center: THREE.Vector3;
   radius: number;

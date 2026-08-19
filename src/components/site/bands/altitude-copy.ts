@@ -160,20 +160,14 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
     copy: [
       'See what every one of them is doing without opening a single one.',
       'The ones waiting on you light up. The rest keep working.',
+      'Take your agentmaxxing to the next level.',
     ],
   },
   {
     id: 'any-lab',
     copy: [
-      'Launch Claude Code, Codex, OpenCode and Grok Build. OpenClaw lands next.',
+      'Command Claude Code, Codex, OpenCode, Grok Build and OpenClaw.',
       'They run side by side on one board, on the plan you already pay for.',
-    ],
-  },
-  {
-    id: 'trust',
-    copy: [
-      'Your agents run on your Mac, under your account, on your keys.',
-      'Your code, your prompts, and what your agents write never pass through Exawatt.',
     ],
   },
   {
@@ -184,17 +178,24 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
     ],
   },
   {
-    id: 'cloud',
+    id: 'altitude-agent',
     copy: [
-      'Soon you will push a running agent to the cloud and close your laptop.',
-      'It works all night and hands you the result in the morning.',
+      'Command a thousand. Drop into any one of them and it tells you exactly what it is doing.',
+      'Working, needs you, done. Never a green check that lies.',
     ],
   },
   {
-    id: 'altitude-agent',
+    id: 'cloud',
     copy: [
-      'Every agent tells you the job it is on, in its own words.',
-      'Working, needs you, done. Never a green check that lies.',
+      'Push a running agent to the cloud and close your laptop.',
+      'Long-horizon work runs for hours or days, and it keeps running after you walk away.',
+    ],
+  },
+  {
+    id: 'trust',
+    copy: [
+      'Your agents run on your Mac, under your account, on your keys.',
+      'Your code, your prompts, and what your agents write never pass through Exawatt.',
     ],
   },
 ];

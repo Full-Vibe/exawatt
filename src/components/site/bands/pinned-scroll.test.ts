@@ -99,18 +99,19 @@ describe('pinned scroll geometry', () => {
   it('runs the real manifest sequence, and the camera never reverses', () => {
     const bands = pinnedBoardBands();
     const anchors = panelAnchors(bands.map(band => band.screens));
-    // W12: six panels over one board, after the fold's own frame. The camera
-    // GLIDES ten percent in on the first scroll, steps in again while two lens
-    // panels re-read the same marks, steps in onto the Project where
-    // delegation is legible, HOLDS there for the cloud claim, and dives to one
-    // agent last. (W9 held the fold's crop through the attention beat; the
-    // operator asked for movement there.)
+    // W13: six panels over one board, after the fold's own frame. The camera
+    // GLIDES ten percent in on the first scroll, steps in again for the lens
+    // panel, steps in onto the Project where delegation is legible, DIVES to
+    // one agent, and holds that frame for the two claims the page closes on.
+    // (W9 held the fold's crop through the attention beat; the operator asked
+    // for movement there. W12 had the cloud claim holding at the Project
+    // framing; the operator then moved the dive up and ownership last.)
     expect(bands.map(band => band.altitudeAnchor)).toEqual([
       'cluster-in',
       'cluster-close',
-      'cluster-close',
       'team',
-      'team',
+      'agent',
+      'agent',
       'agent',
     ]);
     // Progress is monotonic, and now so is the ALTITUDE it resolves to. The

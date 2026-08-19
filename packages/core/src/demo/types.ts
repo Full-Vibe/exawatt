@@ -26,6 +26,7 @@
  *   reads as more than one worker (ENG-023) without a demo-only shape.
  */
 
+import type { AgentSourceAdapterId } from '../agent-sources';
 import type { AgentStatus, BlockerType } from '../types/agent';
 import type { ConsumptionSourceId } from '../consumption/types';
 
@@ -166,7 +167,47 @@ export interface DemoFleetAgent {
   /** Six-word-contract subtitle (ENG-016 D33). */
   contextLabel: string;
   status: AgentStatus;
+  /**
+   * WHICH LEDGER THIS SESSION'S SPEND IS READ FROM (ENG-008).
+   *
+   * A `ConsumptionSourceId` is a consumption ledger, not a harness: it names
+   * the local record Exawatt scans and the shape of the usage it finds there
+   * (Codex reports reasoning tokens and a context window, Claude Code reports
+   * neither). It is authored per Agent and every consumption number in Demo
+   * Mode derives from it.
+   *
+   * IT IS NOT WHICH HARNESS RUNS THE AGENT. See `harness` below.
+   */
   source: ConsumptionSourceId;
+  /**
+   * WHICH AGENT SOURCE LAUNCHED THIS AGENT (ENG-003).
+   *
+   * The launcher's own `adapterId` from `contracts/agent-sources.json`:
+   * `claude`, `codex`, `opencode`, `grok`, `openclaw`. This is the field a
+   * surface means when it asks "whose agent is this", and it is what the
+   * marketing board's source lens colours by.
+   *
+   * SPLIT FROM `source` 2026-08-19 (ENG-031 W13). One field carried both
+   * facts, typed as `ConsumptionSourceId`, so the demo fleet could only ever
+   * be run by the three harnesses that happen to own a consumption ledger,
+   * and in practice by the two the generator assigned. That conflation is the
+   * defect: a harness and a ledger are independent axes in the product
+   * (ENG-003 declares six adapters; ENG-008 reads three ledgers), and a
+   * fixture that models them as one cannot represent an OpenCode session at
+   * all.
+   *
+   * THE SIMPLIFICATION THIS FIXTURE MAKES, stated rather than hidden. Only
+   * three ledgers exist, so an OpenCode, OpenClaw or Grok Build Agent here
+   * reports into the ledger of the model family it ran. That is honest for a
+   * multi-provider CLI and for a gateway, and it is a simplification for Grok
+   * Build, which owns its own ledger in the product (ENG-003 S4) and would
+   * carry `source: 'grok'` and a grok model in a fixture that also reauthored
+   * usage. This pass deliberately did not reauthor usage: moving a single
+   * Agent between ledgers or model tiers moves Demo Mode's weighted-token
+   * totals, and no marketing surface is worth a fabricated spend delta.
+   * Widening the corpus with a real Grok Build slice belongs to ENG-027.
+   */
+  harness: AgentSourceAdapterId;
   model: string;
   effort: 'low' | 'medium' | 'high' | null;
   gitBranch: string | null;

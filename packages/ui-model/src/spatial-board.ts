@@ -191,7 +191,29 @@ export interface SpatialBoardLayoutOptions {
 
 const BOARD = {
   columns: 4,
-  fleetPitchX: 30,
+  /**
+   * PROJECT LATTICE PITCH, and why X is now the SMALLER of the two (operator,
+   * 2026-08-19: "move these project circles closer together, they're too far
+   * apart in the x dimension, this goes for the product as well").
+   *
+   * The lattice was 30 across and 28 down while a Project's circle is the same
+   * size in both axes, so the horizontal gaps were already the looser pair in
+   * layout space. What made it obvious on screen is the board's fixed
+   * three-quarter view: every altitude looks down the same planted polar
+   * angle, which foreshortens the depth axis by about a quarter and leaves the
+   * horizontal gaps reading roughly forty percent wider than the vertical ones
+   * that measure the same. Setting X UNDER Y is what makes the two read equal
+   * through the projection the board actually uses.
+   *
+   * The floor is collision, not taste: the widest adjacent pair in the current
+   * demo fleet sums to 22.98 units of radius, so 25 leaves a real gap and the
+   * `no zones intersect` property in `spatial-board.test.ts` is what holds it.
+   * This is the shared policy, so the site board and the product's own Fleet
+   * board move together; a site-only override would have been a second layout
+   * truth, which is the thing ENG-004's stable-address contract exists to
+   * prevent.
+   */
+  fleetPitchX: 25,
   fleetPitchY: 28,
   fleetMinRadius: 7,
   fleetMaxRadius: 14,

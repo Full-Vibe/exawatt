@@ -164,22 +164,31 @@ describe('homepage band ordering', () => {
     // left on the page.
     const anchors = heroCameraAnchors();
 
+    // AMENDED again (W13, operator, two notes at once): the dive moves UP so
+    // the page zooms in closer, faster, and `Your machine, your keys` becomes
+    // the LAST section. Those two cannot both be served by a plain reorder,
+    // because a wide framing after the dive is the reversal this test exists
+    // to forbid. They are served by the dive ARRIVING earlier and the two
+    // panels after it HOLDING the frame it arrived on, which is the stronger
+    // reading as well: the reader is looking at one running agent when the
+    // page says push a running agent to the cloud, and ownership lands last
+    // on the agent the whole run travelled to.
     expect(anchors.map(anchor => anchor.id)).toEqual([
       'fold',
       'altitude-attention',
       'any-lab',
-      'trust',
       'altitude-delegation',
-      'cloud',
       'altitude-agent',
+      'cloud',
+      'trust',
     ]);
     expect(bandById('fold').altitudeAnchor).toBe('cluster');
     expect(pinnedAltitudeLadder()).toEqual([
       'cluster-in',
       'cluster-close',
-      'cluster-close',
       'team',
-      'team',
+      'agent',
+      'agent',
       'agent',
     ]);
     expect(anchorsHeroCamera(bandById('proof'))).toBe(false);
@@ -204,9 +213,20 @@ describe('homepage band ordering', () => {
     // And it actually TRAVELS: a run that held one framing throughout would
     // pass a monotonicity test and say nothing.
     expect(depths.at(-1)!).toBeGreaterThan(depths[0]!);
-    // The deepest rung is the last thing the page shows over the board, which
-    // is what hands the reader straight to the dated list and the button.
-    expect(heroCameraAnchors().at(-1)?.id).toBe('altitude-agent');
+    // THE DIVE IS THE ARRIVAL, AND NOTHING AFTER IT LEAVES (W13). It used to
+    // be the last panel; the operator moved it up and asked for `trust` last,
+    // so what this asserts now is that the deepest rung is reached at
+    // `altitude-agent` and every panel after it holds exactly that rung. A
+    // reordered row that puts a wider frame in the tail fails here.
+    const anchors = heroCameraAnchors();
+    const dive = anchors.findIndex(anchor => anchor.id === 'altitude-agent');
+    expect(dive).toBeGreaterThan(0);
+    expect(depths[dive]).toBe(Math.max(...depths));
+    for (let index = dive; index < depths.length; index += 1) {
+      expect(depths[index], anchors[index]!.id).toBe(depths[dive]!);
+    }
+    // And it does not arrive early and then coast for half the page.
+    expect(dive).toBeGreaterThanOrEqual(anchors.length - 3);
   });
 
   it('places every reserved band in the slot it would occupy', () => {
@@ -222,7 +242,7 @@ describe('homepage band ordering', () => {
     // it is, and all three finish before the dive and the dated list. W9 moved
     // them AHEAD of delegation, because saying them at the fold's crop and
     // then stepping in is the only ordering that never reverses the camera.
-    for (const id of ['any-lab', 'cost', 'trust'] as const) {
+    for (const id of ['any-lab', 'cost'] as const) {
       expect(order.indexOf(id), id).toBeGreaterThan(
         order.indexOf('altitude-attention')
       );
@@ -231,6 +251,13 @@ describe('homepage band ordering', () => {
       );
       expect(order.indexOf(id), id).toBeLessThan(order.indexOf('proof'));
     }
+    // OWNERSHIP IS LAST (W13, operator). It left that group and became the
+    // final panel over the board, which it can only do because it HOLDS the
+    // dive's framing rather than pulling back out to say itself.
+    expect(order.indexOf('trust')).toBeGreaterThan(
+      order.indexOf('altitude-agent')
+    );
+    expect(order.indexOf('trust')).toBeLessThan(order.indexOf('close'));
     // `observability` merged into the attention panel and `altitude-team` into
     // the dive. Each row keeps the slot it would take back.
     expect(order.indexOf('observability')).toBeGreaterThan(
@@ -276,29 +303,30 @@ describe('the pinned board run', () => {
     expect(pinned.map(band => band.id)).toEqual([
       'altitude-attention',
       'any-lab',
-      'trust',
       'altitude-delegation',
-      'cloud',
       'altitude-agent',
+      'cloud',
+      'trust',
     ]);
     expect(pinned.map(band => band.boardHighlight)).toEqual([
       'needs-you',
       'whole-fleet',
-      'whole-fleet',
       'delegation',
+      'one-agent',
       'whole-fleet',
       'one-agent',
     ]);
-    // The LENS is what makes the two middle panels different pictures of the
-    // same fleet rather than the same picture twice, which is what lets the
-    // camera hold between them without repeating itself.
+    // The LENS and the EMPHASIS are what keep the run's tail three pictures
+    // rather than one framing held for a third of the page: the dive lights
+    // one agent, `cloud` brings the fleet around it back up, and `trust`
+    // returns to that agent under its own declared lens.
     expect(pinned.map(band => band.boardLens)).toEqual([
       'status',
       'source',
+      'status',
+      'status',
+      'status',
       'permission',
-      'status',
-      'status',
-      'status',
     ]);
   });
 
