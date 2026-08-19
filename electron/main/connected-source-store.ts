@@ -3,10 +3,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseConnectedSourceRecord,
+  parseDeviceKeypair,
   readGrantedAuthority,
   toConnectedSourceView,
   type ConnectedSourceRecord,
   type ConnectedSourceView,
+  type OCDeviceKeypair,
   type SourceAuthority,
   type SourceTransport,
 } from '@exawatt/core';
@@ -17,7 +19,7 @@ import {
  * Two files, deliberately separate:
  *
  *   <userData>/connected-sources.json      records, no secrets
- *   <userData>/connected-source-secrets.json  OS-encrypted device tokens
+ *   <userData>/connected-source-secrets.json  OS-encrypted device credentials
  *
  * The split is not tidiness. The records file is the one a diagnostic export,
  * a support bundle, or a bug report may reasonably want to include; keeping
@@ -30,6 +32,16 @@ import {
  * uses it once, in memory, to pair its own device identity at `operator.read`,
  * and persists only the resulting scoped, server-revocable device token. That
  * is what this store holds.
+ *
+ * A device credential is two things, and this store keeps them as one
+ * (ENG-010 C3, after a live run). The Gateway derives the device id from the
+ * public key it was paired with and binds the issued token to that id, so the
+ * token alone is not a credential: presented by a process that minted a new
+ * keypair it is refused with "device token mismatch", which is what made
+ * every relaunch of a saved source fail. The private key is therefore held
+ * exactly as the token is, encrypted by the OS and never in the records file,
+ * and the two are written, read, and cleared together. Half a credential is
+ * not a state anything can use.
  *
  * ENG-010 C3 adds one more rule, and it is an identity rule rather than a
  * storage one:
@@ -51,6 +63,11 @@ const RECORDS_SCHEMA_VERSION = 1;
 const MAX_SOURCES = 200;
 /** A device token is a bounded credential, not a payload. */
 const MAX_TOKEN_LENGTH = 16_384;
+/**
+ * A serialised keypair is a hex secret and a base64url public key, so this is
+ * an order of magnitude of headroom rather than a limit anything real meets.
+ */
+const MAX_KEYPAIR_LENGTH = 2_048;
 
 export interface ConnectedSourceStoreDependencies {
   /** Directory the two files live in. Injected so tests never touch userData. */
@@ -140,12 +157,37 @@ export type AddConnectedSourceResult =
 
 export type DeviceCredentialWriteResult =
   | { ok: true }
-  | { ok: false; reason: 'encryption-unavailable' | 'invalid-token' | 'io' };
+  | {
+      ok: false;
+      reason:
+        | 'encryption-unavailable'
+        | 'invalid-token'
+        | 'invalid-keypair'
+        | 'io';
+    };
+
+/**
+ * What Exawatt must present to be the device this source already knows: the
+ * scoped token the Gateway issued, and the identity it issued it to.
+ */
+export interface DeviceCredential {
+  token: string;
+  keypair: OCDeviceKeypair;
+}
 
 interface SecretsFileShape {
   schemaVersion: number;
   /** configured source id -> base64 of the OS-encrypted token. */
   tokens: Record<string, string>;
+  /**
+   * configured source id -> base64 of the OS-encrypted device keypair.
+   *
+   * A separate map rather than a field inside the token blob so that reading
+   * one never means decrypting the other: the identity is read on every
+   * connect, the token beside it, and neither is ever handed to a caller that
+   * asked for the other.
+   */
+  devices: Record<string, string>;
 }
 
 function readJsonFile(file: string): unknown {
@@ -174,6 +216,27 @@ function writeJsonFileAtomic(file: string, value: unknown): void {
   } catch {
     // Best effort: a filesystem without POSIX modes still gets the rename.
   }
+}
+
+/**
+ * One map of source id to ciphertext, read from a file this process wrote but
+ * anything on the machine could have edited. Oversized and non-string values
+ * are dropped rather than carried: a decrypt is the only thing that can
+ * validate the contents, and nothing here should be able to grow the file it
+ * writes back.
+ */
+function readCiphertextMap(
+  value: unknown,
+  maxLength: number
+): Record<string, string> {
+  const safe: Record<string, string> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return safe;
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'string' && entry.length <= maxLength) {
+      safe[key] = entry;
+    }
+  }
+  return safe;
 }
 
 export class ConnectedSourceStore {
@@ -332,11 +395,20 @@ export class ConnectedSourceStore {
   }
 
   /**
-   * Persist a scoped device token. Fails closed when the OS refuses
-   * encryption: a token written in plaintext would be a worse outcome than an
-   * operator who has to reconnect, so this never falls back.
+   * Persist one device credential: the scoped token, and the identity the
+   * Gateway issued it to.
+   *
+   * Both halves in one write, because either half alone is a state Exawatt
+   * cannot connect from. Fails closed when the OS refuses encryption: an
+   * operator who has to pair again is a better outcome than a private key
+   * lying at rest in the clear, so this never falls back to plaintext and
+   * never keeps the token when it could not keep the key.
    */
-  writeDeviceToken(id: string, token: string): DeviceCredentialWriteResult {
+  writeDeviceCredential(
+    id: string,
+    credential: DeviceCredential
+  ): DeviceCredentialWriteResult {
+    const token = credential?.token;
     if (
       typeof token !== 'string' ||
       token.length === 0 ||
@@ -344,14 +416,22 @@ export class ConnectedSourceStore {
     ) {
       return { ok: false, reason: 'invalid-token' };
     }
+    const keypair = parseDeviceKeypair(credential?.keypair);
+    if (keypair === null) return { ok: false, reason: 'invalid-keypair' };
+    const serialisedKeypair = JSON.stringify(keypair);
+    if (serialisedKeypair.length > MAX_KEYPAIR_LENGTH) {
+      return { ok: false, reason: 'invalid-keypair' };
+    }
     const encryption = this.deps.encryption;
     if (!encryption?.isAvailable()) {
       return { ok: false, reason: 'encryption-unavailable' };
     }
     try {
-      const encrypted = encryption.encryptString(token);
+      const encryptedToken = encryption.encryptString(token);
+      const encryptedKeypair = encryption.encryptString(serialisedKeypair);
       const secrets = this.readSecrets();
-      secrets.tokens[id] = encrypted.toString('base64');
+      secrets.tokens[id] = encryptedToken.toString('base64');
+      secrets.devices[id] = encryptedKeypair.toString('base64');
       writeJsonFileAtomic(this.secretsPath, secrets);
       this.setCredentialFlag(id, true);
       return { ok: true };
@@ -362,28 +442,45 @@ export class ConnectedSourceStore {
 
   /** Null whenever the token is absent, undecryptable, or encryption is off. */
   readDeviceToken(id: string): string | null {
-    const encryption = this.deps.encryption;
-    if (!encryption?.isAvailable()) return null;
-    const stored = this.readSecrets().tokens[id];
-    if (typeof stored !== 'string' || stored.length === 0) return null;
+    return this.readSecret(this.readSecrets().tokens[id]);
+  }
+
+  /**
+   * The device this source paired Exawatt as, or null when Exawatt cannot be
+   * that device any more.
+   *
+   * Null is the answer that keeps the product honest: a caller that cannot
+   * read the identity must pair a new device rather than present the stored
+   * token, which the Gateway would refuse for a device it never issued it to.
+   */
+  readDeviceKeypair(id: string): OCDeviceKeypair | null {
+    const plain = this.readSecret(this.readSecrets().devices[id]);
+    if (plain === null) return null;
     try {
-      const plain = encryption.decryptString(Buffer.from(stored, 'base64'));
-      return typeof plain === 'string' && plain.length > 0 ? plain : null;
+      return parseDeviceKeypair(JSON.parse(plain));
     } catch {
-      // A token encrypted under a different OS user or keychain state is not
-      // recoverable. Report absence so the caller re-pairs rather than
-      // presenting a broken credential as present.
       return null;
     }
   }
 
+  /**
+   * Forget this source's device credential, both halves.
+   *
+   * Named for the token because the token is the half a caller asks about,
+   * but the identity goes with it every time. Keeping the keypair after
+   * discarding the token would leave a device with nothing to present, and
+   * keeping the token after discarding the keypair would leave a token no
+   * device can present; both read as "credential held" to everything
+   * downstream and neither can connect.
+   */
   clearDeviceToken(id: string): void {
     const secrets = this.readSecrets();
-    if (!(id in secrets.tokens)) {
+    if (!(id in secrets.tokens) && !(id in secrets.devices)) {
       this.setCredentialFlag(id, false);
       return;
     }
     delete secrets.tokens[id];
+    delete secrets.devices[id];
     try {
       writeJsonFileAtomic(this.secretsPath, secrets);
     } catch {
@@ -391,6 +488,27 @@ export class ConnectedSourceStore {
       // claiming a credential it cannot read.
     }
     this.setCredentialFlag(id, false);
+  }
+
+  /**
+   * One stored secret, decrypted. Null whenever it is absent, undecryptable,
+   * or the platform will not decrypt at all.
+   *
+   * Secrets encrypted under a different OS user or keychain state are not
+   * recoverable. Reporting absence is what makes the caller pair again rather
+   * than present a broken credential as a present one, and no branch here
+   * puts the ciphertext, the plaintext, or the reason in an error.
+   */
+  private readSecret(stored: string | undefined): string | null {
+    const encryption = this.deps.encryption;
+    if (!encryption?.isAvailable()) return null;
+    if (typeof stored !== 'string' || stored.length === 0) return null;
+    try {
+      const plain = encryption.decryptString(Buffer.from(stored, 'base64'));
+      return typeof plain === 'string' && plain.length > 0 ? plain : null;
+    } catch {
+      return null;
+    }
   }
 
   private setCredentialFlag(id: string, hasDeviceCredential: boolean): void {
@@ -409,19 +527,15 @@ export class ConnectedSourceStore {
 
   private readSecrets(): SecretsFileShape {
     const parsed = readJsonFile(this.secretsPath);
-    const tokens =
+    const file =
       parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? (parsed as { tokens?: unknown }).tokens
-        : null;
-    const safe: Record<string, string> = {};
-    if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-      for (const [key, value] of Object.entries(tokens)) {
-        if (typeof value === 'string' && value.length <= MAX_TOKEN_LENGTH * 2) {
-          safe[key] = value;
-        }
-      }
-    }
-    return { schemaVersion: RECORDS_SCHEMA_VERSION, tokens: safe };
+        ? (parsed as { tokens?: unknown; devices?: unknown })
+        : {};
+    return {
+      schemaVersion: RECORDS_SCHEMA_VERSION,
+      tokens: readCiphertextMap(file.tokens, MAX_TOKEN_LENGTH * 2),
+      devices: readCiphertextMap(file.devices, MAX_KEYPAIR_LENGTH * 2),
+    };
   }
 
   private persist(records: readonly ConnectedSourceRecord[]): void {

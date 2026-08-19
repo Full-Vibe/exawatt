@@ -1,5 +1,6 @@
 import {
   adaptOpenClawTopology,
+  generateDeviceKeypair,
   readGrantedAuthority,
   resolveConnectionStatus,
   type AgentSourceAdapterId,
@@ -8,6 +9,7 @@ import {
   type ConnectedSourceRecord,
   type ConnectionStatus,
   type OCClientConfig,
+  type OCDeviceKeypair,
   type OCGatewayClient,
   type OCGatewayOperatorScope,
   type OpenClawTopologyIssue,
@@ -294,6 +296,51 @@ export function classifyAuthorityRefusal(
     : 'refused';
 }
 
+/**
+ * Words a Gateway uses when it is refusing a credential rather than failing
+ * to serve one.
+ *
+ * Confirmed against a live Gateway: a device token presented by a device the
+ * Gateway did not issue it to comes back as "unauthorized: device token
+ * mismatch (rotate/reissue device token)", and a mis-encoded public key as
+ * "device identity mismatch". Both were being reported to the operator as
+ * `gateway-down`, which is a sentence about a healthy server and a next step
+ * that leads nowhere.
+ */
+const CREDENTIAL_REFUSAL_SIGNALS = [
+  'device token',
+  'device identity',
+  'unauthorized',
+  'not_paired',
+  'not paired',
+  'pairing required',
+  'pairing_required',
+  'forbidden',
+  'invalid token',
+  'token mismatch',
+  'credential',
+  'scope mismatch',
+] as const;
+
+/**
+ * What a refused handshake actually was.
+ *
+ * `auth-rejected` only when the source said something about the credential.
+ * Everything else stays `gateway-down`, including a refusal with no sentence
+ * at all: guessing "credential" over an unexplained refusal would send the
+ * operator to re-pair a device that was never the problem, and would make
+ * Exawatt discard a credential that still works.
+ */
+export function classifyHandshakeFailure(
+  sentence: string | null
+): SourceFailureClass {
+  if (sentence === null) return 'gateway-down';
+  const text = sentence.toLowerCase();
+  return CREDENTIAL_REFUSAL_SIGNALS.some(signal => text.includes(signal))
+    ? 'auth-rejected'
+    : 'gateway-down';
+}
+
 /** The protocol client this session drives. */
 export type ConnectedGatewayClient = OCGatewayClient & {
   connect(): Promise<void>;
@@ -320,7 +367,8 @@ export interface ConnectedGatewaySessionDeps {
   store: Pick<
     ConnectedSourceStore,
     | 'readDeviceToken'
-    | 'writeDeviceToken'
+    | 'readDeviceKeypair'
+    | 'writeDeviceCredential'
     | 'clearDeviceToken'
     | 'setGrantedAuthority'
   >;
@@ -462,6 +510,8 @@ export function describeExawattClient(
 const MAX_DISCOVERY_AGENTS = 500;
 const MAX_ID_LENGTH = 4_096;
 const MAX_LABEL_LENGTH = 512;
+/** One quoted refusal, long enough to be useful and short enough to read. */
+const MAX_SOURCE_SENTENCE_LENGTH = 240;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -978,7 +1028,9 @@ export class ConnectedGatewaySession {
         message:
           attempt.refusal === 'approval-required'
             ? 'This source needs its own operator to approve write access for the Exawatt device. Approve it with the source device tooling, then ask again.'
-            : `This source refused write access: ${attempt.message}`,
+            : attempt.sentence === null
+              ? 'This source refused write access.'
+              : `This source refused write access. It said "${attempt.sentence}".`,
       };
     } finally {
       this.renegotiating = false;
@@ -1162,19 +1214,53 @@ export class ConnectedGatewaySession {
   /**
    * Credential custody, in one place.
    *
-   * The steady state is the first branch: a device token already exists, so
-   * bootstrap never runs again. Bootstrap is a once-ever step, and re-reading
-   * the source's admin-capable shared secret on every launch would be a
-   * strictly worse posture than holding a read-only, per-device, revocable
-   * token.
+   * A credential is two things, and Exawatt is only the device this source
+   * already knows when it holds both: the scoped token, and the keypair the
+   * Gateway issued that token to. The Gateway derives the device id from the
+   * public key and binds the token to it, so a launch that presented a stored
+   * token behind a freshly minted keypair was refused every time with
+   * "device token mismatch". That was not a rare edge: it was every relaunch
+   * and every automatic reconnect of every saved source.
+   *
+   * So the identity is resolved first, and three states follow from it.
+   *
+   * 1. **Identity and token.** The steady state, and the reason this milestone
+   *    exists: no bootstrap, no shared secret, no new device. One device,
+   *    once, forever.
+   * 2. **Identity, no token.** The token was cleared, expired, or refused.
+   *    Exawatt pairs again as the device it already is, so the source gets a
+   *    reissued token rather than a second device record.
+   * 3. **No identity.** Nothing to be but someone new, so a keypair is minted
+   *    here and persisted only once the Gateway has actually issued a token
+   *    for it. A token found without its keypair is deliberately ignored:
+   *    it belongs to a device this process can no longer be.
+   *
+   * Minting here rather than in the client is the point of the seam. The
+   * identity belongs to the configured source, not to a socket, so the
+   * session owns it and hands it to whatever client it builds; a client left
+   * to mint its own would tie a persisted identity to whether that particular
+   * client implementation happens to expose it.
    */
   private async resolveCredential(): Promise<
-    | { ok: true; deviceToken: string | null; sharedSecret: string | null }
+    | {
+        ok: true;
+        deviceToken: string | null;
+        keypair: OCDeviceKeypair;
+        sharedSecret: string | null;
+      }
     | { ok: false; failure: SourceFailureClass; message: string }
   > {
-    const stored = this.deps.store.readDeviceToken(this.record.id);
-    if (typeof stored === 'string' && stored.length > 0) {
-      return { ok: true, deviceToken: stored, sharedSecret: null };
+    const identity = this.deps.store.readDeviceKeypair(this.record.id);
+    if (identity !== null) {
+      const stored = this.deps.store.readDeviceToken(this.record.id);
+      if (typeof stored === 'string' && stored.length > 0) {
+        return {
+          ok: true,
+          deviceToken: stored,
+          keypair: identity,
+          sharedSecret: null,
+        };
+      }
     }
 
     this.setPhase('bootstrapping');
@@ -1196,6 +1282,7 @@ export class ConnectedGatewaySession {
     return {
       ok: true,
       deviceToken: null,
+      keypair: identity ?? (await generateDeviceKeypair()),
       sharedSecret: result.facts.sharedToken,
     };
   }
@@ -1230,7 +1317,11 @@ export class ConnectedGatewaySession {
    */
   private async pair(
     port: number,
-    credential: { deviceToken: string | null; sharedSecret: string | null }
+    credential: {
+      deviceToken: string | null;
+      keypair: OCDeviceKeypair;
+      sharedSecret: string | null;
+    }
   ): Promise<
     { ok: true } | { ok: false; failure: SourceFailureClass; message: string }
   > {
@@ -1240,6 +1331,12 @@ export class ConnectedGatewaySession {
     const config: OCClientConfig = {
       url: `ws://${LOOPBACK_HOST}:${port}`,
       scopes: [...SCOPES_FOR_AUTHORITY[this.grantedAuthority]],
+      /*
+       * The device Exawatt is on this source, carried on the config so that
+       * every client this session builds is the same device: the first one,
+       * the one a scope change cycles, and the one each reconnect opens.
+       */
+      deviceKeypair: credential.keypair,
       ...describeExawattClient(),
     };
     if (sharedSecret !== null) {
@@ -1278,11 +1375,10 @@ export class ConnectedGatewaySession {
     if (!opened.ok) {
       sharedSecret = null;
       config.token = undefined;
-      return {
-        ok: false,
-        failure: 'gateway-down',
-        message: opened.message,
-      };
+      return this.refusedHandshake(
+        opened.sentence,
+        credential.deviceToken !== null
+      );
     }
 
     const issued =
@@ -1291,7 +1387,16 @@ export class ConnectedGatewaySession {
         : null;
 
     if (issued !== null && issued !== credential.deviceToken) {
-      const written = this.deps.store.writeDeviceToken(this.record.id, issued);
+      /*
+       * The token and the identity it was issued to, written together. A
+       * token stored without its keypair is what broke every relaunch of
+       * every saved source, so there is deliberately no path here that can
+       * persist one without the other.
+       */
+      const written = this.deps.store.writeDeviceCredential(this.record.id, {
+        token: issued,
+        keypair: credential.keypair,
+      });
       if (!written.ok) {
         /*
          * Encryption unavailable, or the write failed. The session continues:
@@ -1320,19 +1425,72 @@ export class ConnectedGatewaySession {
   /**
    * One handshake attempt, with the client's own failure turned into a
    * sentence rather than an exception.
+   *
+   * `sentence` is the source's own account of the refusal, or null when the
+   * connection died without giving one. Carrying it is the whole fix to the
+   * second half of a live finding: a Gateway that refuses a credential says
+   * exactly why, Exawatt threw that away, and the operator was sent to check
+   * a Gateway that was answering perfectly well. It is protocol text, not
+   * transport text, and it is the sentence that makes the next step obvious.
    */
   private async openHandshake(
     client: ConnectedGatewayClient
-  ): Promise<{ ok: true } | { ok: false; message: string }> {
+  ): Promise<{ ok: true } | { ok: false; sentence: string | null }> {
     try {
       await client.connect();
       return { ok: true };
     } catch (error) {
+      return { ok: false, sentence: sourceSentence(error) };
+    }
+  }
+
+  /**
+   * A refused handshake, as the operator reads it.
+   *
+   * Two decisions live here. The failure is classified by what the source
+   * actually said, so a refused credential stops being reported as an
+   * unreachable Gateway; and a stored credential the source refuses is
+   * discarded rather than presented again forever, because a source that can
+   * never connect again until someone clears a keychain entry by hand is the
+   * outcome this milestone exists to prevent.
+   *
+   * Discarding is where the recovery stops, deliberately. Pairing again mints
+   * a NEW device on the operator's server and re-reads the admin-capable
+   * shared secret, which is exactly the posture the credential model exists
+   * to avoid. So this call ends in a reported failure that names what was
+   * discarded and what connecting again will cost, the retry ladder stops on
+   * this failure class rather than pairing on a timer, and the operator's
+   * next connect is the act that pairs.
+   */
+  private refusedHandshake(
+    sentence: string | null,
+    presentedStoredCredential: boolean
+  ): { ok: false; failure: SourceFailureClass; message: string } {
+    const failure = classifyHandshakeFailure(sentence);
+    const said = sentence === null ? '' : ` The source said "${sentence}".`;
+
+    if (failure !== 'auth-rejected') {
       return {
         ok: false,
-        message: messageOf(error, 'The Gateway refused the connection.'),
+        failure,
+        message: `Exawatt reached this source but the Gateway refused the connection.${said}`,
       };
     }
+
+    if (!presentedStoredCredential) {
+      return {
+        ok: false,
+        failure,
+        message: `This source refused to pair the Exawatt device.${said}`,
+      };
+    }
+
+    this.deps.store.clearDeviceToken(this.record.id);
+    return {
+      ok: false,
+      failure,
+      message: `This source refused the device credential Exawatt saved for it.${said} Exawatt has discarded that credential; connect again to pair a new device, which reads this source's Gateway secret one more time.`,
+    };
   }
 
   /**
@@ -1342,8 +1500,9 @@ export class ConnectedGatewaySession {
    * socket. The client instance is reused deliberately and this is the whole
    * distinction between an upgrade and a re-pairing: it keeps the device
    * keypair the Gateway knows this device by, and it keeps the persisted
-   * device token. A fresh client would generate a fresh keypair, which is a
-   * new device, which is exactly the outcome the doc rules out.
+   * device token. The identity now travels on the config as well, so even a
+   * replacement client would be the same device; reusing this one keeps the
+   * open subscriptions and the pending state with it.
    *
    * What the cycle does cost is the Gateway-side stream, which belongs to the
    * socket rather than to the device. It is asked for again here rather than
@@ -1355,7 +1514,11 @@ export class ConnectedGatewaySession {
     authority: SourceAuthority
   ): Promise<
     | { ok: true }
-    | { ok: false; message: string; refusal: 'approval-required' | 'refused' }
+    | {
+        ok: false;
+        sentence: string | null;
+        refusal: 'approval-required' | 'refused';
+      }
   > {
     config.scopes = [...SCOPES_FOR_AUTHORITY[authority]];
     try {
@@ -1379,8 +1542,8 @@ export class ConnectedGatewaySession {
     }
     return {
       ok: false,
-      message: opened.message,
-      refusal: classifyAuthorityRefusal(opened.message),
+      sentence: opened.sentence,
+      refusal: classifyAuthorityRefusal(opened.sentence ?? ''),
     };
   }
 
@@ -1722,6 +1885,21 @@ export class ConnectedGatewaySession {
       this.retrying = false;
       return;
     }
+    if (result.failure === 'auth-rejected') {
+      /*
+       * A credential the source refused, an SSH login it rejected, or a
+       * secret it no longer publishes. None of them is an outage, so none of
+       * them is repaired by asking again on a timer. The credential case is
+       * the one that must not loop: the stored credential has just been
+       * discarded, so the next attempt would pair a NEW device on the
+       * operator's server and read the admin-capable shared secret again.
+       * That is the posture this whole model exists to avoid holding, so it
+       * happens when the operator connects, not when a timer fires.
+       */
+      this.retrying = false;
+      this.setPhase('failed');
+      return;
+    }
     this.retrying = true;
     this.setPhase('reconnecting');
     this.scheduleReconnect();
@@ -1789,4 +1967,23 @@ function messageOf(error: unknown, fallback: string): string {
     return error.message.slice(0, MAX_LABEL_LENGTH);
   }
   return fallback;
+}
+
+/**
+ * A source's own words, made safe to put in front of an operator.
+ *
+ * The Gateway is untrusted input even when the operator trusts the server, so
+ * what comes back is collapsed to one line, stripped of control characters,
+ * and bounded before it can be quoted into product copy. Null when the
+ * failure carried nothing worth quoting, which is what keeps the caller from
+ * printing an empty pair of quotes.
+ */
+function sourceSentence(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const collapsed = error.message
+    .replace(/[\u0000-\u001f\u007f]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (collapsed.length === 0) return null;
+  return collapsed.slice(0, MAX_SOURCE_SENTENCE_LENGTH);
 }
