@@ -39,6 +39,7 @@ export const PUBLIC_REMOTE_NAME = 'public';
 export const PUBLIC_BRANCH = 'master';
 const REFUSAL = /refusing a non-fast-forward projection/u;
 const UNRENDERED_SHOWN = 6;
+const ENTRY_SHOWN = 3;
 
 /**
  * The public remote's push refspec. Deliberately force-free and exported so a
@@ -88,6 +89,42 @@ export function describeUnrendered(summary) {
 }
 
 /**
+ * A rendered path does not always enter public history at its first source
+ * revision: it enters where every remaining revision renders. That boundary is
+ * a fact about the public repository an operator would otherwise have to find
+ * by diffing it, so the landing says it.
+ *
+ * The paths named first are the ones whose entry MOVED — where a revision the
+ * projector could have rendered was held back because a later one could not.
+ * That is the shape a shared document takes when an edit removes the
+ * public-variant directives it carries, and it is the case worth a human's
+ * attention; a path that simply predates its recipe is ordinary.
+ */
+export function describeEntryBoundaries(summary) {
+  const boundaries = summary.entryBoundaries ?? [];
+  if (boundaries.length === 0) return null;
+  const moved = boundaries.filter(boundary => boundary.renderableSkipped > 0);
+  const named = moved.length > 0 ? moved : boundaries;
+  const shown = named
+    .slice(0, ENTRY_SHOWN)
+    .map(
+      boundary =>
+        `${boundary.path} enters at ${boundary.entryCommit.slice(0, 12)}, ` +
+        `${boundary.skippedRevisions} earlier revisions do not carry it` +
+        (boundary.renderableSkipped > 0
+          ? ` (${boundary.renderableSkipped} of them render, held back by ` +
+            `${boundary.lastUnrenderableCommit.slice(0, 12)})`
+          : '')
+    )
+    .join('; ');
+  const rest = named.length - Math.min(named.length, ENTRY_SHOWN);
+  return (
+    `${boundaries.length} rendered paths enter public history after their ` +
+    `first source revision: ${shown}${rest > 0 ? `, and ${rest} more` : ''}`
+  );
+}
+
+/**
  * Projects `integratedSha` and fast-forwards the public remote to it.
  *
  * Returns `{ state }` where state is `inert` (no public remote configured),
@@ -131,6 +168,8 @@ export async function projectToPublicRemote(
       changed,
       outputCount: projection.outputCount,
       renderedVariants: projection.renderedVariants,
+      skippedRevisions: projection.skippedRevisions,
+      entryBoundaries: projection.entryBoundaries,
       unrenderedOutputs: projection.unrenderedOutputs.map(
         output => output.path
       ),
@@ -162,6 +201,8 @@ export async function projectToPublicRemote(
           changed: summary.changed,
           outputCount: summary.outputCount,
           renderedVariants: summary.renderedVariants,
+          skippedRevisions: summary.skippedRevisions,
+          entryBoundaries: summary.entryBoundaries,
           unrenderedOutputs: summary.unrenderedOutputs,
         }
       : { reason: summary.reason }),
@@ -177,6 +218,8 @@ export async function projectToPublicRemote(
 
   if (summary.state === 'published') {
     log(`[public-delivery] ${describeProjection(summary)}`);
+    const entries = describeEntryBoundaries(summary);
+    if (entries) log(`[public-delivery] ${entries}`);
     const unrendered = describeUnrendered(summary);
     if (unrendered) log(`[public-delivery] ${unrendered}`);
   } else if (summary.state === 'refused') {

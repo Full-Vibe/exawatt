@@ -9,6 +9,7 @@ import {
   assertFastForward,
   buildProjectionPlan,
   projectPublicHistory,
+  resolveEntryBoundary,
 } from './lib/public-projection.mjs';
 import { renderRecipeOutput } from './lib/recipe-renderers.mjs';
 import {
@@ -677,4 +678,328 @@ test('every rendered output passes the checks the content gate applies', async (
   } finally {
     fixture.cleanup();
   }
+});
+
+/**
+ * The same workflow carrying something the renderer refuses. A file acquiring
+ * private material before it declares how its public variant differs is the
+ * ordinary shape here, not an exotic one: `AGENTS.md` rendered for 96 commits
+ * before the repository had a private research convention to hide, and
+ * `electron-builder.yml` rendered before it had an update feed.
+ */
+function unrenderableWorkflow(timeout) {
+  return workflow(timeout).replace(
+    'jobs:',
+    ['jobs:', '  # env:', '  #   TOKEN: ${{ secrets.PUBLISH_TOKEN }}'].join(
+      '\n'
+    )
+  );
+}
+
+/**
+ * A source repository whose rendered path renders, stops rendering, and
+ * renders again. Each entry of `revisions` is `[message, workflow]` and
+ * becomes one commit; the root also carries the public and private paths the
+ * manifest classifies, so Gate A has something to project.
+ */
+function gapFixture(revisions) {
+  const parent = mkdtempSync(path.join(tmpdir(), 'exawatt-projection-gap-'));
+  const source = path.join(parent, 'source');
+  mkdirSync(source);
+  git(source, ['init', '--quiet', '--initial-branch=master', '.']);
+
+  write(source, 'README.md', '# fixture\n');
+  write(source, MANIFEST_PATH, JSON.stringify(MANIFEST, null, 2) + '\n');
+  write(source, 'src/a.ts', 'export const a = 1;\n');
+  write(source, 'src/config.private.ts', 'export const operator = "op";\n');
+  write(source, 'src/config.ts', 'export const operator = null;\n');
+  write(source, 'company/secret.md', 'private overlay\n');
+  write(source, WORKFLOW, revisions[0][1]);
+  git(source, [
+    'add',
+    '--',
+    'README.md',
+    MANIFEST_PATH,
+    'src',
+    'company',
+    '.github',
+  ]);
+  git(source, ['commit', '--quiet', '-m', revisions[0][0]]);
+  const commits = [git(source, ['rev-parse', 'HEAD'])];
+
+  for (const [message, contents] of revisions.slice(1)) {
+    write(source, WORKFLOW, contents);
+    git(source, ['add', '--', WORKFLOW]);
+    git(source, ['commit', '--quiet', '-m', message]);
+    commits.push(git(source, ['rev-parse', 'HEAD']));
+  }
+
+  return {
+    parent,
+    source,
+    commits,
+    head: commits.at(-1),
+    at: name => path.join(parent, name),
+    cleanup: () => rmSync(parent, { recursive: true, force: true }),
+  };
+}
+
+const GAP_REVISIONS = [
+  ['root', workflow(25)],
+  ['the workflow gains a secret', unrenderableWorkflow(30)],
+  ['the secret is declared', workflow(35)],
+  ['a later edit', workflow(45)],
+];
+
+test('a path that renders, fails, then renders again enters after the last failure', async () => {
+  const fixture = gapFixture(GAP_REVISIONS);
+  try {
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('public'),
+    });
+
+    // Entry is taken from the END of history. First-success entry would have
+    // published the root's variant, then had nothing to replace it with at
+    // the failing revision, and the public repository would carry a stale
+    // variant of a file the source had already changed.
+    assert.deepEqual(
+      git(projection.destination, [
+        'log',
+        '--format=%s',
+        '--diff-filter=A',
+        'master',
+        '--',
+        WORKFLOW,
+      ]).split('\n'),
+      ['the secret is declared'],
+      'the public file must enter after the last revision that cannot render'
+    );
+    assert.equal(
+      git(projection.destination, [
+        'log',
+        '--format=%s',
+        '--diff-filter=D',
+        'master',
+        '--',
+        WORKFLOW,
+      ]),
+      '',
+      'a public file must never vanish once it has appeared'
+    );
+    assert.deepEqual(
+      git(projection.destination, [
+        'log',
+        '--format=%s',
+        'master',
+        '--',
+        WORKFLOW,
+      ]).split('\n'),
+      ['a later edit', 'the secret is declared'],
+      'every revision from the boundary on carries its own rendered bytes'
+    );
+
+    // No stale variant: each public revision is the render of the source blob
+    // at its own commit, not of an earlier one.
+    for (const [message, contents] of GAP_REVISIONS.slice(2)) {
+      const commit = git(projection.destination, [
+        'log',
+        '--format=%H',
+        '-1',
+        `--grep=^${message}$`,
+        '--extended-regexp',
+        'master',
+      ]);
+      assert.equal(
+        git(projection.destination, ['show', `${commit}:${WORKFLOW}`]),
+        renderRecipeOutput({
+          recipeId: 'public-ci',
+          kind: 'render-public-ci',
+          path: WORKFLOW,
+          source: Buffer.from(contents, 'utf8'),
+        })
+          .toString('utf8')
+          .trim()
+      );
+    }
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a moved entry boundary is reported, not left to be found in a diff', async () => {
+  const fixture = gapFixture(GAP_REVISIONS);
+  try {
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+    });
+
+    assert.equal(projection.skippedRevisions, 2);
+    assert.equal(projection.entryBoundaries.length, 1);
+    const [boundary] = projection.entryBoundaries;
+    assert.equal(boundary.path, WORKFLOW);
+    assert.equal(boundary.recipe, 'public-ci');
+    assert.equal(boundary.revisions, 4);
+    assert.equal(boundary.entryCommit, fixture.commits[2]);
+    assert.equal(boundary.skippedRevisions, 2);
+    // The signal that separates this from a path entering where its recipe
+    // became executable: a revision the projector COULD have rendered was
+    // dropped because a later one could not.
+    assert.equal(boundary.renderableSkipped, 1);
+    assert.equal(boundary.lastUnrenderableCommit, fixture.commits[1]);
+    assert.match(boundary.reason, /secrets\./u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('an entry boundary stays put as the source history grows past it', async () => {
+  const fixture = gapFixture(GAP_REVISIONS);
+  try {
+    const earlier = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.commits[2],
+      destination: fixture.at('earlier'),
+    });
+    const later = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('later'),
+    });
+    git(later.destination, [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      earlier.destination,
+      'master:refs/remotes/earlier/master',
+    ]);
+    assert.equal(
+      await assertFastForward({
+        repo: later.destination,
+        candidateSha: later.publicSha,
+        existingRef: 'refs/remotes/earlier/master',
+      }),
+      true,
+      'a projection over a mid-history gap must still fast-forward'
+    );
+
+    const repeated = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('repeated'),
+    });
+    assert.equal(later.publicSha, repeated.publicSha);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('the boundary moves past content an unrenderable revision preceded', async () => {
+  // The revision after the failure reverts the file to bytes the pre-boundary
+  // history already had. filter-repo's callback sees one (filename, blob) pair
+  // and no commit, so that blob cannot be dropped there and rendered here; the
+  // boundary moves forward instead, and the file enters one revision later.
+  const fixture = gapFixture([
+    ['root', workflow(25)],
+    ['the workflow gains a secret', unrenderableWorkflow(30)],
+    ['the workflow is reverted', workflow(25)],
+    ['a later edit', workflow(45)],
+  ]);
+  try {
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('public'),
+    });
+    const [boundary] = projection.entryBoundaries;
+    assert.equal(boundary.entryCommit, fixture.commits[3]);
+    assert.equal(boundary.skippedRevisions, 3);
+    assert.equal(boundary.renderableSkipped, 2);
+    assert.deepEqual(
+      git(projection.destination, [
+        'log',
+        '--format=%s',
+        'master',
+        '--',
+        WORKFLOW,
+      ]).split('\n'),
+      ['a later edit'],
+      'a reverted blob must not be both dropped and rendered'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a source commit whose own revision cannot render is refused by name', async () => {
+  const fixture = gapFixture([
+    ['root', workflow(25)],
+    ['the workflow gains a secret', unrenderableWorkflow(30)],
+  ]);
+  try {
+    await assert.rejects(
+      projectPublicHistory({
+        sourceRepo: fixture.source,
+        sourceSha: fixture.head,
+        destination: fixture.at('public'),
+      }),
+      error =>
+        /does not render at the source commit itself/u.test(error.message) &&
+        error.message.includes(fixture.head) &&
+        /secrets\./u.test(error.message)
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('the entry boundary is the last contiguous run of rendering revisions', () => {
+  const revisions = objects => objects.map(object => ({ object }));
+  const renders = set => revision => set.has(revision.object);
+
+  assert.equal(
+    resolveEntryBoundary(
+      revisions(['a', 'b', 'c']),
+      renders(new Set(['a', 'b', 'c']))
+    ),
+    0,
+    'a path that renders everywhere enters at its first revision'
+  );
+  assert.equal(
+    resolveEntryBoundary(
+      revisions(['a', 'b', 'c']),
+      renders(new Set(['b', 'c']))
+    ),
+    1,
+    'a path that predates its recipe enters where it starts rendering'
+  );
+  // The case first-success entry got wrong: renders, stops, renders again.
+  assert.equal(
+    resolveEntryBoundary(
+      revisions(['a', 'b', 'c', 'd']),
+      renders(new Set(['a', 'c', 'd']))
+    ),
+    2,
+    'entry is taken from the end, so the early success is dropped with the failure'
+  );
+  assert.equal(
+    resolveEntryBoundary(
+      revisions(['a', 'b', 'c']),
+      renders(new Set(['a', 'b']))
+    ),
+    3,
+    'a tip that cannot render leaves no revision to enter at'
+  );
+  // A blob on both sides of the boundary cannot be dropped there and rendered
+  // here, because the callback keys on (path, blob) and sees no commit.
+  assert.equal(
+    resolveEntryBoundary(
+      revisions(['a', 'b', 'a', 'c']),
+      renders(new Set(['a', 'c']))
+    ),
+    3,
+    'the boundary moves past content an unrenderable revision preceded'
+  );
 });

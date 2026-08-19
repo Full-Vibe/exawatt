@@ -205,6 +205,8 @@ export async function reseedPublicRepository({
       droppedPublicCommits: Number(dropped),
       outputCount: projection.outputCount,
       renderedVariants: projection.renderedVariants,
+      skippedRevisions: projection.skippedRevisions,
+      entryBoundaries: projection.entryBoundaries,
       unrenderedOutputs: projection.unrenderedOutputs.map(
         output => output.path
       ),

@@ -62,9 +62,18 @@ export const GIT_FILTER_REPO = 'git-filter-repo';
  * A recipe becomes executable at a commit, and revisions older than that
  * cannot be rendered — they predate the directives that declare their public
  * variant. Those revisions are dropped, so the path enters public history
- * where its recipe did, and `unrenderableRevisions` counts them. The reverse
- * is refused outright: once a revision renders, every later revision must,
- * because a newer one that stopped rendering would freeze a stale public file.
+ * where its recipe did, and `skippedRevisions` counts them.
+ *
+ * "Renders" is not monotone, so the entry boundary is taken from the END of
+ * history and never from the first success. A shared document can lose its
+ * public-variant directives mid-history — a sibling session edits it without
+ * knowing the public variant exists — and get them back later; the same shape
+ * appears when a file acquires something private and then declares it
+ * (`electron-builder.yml` rendered, stopped when it gained an update feed, and
+ * renders again now the feed is declared private). Entering at the first
+ * success would make the public file appear, vanish, and reappear, or freeze a
+ * stale variant across the gap. `resolveEntryBoundary` is where that is
+ * decided, and `entryBoundaries` reports every path whose entry moved.
  */
 
 function fail(message) {
@@ -344,10 +353,14 @@ export async function assertFastForward({ repo, candidateSha, existingRef }) {
  *
  * It fails closed: an unknown source blob at a rendered path, or a symlink
  * where a rendered file was expected, aborts filter-repo rather than letting
- * the private blob reach the public repository. A revision this module could
- * not render — one predating its recipe's directives — is dropped from that
- * commit, which is what makes the path enter public history where its recipe
- * became executable instead of before it.
+ * the private blob reach the public repository. A revision before the path's
+ * entry boundary is dropped from its commit, which is what makes the path
+ * enter public history where it became publishable instead of before it.
+ *
+ * Dropping a file change does not delete the file: it leaves whatever the
+ * parent commit had. That is exactly why the boundary is a boundary — every
+ * dropped revision precedes the file's first appearance, so there is nothing
+ * for it to leave behind.
  */
 const FILE_INFO_CALLBACK = `state = value.data
 plan = state.get('exawatt_plan')
@@ -430,6 +443,49 @@ async function batchCheck(repo, requests) {
 }
 
 /**
+ * The index in `revisions` at which a rendered path ENTERS public history:
+ * the start of the last contiguous run of revisions that all render, taken
+ * from the newest end.
+ *
+ * Taken from the end, never from the first success, because "renders" is not
+ * monotone. A document can render, lose its public-variant directives to an
+ * edit that did not know they were load-bearing, and get them back; a config
+ * can render, acquire something private, and render again once that is
+ * declared. Entering at the first success would publish a file that appears,
+ * vanishes, and reappears — and, worse, the revision that stopped rendering
+ * cannot be replaced, so the public repository would hold the PREVIOUS
+ * revision's bytes: a stale variant of a file the source has since changed.
+ *
+ * `revisions` is in ancestor-first topological order, so a suffix of it is
+ * closed under descendants: no revision the projection drops can be an
+ * ancestor of one it carries, whatever the shape of the DAG.
+ *
+ * The boundary then moves forward past any blob that appears on both sides of
+ * it. filter-repo's callback sees one `(filename, blob)` pair and no commit,
+ * so a revision that reverted the file to content the pre-boundary history
+ * already had cannot be dropped there and rendered here. Making the two sides
+ * disjoint by construction is what keeps that lookup single-valued; it costs
+ * a slightly later entry in a case this repository has never yet produced.
+ */
+export function resolveEntryBoundary(revisions, renders) {
+  let boundary = 0;
+  for (const [index, revision] of revisions.entries()) {
+    if (!renders(revision)) boundary = index + 1;
+  }
+  for (;;) {
+    const before = new Set(
+      revisions.slice(0, boundary).map(revision => revision.object)
+    );
+    let shared = -1;
+    for (let index = boundary; index < revisions.length; index += 1) {
+      if (before.has(revisions[index].object)) shared = index;
+    }
+    if (shared === -1) return boundary;
+    boundary = shared + 1;
+  }
+}
+
+/**
  * Renders every GENERATED variant the projected history will need, once per
  * distinct (path, source blob), and writes the lookup the callback reads.
  *
@@ -437,11 +493,19 @@ async function batchCheck(repo, requests) {
  * JavaScript next to the manifest that declares them, and it makes the render
  * set explicit: if a source blob at a rendered path is not in this map, the
  * callback aborts instead of guessing.
+ *
+ * Every revision before a path's entry boundary is dropped whether it renders
+ * or not, and every revision from it on renders. Those two together are what
+ * make the public file honest: it is absent until it is publishable, and from
+ * then on every public revision was rendered from the source revision it sits
+ * on. `entryBoundaries` reports each path that entered late, so an operator
+ * reads it instead of finding it in a diff.
  */
 async function prepareRenderedVariants(workdir, plan) {
   if (plan.renderedOutputs.length === 0) return null;
   // Reverse topological order puts every ancestor before its descendants,
-  // which is what makes the "renderable from here on" check below sound.
+  // which is what makes the entry boundary below a boundary in the history's
+  // own order rather than in an arbitrary listing.
   const commits = (
     await git(['rev-list', '--reverse', '--topo-order', plan.sourceSha], {
       cwd: workdir,
@@ -463,83 +527,123 @@ async function prepareRenderedVariants(workdir, plan) {
   for (const [index, object] of answers.entries()) {
     if (object === null) continue;
     const output = plan.renderedOutputs[index % plan.renderedOutputs.length];
-    history.get(output.path).push(object);
+    history.get(output.path).push({
+      commit: commits[Math.trunc(index / plan.renderedOutputs.length)],
+      object,
+    });
   }
 
   const blobs = await readBlobBatch(workdir, [
-    ...new Set([...history.values()].flat()),
+    ...new Set([...history.values()].flat().map(revision => revision.object)),
   ]);
   const directory = path.join(workdir, '.git', 'exawatt-rendered');
   await mkdir(directory, { recursive: true });
   const map = { modes: {}, blobs: {}, dropped: {} };
+  const entryBoundaries = [];
   let renderedVariants = 0;
-  let unrenderableRevisions = 0;
+  let skippedRevisions = 0;
 
   for (const output of plan.renderedOutputs) {
     map.modes[output.path] = output.mode;
-    // A recipe becomes executable at a commit: older revisions of the same
-    // path predate the directives that declare their public variant, and
-    // rendering them would either publish private bytes or guess. Those
-    // revisions are dropped, exactly as the whole path was dropped before
-    // this recipe had a renderer, and the path simply enters public history
-    // where its recipe did.
-    //
-    // What must never happen is the reverse — a NEW revision that stops
-    // rendering — because that would silently freeze or stale the public
-    // file. Walking in ancestor-first order, the moment a revision renders,
-    // every later one must too.
-    let firstRendered = null;
-    let failure = null;
-    for (const object of history.get(output.path)) {
+    const revisions = history.get(output.path);
+
+    // A Git blob id IS its content, so rendering once per distinct object is
+    // also rendering once per distinct source content — the same identity the
+    // callback keys its lookup on.
+    const rendered = new Map();
+    const refused = new Map();
+    const keys = new Map();
+    for (const { object } of revisions) {
+      if (keys.has(object)) continue;
       const source = blobs.get(object);
       if (source === undefined) fail('missing source blob ' + object);
-      const key = output.path + '\0' + sha256(source);
-      if (map.blobs[key]) {
-        firstRendered ??= object;
-        continue;
-      }
-      if (map.dropped[key]) continue;
-      let variant;
+      keys.set(object, output.path + '\0' + sha256(source));
       try {
-        variant = renderRecipeOutput({
-          recipeId: output.recipe,
-          kind: output.kind,
-          path: output.path,
-          source,
-        });
+        rendered.set(
+          object,
+          renderRecipeOutput({
+            recipeId: output.recipe,
+            kind: output.kind,
+            path: output.path,
+            source,
+          })
+        );
       } catch (error) {
-        if (firstRendered !== null) {
-          fail(
-            'recipe ' +
-              output.recipe +
-              ' rendered ' +
-              output.path +
-              ' at an earlier commit but not at ' +
-              object +
-              ', which would publish a stale public variant: ' +
-              error.message
-          );
-        }
-        map.dropped[key] = true;
-        unrenderableRevisions += 1;
-        failure = error;
-        continue;
+        refused.set(object, error);
       }
-      const file = path.join(directory, sha256(key));
-      await writeFile(file, variant);
-      map.blobs[key] = file;
-      renderedVariants += 1;
-      firstRendered ??= object;
     }
-    if (firstRendered === null) {
+
+    const boundary = resolveEntryBoundary(revisions, revision =>
+      rendered.has(revision.object)
+    );
+    if (boundary >= revisions.length) {
+      const tip = revisions.at(-1);
       fail(
         'recipe ' +
           output.recipe +
-          ' renders no revision of ' +
+          ' gives the public repository no revision of ' +
           output.path +
-          ', so the public repository would never receive it: ' +
-          (failure?.message ?? 'the path is absent from the projected history')
+          ': ' +
+          (revisions.length === 0
+            ? 'the path is absent from the projected history'
+            : refused.has(tip.object)
+              ? 'it does not render at the source commit itself (' +
+                tip.commit +
+                '), so there is no revision it could enter at. ' +
+                refused.get(tip.object).message
+              : 'every revision it renders repeats content an unrenderable ' +
+                'revision preceded, so the file cannot enter without either ' +
+                'a stale variant or a reappearing one')
       );
+    }
+
+    let renderableSkipped = 0;
+    let lastUnrenderable = null;
+    for (let index = 0; index < boundary; index += 1) {
+      const revision = revisions[index];
+      map.dropped[keys.get(revision.object)] = true;
+      if (rendered.has(revision.object)) renderableSkipped += 1;
+      else lastUnrenderable = revision;
+    }
+    skippedRevisions += boundary;
+
+    for (let index = boundary; index < revisions.length; index += 1) {
+      const key = keys.get(revisions[index].object);
+      // The callback reads `dropped` before `blobs`, so a key on both sides of
+      // the boundary would silently drop a revision the public repository must
+      // carry — and leave the previous one in its place. `resolveEntryBoundary`
+      // makes the two sides disjoint; this refuses to publish if it ever did
+      // not.
+      if (map.dropped[key]) {
+        fail(
+          'rendered ' +
+            output.path +
+            ' would be both dropped and published for one source blob'
+        );
+      }
+      if (map.blobs[key]) continue;
+      const file = path.join(directory, sha256(key));
+      await writeFile(file, rendered.get(revisions[index].object));
+      map.blobs[key] = file;
+      renderedVariants += 1;
+    }
+
+    if (boundary > 0) {
+      entryBoundaries.push({
+        path: output.path,
+        recipe: output.recipe,
+        revisions: revisions.length,
+        entryCommit: revisions[boundary].commit,
+        skippedRevisions: boundary,
+        // The signal that separates a path entering where its recipe became
+        // executable (renderableSkipped === 0, the ordinary case) from one
+        // whose entry MOVED because a later revision stopped rendering.
+        renderableSkipped,
+        lastUnrenderableCommit: lastUnrenderable?.commit ?? null,
+        reason: lastUnrenderable
+          ? refused.get(lastUnrenderable.object).message
+          : null,
+      });
     }
   }
 
@@ -552,7 +656,8 @@ async function prepareRenderedVariants(workdir, plan) {
     callbackPath,
     directory,
     renderedVariants,
-    unrenderableRevisions,
+    skippedRevisions,
+    entryBoundaries,
   };
 }
 
@@ -756,7 +861,8 @@ export async function projectPublicHistory({
       renderedOutputs: plan.renderedOutputs,
       unrenderedOutputs: plan.unrenderedOutputs,
       renderedVariants: substitution?.renderedVariants ?? 0,
-      unrenderableRevisions: substitution?.unrenderableRevisions ?? 0,
+      skippedRevisions: substitution?.skippedRevisions ?? 0,
+      entryBoundaries: substitution?.entryBoundaries ?? [],
       existingPublicSha,
       destination: resolvedDestination,
     };
