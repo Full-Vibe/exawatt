@@ -1779,12 +1779,13 @@ Sequencing: after ENG-008 and ENG-011.
 
 ### ENG-022 Agent development-loop hardening
 
-Status: active-build — H1–H6 landed through 2026-08-03. REOPENED 2026-08-03 after the delivery-log audit measured 90 stale-base stops against 182 successful landings, non-FIFO lock acquisition in all 20 stress trials, dogfood builds inside the integration critical section, and an 89% red post-merge CI signal. Decision `0030` (as amended same day) adopts a contention-first delivery queue: dogfood leaves the lock first, a FIFO ticket with head-of-queue self-integration replaces the elected coordinator, the exact-tree gate narrows to a cheap changed-path floor rerun only when the base moved, and the full sequencer is held as a measured contingency triggered by the H11 verdict or by remote writers.
+Status: active-build — H1–H6 landed through 2026-08-03; H12 landed 2026-08-19. REOPENED 2026-08-03 after the delivery-log audit measured 90 stale-base stops against 182 successful landings, non-FIFO lock acquisition in all 20 stress trials, dogfood builds inside the integration critical section, and an 89% red post-merge CI signal. Decision `0030` (as amended same day) adopts a contention-first delivery queue: dogfood leaves the lock first, a FIFO ticket with head-of-queue self-integration replaces the elected coordinator, the exact-tree gate narrows to a cheap changed-path floor rerun only when the base moved, and the full sequencer is held as a measured contingency triggered by the H11 verdict or by remote writers.
 
 Scope:
 
 - one idempotent command bootstraps a fresh worktree (install, optional linked Vercel Development env refresh with a linked-only last-good fallback, macOS signed-browser identity, node-pty Electron rebuild, Electron main compile); unlinked/community checkouts never inherit another checkout's private env
 - the eval harness refuses to run against the wrong checkout, an unhealthy dev server, or a missing native binding, with actionable remedies instead of bare native errors
+- a dev server nobody is attached to expires on its own, so the worktree rule that mandates one per agent cannot accumulate abandoned renderers
 - bounded launch resilience for the one observed Playwright transient; a second failure surfaces
 - fold future agent-loop friction here rather than into product items
 - keep `pnpm agent:land` as the only public delivery entrypoint while internal queue, verification-policy, and post-integration modules replace polling races
@@ -1795,6 +1796,7 @@ Exit criteria:
 
 - a fresh worktree reaches a passing Electron eval with exactly `pnpm worktree:setup` + `pnpm dev -p <port>` + `EXA_BASE=... pnpm eval:...` — validated 2026-07-21
 - pointing an eval at the wrong tree's dev server fails loudly instead of testing the wrong code — validated 2026-07-21
+- no dev server outlives the agent that started it by more than an hour, measured against the 2026-08-19 baseline of a 2d7h orphan
 - 30 representative queued landings produce zero stale-base re-verification loops, zero exact-floor escapes, and all-green completed queue-drain Linux batches, with p95 queue wait under three minutes at comparable load and lower Actions minutes per integrated commit than the 2026-08-03 audit baseline
 - a burst of at least ten Electron-facing candidates advances `master` without waiting on dogfood and installs a verified integrated snapshot no more than ten minutes after queue-drain eligibility
 
@@ -1811,6 +1813,7 @@ Milestones:
 - H9 FIFO ticket queue (active-build, implementation landed 2026-08-03): monotonic common-Git-dir tickets, ownership epochs, dead-PID-only recovery, head self-integration, seconds-only final locking, an operator-only direct recovery path, and non-blocking shared-`master` sync are implemented; production killed-head and sustained-load evidence remain to exit.
 - H10 Exact-tree floor and changed-path policy (active-build, implementation landed 2026-08-03): the repository now owns the always-on type/delivery floor and conditional related-test, Electron, browser, R3F, CI, and documentation checks; a moved base rebases in the author worktree and reruns that floor on the exact attempt SHA; the 30-landing observation window remains to prove zero escapes.
 - H11 Measured verdict (planned): 30 representative landings against the audit baseline — zero floor escapes and all-green completed drain batches, since batched CI cannot see every intermediate commit — decide whether the decision `0030` elected-coordinator sequencer contingency activates or stays shelved; remote writers force the evaluation early.
+- H12 Dev servers that expire (landed 2026-08-19): AGENTS.md tells every agent touching a gated surface to start its own `pnpm dev -p <free-port>`, and nothing had ever stopped one — an audit found a server in a landed `exawatt-glide` worktree that had served zero requests for 2d7h, plus an Electron lifecycle eval's server whose temp userData directory was already deleted, together holding two ports and pushing load average past 11. Parent-death detection cannot fix it: these are launched detached, so the root `pnpm` is already reparented to PID 1 at startup. `scripts/lib/dev-idle-watch.mjs` polls ESTABLISHED connections to the dev port instead — a renderer with the page open holds an HMR socket, so "no client for 45 minutes" means abandoned rather than merely quiet, and the whole mechanism stays in the supervisor without touching `src/proxy.ts` on the auth path. A probe that cannot measure (absent lsof) reports UNKNOWN and keeps the server alive rather than reading as abandoned. `EXAWATT_DEV_IDLE_MINUTES=0` opts out. H2's `/api/dev-identity` guard was the earlier half of this same problem: it refused to TEST against a stale orphan but never stopped one existing, and `electron-dev.mjs` still adopts any server already on 7000/7090/3000.
 
 Sequencing: independent; extend as new agent-loop friction is diagnosed.
 
