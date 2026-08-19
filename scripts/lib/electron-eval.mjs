@@ -15,6 +15,11 @@
 //   - Run evals SERIALLY; never overlap two Electron launches from the harness.
 
 import { _electron as electron } from 'playwright-core';
+import {
+  DEV_IDENTITY,
+  readDevServerIdentity,
+  servesCheckout,
+} from './dev-server-identity.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   closeSync,
@@ -151,19 +156,14 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
   } catch {
     return; // not a URL (packaged-app eval) — nothing to verify
   }
-  let response;
-  try {
-    // generous timeout: next dev compiles the route on first hit
-    response = await fetch(`${origin}/api/dev-identity`, {
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch {
+  const identity = await readDevServerIdentity(origin);
+  if (identity.kind === DEV_IDENTITY.UNREACHABLE) {
     throw new Error(
       `No dev server is answering at ${origin} — start one from ` +
         `${evalRoot} (pnpm dev -p <port>) and point EXA_BASE at it.`
     );
   }
-  if (response.status === 404) {
+  if (identity.kind === DEV_IDENTITY.UNVERIFIABLE) {
     // an older tree without the identity route (or a prod server): the
     // one legitimately unverifiable case — tolerate with a warning
     console.warn(
@@ -172,21 +172,18 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
     );
     return;
   }
-  if (!response.ok) {
+  if (identity.kind === DEV_IDENTITY.UNHEALTHY) {
     throw new Error(
       `The dev server at ${origin} is unhealthy ` +
-        `(/api/dev-identity returned ${response.status}) — often a stale ` +
+        `(/api/dev-identity returned ${identity.status}) — often a stale ` +
         `server whose worktree was deleted. Kill the listener on that ` +
         `port and start pnpm dev from ${evalRoot}.`
     );
   }
-  const { repoRoot, distributionDigest } = await response.json();
-  const served = realpathSync(repoRoot);
-  const expected = realpathSync(evalRoot);
-  if (served !== expected) {
+  if (!servesCheckout(identity, evalRoot)) {
     throw new Error(
-      `WRONG TREE: the dev server at ${origin} serves\n  ${served}\n` +
-        `but this eval is testing\n  ${expected}\n` +
+      `WRONG TREE: the dev server at ${origin} serves\n  ${identity.repoRoot}\n` +
+        `but this eval is testing\n  ${realpathSync(evalRoot)}\n` +
         `Start pnpm dev from the tree under test on a free port and set EXA_BASE.`
     );
   }
@@ -201,9 +198,9 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
       `No prepared distribution exists in ${evalRoot}; start its dev server with pnpm dev before running an Electron eval.`
     );
   }
-  if (distributionDigest !== expectedDistributionDigest) {
+  if (identity.distributionDigest !== expectedDistributionDigest) {
     throw new Error(
-      `WRONG DISTRIBUTION: the dev server at ${origin} serves ${distributionDigest ?? 'none'}, ` +
+      `WRONG DISTRIBUTION: the dev server at ${origin} serves ${identity.distributionDigest ?? 'none'}, ` +
         `but Electron is testing ${expectedDistributionDigest}. Restart pnpm dev from ${evalRoot}.`
     );
   }
