@@ -1220,3 +1220,17 @@ html:has(main[data-home-arrangement='proposed']) body {
     scroll-snap-type: none;
   }
 }
+
+/* ---- The fold's opening dissolve (ENG-031 W11) -------------------------
+   The gesture image is the pointer gate for the board beneath it. An
+   ancestor's `pointer-events: none` does not stop a descendant that sets
+   `auto`, so the layer that occludes the board visually is the layer that
+   occludes it for a pointer, keyed off the phase the scroll pass writes.
+   While the dissolve runs the image swallows pointer events; once it is
+   complete the board answers them and the image is inert. -------------- */
+[data-fold-crossfade='running'] [data-fold-gesture-layer] {
+  pointer-events: auto;
+}
+[data-fold-crossfade='complete'] [data-fold-gesture-layer] {
+  pointer-events: none;
+}

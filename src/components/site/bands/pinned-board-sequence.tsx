@@ -66,6 +66,21 @@
  * - **Reduced motion takes the same unpinned shape**, by CSS, in the SAME DOM,
  *   plus the board's own poster path. Doing it in CSS rather than in a JS
  *   branch is what keeps the layout shift at zero.
+ * - **THE PAGE OPENS ON THE GESTURE IMAGE AND DISSOLVES INTO THE BOARD** (W11,
+ *   operator: "Put the / tom cruise visual above the fold, so scrolling fades
+ *   him out and the fleet board in"). The image is a layer inside the SAME
+ *   sticky box the board lives in, so the dissolve happens in place: the human
+ *   commanding by gesture becomes the fleet he was commanding, in one frame,
+ *   without a second section and without anything scrolling away. The mapping
+ *   is `fold-crossfade.ts`; three consequences live here. The board renders
+ *   NOTHING while it is fully occluded (`occluded` parks the demand loop after
+ *   one settled frame, so the page-top rest costs zero frames). The image layer
+ *   is also the POINTER gate, because a hit target under a picture is a ghost
+ *   surface — an ancestor's `pointer-events: none` does not stop a descendant
+ *   that sets `auto`, so the thing that occludes the board visually is the
+ *   thing that occludes it for a pointer. And the dissolve finishes with three
+ *   hundred pixels to spare before the sequence's first snap point, so no
+ *   settle can park a reader on a half-dissolved hero.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -94,8 +109,15 @@ import { cn } from '@/lib/utils';
 import { HarnessMark, harnessMarkExists } from '@/components/site/harness-mark';
 import { altitudePanel } from './altitude-copy';
 import { BandHeading } from './band-section';
+import { FoldGestureImage } from './fold-gesture-image';
 import { FoldHero } from './fold-hero';
 import type { HomepageBand } from './manifest';
+import {
+  foldBoardInteractive,
+  foldBoardOpacity,
+  foldCrossfadeProgress,
+  foldImageOpacity,
+} from './fold-crossfade';
 import {
   activePanel,
   boardProgressAt,
@@ -187,14 +209,40 @@ export function PinnedBoardSequence({
   const panelNodes = useRef(new Map<number, HTMLElement>());
   const progress = useRef(0);
   const ticking = useRef(false);
+  /** Last written pointer phase, so the attribute is touched on a change and
+   *  not once a frame. */
+  const crossfadePhase = useRef<'running' | 'complete'>('running');
 
   const [active, setActive] = useState(0);
+  /**
+   * Has the dissolve started (W11)?
+   *
+   * The ONE piece of React state the crossfade owns, and it flips at the very
+   * first pixel of scroll, before the camera has begun to move — never
+   * mid-flight (guide rule 4e). It exists because `animating` is a prop the
+   * scene threads into every `useFrame`, and a board nobody can see must not
+   * ask for frames: false here parks the demand loop after its first settled
+   * frame at the fold's own framing. It is a pure function of position like
+   * everything else, so scrolling back to the top parks it again.
+   */
+  const [revealed, setRevealed] = useState(false);
 
   const screens = useMemo(() => bands.map(band => band.screens), [bands]);
   const total = useMemo(
     () => screens.reduce((sum, value) => sum + value, 0),
     [screens]
   );
+
+  /**
+   * Does this run OPEN the page (W11)?
+   *
+   * `headingRole` is the discriminator rather than the id, for the same reason
+   * `PinnedPanel` uses it: "the band that carries the page headline" is
+   * exactly the thing that is true about the fold, and the manifest allows
+   * only one. A study that passes panels alone gets no gesture image, no
+   * dissolve, and a board that is live from its first frame.
+   */
+  const hasFold = bands[0]?.headingRole === 'headline';
 
   const highlightId: HeroHighlightId =
     bands[active]?.boardHighlight ?? 'whole-fleet';
@@ -235,6 +283,33 @@ export function PinnedBoardSequence({
 
       const height = element.offsetHeight;
       if (height <= 0 || total <= 0) return;
+
+      // THE DISSOLVE, before either geometry branch (W11). It is the same
+      // question at both widths — how far into the sequence is the reader, as
+      // a share of the pinned box — so it is answered once, and the phone's
+      // shorter board card gets a proportionally shorter dissolve for free.
+      const sequenceTop = element.getBoundingClientRect().top + window.scrollY;
+      if (hasFold) {
+        const crossfade = foldCrossfadeProgress(
+          window.scrollY - sequenceTop,
+          pinned.offsetHeight
+        );
+        pinned.style.setProperty(
+          '--fold-image-opacity',
+          String(foldImageOpacity(crossfade))
+        );
+        pinned.style.setProperty(
+          '--fold-board-opacity',
+          String(foldBoardOpacity(crossfade))
+        );
+        const phase = foldBoardInteractive(crossfade) ? 'complete' : 'running';
+        if (crossfadePhase.current !== phase) {
+          crossfadePhase.current = phase;
+          pinned.dataset.foldCrossfade = phase;
+        }
+        const started = crossfade > 0;
+        setRevealed(current => (current === started ? current : started));
+      }
 
       const stacked = !window.matchMedia('(min-width: 768px)').matches;
       if (stacked) {
@@ -352,6 +427,15 @@ export function PinnedBoardSequence({
             sphere to the narrower aspect. Stacked, it is the whole card. */}
         <div
           className={`absolute inset-x-0 top-0 bottom-8 md:bottom-0 ${BOARD_FRAME_CLASS} motion-reduce:md:bottom-8`}
+          // The board is the layer UNDERNEATH the dissolve, so it arrives
+          // first and is at full strength before the image finishes leaving.
+          // The var defaults to 1, so a run without a fold (a study passing
+          // panels alone) is unaffected.
+          style={
+            hasFold
+              ? { opacity: 'var(--fold-board-opacity, 1)' }
+              : undefined
+          }
           data-pinned-board-frame
         >
           <HeroBoard
@@ -360,8 +444,28 @@ export function PinnedBoardSequence({
             ladder={ladder}
             highlight={highlightId}
             lens={lensId}
+            // A board nobody can see must not ask for frames. `frozen` parks
+            // the demand loop after one settled frame at the fold's own
+            // framing, so the page-top rest costs nothing; the first pixel of
+            // scroll flips it before the camera has begun to move.
+            force={hasFold && !revealed ? 'frozen' : 'auto'}
           />
         </div>
+        {/* THE OPENING FRAME (W11). Same sticky box as the board, one layer
+            above it, so the dissolve happens in place rather than as a section
+            that scrolls away. It is also the pointer gate: an ancestor's
+            `pointer-events: none` does not stop a descendant that sets `auto`,
+            so the thing that occludes the board visually is the thing that
+            occludes it for a pointer, keyed off the phase the scroll pass
+            writes. Reduced motion gets no dissolve and no image: the board
+            carries the fold as it already does, with zero layout shift. */}
+        {hasFold ? (
+          <FoldGestureImage
+            priority
+            className="z-10 motion-reduce:hidden"
+            data-fold-gesture-layer=""
+          />
+        ) : null}
         {/* Stacked, the copy scrolls UNDER the board card, and a hard card
             edge slices a sentence in half rather than letting it leave. Two
             rem of ground fading to nothing is the whole repair: a line
