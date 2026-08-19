@@ -1,7 +1,7 @@
 <!-- Generated for the public repository by the "public-document-set" recipe. -->
 <div align="center">
 
-<img src="electron/resources/icon-master.png" alt="" width="96" />
+<img src="electron/resources/icon-community-master.png" alt="" width="96" />
 
 <h1>Exawatt</h1>
 

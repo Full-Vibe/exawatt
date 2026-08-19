@@ -14,7 +14,13 @@ import {
   publicPushArgs,
   resolvePublicRemote,
 } from './lib/public-delivery.mjs';
+import {
+  OPEN_SOURCE_PATH_MANIFEST,
+  createPathClassifier,
+  readPathManifest,
+} from './lib/open-source-paths.mjs';
 import { projectPublicHistory } from './lib/public-projection.mjs';
+import { hasRecipeRenderer, rendersOutput } from './lib/recipe-renderers.mjs';
 import {
   createPrivateFixture,
   git,
@@ -39,6 +45,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const landScript = fileURLToPath(new URL('./agent-land.mjs', import.meta.url));
+const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 
 async function land(worktree, environment) {
   const { stdout, stderr } = await execFileAsync(
@@ -385,4 +392,79 @@ test('the report names where a rendered path enters public history', () => {
     /2 rendered paths enter public history after their first source revision: AGENTS\.md enters at cccccccccccc, 894 earlier revisions do not carry it \(14 of them render, held back by dddddddddddd\)$/u
   );
   assert.doesNotMatch(described, /README/u);
+});
+
+/**
+ * The README is the public repository's front door, and its images and links
+ * are RELATIVE, so each one resolves against whatever tree it lands in. That
+ * makes it possible to reference a path the private tree has and the public
+ * tree never receives: the projection drops it silently, GitHub renders a
+ * broken image in the first screenful, and nothing here goes red.
+ *
+ * That happened on 2026-08-19. The front page's mark pointed at
+ * `electron/resources/icon-master.png`, which is GENERATED with no renderer
+ * precisely because the official Exawatt mark is deliberately withheld from a
+ * tree whose builds are community builds. The delivery log named it, in a line
+ * about three unrelated icon outputs, and a reader could easily miss the one
+ * that mattered. So assert it instead of reading for it.
+ */
+test('every relative README reference survives into the public tree', async () => {
+  const readme = await readFile(path.join(repositoryRoot, 'README.md'), 'utf8');
+  const manifest = await readPathManifest(
+    path.join(repositoryRoot, OPEN_SOURCE_PATH_MANIFEST)
+  );
+  const classify = createPathClassifier(manifest);
+  const recipeKinds = new Map(
+    Object.entries(manifest.recipes).map(([id, recipe]) => [id, recipe.kind])
+  );
+
+  const references = new Set();
+  for (const [, target] of readme.matchAll(/<img[^>]+src="([^"]+)"/gu)) {
+    references.add(target);
+  }
+  for (const [, target] of readme.matchAll(/\]\(([^)]+)\)/gu)) {
+    references.add(target);
+  }
+  for (const [, target] of readme.matchAll(/<a[^>]+href="([^"]+)"/gu)) {
+    references.add(target);
+  }
+
+  const relative = [...references].filter(
+    target =>
+      !/^[a-z]+:/iu.test(target) && !target.startsWith('#') && target !== ''
+  );
+  assert.ok(
+    relative.length > 0,
+    'expected the README to carry relative references'
+  );
+
+  for (const target of relative) {
+    const file = target.split('#')[0];
+    assert.ok(
+      existsSync(path.join(repositoryRoot, file)),
+      `README references ${file}, which does not exist in this repository`
+    );
+    const { classification, recipe } = classify(file);
+    assert.notEqual(
+      classification,
+      'PRIVATE',
+      `README references ${file}, which is PRIVATE and never reaches the public tree`
+    );
+    assert.notEqual(
+      classification,
+      'EXCLUDED',
+      `README references ${file}, which is EXCLUDED from the public tree`
+    );
+    if (classification !== 'GENERATED') continue;
+    const kind = recipeKinds.get(recipe);
+    assert.ok(
+      kind,
+      `README references ${file}, whose recipe ${recipe} is unknown`
+    );
+    assert.ok(
+      hasRecipeRenderer(kind) && rendersOutput(kind, file),
+      `README references ${file}, which is GENERATED but has no renderer, so ` +
+        'the public repository never receives it and the link renders broken'
+    );
+  }
 });
