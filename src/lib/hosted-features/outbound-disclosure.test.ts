@@ -6,6 +6,7 @@ import {
   parseDistributionContractJson,
 } from '@exawatt/core/distribution';
 import { resolveDistributionAnalyticsDecision } from '@/lib/analytics/config';
+import { parseGoalVisualRequest } from '@/lib/goal-visuals/contract';
 import { OUTBOUND_CONTROLS, OUTBOUND_CONTROL_IDS } from './contract';
 import {
   createPathClassifier,
@@ -510,37 +511,65 @@ describe('the analytics claim is anchored to what decides it', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* 5. THE PUBLISHED CONTRACT IS NOT THE SHIPPED REQUEST                */
+/* 5. THE PUBLISHED CONTRACT IS THE SHIPPED REQUEST                    */
 /* ------------------------------------------------------------------ */
 
-describe('the goal-visual contract does not read as a shipped guarantee', () => {
-  it('marks the divergence while the client still sends the label', () => {
-    // `contracts/services/v1/schemas/goal-visuals.schema.json` admits only
-    // `schemaVersion` and `identityKey`, and `contracts/README.md` called that
-    // a privacy boundary in the present tense. The shipped client sends the
-    // accepted context label. Until the client-derived-key migration lands,
-    // the README has to say so.
+/** The `{ … }` body of a named interface, which contains no nested braces. */
+function interfaceBody(source: string, name: string): string {
+  const match = new RegExp(`interface ${name} \\{([^}]*)\\}`).exec(source);
+  expect(match, `${name} is not declared as a flat interface`).not.toBeNull();
+  return match![1];
+}
+
+describe('the published goal-visual contract is what the client sends', () => {
+  it('keeps every caller on schemaVersion and an opaque identity', () => {
+    // Until 2026-08-19 this block asserted the OPPOSITE: the schema admitted
+    // only `{ schemaVersion, identityKey }` while the client sent the accepted
+    // context label, so it required `contracts/README.md` to say the section
+    // was a target rather than a guarantee. BUG-091 migrated the client, the
+    // `/hud-gallery` bench, and the hosted route together, so the assertion is
+    // inverted: the label may not come back without this failing.
     const schema = JSON.parse(
       read('contracts/services/v1/schemas/goal-visuals.schema.json')
     );
-    const contractProperties = Object.keys(
-      schema.$defs.request.properties as Record<string, unknown>
-    ).sort();
-    expect(contractProperties).toEqual(['identityKey', 'schemaVersion']);
+    expect(
+      Object.keys(
+        schema.$defs.request.properties as Record<string, unknown>
+      ).sort()
+    ).toEqual(['identityKey', 'schemaVersion']);
+    expect(schema.$defs.request.additionalProperties).toBe(false);
 
-    const clientSendsLabel =
-      /interface GoalVisualRequest \{[\s\S]*?\blabel\b[\s\S]*?\n\}/.test(
-        read('electron/main/pty/context-summarizer.ts')
+    for (const [file, name] of [
+      ['electron/main/pty/context-summarizer.ts', 'GoalVisualRequest'],
+      ['src/lib/goal-visuals/contract.ts', 'GoalVisualRequest'],
+    ] as const) {
+      const body = interfaceBody(read(file), name);
+      expect(body, `${file} must send the opaque identity`).toContain(
+        'identityKey'
       );
-    if (clientSendsLabel) {
-      const readme = read('contracts/README.md');
-      expect(
-        readme,
-        'The shipped goal-visual request still carries `label`, so the ' +
-          'contracts README must not read as a present-tense guarantee that ' +
-          'no goal label leaves. Remove this note only with the migration.'
-      ).toContain('That is the target, not yet the shipped client.');
-      expect(MANIFEST).toContain('the accepted context label');
+      for (const retired of ['label', 'projectKey']) {
+        expect(
+          body,
+          `${file} must not put ${retired} back on the wire (BUG-091)`
+        ).not.toContain(retired);
+      }
     }
+
+    // The parser is the enforcement point: the request object is closed, so a
+    // caller that adds a label is refused rather than silently trimmed.
+    expect(() =>
+      parseGoalVisualRequest(
+        JSON.stringify({
+          schemaVersion: 1,
+          identityKey: 'a'.repeat(64),
+          label: 'Improve agent context summaries',
+        })
+      )
+    ).toThrow('unsupported fields');
+
+    expect(read('contracts/README.md')).toContain(
+      "**Exawatt's own client sends this.**"
+    );
+    expect(MANIFEST).toContain('two fields');
   });
 });

@@ -14,6 +14,10 @@ import {
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createGoalVisualPreferenceSource } from '@/lib/goal-visuals/preference-source';
+import {
+  GOAL_VISUAL_STUDY_IDENTITIES,
+  type GoalVisualStudyId,
+} from '@/lib/goal-visuals/studies';
 import styles from './goal-visual-layout-study.module.css';
 
 const GOALS = [
@@ -75,15 +79,18 @@ const LANGUAGES = [
   },
 ] as const;
 
-const STUDY_PROJECT_PREFIX = 'hud-gallery:goal-visual-languages:v1:';
-
 const STUDIES = LANGUAGES.flatMap(language =>
-  GOALS.map((goal, variant) => ({
-    id: `${language.id}:${variant}`,
-    projectKey: `${STUDY_PROJECT_PREFIX}${language.id}:${variant}`,
-    languageId: language.id,
-    goal,
-  }))
+  GOALS.map((goal, variant) => {
+    const id = `${language.id}:${variant}` as GoalVisualStudyId;
+    return {
+      id,
+      // A study cannot name itself in the request (BUG-091): the service
+      // receives one opaque key and maps it back to the study recipe.
+      identityKey: GOAL_VISUAL_STUDY_IDENTITIES[id],
+      languageId: language.id,
+      goal,
+    };
+  })
 );
 
 interface LoadedStudy {
@@ -235,8 +242,7 @@ export function GoalVisualLanguageStudy() {
                 },
                 body: JSON.stringify({
                   schemaVersion: 1,
-                  projectKey: study.projectKey,
-                  label: study.goal.label,
+                  identityKey: study.identityKey,
                 }),
               });
               if (!response.ok) return [study.id, null] as const;

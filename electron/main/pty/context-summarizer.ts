@@ -87,12 +87,20 @@ export interface GoalVisual {
   dataUrl?: string | null;
 }
 
+/**
+ * The V1 goal-visual request (`contracts/services/v1/schemas/goal-visuals.schema.json`).
+ *
+ * One opaque key and nothing else: no Project name, no accepted label, no
+ * prompt, path, instruction, or transcript. Until 2026-08-19 this carried the
+ * accepted label, which an operator correction may have typed (BUG-091). The
+ * service never needed it — it indexes fixed word lists by bytes of the key to
+ * build the provider prompt — so the label was crossing the boundary for
+ * nothing.
+ */
 export interface GoalVisualRequest {
   schemaVersion: 1;
-  /** One-way local project identity; never a filesystem path or project name. */
-  projectKey: string;
-  /** Accepted durable context label only; never raw instructions/output. */
-  label: string;
+  /** Locally derived content address for (project, goal). Opaque to Exawatt. */
+  identityKey: string;
 }
 
 interface HostedGoalVisual {
@@ -137,6 +145,8 @@ interface PendingRecap {
 
 interface PendingGoalVisual {
   request: GoalVisualRequest;
+  /** Local identity to fall back to; the request no longer carries its inputs. */
+  fallbackIdentityKey: string;
   revision: number;
   attempt: number;
 }
@@ -167,6 +177,47 @@ function privateProjectKey(localProjectIdentity: string): string {
   return `project:${createHash('sha256')
     .update(localProjectIdentity, 'utf8')
     .digest('hex')}`;
+}
+
+/**
+ * Identity version of the goal-visual content address (BUG-091).
+ *
+ * Two is not a fresh number. Until 2026-08-19 the hosted route derived this
+ * digest itself from the `{ projectKey, label }` the client sent, under
+ * `goal-visual:v2`; deriving the SAME digest here is what lets the request drop
+ * the label without orphaning a single image. Cached goal visuals — Supabase
+ * Storage server-side, `goal-visual-store.ts` locally — are addressed by this
+ * key, so changing it regenerates every one of them.
+ */
+const GOAL_VISUAL_IDENTITY_VERSION = 2;
+
+/**
+ * The content address for one (project, goal) pair, derived locally.
+ *
+ * `cleanGoalLabel` reproduces `cleanContextLabel`, which the hosted route
+ * applied to the label before hashing it. The normalization below reproduces
+ * the route's, so an operator who has been running this build keeps the images
+ * he already has.
+ */
+function goalVisualIdentityKey(projectKey: string, label: string): string {
+  const cleanGoalLabel = (value: string) =>
+    value
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[.;,\s]+$/g, '')
+      .trim();
+  const identityPart = (value: string) =>
+    value
+      .normalize('NFKC')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLocaleLowerCase('en-US');
+  return createHash('sha256')
+    .update(
+      `goal-visual:v${GOAL_VISUAL_IDENTITY_VERSION}\0${identityPart(projectKey)}\0${identityPart(cleanGoalLabel(label))}`,
+      'utf8'
+    )
+    .digest('hex');
 }
 
 function validDataUrl(value: unknown): value is string {
@@ -829,13 +880,15 @@ export class ContextSummarizer extends EventEmitter {
     const projectKey = privateProjectKey(localProjectIdentity);
     const prior = this.goalVisuals.get(durableId);
     const revision = (prior?.revision ?? 0) + 1;
+    // The project key and the label are hashed here and stay here. What leaves
+    // is the digest.
     const request: GoalVisualRequest = {
       schemaVersion: 1,
-      projectKey,
-      label,
+      identityKey: goalVisualIdentityKey(projectKey, label),
     };
+    const localIdentityKey = fallbackIdentityKey(projectKey, label);
     const next: GoalVisual = {
-      identityKey: fallbackIdentityKey(projectKey, label),
+      identityKey: localIdentityKey,
       revision,
       state:
         this.hostedGoalVisualsAllowed() && this.accessToken
@@ -851,7 +904,12 @@ export class ContextSummarizer extends EventEmitter {
     // Community builds keep the deterministic visual identity but enqueue no
     // authenticated work. Supplying a token later cannot invent a capability.
     if (!this.hostedGoalVisualsAllowed()) return;
-    this.goalVisualPending.set(durableId, { request, revision, attempt: 1 });
+    this.goalVisualPending.set(durableId, {
+      request,
+      fallbackIdentityKey: localIdentityKey,
+      revision,
+      attempt: 1,
+    });
     void this.drainGoalVisual(durableId);
   }
 
@@ -907,10 +965,7 @@ export class ContextSummarizer extends EventEmitter {
       const rejected =
         error instanceof GoalVisualEndpointError && error.status === 422;
       const fallback: GoalVisual = {
-        identityKey: fallbackIdentityKey(
-          pending.request.projectKey,
-          pending.request.label
-        ),
+        identityKey: pending.fallbackIdentityKey,
         revision: pending.revision,
         state: rejected ? 'rejected' : 'fallback',
         dataUrl: null,

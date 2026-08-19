@@ -62,22 +62,18 @@ the 64-character key locally with a keyed SHA-256 construction or persist a
 random content mapping; services must treat it as opaque. The returned image is
 deterministic for that key within a service's documented generation version.
 
-**That is the target, not yet the shipped client.** CORRECTED 2026-08-18: this
-section read as a present-tense privacy guarantee, and the sentence below was
-the only thing qualifying it. Today Exawatt's own client sends
-`{ schemaVersion, projectKey, label }` (`electron/main/pty/context-summarizer.ts`),
-where `label` is the accepted context label, and the hosted route derives the
-identity server-side. So the accepted goal label does reach the service on the
-shipped path. `docs/engineering/outbound-data.md` section 4 is the accurate
-account of what leaves a machine today; this schema is what the client-derived
-key migration moves to, and it is the shape a distributor should implement
-against. Until that migration lands, do not read this section as a statement
-about the current Exawatt client.
+**Exawatt's own client sends this.** It did not always: until 2026-08-19 it
+sent `{ schemaVersion, projectKey, label }`, where `label` was the accepted
+context label, and this section read as a present-tense guarantee of a request
+that had not shipped. BUG-091 migrated the client, the gallery bench, and the
+hosted route together. `electron/main/pty/context-summarizer.ts` now derives the
+key locally and `docs/engineering/outbound-data.md` section 4 is the account of
+what leaves a machine.
 
-The current private hosted routes predate this publication contract. Runtime
-call-site and hosted-handler alignment is a separate migration; these schemas
-define the compatibility target and deliberately do not import private route
-code.
+The private hosted routes still predate this publication contract in their
+response envelope and headers; aligning those is a separate migration. These
+schemas define the compatibility target and deliberately do not import private
+route code.
 
 ## Agent quick map
 

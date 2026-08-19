@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { EventEmitter } from 'events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -66,6 +67,25 @@ class FakeManager extends EventEmitter {
     this.text.set(id, (this.text.get(id) ?? '') + value);
     this.emit('data', id, value);
   }
+}
+
+/**
+ * The identity the hosted route derived server-side until 2026-08-19, from the
+ * `{ projectKey, label }` the client used to send (BUG-091). The client derives
+ * it locally now; reproducing the retired construction here is what proves an
+ * operator keeps the goal visuals he already has instead of regenerating them.
+ */
+function retiredHostedIdentity(projectDir: string, label: string): string {
+  const projectKey = `project:${createHash('sha256').update(projectDir, 'utf8').digest('hex')}`;
+  const part = (value: string) =>
+    value
+      .normalize('NFKC')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLocaleLowerCase('en-US');
+  return createHash('sha256')
+    .update(`goal-visual:v2\0${part(projectKey)}\0${part(label)}`, 'utf8')
+    .digest('hex');
 }
 
 async function flush() {
@@ -200,21 +220,34 @@ describe('hosted Session context ownership', () => {
     expect(generateGoalVisual).toHaveBeenCalledOnce();
   });
 
-  it('requests visuals from accepted labels without raw instruction evidence', async () => {
+  it('sends one opaque identity and no operator-authored text', async () => {
+    // BUG-091. The request used to carry the accepted label, and `correct()`
+    // queues a visual after an operator correction, so text the operator typed
+    // himself crossed the boundary. What leaves now is a digest.
     service.setAccessToken('jwt');
     service.noteInput('live-1', 'Raw operator wording that must stay local\r');
     await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
     const [request, token] = generateGoalVisual.mock.calls[0];
     expect(request).toEqual({
       schemaVersion: 1,
-      projectKey: expect.stringMatching(/^project:[a-f0-9]{64}$/),
-      label: 'Improve agent context summaries',
+      identityKey: retiredHostedIdentity(
+        '/repo/exawatt',
+        'Improve agent context summaries'
+      ),
     });
     expect(token).toBe('jwt');
     const serializedRequest = JSON.stringify(request);
-    expect(serializedRequest).not.toContain('Raw operator wording');
-    expect(serializedRequest).not.toContain('/repo/exawatt');
-    expect(serializedRequest).not.toContain('Exawatt');
+    expect(Object.keys(request)).toEqual(['schemaVersion', 'identityKey']);
+    for (const operatorText of [
+      'Raw operator wording',
+      'Improve agent context summaries',
+      '/repo/exawatt',
+      'Exawatt',
+      'label',
+      'projectKey',
+    ]) {
+      expect(serializedRequest).not.toContain(operatorText);
+    }
     expect(service.getGoalVisual('session-1')).toEqual({
       identityKey: 'goal-identity',
       revision: 1,
@@ -280,6 +313,19 @@ describe('hosted Session context ownership', () => {
     service.setAccessToken('jwt');
     service.correct('session-1', 'Corrected human goal');
     await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    // The words in a correction are the operator's own. They stay on the
+    // machine even though a correction is exactly what queues this request
+    // (BUG-091).
+    expect(JSON.stringify(generateGoalVisual.mock.calls[0][0])).not.toContain(
+      'Corrected human goal'
+    );
+    expect(generateGoalVisual.mock.calls[0][0]).toEqual({
+      schemaVersion: 1,
+      identityKey: retiredHostedIdentity(
+        '/repo/exawatt',
+        'Corrected human goal'
+      ),
+    });
     await vi.waitFor(() =>
       expect(service.getGoalVisual('session-1')).toMatchObject({
         revision: 1,
