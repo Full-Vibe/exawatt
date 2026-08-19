@@ -64,6 +64,28 @@ The 2026-08-02 demo arc **landed in one day**: ENG-036 G0/G1, ENG-026 N0–N5, E
 1. **Codex turn truth** (ENG-016, triaged `f8fade12`) — a Codex tab showed the finished glyph while its agent was still working. This is a regression of D38's latch and D40's protocol, and status truth is the product's core claim, so it outranks every feature below. A green check that lies is worse in a demo than a surface that is missing.
 2. **ENG-008 E5** flip Consumption from `preview` to `live` — the local data already exists (E0), and this converts the product's most-asked question ("how are you tracking cost per agent?") from a demo answer into a true one. **LANDED 2026-08-10** contract-first in two parallel halves (typed IPC contract + renderer swap with the manifest flip; the incremental scanner behind the contract in flight) — see the E5 milestone line.
 3. **ENG-030 open-source readiness** — gate-driven, not calendar-bound. **Amended 2026-08-11:** the "public this quarter" calendar commitment is dropped; each publication deliverable ships when its own gates pass, with no single launch event (operator review with verified comps). **Shaped 2026-08-10:** the operator decisions are closed by decision `0036`: fresh public `Full-Vibe/exawatt` as the daily product repo; current history retained in private `exawatt-company`; AGPL application, Apache compatibility spec, CLA, private cloud/official distribution, and source builds with no Exawatt service configuration. OS2–OS6 are the publication path. **Amended 2026-08-06:** OS0 and OS1.1–OS1.4 were pulled forward because invited users already ran released builds without accounts.
+3a. **BUG-091 then BUG-090, ahead of the rest of ENG-030's publication path**
+   (operator, 2026-08-19). Both were found while executing OS2.2 and both are
+   enqueued rather than left in the backlog, because each gets worse the later
+   it is taken.
+
+   **BUG-091** is a live product defect, not a doc defect: the goal-visual
+   request carries the Session label, which the operator may have typed, to
+   Exawatt, and nothing downstream needs it. The disclosure has been corrected
+   to describe the real payload, so the product is honest today, but honesty
+   about a payload that should not exist is a holding position. Fix it before
+   OS6 puts strangers in front of the product, because it is precisely what a
+   privacy-minded reader checks first, and because the published Apache
+   contract already specifies the request the client should have been sending.
+
+   **BUG-090** taxes every agent, every day: a correct change to a widely
+   imported module cannot land while a sibling session is busy, and the
+   pre-landing checks report the timeouts as named test failures, which reads
+   as "your change broke these". Six attempts on a verified-sound change on
+   2026-08-18 is the measured cost. It compounds with fleet size, so it is
+   cheapest to fix before the contribution loops of OS6.2 add outside PRs to
+   the same queue.
+
 4. **ENG-031 website** — if demoing is a standing posture, the site is the always-on demo, and it is where users and contributors land. Still unshaped; a design pass precedes any building.
 
 **2026-08-03 sequencing amendment:** ENG-003 S2 was pulled forward and landed; ENG-003 S3 then supplied the scalable model-picker foundation and ENG-016 D46's lightweight Launch Configuration runtime landed on top of it. Neither item remains in the unsequenced set.
