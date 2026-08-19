@@ -1,4 +1,47 @@
 import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { loadavg, tmpdir } from 'node:os';
+import path from 'node:path';
+
+/**
+ * Flake-aware reruns for the vitest checks (BUG-090).
+ *
+ * `test:related` on a module the whole app imports selects a large `app-dom`
+ * set, and on a machine running four agent worktrees those tests fail by
+ * TIMEOUT rather than by assertion. The failing identities changed between
+ * runs on identical code — six one run, eight the next, two different ones on
+ * a clean `origin/master` control — which is the proof that none of them was a
+ * defect. The floor still reported them as named test failures, which reads to
+ * the author as "your change broke these", and that misreport is the damage:
+ * six landing attempts on a change that only set an icon path.
+ *
+ * The repair is to automate the diagnostic `docs/engineering/agent-delivery.md`
+ * already prescribes: re-run the named files ALONE. A break is deterministic
+ * and reproduces in isolation; contention does not. So a failed vitest check
+ * re-runs exactly the files it named, once, in a single worker:
+ *
+ * - every named file passes alone → `flaked`. The floor CONTINUES and the
+ *   result is reported and recorded as a suspected flake with the file
+ *   identities, the failing test names, and the load average at both runs, so
+ *   a real regression hiding behind flakiness stays findable across landings.
+ * - any file fails again → the floor FAILS, naming what reproduced separately
+ *   from what did not, so the author reads the deterministic half.
+ * - the rerun did not actually run what it was asked to → `inconclusive`, and
+ *   the original failure stands. A rerun that silently matched nothing must
+ *   never read as proof of a flake.
+ *
+ * No timeout is raised anywhere. Decision `0030` keeps the suite bounded, and a
+ * longer timeout would make every real failure slower to surface.
+ */
+const VITEST_RERUN = { kind: 'vitest', script: 'test:alone' };
+
+/**
+ * A rerun wider than this is a second full run, not a targeted one, and the
+ * floor's job is to bound the load rather than double it. Above the cap the
+ * original failure stands, which is also the right reading: dozens of files
+ * failing at once is a break, not machine contention.
+ */
+const MAX_RERUN_FILES = 25;
 
 /**
  * Surface gates (ENG-016 D51).
@@ -344,6 +387,7 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       id: 'vitest-related',
       command: 'pnpm',
       args: ['run', 'test:related', ...related],
+      rerun: VITEST_RERUN,
     });
   }
 
@@ -477,6 +521,7 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
         '--maxWorkers=25%',
         '--passWithNoTests',
       ],
+      rerun: VITEST_RERUN,
     });
   }
 
@@ -491,6 +536,250 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
   return [...repositoryOwned.values()];
 }
 
+/** The reporter pair every rerunnable vitest check runs under: the default
+ *  reporter still prints for the human, and the JSON one is the machine
+ *  channel. Human reporter text is never parsed. */
+export function vitestReportArgs(reportPath) {
+  return [
+    '--reporter=default',
+    '--reporter=json',
+    `--outputFile.json=${reportPath}`,
+  ];
+}
+
+/**
+ * The test files a vitest JSON report says failed, repository-relative, each
+ * with the tests that failed inside it. The test names are what makes a
+ * repeated flake distinguishable from a one-off in the metric stream.
+ */
+export function failedVitestFiles(report, root) {
+  if (!Array.isArray(report?.testResults)) return [];
+  return report.testResults
+    .filter(result => result.status === 'failed')
+    .map(result => ({
+      file: repositoryRelative(result.name, root),
+      tests: (result.assertionResults ?? [])
+        .filter(assertion => assertion.status === 'failed')
+        .map(assertion => assertion.fullName ?? assertion.title ?? '(unnamed)'),
+    }))
+    .sort((left, right) => left.file.localeCompare(right.file));
+}
+
+/** Every test file a report covered, whatever its result. */
+export function coveredVitestFiles(report, root) {
+  if (!Array.isArray(report?.testResults)) return [];
+  return report.testResults.map(result =>
+    repositoryRelative(result.name, root)
+  );
+}
+
+/**
+ * What the isolated rerun proved. `reproduced` failed twice and is the
+ * author's; `flaked` failed in the full selection and passed alone;
+ * `notRun` means the rerun never exercised a file it was asked about, which
+ * settles nothing and must not be read as a pass.
+ */
+export function rerunVerdict({ requested, report, root }) {
+  const covered = new Set(coveredVitestFiles(report, root));
+  const notRun = requested
+    .map(entry => entry.file)
+    .filter(file => !covered.has(file));
+  const reproduced = failedVitestFiles(report, root);
+  const failedFiles = new Set(reproduced.map(entry => entry.file));
+  const flaked = requested.filter(entry => !failedFiles.has(entry.file));
+  if (notRun.length > 0) return { status: 'inconclusive', notRun };
+  if (reproduced.length > 0)
+    return { status: 'reproduced', reproduced, flaked };
+  return { status: 'flake', flaked };
+}
+
+function repositoryRelative(file, root) {
+  if (typeof file !== 'string') return '(unnamed file)';
+  if (!path.isAbsolute(file)) return file;
+  const relative = path.relative(root, file);
+  return relative && !relative.startsWith('..') ? relative : file;
+}
+
+function fileLines(entries) {
+  return entries.flatMap(entry => [
+    `      ${entry.file}`,
+    ...entry.tests.map(name => `          ${name}`),
+  ]);
+}
+
+function loadLine(load) {
+  return `      load average ${load.atFailure.toFixed(2)} at the failure, ${load.atRerun.toFixed(2)} at the rerun`;
+}
+
+/** What the author reads when the named files passed alone. Loud on purpose:
+ *  a swallowed flake is how a real regression hides. */
+export function suspectedFlakeReport({ checkId, flaked, load }) {
+  return [
+    `[agent-land] SUSPECTED FLAKE — ${checkId} named ${flaked.length} failing file(s), and every one passed when re-run alone.`,
+    loadLine(load),
+    ...fileLines(flaked),
+    '      A break is deterministic. Failing in a large selection and passing in',
+    '      isolation is the machine-contention signature in',
+    '      docs/engineering/agent-delivery.md, not a defect in this change.',
+    '      Recorded as a floor_check flake; the floor continues.',
+  ].join('\n');
+}
+
+/** What the author reads when the rerun failed too. This is the right reason
+ *  to fail: it failed twice, the second time with the machine to itself. */
+export function reproducedFailureReport({ checkId, reproduced, flaked, load }) {
+  return [
+    `${checkId} failed, and ${reproduced.length} file(s) failed AGAIN when re-run alone in a single worker:`,
+    ...fileLines(reproduced),
+    loadLine(load),
+    'A failure that survives isolation is deterministic. Fix these; they are not machine load.',
+    ...(flaked.length > 0
+      ? [
+          `${flaked.length} other file(s) passed when run alone and are recorded as suspected flakes:`,
+          ...fileLines(flaked),
+        ]
+      : []),
+  ].join('\n');
+}
+
+/** The rerun answered nothing, so the first failure stands unqualified. */
+export function inconclusiveRerunReport({ checkId, notRun }) {
+  return [
+    `${checkId} failed, and the isolated rerun never ran ${notRun.length} of the file(s) it named:`,
+    ...notRun.map(file => `      ${file}`),
+    'A rerun that matched nothing is not evidence of a flake, so the original failure stands.',
+  ].join('\n');
+}
+
+/** The first known intermittent (agent-delivery.md): a non-zero exit with no
+ *  failing test named is an unhandled error or a dead worker, and that
+ *  distinction is the whole diagnosis. Nothing is re-run for it. */
+export function unnamedFailureReport(checkId) {
+  return [
+    `${checkId} exited non-zero and named no failing test file.`,
+    'That is an unhandled error or a dead worker, not a failing assertion, and',
+    'no rerun can narrow it. Capture the FULL output, not the tail — see',
+    '"A known intermittent" in docs/engineering/agent-delivery.md.',
+  ].join('\n');
+}
+
+/** Above the cap the rerun would be a second full run. The floor bounds load;
+ *  it does not double it. */
+export function rerunTooWideReport(checkId, failures) {
+  return [
+    `${checkId} named ${failures.length} failing file(s), more than the ${MAX_RERUN_FILES} a targeted rerun covers.`,
+    'Re-running them would be a second full run, which is the load this floor',
+    'exists to bound. Dozens of files failing at once is a break, not contention.',
+  ].join('\n');
+}
+
+async function spawnCheck(root, command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: root,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    child.once('error', reject);
+    child.once('exit', code => resolve(code ?? 1));
+  });
+}
+
+async function readReport(reportPath) {
+  try {
+    return JSON.parse(await readFile(reportPath, 'utf8'));
+  } catch {
+    // A crashed or killed run writes no report. That is the unnamed-failure
+    // path, handled by the caller; it is never an error of its own.
+    return null;
+  }
+}
+
+function exitMessage(check, code) {
+  return `${check.command} ${check.args.join(' ')} exited ${code}`;
+}
+
+async function runVitestCheck(root, check) {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'exawatt-floor-'));
+  try {
+    const firstReport = path.join(workspace, 'selection.json');
+    const code = await spawnCheck(root, check.command, [
+      ...check.args,
+      ...vitestReportArgs(firstReport),
+    ]);
+    if (code === 0) return { status: 'passed' };
+
+    const atFailure = loadavg()[0];
+    const failures = failedVitestFiles(await readReport(firstReport), root);
+    // A failure carries its file identities into the metric stream too, so the
+    // stream holds what was named at every outcome, not only at a flake.
+    const failed = (message, detail = {}) => ({
+      status: 'failed',
+      message: `${exitMessage(check, code)}\n${message}`,
+      detail: { loadAverageAtFailure: atFailure, ...detail },
+    });
+    if (failures.length === 0) return failed(unnamedFailureReport(check.id));
+    if (failures.length > MAX_RERUN_FILES)
+      return failed(rerunTooWideReport(check.id, failures), {
+        failedFiles: failures,
+      });
+
+    console.log(
+      `[agent-land] ${check.id} named ${failures.length} failing file(s); re-running them alone once (BUG-090).`
+    );
+    const rerunReport = path.join(workspace, 'isolated.json');
+    await spawnCheck(root, check.command, [
+      'run',
+      check.rerun.script,
+      ...failures.map(entry => entry.file),
+      ...vitestReportArgs(rerunReport),
+    ]);
+    const load = { atFailure, atRerun: loadavg()[0] };
+    const verdict = rerunVerdict({
+      requested: failures,
+      report: await readReport(rerunReport),
+      root,
+    });
+
+    if (verdict.status === 'inconclusive')
+      return failed(
+        inconclusiveRerunReport({ checkId: check.id, notRun: verdict.notRun }),
+        { failedFiles: failures, notRunFiles: verdict.notRun }
+      );
+    if (verdict.status === 'reproduced')
+      return failed(
+        reproducedFailureReport({ checkId: check.id, ...verdict, load }),
+        {
+          reproducedFiles: verdict.reproduced,
+          flakedFiles: verdict.flaked,
+          loadAverageAtRerun: load.atRerun,
+        }
+      );
+
+    console.warn(
+      suspectedFlakeReport({ checkId: check.id, flaked: verdict.flaked, load })
+    );
+    return {
+      status: 'flaked',
+      detail: {
+        flakedFiles: verdict.flaked,
+        loadAverageAtFailure: atFailure,
+        loadAverageAtRerun: load.atRerun,
+      },
+    };
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+async function runOneCheck(root, check) {
+  if (check.rerun?.kind === 'vitest') return runVitestCheck(root, check);
+  const code = await spawnCheck(root, check.command, check.args);
+  return code === 0
+    ? { status: 'passed' }
+    : { status: 'failed', message: exitMessage(check, code) };
+}
+
 export async function runDeliveryChecks(
   root,
   checks,
@@ -502,44 +791,26 @@ export async function runDeliveryChecks(
     console.log(
       `[agent-land] ${phase} floor: ${check.command} ${check.args.join(' ')}`
     );
+    let outcome;
     try {
-      await new Promise((resolve, reject) => {
-        const child = spawn(check.command, check.args, {
-          cwd: root,
-          stdio: 'inherit',
-          env: process.env,
-        });
-        child.once('error', reject);
-        child.once('exit', code =>
-          code === 0
-            ? resolve()
-            : reject(
-                new Error(
-                  `${check.command} ${check.args.join(' ')} exited ${code}`
-                )
-              )
-        );
-      });
-      const result = {
-        id: check.id,
-        phase,
-        status: 'passed',
-        durationMs: Date.now() - startedAt,
-        completedAt: new Date().toISOString(),
-      };
-      evidence.push(result);
-      await onResult(result);
+      outcome = await runOneCheck(root, check);
     } catch (error) {
-      const result = {
-        id: check.id,
-        phase,
-        status: 'failed',
-        durationMs: Date.now() - startedAt,
-        completedAt: new Date().toISOString(),
-      };
-      await onResult(result);
-      throw error;
+      outcome = { status: 'failed', message: error.message };
     }
+    const result = {
+      id: check.id,
+      phase,
+      status: outcome.status,
+      durationMs: Date.now() - startedAt,
+      completedAt: new Date().toISOString(),
+      ...(outcome.detail ?? {}),
+    };
+    if (outcome.status === 'failed') {
+      await onResult(result);
+      throw new Error(outcome.message);
+    }
+    evidence.push(result);
+    await onResult(result);
   }
   return evidence;
 }

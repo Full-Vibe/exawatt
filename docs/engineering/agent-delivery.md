@@ -56,6 +56,11 @@ Recorded rather than closed. If it recurs, capture the FULL output (not the
 tail): a run that fails with no `×` line is an unhandled error or a dead
 worker, and that distinction is the whole diagnosis.
 
+Since BUG-090 the floor says this itself. A vitest check that exits non-zero
+and names no failing test file is reported as exactly that — an unhandled
+error or a dead worker, which no rerun can narrow — and nothing is re-run for
+it. The second intermittent below is the one the floor acts on.
+
 ## A second intermittent: named failures under machine load
 
 Distinct from the one above, and the distinction is the diagnosis. That one
@@ -79,6 +84,28 @@ So the diagnostic is two steps, and the second is the one that settles it:
 re-run the named files alone, and if that is ambiguous, run them against a
 detached `origin/master` worktree. A failure that reproduces on clean master
 is not yours. A failure whose IDENTITY changes between runs is nobody's.
+
+**The floor now runs the first step itself (BUG-090).** A failed vitest check
+re-runs exactly the files it named, once, in a single worker
+(`pnpm test:alone <files...>`, which is also the hand command for the manual
+diagnostic). No timeout is raised anywhere; the rerun changes what the floor
+BELIEVES about a failure, never how long a test may take.
+
+| Rerun outcome                     | Floor result | What the author reads                                                                                                      |
+| --------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| every named file passes alone     | `flaked`     | `SUSPECTED FLAKE`, the files, the failing test names, both load averages; the floor **continues** and the landing proceeds |
+| any file fails again              | `failed`     | which files failed AGAIN in isolation (deterministic, and the author's), listed separately from the ones that did not      |
+| the rerun ran none of those files | `failed`     | inconclusive; the original failure stands, because a rerun that matched nothing is not evidence of a flake                 |
+| more than 25 files failed         | `failed`     | too wide for a targeted rerun; dozens of files failing at once is a break, not contention                                  |
+
+A flake is reported, never swallowed: it appears in the check stream, in the
+ticket's evidence, on the landing's `STATUS` line as `flaked=<check>:<n>`, and
+in `metrics.jsonl` as a `floor_check` event with `status: "flaked"` carrying
+the file identities, the failing test names, and the load average at the
+failure and at the rerun. `summarizeDeliveryMetrics` tallies flakes per file,
+because a real regression hiding behind flakiness returns to the SAME file
+while contention moves around. Repeated flakes on one file are a defect to
+chase, not noise to accept.
 
 Before "fixing" a red suite, check `uptime`. Above roughly 30, DOM tests are
 timing the machine rather than the code. Re-run the named files alone; if they
@@ -142,7 +169,7 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm type-check`, and `pnpm test:agent-delivery` |
-| Changed JavaScript or TypeScript                                                        | related Vitest selection, bounded to 25% workers                                                              |
+| Changed JavaScript or TypeScript                                                        | related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing        |
 | `electron/**`, `packages/core/**`, Electron builder config, or Electron/dogfood scripts | `pnpm electron:compile`                                                                                       |
 | Playwright or stable-browser boundary                                                   | `pnpm qa:browser:doctor`                                                                                      |
 | Fleet spatial or R3F evaluation code                                                    | `pnpm eval:r3f`                                                                                               |
@@ -246,6 +273,9 @@ Success output distinguishes:
   evidence request was accepted; it is not a hosted verdict;
 - `installed=not-requested|queued|queue-failed`: post-integration request state,
   not proof that the app is already installed;
+- `flaked=<check>:<n>`: checks that failed and then passed when their named
+  files ran alone. Absent when nothing flaked, so a clean landing reads exactly
+  as it did before the rerun existed;
 - `public=published|pending|refused`: what the public projection did. The field
   is absent entirely when no public remote is configured, which is the default.
 
@@ -357,23 +387,23 @@ contributor's own commit is what the projector publishes.
 
 `metrics.jsonl` is append-only schema version 1. Current event types are:
 
-| Event                                                                                                         | Important fields                                                         |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status, duration |
-| `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                       |
-| `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                    |
-| `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                       |
-| `queue_terminal`                                                                                              | status, queue wait, integrated SHA or failure/recovery detail            |
-| `integration_lock`                                                                                            | final critical-section duration                                          |
-| `ci_batch_requested` / `ci_batch_started` / `ci_batch_superseded` / `ci_batch_dispatched` / `ci_batch_failed` | desired/dispatched SHA, sequence, freshness, supersession, or failure    |
-| `dogfood_requested` / `dogfood_started` / `dogfood_superseded` / `dogfood_installed` / `dogfood_failed`       | desired SHA, sequence, freshness, supersession, or failure               |
-| `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                 |
-| `public_projection`                                                                                           | projection state, private/public SHA pair, duration                      |
-| `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason       |
+| Event                                                                                                         | Important fields                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
+| `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                                                                                                                                                            |
+| `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                                                                                                                                                         |
+| `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                                                                                                                                                            |
+| `queue_terminal`                                                                                              | status, queue wait, integrated SHA or failure/recovery detail                                                                                                                                                 |
+| `integration_lock`                                                                                            | final critical-section duration                                                                                                                                                                               |
+| `ci_batch_requested` / `ci_batch_started` / `ci_batch_superseded` / `ci_batch_dispatched` / `ci_batch_failed` | desired/dispatched SHA, sequence, freshness, supersession, or failure                                                                                                                                         |
+| `dogfood_requested` / `dogfood_started` / `dogfood_superseded` / `dogfood_installed` / `dogfood_failed`       | desired SHA, sequence, freshness, supersession, or failure                                                                                                                                                    |
+| `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                                                                                                                                                      |
+| `public_projection`                                                                                           | projection state, private/public SHA pair, duration                                                                                                                                                           |
+| `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
 
 `summarizeDeliveryMetrics` computes integrated and failed counts, queue p50/p95,
-lock p95, stale-stop and floor-failure counts, Actions minutes, and dogfood
-freshness p95. ENG-022 H11—not an individual successful landing—owns the
+lock p95, stale-stop and floor-failure counts, suspected-flake counts with a
+per-file tally, Actions minutes, and dogfood freshness p95. ENG-022 H11—not an individual successful landing—owns the
 30-landing verdict: zero exact-floor escapes, every completed queue-drain Linux
 batch green, no stale-base conversational loops, p95 queue wait below three
 minutes at comparable load, and lower Actions minutes per integrated commit.
@@ -390,20 +420,21 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 
 ## Recovery runbook
 
-| Symptom                                                          | Safe response                                                                                                                                                                                                   |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                              |
-| Automatic rebase conflicts                                       | The rebase is aborted and the ticket is terminal `failed`. Fetch/rebase the author branch normally, resolve and verify it, commit if needed, then submit a new ticket. The failed attempt ref remains evidence. |
-| Queue head has a live PID and stale heartbeat                    | Wait and inspect machine load/process health. Never delete its ticket or lock. If the operator establishes that it is irrecoverably wedged, terminate that exact PID; the next waiter will reconcile it.        |
-| Queue head owner is dead                                         | No manual mutation is needed. The next waiter/lander claims a new epoch, checks remote reachability, and records exactly one terminal result.                                                                   |
-| Process died during or after push                                | Start or continue another normal landing. Dead-head reconciliation treats the attempt as integrated only if fetch proves it reachable from `origin/master`; otherwise the attempt remains preserved.            |
-| Shared `master` is dirty or stale                                | Leave it alone. Remote integration is authoritative and already succeeded; clean/sync the shared checkout only when its owner can do so safely.                                                                 |
-| Attempt-ref cleanup warns after integration                      | First prove the attempt SHA is reachable from `origin/master`, then delete that exact remote `agent-attempts/*` ref. Never use a broad branch pattern.                                                          |
-| CI batch request remains after a failure                         | Inspect `ci_batch_failed`; a later normal landing restarts the detached worker. For urgent evidence, manually dispatch `CI` at `master`. Do not delete request or cadence state to manufacture a green signal.  |
-| Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                      |
-| A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                        |
-| A landing reports `public=pending`                               | Nothing. The private landing is integrated; the next landing's projection fast-forwards past both. Investigate only if it repeats, and read the reason in the source lock.                                      |
-| A landing reports `public=refused`                               | The projection no longer descends from public `master`. Establish which manifest change reclassified history, then run `pnpm open-source:reseed` with that reason. Never force the public remote by hand.       |
+| Symptom                                                          | Safe response                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                                                                                |
+| Automatic rebase conflicts                                       | The rebase is aborted and the ticket is terminal `failed`. Fetch/rebase the author branch normally, resolve and verify it, commit if needed, then submit a new ticket. The failed attempt ref remains evidence.                                                   |
+| Queue head has a live PID and stale heartbeat                    | Wait and inspect machine load/process health. Never delete its ticket or lock. If the operator establishes that it is irrecoverably wedged, terminate that exact PID; the next waiter will reconcile it.                                                          |
+| Queue head owner is dead                                         | No manual mutation is needed. The next waiter/lander claims a new epoch, checks remote reachability, and records exactly one terminal result.                                                                                                                     |
+| Process died during or after push                                | Start or continue another normal landing. Dead-head reconciliation treats the attempt as integrated only if fetch proves it reachable from `origin/master`; otherwise the attempt remains preserved.                                                              |
+| Shared `master` is dirty or stale                                | Leave it alone. Remote integration is authoritative and already succeeded; clean/sync the shared checkout only when its owner can do so safely.                                                                                                                   |
+| Attempt-ref cleanup warns after integration                      | First prove the attempt SHA is reachable from `origin/master`, then delete that exact remote `agent-attempts/*` ref. Never use a broad branch pattern.                                                                                                            |
+| CI batch request remains after a failure                         | Inspect `ci_batch_failed`; a later normal landing restarts the detached worker. For urgent evidence, manually dispatch `CI` at `master`. Do not delete request or cadence state to manufacture a green signal.                                                    |
+| Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                                                                        |
+| A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                                                                          |
+| A landing reports `flaked=<check>:<n>`                           | Nothing blocking. The named files failed in a large selection and passed alone, which is contention. Read the file names: if `summarizeDeliveryMetrics`' per-file tally shows the SAME file flaking across landings, that is a defect to chase, not machine load. |
+| A landing reports `public=pending`                               | Nothing. The private landing is integrated; the next landing's projection fast-forwards past both. Investigate only if it repeats, and read the reason in the source lock.                                                                                        |
+| A landing reports `public=refused`                               | The projection no longer descends from public `master`. Establish which manifest change reclassified history, then run `pnpm open-source:reseed` with that reason. Never force the public remote by hand.                                                         |
 
 Do not hand-edit `next-ticket.json`, ticket files, ownership epochs, terminal
 results, or request state during ordinary recovery. These are durable machine

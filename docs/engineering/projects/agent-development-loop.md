@@ -301,6 +301,42 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-08-18, BUG-090: the floor's named test failures were the machine's, not
+  the author's, and it took six landing attempts and most of an evening to
+  establish that once. `agent:land` selects `test:related` from the changed
+  paths, and for a module the whole app imports — the distribution contract in
+  `packages/core` is the worked example — that pulls a large `app-dom` set
+  whose tests fail by TIMEOUT at five to seven seconds under load. Four concurrent worktrees is the documented normal state, and a sibling
+  running `electron-builder` pushes the load average past 150. The failing
+  identities changed between runs on identical code (six one run, eight the
+  next, two different ones on a clean `origin/master` control), which is the
+  proof that none of them was a defect. The damage was the misreport, not the
+  delay: named failures read as "your change broke these", and a capable agent
+  nearly went hunting in unrelated surfaces.
+
+  The floor now runs the diagnostic `agent-delivery.md` already prescribed. A
+  failed vitest check re-runs exactly the files it named, once, in a single
+  worker (`pnpm test:alone`). Every file passing alone is `flaked`: the floor
+  continues, and the flake is reported on the `STATUS` line, in the ticket
+  evidence, and in `metrics.jsonl` with the file identities, the failing test
+  names, and the load average at both runs, tallied per file so a genuine
+  defect hiding behind flakiness — which returns to the SAME file while
+  contention moves around — stays findable. Any file failing again fails the
+  landing and is named separately from the ones that did not. A rerun that ran
+  none of its files is inconclusive and the original failure stands; a failure
+  naming no file is the first intermittent (a dead worker) and is not re-run;
+  more than 25 failing files is a break, not contention.
+
+  No timeout was raised, and the 25% worker cap is untouched: decision `0030`
+  keeps the suite bounded, and a longer timeout makes every real failure slower
+  to surface. A concurrency-aware admission gate was rejected on `0030`'s own
+  arithmetic (it serializes expensive verification back into the critical path,
+  and the evidence includes a landing that waited for load 12 and still failed);
+  narrowing the `test:related` selection was rejected as weakening the floor for
+  a machine condition, and belongs to ENG-039's module-owned verification;
+  quarantining the `app-dom` files was rejected because their identities are not
+  stable, so there is nothing to quarantine but the coverage itself.
+
 - 2026-08-16, the operator's 90% Actions alert proved H7 had implemented only
   cancellation, not the batching its accepted contract already required. The
   month held 336 Exawatt CI runs and three macOS releases; 96 runs were
