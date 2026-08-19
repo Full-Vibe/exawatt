@@ -99,6 +99,31 @@
  * therefore the last panel over the board, which puts the best frame on the
  * page immediately above the dated list and the call to action.
  *
+ * AMENDED 2026-08-19 (ENG-031 W12, operator): THE PAGE GAINS A DURATION
+ * CLAIM, AND IT SITS BETWEEN THE TWO SCALE CLAIMS AND THE DIVE.
+ *
+ * > "add a section about the (forthcoming ... it'll likely be live tomorrow)
+ * > feature to push an agent up to the cloud to manage long-horizon agents /
+ * > long-horizon work."
+ *
+ * `cloud` is ENG-033's one user-facing promise, and the affordance it names
+ * already ships in the product as an ENG-026 `announced` row. Three decisions
+ * are carried in its row below rather than in prose here:
+ *
+ * 1. **It follows `altitude-delegation`.** Delegation is scale ACROSS a fleet
+ *    and this is scale THROUGH TIME. Both are answers to "how does ten become
+ *    ten thousand", so they belong adjacent, and putting the pair immediately
+ *    before the dive leaves the run's one remaining camera event where W9 put
+ *    it.
+ * 2. **It holds the Project framing.** The camera neither moves nor reverses,
+ *    which is what the monotonic ladder requires and what keeps the dive the
+ *    only arrival left.
+ * 3. **The board does not pretend to prove it.** Placement is not a property
+ *    the frozen capture carries, so the panel returns the Project to full
+ *    strength after the delegation bloom and lets the SENTENCE carry the
+ *    future tense. Lighting a real agent as though it were already hosted
+ *    would be the false present-tense claim `marketing.md` records twice.
+ *
  * THE LENS SEAM. `boardLens` is the extension point the operator asked for:
  * "we can gradually build our actual product surface into that and make a
  * homepage version more illustrative over time." A lens says what the marks
@@ -121,6 +146,7 @@ export type BandId =
   | 'any-lab'
   | 'cost'
   | 'trust'
+  | 'cloud'
   | 'open-source'
   | 'security'
   | 'proof'
@@ -468,9 +494,13 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
   },
   {
     id: 'altitude-attention',
-    job: 'ATTENTION. The board recedes to the agents waiting on a person, and says why the colour is trustworthy.',
+    job: 'SCALE AND ATTENTION. Every agent on one screen, with the ones waiting on a person lit.',
     headingRole: 'section',
-    heading: 'Only what needs you',
+    // W12 (operator: "make it more about see 100s of agents in one screen").
+    // `Only what needs you` was the panel's whole heading and it named the
+    // half a reader arrives caring about second. The number goes first now
+    // and the needs-you idea is one plain sentence under it.
+    heading: 'A hundred agents, one screen',
     // W6c: one claim, no coda. The budget is the claim's own size plus room
     // for a rewrite, not room for a second idea.
     copyBudget: { min: 22, max: 42 },
@@ -519,7 +549,9 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     job: 'PROVENANCE. Whose agents these are, coloured by the harness that runs each one.',
     headingRole: 'section',
     heading: 'Agents from any lab',
-    copyBudget: { min: 30, max: 48 },
+    // Floor 30 to 26 in W12. The rewrite that NAMES the harnesses is shorter
+    // than the abstraction it replaced, and a floor is never a target.
+    copyBudget: { min: 26, max: 48 },
     // W8 promoted this from a card chapter to a LENS. A harness is a property
     // of every mark on the board, so the claim proves itself the moment the
     // fleet recolours by source.
@@ -556,10 +588,13 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
   },
   {
     id: 'trust',
-    job: 'OWNERSHIP. Whose machine this runs on, and the switch attached to every outbound thing.',
+    job: 'OWNERSHIP. Whose machine this runs on, whose account, whose keys, and where the work stays.',
     headingRole: 'section',
     heading: 'Your machine, your keys, your repo',
-    copyBudget: { min: 30, max: 46 },
+    // Floor 30 to 26 in W12, because the coda came off (operator: "kill ...
+    // such overpedantic hyperpolite copy lines") and the two claims that
+    // remain are 31 words. The floor sits under what is written, as always.
+    copyBudget: { min: 26, max: 46 },
     medium: 'pinned-board',
     // HELD BESIDE `any-lab`, and ahead of the dive (W9). Ownership is a claim
     // about every mark, so it belongs while the whole crop is in frame; and it
@@ -609,6 +644,32 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     altitudeAnchor: 'team',
     boardLens: 'status',
     boardHighlight: 'delegation',
+    screens: 1,
+    status: 'proposed',
+  },
+  {
+    id: 'cloud',
+    job: 'DURATION. The long work leaves your laptop and keeps going without you.',
+    headingRole: 'section',
+    heading: 'Push an agent to the cloud',
+    // Written at 32. The floor sits under that so a later pass can cut a line
+    // without this test asking for it back.
+    copyBudget: { min: 26, max: 44 },
+    medium: 'pinned-board',
+    // HOLDS THE PROJECT FRAMING, and that is the honest composition (ENG-033).
+    // Delegation is scale ACROSS the fleet and this is scale THROUGH TIME, so
+    // the two belong at the same distance and the camera has no reason to
+    // move; holding also keeps the dive's arrival as the one camera event left
+    // on the page. The board may not prove this claim, either: hosted
+    // placement is not a property the frozen capture carries, and lighting a
+    // real agent as though it were already hosted is the false present-tense
+    // claim `marketing.md` records twice. So the picture returns the whole
+    // Project to full strength after the delegation bloom and the SENTENCE
+    // carries the future tense, which is the register `marketing.md` ->
+    // "Aspiration is half the message" makes first-class.
+    altitudeAnchor: 'team',
+    boardLens: 'status',
+    boardHighlight: 'whole-fleet',
     screens: 1,
     status: 'proposed',
   },

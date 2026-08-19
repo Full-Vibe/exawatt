@@ -155,6 +155,13 @@ describe('homepage band ordering', () => {
     // to `cluster-in`, steps in again while two lens panels re-read the same
     // marks, steps in onto the Project where delegation is legible, and dives
     // to one agent last.
+    //
+    // AMENDED again (W12, operator: "add a section about the ... feature to
+    // push an agent up to the cloud"). `cloud` HOLDS the Project framing that
+    // `altitude-delegation` reached. The two are the same claim on two axes,
+    // scale across a fleet and scale through time, so there is nothing for the
+    // camera to do between them, and holding keeps the dive as the one arrival
+    // left on the page.
     const anchors = heroCameraAnchors();
 
     expect(anchors.map(anchor => anchor.id)).toEqual([
@@ -163,6 +170,7 @@ describe('homepage band ordering', () => {
       'any-lab',
       'trust',
       'altitude-delegation',
+      'cloud',
       'altitude-agent',
     ]);
     expect(bandById('fold').altitudeAnchor).toBe('cluster');
@@ -170,6 +178,7 @@ describe('homepage band ordering', () => {
       'cluster-in',
       'cluster-close',
       'cluster-close',
+      'team',
       'team',
       'agent',
     ]);
@@ -244,10 +253,15 @@ describe('homepage band ordering', () => {
     // W6b: the operator's verdict was the same again, about text this time.
     // Eight bands over about eight and a half screens, and six of the eight
     // are one graphic.
-    // W10 took `proof` off the page outright, so it is seven bands over about
-    // 7.6 screens, and six of the seven are one graphic.
-    expect(proposedBands().length).toBeLessThanOrEqual(7);
-    expect(pageScreens()).toBeLessThan(8);
+    // W10 took `proof` off the page outright, so it is seven bands over 7.2
+    // screens, and six of the seven are one graphic.
+    // W12 added `cloud`, the page's one future-tense claim: eight bands over
+    // 8.2 screens, and seven of the eight are still that one graphic. The
+    // ceiling moves by exactly the band that was added and no more, so this
+    // stays an assertion about height rather than a number that follows the
+    // page around.
+    expect(proposedBands().length).toBeLessThanOrEqual(8);
+    expect(pageScreens()).toBeLessThan(8.5);
     // And most of the page is ONE graphic rather than a stack of stops.
     expect(pinnedBoardBands().length + 1).toBeGreaterThanOrEqual(
       proposedBands().length - 2
@@ -264,6 +278,7 @@ describe('the pinned board run', () => {
       'any-lab',
       'trust',
       'altitude-delegation',
+      'cloud',
       'altitude-agent',
     ]);
     expect(pinned.map(band => band.boardHighlight)).toEqual([
@@ -271,6 +286,7 @@ describe('the pinned board run', () => {
       'whole-fleet',
       'whole-fleet',
       'delegation',
+      'whole-fleet',
       'one-agent',
     ]);
     // The LENS is what makes the two middle panels different pictures of the
@@ -280,6 +296,7 @@ describe('the pinned board run', () => {
       'status',
       'source',
       'permission',
+      'status',
       'status',
       'status',
     ]);

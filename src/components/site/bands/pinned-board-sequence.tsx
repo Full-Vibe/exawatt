@@ -111,7 +111,7 @@ import { altitudePanel } from './altitude-copy';
 import { BandHeading } from './band-section';
 import { FoldGestureImage } from './fold-gesture-image';
 import { FoldHero } from './fold-hero';
-import type { HomepageBand } from './manifest';
+import type { BandId, HomepageBand } from './manifest';
 import {
   foldBoardInteractive,
   foldBoardOpacity,
@@ -123,6 +123,7 @@ import {
   boardProgressAt,
   panelAnchors,
   panelPresence,
+  panelStepId,
 } from './pinned-scroll';
 
 /**
@@ -375,8 +376,9 @@ export function PinnedBoardSequence({
       const next = activePanel(scrolled, anchors);
       setActive(current => (current === next ? current : next));
     });
-    // `hasFold` is read at line 292 to decide whether the fold participates in
-    // the pinned sequence. It was missing from these dependencies, so the
+    // `hasFold` is read inside this pass to decide whether the fold
+    // participates in the pinned sequence (the line number this comment used
+    // to name moved in W12; the fact did not). It was missing from these dependencies, so the
     // callback could keep a stale value after the band set changes shape, and
     // the React Compiler refused to preserve the memoization at all — which is
     // what turned `pnpm lint` red, and lint is the third CI step, so nothing
@@ -438,9 +440,7 @@ export function PinnedBoardSequence({
           // The var defaults to 1, so a run without a fold (a study passing
           // panels alone) is unaffected.
           style={
-            hasFold
-              ? { opacity: 'var(--fold-board-opacity, 1)' }
-              : undefined
+            hasFold ? { opacity: 'var(--fold-board-opacity, 1)' } : undefined
           }
           data-pinned-board-frame
         >
@@ -528,8 +528,8 @@ export function PinnedBoardSequence({
             band={band}
             index={index}
             active={index === active}
+            nextBandId={bands[index + 1]?.id}
             theme={{ label: theme.label, muted: theme.labelMuted }}
-            accent={theme.status['needs-you']}
             snapshot={theme}
             register={(node: HTMLElement | null) => {
               if (node) panelNodes.current.set(index, node);
@@ -546,18 +546,20 @@ function PinnedPanel({
   band,
   index,
   active,
+  nextBandId,
   theme,
   snapshot,
-  accent,
   register,
 }: {
   band: HomepageBand;
   index: number;
   active: boolean;
+  /** The panel after this one, so the fold can point its way-down control at
+   *  that panel's own settle point rather than at a pixel offset. */
+  nextBandId?: BandId;
   theme: { label: string; muted: string };
   /** The whole resolved snapshot, which the lens needs for its palette. */
   snapshot: SpatialThemeSnapshot;
-  accent: string;
   register: (node: HTMLElement | null) => void;
 }) {
   const copy = altitudePanel(band.id);
@@ -566,18 +568,6 @@ function PinnedPanel({
   // id, because "the band that carries the page headline" is exactly the thing
   // that is true about it, and the manifest already allows only one.
   const isFold = band.headingRole === 'headline';
-  // Every panel names its OWN subject, not the active one's. Gating it on
-  // "am I active" was wrong twice: unpinned, every panel is on screen at once
-  // and only one of them would have named anything; and pinned, the subject
-  // would have popped a frame after the panel it belongs to.
-  const subject = useMemo(
-    () =>
-      resolveHeroHighlight(
-        HERO_BOARD_CAPTURE,
-        band.boardHighlight ?? 'whole-fleet'
-      ).subject,
-    [band.boardHighlight]
-  );
   // Resolved per panel rather than per active panel, for the same reason the
   // subject is: unpinned, several panels are on screen at once, and a legend
   // that named the ACTIVE lens would label the wrong colours on all but one.
@@ -586,12 +576,30 @@ function PinnedPanel({
       resolveHeroLens(HERO_BOARD_CAPTURE, band.boardLens ?? 'status', snapshot),
     [band.boardLens, snapshot]
   );
-  // ONE STAT LINE PER PANEL, and only one. A panel whose lens prints a legend
-  // has its state line already; every other panel prints the subject the
-  // highlight resolved off the capture. The fold prints neither: its stat line
-  // is the board's own fleet chip, which is in frame beside it.
+  // NO PANEL PRINTS A STAT LINE ANY MORE (ENG-031 W12, operator: "the last two
+  // lines of copy are horrendous here - you're just putting random numbers and
+  // labels '172 agents' ... kill that and other such overpedantic hyperpolite
+  // copy lines").
+  //
+  // W6b's rule was one stat line on every panel but the fold, read off the
+  // highlight's resolved subject. Rendered, every one of them was a second
+  // printing of something already in the same frame:
+  //
+  // - `trust` printed `173 agents / 10 projects · 25 need you` while the
+  //   board's own chip printed those three numbers at the top of the screen;
+  // - `altitude-attention` printed `25 agents need you / the other 148 are on
+  //   track`, which is that chip's third figure said again;
+  // - `altitude-delegation` printed a count of delegating agents that the
+  //   bloom is the picture of;
+  // - `altitude-agent` printed the agent's name, its Project and its activity
+  //   line, which is verbatim what the identity card beside the mark already
+  //   renders, at both layouts.
+  //
+  // So the board says its own state and the panel says the claim. The LENS
+  // LEGEND stays, because it is not a restatement: it is the key that maps a
+  // colour the board IS using to a name, and nothing else on screen carries
+  // it.
   const showLegend = lens.active && lens.legend.length > 0;
-  const showSubject = !isFold && !showLegend;
   const style = {
     '--panel-screens': band.screens,
     // The pinned pass owns this after first paint. It starts at the first
@@ -626,6 +634,7 @@ function PinnedPanel({
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 h-px md:snap-start motion-reduce:md:snap-align-none"
+          id={panelStepId(band.id)}
           style={{ top: SNAP_SENTINEL_TOP }}
           data-pinned-snap-point={band.id}
         />
@@ -647,7 +656,7 @@ function PinnedPanel({
           data-pinned-panel-column
         >
           {isFold ? (
-            <FoldHero />
+            <FoldHero nextStepBandId={nextBandId} />
           ) : (
             <>
               <BandHeading
@@ -670,28 +679,6 @@ function PinnedPanel({
                   <p key={line}>{line}</p>
                 ))}
               </div>
-              {/* The board's own numbers, read off the capture, never typed. */}
-              {showSubject ? (
-                <p
-                  className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1"
-                  data-pinned-panel-subject
-                >
-                  <span
-                    className="text-base font-semibold"
-                    style={{ color: accent }}
-                    data-pinned-panel-subject-label
-                  >
-                    {subject.label}
-                  </span>
-                  <span
-                    className="text-sm"
-                    style={{ color: theme.muted }}
-                    data-pinned-panel-subject-detail
-                  >
-                    {subject.detail}
-                  </span>
-                </p>
-              ) : null}
               {/* THE LENS LEGEND, and it is this panel's stat line. Printed
                   only when the lens is actually re-reading the board: a legend
                   for colours the board is not using is worse than no legend,
@@ -773,15 +760,6 @@ function PinnedPanel({
                     )}
                   </div>
                 </div>
-              ) : null}
-              {copy?.coda ? (
-                <p
-                  className="mt-4 text-[13px] leading-snug sm:text-sm"
-                  style={{ color: theme.muted }}
-                  data-pinned-panel-coda
-                >
-                  {copy.coda}
-                </p>
               ) : null}
             </>
           )}

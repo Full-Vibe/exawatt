@@ -49,6 +49,7 @@ export const BAND_COMPONENTS: Record<BandId, BandComponent | null> = {
   'any-lab': null,
   cost: null,
   trust: null,
+  cloud: null,
   'open-source': null,
   security: null,
   proof: null,

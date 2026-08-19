@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,8 +19,13 @@ import {
  * Decisions carried here:
  * - ONE primary CTA, not two. The measured ceiling is two with one primary,
  *   and persistent conversion already lives in the sticky header, so a second
- *   inline CTA would spend attention without adding a destination. The slot
- *   stays open for W6, which owns the nav.
+ *   inline CTA would spend attention without adding a destination.
+ * - A `trailing` SLOT, filled only by the fold (ENG-031 W12, operator: "put a
+ *   second CTA next to download like an arrow button to indicate
+ *   scrollability"). It sits in the button's own row rather than under it, so
+ *   the requirement line still reads as belonging to the download and the two
+ *   controls read as one row. The close leaves it empty: there is nothing
+ *   below the close to point at.
  * - FLAT DOM. The 3D key switch comes off the site (operator); no premium hero
  *   in the 16-site set makes its primary conversion action a mesh. This is a
  *   real anchor: hit-testable, keyboard-focusable, and legible to a crawler.
@@ -37,12 +43,15 @@ export function DownloadCta({
   className,
   size = 'fold',
   align = 'center',
+  trailing,
 }: {
   className?: string;
   /** The close repeats the fold's button; only the leading rhythm differs. */
   size?: 'fold' | 'close';
   /** The fold is a left column now; the close is still centred type. */
   align?: 'center' | 'start';
+  /** A quiet second control beside the button. The fold's way down. */
+  trailing?: ReactNode;
 }) {
   return (
     <div
@@ -53,16 +62,19 @@ export function DownloadCta({
       )}
       {...{ [BAND_AFFORDANCE_ATTR]: 'download' }}
     >
-      <Button
-        asChild
-        className={cn(
-          'h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90',
-          size === 'close' && 'h-12 px-8 text-lg'
-        )}
-        data-band-download
-      >
-        <Link href={DOWNLOAD_HREF}>{DOWNLOAD_LABEL}</Link>
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button
+          asChild
+          className={cn(
+            'h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90',
+            size === 'close' && 'h-12 px-8 text-lg'
+          )}
+          data-band-download
+        >
+          <Link href={DOWNLOAD_HREF}>{DOWNLOAD_LABEL}</Link>
+        </Button>
+        {trailing}
+      </div>
       <p
         className="text-[13px] leading-snug text-white/50"
         data-band-download-requirement

@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PinnedBoardSequence } from './pinned-board-sequence';
 import { ALTITUDE_PANELS } from './altitude-copy';
+import { panelStepId } from './pinned-scroll';
 import {
   bandCopyWords,
   bandById,
@@ -227,29 +228,52 @@ describe('pinned board sequence', () => {
     ).toHaveAttribute('data-pinned-active', bands[0]!.id);
   });
 
-  it('gives every panel exactly ONE stat line, and never two', () => {
-    // Operator, W6b: one kicker, one two-sentence claim, one stat line. A
-    // panel whose lens prints a legend has its state line already; every other
-    // panel prints the subject the highlight resolved off the capture. The
-    // fold prints neither, because the board's own fleet chip is beside it.
+  it('prints no stat line and no coda on any panel, at all', () => {
+    // SUPERSEDES W6b's "exactly ONE stat line per panel" (operator, W12: "the
+    // last two lines of copy are horrendous here - you're just putting random
+    // numbers and labels '172 agents' and 'Every outbound feature' - kill that
+    // and other such overpedantic hyperpolite copy lines").
+    //
+    // Every subject line the panels printed was a second printing of something
+    // already in the same frame: the fleet chip's own three numbers under
+    // `trust`, the same chip's needs-you figure under `altitude-attention`, a
+    // delegation count the bloom is the picture of, and under the dive the
+    // identity card's own three lines verbatim. The board says its own state
+    // now and the panel says the claim.
     const { container } = render(<PinnedBoardSequence bands={bands} />);
 
-    for (const band of bands) {
-      const panel = container.querySelector(
-        `[data-pinned-panel="${band.id}"]`
-      )!;
-      const subject = panel.querySelector('[data-pinned-panel-subject]');
-      const legend = panel.querySelector('[data-pinned-panel-legend]');
-      const lines = [subject, legend].filter(Boolean).length;
-      expect(lines, band.id).toBe(band.id === 'fold' ? 0 : 1);
-    }
+    expect(container.querySelector('[data-pinned-panel-subject]')).toBeNull();
+    expect(container.querySelector('[data-pinned-panel-coda]')).toBeNull();
+  });
 
-    const subjects = Array.from(
-      container.querySelectorAll('[data-pinned-panel-subject-label]')
-    ).map(node => node.textContent);
-    // Every stat line says something the others do not.
-    expect(new Set(subjects).size).toBe(subjects.length);
-    expect(subjects.join(' ')).toContain('need you');
+  it('gives the fold a way down that lands on the next panel snap point', () => {
+    // Operator, W12: "put a second CTA next to download like an arrow button
+    // to indicate scrollability which scrolls down to the next frame."
+    //
+    // It is a real link to the sentinel the browser already snaps to, so the
+    // affordance and the settle position cannot drift, and this component
+    // still calls no `scrollTo`.
+    const { container } = render(<PinnedBoardSequence bands={bands} />);
+    const cue = container.querySelector('[data-fold-scroll-cue]')!;
+    expect(cue).toBeTruthy();
+    expect(cue.tagName).toBe('A');
+    expect(cue.getAttribute('href')).toBe(`#${panelStepId(bands[1]!.id)}`);
+    // A real name, not a description of the gesture.
+    expect(cue.getAttribute('aria-label')).toBeTruthy();
+    // The target is the panel's own snap sentinel, and exactly one element
+    // owns that id.
+    const targets = container.querySelectorAll(
+      `[id="${panelStepId(bands[1]!.id)}"]`
+    );
+    expect(targets).toHaveLength(1);
+    expect(targets[0]!.getAttribute('data-pinned-snap-point')).toBe(
+      bands[1]!.id
+    );
+    // Quiet, not a second primary: no fill of its own.
+    expect(cue.className).not.toContain('bg-white');
+    // Inside the affordance boundary, so it never spends reading words against
+    // the fold's 24-word ceiling.
+    expect(cue.closest('[data-band-affordance]')).toBeTruthy();
   });
 
   it('prints a lens legend only where the lens actually re-reads the board', () => {

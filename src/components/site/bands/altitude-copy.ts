@@ -4,7 +4,7 @@ import { bandById, countWords, type BandId } from './manifest';
  * The pinned sequence's panels (ENG-031 W4, rewritten W5, widened W8, CUT W6b,
  * cut again W6c).
  *
- * ONE graphic, five explanations. Each panel says what the board is doing
+ * ONE graphic, six explanations. Each panel says what the board is doing
  * WHILE the board does it, and names the thing it is pointing at. The names
  * and the numbers are never written here: `hero-board-highlight.ts` and
  * `hero-board-lens.ts` read them off the frozen capture, so the copy and the
@@ -21,9 +21,9 @@ import { bandById, countWords, type BandId } from './manifest';
  * two-sentence claim, and one line of state read off the board itself.
  *
  * THE CUT IS VOLUME, NOT REGISTER. Every sentence the page was known by is
- * still here: "Every colour here is a claim, and a wrong one costs you a
- * trip", "Never a green check that lies", and the plain-voice product
- * sentences. Nothing was softened, generalised, or made safer.
+ * still here: "Never a green check that lies" and the plain-voice product
+ * sentences. Nothing was softened, generalised, or made safer. (W12 retired
+ * the other line this paragraph used to name; see below.)
  *
  * W6C, THE SECOND CUT: ONE CLAIM PER PANEL, AND EVERY SENTENCE DOES WORK.
  * W6b removed the mechanism trios and left each panel with a two-sentence
@@ -47,7 +47,8 @@ import { bandById, countWords, type BandId } from './manifest';
  *   the commercial answer a stranger actually wants, and it was set at 13px.
  * - `trust` keeps its coda. A disclosure with a control attached is a feature
  *   and a disclosure without one is a warning (`marketing.md`, "Disclosure is
- *   not apology"), so the switch stays.
+ *   not apology"), so the switch stays. SUPERSEDED BY W12, which removes the
+ *   coda and the `coda` field with it; the reason is in the W12 block below.
  *
  * W9, THE ORDER IS THE CAMERA PATH (operator: "I like it when it goes only
  * one direction smoothly across multiple steps"). The panels are resequenced,
@@ -56,24 +57,60 @@ import { bandById, countWords, type BandId } from './manifest';
  * and never opens back out, and a run that ENDS on the dive, which is the
  * frame both design reviews called the best on the page.
  *
+ * W12, THREE PANELS REWRITTEN CONCRETE AND ONE ADDED (operator, 2026-08-19).
+ * Every note here is a rejection of ABSTRACTION, and each one is answered in
+ * the panel it names rather than by a general resolve to write better:
+ *
+ * - `altitude-attention`: "this copy really sucks - make it more about see
+ *   100s of agents in one screen." The panel used to make an aphoristic claim
+ *   about where to look ("The board tells you where to look, so you never go
+ *   looking" / "Every colour here is a claim, and a wrong one costs you a
+ *   trip"). The second of those is the clever-not-useful register outright: it
+ *   is a sentence about the COST OF A LIE rather than about what the reader
+ *   can see. Both are replaced by the claim the board is actually making, in
+ *   the number the operator asked for: a hundred agents at once, and the ones
+ *   waiting on you are the lit ones.
+ * - `any-lab`: "way too abstract." "None of them will sell you the seat you
+ *   command them from" is a metaphor about a market; the reader wants to know
+ *   what runs. The harnesses are NAMED now, in the product's own labels from
+ *   `contracts/agent-sources.json`, with the one that cannot be launched today
+ *   marked as arriving rather than listed beside the four that can. The
+ *   commercial line W6c promoted out of a coda survives as the second half of
+ *   the second sentence, which is where it was already doing the work.
+ * - `trust`: the coda goes. "kill that and other such overpedantic hyperpolite
+ *   copy lines." W6c kept "Every outbound feature has a switch in Settings"
+ *   under the `marketing.md` rule that a disclosure with a control is a
+ *   feature and one without is a warning. That rule is not violated by
+ *   removing it, because there is no longer a DISCLOSURE on this panel for it
+ *   to attach to: what remains is a claim that nothing leaves the machine, and
+ *   a switch for an outbound behaviour the page does not describe is a
+ *   footnote about Settings on a page a stranger has not installed yet.
+ * - `cloud` is NEW: ENG-033's one user-facing promise, and the future tense is
+ *   IN THE SENTENCE rather than in a badge. `marketing.md` -> "Aspiration is
+ *   half the message" makes the future tense first-class and draws the line at
+ *   a false claim about PRESENT behaviour, so "Soon you will push" is the
+ *   honest form and "Push a running agent to the cloud" alone would not be.
+ *
  * THE PANELS, one claim at a time, each one a claim the board is
  * simultaneously proving:
  *
  * 1. `fold` WHAT. Not written here: the fold's own copy is the operator's
  *    frame in `fold-copy.ts`. It is the first frame of this graphic, and its
  *    crop is the widest the page ever shows.
- * 2. `altitude-attention` ATTENTION. The camera HOLDS on that crop while the
- *    board recedes to the agents waiting on a person. A still camera over a
- *    changing board is the one beat a competitor cannot screenshot.
+ * 2. `altitude-attention` SCALE AND ATTENTION. The camera glides in while the
+ *    board recedes to the agents waiting on a person, so a hundred marks are
+ *    on screen and only the ones that want something are lit.
  * 3. `any-lab` PROVENANCE. One step in, and the fleet recolours by the harness
  *    running each agent, so vendor neutrality proves itself.
  * 4. `trust` OWNERSHIP. Whose machine, whose keys, whose repo, said while the
  *    marks it is a claim about are all still in frame.
  * 5. `altitude-delegation` TRAJECTORY. In a step, onto the Project where a
  *    child mark blooming out of its parent is actually legible.
- * 6. `altitude-agent` DEPTH. All the way down to one agent whose status
- *    changes while it is read, and then the page releases into the dated list
- *    and the button.
+ * 6. `cloud` DURATION. The same framing, held: the fleet returns to full
+ *    strength while the one claim on the page written in the future tense is
+ *    made over it.
+ * 7. `altitude-agent` DEPTH. All the way down to one agent whose status
+ *    changes while it is read, and then the page releases into the button.
  *
  * `altitude-fleet` and `cost` are RESERVED, each with its reason in
  * `manifest.ts`. Their lenses and highlights still resolve, so either is a
@@ -103,28 +140,33 @@ export interface AltitudePanelCopy {
   id: BandId;
   /** The panel's body, one entry per rendered line. */
   copy: string[];
-  /**
-   * One quiet line under the claim, and the ONLY thing permitted beneath it
-   * (ENG-031 W6b). The `cards` field is gone rather than capped: a sub-headed
-   * trio is documentation, and the page it was on is the page the operator
-   * said he would not read.
-   */
-  coda?: string;
 }
+
+/**
+ * THERE IS NO CODA FIELD (ENG-031 W12, operator: "kill that and other such
+ * overpedantic hyperpolite copy lines").
+ *
+ * W6b allowed exactly one quiet line under a claim and W6c left one panel
+ * using it. The shape is retired rather than emptied, per the burn-bridges
+ * rule: a 13px explanatory sentence under a claim is where a panel hides the
+ * thing it could not justify saying at full size, and leaving the field in
+ * place is an invitation to write another one. A panel is a heading, a claim,
+ * and whatever the board itself says beside it.
+ */
 
 export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
   {
     id: 'altitude-attention',
     copy: [
-      'The board tells you where to look, so you never go looking.',
-      'Every colour here is a claim, and a wrong one costs you a trip.',
+      'See what every one of them is doing without opening a single one.',
+      'The ones waiting on you light up. The rest keep working.',
     ],
   },
   {
     id: 'any-lab',
     copy: [
-      'Every lab will sell you agents. None of them will sell you the seat you command them from.',
-      'Bring the plan you already pay for. Exawatt never asks for a balance of its own.',
+      'Launch Claude Code, Codex, OpenCode and Grok Build. OpenClaw lands next.',
+      'They run side by side on one board, on the plan you already pay for.',
     ],
   },
   {
@@ -133,13 +175,19 @@ export const ALTITUDE_PANELS: AltitudePanelCopy[] = [
       'Your agents run on your Mac, under your account, on your keys.',
       'Your code, your prompts, and what your agents write never pass through Exawatt.',
     ],
-    coda: 'Every outbound feature has a switch in Settings.',
   },
   {
     id: 'altitude-delegation',
     copy: [
       'The work fans out and comes back under the one that asked for it.',
       'This is how ten becomes ten thousand.',
+    ],
+  },
+  {
+    id: 'cloud',
+    copy: [
+      'Soon you will push a running agent to the cloud and close your laptop.',
+      'It works all night and hands you the result in the morning.',
     ],
   },
   {
@@ -155,12 +203,10 @@ export function altitudePanel(id: BandId): AltitudePanelCopy | undefined {
   return ALTITUDE_PANELS.find(panel => panel.id === id);
 }
 
-/** Reading words in a panel: its heading, claim, and coda. */
+/** Reading words in a panel: its heading and its claim. */
 export function panelWords(panel: AltitudePanelCopy): number {
   return countWords(
-    [bandById(panel.id).heading ?? '', ...panel.copy, panel.coda ?? ''].join(
-      ' '
-    )
+    [bandById(panel.id).heading ?? '', ...panel.copy].join(' ')
   );
 }
 
@@ -171,8 +217,5 @@ export function pinnedRunWords(): number {
 
 /** Everything a reader reads in the panel layer, for a lint pass. */
 export function panelProse(): string {
-  return ALTITUDE_PANELS.flatMap(panel => [
-    ...panel.copy,
-    panel.coda ?? '',
-  ]).join(' ');
+  return ALTITUDE_PANELS.flatMap(panel => panel.copy).join(' ');
 }

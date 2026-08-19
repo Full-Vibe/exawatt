@@ -1221,6 +1221,44 @@ html:has(main[data-home-arrangement='proposed']) body {
   }
 }
 
+/* ---- The fold's way down (ENG-031 W12, operator: "put a second CTA next to
+   download like an arrow button to indicate scrollability which scrolls down
+   to the next frame").
+
+   The control is an ordinary in-page link to the next panel's snap sentinel,
+   so the browser performs the scroll and lands on exactly the position a
+   settle parks at. SMOOTHNESS is therefore a property of the scroller rather
+   than of the control, which is what keeps the no-scroll-jacking rule intact:
+   this page still calls no `scrollTo` and binds no wheel handler.
+
+   Scoped like the snap rules above, by `:has()` on the arrangement, so it is
+   route-stable and follows the page when `HOMEPAGE_ARRANGEMENT` flips onto
+   `/`. Gated on `prefers-reduced-motion: no-preference` because Chromium does
+   NOT honour the preference for `scroll-behavior: smooth` on its own: a reader
+   who asked for stillness gets the same link and an instant jump.
+   ---- */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(
+    main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
+  ) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* The nudge on that control's chevron. Three pixels, and it is the affordance
+   rather than decoration on it: a static chevron states a direction, a moving
+   one states that there is somewhere to go. `motion-safe:` in the component is
+   what stops it under the preference. */
+@keyframes fold-cue-nudge {
+  0%,
+  100% {
+    transform: translateY(-1.5px);
+  }
+  50% {
+    transform: translateY(1.5px);
+  }
+}
+
 /* ---- The fold's opening dissolve (ENG-031 W11) -------------------------
    The gesture image is the pointer gate for the board beneath it. An
    ancestor's `pointer-events: none` does not stop a descendant that sets

@@ -27,6 +27,24 @@
  */
 
 /**
+ * The DOM address of a panel's SETTLE POINT (ENG-031 W12).
+ *
+ * `pinned-board-sequence.tsx` already renders one zero-height sentinel per
+ * panel at the camera keyframe, and `globals.css` snaps the document scroller
+ * to it. Giving that sentinel an id makes the same position addressable as an
+ * ordinary in-page link, which is what the fold's scroll affordance uses: an
+ * `<a href>` to this id lands the reader exactly where a scroll settle would,
+ * because it IS the settle target rather than a second pixel offset computed
+ * beside it. No `scrollTo`, no measurement, and nothing to keep in step.
+ *
+ * The prefix exists because a band id is also the anchor of a `BandSection`
+ * (`close`, and every band on `/`), and two elements cannot share an id.
+ */
+export function panelStepId(bandId: string): string {
+  return `step-${bandId}`;
+}
+
+/**
  * Viewport heights of scroll the board stays pinned for.
  *
  * `sticky` is the pinned element's own height in viewport heights, which is

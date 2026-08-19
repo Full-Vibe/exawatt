@@ -89,7 +89,7 @@ describe('altitude panel copy', () => {
       'limitation',
     ];
     for (const panel of ALTITUDE_PANELS) {
-      const prose = [...panel.copy, panel.coda ?? ''].join(' ').toLowerCase();
+      const prose = panel.copy.join(' ').toLowerCase();
       for (const shape of confessions) {
         expect(prose, panel.id).not.toContain(shape);
       }

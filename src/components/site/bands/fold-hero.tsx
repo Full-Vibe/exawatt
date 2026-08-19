@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { BandCopy, BandHeading } from './band-section';
 import { DownloadCta } from './download-cta';
+import { SequenceScrollCue } from './sequence-scroll-cue';
 import {
   DEFAULT_FOLD_CLOSE_VARIANT,
   foldCloseVariant,
@@ -37,14 +38,41 @@ const FOLD = bandById('fold');
  * 10 agents." Both halves stay at one size on purpose, because the honesty of
  * the big number comes from the pair, not from the number.
  *
+ * THE PRODUCT SENTENCE SETS ON ONE LINE (ENG-031 W12, operator: "don't wrap
+ * 'Exawatt is the command interface...'"). It was breaking after "agent",
+ * which orphaned "fleet." on a line of its own directly under the headline and
+ * read as a third headline line rather than as a subhead. Two edits, in the
+ * order the operator ranked them. First the MEASURE: the subhead carried its
+ * own 26rem cap while the column around it is 32rem at `md` and 36rem at `lg`,
+ * so it wrapped at 416px inside a column with 472px of room; the cap is gone
+ * and it takes the column's own measure. Then ONE STEP OF TYPE, and only where
+ * the widened column is still not enough: the sentence needs 445px at 18px and
+ * `md` offers 432px, so the 18px rung starts at `lg`, where the column widens
+ * to 472px, and `md` reads at 17px, which needs 421px. Tracking is untouched
+ * and the sentence is untouched. Below `sm` it still wraps, which is a phone
+ * and is allowed.
+ *
+ * THE SECOND CONTROL IS THE WAY DOWN (W12, operator: "put a second CTA next to
+ * download like an arrow button to indicate scrollability"). It is quiet by
+ * construction and it lives in `sequence-scroll-cue.tsx`; the fold only knows
+ * which panel follows it.
+ *
  * Under 26 words of reading copy, enforced in `fold-copy.test.ts` rather than
  * intended. The short-viewport rules (`globals.css`, `max-height: 520px`) are
  * reused by class name rather than re-authored.
  */
 export function FoldHero({
   variant = DEFAULT_FOLD_CLOSE_VARIANT,
+  nextStepBandId,
 }: {
   variant?: FoldCloseVariantId;
+  /**
+   * The band the fold's scroll affordance lands on, or undefined where there
+   * is nothing after the fold. The pinned sequence passes the panel that
+   * follows it; the `/hud-gallery` study renders the fold alone and passes
+   * nothing, so the control never points at an id that is not on the page.
+   */
+  nextStepBandId?: string;
 }) {
   const copy = foldCloseVariant(variant);
   const lastHeadlineLine = copy.headline.length - 1;
@@ -78,7 +106,7 @@ export function FoldHero({
       </BandHeading>
 
       <BandCopy
-        className="home-hero-copy max-w-[26rem] text-[17px] leading-relaxed text-white/70 sm:text-lg sm:leading-relaxed"
+        className="home-hero-copy text-[17px] leading-relaxed text-white/70 lg:text-lg lg:leading-relaxed"
         data-fold-subhead
       >
         {copy.subhead.map(line => (
@@ -91,7 +119,15 @@ export function FoldHero({
       {/* The one thing on the panel layer a pointer may reach. Everything else
           in the reading column is `pointer-events-none` so the board keeps its
           own hover targets. */}
-      <DownloadCta align="start" className="pointer-events-auto pt-1" />
+      <DownloadCta
+        align="start"
+        className="pointer-events-auto pt-1"
+        trailing={
+          nextStepBandId ? (
+            <SequenceScrollCue targetBandId={nextStepBandId} />
+          ) : undefined
+        }
+      />
     </div>
   );
 }
