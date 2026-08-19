@@ -4,6 +4,8 @@ export * from './agent-projection';
 // ENG-010 C1: configured remote sources, their transport candidates, and the
 // adapter that turns observed Gateway payloads into projection input.
 export * from './sources/connected-source';
+// ENG-010 C3: the Demo connected source the lifecycle contract runs against.
+export * from './sources/demo-connected-source';
 export * from './oc/ssh-config';
 export * from './oc/topology-adapter';
 export { TypedEmitter } from './events/emitter';

@@ -6,6 +6,7 @@ import {
   type ConnectedSourceRecord,
   type ConnectionStatus,
   type SourceAuthority,
+  type SourceAutomationRecord,
   type SourceContextRecord,
 } from '@exawatt/core';
 import {
@@ -26,6 +27,7 @@ import {
 import type {
   AuthorityRequestResult,
   ConnectedGatewayPhase,
+  GatewayIdentity,
 } from './connected-gateway';
 
 /**
@@ -49,6 +51,18 @@ interface AgentSpec {
   helpers?: number;
   /** Which context the source reports mid-run; absent means it reported none. */
   running?: 'main' | 'helper';
+  /**
+   * A scheduled job the source attributes to this Agent. Absent means it
+   * reported none, which is the source saying nothing rather than saying the
+   * Agent has no automation.
+   */
+  automation?: { enabled?: boolean; lastOutcome?: 'succeeded' | 'failed' };
+  /**
+   * The source reported nothing at all about this Agent's contexts: no run
+   * flag either way. Every branch of the kernel's derivation reads a positive
+   * report, so this is the shape that answers unknown.
+   */
+  silent?: boolean;
 }
 
 function contextsFor(
@@ -66,7 +80,11 @@ function contextsFor(
       parent: null,
       roles: ['primary-conversation'],
       nativeRunId: null,
-      hasActiveRun: spec.running === 'main',
+      // Absent is the source saying nothing. It is not `false`, and the
+      // difference is the whole of what `silent` exists to prove.
+      ...(spec.silent === true
+        ? {}
+        : { hasActiveRun: spec.running === 'main' }),
       createdAt: 1_000,
       lastActiveAt: 5_000,
     });
@@ -81,12 +99,34 @@ function contextsFor(
       parent: null,
       roles: [],
       nativeRunId: null,
-      hasActiveRun: spec.running === 'helper' && index === 0,
+      ...(spec.silent === true
+        ? {}
+        : { hasActiveRun: spec.running === 'helper' && index === 0 }),
       createdAt: 2_000,
       lastActiveAt: 6_000,
     });
   }
   return contexts;
+}
+
+function automationsFor(
+  configuredSourceId: string,
+  specs: readonly AgentSpec[]
+): SourceAutomationRecord[] {
+  return specs
+    .filter(spec => spec.automation !== undefined)
+    .map(spec => ({
+      configuredSourceId,
+      nativeAgentId: spec.nativeAgentId,
+      nativeAutomationId: `${spec.nativeAgentId}-sweep`,
+      ...(spec.automation?.enabled === undefined
+        ? {}
+        : { enabled: spec.automation.enabled }),
+      ...(spec.automation?.lastOutcome === undefined
+        ? {}
+        : { lastOutcome: spec.automation.lastOutcome }),
+      targetContextId: null,
+    }));
 }
 
 function snapshot(
@@ -108,6 +148,11 @@ function snapshot(
       discoveryState: spec.discoveryState ?? 'configured',
     })),
     contexts: specs.flatMap(spec => contextsFor(configuredSourceId, spec)),
+    // Absent and empty are different answers, so a snapshot only carries the
+    // key when some Agent in it was given one.
+    ...(specs.some(spec => spec.automation !== undefined)
+      ? { automations: automationsFor(configuredSourceId, specs) }
+      : {}),
   };
 }
 
@@ -150,6 +195,15 @@ class MemoryPlanStore implements ConnectedAgentProjectionPlanStore {
     return {
       projectionVersion: this.plan.projectionVersion,
       mappings: this.plan.mappings.map(mapping => ({ ...mapping })),
+      boundIdentities: Object.fromEntries(
+        Object.entries(this.plan.boundIdentities).map(([id, identity]) => [
+          id,
+          {
+            version: identity.version,
+            nativeAgentIds: [...identity.nativeAgentIds],
+          },
+        ])
+      ),
     };
   }
 
@@ -158,6 +212,15 @@ class MemoryPlanStore implements ConnectedAgentProjectionPlanStore {
     this.plan = {
       projectionVersion: plan.projectionVersion,
       mappings: plan.mappings.map(mapping => ({ ...mapping })),
+      boundIdentities: Object.fromEntries(
+        Object.entries(plan.boundIdentities).map(([id, identity]) => [
+          id,
+          {
+            version: identity.version,
+            nativeAgentIds: [...identity.nativeAgentIds],
+          },
+        ])
+      ),
     };
   }
 }
@@ -175,6 +238,8 @@ interface SessionScript {
   sendError?: Error;
   /** What the source says when asked to raise Exawatt's authority. */
   authorityResult?: AuthorityRequestResult;
+  /** The version the source reports as part of its installation identity. */
+  version?: string;
 }
 
 class FakeSession implements ConnectedSourceSession {
@@ -183,14 +248,23 @@ class FakeSession implements ConnectedSourceSession {
   identityDrift: null = null;
   disconnectCalls = 0;
   connectCalls = 0;
+  /**
+   * What this session has bound to. Seeded from what the runtime handed over,
+   * exactly as the real session seeds its drift comparison, so a test can see
+   * whether a relaunch had anything to compare against.
+   */
+  identity: GatewayIdentity | null;
+  readonly seededIdentity: GatewayIdentity | null;
   private readonly script: SessionScript;
   private readonly phaseListeners = new Set<
     (phase: ConnectedGatewayPhase) => void
   >();
   private currentStatus: ConnectionStatus;
 
-  constructor(script: SessionScript) {
+  constructor(script: SessionScript, knownIdentity: GatewayIdentity | null) {
     this.script = script;
+    this.seededIdentity = knownIdentity;
+    this.identity = knownIdentity;
     this.currentStatus = script.status ?? {
       state: 'unavailable',
       observationAgeMs: null,
@@ -218,11 +292,18 @@ class FakeSession implements ConnectedSourceSession {
     this.snapshot = next;
     this.phase = 'connected';
     this.currentStatus = this.script.status ?? LIVE_STATUS;
+    this.identity = {
+      version: this.script.version ?? '',
+      nativeAgentIds: next.agents
+        .filter(agent => agent.discoveryState === 'configured')
+        .map(agent => agent.nativeAgentId)
+        .sort(),
+    };
     return {
       ok: true as const,
       outcome: 'connected' as const,
       snapshot: next,
-      identity: { version: '', nativeAgentIds: [] },
+      identity: this.identity,
       facts: {
         version: '',
         configuredAgentCount: next.agents.length,
@@ -327,6 +408,8 @@ interface Harness {
   plans: MemoryPlanStore;
   sessions: Map<string, FakeSession>;
   records: ConnectedSourceRecord[];
+  /** Everything the runtime reported. Never a payload, never a name. */
+  diagnostics: { event: string; fields: Record<string, unknown> }[];
 }
 
 function harness(
@@ -335,20 +418,26 @@ function harness(
 ): Harness {
   const plans = new MemoryPlanStore();
   const sessions = new Map<string, FakeSession>();
+  const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
   const runtime = new ConnectedSourceRuntime({
     store: {
       list: () => records,
       get: (id: string) => records.find(entry => entry.id === id) ?? null,
     },
     plans,
-    createSession: source => {
-      const session = new FakeSession(scripts[source.id] ?? {});
+    createSession: (source, context) => {
+      const session = new FakeSession(
+        scripts[source.id] ?? {},
+        context.knownIdentity
+      );
       sessions.set(source.id, session);
       return session;
     },
     now: () => 20_000,
+    recordDiagnostic: (event, fields = {}) =>
+      diagnostics.push({ event, fields }),
   });
-  return { runtime, plans, sessions, records };
+  return { runtime, plans, sessions, records, diagnostics };
 }
 
 /** Map every discovered Agent of one source into one Project. */
@@ -610,11 +699,15 @@ describe('ConnectedSourceRuntime — mapping edits', () => {
       },
     });
     await runtime.connect('alpha');
+    // Observing binds the plan to the installation it observed, so the count
+    // that matters is what the refused edit added to it: nothing.
+    const writesBefore = plans.writes;
     const result = runtime.mapAgents('alpha', [
       { nativeAgentId: 'scout', projectId: '' },
     ]);
     expect(result.ok).toBe(false);
-    expect(plans.writes).toBe(0);
+    expect(plans.writes).toBe(writesBefore);
+    expect(plans.plan.mappings).toEqual([]);
   });
 
   it('leaves the other sources mappings alone when one source is remapped', async () => {
@@ -738,6 +831,7 @@ describe('ConnectedSourceRuntime — identity across reconnects', () => {
     );
     revived.plans.plan = {
       projectionVersion: AGENT_PROJECTION_VERSION,
+      boundIdentities: {},
       mappings: [
         {
           configuredSourceId: 'alpha',
@@ -760,6 +854,399 @@ describe('ConnectedSourceRuntime — identity across reconnects', () => {
     await revived.runtime.connect('alpha');
     const projected = revived.runtime.agents();
     expect(projected.map(agent => agent.displayName)).toEqual(['scout']);
+  });
+});
+
+describe('ConnectedSourceRuntime — an Agent retires on the source', () => {
+  /**
+   * Two sources, two coworkers each, all four mapped. The second snapshot of
+   * `alpha` no longer declares one of them: somebody deleted that Agent on
+   * their own server, which is the ordinary thing this describes.
+   */
+  async function afterRetiring(retired: string) {
+    const context = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout', helpers: 1 },
+            { nativeAgentId: 'reddit', displayName: 'reddit-poster' },
+          ]),
+          snapshot(
+            'alpha',
+            [
+              { nativeAgentId: 'scout', displayName: 'scout', helpers: 1 },
+              { nativeAgentId: 'reddit', displayName: 'reddit-poster' },
+            ].filter(spec => spec.nativeAgentId !== retired),
+            30_000
+          ),
+        ],
+      },
+      beta: {
+        snapshots: [
+          snapshot('beta', [
+            { nativeAgentId: 'tyler', displayName: 'Tyler' },
+            { nativeAgentId: 'priya', displayName: 'Priya' },
+          ]),
+        ],
+      },
+    });
+    const alpha = await context.runtime.connect('alpha');
+    const beta = await context.runtime.connect('beta');
+    if (!alpha.ok || !beta.ok) throw new Error('fixture failed to connect');
+    await mapAll(context.runtime, 'alpha', alpha.agents);
+    await mapAll(context.runtime, 'beta', beta.agents);
+    expect(context.runtime.agents()).toHaveLength(4);
+
+    // The operator's Reconnect: one fresh authoritative snapshot.
+    await context.runtime.disconnect('alpha');
+    await context.runtime.connect('alpha');
+    return context;
+  }
+
+  it('costs the operator that one coworker and nobody else, on any source', async () => {
+    const { runtime } = await afterRetiring('reddit');
+
+    expect(
+      runtime
+        .agents()
+        .map(agent => `${agent.source.id}/${agent.nativeAgentId}`)
+        .sort()
+    ).toEqual(['alpha/scout', 'beta/priya', 'beta/tyler']);
+  });
+
+  it('leaves the surviving coworkers with the ids and Projects they had', async () => {
+    const { runtime } = await afterRetiring('scout');
+    const survivor = runtime
+      .agents()
+      .find(agent => agent.nativeAgentId === 'reddit');
+
+    expect(survivor?.id).toBe(deriveRemoteAgentId('alpha', 'reddit'));
+    expect(survivor?.projectId).toBe('project-alpha');
+    expect(runtime.agents().every(agent => agent.workState !== null)).toBe(
+      true
+    );
+  });
+
+  it('says nothing about it: a retirement is not a projection fault', async () => {
+    const { diagnostics } = await afterRetiring('reddit');
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('keeps the retired Agent placed, so returning is a choice and not a resnapshot', async () => {
+    const { runtime, plans } = await afterRetiring('reddit');
+
+    // Unprojected, not forgotten. Deleting the row here would throw away the
+    // Project the operator chose the moment a server hiccuped.
+    expect(
+      plans.plan.mappings.map(mapping => mapping.nativeAgentId).sort()
+    ).toEqual(['priya', 'reddit', 'scout', 'tyler']);
+    expect(
+      runtime.agents().some(agent => agent.nativeAgentId === 'reddit')
+    ).toBe(false);
+  });
+
+  it('leaves an Agent the source declares retired out of the roster too', async () => {
+    const { runtime } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout' },
+            { nativeAgentId: 'priya', displayName: 'Priya' },
+          ]),
+          snapshot(
+            'alpha',
+            [
+              { nativeAgentId: 'scout', displayName: 'scout' },
+              {
+                nativeAgentId: 'priya',
+                displayName: 'Priya',
+                discoveryState: 'retired',
+              },
+            ],
+            30_000
+          ),
+        ],
+      },
+    });
+    const connected = await runtime.connect('alpha');
+    if (!connected.ok) return;
+    await mapAll(runtime, 'alpha', connected.agents);
+    expect(runtime.agents()).toHaveLength(2);
+
+    await runtime.disconnect('alpha');
+    await runtime.connect('alpha');
+
+    // A source that keeps the identity around as history has still stopped
+    // declaring it configured, and that is the same retirement.
+    expect(runtime.agents().map(agent => agent.nativeAgentId)).toEqual([
+      'scout',
+    ]);
+  });
+
+  it('reports a plan that is broken rather than outdated, and projects nothing on it', async () => {
+    const { runtime, plans, diagnostics } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout' },
+            { nativeAgentId: 'reddit', displayName: 'reddit-poster' },
+          ]),
+        ],
+      },
+    });
+    const connected = await runtime.connect('alpha');
+    if (!connected.ok) return;
+    await mapAll(runtime, 'alpha', connected.agents);
+    expect(runtime.agents()).toHaveLength(2);
+
+    // Two coworkers claiming one Exawatt identity. Both Agents are configured
+    // on the source, so this is corruption, not a retirement, and quietly
+    // dropping a row would hand the operator a roster silently missing people.
+    plans.plan = {
+      projectionVersion: AGENT_PROJECTION_VERSION,
+      boundIdentities: plans.plan.boundIdentities,
+      mappings: plans.plan.mappings.map(mapping => ({
+        ...mapping,
+        exawattAgentId: deriveRemoteAgentId('alpha', 'scout'),
+      })),
+    };
+
+    expect(runtime.agents()).toEqual([]);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].event).toBe('connected-sources.projection-refused');
+    expect(diagnostics[0].fields.codes).toEqual(['duplicate-exawatt-agent']);
+    // Codes and counts only: nothing an operator named travels to a log file.
+    const reported = JSON.stringify(diagnostics[0].fields);
+    for (const name of ['scout', 'reddit', 'alias-alpha', 'Source alpha']) {
+      expect(reported).not.toContain(name);
+    }
+  });
+});
+
+describe('ConnectedSourceRuntime — detaching a source', () => {
+  /** Two sources, one coworker each, both mapped and both observed. */
+  async function twoSources() {
+    const context = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+      beta: {
+        snapshots: [
+          snapshot('beta', [{ nativeAgentId: 'tyler', displayName: 'Tyler' }]),
+        ],
+      },
+    });
+    const alpha = await context.runtime.connect('alpha');
+    const beta = await context.runtime.connect('beta');
+    if (!alpha.ok || !beta.ok) throw new Error('fixture failed to connect');
+    await mapAll(context.runtime, 'alpha', alpha.agents);
+    await mapAll(context.runtime, 'beta', beta.agents);
+    expect(context.runtime.agents()).toHaveLength(2);
+    return context;
+  }
+
+  it('takes the coworkers out of the roster instead of leaving them until quit', async () => {
+    const { runtime } = await twoSources();
+
+    await runtime.detach('alpha');
+
+    expect(
+      runtime.agents().map(agent => `${agent.source.id}/${agent.nativeAgentId}`)
+    ).toEqual(['beta/tyler']);
+  });
+
+  it('leaves no projection behind for it, and every other source keeps its own', async () => {
+    const { runtime, plans } = await twoSources();
+
+    await runtime.detach('alpha');
+
+    expect(plans.plan.mappings.map(mapping => mapping.nativeAgentId)).toEqual([
+      'tyler',
+    ]);
+    expect(Object.keys(plans.plan.boundIdentities)).toEqual(['beta']);
+  });
+
+  it('closes that source and touches no other, and changes nothing on the remote', async () => {
+    const { runtime, sessions } = await twoSources();
+
+    await runtime.detach('alpha');
+
+    const alpha = sessions.get('alpha');
+    const beta = sessions.get('beta');
+    expect(alpha?.disconnectCalls).toBe(1);
+    expect(beta?.disconnectCalls).toBe(0);
+    // Detaching is Exawatt forgetting a source, never Exawatt changing one.
+    expect(alpha?.writes).toEqual([]);
+    expect(alpha?.reads).toEqual([]);
+  });
+
+  it('forgets the source entirely, so a later disconnect finds nothing to close', async () => {
+    const { runtime, sessions } = await twoSources();
+
+    await runtime.detach('alpha');
+
+    expect(await runtime.disconnect('alpha')).toEqual({ ok: false });
+    expect(sessions.get('alpha')?.disconnectCalls).toBe(1);
+  });
+
+  it('tells the renderer, so a roster on screen reads the absence', async () => {
+    const { runtime } = await twoSources();
+    const changes: string[] = [];
+    runtime.onChange(change => changes.push(change.sourceId));
+
+    await runtime.detach('alpha');
+
+    expect(changes).toContain('alpha');
+  });
+
+  it('is safe on a source this launch never opened', async () => {
+    const { runtime, plans } = harness({ alpha: {} });
+    plans.plan = {
+      projectionVersion: AGENT_PROJECTION_VERSION,
+      boundIdentities: {},
+      mappings: [
+        {
+          configuredSourceId: 'alpha',
+          nativeAgentId: 'scout',
+          exawattAgentId: deriveRemoteAgentId('alpha', 'scout'),
+          projectId: 'project-alpha',
+          displayNameOverride: null,
+          projectLabel: 'Field Work',
+        },
+      ],
+    };
+
+    await runtime.detach('alpha');
+
+    expect(plans.plan.mappings).toEqual([]);
+  });
+
+  it('gives the same server the same coworkers when it is connected again', async () => {
+    const { runtime } = await twoSources();
+    const before = runtime
+      .agents()
+      .filter(agent => agent.source.id === 'alpha')
+      .map(agent => agent.id);
+
+    await runtime.detach('alpha');
+    // The store hands back the same id for the same server, so the Connect
+    // flow reaches this runtime with the source it already had.
+    const again = await runtime.connect('alpha');
+    if (!again.ok) throw new Error('reconnecting the same source failed');
+    await mapAll(runtime, 'alpha', again.agents);
+
+    const after = runtime
+      .agents()
+      .filter(agent => agent.source.id === 'alpha')
+      .map(agent => agent.id);
+    expect(after).toEqual(before);
+    expect(after).toEqual([deriveRemoteAgentId('alpha', 'scout')]);
+    expect(runtime.agents()).toHaveLength(2);
+  });
+});
+
+describe('ConnectedSourceRuntime — what the projection is bound to', () => {
+  it('persists the installation it observed, so a relaunch has something to compare', async () => {
+    const { runtime, plans } = harness({
+      alpha: {
+        version: '1.4.0',
+        snapshots: [
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout' },
+            { nativeAgentId: 'reddit', displayName: 'reddit-poster' },
+          ]),
+        ],
+      },
+    });
+
+    await runtime.connect('alpha');
+
+    expect(plans.plan.boundIdentities.alpha).toEqual({
+      version: '1.4.0',
+      nativeAgentIds: ['reddit', 'scout'],
+    });
+  });
+
+  it('hands it back to the next launch, which is when a swap is least visible', async () => {
+    const shared = new MemoryPlanStore();
+    const scripts = {
+      alpha: {
+        version: '1.4.0',
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+    };
+    const records = [record('alpha')];
+    const build = () => {
+      const sessions = new Map<string, FakeSession>();
+      const runtime = new ConnectedSourceRuntime({
+        store: {
+          list: () => records,
+          get: (id: string) => records.find(entry => entry.id === id) ?? null,
+        },
+        plans: shared,
+        createSession: (source, context) => {
+          const session = new FakeSession(scripts.alpha, context.knownIdentity);
+          sessions.set(source.id, session);
+          return session;
+        },
+        now: () => 20_000,
+      });
+      return { runtime, sessions };
+    };
+
+    const first = build();
+    await first.runtime.connect('alpha');
+    // Everything a quit tears down.
+    await first.runtime.dispose();
+
+    const second = build();
+    await second.runtime.observeSavedSources();
+
+    // A fresh session with nothing seeded has nothing to call drift against,
+    // which is how a Gateway swapped while Exawatt was closed slips through.
+    expect(second.sessions.get('alpha')?.seededIdentity).toEqual({
+      version: '1.4.0',
+      nativeAgentIds: ['scout'],
+    });
+  });
+
+  it('carries no name, alias, host, or address into the plan file', async () => {
+    const { runtime, plans } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+    });
+
+    await runtime.connect('alpha');
+
+    const written = JSON.stringify(plans.plan.boundIdentities);
+    for (const material of ['alias-alpha', 'Source alpha', '1337']) {
+      expect(written).not.toContain(material);
+    }
+  });
+
+  it('starts a detached source over with no history to compare against', async () => {
+    const { runtime, sessions } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+    });
+    await runtime.connect('alpha');
+
+    await runtime.detach('alpha');
+    await runtime.connect('alpha');
+
+    // The operator connected this server deliberately just now. Whatever was
+    // behind it before is not something to hold them to.
+    expect(sessions.get('alpha')?.seededIdentity).toBeNull();
   });
 });
 
@@ -1058,6 +1545,82 @@ describe("ConnectedSourceRuntime — work state is the source's, not the connect
       { nativeAgentId: 'scout', displayName: 'scout', helpers: 1 },
     ]);
     expect(runtime.agents()[0].workState).toBe('idle');
+  });
+
+  it('carries a fault the source reported through to the roster', async () => {
+    const { runtime } = await rosterOf([
+      {
+        nativeAgentId: 'scout',
+        displayName: 'scout',
+        automation: { enabled: true, lastOutcome: 'failed' },
+      },
+    ]);
+
+    // The kernel derives this from an enabled job the source says last failed.
+    // The runtime used to answer `hasActiveRun ? working : idle` and threw the
+    // fault away, so a coworker whose work was erroring read as quiet.
+    expect(runtime.agents()[0].workState).toBe('error');
+  });
+
+  it('lets a fault outrank a run in flight, exactly as the kernel states it', async () => {
+    const { runtime } = await rosterOf([
+      {
+        nativeAgentId: 'scout',
+        displayName: 'scout',
+        running: 'main',
+        automation: { enabled: true, lastOutcome: 'failed' },
+      },
+    ]);
+
+    expect(runtime.agents()[0].workState).toBe('error');
+  });
+
+  it('reads a disabled job’s old failure as history, not as a present fault', async () => {
+    const { runtime } = await rosterOf([
+      {
+        nativeAgentId: 'scout',
+        displayName: 'scout',
+        automation: { enabled: false, lastOutcome: 'failed' },
+      },
+    ]);
+
+    expect(runtime.agents()[0].workState).toBe('idle');
+  });
+
+  it('makes no claim at all about a coworker its source said nothing about', async () => {
+    const { runtime } = await rosterOf([
+      { nativeAgentId: 'scout', displayName: 'scout', silent: true },
+    ]);
+
+    // Unknown is an answer, and `idle` is not it. A coworker nobody reported
+    // on is not quietly waiting; Exawatt simply has nothing to show.
+    expect(runtime.agents()[0].workState).toBeNull();
+  });
+
+  it('leaves an unknown and a fault exactly as observed when the connection goes', async () => {
+    for (const spec of [
+      { nativeAgentId: 'scout', displayName: 'scout', silent: true },
+      {
+        nativeAgentId: 'scout',
+        displayName: 'scout',
+        automation: { enabled: true, lastOutcome: 'failed' as const },
+      },
+    ]) {
+      const { runtime, sessions } = await rosterOf([spec]);
+      const observed = runtime.agents()[0].workState;
+
+      sessions.get('alpha')?.setStatus({
+        state: 'stale',
+        observationAgeMs: 3_600_000,
+        stalePresentation: true,
+        failure: null,
+      });
+
+      const agent = runtime.agents()[0];
+      expect(agent.workState).toBe(observed);
+      expect(agent.connection.state).toBe('stale');
+      expect(agent.connection.stalePresentation).toBe(true);
+    }
   });
 });
 

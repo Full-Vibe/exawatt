@@ -1541,3 +1541,20 @@ describe('adaptOpenClawTopology work-state evidence reaches the kernel', () => {
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
   });
 });
+
+describe('the adapter that observed a topology is an input, not an assumption', () => {
+  it('defaults to OpenClaw, the only live adapter', () => {
+    const result = adaptOpenClawTopology(realisticInput());
+    expect(result.ok && result.snapshot.adapterId).toBe('openclaw');
+  });
+
+  it('records the adapter it was told, so simulated evidence cannot wear a live name', () => {
+    const result = adaptOpenClawTopology({
+      ...realisticInput(),
+      adapterId: 'demo',
+      evidenceBasis: 'simulated',
+    });
+    expect(result.ok && result.snapshot.adapterId).toBe('demo');
+    expect(result.ok && result.snapshot.evidenceBasis).toBe('simulated');
+  });
+});

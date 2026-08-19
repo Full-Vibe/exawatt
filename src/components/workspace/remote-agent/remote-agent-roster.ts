@@ -118,8 +118,13 @@ export function projectCoworkers(roster: RemoteRoster): RemoteCoworkerTile[] {
       sourceName: agent.source.displayName,
       placement: agent.placement,
       placementLabel: agent.placementLabel,
-      // D40, from the source. Not derived from the connection, ever.
-      workState: statusLightStateForAgentStatus(agent.workState),
+      // D40, from the source. Not derived from the connection, ever. A source
+      // that evidenced no state at all gets the unlit light rather than a
+      // borrowed one: Exawatt has nothing to show, and says nothing.
+      workState:
+        agent.workState === null
+          ? 'off'
+          : statusLightStateForAgentStatus(agent.workState),
       connection: connectionViewOf(agent),
       authority: writeAuthorityFor(agent.source.id, roster.authorities),
     }))

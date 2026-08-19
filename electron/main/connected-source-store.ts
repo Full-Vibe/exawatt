@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
@@ -30,6 +30,17 @@ import {
  * uses it once, in memory, to pair its own device identity at `operator.read`,
  * and persists only the resulting scoped, server-revocable device token. That
  * is what this store holds.
+ *
+ * ENG-010 C3 adds one more rule, and it is an identity rule rather than a
+ * storage one:
+ *
+ * **One server, one record.** A source's id is derived from the server its
+ * transport points at rather than minted per act of configuring it, and
+ * configuring a server this registry already holds returns the record it
+ * already has. Everything downstream hangs off that id — the projection plan,
+ * each coworker's Exawatt Agent id, its Project placement, its history — so an
+ * id that changed when the operator detached and connected the same server
+ * again would return the same people as strangers.
  */
 
 const RECORDS_FILE = 'connected-sources.json';
@@ -50,8 +61,69 @@ export interface ConnectedSourceStoreDependencies {
     encryptString(plain: string): Buffer;
     decryptString(encrypted: Buffer): string;
   };
-  createId?: () => string;
   now?: () => number;
+}
+
+/**
+ * The server one transport points at, as a single stable string.
+ *
+ * Only the fields that select a destination take part. An identity file is how
+ * Exawatt reaches a server, never which server it is, so two records differing
+ * only there name one installation and must not become two.
+ *
+ * Reads defensively rather than trusting the declared type: `add` is reachable
+ * from the renderer, and this runs before `parseConnectedSourceRecord` has had
+ * a chance to refuse a shape. Null means "no target could be read", and the
+ * caller falls back to a random id that the parse then rejects along with the
+ * rest of the record.
+ */
+function transportTarget(transport: unknown): string | null {
+  if (!transport || typeof transport !== 'object' || Array.isArray(transport)) {
+    return null;
+  }
+  const candidate = transport as Record<string, unknown>;
+  const parts: readonly unknown[] | null =
+    candidate.kind === 'ssh-alias'
+      ? ['ssh-alias', candidate.alias, candidate.remotePort]
+      : candidate.kind === 'ssh-manual'
+        ? [
+            'ssh-manual',
+            candidate.user,
+            candidate.host,
+            candidate.port,
+            candidate.remotePort,
+          ]
+        : candidate.kind === 'local-loopback'
+          ? ['local-loopback', candidate.port]
+          : null;
+  if (parts === null) return null;
+  if (parts.some(part => part === undefined || part === null)) return null;
+  return JSON.stringify(parts);
+}
+
+/**
+ * Exawatt's id for one configured server.
+ *
+ * Derived rather than random, for the same reason a coworker's id is derived:
+ * detaching and connecting the same server again must return the operator the
+ * source they already had, not a second one wearing the same name. It is a
+ * digest, so it carries no alias, host, user, or port in the clear and is safe
+ * in a file, a log line, and a URL.
+ */
+export function deriveConnectedSourceId(transport: SourceTransport): string {
+  return sourceIdForTarget(transportTarget(transport));
+}
+
+/**
+ * A target nothing could be read from gets a random id, which the record parse
+ * then rejects along with the rest of the shape. Never a shared constant: two
+ * unreadable transports must not collide into one identity on the way to being
+ * refused.
+ */
+function sourceIdForTarget(target: string | null): string {
+  if (target === null) return randomUUID();
+  const digest = createHash('sha256').update(target).digest('hex');
+  return `source-${digest.slice(0, 24)}`;
 }
 
 export interface AddConnectedSourceInput {
@@ -148,13 +220,44 @@ export class ConnectedSourceStore {
     return this.list().find(record => record.id === id) ?? null;
   }
 
+  /**
+   * Configure a server.
+   *
+   * Idempotent in the server, not in the act: connecting a server this
+   * registry already holds a record for answers with that record rather than
+   * minting a second identity for one installation. The operator's freshly
+   * typed name is taken — they just wrote it — while the id, the paired device
+   * credential, the authority the Gateway granted, and when the source was
+   * first configured all stay exactly where they were.
+   */
   add(input: AddConnectedSourceInput): AddConnectedSourceResult {
     const existing = this.list();
+    const target = transportTarget(input?.transport);
+    const already =
+      target === null
+        ? undefined
+        : existing.find(record => transportTarget(record.transport) === target);
+    if (already) {
+      const reused = parseConnectedSourceRecord({
+        ...already,
+        displayName: input.displayName,
+      });
+      if (!reused.ok) return { ok: false, issues: reused.issues };
+      if (reused.record.displayName !== already.displayName) {
+        this.persist(
+          existing.map(record =>
+            record.id === already.id ? reused.record : record
+          )
+        );
+      }
+      return { ok: true, record: reused.record };
+    }
+
     if (existing.length >= MAX_SOURCES) {
       return { ok: false, issues: ['source limit reached'] };
     }
     const candidate = {
-      id: (this.deps.createId ?? randomUUID)(),
+      id: sourceIdForTarget(target),
       adapterId: input.adapterId,
       placement: input.placement,
       displayName: input.displayName,

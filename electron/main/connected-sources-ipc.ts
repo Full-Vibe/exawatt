@@ -1,6 +1,11 @@
+import * as path from 'node:path';
 import { app, BrowserWindow, safeStorage } from 'electron';
 import { OCClient, type OCClientConfig } from '@exawatt/core';
 import { handleTrusted } from './ipc-security';
+import {
+  createDiagnosticsLog,
+  type DiagnosticRecorder,
+} from './diagnostics-log';
 import {
   ConnectedSourceStore,
   type AddConnectedSourceInput,
@@ -55,13 +60,41 @@ function sourceStore(): ConnectedSourceStore {
   return store;
 }
 
+/**
+ * Where a refused projection is reported: `logs/connected-sources.jsonl`,
+ * bounded and rotated alongside the other main-process logs.
+ *
+ * A roster that comes back empty because the projection plan is corrupt looks
+ * exactly like a roster that comes back empty because nobody is configured,
+ * and in the packaged app stdout goes nowhere. A recorder that cannot open its
+ * file degrades to a no-op: instrumentation must never keep a source from
+ * being read.
+ */
+function createProjectionDiagnostics(): DiagnosticRecorder {
+  try {
+    return createDiagnosticsLog(
+      path.join(app.getPath('userData'), 'logs', 'connected-sources.jsonl')
+    );
+  } catch {
+    return () => {};
+  }
+}
+
 function sourceRuntime(): ConnectedSourceRuntime {
   if (runtime) return runtime;
   const created = new ConnectedSourceRuntime({
     store: sourceStore(),
     plans: new FileConnectedAgentProjectionPlanStore(app.getPath('userData')),
-    createSession: record =>
+    createSession: (record, context) =>
       new ConnectedGatewaySession(record, {
+        /*
+         * What Exawatt last saw behind this source. A fresh session has no
+         * history of its own, and a relaunch is exactly when a Gateway swapped
+         * for a different installation is least visible, so the runtime hands
+         * the persisted binding back rather than letting the session learn it
+         * only by watching.
+         */
+        knownIdentity: context.knownIdentity,
         store: sourceStore(),
         openTunnel: openSshTunnel,
         resolveCredential: resolveGatewayCredential,
@@ -72,6 +105,7 @@ function sourceRuntime(): ConnectedSourceRuntime {
         clearTimer: handle => clearTimeout(handle as NodeJS.Timeout),
       }),
     now: Date.now,
+    recordDiagnostic: createProjectionDiagnostics(),
   });
   created.onChange(change => {
     broadcastToWindows(
@@ -335,7 +369,12 @@ export function registerConnectedSourcesIPC(): void {
    */
   handleTrusted('connected-sources:detach', async (_event, id: unknown) => {
     const sourceId = assertString(id, 'source id');
-    await sourceRuntime().disconnect(sourceId);
+    // Order matters. The runtime releases what this process holds — the
+    // session, its last snapshot, and this source's rows in the projection
+    // plan — while the record is still there to describe it; the store then
+    // removes the record and the credential. Reversed, the runtime would be
+    // detaching a source it can no longer name.
+    await sourceRuntime().detach(sourceId);
     return { ok: sourceStore().remove(sourceId) };
   });
 

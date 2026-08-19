@@ -18,9 +18,11 @@ import {
   TUNNEL_FAILURE_TO_SOURCE_FAILURE,
   authorityForGrantedScopes,
   classifyAuthorityRefusal,
+  evidenceBasisForAdapter,
   type ConnectedGatewayClient,
   type ConnectedGatewayPhase,
   type ConnectedGatewaySessionDeps,
+  type GatewayIdentity,
 } from './connected-gateway';
 import type {
   GatewayBootstrapFailure,
@@ -66,6 +68,9 @@ const AGENT_QUILL = 'agent-quill';
 const AGENT_LUMEN = 'agent-lumen';
 const AGENT_TESSERA = 'agent-tessera';
 
+/** Invented. The source's own name for the one automation it schedules. */
+const AUTOMATION_NAME = 'nightly-sweep';
+
 const FIXED_NOW = 1_760_000_000_000;
 
 /** Distinguishes one client instance's device identity from another's. */
@@ -80,6 +85,15 @@ class FakeGateway {
   agentIds: string[] = [AGENT_QUILL, AGENT_LUMEN];
   version = '2026.6.11';
   automationCount = 1;
+  /** How the source says that automation last ended. Evidence, not a guess. */
+  automationOutcome = 'failed';
+  /** Source-wide task totals, exactly as `status` reports them. */
+  taskTotals: Record<string, number> = {
+    total: 3,
+    active: 1,
+    terminal: 2,
+    failures: 1,
+  };
   /** Methods the fake was asked for, in order. */
   readonly received: { method: string; params: unknown }[] = [];
 
@@ -172,11 +186,25 @@ class FakeGateway {
         return {
           jobs: Array.from({ length: this.automationCount }, (_, index) => ({
             id: `job-${index}`,
+            name: `${AUTOMATION_NAME}-${index}`,
+            agentId: this.agentIds[0] ?? AGENT_QUILL,
+            enabled: true,
+            state: {
+              lastStatus: this.automationOutcome,
+              lastRunAtMs: FIXED_NOW - 60_000,
+            },
           })),
         };
       case 'status':
-        return { version: this.version, sessions: this.agentIds.length };
+        return {
+          version: this.version,
+          sessions: this.agentIds.length,
+          tasks: this.taskTotals,
+        };
       case 'health':
+        return { ok: true };
+      case 'sessions.messages.subscribe':
+      case 'sessions.messages.unsubscribe':
         return { ok: true };
       case 'chat.send':
       case 'chat.abort':
@@ -209,6 +237,10 @@ class FakeGatewayClient {
   private status = 'disconnected';
   readonly calls: { method: string; params: unknown }[] = [];
   private readonly statusHandlers = new Set<(status: string) => void>();
+  private readonly eventHandlers = new Map<
+    string,
+    Set<(payload: unknown) => void>
+  >();
 
   constructor(
     readonly config: OCClientConfig,
@@ -248,8 +280,33 @@ class FakeGatewayClient {
     return this.gateway.respond(method, params) as R;
   }
 
-  onOCEvent(): void {}
-  offOCEvent(): void {}
+  /**
+   * The Gateway's own event stream, as a client hands it over. Real handlers
+   * rather than a no-op, because whether a subscription is attached to *this*
+   * client is exactly what the streaming tests are about.
+   */
+  onOCEvent(eventName: string, handler: (payload: unknown) => void): void {
+    const handlers =
+      this.eventHandlers.get(eventName) ?? new Set<(p: unknown) => void>();
+    handlers.add(handler);
+    this.eventHandlers.set(eventName, handlers);
+  }
+
+  offOCEvent(eventName: string, handler: (payload: unknown) => void): void {
+    this.eventHandlers.get(eventName)?.delete(handler);
+  }
+
+  /** A frame arriving on this client's socket. */
+  emitOCEvent(eventName: string, payload: unknown): void {
+    for (const handler of [...(this.eventHandlers.get(eventName) ?? [])]) {
+      handler(payload);
+    }
+  }
+
+  /** How many listeners this client is carrying for that event. */
+  listenerCount(eventName: string): number {
+    return this.eventHandlers.get(eventName)?.size ?? 0;
+  }
 
   on(event: string, handler: (data: never) => void): void {
     if (event === 'connection:status') {
@@ -406,6 +463,16 @@ function loopbackRecord(): ConnectedSourceRecord {
   };
 }
 
+/** A source whose Gateway is simulated, so its answers are not observations. */
+function demoRecord(): ConnectedSourceRecord {
+  return {
+    ...loopbackRecord(),
+    id: 'src-demo-01',
+    adapterId: 'demo',
+    displayName: 'Demo workshop',
+  };
+}
+
 interface HarnessOptions {
   record?: ConnectedSourceRecord;
   storedTokens?: Record<string, string>;
@@ -417,6 +484,8 @@ interface HarnessOptions {
   /** Scopes the fake Gateway echoes back as granted, when it echoes any. */
   reportGrantedScopes?: readonly string[];
   maxReconnectAttempts?: number;
+  /** What the last process saw behind this source, as a relaunch supplies it. */
+  knownIdentity?: GatewayIdentity | null;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -488,6 +557,9 @@ function createHarness(options: HarnessOptions = {}) {
     ...(options.maxReconnectAttempts === undefined
       ? {}
       : { maxReconnectAttempts: options.maxReconnectAttempts }),
+    ...(options.knownIdentity === undefined
+      ? {}
+      : { knownIdentity: options.knownIdentity }),
   };
 
   const session = new ConnectedGatewaySession(record, deps);
@@ -562,7 +634,17 @@ describe('ConnectedGatewaySession — connecting', () => {
       'sessions.list',
       'cron.list',
       'status',
+      // Connecting also asks the source to stream each coworker's primary
+      // conversation, so a reply arrives as it is written rather than on the
+      // next authoritative read.
+      'sessions.messages.subscribe',
+      'sessions.messages.subscribe',
     ]);
+    expect(
+      harness.gateway.received
+        .filter(entry => entry.method === 'sessions.messages.subscribe')
+        .map(entry => (entry.params as { key: string }).key)
+    ).toEqual([`agent:${AGENT_LUMEN}:main`, `agent:${AGENT_QUILL}:main`]);
     expect(
       harness.gateway.received
         .filter(entry => entry.method === 'sessions.list')
@@ -971,6 +1053,413 @@ describe('ConnectedGatewaySession — resnapshot', () => {
     const result = await harness.session.resnapshot();
 
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('ConnectedGatewaySession — connecting again', () => {
+  /** The operator's own Reconnect, over a source that is already connected. */
+  function reconnectableHarness() {
+    return createHarness({ storedTokens: { [SOURCE_ID]: DEVICE_TOKEN } });
+  }
+
+  it('closes the connection it had before it opens another', async () => {
+    const harness = reconnectableHarness();
+    await harness.session.connect();
+
+    const again = await harness.session.connect();
+
+    expect(again.ok).toBe(true);
+    expect(harness.session.phase).toBe('connected');
+    expect(harness.tunnels).toHaveLength(2);
+    expect(harness.clients).toHaveLength(2);
+    // Exactly once each: an `ssh` child left holding a port open on the
+    // operator's server is the whole cost of getting this wrong.
+    expect(harness.tunnels[0]!.closeCount()).toBe(1);
+    expect(harness.clients[0]!.disconnectCount).toBe(1);
+    expect(harness.tunnels[1]!.tunnel.closed).toBe(false);
+    expect(harness.clients[1]!.disconnectCount).toBe(0);
+  });
+
+  it('watches the connection it is now on, so a later drop is still seen', async () => {
+    const harness = reconnectableHarness();
+    await harness.session.connect();
+    await harness.session.connect();
+
+    harness.tunnels[1]!.drop({
+      class: 'host-unreachable',
+      message: 'the hop went away',
+    });
+
+    expect(harness.session.phase).toBe('reconnecting');
+    expect(harness.session.status().stalePresentation).toBe(true);
+    // And the ladder repairs it, so the drop is an outage rather than a wall.
+    harness.timers.fireNext();
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+  });
+
+  it('sees the socket underneath the new connection drop as well', async () => {
+    const harness = reconnectableHarness();
+    await harness.session.connect();
+    await harness.session.connect();
+
+    harness.clients[1]!.emitStatus('disconnected');
+
+    expect(harness.session.phase).toBe('reconnecting');
+  });
+
+  it('ignores a drop reported by the connection it already closed', async () => {
+    const harness = reconnectableHarness();
+    await harness.session.connect();
+    await harness.session.connect();
+
+    harness.tunnels[0]!.drop(null);
+    harness.clients[0]!.emitStatus('error');
+
+    expect(harness.session.phase).toBe('connected');
+    expect(harness.session.status().state).toBe('live');
+  });
+
+  it('takes a fresh authoritative snapshot rather than presenting the old one', async () => {
+    const harness = reconnectableHarness();
+    await harness.session.connect();
+    expect(agentIdsOf(harness.session)).toEqual([AGENT_LUMEN, AGENT_QUILL]);
+
+    // The source retires one Agent between the two connects.
+    harness.gateway.agentIds = [AGENT_QUILL];
+    harness.advance(1_000);
+    await harness.session.connect();
+
+    expect(agentIdsOf(harness.session)).toEqual([AGENT_QUILL]);
+    expect(harness.session.snapshot?.observedAt).toBe(FIXED_NOW + 1_000);
+  });
+});
+
+describe('ConnectedGatewaySession — an identity remembered across a relaunch', () => {
+  /** What the previous process observed, as a caller persisted it. */
+  const REMEMBERED: GatewayIdentity = {
+    version: '2026.6.11',
+    nativeAgentIds: [AGENT_LUMEN, AGENT_QUILL],
+  };
+
+  it('publishes the identity a caller has to keep for the next launch', async () => {
+    const harness = createHarness();
+
+    await harness.session.connect();
+
+    expect(harness.session.identity).toEqual(REMEMBERED);
+  });
+
+  it('reports drift the first time it looks, without ever having watched', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+      knownIdentity: REMEMBERED,
+    });
+    // A different installation is answering behind the same alias, and this
+    // process never saw the one before it.
+    harness.gateway.agentIds = [AGENT_TESSERA];
+    harness.gateway.version = '2026.7.02';
+
+    const result = await harness.session.connect();
+
+    expect(result).toMatchObject({ ok: false, outcome: 'identity-drift' });
+    const drift = harness.session.identityDrift;
+    expect(drift?.previous.nativeAgentIds).toEqual([AGENT_LUMEN, AGENT_QUILL]);
+    expect(drift?.observed.nativeAgentIds).toEqual([AGENT_TESSERA]);
+    expect(drift?.observed.version).toBe('2026.7.02');
+    // Nothing is rebound, and nothing reads as current.
+    expect(harness.session.snapshot).toBeNull();
+    expect(harness.session.identity).toEqual(REMEMBERED);
+    expect(harness.session.status().state).not.toBe('live');
+  });
+
+  it('does not call an ordinary roster change drift', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+      knownIdentity: REMEMBERED,
+    });
+    harness.gateway.agentIds = [AGENT_QUILL, AGENT_TESSERA];
+    harness.gateway.version = '2026.7.02';
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.session.identityDrift).toBeNull();
+    expect(harness.session.identity).toEqual({
+      version: '2026.7.02',
+      nativeAgentIds: [AGENT_QUILL, AGENT_TESSERA],
+    });
+  });
+
+  it('sorts a remembered roster, so the order it was stored in cannot read as drift', async () => {
+    const harness = createHarness({
+      knownIdentity: {
+        version: '',
+        nativeAgentIds: [AGENT_QUILL, AGENT_LUMEN],
+      },
+    });
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.session.identityDrift).toBeNull();
+  });
+
+  it('treats a remembered identity it cannot read as never having seen the source', async () => {
+    const harness = createHarness({
+      knownIdentity: {
+        version: '',
+        nativeAgentIds: ['   ', 42 as unknown as string],
+      },
+    });
+    harness.gateway.agentIds = [AGENT_TESSERA];
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.session.identityDrift).toBeNull();
+  });
+
+  it('needs no remembered identity to work, and reports none until it observes one', async () => {
+    const harness = createHarness({ knownIdentity: null });
+
+    expect(harness.session.identity).toBeNull();
+    expect((await harness.session.connect()).ok).toBe(true);
+    expect(harness.session.identity).toEqual(REMEMBERED);
+  });
+});
+
+describe('ConnectedGatewaySession — the evidence a snapshot carries', () => {
+  it('records a live source as its own adapter, observed', async () => {
+    const harness = createHarness();
+
+    await harness.session.connect();
+
+    expect(harness.session.snapshot).toMatchObject({
+      adapterId: 'openclaw',
+      evidenceBasis: 'observed',
+    });
+  });
+
+  it('records a simulated source as simulated, so it cannot read as an observation', async () => {
+    const harness = createHarness({ record: demoRecord() });
+
+    await harness.session.connect();
+
+    expect(harness.session.snapshot).toMatchObject({
+      adapterId: 'demo',
+      evidenceBasis: 'simulated',
+    });
+  });
+
+  it('maps each adapter to the basis its answers are entitled to claim', () => {
+    expect(evidenceBasisForAdapter('demo')).toBe('simulated');
+    for (const adapterId of ['openclaw', 'claude', 'codex'] as const) {
+      expect(evidenceBasisForAdapter(adapterId)).toBe('observed');
+    }
+  });
+
+  it('gives the adapter the automations discovery paid for', async () => {
+    const harness = createHarness();
+
+    await harness.session.connect();
+
+    // The failing automation is the evidence D40 needs; discovery used to read
+    // it and throw it away, which left a coworker whose work is erroring
+    // reading as idle.
+    expect(harness.session.snapshot?.automations).toEqual([
+      {
+        configuredSourceId: SOURCE_ID,
+        nativeAgentId: AGENT_QUILL,
+        nativeAutomationId: `${AUTOMATION_NAME}-0`,
+        enabled: true,
+        lastOutcome: 'failed',
+        lastRunAt: FIXED_NOW - 60_000,
+        targetContextId: null,
+      },
+    ]);
+  });
+
+  it('gives the adapter the source task totals discovery paid for', async () => {
+    const harness = createHarness();
+
+    await harness.session.connect();
+
+    expect(harness.session.snapshot?.taskFacts).toEqual({
+      total: 3,
+      active: 1,
+      terminal: 2,
+      failures: 1,
+      byStatus: {},
+      byRuntime: {},
+    });
+  });
+});
+
+describe('ConnectedGatewaySession — following the conversation', () => {
+  const SEGMENT = 'chat.segment';
+
+  function subscribesIn(harness: ReturnType<typeof createHarness>) {
+    return harness.gateway.received.filter(
+      entry => entry.method === 'sessions.messages.subscribe'
+    );
+  }
+
+  it('delivers to a subscription taken before anything was connected', async () => {
+    const harness = createHarness();
+    const seen: unknown[] = [];
+    const release = harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+
+    await harness.session.connect();
+    harness.clients[0]!.emitOCEvent(SEGMENT, { text: 'on its way' });
+
+    expect(seen).toEqual([{ text: 'on its way' }]);
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(1);
+
+    release();
+    harness.clients[0]!.emitOCEvent(SEGMENT, { text: 'after the release' });
+    expect(seen).toEqual([{ text: 'on its way' }]);
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(0);
+  });
+
+  it('never attaches a subscription released before the connection existed', async () => {
+    const harness = createHarness();
+    const seen: unknown[] = [];
+    const release = harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+    release();
+
+    await harness.session.connect();
+    harness.clients[0]!.emitOCEvent(SEGMENT, { text: 'nobody is listening' });
+
+    expect(seen).toEqual([]);
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(0);
+  });
+
+  it('re-establishes the subscription on the connection that replaces a dropped one', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    const seen: unknown[] = [];
+    harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+    await harness.session.connect();
+
+    harness.tunnels[0]!.drop(null);
+    harness.timers.fireNext();
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+
+    expect(harness.clients).toHaveLength(2);
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(0);
+    expect(harness.clients[1]!.listenerCount(SEGMENT)).toBe(1);
+
+    harness.clients[1]!.emitOCEvent(SEGMENT, { text: 'after the drop' });
+    expect(seen).toEqual([{ text: 'after the drop' }]);
+  });
+
+  it('asks the source to stream again on every connection, and resumes nothing', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+    expect(subscribesIn(harness)).toHaveLength(2);
+
+    harness.tunnels[0]!.drop(null);
+    harness.timers.fireNext();
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+
+    // Two coworkers, twice: re-established, never resumed. The Gateway resets
+    // its frame sequence per connection and replays nothing, so no subscribe
+    // may carry a cursor of any kind.
+    expect(subscribesIn(harness)).toHaveLength(4);
+    for (const entry of subscribesIn(harness)) {
+      expect(Object.keys(entry.params as Record<string, unknown>)).toEqual([
+        'key',
+      ]);
+    }
+  });
+
+  it('carries the subscription through an operator Reconnect', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    const seen: unknown[] = [];
+    harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+    await harness.session.connect();
+
+    await harness.session.connect();
+
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(0);
+    expect(harness.clients[1]!.listenerCount(SEGMENT)).toBe(1);
+    harness.clients[1]!.emitOCEvent(SEGMENT, { text: 'after the reconnect' });
+    expect(seen).toEqual([{ text: 'after the reconnect' }]);
+  });
+
+  it('asks the source to stream again after write authority is granted', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    expect(subscribesIn(harness)).toHaveLength(2);
+    // The operator approves the Exawatt device on the source itself.
+    harness.gateway.approve([...H2_WRITE_SCOPES]);
+    const seen: unknown[] = [];
+    harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+
+    const granted = await harness.session.requestWriteAuthority();
+
+    expect(granted.outcome).toBe('granted');
+    // A scope change is settled on the handshake, so it cycles the socket, and
+    // a new socket carries no subscription. This is the moment the operator
+    // has just been given a voice and is about to send their first message, so
+    // the stream is asked for again on the connection the session now holds.
+    // Two coworkers, twice: re-established, never resumed.
+    expect(subscribesIn(harness)).toHaveLength(4);
+    // Same device, same client, so the handlers stay attached exactly once.
+    expect(harness.clients).toHaveLength(1);
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(1);
+    harness.clients[0]!.emitOCEvent(SEGMENT, { text: 'the first reply' });
+    expect(seen).toEqual([{ text: 'the first reply' }]);
+  });
+
+  it('asks the source to stream again after write authority is given back', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    expect(subscribesIn(harness)).toHaveLength(2);
+    const seen: unknown[] = [];
+    harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+
+    const relinquished = await harness.session.relinquishWriteAuthority();
+
+    // Narrowing cycles the same socket for the same reason, and an operator
+    // who gave up writing is still reading, so the stream is asked for again
+    // here too rather than left for the next reconnect to repair.
+    expect(relinquished.authority).toBe('read');
+    expect(subscribesIn(harness)).toHaveLength(4);
+    harness.clients[0]!.emitOCEvent(SEGMENT, { text: 'still watching' });
+    expect(seen).toEqual([{ text: 'still watching' }]);
+  });
+
+  it('stops delivering once the source is detached', async () => {
+    const harness = createHarness();
+    const seen: unknown[] = [];
+    harness.session.onGatewayEvent(SEGMENT, payload => {
+      seen.push(payload);
+    });
+    await harness.session.connect();
+
+    await harness.session.disconnect();
+
+    expect(harness.clients[0]!.listenerCount(SEGMENT)).toBe(0);
+    harness.clients[0]!.emitOCEvent(SEGMENT, { text: 'nobody is watching' });
+    expect(seen).toEqual([]);
   });
 });
 

@@ -116,6 +116,13 @@ export interface OpenClawTopologyInput {
   gatewayId: string;
   placement: AgentSourcePlacement;
   evidenceBasis: AgentSourceEvidenceBasis;
+  /**
+   * Which adapter observed this topology. Defaults to OpenClaw because that is
+   * the only live one, but it is an input rather than an assertion: a Demo
+   * source runs this exact code path, and recording its answers as OpenClaw's
+   * would let simulated evidence wear a live adapter's name.
+   */
+  adapterId?: AgentSourceAdapterId;
   observedAt: number;
   /** Raw `agents.list` result. */
   agentsList: unknown;
@@ -1125,7 +1132,7 @@ export function adaptOpenClawTopology(
 
   const snapshot: AgentSourceTopologySnapshot = {
     configuredSourceId,
-    adapterId: OPENCLAW_ADAPTER_ID,
+    adapterId: input.adapterId ?? OPENCLAW_ADAPTER_ID,
     placement,
     gatewayId,
     observedAt,

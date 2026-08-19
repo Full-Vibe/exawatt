@@ -822,11 +822,15 @@ export interface RemoteAgentView {
   nativeAgentId: string;
   primaryContextId: string | null;
   /**
-   * D40 work state, in the same vocabulary a local Agent uses. Observed at
-   * `observedAt`; a stale connection leaves it at its last-known value and
-   * `connection` is what says the view is not current.
+   * D40 work state, in the same vocabulary a local Agent uses, or null when
+   * the source has evidenced none. Observed at `observedAt`; a stale
+   * connection leaves it at its last-known value and `connection` is what says
+   * the view is not current.
+   *
+   * Null is unknown and must never render as a positive claim: a surface with
+   * nothing to show says nothing rather than saying idle.
    */
-  workState: AgentStatus;
+  workState: AgentStatus | null;
   contextCount: number;
   observedAt: number;
   createdAt: number;
