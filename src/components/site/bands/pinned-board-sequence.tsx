@@ -375,7 +375,13 @@ export function PinnedBoardSequence({
       const next = activePanel(scrolled, anchors);
       setActive(current => (current === next ? current : next));
     });
-  }, [screens, total]);
+    // `hasFold` is read at line 292 to decide whether the fold participates in
+    // the pinned sequence. It was missing from these dependencies, so the
+    // callback could keep a stale value after the band set changes shape, and
+    // the React Compiler refused to preserve the memoization at all — which is
+    // what turned `pnpm lint` red, and lint is the third CI step, so nothing
+    // after it ran.
+  }, [hasFold, screens, total]);
 
   useEffect(() => {
     // Reduced motion pins nothing and drives nothing: the board is a poster in
