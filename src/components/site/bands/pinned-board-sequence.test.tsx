@@ -302,16 +302,13 @@ describe('pinned board sequence', () => {
         `[data-pinned-panel="${band.id}"]`
       )!;
       const budget = bandById(band.id).copyBudget.max;
-      // The subject line is board state read off the capture, not authored
-      // reading copy, so it is measured out the way the fold excludes its
-      // button. What the budget governs is the heading and the sentences.
+      // A panel is a heading and a claim now (W12): the stat line and the coda
+      // are both gone, so there is nothing left to measure out.
       const heading = panel.querySelector('[data-pinned-panel-heading]');
       const copy = panel.querySelector('[data-pinned-panel-copy]');
-      const coda = panel.querySelector('[data-pinned-panel-coda]');
       const words =
         bandCopyWords(heading ?? document.createElement('div')) +
-        bandCopyWords(copy!) +
-        bandCopyWords(coda ?? document.createElement('div'));
+        bandCopyWords(copy!);
       expect(words, band.id).toBeLessThanOrEqual(budget);
     }
   });
