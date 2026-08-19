@@ -10,25 +10,27 @@ import {
   type SourceContextRecord,
 } from '@exawatt/core';
 import {
-  ConnectedSourceRuntime,
   EMPTY_PROJECTION_PLAN,
+  deriveRemoteAgentId,
+  type ConnectedAgentProjectionPlan,
+  type ConnectedAgentProjectionPlanStore,
+} from './connected-agent-projection-plan';
+import {
   MAX_CONVERSATION_CHARACTERS,
   MAX_CONVERSATION_TURNS,
   MAX_TURN_CHARACTERS,
   MAX_UPDATES_PER_RUN,
   MAX_UPDATE_CHARACTERS,
-  deriveRemoteAgentId,
-  type ConnectedAgentProjectionPlan,
-  type ConnectedAgentProjectionPlanStore,
+} from './connected-conversation';
+import {
+  ConnectedSourceRuntime,
   type ConnectedSourceSession,
   type ConversationUpdate,
   type SendToAgentOptions,
 } from './connected-source-runtime';
-import type {
-  AuthorityRequestResult,
-  ConnectedGatewayPhase,
-  GatewayIdentity,
-} from './connected-gateway';
+import type { AuthorityRequestResult } from './connected-gateway-authority';
+import type { ConnectedGatewayPhase } from './connected-gateway';
+import type { GatewayIdentity } from './gateway-identity';
 
 /**
  * ENG-010 C2. The runtime that owns every configured source.
@@ -914,6 +916,50 @@ describe('ConnectedSourceRuntime — an Agent retires on the source', () => {
     ).toEqual(['alpha/scout', 'beta/priya', 'beta/tyler']);
   });
 
+  it('stops answering at the address as well as in the roster', async () => {
+    const context = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+          snapshot(
+            'alpha',
+            [
+              {
+                nativeAgentId: 'scout',
+                displayName: 'scout',
+                discoveryState: 'retired',
+              },
+            ],
+            30_000
+          ),
+        ],
+        history: {
+          'agent:scout:main': {
+            messages: [{ role: 'user', content: 'still there?', timestamp: 1 }],
+          },
+        },
+      },
+    });
+    const connected = await context.runtime.connect('alpha');
+    if (!connected.ok) throw new Error('fixture failed to connect');
+    await mapAll(context.runtime, 'alpha', connected.agents);
+    const agentId = deriveRemoteAgentId('alpha', 'scout');
+    expect((await context.runtime.conversation(agentId)).ok).toBe(true);
+
+    await context.runtime.disconnect('alpha');
+    await context.runtime.connect('alpha');
+
+    // The roster and the conversation address answer one question, not two.
+    // They used to disagree: a retired coworker left the roster while its
+    // address still resolved, so Exawatt would still read a transcript for
+    // somebody the operator can no longer see.
+    expect(context.runtime.agents()).toEqual([]);
+    const reread = await context.runtime.conversation(agentId);
+    expect(reread.ok).toBe(false);
+    if (reread.ok) return;
+    expect(reread.outcome).toBe('unknown-agent');
+  });
+
   it('leaves the surviving coworkers with the ids and Projects they had', async () => {
     const { runtime } = await afterRetiring('scout');
     const survivor = runtime
@@ -1333,6 +1379,82 @@ describe('ConnectedSourceRuntime — change notifications', () => {
       (changes.at(-1) as { snapshotRevision: number }).snapshotRevision
     ).toBe(1);
   });
+
+  it('bumps the revision for the snapshot an automatic reconnect brought in', async () => {
+    const { runtime, sessions } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout', running: 'main' },
+          ]),
+        ],
+      },
+    });
+    const connected = await runtime.connect('alpha');
+    if (!connected.ok) throw new Error('fixture failed to connect');
+    await mapAll(runtime, 'alpha', connected.agents);
+    const session = sessions.get('alpha');
+    if (!session) throw new Error('fixture built no session');
+    expect(runtime.status()[0].snapshotRevision).toBe(1);
+    expect(runtime.agents()[0].workState).toBe('idle');
+
+    // The ladder, not the operator: the connection drops, the session
+    // resnapshots on its own way back up, and `connect` is never called on the
+    // runtime. The coworker started working while Exawatt was reconnecting, so
+    // a surface keyed on the revision would otherwise be holding a roster it
+    // has no reason to read again.
+    session.emitPhase('reconnecting');
+    expect(runtime.status()[0].snapshotRevision).toBe(1);
+    await session.connect();
+    session.emitPhase('connected');
+
+    expect(runtime.status()[0].snapshotRevision).toBe(2);
+    expect(runtime.agents()[0].workState).toBe('working');
+  });
+
+  it('bumps once per authoritative snapshot, however many times it is noticed', async () => {
+    const { runtime, sessions } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+    });
+    await runtime.connect('alpha');
+    const session = sessions.get('alpha');
+    if (!session) throw new Error('fixture built no session');
+
+    // Phase movement that replaced nothing is freshness news. A reconnecting
+    // ladder that comes back to the snapshot it already had must not read as
+    // new content, or a renderer re-reads the roster on every flap.
+    session.emitPhase('reconnecting');
+    session.emitPhase('connected');
+    session.emitPhase('reconnecting');
+    session.emitPhase('connected');
+
+    expect(runtime.status()[0].snapshotRevision).toBe(1);
+  });
+
+  it('leaves the revision alone when a reconnect fails', async () => {
+    const { runtime, sessions } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+    });
+    await runtime.connect('alpha');
+    const session = sessions.get('alpha');
+    if (!session) throw new Error('fixture built no session');
+
+    // The ladder gave up. The cached snapshot is exactly where it was, so
+    // there is nothing new to read and the number says so.
+    session.emitPhase('reconnecting');
+    session.emitPhase('failed');
+
+    expect(runtime.status()[0].snapshotRevision).toBe(1);
+  });
 });
 
 describe('ConnectedSourceRuntime — freshness never implies stopped work', () => {
@@ -1594,6 +1716,38 @@ describe("ConnectedSourceRuntime — work state is the source's, not the connect
 
     // Unknown is an answer, and `idle` is not it. A coworker nobody reported
     // on is not quietly waiting; Exawatt simply has nothing to show.
+    expect(runtime.agents()[0].workState).toBeNull();
+  });
+
+  it('keeps unknown unknown across the resnapshot a reconnect brings in', async () => {
+    const { runtime, sessions } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout', silent: true },
+          ]),
+          snapshot('alpha', [
+            { nativeAgentId: 'scout', displayName: 'scout', silent: true },
+          ]),
+        ],
+      },
+    });
+    const connected = await runtime.connect('alpha');
+    if (!connected.ok) throw new Error('fixture failed to connect');
+    await mapAll(runtime, 'alpha', connected.agents);
+    const session = sessions.get('alpha');
+    if (!session) throw new Error('fixture built no session');
+    expect(runtime.agents()[0].workState).toBeNull();
+
+    session.emitPhase('reconnecting');
+    await session.connect();
+    session.emitPhase('connected');
+
+    // A second reading of the same silence is still silence. The one place
+    // this must never be resolved is here, where the source is still saying
+    // nothing: the main process carries null all the way to the boundary and
+    // never trades it for a state nobody reported.
+    expect(runtime.status()[0].snapshotRevision).toBe(2);
     expect(runtime.agents()[0].workState).toBeNull();
   });
 

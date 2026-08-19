@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildDestinationArgs,
   buildSshArgs,
+  classifySshFailure,
   classifySshStderr,
   openSshTunnel,
   resolveSshDestination,
@@ -101,7 +102,9 @@ interface Harness {
 
 const LOCAL_PORT = 52345;
 
-function harness(options: { probeReady?: boolean } = {}): Harness {
+function harness(
+  options: { probeReady?: boolean; keyReadable?: boolean } = {}
+): Harness {
   const children: FakeChild[] = [];
   const spawn = vi.fn(() => {
     const child = new FakeChild();
@@ -117,6 +120,10 @@ function harness(options: { probeReady?: boolean } = {}): Harness {
       spawn: spawn as unknown as typeof import('node:child_process').spawn,
       allocatePort: async () => LOCAL_PORT,
       probeLocalPort: probe ?? (async () => options.probeReady !== false),
+      // The fixture key path does not exist and must not: a unit test needing a
+      // real private key on disk would only pass on one machine. Readability is
+      // injected here and exercised on purpose where it is the thing under test.
+      canReadIdentityFile: () => options.keyReadable !== false,
     });
   return {
     spawn,
@@ -714,6 +721,109 @@ describe('tunnel lifecycle', () => {
   });
 });
 
+/**
+ * Which FIELD the operator got wrong, not just which kind of failure it was.
+ *
+ * A manually entered server is four fields somebody typed, and one sentence
+ * about the server being offline is the wrong next step for three of them.
+ * Every stderr below was captured from a real OpenSSH client answering a real
+ * server, with the operator's own identifiers replaced by this file's
+ * fixtures, so these assert the ordering reality produces rather than the one
+ * that reads well in a table.
+ */
+describe('the field the operator got wrong', () => {
+  const sentenceFor = (stderr: string) =>
+    classifySshFailure(stderr).message.toLowerCase();
+
+  it('names the address when the name does not resolve', () => {
+    const stderr = `ssh: Could not resolve hostname ${FAKE_HOST}: nodename nor servname provided, or not known`;
+    expect(classifySshStderr(stderr)).toBe('host-unreachable');
+    expect(sentenceFor(stderr)).toContain('address');
+  });
+
+  it('names the SSH port when nothing answers on it', () => {
+    const stderr = `ssh: connect to host ${FAKE_HOST} port 47: Operation timed out`;
+    expect(classifySshStderr(stderr)).toBe('host-unreachable');
+    expect(sentenceFor(stderr)).toContain('port');
+    // Same class, different next step. A name that does not exist and a port
+    // nothing answers are not the same mistake.
+    expect(sentenceFor(stderr)).not.toBe(
+      sentenceFor(`ssh: Could not resolve hostname ${FAKE_HOST}`)
+    );
+  });
+
+  /**
+   * The ordering case, and the reason this block exists at all.
+   *
+   * A missing `-i` never arrives alone: `ssh` warns, offers nothing, and the
+   * SERVER ends the session with `Permission denied (publickey).` The key-file
+   * patterns used to sit BELOW the generic refusal, so they could never win a
+   * match, and the operator who mistyped a path was told to check that their
+   * key was authorized for a key the client had never sent.
+   */
+  it('names the key file even though the server also refused the login', () => {
+    const stderr = [
+      `Warning: Identity file ${FAKE_KEY_PATH} not accessible: No such file or directory.`,
+      `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`,
+    ].join('\n');
+    expect(classifySshStderr(stderr)).toBe('auth-rejected');
+    expect(sentenceFor(stderr)).toContain('key file');
+  });
+
+  it('names the key file when its permissions are too open', () => {
+    const stderr = [
+      '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@',
+      '@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @',
+      `Permissions 0644 for '${FAKE_KEY_PATH}' are too open.`,
+      `Load key "${FAKE_KEY_PATH}": bad permissions`,
+      `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`,
+    ].join('\n');
+    expect(classifySshStderr(stderr)).toBe('auth-rejected');
+    expect(sentenceFor(stderr)).toContain('key file');
+  });
+
+  it('names the login when the server simply refuses it', () => {
+    expect(sentenceFor(AUTH_STDERR)).toContain('login');
+    expect(sentenceFor(AUTH_STDERR)).not.toContain('key file');
+  });
+
+  it('says the host key changed rather than blaming the operator key', () => {
+    const stderr =
+      'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\nHost key verification failed.';
+    expect(classifySshStderr(stderr)).toBe('auth-rejected');
+    expect(sentenceFor(stderr)).toContain('host key');
+  });
+});
+
+describe('an unreadable key file', () => {
+  it('is refused before anything is spawned', async () => {
+    const fixture = harness({ keyReadable: false });
+    const failure = expectFailure(await fixture.openManual());
+    expect(failure.class).toBe('invalid-target');
+    expect(failure.message.toLowerCase()).toContain('key file');
+    // The point of checking here: `ssh` would have spent a refused login on
+    // the operator's server to learn something already knowable on this one,
+    // and a server that bans on refused logins would have counted it.
+    expect(fixture.spawn).not.toHaveBeenCalled();
+  });
+
+  it('is not checked for an alias, which names no key file', async () => {
+    const fixture = harness({ keyReadable: false });
+    const tunnel = expectTunnel(await fixture.open());
+    expect(fixture.spawn).toHaveBeenCalledTimes(1);
+    await tunnel.close();
+  });
+
+  it('is not checked when the manual target names no key file', async () => {
+    const fixture = harness({ keyReadable: false });
+    const tunnel = expectTunnel(
+      await fixture.openManual({ identityFile: null })
+    );
+    expect(fixture.spawn).toHaveBeenCalledTimes(1);
+    await tunnel.close();
+  });
+});
+
 describe('redaction invariant', () => {
   it('never echoes infrastructure identity into an operator-facing message', async () => {
     const secrets = [
@@ -781,6 +891,12 @@ describe('redaction invariant', () => {
     manual.children[0].exit(255);
     messages.push(expectFailure(await manualPending).message);
 
+    // The key file that cannot be read: refused here, with the operator's own
+    // path as the rejected value.
+    const unreadable = harness({ keyReadable: false });
+    messages.push(expectFailure(await unreadable.openManual()).message);
+    expect(unreadable.spawn).not.toHaveBeenCalled();
+
     // An unexpected death after readiness is the other message-producing path.
     const live = harness();
     const tunnel = expectTunnel(await live.open());
@@ -790,7 +906,7 @@ describe('redaction invariant', () => {
     live.children[0].exit(255);
     messages.push(outcomes[0]?.message ?? '');
 
-    expect(messages).toHaveLength(12);
+    expect(messages).toHaveLength(13);
     for (const message of messages) {
       expect(message.length).toBeGreaterThan(0);
       expect(message.length).toBeLessThanOrEqual(200);

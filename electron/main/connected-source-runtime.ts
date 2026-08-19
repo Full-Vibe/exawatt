@@ -1,6 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   AGENT_PROJECTION_VERSION,
   describeConnectionStatus,
@@ -17,17 +15,41 @@ import {
   type SourceAgentDiscoveryState,
   type SourceAuthority,
   type SourceConnectionState,
-  type SourceContextRecord,
   type SourceFailureClass,
 } from '@exawatt/core';
+import {
+  EMPTY_PROJECTION_PLAN,
+  MAX_MAPPINGS,
+  deriveRemoteAgentId,
+  type ConnectedAgentMapping,
+  type ConnectedAgentProjectionPlan,
+  type ConnectedAgentProjectionPlanStore,
+} from './connected-agent-projection-plan';
+import {
+  MAX_CONVERSATION_TURNS,
+  MAX_MESSAGE_CHARACTERS,
+  MAX_UPDATES_PER_RUN,
+  MAX_UPDATE_CHARACTERS,
+  boundConversation,
+  findPrimaryConversation,
+  isPrimaryConversation,
+  readTranscript,
+  type ConversationRequest,
+  type ConversationTurnView,
+} from './connected-conversation';
+import type { AuthorityRequestResult } from './connected-gateway-authority';
 import type {
-  AuthorityRequestResult,
   ConnectedGatewayPhase,
   ConnectedGatewaySession,
-  GatewayIdentity,
 } from './connected-gateway';
+import { sameGatewayIdentity, type GatewayIdentity } from './gateway-identity';
 import type { ConnectedSourceStore } from './connected-source-store';
 import type { DiagnosticRecorder } from './diagnostics-log';
+import {
+  MAX_ID_LENGTH,
+  describeSourceError,
+  validText,
+} from './untrusted-input';
 
 /**
  * The main-process owner of every configured Agent Source (ENG-010 C2).
@@ -44,9 +66,10 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  *    source the operator already authorized by pairing a device credential
  *    (`observeSavedSources`). Constructing this object contacts nothing.
  * 2. **The projection plan is Exawatt's, not the source's.** Which coworker
- *    lands in which Project, and under what name, is persisted here and edited
- *    here. `mapAgents` performs no Gateway call of any kind: renaming a
- *    coworker or moving it between Projects must be invisible to the server.
+ *    lands in which Project, and under what name, is edited here and persisted
+ *    by `connected-agent-projection-plan`. `mapAgents` performs no Gateway call
+ *    of any kind: renaming a coworker or moving it between Projects must be
+ *    invisible to the server.
  * 3. **Freshness is not work state.** Every status this file produces
  *    describes Exawatt's own observation. None of it may say, or let a caller
  *    infer, that remote work stopped, paused, or was lost.
@@ -70,229 +93,6 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  *    can aim a message at a cron run, a helper context, or a delegated child,
  *    and viewing recent work can never silently retarget the composer.
  */
-
-/* ---- Projection plan ----------------------------------------------------- */
-
-/**
- * One native Agent's place in Exawatt.
- *
- * `projectLabel` rides alongside the kernel's mapping rather than inside it:
- * `AgentProjectionMapping` is the C0 contract and owns identity, not display
- * text. The label is what the Connect flow's Project step chose, kept so the
- * roster can name a Project that the local workspace catalog has never heard
- * of.
- */
-export interface ConnectedAgentMapping extends AgentProjectionMapping {
-  projectLabel: string;
-}
-
-/**
- * Exawatt's projection plan: who is bound to whom, and to what.
- *
- * `boundIdentities` is the second half of that sentence, keyed by configured
- * source id. A mapping says "this coworker is that source's `market-watch`";
- * the bound identity says which installation was answering when the operator
- * said so. Without it a relaunch has nothing to compare the next snapshot
- * against, and a Gateway swapped for a different installation while Exawatt
- * was closed — the moment a swap is most likely and least visible — is
- * accepted in silence. It lives here rather than on the source record because
- * it is what the plan is bound to: it is written when a binding is confirmed,
- * and it goes when the plan does.
- *
- * It carries only what `GatewayIdentity` carries: a version string and sorted
- * native Agent ids. No display name, no host, no alias, no address.
- */
-export interface ConnectedAgentProjectionPlan {
-  projectionVersion: typeof AGENT_PROJECTION_VERSION;
-  mappings: readonly ConnectedAgentMapping[];
-  boundIdentities: Readonly<Record<string, GatewayIdentity>>;
-}
-
-export interface ConnectedAgentProjectionPlanStore {
-  read(): ConnectedAgentProjectionPlan;
-  write(plan: ConnectedAgentProjectionPlan): void;
-}
-
-const PLAN_FILE = 'connected-agent-projection.json';
-const PLAN_SCHEMA_VERSION = 1;
-/** A registry of coworkers, not a data store. */
-const MAX_MAPPINGS = 2_000;
-const MAX_TEXT_LENGTH = 512;
-const MAX_ID_LENGTH = 4_096;
-
-function validText(value: unknown, max = MAX_TEXT_LENGTH): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= max;
-}
-
-export const EMPTY_PROJECTION_PLAN: ConnectedAgentProjectionPlan = {
-  projectionVersion: AGENT_PROJECTION_VERSION,
-  mappings: [],
-  boundIdentities: {},
-};
-
-/**
- * Read one persisted bound identity. Fails closed per source, exactly as a
- * mapping row does: an unreadable entry costs that source its drift check,
- * never the whole file. The session sanitises again on the way in, so this
- * only has to refuse what is not an identity at all.
- */
-function parseBoundIdentities(
-  value: unknown
-): Readonly<Record<string, GatewayIdentity>> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const identities: Record<string, GatewayIdentity> = {};
-  for (const [sourceId, candidate] of Object.entries(value).slice(
-    0,
-    MAX_MAPPINGS
-  )) {
-    if (!validText(sourceId, MAX_ID_LENGTH)) continue;
-    if (!candidate || typeof candidate !== 'object') continue;
-    const row = candidate as Record<string, unknown>;
-    const ids = Array.isArray(row.nativeAgentIds)
-      ? row.nativeAgentIds.filter(
-          (id): id is string => typeof id === 'string' && id.length > 0
-        )
-      : [];
-    const version = typeof row.version === 'string' ? row.version : '';
-    if (ids.length === 0 && version.length === 0) continue;
-    identities[sourceId] = { version, nativeAgentIds: ids };
-  }
-  return identities;
-}
-
-/**
- * Parse one persisted mapping. Fails closed per row: a hand-edited or
- * partially written file must cost the operator the coworkers it corrupted,
- * never the whole roster.
- */
-function parseMapping(value: unknown): ConnectedAgentMapping | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const candidate = value as Record<string, unknown>;
-  if (
-    !validText(candidate.configuredSourceId, MAX_ID_LENGTH) ||
-    !validText(candidate.nativeAgentId, MAX_ID_LENGTH) ||
-    !validText(candidate.exawattAgentId, MAX_ID_LENGTH) ||
-    !validText(candidate.projectId, MAX_ID_LENGTH)
-  ) {
-    return null;
-  }
-  const override = candidate.displayNameOverride;
-  if (override !== null && !validText(override)) return null;
-  return {
-    configuredSourceId: candidate.configuredSourceId,
-    nativeAgentId: candidate.nativeAgentId,
-    exawattAgentId: candidate.exawattAgentId,
-    projectId: candidate.projectId,
-    displayNameOverride: override === null ? null : (override as string),
-    projectLabel: validText(candidate.projectLabel)
-      ? candidate.projectLabel
-      : candidate.projectId,
-  };
-}
-
-/**
- * The plan on disk. Deliberately its own file rather than a field on the
- * source registry: a source is a connection and a plan is a set of product
- * decisions about people, and detaching one source must never rewrite the
- * mapping of another.
- */
-export class FileConnectedAgentProjectionPlanStore implements ConnectedAgentProjectionPlanStore {
-  private readonly file: string;
-
-  constructor(userDataDir: string) {
-    this.file = path.join(userDataDir, PLAN_FILE);
-  }
-
-  read(): ConnectedAgentProjectionPlan {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(fs.readFileSync(this.file, 'utf8')) as unknown;
-    } catch {
-      // Missing or corrupt is an empty plan, never a crash on boot.
-      return EMPTY_PROJECTION_PLAN;
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return EMPTY_PROJECTION_PLAN;
-    }
-    const record = parsed as {
-      mappings?: unknown;
-      boundIdentities?: unknown;
-    };
-    const rows = record.mappings;
-    // A file written before bound identities existed simply has none, which
-    // reads as "never seen" and is the right answer for a source Exawatt has
-    // no history with.
-    const boundIdentities = parseBoundIdentities(record.boundIdentities);
-    if (!Array.isArray(rows))
-      return { ...EMPTY_PROJECTION_PLAN, boundIdentities };
-    return {
-      projectionVersion: AGENT_PROJECTION_VERSION,
-      mappings: normalizeMappings(rows.slice(0, MAX_MAPPINGS)),
-      boundIdentities,
-    };
-  }
-
-  write(plan: ConnectedAgentProjectionPlan): void {
-    const dir = path.dirname(this.file);
-    fs.mkdirSync(dir, { recursive: true });
-    const temp = path.join(dir, `.${PLAN_FILE}.${randomUUID()}.tmp`);
-    fs.writeFileSync(
-      temp,
-      JSON.stringify(
-        {
-          schemaVersion: PLAN_SCHEMA_VERSION,
-          projectionVersion: AGENT_PROJECTION_VERSION,
-          mappings: plan.mappings,
-          boundIdentities: plan.boundIdentities,
-        },
-        null,
-        2
-      ),
-      { mode: 0o600 }
-    );
-    fs.renameSync(temp, this.file);
-  }
-}
-
-/**
- * Drop unreadable rows, then drop collisions. Two mappings for one native
- * Agent, or two coworkers claiming one Exawatt Agent id, are fatal to the
- * kernel; resolving them here keeps a bad row from taking the roster with it.
- */
-function normalizeMappings(
-  rows: readonly unknown[]
-): readonly ConnectedAgentMapping[] {
-  const bySourceAgent = new Map<string, ConnectedAgentMapping>();
-  const claimedIds = new Set<string>();
-  for (const row of rows) {
-    const mapping = parseMapping(row);
-    if (!mapping) continue;
-    const key = sourceAgentKey(mapping);
-    if (bySourceAgent.has(key)) continue;
-    if (claimedIds.has(mapping.exawattAgentId)) continue;
-    claimedIds.add(mapping.exawattAgentId);
-    bySourceAgent.set(key, mapping);
-  }
-  return [...bySourceAgent.values()];
-}
-
-/**
- * Exawatt's own id for a source-native Agent.
- *
- * Derived, not random, so a reconnect, a relaunch, or a reinstall that
- * rebuilds a plan from the same source produces the same coworker rather than
- * a duplicate. It is a digest of the source-qualified key, so it carries no
- * hostname, alias, or native name, and it is safe in a URL.
- */
-export function deriveRemoteAgentId(
-  configuredSourceId: string,
-  nativeAgentId: string
-): string {
-  const digest = createHash('sha256')
-    .update(sourceAgentKey({ configuredSourceId, nativeAgentId }))
-    .digest('hex');
-  return `remote-${digest.slice(0, 24)}`;
-}
 
 /* ---- Renderer-facing views ----------------------------------------------- */
 
@@ -341,7 +141,17 @@ export interface ConnectedSourceStatusView {
   connection: SourceConnectionView;
   /** The source now reports a different installation than the plan maps. */
   identityDrift: boolean;
-  /** Bumped only by an authoritative snapshot. */
+  /**
+   * Bumped by every authoritative snapshot, and by nothing else.
+   *
+   * Both halves are load-bearing. A renderer keyed on this number re-reads the
+   * roster when it moves, so a snapshot that landed without moving it costs the
+   * operator whatever that snapshot brought in — and for a while exactly that
+   * happened, because only the operator's own `connect` bumped it while an
+   * automatic reconnect resnapshots authoritatively too. Phase movement still
+   * does not bump it: a reconnect ladder is freshness news, not new content,
+   * and a surface that only cares about topology must be able to ignore it.
+   */
   snapshotRevision: number;
 }
 
@@ -388,7 +198,11 @@ export interface RemoteAgentView {
    * Null is unknown, and unknown is an answer. It must never render as a
    * positive claim: a coworker whose source said nothing about any of its
    * contexts is not idle, and showing it as idle would be Exawatt inventing a
-   * state nobody reported.
+   * state nobody reported. This runtime once answered
+   * `hasActiveRun ? 'working' : 'idle'`, which threw away the fault the
+   * discovery reads had already paid for and turned silence into a claim that
+   * the coworker is quiet; every value here is now a word D40 already uses, so
+   * a remote coworker still needs no second status vocabulary.
    *
    * Observed at `observedAt` and nowhere else: a stale or unavailable
    * connection leaves this exactly as it was last observed, and `connection`
@@ -481,46 +295,6 @@ export interface ConnectedSourceChange {
 const AWAITING_APPROVAL_MESSAGE =
   'Approve the Exawatt device for write access with the source device tooling, then send again.';
 
-/* ---- Conversation bounds ------------------------------------------------- */
-
-/** The most turns one read returns, however many the source retained. */
-export const MAX_CONVERSATION_TURNS = 200;
-/** What a caller gets when it names no page size. */
-export const DEFAULT_CONVERSATION_TURNS = 50;
-/** One turn's character budget. A longer turn is clipped and says so. */
-export const MAX_TURN_CHARACTERS = 4_000;
-/** The page's character budget, spent from the newest turn backward. */
-export const MAX_CONVERSATION_CHARACTERS = 60_000;
-/** The longest message Exawatt hands to a Gateway. */
-export const MAX_MESSAGE_CHARACTERS = 32_000;
-/** One streamed update's character budget. */
-export const MAX_UPDATE_CHARACTERS = 2_000;
-/** How many live updates one run forwards before the renderer re-reads. */
-export const MAX_UPDATES_PER_RUN = 400;
-
-/**
- * Who said it. The product vocabulary, not the protocol's: Exawatt says
- * Conversation, and the two voices in one are the operator and the coworker.
- */
-export type ConversationRole = 'operator' | 'agent';
-
-export interface ConversationTurnView {
-  /**
-   * Stable identity, derived from the turn's own content and its position
-   * among identical siblings rather than minted per read. An authoritative
-   * resnapshot must produce the same id for the same turn, because that is
-   * what lets a reconnect reconcile instead of duplicating.
-   */
-  id: string;
-  role: ConversationRole;
-  text: string;
-  at: number;
-  /** The run that produced it, when the source names one. */
-  runId: string | null;
-  /** True when `text` was clipped to the per-turn budget. */
-  clipped: boolean;
-}
-
 export type ConversationRefusal =
   | 'unknown-agent'
   | 'no-primary-conversation'
@@ -547,13 +321,6 @@ export type ConversationResult =
       outcome: ConversationRefusal;
       message: string;
     };
-
-export interface ConversationRequest {
-  /** Turns to return, newest backward. Clamped to `MAX_CONVERSATION_TURNS`. */
-  limit?: number;
-  /** Page further back: the turns older than this one. */
-  beforeTurnId?: string;
-}
 
 export interface SendToAgentOptions {
   /**
@@ -626,16 +393,11 @@ export interface ConversationUpdate {
 /* ---- Runtime ------------------------------------------------------------- */
 
 /**
- * Exactly what the runtime uses of a gateway session. Structural on purpose:
- * the test drives a hand-written double, so no test in this file can open a
- * tunnel, read an SSH configuration, or reach a network.
- */
-/**
- * The streaming half of that surface, declared here rather than picked from
- * `ConnectedGatewaySession` because it is capability-declared: a session whose
- * transport proves no event stream simply does not carry it, and the operator
- * still sees the reply on the next authoritative read. Absence is a quieter
- * surface, never a crash and never a silent no-op.
+ * The streaming half of the session surface, declared here rather than picked
+ * from `ConnectedGatewaySession` because it is capability-declared: a session
+ * whose transport proves no event stream simply does not carry it, and the
+ * operator still sees the reply on the next authoritative read. Absence is a
+ * quieter surface, never a crash and never a silent no-op.
  */
 export interface ConnectedSourceCommandSurface {
   /** One Gateway event stream, unsubscribed by the returned disposer. */
@@ -645,15 +407,25 @@ export interface ConnectedSourceCommandSurface {
   ): () => void;
 }
 
+/**
+ * Exactly what the runtime uses of a gateway session. Structural on purpose:
+ * the test drives a hand-written double, so no test in this file can open a
+ * tunnel, read an SSH configuration, or reach a network.
+ *
+ * Exactly, and no more. The session also exposes `resnapshot` and `authority`,
+ * and this runtime uses neither: it repairs observation by connecting, and it
+ * reads granted authority off the source record rather than off a live session,
+ * so a source Exawatt is not observing still answers what it may be asked to
+ * do. Leaving them in the list would let a future edit reach around both of
+ * those decisions without anyone having to argue for it.
+ */
 export type ConnectedSourceSession = Pick<
   ConnectedGatewaySession,
   | 'connect'
   | 'read'
   | 'write'
-  | 'authority'
   | 'requestWriteAuthority'
   | 'relinquishWriteAuthority'
-  | 'resnapshot'
   | 'status'
   | 'disconnect'
   | 'onPhaseChange'
@@ -700,6 +472,14 @@ interface SessionEntry {
   record: ConnectedSourceRecord;
   session: ConnectedSourceSession;
   snapshotRevision: number;
+  /**
+   * The snapshot the revision above counts. Compared by identity rather than
+   * by content: the session replaces the cached tree whole on every
+   * authoritative read and never merges into it, so a different object IS a
+   * different observation, and a resnapshot that happens to find the source
+   * unchanged is still news the renderer asked to hear about.
+   */
+  observedSnapshot: AgentSourceTopologySnapshot | null;
   offPhase: () => void;
   offEvents: () => void;
   closed: boolean;
@@ -831,7 +611,7 @@ export class ConnectedSourceRuntime {
           };
     }
 
-    entry.snapshotRevision += 1;
+    this.noteAuthoritativeSnapshot(entry);
     this.emit(entry);
     return {
       ok: true,
@@ -924,7 +704,7 @@ export class ConnectedSourceRuntime {
         snapshot.configuredSourceId,
         new Set(
           snapshot.agents
-            .filter(agent => agent.discoveryState !== 'retired')
+            .filter(stillDeclared)
             .map(agent => agent.nativeAgentId)
         )
       );
@@ -1038,7 +818,10 @@ export class ConnectedSourceRuntime {
         ok: false,
         agentId,
         outcome: 'unreadable',
-        message: messageOf(error, 'The Gateway did not answer that read.'),
+        message: describeSourceError(
+          error,
+          'The Gateway did not answer that read.'
+        ),
       };
     }
 
@@ -1424,16 +1207,11 @@ export class ConnectedSourceRuntime {
     if (!identity) return;
     const plan = this.deps.plans.read();
     const current = plan.boundIdentities[entry.record.id];
-    if (
-      current &&
-      current.version === identity.version &&
-      current.nativeAgentIds.length === identity.nativeAgentIds.length &&
-      current.nativeAgentIds.every(
-        (id, index) => id === identity.nativeAgentIds[index]
-      )
-    ) {
-      return;
-    }
+    // What makes two observations the same installation is one rule, and it
+    // lives with the identity rather than with whoever happens to be storing
+    // one; a second comparison written here is how a value reads as equal in
+    // one place and different in another.
+    if (current && sameGatewayIdentity(current, identity)) return;
     this.deps.plans.write({
       projectionVersion: AGENT_PROJECTION_VERSION,
       mappings: plan.mappings,
@@ -1445,6 +1223,28 @@ export class ConnectedSourceRuntime {
         },
       },
     });
+  }
+
+  /**
+   * One authoritative snapshot landed, or none did. The only place the
+   * revision moves.
+   *
+   * Called wherever the runtime can learn that the session replaced its
+   * topology — the operator's own connect, and the reconnect ladder's return —
+   * rather than at one of them, because the doc promises the number tracks
+   * authoritative snapshots and a renderer keyed on it has no other way to
+   * discover what a reconnect brought in. It is idempotent, so calling it from
+   * both places on one snapshot bumps once.
+   *
+   * A drifted or failed reconnect leaves the cached snapshot exactly where it
+   * was, so nothing here bumps for it: the operator is being asked to remap or
+   * detach, not being told there is new content to read.
+   */
+  private noteAuthoritativeSnapshot(entry: SessionEntry): void {
+    const snapshot = entry.session.snapshot;
+    if (snapshot === null || snapshot === entry.observedSnapshot) return;
+    entry.observedSnapshot = snapshot;
+    entry.snapshotRevision += 1;
   }
 
   private ensureSession(record: ConnectedSourceRecord): SessionEntry {
@@ -1460,6 +1260,7 @@ export class ConnectedSourceRuntime {
       record,
       session,
       snapshotRevision: 0,
+      observedSnapshot: null,
       offPhase: () => {},
       offEvents: () => {},
       closed: false,
@@ -1504,10 +1305,14 @@ export class ConnectedSourceRuntime {
       entry.awaitingResnapshot = true;
       return;
     }
-    if (phase !== 'connected' || !entry.awaitingResnapshot) return;
+    if (phase !== 'connected') return;
+    // The session resnapshots on its own way back up, so a connection that
+    // comes back carries new content whether or not anyone asked for it.
+    this.noteAuthoritativeSnapshot(entry);
+    if (!entry.awaitingResnapshot) return;
     entry.awaitingResnapshot = false;
-    // The session resnapshots on its own way back up, so this is the other
-    // place an observation is confirmed and the plan's binding is refreshed.
+    // This is also the other place an observation is confirmed and the plan's
+    // binding is refreshed.
     this.rememberBoundIdentity(entry);
     for (const target of this.primaryTargetsOf(entry)) {
       this.publish({
@@ -1599,11 +1404,7 @@ export class ConnectedSourceRuntime {
     const targets: { agentId: string; contextId: string }[] = [];
     for (const mapping of this.deps.plans.read().mappings) {
       if (mapping.configuredSourceId !== entry.record.id) continue;
-      const primary = snapshot.contexts.find(
-        context =>
-          context.nativeAgentId === mapping.nativeAgentId &&
-          isPrimaryConversation(context)
-      );
+      const primary = findPrimaryConversation(snapshot, mapping.nativeAgentId);
       if (!primary) continue;
       targets.push({
         agentId: mapping.exawattAgentId,
@@ -1661,7 +1462,8 @@ export class ConnectedSourceRuntime {
     }
     if (
       !snapshot.agents.some(
-        agent => agent.nativeAgentId === mapping.nativeAgentId
+        agent =>
+          agent.nativeAgentId === mapping.nativeAgentId && stillDeclared(agent)
       )
     ) {
       return {
@@ -1670,11 +1472,7 @@ export class ConnectedSourceRuntime {
         message: "That coworker is not in the source's current configuration.",
       };
     }
-    const primary = snapshot.contexts.find(
-      context =>
-        context.nativeAgentId === mapping.nativeAgentId &&
-        isPrimaryConversation(context)
-    );
+    const primary = findPrimaryConversation(snapshot, mapping.nativeAgentId);
     if (!primary) {
       return {
         ok: false,
@@ -1706,7 +1504,10 @@ export class ConnectedSourceRuntime {
         ok: false,
         agentId,
         outcome: 'refused',
-        message: messageOf(error, 'The Gateway did not accept that message.'),
+        message: describeSourceError(
+          error,
+          'The Gateway did not accept that message.'
+        ),
       };
     }
     const result =
@@ -1790,169 +1591,23 @@ export class ConnectedSourceRuntime {
 
 /* ---- Pure projection helpers --------------------------------------------- */
 
-function isPrimaryConversation(context: SourceContextRecord): boolean {
-  return context.roles.includes('primary-conversation');
-}
-
-function messageOf(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message.slice(0, MAX_TEXT_LENGTH);
-  }
-  return fallback;
-}
-
 /**
- * One turn's stable id.
+ * Does the source still declare this Agent?
  *
- * A digest of the address, the voice, the moment, and the exact words, plus
- * which repeat it is among identical siblings. Deliberately derived rather
- * than minted: the same turn read twice, or read again after a reconnect,
- * must carry the same id so the renderer reconciles instead of duplicating.
- * It carries no hostname, no native session key in the clear, and it is safe
- * in a URL.
+ * `retired` is the only answer that costs the operator a coworker, and it is
+ * ordinary: somebody deleted an Agent on their own server. `unknown` is
+ * silence, and silence is not a retirement, so a coworker the source said
+ * nothing about stays exactly where it was.
+ *
+ * One predicate, because the roster and the conversation address used to
+ * disagree. `agents()` dropped a retired coworker while `resolveTarget`
+ * matched on the native id alone, so the same coworker could be gone from the
+ * roster and still resolvable to an address.
  */
-function conversationTurnId(fingerprint: string, occurrence: number): string {
-  const digest = createHash('sha256')
-    .update(`${fingerprint}\0${occurrence}`)
-    .digest('hex');
-  return `turn-${digest.slice(0, 24)}`;
-}
-
-/**
- * Read one `chat.history` row. Fails closed per row, exactly as the projection
- * plan does: one malformed entry costs that entry, never the transcript.
- */
-function readConversationTurn(
-  value: unknown,
-  contextId: string,
-  seen: Map<string, number>
-): ConversationTurnView | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const row = value as Record<string, unknown>;
-  const role: ConversationRole | null =
-    row.role === 'user'
-      ? 'operator'
-      : row.role === 'assistant'
-        ? 'agent'
-        : null;
-  if (role === null) return null;
-  if (typeof row.content !== 'string') return null;
-  const content = row.content;
-  const at =
-    typeof row.timestamp === 'number' && Number.isFinite(row.timestamp)
-      ? row.timestamp
-      : 0;
-  const fingerprint = [contextId, role, String(at), content].join('\0');
-  const occurrence = (seen.get(fingerprint) ?? 0) + 1;
-  seen.set(fingerprint, occurrence);
-  return {
-    id: conversationTurnId(fingerprint, occurrence),
-    role,
-    text: content.slice(0, MAX_TURN_CHARACTERS),
-    at,
-    runId: validText(row.runId, MAX_ID_LENGTH) ? row.runId : null,
-    clipped: content.length > MAX_TURN_CHARACTERS,
-  };
-}
-
-/**
- * The `chat.history` payload as turns, in the order the source retains them.
- *
- * Exawatt does not re-sort by timestamp. The source owns the order of its own
- * conversation, and a clock Exawatt does not own is the wrong authority to
- * rearrange someone's words by.
- */
-export function readTranscript(
-  payload: unknown,
-  contextId: string
-): ConversationTurnView[] {
-  if (!payload || typeof payload !== 'object') return [];
-  const messages = (payload as { messages?: unknown }).messages;
-  if (!Array.isArray(messages)) return [];
-  const seen = new Map<string, number>();
-  const turns: ConversationTurnView[] = [];
-  for (const row of messages.slice(0, MAX_CONVERSATION_TURNS + 1)) {
-    const turn = readConversationTurn(row, contextId, seen);
-    if (turn) turns.push(turn);
-  }
-  return turns;
-}
-
-/**
- * Page from the newest turn backward, and say when there is more.
- *
- * Two budgets apply at once, turns and characters, and whichever binds first
- * sets `hasMore`. Reading backward is what makes the bound honest: the turns
- * an operator most needs are the recent ones, so a clipped page loses the
- * oldest end and admits it rather than losing the newest end silently.
- */
-export function boundConversation(
-  all: readonly ConversationTurnView[],
-  request: ConversationRequest = {}
-): {
-  turns: ConversationTurnView[];
-  hasMore: boolean;
-  characterCount: number;
-} {
-  const requested =
-    typeof request.limit === 'number' && Number.isFinite(request.limit)
-      ? Math.floor(request.limit)
-      : DEFAULT_CONVERSATION_TURNS;
-  const limit = Math.max(1, Math.min(MAX_CONVERSATION_TURNS, requested));
-
-  let window = all;
-  if (validText(request.beforeTurnId, MAX_ID_LENGTH)) {
-    const index = all.findIndex(turn => turn.id === request.beforeTurnId);
-    // A cursor this page no longer holds reads from the newest end rather
-    // than answering nothing, so a stale cursor never looks like an empty
-    // conversation.
-    if (index >= 0) window = all.slice(0, index);
-  }
-
-  const newestFirst: ConversationTurnView[] = [];
-  let characterCount = 0;
-  for (let index = window.length - 1; index >= 0; index -= 1) {
-    const turn = window[index];
-    if (newestFirst.length >= limit) break;
-    if (
-      newestFirst.length > 0 &&
-      characterCount + turn.text.length > MAX_CONVERSATION_CHARACTERS
-    ) {
-      break;
-    }
-    newestFirst.push(turn);
-    characterCount += turn.text.length;
-  }
-  newestFirst.reverse();
-  return {
-    turns: newestFirst,
-    hasMore: newestFirst.length < window.length,
-    characterCount,
-  };
-}
-
-/**
- * One projected coworker's D40 work state: the kernel's answer, read.
- *
- * Read and not recomputed, deliberately. `projectAgentTopology` derives this
- * from the evidence carried on the Agent's own records — an enabled automation
- * whose last run failed is `error`, a context with a run in flight is
- * `working`, a context that explicitly reports none is `idle` — and it states
- * that precedence once so no surface can drift from it. This runtime used to
- * answer `hasActiveRun ? 'working' : 'idle'`, which threw away the fault the
- * discovery reads had already paid for and turned "the source said nothing"
- * into a claim that the coworker is quiet.
- *
- * Every value the kernel can return is a word D40 already uses, so a remote
- * coworker still needs no second status vocabulary. Null is unknown and stays
- * null all the way to the renderer.
- *
- * The connection is not an input. An Agent observed working before its source
- * went stale is still working as far as anyone knows; the freshness lens
- * beside the name is what says how old that knowledge is.
- */
-function projectedWorkState(agent: ProjectedAgent): AgentStatus | null {
-  return agent.workState;
+function stillDeclared(agent: {
+  discoveryState: SourceAgentDiscoveryState;
+}): boolean {
+  return agent.discoveryState !== 'retired';
 }
 
 /**
@@ -2021,7 +1676,7 @@ export function toRemoteAgentView(
     source: { id: record.id, displayName: record.displayName },
     nativeAgentId: agent.nativeAgentId,
     primaryContextId: agent.primaryConversation?.nativeContextId ?? null,
-    workState: projectedWorkState(agent),
+    workState: agent.workState,
     contextCount: agent.contexts.length,
     observedAt: snapshot.observedAt,
     createdAt,

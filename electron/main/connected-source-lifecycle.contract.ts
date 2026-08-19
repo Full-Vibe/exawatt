@@ -3,8 +3,8 @@ import type {
   AgentSourceAdapterId,
   AgentSourceEvidenceBasis,
 } from '@exawatt/core';
+import type { ConnectedAgentMapping } from './connected-agent-projection-plan';
 import type {
-  ConnectedAgentMapping,
   ConnectedSourceRuntime,
   ConnectedSourceStatusView,
   RemoteAgentView,
@@ -576,6 +576,32 @@ export const CONNECTED_SOURCE_LIFECYCLE_CONTRACT: readonly LifecycleContractCase
           'Recovery reused the observation it had before the outage.'
         );
         assertContextsStaySubordinate(world, 'after recovering from an outage');
+      },
+    },
+    {
+      id: 'outage/recovery-bumps-the-snapshot-revision',
+      title:
+        'recovering from an outage bumps the snapshot revision, so a surface keyed on it reads what the reconnect brought in',
+      criterion:
+        'Reconnect always permits an authoritative resnapshot. The snapshot revision is bumped by an authoritative snapshot.',
+      requires: ['outage'],
+      async run(world) {
+        const before = requireStatus(world).snapshotRevision;
+
+        await world.loseConnection();
+
+        assert.equal(
+          requireStatus(world).snapshotRevision,
+          before,
+          'Losing a connection bumped the snapshot revision, so a surface re-reads a roster that nothing replaced.'
+        );
+
+        await world.restoreConnection();
+
+        assert.ok(
+          requireStatus(world).snapshotRevision > before,
+          'A reconnect resnapshotted authoritatively and left the revision where it was, so a surface keyed on it never learns what the reconnect brought in.'
+        );
       },
     },
     {

@@ -11,24 +11,47 @@ import {
   type OCClientConfig,
   type OCDeviceKeypair,
   type OCGatewayClient,
-  type OCGatewayOperatorScope,
   type OpenClawTopologyIssue,
   type SourceAuthority,
   type SourceFailureClass,
   type SourceTransport,
 } from '@exawatt/core';
+import { findPrimaryConversation } from './connected-conversation';
+import {
+  H1_READ_METHODS,
+  H2_WRITE_METHODS,
+  SCOPES_FOR_AUTHORITY,
+  authorityForGrantedScopes,
+  isH1ReadMethod,
+  isH2WriteMethod,
+  narrowerAuthority,
+  type AuthorityRequestResult,
+  type H1ReadMethod,
+  type H2WriteMethod,
+} from './connected-gateway-authority';
+import {
+  BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE,
+  TUNNEL_FAILURE_TO_SOURCE_FAILURE,
+  classifyAuthorityRefusal,
+  classifyHandshakeFailure,
+} from './connected-source-failure';
 import type { ConnectedSourceStore } from './connected-source-store';
-import type {
-  GatewayBootstrapFailure,
-  RemoteExec,
-  resolveGatewayCredential,
-} from './gateway-bootstrap';
-import type {
-  openSshTunnel,
-  SshTunnel,
-  SshTunnelFailureClass,
-  SshTunnelTarget,
-} from './ssh-tunnel';
+import type { RemoteExec, resolveGatewayCredential } from './gateway-bootstrap';
+import {
+  gatewayIdentityDrifted,
+  gatewayIdentityOf,
+  normalizeGatewayIdentity,
+  type GatewayIdentity,
+  type GatewayIdentityDrift,
+} from './gateway-identity';
+import type { openSshTunnel, SshTunnel, SshTunnelTarget } from './ssh-tunnel';
+import {
+  MAX_ID_LENGTH,
+  MAX_TEXT_LENGTH,
+  describeSourceError,
+  isRecord,
+  sourceSentence,
+} from './untrusted-input';
 
 /**
  * ENG-010 C1: one configured source's whole read-only lifecycle.
@@ -43,9 +66,10 @@ import type {
  * 1. **Read-only is the default, and the source enforces it.** The session
  *    requests exactly the scopes its granted authority earns, which for every
  *    new source is `operator.read`, so the Gateway itself refuses a write even
- *    if Exawatt asks for one. The local method allowlists below are the second
- *    lock, not the first: they stop a typo or a future edit from ever forming
- *    the request. See `H1_READ_METHODS` and `H2_WRITE_METHODS`.
+ *    if Exawatt asks for one. The local method allowlists are the second lock,
+ *    not the first: they stop a typo or a future edit from ever forming the
+ *    request. They live in `connected-gateway-authority`, which is the whole
+ *    security vocabulary on one screen with no session state near it.
  * 2. **Losing the connection is not evidence about the remote Agent.** A drop
  *    means Exawatt stopped observing. It never means work stopped, paused, or
  *    ended, so nothing here writes such a conclusion into state or copy.
@@ -70,97 +94,6 @@ import type {
  *    authority this whole custody model exists to avoid holding.
  */
 
-/**
- * Exactly the scopes H1 needs. This is the real read-only enforcement: the
- * Gateway stores the requested scopes on the device record, so a device paired
- * here cannot send, steer, abort, or mutate a schedule no matter what Exawatt
- * later asks.
- */
-export const H1_READ_SCOPES = ['operator.read'] as const;
-
-/** Every Gateway method H1 is allowed to call. */
-export const H1_READ_METHODS = [
-  'health',
-  'status',
-  'agents.list',
-  'sessions.list',
-  'chat.history',
-  'cron.list',
-  'cron.runs',
-  'tasks.list',
-  // Subscriptions are observation, not command: the Gateway classifies all
-  // four as `operator.read`, so following a conversation as it arrives needs
-  // no authority beyond what H1 already holds.
-  'sessions.subscribe',
-  'sessions.unsubscribe',
-  'sessions.messages.subscribe',
-  'sessions.messages.unsubscribe',
-] as const;
-
-export type H1ReadMethod = (typeof H1_READ_METHODS)[number];
-
-/**
- * Scopes a source granted write authority presents. Read travels with it
- * because a write-authorised session still observes; asking for write alone
- * would trade one authority for another rather than add one.
- */
-export const H2_WRITE_SCOPES = ['operator.read', 'operator.write'] as const;
-
-/**
- * Every Gateway method the write surface allows, and the complete set the
- * Gateway classifies as `operator.write`. Nothing here mutates a schedule,
- * changes configuration, or creates or deletes an Agent: those are
- * `operator.admin`, which Exawatt does not request, cannot represent as an
- * authority, and has no surface for.
- *
- * There is deliberately no Pause, Resume, or Stop. The project doc defers a
- * generic remote Pause until the source can name the halted scope and prove
- * resumable continuity, and a verb assembled out of these four methods would
- * be exactly the approximation it forbids.
- */
-export const H2_WRITE_METHODS = [
-  'chat.send',
-  'chat.abort',
-  'sessions.steer',
-  'tasks.cancel',
-] as const;
-
-export type H2WriteMethod = (typeof H2_WRITE_METHODS)[number];
-
-/*
- * Sets so each guard is a cheap lookup on an untrusted string, built from the
- * exported tuples so the runtime checks cannot drift from the unions.
- */
-const H1_READ_METHOD_SET: ReadonlySet<string> = new Set(H1_READ_METHODS);
-const H2_WRITE_METHOD_SET: ReadonlySet<string> = new Set(H2_WRITE_METHODS);
-
-/** The scopes each authority presents on the handshake. One table, both tiers. */
-export const SCOPES_FOR_AUTHORITY: Readonly<
-  Record<SourceAuthority, readonly OCGatewayOperatorScope[]>
-> = {
-  read: H1_READ_SCOPES,
-  write: H2_WRITE_SCOPES,
-};
-
-/**
- * The authority a set of granted scopes actually buys. Write requires the
- * write scope to be present; anything else, including an unrecognised scope
- * vocabulary from a future Gateway, is observation.
- */
-export function authorityForGrantedScopes(
-  scopes: readonly string[]
-): SourceAuthority {
-  return scopes.includes('operator.write') ? 'write' : 'read';
-}
-
-/** The narrower of two authorities. Used to intersect asked with granted. */
-function narrowerAuthority(
-  left: SourceAuthority,
-  right: SourceAuthority
-): SourceAuthority {
-  return left === 'write' && right === 'write' ? 'write' : 'read';
-}
-
 export type ConnectedGatewayPhase =
   | 'idle'
   | 'opening-tunnel'
@@ -172,29 +105,16 @@ export type ConnectedGatewayPhase =
   | 'failed';
 
 /**
- * Gateway identity, as observed. Only the source's own version string and its
- * configured native Agent ids: display names are never part of identity,
- * because renaming a coworker on the source must not read as a different
- * installation, and two installations may legitimately use the same names.
- */
-export interface GatewayIdentity {
-  /** The source's reported version, or '' when it declared none. */
-  version: string;
-  /** Sorted configured native Agent ids. */
-  nativeAgentIds: readonly string[];
-}
-
-export interface GatewayIdentityDrift {
-  previous: GatewayIdentity;
-  observed: GatewayIdentity;
-}
-
-/**
  * Bounded facts observed alongside the snapshot. Deliberately counts and one
  * version string rather than retained `cron.list`/`status` payloads: those
  * carry workspace paths and schedules that belong to a later projection step,
  * and holding them here would put remote data in a transport object with no
  * contract for it.
+ *
+ * Observed on every discovery and not yet rendered anywhere: this is what a
+ * source-detail surface needs and C2 has not built. It is kept rather than
+ * dropped because the reads that produce it happen regardless, and because
+ * `version` is already half of the identity a drift check compares.
  */
 export interface ObservedGatewayFacts {
   version: string;
@@ -232,120 +152,10 @@ export type SnapshotResult =
  */
 export type ConnectResult = SnapshotResult;
 
-/**
- * What became of an operator's request to change this source's authority.
- *
- * `approval-required` is a first-class answer, not an error. Verified against a
- * live Gateway 2026-08-18: a device already approved at `operator.read` that
- * reconnects asking for `operator.write` is refused whether it presents its own
- * device token (`device token scope mismatch`) or the admin-capable shared
- * secret (`pairing required: device is asking for more scopes than currently
- * approved`), and the device record keeps its narrower scopes either way.
- * Raising an approved device's scope is a decision taken on the source, by the
- * person who owns it, with the source's own device tooling. Exawatt asks; it
- * cannot grant.
- *
- * `refused` is every other no. `unchanged` means Exawatt already holds the
- * authority asked for and put no question to the Gateway.
- */
-export const AUTHORITY_REQUEST_OUTCOMES = [
-  'granted',
-  'approval-required',
-  'refused',
-  'unchanged',
-] as const;
-export type AuthorityRequestOutcome =
-  (typeof AUTHORITY_REQUEST_OUTCOMES)[number];
-
-export interface AuthorityRequestResult {
-  outcome: AuthorityRequestOutcome;
-  /**
-   * The authority Exawatt holds now that the attempt is over. It is the
-   * granted truth in every branch, so a caller that reads nothing else still
-   * cannot act on authority the source did not give.
-   */
-  authority: SourceAuthority;
-  /** One operator-facing sentence: what happened, and what to do about it. */
-  message: string;
-}
-
-/**
- * Signals that a no meant "a human must approve this on the source" rather
- * than "this failed".
- *
- * Matching a remote string is weak evidence, so it is used in exactly one
- * direction: it can make a refusal more informative, never more permissive. No
- * branch reachable from here grants authority, so a Gateway that phrases a
- * refusal differently costs the operator a clearer sentence and nothing else.
- */
-const APPROVAL_REQUIRED_SIGNALS = [
-  'not_paired',
-  'pairing required',
-  'pairing_required',
-  'scope mismatch',
-  'scope upgrade',
-  'approval',
-] as const;
-
-export function classifyAuthorityRefusal(
-  message: string
-): 'approval-required' | 'refused' {
-  const text = message.toLowerCase();
-  return APPROVAL_REQUIRED_SIGNALS.some(signal => text.includes(signal))
-    ? 'approval-required'
-    : 'refused';
-}
-
-/**
- * Words a Gateway uses when it is refusing a credential rather than failing
- * to serve one.
- *
- * Confirmed against a live Gateway: a device token presented by a device the
- * Gateway did not issue it to comes back as "unauthorized: device token
- * mismatch (rotate/reissue device token)", and a mis-encoded public key as
- * "device identity mismatch". Both were being reported to the operator as
- * `gateway-down`, which is a sentence about a healthy server and a next step
- * that leads nowhere.
- */
-const CREDENTIAL_REFUSAL_SIGNALS = [
-  'device token',
-  'device identity',
-  'unauthorized',
-  'not_paired',
-  'not paired',
-  'pairing required',
-  'pairing_required',
-  'forbidden',
-  'invalid token',
-  'token mismatch',
-  'credential',
-  'scope mismatch',
-] as const;
-
-/**
- * What a refused handshake actually was.
- *
- * `auth-rejected` only when the source said something about the credential.
- * Everything else stays `gateway-down`, including a refusal with no sentence
- * at all: guessing "credential" over an unexplained refusal would send the
- * operator to re-pair a device that was never the problem, and would make
- * Exawatt discard a credential that still works.
- */
-export function classifyHandshakeFailure(
-  sentence: string | null
-): SourceFailureClass {
-  if (sentence === null) return 'gateway-down';
-  const text = sentence.toLowerCase();
-  return CREDENTIAL_REFUSAL_SIGNALS.some(signal => text.includes(signal))
-    ? 'auth-rejected'
-    : 'gateway-down';
-}
-
 /** The protocol client this session drives. */
 export type ConnectedGatewayClient = OCGatewayClient & {
   connect(): Promise<void>;
   disconnect(): void;
-  getStatus(): string;
   /**
    * The device token in play. Set before `connect()` to present a persisted
    * one; read after `connect()` to pick up a freshly issued one.
@@ -398,47 +208,6 @@ export interface ConnectedGatewaySessionDeps {
    */
   knownIdentity?: GatewayIdentity | null;
 }
-
-/**
- * Transport failures classified by the tunnel owner, translated into the
- * product's own failure vocabulary. Exported so the mapping is one table a test
- * can read rather than a switch buried in a private method.
- *
- * `invalid-target` becomes `unknown` on purpose: it is a configuration fault on
- * this machine, not an observation about the server, and calling it
- * `host-unreachable` would send the operator to check a network that is fine.
- */
-export const TUNNEL_FAILURE_TO_SOURCE_FAILURE: Readonly<
-  Record<SshTunnelFailureClass, SourceFailureClass>
-> = {
-  'invalid-target': 'unknown',
-  'host-unreachable': 'host-unreachable',
-  'auth-rejected': 'auth-rejected',
-  'gateway-down': 'gateway-down',
-  unknown: 'unknown',
-};
-
-/**
- * Bootstrap failures translated the same way.
- *
- * `openclaw-missing` is `gateway-down`: the login worked and nothing is serving
- * a Gateway there. `token-unavailable` is `auth-rejected`: the source declares
- * no shared secret, so Exawatt has no credential to present, and the operator
- * resolves it the same way as any other credential problem (the documented
- * paste-a-token fallback). `unreadable-config` stays `unknown` rather than
- * guessing which of several causes applied.
- */
-export const BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE: Readonly<
-  Record<GatewayBootstrapFailure, SourceFailureClass>
-> = {
-  'invalid-target': 'unknown',
-  unreachable: 'host-unreachable',
-  'auth-rejected': 'auth-rejected',
-  'openclaw-missing': 'gateway-down',
-  'token-unavailable': 'auth-rejected',
-  'unreadable-config': 'unknown',
-  unknown: 'unknown',
-};
 
 /**
  * The persisted transport, as the tunnel owner's target.
@@ -508,14 +277,6 @@ export function describeExawattClient(
  * operator trusts: it may be compromised, downgraded, or simply buggy.
  */
 const MAX_DISCOVERY_AGENTS = 500;
-const MAX_ID_LENGTH = 4_096;
-const MAX_LABEL_LENGTH = 512;
-/** One quoted refusal, long enough to be useful and short enough to read. */
-const MAX_SOURCE_SENTENCE_LENGTH = 240;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Native Agent ids for the per-Agent `sessions.list` fan-out. Deliberately
@@ -543,7 +304,7 @@ function readGatewayVersion(payload: unknown): string {
   for (const key of ['version', 'gatewayVersion']) {
     const value: unknown = payload[key];
     if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim().slice(0, MAX_LABEL_LENGTH);
+      return value.trim().slice(0, MAX_TEXT_LENGTH);
     }
   }
   return '';
@@ -572,85 +333,6 @@ export function evidenceBasisForAdapter(
   adapterId: AgentSourceAdapterId
 ): AgentSourceEvidenceBasis {
   return adapterId === 'demo' ? 'simulated' : 'observed';
-}
-
-/**
- * A previously observed identity, made safe to compare against.
- *
- * It arrives from whatever persisted it, so it is read like any other
- * untrusted input: non-strings, blanks, over-long ids, and duplicates are
- * dropped, and the roster is sorted the way an observed one is, so a store
- * that wrote the ids in another order cannot read as a different
- * installation. Nothing usable collapses to null, which is the same as never
- * having seen this source: no drift rather than a false one.
- */
-function normalizeIdentity(
-  identity: GatewayIdentity | null | undefined
-): GatewayIdentity | null {
-  if (identity === null || identity === undefined) return null;
-  const version =
-    typeof identity.version === 'string'
-      ? identity.version.trim().slice(0, MAX_LABEL_LENGTH)
-      : '';
-  const candidates = Array.isArray(identity.nativeAgentIds)
-    ? identity.nativeAgentIds
-    : [];
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  for (const candidate of candidates.slice(0, MAX_DISCOVERY_AGENTS)) {
-    if (typeof candidate !== 'string') continue;
-    if (candidate.trim().length === 0 || candidate.length > MAX_ID_LENGTH) {
-      continue;
-    }
-    if (seen.has(candidate)) continue;
-    seen.add(candidate);
-    ids.push(candidate);
-  }
-  if (ids.length === 0 && version.length === 0) return null;
-  return { version, nativeAgentIds: ids.sort() };
-}
-
-function identityOf(
-  snapshot: AgentSourceTopologySnapshot,
-  version: string
-): GatewayIdentity {
-  return {
-    version,
-    nativeAgentIds: snapshot.agents
-      .filter(agent => agent.discoveryState === 'configured')
-      .map(agent => agent.nativeAgentId)
-      .sort(),
-  };
-}
-
-/**
- * Is the Gateway behind this source a different installation than the one the
- * projection was bound to?
- *
- * The brief leaves the threshold to the implementation, and the two candidate
- * signals mean different things:
- *
- * - A changed **version** is an ordinary upgrade. Treating it as drift would
- *   ask the operator to remap every time they update OpenClaw, which trains
- *   them to dismiss the one prompt that matters. It is carried in the reported
- *   identity so the operator sees it, but it never decides on its own.
- * - A changed **roster** is ordinary source-side work: Agents get added and
- *   retired, and the authoritative resnapshot already replaces the old tree.
- *
- * What no ordinary change explains is a roster with *nothing* in common with
- * the one Exawatt was observing. That is a different installation wearing the
- * same alias, and rebinding to it would silently move the operator's coworkers
- * onto a machine they never connected. So drift is disjointness, and the
- * session only reports it: remap or detach is the operator's decision.
- */
-function isIdentityDrift(
-  previous: GatewayIdentity,
-  observed: GatewayIdentity
-): boolean {
-  if (previous.nativeAgentIds.length === 0) return false;
-  if (observed.nativeAgentIds.length === 0) return true;
-  const known = new Set(previous.nativeAgentIds);
-  return !observed.nativeAgentIds.some(id => known.has(id));
 }
 
 /** One carried event subscription: what to listen for, and who to tell. */
@@ -739,7 +421,7 @@ export class ConnectedGatewaySession {
      * is that history: without it the first snapshot has nothing to be drift
      * against and a swapped installation is accepted in silence.
      */
-    this.lastIdentity = normalizeIdentity(deps.knownIdentity);
+    this.lastIdentity = normalizeGatewayIdentity(deps.knownIdentity);
     const configured =
       deps.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.maxReconnectAttempts = Math.max(
@@ -893,11 +575,7 @@ export class ConnectedGatewaySession {
     if (!snapshot) return;
     for (const agent of snapshot.agents) {
       if (agent.discoveryState !== 'configured') continue;
-      const primary = snapshot.contexts.find(
-        context =>
-          context.nativeAgentId === agent.nativeAgentId &&
-          context.roles.includes('primary-conversation')
-      );
+      const primary = findPrimaryConversation(snapshot, agent.nativeAgentId);
       if (!primary) continue;
       try {
         await this.read('sessions.messages.subscribe', {
@@ -1611,7 +1289,10 @@ export class ConnectedGatewaySession {
         ok: false,
         outcome: 'failed',
         failure: 'gateway-down',
-        message: messageOf(error, 'The Gateway stopped answering reads.'),
+        message: describeSourceError(
+          error,
+          'The Gateway stopped answering reads.'
+        ),
       };
     }
 
@@ -1654,11 +1335,11 @@ export class ConnectedGatewaySession {
     }
 
     const version = readGatewayVersion(statusPayload);
-    const observedIdentity = identityOf(adapted.snapshot, version);
+    const observedIdentity = gatewayIdentityOf(adapted.snapshot, version);
 
     if (
       this.lastIdentity !== null &&
-      isIdentityDrift(this.lastIdentity, observedIdentity)
+      gatewayIdentityDrifted(this.lastIdentity, observedIdentity)
     ) {
       /*
        * Report, do not resolve. The last-known snapshot and identity are kept
@@ -1707,7 +1388,7 @@ export class ConnectedGatewaySession {
    * request in the first place.
    */
   private async callGateway<R>(method: string, params?: unknown): Promise<R> {
-    if (!H1_READ_METHOD_SET.has(method)) {
+    if (!isH1ReadMethod(method)) {
       throw new Error(
         `Refusing "${method}": ENG-010 H1 is read-only and allows only ${H1_READ_METHODS.join(', ')}.`
       );
@@ -1727,7 +1408,7 @@ export class ConnectedGatewaySession {
     method: string,
     params?: unknown
   ): Promise<R> {
-    if (!H2_WRITE_METHOD_SET.has(method)) {
+    if (!isH2WriteMethod(method)) {
       throw new Error(
         `Refusing "${method}": the write surface allows only ${H2_WRITE_METHODS.join(', ')}.`
       );
@@ -1740,8 +1421,17 @@ export class ConnectedGatewaySession {
     return this.dispatch<R>(method, params);
   }
 
-  /** The one place a method name reaches the client, whichever tier sent it. */
-  private async dispatch<R>(method: string, params?: unknown): Promise<R> {
+  /**
+   * The one place a method name reaches the client, whichever tier sent it.
+   *
+   * The parameter is the allowlist union rather than `string`, so the compiler
+   * is what proves no caller reached the client around a guard. Widening it
+   * back to `string` is the edit that would silently undo both allowlists.
+   */
+  private async dispatch<R>(
+    method: H1ReadMethod | H2WriteMethod,
+    params?: unknown
+  ): Promise<R> {
     const client = this.client;
     if (!client) {
       throw new Error('No Gateway connection is open for this source.');
@@ -1960,30 +1650,4 @@ export class ConnectedGatewaySession {
       }
     }
   }
-}
-
-function messageOf(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message.slice(0, MAX_LABEL_LENGTH);
-  }
-  return fallback;
-}
-
-/**
- * A source's own words, made safe to put in front of an operator.
- *
- * The Gateway is untrusted input even when the operator trusts the server, so
- * what comes back is collapsed to one line, stripped of control characters,
- * and bounded before it can be quoted into product copy. Null when the
- * failure carried nothing worth quoting, which is what keeps the caller from
- * printing an empty pair of quotes.
- */
-function sourceSentence(error: unknown): string | null {
-  if (!(error instanceof Error)) return null;
-  const collapsed = error.message
-    .replace(/[\u0000-\u001f\u007f]+/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
-  if (collapsed.length === 0) return null;
-  return collapsed.slice(0, MAX_SOURCE_SENTENCE_LENGTH);
 }

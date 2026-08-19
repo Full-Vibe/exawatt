@@ -43,6 +43,14 @@ const MANUAL_DESTINATION: SshDestination = {
   identityFile: FAKE_KEY_PATH,
 };
 
+/**
+ * The key file in these fixtures does not exist, and must not: a unit test that
+ * needed a real private key on disk would be a test that only passes on one
+ * machine. The readability check is injected wherever a manual destination is
+ * supposed to get past it, and exercised on purpose where it is not.
+ */
+const READABLE_KEY = () => true;
+
 const VERSION_PRINT = 'OpenClaw 2026.7.1-2 (abc1234)\n';
 
 const PLAIN_CONFIG = JSON.stringify({
@@ -123,6 +131,10 @@ describe('buildRemoteExecArgs', () => {
       'ConnectTimeout=10',
       '-o',
       'StrictHostKeyChecking=accept-new',
+      '-o',
+      'ControlMaster=no',
+      '-o',
+      'ControlPath=none',
       '--',
       ALIAS,
       'openclaw',
@@ -1019,7 +1031,10 @@ describe('resolveGatewayCredential', () => {
       remotePort: 4242,
     };
 
-    const result = await resolveGatewayCredential(transport, { exec });
+    const result = await resolveGatewayCredential(transport, {
+      exec,
+      canReadIdentityFile: READABLE_KEY,
+    });
 
     expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
     expect(calls).toHaveLength(3);
@@ -1070,6 +1085,10 @@ describe('buildRemoteExecArgs for a manually entered server', () => {
       'ConnectTimeout=10',
       '-o',
       'StrictHostKeyChecking=accept-new',
+      '-o',
+      'ControlMaster=no',
+      '-o',
+      'ControlPath=none',
       '-p',
       String(FAKE_SSH_PORT),
       '-o',
@@ -1102,6 +1121,145 @@ describe('buildRemoteExecArgs for a manually entered server', () => {
     );
     expect(result.ok === false && result.failure).toBe('invalid-target');
     expect(calls).toHaveLength(0);
+  });
+
+  /**
+   * Proved against a real server, not reasoned about.
+   *
+   * The operator's own SSH configuration had `ControlMaster auto` for every
+   * host. Without these two options the bootstrap rode the control socket an
+   * earlier connection had opened, and a manual destination naming a key file
+   * that DID NOT EXIST read the Gateway credential successfully. Exawatt would
+   * have told the operator their details worked and saved a source that breaks
+   * as soon as their own session expires.
+   */
+  it('refuses connection multiplexing so the read tests the credentials it was given', () => {
+    for (const destination of [ALIAS_DESTINATION, MANUAL_DESTINATION]) {
+      const args = buildRemoteExecArgs(destination, ['openclaw', '--version']);
+      expect(args).toContain('ControlMaster=no');
+      expect(args).toContain('ControlPath=none');
+      // Options, so they belong ahead of the end-of-options marker.
+      expect(args.indexOf('ControlMaster=no')).toBeLessThan(args.indexOf('--'));
+    }
+  });
+
+  it('names the key file, and runs nothing, when it cannot be read', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+    const result = await bootstrapGatewayCredentialOverSsh(
+      MANUAL_DESTINATION,
+      exec,
+      () => false
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.failure).toBe('invalid-target');
+    expect(result.ok === false && result.message.toLowerCase()).toContain(
+      'key file'
+    );
+    // Nothing was attempted, so the server never sees a login for a key this
+    // machine already knows it cannot offer.
+    expect(calls).toHaveLength(0);
+  });
+
+  it('leaves an alias alone: it has no key file to check', async () => {
+    const { exec, calls } = fakeExec(healthyResponder());
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec,
+      () => false
+    );
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(3);
+  });
+});
+
+/**
+ * Which FIELD the operator got wrong, not just which kind of failure it was.
+ *
+ * The manual transport is four fields somebody typed. Every stderr below was
+ * captured from a real OpenSSH client answering a real server, so the ordering
+ * these assert is the ordering reality produces rather than the one that reads
+ * well in a table.
+ */
+describe('bootstrapGatewayCredentialOverSsh actionable sentences', () => {
+  async function messageFor(stderr: string, code = 255): Promise<string> {
+    const { exec } = fakeExec(
+      healthyResponder(argv =>
+        argv.includes('--version') ? { code, stderr } : undefined
+      )
+    );
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
+    expect(result.ok).toBe(false);
+    return result.ok === false ? result.message.toLowerCase() : '';
+  }
+
+  it('names the address when the name does not resolve', async () => {
+    expect(
+      await messageFor(
+        `ssh: Could not resolve hostname ${FAKE_HOST}: nodename nor servname provided, or not known`
+      )
+    ).toContain('address');
+  });
+
+  it('names the SSH port when nothing answers on it', async () => {
+    expect(
+      await messageFor(
+        `ssh: connect to host ${FAKE_HOST} port 22: Operation timed out`
+      )
+    ).toContain('port');
+  });
+
+  /**
+   * The ordering case. A missing `-i` never arrives alone: ssh warns, offers
+   * nothing, and the SERVER answers `Permission denied (publickey).` With the
+   * generic refusal matched first, the operator who mistyped a path was told
+   * to check authorization for a key the client never sent.
+   */
+  it('names the key file even though the server also refused the login', async () => {
+    const message = await messageFor(
+      [
+        `Warning: Identity file ${FAKE_KEY_PATH} not accessible: No such file or directory.`,
+        `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`,
+      ].join('\n')
+    );
+    expect(message).toContain('key file');
+  });
+
+  it('names the key file when its permissions are too open', async () => {
+    const message = await messageFor(
+      [
+        `Permissions 0644 for '${FAKE_KEY_PATH}' are too open.`,
+        `Load key "${FAKE_KEY_PATH}": bad permissions`,
+        `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`,
+      ].join('\n')
+    );
+    expect(message).toContain('key file');
+  });
+
+  it('names the login when the server simply refuses it', async () => {
+    const message = await messageFor(
+      `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`
+    );
+    expect(message).toContain('login');
+    expect(message).not.toContain('key file');
+  });
+
+  it('says the host key changed rather than blaming the operator key', async () => {
+    const message = await messageFor(
+      'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\nHost key verification failed.'
+    );
+    expect(message).toContain('host key');
+  });
+
+  it('never names an alias, because half the sources do not have one', async () => {
+    for (const stderr of [
+      `${FAKE_USER}@${FAKE_HOST}: Permission denied (publickey).`,
+      `ssh: connect to host ${FAKE_HOST} port 22: Connection refused`,
+    ]) {
+      expect(await messageFor(stderr)).not.toContain('alias');
+    }
   });
 });
 

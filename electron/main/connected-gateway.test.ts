@@ -9,24 +9,25 @@ import {
   type SourceFailureClass,
 } from '@exawatt/core';
 import {
-  BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE,
-  ConnectedGatewaySession,
-  classifyHandshakeFailure,
   H1_READ_METHODS,
   H1_READ_SCOPES,
   H2_WRITE_METHODS,
   H2_WRITE_SCOPES,
-  RECONNECT_BASE_DELAY_MS,
   SCOPES_FOR_AUTHORITY,
+} from './connected-gateway-authority';
+import {
+  BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE,
   TUNNEL_FAILURE_TO_SOURCE_FAILURE,
-  authorityForGrantedScopes,
-  classifyAuthorityRefusal,
+} from './connected-source-failure';
+import {
+  ConnectedGatewaySession,
+  RECONNECT_BASE_DELAY_MS,
   evidenceBasisForAdapter,
   type ConnectedGatewayClient,
   type ConnectedGatewayPhase,
   type ConnectedGatewaySessionDeps,
-  type GatewayIdentity,
 } from './connected-gateway';
+import type { GatewayIdentity } from './gateway-identity';
 import type {
   GatewayBootstrapFailure,
   resolveGatewayCredential,
@@ -1122,29 +1123,6 @@ describe('ConnectedGatewaySession — a credential the source refuses', () => {
     expect(harness.store.clearDeviceToken).not.toHaveBeenCalled();
     expect(harness.store.tokens.get(SOURCE_ID)).toBe(DEVICE_TOKEN);
   });
-
-  it('classifies what the source said, and guesses nothing when it said nothing', () => {
-    for (const sentence of [
-      'unauthorized: device token mismatch (rotate/reissue device token)',
-      'device identity mismatch',
-      'NOT_PAIRED: pairing required',
-      'FORBIDDEN: operator.write scope required',
-      'invalid token',
-    ]) {
-      expect(classifyHandshakeFailure(sentence)).toBe('auth-rejected');
-    }
-
-    for (const sentence of [
-      'INTERNAL: the Gateway is restarting',
-      'connection closed',
-      null,
-    ]) {
-      // An unexplained refusal is not evidence about the credential. Guessing
-      // one would discard a working device and send the operator to re-pair
-      // something that was never the problem.
-      expect(classifyHandshakeFailure(sentence)).toBe('gateway-down');
-    }
-  });
 });
 
 describe('ConnectedGatewaySession — read-only enforcement', () => {
@@ -1797,6 +1775,90 @@ describe('ConnectedGatewaySession — following the conversation', () => {
   });
 });
 
+describe("ConnectedGatewaySession — the operator's own machine", () => {
+  /**
+   * `local-loopback` is meant to be one more configured source rather than a
+   * special case, and until now only its first connect was exercised. What
+   * follows is the rest of the lifecycle over a transport that has no tunnel:
+   * an outage, the ladder, a credential refusal, and a detach. Any divergence
+   * from the remote path shows up here rather than on the operator's own
+   * machine.
+   */
+  it('recovers from a dropped socket with no tunnel anywhere in the ladder', async () => {
+    const harness = createHarness({
+      record: loopbackRecord(),
+      storedTokens: { 'src-this-machine-01': DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+    expect(harness.session.phase).toBe('connected');
+
+    // A local Gateway restarting is a socket drop and nothing else: there is
+    // no tunnel to notice it, so the client watch is the only witness.
+    harness.clients[0]!.emitStatus('disconnected');
+    expect(harness.session.phase).toBe('reconnecting');
+    harness.timers.fireNext();
+
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    expect(harness.openTunnel).not.toHaveBeenCalled();
+    expect(harness.clients).toHaveLength(2);
+    expect(harness.clients[1]!.config.url).toBe(
+      `ws://127.0.0.1:${LOOPBACK_PORT}`
+    );
+    expect(agentIdsOf(harness.session)).toEqual([AGENT_LUMEN, AGENT_QUILL]);
+  });
+
+  it('is the same device, at the same scopes, as a source across a network', async () => {
+    const harness = createHarness({ record: loopbackRecord() });
+
+    await harness.session.connect();
+
+    // Nothing about being on this machine relaxes the custody model: the
+    // Gateway pairs a device, issues a scoped token for it, and the shared
+    // secret is gone from the config the client keeps.
+    const client = harness.clients[0]!;
+    expect(client.config.scopes).toEqual([...H1_READ_SCOPES]);
+    expect(client.config.deviceKeypair).toBeDefined();
+    expect(client.config.token).toBeUndefined();
+    expect(harness.store.tokens.get('src-this-machine-01')).toBe(DEVICE_TOKEN);
+    expect(harness.store.keypairs.get('src-this-machine-01')).toEqual(
+      client.deviceKeypair
+    );
+  });
+
+  it("discards a credential this machine's own Gateway refuses", async () => {
+    const harness = createHarness({
+      record: loopbackRecord(),
+      storedTokens: { 'src-this-machine-01': DEVICE_TOKEN },
+    });
+    harness.gateway.failHandshakes(
+      'unauthorized: device token mismatch (rotate/reissue device token)'
+    );
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.outcome !== 'failed') return;
+    expect(result.failure).toBe('auth-rejected');
+    expect(harness.store.tokens.has('src-this-machine-01')).toBe(false);
+  });
+
+  it('detaches by closing a socket, with no tunnel to close', async () => {
+    const harness = createHarness({ record: loopbackRecord() });
+    await harness.session.connect();
+
+    await harness.session.disconnect();
+
+    expect(harness.session.phase).toBe('idle');
+    expect(harness.clients[0]!.disconnectCount).toBe(1);
+    expect(harness.tunnels).toHaveLength(0);
+    // Detach is not destruction, on this machine as anywhere else: everything
+    // this source was ever asked for is on the read allowlist.
+    for (const call of harness.clients[0]!.calls) {
+      expect(H1_READ_METHODS).toContain(call.method);
+    }
+  });
+});
+
 describe('ConnectedGatewaySession — detaching', () => {
   it('is safe twice and closes the tunnel exactly once', async () => {
     const harness = createHarness();
@@ -1840,25 +1902,6 @@ describe('ConnectedGatewaySession — detaching', () => {
     expect(result.ok).toBe(true);
     expect(harness.session.phase).toBe('connected');
     expect(harness.openTunnel).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('ConnectedGatewaySession — failure vocabularies', () => {
-  it('classifies every tunnel and bootstrap failure it can receive', () => {
-    const sourceClasses: SourceFailureClass[] = [
-      'host-unreachable',
-      'gateway-down',
-      'auth-rejected',
-      'approval-required',
-      'incompatible',
-      'unknown',
-    ];
-    for (const mapped of Object.values(TUNNEL_FAILURE_TO_SOURCE_FAILURE)) {
-      expect(sourceClasses).toContain(mapped);
-    }
-    for (const mapped of Object.values(BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE)) {
-      expect(sourceClasses).toContain(mapped);
-    }
   });
 });
 
@@ -2275,68 +2318,5 @@ describe('ConnectedGatewaySession — the write surface', () => {
     await expect(harness.session.write('chat.send')).rejects.toThrow(
       /no gateway connection/iu
     );
-  });
-});
-
-describe('ConnectedGatewaySession — authority vocabularies', () => {
-  it('allows exactly the Gateway operator.write methods and no pause verb', () => {
-    expect([...H2_WRITE_METHODS]).toEqual([
-      'chat.send',
-      'chat.abort',
-      'sessions.steer',
-      'tasks.cancel',
-    ]);
-    expect(H2_WRITE_METHODS.join(' ')).not.toMatch(/pause|resume|stop/iu);
-    expect([...H2_WRITE_SCOPES]).toEqual(['operator.read', 'operator.write']);
-  });
-
-  it('never puts an admin method on either surface', () => {
-    const admin = [
-      'cron.add',
-      'cron.remove',
-      'cron.update',
-      'config.set',
-      'config.get',
-      'agents.create',
-      'agents.delete',
-    ];
-    for (const method of admin) {
-      expect(H1_READ_METHODS).not.toContain(method);
-      expect(H2_WRITE_METHODS).not.toContain(method);
-    }
-    expect(JSON.stringify(SCOPES_FOR_AUTHORITY)).not.toContain(
-      'operator.admin'
-    );
-  });
-
-  it('maps each authority to the scopes it presents', () => {
-    expect(SCOPES_FOR_AUTHORITY.read).toEqual([...H1_READ_SCOPES]);
-    expect(SCOPES_FOR_AUTHORITY.write).toEqual([...H2_WRITE_SCOPES]);
-  });
-
-  it('reads write out of granted scopes only when the write scope is there', () => {
-    expect(authorityForGrantedScopes(['operator.read'])).toBe('read');
-    expect(authorityForGrantedScopes(['operator.read', 'operator.write'])).toBe(
-      'write'
-    );
-    expect(authorityForGrantedScopes([])).toBe('read');
-    expect(authorityForGrantedScopes(['operator.admin'])).toBe('read');
-    expect(authorityForGrantedScopes(['operator.writer'])).toBe('read');
-  });
-
-  it('tells an approval apart from an outage in the Gateway own words', () => {
-    for (const message of [
-      'INVALID_REQUEST: unauthorized: device token scope mismatch (re-pair or approve scope upgrade)',
-      'NOT_PAIRED: pairing required: device is asking for more scopes than currently approved',
-    ]) {
-      expect(classifyAuthorityRefusal(message)).toBe('approval-required');
-    }
-    for (const message of [
-      'INTERNAL: the Gateway is restarting',
-      'connection timeout after 10000ms',
-      '',
-    ]) {
-      expect(classifyAuthorityRefusal(message)).toBe('refused');
-    }
   });
 });

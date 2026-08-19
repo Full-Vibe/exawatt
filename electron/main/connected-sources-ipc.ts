@@ -11,12 +11,14 @@ import {
   type AddConnectedSourceInput,
 } from './connected-source-store';
 import { ConnectedGatewaySession } from './connected-gateway';
+import { FileConnectedAgentProjectionPlanStore } from './connected-agent-projection-plan';
+import {
+  MAX_MESSAGE_CHARACTERS,
+  type ConversationRequest,
+} from './connected-conversation';
 import {
   ConnectedSourceRuntime,
-  FileConnectedAgentProjectionPlanStore,
-  MAX_MESSAGE_CHARACTERS,
   type AgentMappingInput,
-  type ConversationRequest,
   type SendToAgentOptions,
 } from './connected-source-runtime';
 import {

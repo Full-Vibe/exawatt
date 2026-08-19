@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { spawn as nodeSpawn } from 'node:child_process';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createConnection } from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -31,7 +33,12 @@ import {
   type DiscoveredSourceAgent,
   type RemoteAgentView,
 } from './connected-source-runtime';
-import { openSshTunnel, type SshTunnel } from './ssh-tunnel';
+import {
+  buildSshArgs,
+  openSshTunnel,
+  type SshDestination,
+  type SshTunnel,
+} from './ssh-tunnel';
 
 vi.mock('electron', () => ({}));
 
@@ -82,28 +89,63 @@ async function connectReadOnly(localPort: number, token: string) {
   return client;
 }
 
-/** Device ids the source currently has paired. */
-async function pairedDeviceIds(alias: string): Promise<Set<string>> {
-  const exec = createSshRemoteExec();
-  const listed = await exec(sshTarget(alias), [
+/**
+ * The device listing, as the source itself reports it.
+ *
+ * Every cleanup and custody assertion below reads this one listing, and it is
+ * addressed by DESTINATION rather than by alias so the manual transport can
+ * verify and clean up after itself with the same code the alias path uses. A
+ * second copy of the cleanup for the second transport would be a second chance
+ * to leave a dead device on someone's server.
+ */
+async function deviceListing(
+  destination: SshDestination
+): Promise<{
+  pending: unknown[];
+  paired: { deviceId?: string; scopes?: string[] }[];
+}> {
+  const listed = await createSshRemoteExec()(destination, [
     'openclaw',
     'devices',
     'list',
     '--json',
   ]);
-  const ids = new Set<string>();
-  if (listed.code !== 0) return ids;
+  if (listed.code !== 0) return { pending: [], paired: [] };
   try {
-    const paired =
-      (JSON.parse(listed.stdout) as { paired?: { deviceId?: unknown }[] })
-        .paired ?? [];
-    for (const device of paired) {
-      if (typeof device.deviceId === 'string') ids.add(device.deviceId);
-    }
+    const parsed = JSON.parse(listed.stdout) as {
+      pending?: unknown[];
+      paired?: { deviceId?: string; scopes?: string[] }[];
+    };
+    return { pending: parsed.pending ?? [], paired: parsed.paired ?? [] };
   } catch {
     // An unreadable listing means no cleanup target, never a guess.
+    return { pending: [], paired: [] };
+  }
+}
+
+/** Device ids the source currently has paired, addressed by destination. */
+async function pairedDeviceIdsOn(
+  destination: SshDestination
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const device of (await deviceListing(destination)).paired) {
+    if (typeof device.deviceId === 'string') ids.add(device.deviceId);
   }
   return ids;
+}
+
+/** Device ids the source currently has paired. */
+async function pairedDeviceIds(alias: string): Promise<Set<string>> {
+  return await pairedDeviceIdsOn(sshTarget(alias));
+}
+
+/** The scopes the source recorded for one device, addressed by destination. */
+async function pairedDeviceScopesOn(
+  destination: SshDestination,
+  deviceId: string
+): Promise<string[] | null> {
+  const paired = (await deviceListing(destination)).paired;
+  return paired.find(device => device.deviceId === deviceId)?.scopes ?? null;
 }
 
 /** The scopes the source recorded for one device. */
@@ -111,24 +153,7 @@ async function pairedDeviceScopes(
   alias: string,
   deviceId: string
 ): Promise<string[] | null> {
-  const listed = await createSshRemoteExec()(sshTarget(alias), [
-    'openclaw',
-    'devices',
-    'list',
-    '--json',
-  ]);
-  if (listed.code !== 0) return null;
-  try {
-    const paired =
-      (
-        JSON.parse(listed.stdout) as {
-          paired?: { deviceId?: string; scopes?: string[] }[];
-        }
-      ).paired ?? [];
-    return paired.find(device => device.deviceId === deviceId)?.scopes ?? null;
-  } catch {
-    return null;
-  }
+  return await pairedDeviceScopesOn(sshTarget(alias), deviceId);
 }
 
 /**
@@ -141,15 +166,22 @@ async function pairedDeviceScopes(
  * operator can never be caught by it: matching on client id or scopes would
  * eventually delete the very device production is supposed to keep.
  */
+async function removeDevicesCreatedOn(
+  destination: SshDestination,
+  before: Set<string>
+): Promise<void> {
+  const exec = createSshRemoteExec();
+  for (const id of await pairedDeviceIdsOn(destination)) {
+    if (before.has(id)) continue;
+    await exec(destination, ['openclaw', 'devices', 'remove', id]);
+  }
+}
+
 async function removeDevicesCreatedDuringRun(
   alias: string,
   before: Set<string>
 ): Promise<void> {
-  const exec = createSshRemoteExec();
-  for (const id of await pairedDeviceIds(alias)) {
-    if (before.has(id)) continue;
-    await exec(sshTarget(alias), ['openclaw', 'devices', 'remove', id]);
-  }
+  await removeDevicesCreatedOn(sshTarget(alias), before);
 }
 
 describe.skipIf(ALIASES.length === 0)('live OpenClaw source', () => {
@@ -1614,3 +1646,517 @@ describe.skipIf(ALIASES.length === 0)('live OpenClaw saved credential', () => {
     120_000
   );
 });
+
+/* ==== ENG-010 C1 - the manually entered server ============================= */
+
+/**
+ * Live proof of the OTHER SSH transport (ENG-010 C1).
+ *
+ * `ssh-alias` names a host from the operator's own SSH configuration and has
+ * been proved against real servers since C1 landed. `ssh-manual` carries host,
+ * login, port, and an optional key file, and it is the shape an operator gets
+ * when they have no config entry for their server, which is most people
+ * connecting for the first time. Until this block it had never touched a real
+ * server: it was implemented, unit-tested against a fake spawn, and taken on
+ * faith. A transport whose whole job is reaching someone's server does not get
+ * to be taken on faith.
+ *
+ * Connection details come from the environment so no operator's infrastructure
+ * is named in this repository:
+ *
+ *   EXAWATT_LIVE_OPENCLAW_MANUAL_HOST=hostname-or-ipv4 \
+ *   EXAWATT_LIVE_OPENCLAW_MANUAL_USER=login \
+ *   EXAWATT_LIVE_OPENCLAW_MANUAL_PORT=22 \
+ *   EXAWATT_LIVE_OPENCLAW_MANUAL_IDENTITY_FILE=/absolute/path/to/key \
+ *   EXAWATT_LIVE_OPENCLAW_MANUAL_ALIAS=the-same-servers-alias \
+ *     npx vitest run electron/main/connected-openclaw.live.test.ts
+ *
+ * HOST and USER are required; PORT defaults to 22 and the key file is
+ * optional, matching what the manual transport itself treats as optional.
+ * ALIAS is optional and names the SAME server through the operator's SSH
+ * config: supplying it turns on the equivalence assertion, which is the only
+ * one that can show the two transports reach one server rather than merely
+ * both working.
+ *
+ * Every call here is read-scoped, exactly as the alias probes above are.
+ */
+
+const MANUAL_HOST = (
+  process.env.EXAWATT_LIVE_OPENCLAW_MANUAL_HOST ?? ''
+).trim();
+const MANUAL_USER = (
+  process.env.EXAWATT_LIVE_OPENCLAW_MANUAL_USER ?? ''
+).trim();
+const MANUAL_PORT = Number.parseInt(
+  (process.env.EXAWATT_LIVE_OPENCLAW_MANUAL_PORT ?? '22').trim() || '22',
+  10
+);
+const MANUAL_IDENTITY_FILE =
+  (process.env.EXAWATT_LIVE_OPENCLAW_MANUAL_IDENTITY_FILE ?? '').trim() || null;
+const MANUAL_ALIAS = (
+  process.env.EXAWATT_LIVE_OPENCLAW_MANUAL_ALIAS ?? ''
+).trim();
+
+/**
+ * A wrong login is a REFUSED LOGIN on the operator's real server, and a server
+ * that runs fail2ban or an equivalent counts refused logins and bans the
+ * source address. Every other probe in this block is either a name that never
+ * resolves, a TCP connect nothing answers, or a refusal this machine makes
+ * before it spawns anything, so none of them can be counted against the
+ * operator. This one can, so it is opt-in and the operator decides.
+ */
+const MANUAL_AUTH_PROBE =
+  process.env.EXAWATT_LIVE_OPENCLAW_MANUAL_AUTH_PROBE === '1';
+
+const MANUAL_CONFIGURED =
+  MANUAL_HOST.length > 0 &&
+  MANUAL_USER.length > 0 &&
+  Number.isInteger(MANUAL_PORT) &&
+  MANUAL_PORT >= 1 &&
+  MANUAL_PORT <= 65535;
+
+type ManualDestination = Extract<SshDestination, { kind: 'ssh-manual' }>;
+
+function manualDestination(
+  overrides: Partial<Omit<ManualDestination, 'kind'>> = {}
+): ManualDestination {
+  return {
+    kind: 'ssh-manual',
+    host: MANUAL_HOST,
+    user: MANUAL_USER,
+    port: MANUAL_PORT,
+    identityFile: MANUAL_IDENTITY_FILE,
+    ...overrides,
+  };
+}
+
+/**
+ * The infrastructure identity this run was handed, as the strings a failure
+ * message must never contain. The unit tests check redaction against invented
+ * fixtures; only a live run can check it against the operator's real values.
+ */
+function realIdentityStrings(): string[] {
+  return [MANUAL_HOST, MANUAL_USER, String(MANUAL_PORT), MANUAL_IDENTITY_FILE]
+    .filter((value): value is string => typeof value === 'string')
+    .filter(value => value.length > 2);
+}
+
+function expectNoInfrastructureIdentity(message: string): void {
+  expect(message.length).toBeGreaterThan(0);
+  expect(message.length).toBeLessThanOrEqual(200);
+  // Repo copy rule: no em dashes in operator-facing strings.
+  expect(message).not.toContain('—');
+  for (const value of realIdentityStrings()) {
+    expect(message.toLowerCase()).not.toContain(value.toLowerCase());
+  }
+}
+
+/**
+ * A spawn that records the exact argument vector and then really spawns.
+ *
+ * Asserting `buildSshArgs` would only prove the builder agrees with itself.
+ * What has to be true is that THIS vector is what reached the real `ssh` that
+ * carried the tunnel that the Gateway handshake then ran through.
+ */
+function recordingSpawn(): {
+  spawn: typeof nodeSpawn;
+  calls: { command: string; args: readonly string[] }[];
+} {
+  const calls: { command: string; args: readonly string[] }[] = [];
+  const spawn = ((command: string, args: readonly string[], options: never) => {
+    calls.push({ command, args: [...args] });
+    return nodeSpawn(command, args as string[], options);
+  }) as unknown as typeof nodeSpawn;
+  return { spawn, calls };
+}
+
+/** Whether anything is still accepting on a loopback port. */
+async function loopbackAccepts(port: number): Promise<boolean> {
+  return await new Promise<boolean>(resolve => {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    const finish = (accepted: boolean) => {
+      socket.destroy();
+      resolve(accepted);
+    };
+    socket.setTimeout(1_000);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+/** The sorted native agent ids one Gateway reports. */
+async function nativeAgentIds(client: OCClient): Promise<string[]> {
+  const listed = (await client.call('agents.list')) as {
+    agents: { id: string }[];
+  };
+  return listed.agents.map(agent => agent.id).sort();
+}
+
+describe.skipIf(!MANUAL_CONFIGURED)('live OpenClaw manual transport', () => {
+  it('reaches a manually entered server and reads its coworkers read-only', async () => {
+    const destination = manualDestination();
+
+    // 1. The credential bootstrap, over the manual destination.
+    const bootstrap = await bootstrapGatewayCredentialOverSsh(
+      destination,
+      createSshRemoteExec()
+    );
+    expect(
+      bootstrap.ok,
+      bootstrap.ok ? '' : `${bootstrap.failure}: ${bootstrap.message}`
+    ).toBe(true);
+    if (!bootstrap.ok) return;
+    expect(bootstrap.facts.gatewayPort).toBeGreaterThan(0);
+    expect(bootstrap.facts.sharedToken.length).toBeGreaterThan(0);
+
+    // 2. The tunnel, with the exact vector recorded on its way to `ssh`.
+    const recorder = recordingSpawn();
+    const opened = await openSshTunnel(
+      { ...destination, remotePort: bootstrap.facts.gatewayPort },
+      { spawn: recorder.spawn }
+    );
+    expect(
+      opened.ok,
+      opened.ok ? '' : `${opened.failure.class}: ${opened.failure.message}`
+    ).toBe(true);
+    if (!opened.ok) return;
+
+    const devicesBefore = await pairedDeviceIdsOn(destination);
+    try {
+      expect(recorder.calls).toHaveLength(1);
+      const sent = recorder.calls[0];
+      expect(sent.command).toBe('ssh');
+      // The builder and the wire agree, and the wire is what carried the
+      // session that is about to complete a Gateway handshake.
+      expect(sent.args).toEqual(
+        buildSshArgs(
+          { ...destination, remotePort: bootstrap.facts.gatewayPort },
+          opened.tunnel.localPort
+        )
+      );
+
+      // The manual shape's own options, proved present on a vector that worked.
+      expect(sent.args).toContain('-p');
+      expect(sent.args[sent.args.indexOf('-p') + 1]).toBe(String(MANUAL_PORT));
+      if (MANUAL_IDENTITY_FILE === null) {
+        expect(sent.args).not.toContain('-i');
+        expect(sent.args).not.toContain('IdentitiesOnly=yes');
+      } else {
+        expect(sent.args).toContain('IdentitiesOnly=yes');
+        expect(sent.args[sent.args.indexOf('-i') + 1]).toBe(
+          MANUAL_IDENTITY_FILE
+        );
+        // The key is an option, so it belongs ahead of the end-of-options mark.
+        expect(sent.args.indexOf('-i')).toBeLessThan(sent.args.indexOf('--'));
+      }
+      expect(sent.args[sent.args.length - 2]).toBe('--');
+      expect(sent.args[sent.args.length - 1]).toBe(
+        `${MANUAL_USER}@${MANUAL_HOST}`
+      );
+      // The multiplexing refusal, on a machine whose own SSH config turns
+      // ControlMaster on. Without these two the operator's control master
+      // would own this forward and close() would not close it.
+      expect(sent.args).toContain('ControlMaster=no');
+      expect(sent.args).toContain('ControlPath=none');
+
+      // 3. The Gateway handshake, through that tunnel, with the production
+      //    client and the production identity.
+      const gateway = await connectReadOnly(
+        opened.tunnel.localPort,
+        bootstrap.facts.sharedToken
+      );
+      try {
+        const agentIds = await nativeAgentIds(gateway);
+        expect(agentIds.length).toBeGreaterThan(0);
+
+        // 4. Discovery: real topology through the manual transport must adapt
+        //    and project as cleanly as it does through an alias.
+        const sessionLists = await Promise.all(
+          agentIds.map(async id => ({
+            nativeAgentId: id,
+            payload: await gateway.call('sessions.list', {
+              agentId: id,
+              limit: 200,
+            }),
+          }))
+        );
+        const adapted = adaptOpenClawTopology({
+          configuredSourceId: 'live-manual',
+          gatewayId: 'live-gateway-manual',
+          placement: 'customer-hosted',
+          evidenceBasis: 'observed',
+          observedAt: Date.now(),
+          agentsList: { agents: agentIds.map(id => ({ id })) },
+          sessionLists,
+        });
+        expect(adapted.ok, JSON.stringify(adapted.issues?.slice(0, 5))).toBe(
+          true
+        );
+        if (!adapted.ok) return;
+        expect(
+          adapted.snapshot.agents.map(a => a.nativeAgentId).sort()
+        ).toEqual(agentIds);
+
+        // The device this run paired carries the one scope Exawatt asked for,
+        // read back from the source's own record over the manual transport.
+        const created = [...(await pairedDeviceIdsOn(destination))].filter(
+          id => !devicesBefore.has(id)
+        );
+        expect(created).toHaveLength(1);
+        expect(await pairedDeviceScopesOn(destination, created[0])).toEqual([
+          'operator.read',
+        ]);
+
+        // Read scope is the source's enforcement, not Exawatt's restraint, and
+        // the transport does not change who enforces it.
+        await expect(
+          gateway.call('chat.send', { key: 'agent:none:main', text: 'x' })
+        ).rejects.toThrow();
+        await expect(
+          gateway.call('cron.add', { name: 'probe', schedule: '0 0 * * *' })
+        ).rejects.toThrow();
+      } finally {
+        gateway.disconnect();
+      }
+
+      // 5. close() owns the forward. This is the assertion the ControlMaster
+      //    refusal exists for: with a shared control master the port would
+      //    still accept after Exawatt believed it had detached.
+      const localPort = opened.tunnel.localPort;
+      await opened.tunnel.close();
+      expect(opened.tunnel.closed).toBe(true);
+      expect(await loopbackAccepts(localPort)).toBe(false);
+    } finally {
+      if (!opened.tunnel.closed) await opened.tunnel.close();
+      await removeDevicesCreatedOn(destination, devicesBefore);
+    }
+
+    // Nothing this run created is left behind, and nothing is left pending.
+    const listing = await deviceListing(destination);
+    expect(listing.pending).toEqual([]);
+    expect([...(await pairedDeviceIdsOn(destination))].sort()).toEqual(
+      [...devicesBefore].sort()
+    );
+  }, 180_000);
+
+  /**
+   * The assertion that makes the manual transport EQUIVALENT rather than
+   * merely also functional.
+   *
+   * Two transports that both connect prove nothing on their own: they could be
+   * reaching two servers, or the manual one could be reaching the right server
+   * through a path that resolves differently. Requiring the same native agent
+   * ids from the same declared Gateway port, with the same shared secret read
+   * out of the same configuration, is what makes them one server seen two ways.
+   */
+  it.skipIf(MANUAL_ALIAS.length === 0)(
+    'returns the same coworkers as the alias for the same server',
+    async () => {
+      const viaAlias = sshTarget(MANUAL_ALIAS);
+      const viaManual = manualDestination();
+
+      const aliasBoot = await bootstrapGatewayCredentialOverSsh(
+        viaAlias,
+        createSshRemoteExec()
+      );
+      const manualBoot = await bootstrapGatewayCredentialOverSsh(
+        viaManual,
+        createSshRemoteExec()
+      );
+      expect(aliasBoot.ok).toBe(true);
+      expect(manualBoot.ok).toBe(true);
+      if (!aliasBoot.ok || !manualBoot.ok) return;
+
+      // Same declared Gateway port, and the same shared secret. Compared, never
+      // reported: this value is admin-capable and does not belong in output.
+      expect(manualBoot.facts.gatewayPort).toBe(aliasBoot.facts.gatewayPort);
+      expect(manualBoot.facts.sharedToken === aliasBoot.facts.sharedToken).toBe(
+        true
+      );
+      expect(manualBoot.facts.tokenSource).toBe(aliasBoot.facts.tokenSource);
+      expect(manualBoot.facts.version).toBe(aliasBoot.facts.version);
+
+      const before = await pairedDeviceIdsOn(viaAlias);
+      const idsBy: Record<string, string[]> = {};
+      try {
+        for (const [label, destination, boot] of [
+          ['alias', viaAlias, aliasBoot],
+          ['manual', viaManual, manualBoot],
+        ] as const) {
+          const opened = await openSshTunnel({
+            ...destination,
+            remotePort: boot.facts.gatewayPort,
+          });
+          expect(
+            opened.ok,
+            opened.ok ? '' : `${label}: ${opened.failure.class}`
+          ).toBe(true);
+          if (!opened.ok) return;
+          try {
+            const client = await connectReadOnly(
+              opened.tunnel.localPort,
+              boot.facts.sharedToken
+            );
+            try {
+              idsBy[label] = await nativeAgentIds(client);
+            } finally {
+              client.disconnect();
+            }
+          } finally {
+            await opened.tunnel.close();
+          }
+        }
+
+        expect(idsBy.manual.length).toBeGreaterThan(0);
+        expect(idsBy.manual).toEqual(idsBy.alias);
+
+        // Two connections, two devices, and both of them this run's. If the
+        // manual transport had reached a different installation this listing
+        // would only hold one of them.
+        const created = [...(await pairedDeviceIdsOn(viaManual))].filter(
+          id => !before.has(id)
+        );
+        expect(created).toHaveLength(2);
+      } finally {
+        await removeDevicesCreatedOn(viaAlias, before);
+      }
+    },
+    240_000
+  );
+});
+
+/**
+ * What each wrong entry field tells the operator.
+ *
+ * The manual transport is four fields an operator types, so the question that
+ * matters is not whether a bad one fails; it is whether the failure names the
+ * field. Every case below is refused either by this machine before it spawns
+ * anything, by DNS, or by a TCP connect nothing answers. None of them attempts
+ * a login, so none of them can be counted against the operator by a server
+ * that bans on refused logins. The one case that does attempt a login is
+ * opt-in and lives in its own block.
+ */
+describe.skipIf(!MANUAL_CONFIGURED)(
+  'live OpenClaw manual transport faults',
+  () => {
+    /**
+     * Reserved, and nothing serves SSH there. A connect nothing answers is not
+     * an authentication attempt, so this is safe against a real server.
+     */
+    const CLOSED_SSH_PORT = 1;
+
+    it('names the address when the server address does not resolve', async () => {
+      const opened = await openSshTunnel({
+        ...manualDestination({
+          // RFC 6761 reserves .invalid, so this can never resolve to anyone.
+          host: 'exawatt-live-probe-no-such-host.invalid',
+        }),
+        remotePort: 4444,
+      });
+      expect(opened.ok).toBe(false);
+      if (opened.ok) {
+        await opened.tunnel.close();
+        return;
+      }
+      expect(opened.failure.class).toBe('host-unreachable');
+      expectNoInfrastructureIdentity(opened.failure.message);
+      // The operator typed an address that does not exist. Telling them to check
+      // that the server is online sends them to the wrong field.
+      expect(opened.failure.message.toLowerCase()).toContain('address');
+    }, 60_000);
+
+    it('names the SSH port when nothing answers on it', async () => {
+      const opened = await openSshTunnel({
+        ...manualDestination({ port: CLOSED_SSH_PORT }),
+        remotePort: 4444,
+        connectTimeoutSeconds: 8,
+      });
+      expect(opened.ok).toBe(false);
+      if (opened.ok) {
+        await opened.tunnel.close();
+        return;
+      }
+      expect(opened.failure.class).toBe('host-unreachable');
+      expectNoInfrastructureIdentity(opened.failure.message);
+      expect(opened.failure.message.toLowerCase()).toContain('port');
+    }, 60_000);
+
+    it('names the key file, and never opens a connection, when it cannot be read', async () => {
+      const missing = path.join(
+        os.tmpdir(),
+        `exawatt-live-probe-absent-key-${Date.now()}`
+      );
+      expect(fs.existsSync(missing)).toBe(false);
+
+      const recorder = recordingSpawn();
+      const opened = await openSshTunnel(
+        {
+          ...manualDestination({ identityFile: missing }),
+          remotePort: 4444,
+        },
+        { spawn: recorder.spawn }
+      );
+      expect(opened.ok).toBe(false);
+      if (opened.ok) {
+        await opened.tunnel.close();
+        return;
+      }
+      // Refused here, so the operator's server never sees a login attempt for a
+      // key this machine already knows it cannot offer.
+      expect(recorder.calls).toEqual([]);
+      expect(opened.failure.class).toBe('invalid-target');
+      expectNoInfrastructureIdentity(opened.failure.message);
+      expect(opened.failure.message.toLowerCase()).toContain('key file');
+    }, 60_000);
+
+    it('names the key file on the credential bootstrap too', async () => {
+      const missing = path.join(
+        os.tmpdir(),
+        `exawatt-live-probe-absent-key-${Date.now()}`
+      );
+      const result = await resolveGatewayCredential(
+        {
+          kind: 'ssh-manual',
+          host: MANUAL_HOST,
+          user: MANUAL_USER,
+          port: MANUAL_PORT,
+          identityFile: missing,
+        },
+        { exec: createSshRemoteExec() }
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expectNoInfrastructureIdentity(result.message);
+      expect(result.message.toLowerCase()).toContain('key file');
+    }, 60_000);
+  }
+);
+
+/**
+ * The one fault that costs the operator's server a refused login.
+ *
+ * Opt in with EXAWATT_LIVE_OPENCLAW_MANUAL_AUTH_PROBE=1, and only against a
+ * server that does not ban on refused logins. fail2ban's shipped sshd jail
+ * bans after five failures in ten minutes with no address exempted, which is
+ * two or three runs of a suite that probes a wrong login.
+ */
+describe.skipIf(!MANUAL_CONFIGURED || !MANUAL_AUTH_PROBE)(
+  'live OpenClaw manual transport refused login',
+  () => {
+    it('names the login when the server refuses it', async () => {
+      const opened = await openSshTunnel({
+        ...manualDestination({ user: 'exawatt-live-probe-nobody' }),
+        remotePort: 4444,
+      });
+      expect(opened.ok).toBe(false);
+      if (opened.ok) {
+        await opened.tunnel.close();
+        return;
+      }
+      expect(opened.failure.class).toBe('auth-rejected');
+      expectNoInfrastructureIdentity(opened.failure.message);
+      expect(opened.failure.message.toLowerCase()).toContain('login');
+    }, 60_000);
+  }
+);

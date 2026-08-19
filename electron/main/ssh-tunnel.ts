@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { accessSync, constants, statSync } from 'node:fs';
 import { createConnection, createServer } from 'node:net';
 import { stopChildProcess } from './child-process-lifecycle';
 
@@ -20,8 +21,9 @@ import { stopChildProcess } from './child-process-lifecycle';
  *    path is remote code execution on this machine (see
  *    `resolveSshDestination`).
  * 2. No failure detail may carry infrastructure identity. `ssh` stderr names
- *    hosts, users, ports, and key paths; those never leave this module. Each
- *    failure class maps to one fixed operator-facing sentence instead.
+ *    hosts, users, ports, and key paths; those never leave this module. A
+ *    failure resolves to one of a fixed set of sentences written in this file
+ *    instead, and nothing is ever interpolated into one.
  *
  * This module also owns the SSH DESTINATION model, which `gateway-bootstrap.ts`
  * shares. Both modules hand operator-supplied server access to `ssh`, and the
@@ -92,6 +94,8 @@ export interface SshTunnelDependencies {
   allocatePort?: () => Promise<number>;
   /** Probes whether the forward is actually accepting connections. */
   probeLocalPort?: (port: number) => Promise<boolean>;
+  /** Whether a named private key file can be opened for reading here. */
+  canReadIdentityFile?: (path: string) => boolean;
 }
 
 export const DEFAULT_CONNECT_TIMEOUT_SECONDS = 10;
@@ -129,9 +133,17 @@ const STDERR_CAPTURE_MAX = 8 * 1024;
 const MESSAGE_MAX = 200;
 
 /**
- * One fixed sentence per class. These are the only strings that ever reach the
- * operator, which is what makes the redaction invariant checkable: no code path
- * interpolates a host, user, port, or key path into a failure message.
+ * The fallback sentence for each class, used when nothing more precise is
+ * known. Every string an operator ever reads is a literal in this file, which
+ * is what makes the redaction invariant checkable: no code path interpolates a
+ * host, user, port, or key path into a failure message.
+ *
+ * A class may have SEVERAL fixed sentences (see `SPECIFIC_MESSAGES` and
+ * `INVALID_TARGET_REASONS`), because a class answers "what kind of failure"
+ * and the sentence has to answer "which field did you get wrong". A manually
+ * entered server is four fields the operator typed, so collapsing all four
+ * mistakes into one sentence about the server being offline sends three of
+ * them to the wrong place.
  */
 const FAILURE_MESSAGES: Record<SshTunnelFailureClass, string> = {
   'invalid-target':
@@ -146,6 +158,22 @@ const FAILURE_MESSAGES: Record<SshTunnelFailureClass, string> = {
     'The SSH tunnel closed for an unrecognized reason. Open source diagnostics for the connection detail.',
 };
 
+/**
+ * The sentences that name a FIELD rather than a category, keyed by what `ssh`
+ * was able to tell us. Each stays inside its class, so the product's failure
+ * vocabulary is unchanged and only the operator's next step gets sharper.
+ */
+const SPECIFIC_MESSAGES = {
+  address_unresolved:
+    'That server address could not be found. Check the hostname or IP address you entered for the server.',
+  ssh_port_silent:
+    'Nothing answered on that SSH port. Check the SSH port you entered, and that the server is online.',
+  identity_file_refused:
+    'That key file was refused. Check that it is the private key for this login and that only you can read it.',
+  host_key_changed:
+    'The server offered a different SSH host key than the one this machine already trusts. Verify the server first.',
+} as const;
+
 const INVALID_TARGET_REASONS = {
   alias:
     'That SSH alias is not usable. Use an alias from your SSH config made of letters, numbers, dots, dashes, or underscores.',
@@ -156,6 +184,8 @@ const INVALID_TARGET_REASONS = {
     'That SSH port is not usable. Use the port the server accepts SSH on, between 1 and 65535.',
   identity_file:
     'That key file path is not usable. Use the full path to the private key file, starting with a slash.',
+  identity_file_unreadable:
+    'That key file could not be read. Check the path to the private key file and that this account can open it.',
   remote_host:
     'That remote host is not usable. Use the loopback address the Gateway listens on, normally 127.0.0.1.',
   remote_port:
@@ -348,6 +378,52 @@ export function buildDestinationArgs(
   ];
 }
 
+/**
+ * Whether the named private key file can actually be opened here.
+ *
+ * `isSafeIdentityFile` above checks the SHAPE of the path, which is a security
+ * check and says nothing about whether the file exists. Both bounds matter:
+ * `isFile` refuses a directory or a device, whose read `ssh` would also refuse,
+ * and the readability check is what separates "you typed the wrong path" from
+ * "your key is not authorized".
+ */
+function defaultCanReadIdentityFile(path: string): boolean {
+  try {
+    if (!statSync(path).isFile()) return false;
+    accessSync(path, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when a destination names a key file this machine cannot read.
+ *
+ * Checked BEFORE any connection, which is the whole point. `ssh` handed an
+ * unreadable `-i` warns about it, offers nothing, and lets the server end the
+ * session with `Permission denied (publickey)`. That is a REFUSED LOGIN: it
+ * spends an authentication attempt on the operator's server, and it reports
+ * back the one sentence that sends them to check authorization instead of the
+ * path they just typed. Servers that ban on refused logins count that attempt.
+ *
+ * Exported so `gateway-bootstrap.ts` applies the same rule to the same field;
+ * a second copy would be a second chance for the two to disagree.
+ */
+export function namesUnreadableIdentityFile(
+  destination: SshDestination,
+  canRead: (path: string) => boolean = defaultCanReadIdentityFile
+): boolean {
+  if (destination.kind !== 'ssh-manual') return false;
+  const { identityFile } = destination;
+  if (identityFile === null) return false;
+  try {
+    return canRead(identityFile) !== true;
+  } catch {
+    return true;
+  }
+}
+
 const DESTINATION_FAULT_REASONS: Record<
   SshDestinationFault,
   InvalidTargetReason
@@ -490,6 +566,8 @@ function buildArgsFor(
 const STDERR_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
   failureClass: SshTunnelFailureClass;
+  /** Names the field the operator got wrong, when `ssh` said which it was. */
+  message?: string;
 }> = [
   { pattern: /channel\s+.*open failed/i, failureClass: 'gateway-down' },
   { pattern: /open failed:\s*connect failed/i, failureClass: 'gateway-down' },
@@ -498,45 +576,124 @@ const STDERR_PATTERNS: ReadonlyArray<{
   { pattern: /bind:\s*address already in use/i, failureClass: 'gateway-down' },
   { pattern: /cannot listen to port/i, failureClass: 'gateway-down' },
 
+  /*
+   * The key-file phrases come BEFORE the generic refusal phrases, and the
+   * order is the whole point. A live run against a real server proved that an
+   * unreadable or wrongly permissioned `-i` never arrives ALONE: `ssh` warns
+   * about the key, offers nothing, and the server then ends the session with
+   * `Permission denied (publickey).` With these entries below that phrase they
+   * could never win a match, so the key cases were dead entries and the
+   * operator was told to check authorization for a key the client had already
+   * refused to load.
+   *
+   * Only a manually entered server can produce them: an alias takes its key
+   * from the operator's own SSH configuration, while a manual destination
+   * names a key file that may be missing, unreadable, or the wrong one.
+   */
+  {
+    pattern: /identity file .* not accessible/i,
+    failureClass: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /no such identity/i,
+    failureClass: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /bad permissions/i,
+    failureClass: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /unprotected private key file/i,
+    failureClass: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /invalid format|error in libcrypto/i,
+    failureClass: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+
+  // A CHANGED host key is the case that means interception, so it gets its
+  // own sentence rather than the one about checking your key.
+  {
+    pattern:
+      /host key verification failed|remote host identification has changed/i,
+    failureClass: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.host_key_changed,
+  },
+
   { pattern: /permission denied/i, failureClass: 'auth-rejected' },
   { pattern: /publickey/i, failureClass: 'auth-rejected' },
   {
     pattern: /too many authentication failures/i,
     failureClass: 'auth-rejected',
   },
-  {
-    pattern: /host key verification failed/i,
-    failureClass: 'auth-rejected',
-  },
-  /*
-   * Only the manual path can produce these: an alias takes its key from the
-   * operator's own SSH configuration, while a manually entered server names a
-   * key file that may be missing, unreadable, or the wrong one. Without them a
-   * bad key path exits with an unclassifiable stderr and the operator is told
-   * to open diagnostics instead of to check the key file they just typed.
-   */
-  { pattern: /no such identity/i, failureClass: 'auth-rejected' },
-  {
-    pattern: /identity file .* not accessible/i,
-    failureClass: 'auth-rejected',
-  },
-  { pattern: /bad permissions/i, failureClass: 'auth-rejected' },
 
-  { pattern: /could not resolve hostname/i, failureClass: 'host-unreachable' },
-  { pattern: /name or service not known/i, failureClass: 'host-unreachable' },
-  { pattern: /no route to host/i, failureClass: 'host-unreachable' },
-  { pattern: /network is unreachable/i, failureClass: 'host-unreachable' },
-  { pattern: /operation timed out/i, failureClass: 'host-unreachable' },
-  { pattern: /connection timed out/i, failureClass: 'host-unreachable' },
-  { pattern: /connection refused/i, failureClass: 'host-unreachable' },
+  /*
+   * A name that does not resolve and a port nothing answers are one class and
+   * two different mistakes. The first is the address field; the second is the
+   * port field, or a server that is genuinely down. Resolution failures are
+   * matched first because `ssh` reports them before it ever tries to connect.
+   */
+  {
+    pattern: /could not resolve hostname/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.address_unresolved,
+  },
+  {
+    pattern: /name or service not known|nodename nor servname/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.address_unresolved,
+  },
+  {
+    pattern: /no route to host/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /network is unreachable/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /operation timed out/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /connection timed out/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /connection refused/i,
+    failureClass: 'host-unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
 ];
 
 export function classifySshStderr(text: string): SshTunnelFailureClass {
-  if (typeof text !== 'string' || text.length === 0) return 'unknown';
-  for (const { pattern, failureClass } of STDERR_PATTERNS) {
-    if (pattern.test(text)) return failureClass;
+  return classifySshFailure(text).class;
+}
+
+/**
+ * The class AND the sentence, from one pass over the captured stderr. Callers
+ * want both, and deriving them separately would let the two drift apart.
+ */
+export function classifySshFailure(text: string): SshTunnelFailure {
+  if (typeof text !== 'string' || text.length === 0) return failure('unknown');
+  for (const entry of STDERR_PATTERNS) {
+    if (entry.pattern.test(text)) {
+      return {
+        class: entry.failureClass,
+        message: bounded(entry.message ?? FAILURE_MESSAGES[entry.failureClass]),
+      };
+    }
   }
-  return 'unknown';
+  return failure('unknown');
 }
 
 /**
@@ -670,7 +827,7 @@ class OwnedSshTunnel implements SshTunnel {
     this.settled = true;
     this.endedWith = this.deliberate
       ? null
-      : failure(classifySshStderr(this.readStderr()));
+      : classifySshFailure(this.readStderr());
     const pending = [...this.listeners];
     this.listeners.clear();
     for (const listener of pending) {
@@ -702,6 +859,19 @@ export async function openSshTunnel(
   const spawnProcess = deps.spawn ?? nodeSpawn;
   const allocatePort = deps.allocatePort ?? defaultAllocatePort;
   const probeLocalPort = deps.probeLocalPort ?? defaultProbeLocalPort;
+
+  // Before a port is reserved and before anything is spawned: a key file this
+  // machine cannot read is a mistake in the target, not a refusal by the
+  // server, and attempting the login anyway would spend a refused login on the
+  // operator's server to learn something already knowable here.
+  if (
+    namesUnreadableIdentityFile(
+      resolved.target.destination,
+      deps.canReadIdentityFile ?? defaultCanReadIdentityFile
+    )
+  ) {
+    return { ok: false, failure: invalidTarget('identity_file_unreadable') };
+  }
 
   let localPort: number;
   try {
@@ -758,7 +928,7 @@ export async function openSshTunnel(
       // classifies an unexpected death from the same rolling buffer.
     };
 
-    const fail = (failureClass: SshTunnelFailureClass) => {
+    const fail = (ended: SshTunnelFailure) => {
       if (settled) return;
       settled = true;
       detach();
@@ -769,7 +939,7 @@ export async function openSshTunnel(
         failAfterMs: CLOSE_FAIL_AFTER_MS,
         failureMessage: 'The SSH tunnel process did not exit',
       }).catch(() => undefined);
-      resolve({ ok: false, failure: failure(failureClass) });
+      resolve({ ok: false, failure: ended });
     };
 
     const succeed = () => {
@@ -785,11 +955,11 @@ export async function openSshTunnel(
     function onExit() {
       // ExitOnForwardFailure makes a broken forward an exit, so an exit before
       // readiness always carries a classifiable reason in stderr.
-      fail(classifySshStderr(readStderr()));
+      fail(classifySshFailure(readStderr()));
     }
 
     function onError() {
-      fail('unknown');
+      fail(failure('unknown'));
     }
 
     child.once('exit', onExit);
@@ -810,7 +980,7 @@ export async function openSshTunnel(
         if (attempts >= PROBE_ATTEMPT_BUDGET) {
           // ssh is still alive and the local forward never accepted, which is
           // the far side not listening rather than the server being down.
-          fail('gateway-down');
+          fail(failure('gateway-down'));
           return;
         }
         probeTimer = setTimeout(attempt, PROBE_RETRY_MS);
@@ -822,7 +992,7 @@ export async function openSshTunnel(
     };
 
     deadlineTimer = setTimeout(
-      () => fail('host-unreachable'),
+      () => fail(failure('host-unreachable')),
       resolved.target.connectTimeoutSeconds * 1_000 + READINESS_GRACE_MS
     );
 

@@ -8,16 +8,20 @@ import {
   DEMO_SOURCE_UNREACHABLE_MESSAGE,
   type AgentSourceAdapterId,
   type AgentSourceEvidenceBasis,
+  type ConnectedSourceRecord,
   type OCClientConfig,
+  type SourceTransport,
 } from '@exawatt/core';
 import {
   ConnectedGatewaySession,
   type ConnectedGatewayClient,
 } from './connected-gateway';
 import {
-  ConnectedSourceRuntime,
   FileConnectedAgentProjectionPlanStore,
   type ConnectedAgentMapping,
+} from './connected-agent-projection-plan';
+import {
+  ConnectedSourceRuntime,
   type ConnectedSourceSession,
 } from './connected-source-runtime';
 import { ConnectedSourceStore } from './connected-source-store';
@@ -57,6 +61,8 @@ import {
 const DEMO_ALIAS = 'voltaic-ops-demo';
 const DEMO_REMOTE_PORT = 4711;
 const DEMO_LOCAL_PORT = 47_110;
+/** The port the operator's own machine would be serving a Gateway on. */
+const DEMO_LOOPBACK_PORT = 47_111;
 const DEMO_SHARED_SECRET = 'demo-shared-secret-never-persisted';
 const DEMO_DEVICE_TOKEN = 'demo-device-token-read-only';
 const DEMO_SOURCE_NAME = 'Voltaic ops (demo)';
@@ -76,6 +82,45 @@ const FALLBACK_PROJECT = { id: 'demo-project-connected', label: 'Connected' };
 const CLOCK_STEP_MS = 1_000;
 /** What a relaunch costs: the app was closed for a while. */
 const RELAUNCH_GAP_MS = 5 * 60_000;
+
+/**
+ * How this world's source is configured (ENG-010 C3, local coverage).
+ *
+ * The contract itself knows nothing about transports, and that is exactly why
+ * the same case list can be run twice: once over a source reached across a
+ * network, and once over the operator's own machine. A local Gateway is meant
+ * to be one more configured source rather than a special case, and the only
+ * way to know whether it still is, is to hold it to the same promises.
+ *
+ * The loopback shape refuses to open a tunnel at all. A tunnel from loopback to
+ * itself is an extra `ssh` child that can only add failure modes, so if any
+ * case ever provokes one, every case in that run fails loudly rather than
+ * passing over a transport nobody meant to build.
+ */
+interface DemoWorldShape {
+  name: string;
+  placement: ConnectedSourceRecord['placement'];
+  transport: SourceTransport;
+  allowTunnel: boolean;
+}
+
+const REMOTE_SHAPE: DemoWorldShape = {
+  name: 'demo',
+  placement: 'customer-hosted',
+  transport: {
+    kind: 'ssh-alias',
+    alias: DEMO_ALIAS,
+    remotePort: DEMO_REMOTE_PORT,
+  },
+  allowTunnel: true,
+};
+
+const LOOPBACK_SHAPE: DemoWorldShape = {
+  name: 'demo over local loopback',
+  placement: 'local',
+  transport: { kind: 'local-loopback', port: DEMO_LOOPBACK_PORT },
+  allowTunnel: false,
+};
 
 /**
  * A stand-in for the OS keychain, shaped like the one the store's own tests
@@ -202,6 +247,7 @@ interface PendingTimer {
 
 class DemoLifecycleWorld implements LifecycleWorld {
   private readonly dir: string;
+  private readonly shape: DemoWorldShape;
   private readonly demo: DemoConnectedSource;
   private clock = DEMO_CONNECTED_SOURCE_NOW_MS;
 
@@ -216,17 +262,18 @@ class DemoLifecycleWorld implements LifecycleWorld {
   private tunnels: FakeTunnelHandle[] = [];
   private sessions = new Map<string, ConnectedGatewaySession>();
 
-  private constructor(dir: string) {
+  private constructor(dir: string, shape: DemoWorldShape) {
     this.dir = dir;
+    this.shape = shape;
     this.demo = new DemoConnectedSource({ now: this.clock });
     this.store = this.createStore();
     this.plans = new FileConnectedAgentProjectionPlanStore(dir);
     this.currentRuntime = this.createRuntime();
   }
 
-  static async open(): Promise<DemoLifecycleWorld> {
+  static async open(shape: DemoWorldShape): Promise<DemoLifecycleWorld> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'exawatt-c3-contract-'));
-    const world = new DemoLifecycleWorld(dir);
+    const world = new DemoLifecycleWorld(dir, shape);
     await world.attach();
     return world;
   }
@@ -268,6 +315,11 @@ class DemoLifecycleWorld implements LifecycleWorld {
       knownIdentity: context.knownIdentity,
       store: this.store,
       openTunnel: async () => {
+        if (!this.shape.allowTunnel) {
+          throw new Error(
+            'A local Gateway already listens on this machine; forwarding loopback to itself is an ssh child that can only add failure modes.'
+          );
+        }
         const handle = createFakeTunnel(DEMO_LOCAL_PORT + this.tunnels.length);
         this.tunnels.push(handle);
         return { ok: true, tunnel: handle.tunnel };
@@ -313,13 +365,9 @@ class DemoLifecycleWorld implements LifecycleWorld {
   ): Promise<void> {
     const added = this.store.add({
       adapterId: DEMO_ADAPTER_ID,
-      placement: 'customer-hosted',
+      placement: this.shape.placement,
       displayName: DEMO_SOURCE_NAME,
-      transport: {
-        kind: 'ssh-alias',
-        alias: DEMO_ALIAS,
-        remotePort: DEMO_REMOTE_PORT,
-      },
+      transport: this.shape.transport,
       credentialOwner: 'source-owned-ssh',
     });
     if (!added.ok) throw new Error(added.issues.join('; '));
@@ -554,34 +602,36 @@ class DemoLifecycleWorld implements LifecycleWorld {
 
 /* ---- The adapter --------------------------------------------------------- */
 
-const demoAdapter: ConnectedSourceLifecycleAdapter = {
-  name: 'demo',
-  supports: [
-    'outage',
-    'relaunch',
-    'restart-same-identity',
-    'restart-other-identity',
-    'retire-agent',
-    'forget-context',
-    'run-state',
-    'rename',
-    'detach',
-    'inspect-source',
-  ],
-  /*
-   * What the shipping runtime does not keep yet, one sentence each. These are
-   * runtime defects rather than Demo-adapter limitations: a live adapter that
-   * ran this contract today would declare the same four, and the fifth is the
-   * parity criterion this whole milestone exists for. Removing an entry after
-   * the runtime is fixed is how the fix is proved.
-   */
-  // Every case the contract states is satisfied. The six gaps declared when it
-  // was written are fixed rather than tolerated, so this is empty on purpose:
-  // a new entry here is a promise the product is not keeping, and should be
-  // read as debt rather than as configuration.
-  knownGaps: {},
-  open: () => DemoLifecycleWorld.open(),
-};
+function demoAdapter(shape: DemoWorldShape): ConnectedSourceLifecycleAdapter {
+  return {
+    name: shape.name,
+    supports: [
+      'outage',
+      'relaunch',
+      'restart-same-identity',
+      'restart-other-identity',
+      'retire-agent',
+      'forget-context',
+      'run-state',
+      'rename',
+      'detach',
+      'inspect-source',
+    ],
+    /*
+     * What the shipping runtime does not keep yet, one sentence each. These are
+     * runtime defects rather than Demo-adapter limitations: a live adapter that
+     * ran this contract today would declare the same four, and the fifth is the
+     * parity criterion this whole milestone exists for. Removing an entry after
+     * the runtime is fixed is how the fix is proved.
+     */
+    // Every case the contract states is satisfied. The six gaps declared when it
+    // was written are fixed rather than tolerated, so this is empty on purpose:
+    // a new entry here is a promise the product is not keeping, and should be
+    // read as debt rather than as configuration.
+    knownGaps: {},
+    open: () => DemoLifecycleWorld.open(shape),
+  };
+}
 
 /* ---- The run ------------------------------------------------------------- */
 
@@ -641,7 +691,13 @@ function runLifecycleContract(adapter: ConnectedSourceLifecycleAdapter): void {
   });
 }
 
-runLifecycleContract(demoAdapter);
+/*
+ * The same promises, twice. A source reached across a network and the
+ * operator's own machine are one lifecycle, and running the case list over
+ * both is what keeps that true rather than aspirational.
+ */
+runLifecycleContract(demoAdapter(REMOTE_SHAPE));
+runLifecycleContract(demoAdapter(LOOPBACK_SHAPE));
 
 /* ---- The contract itself ------------------------------------------------- */
 

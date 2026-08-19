@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseConnectedSourceRecord,
@@ -12,6 +11,7 @@ import {
   type SourceAuthority,
   type SourceTransport,
 } from '@exawatt/core';
+import { readJsonFile, writeJsonFileAtomic } from './atomic-json-file';
 
 /**
  * Persisted registry of configured Agent Sources (ENG-010 C1).
@@ -188,34 +188,6 @@ interface SecretsFileShape {
    * asked for the other.
    */
   devices: Record<string, string>;
-}
-
-function readJsonFile(file: string): unknown {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
-  } catch {
-    // A missing or corrupt file is an empty registry, never a crash on boot.
-    return null;
-  }
-}
-
-/**
- * Write through a temp file in the same directory, then rename. A partial
- * write of the records file would otherwise drop every configured source on
- * the next launch, and the operator would have no way to tell that from a
- * deliberate detach.
- */
-function writeJsonFileAtomic(file: string, value: unknown): void {
-  const dir = path.dirname(file);
-  fs.mkdirSync(dir, { recursive: true });
-  const temp = path.join(dir, `.${path.basename(file)}.${randomUUID()}.tmp`);
-  fs.writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
-  fs.renameSync(temp, file);
-  try {
-    fs.chmodSync(file, 0o600);
-  } catch {
-    // Best effort: a filesystem without POSIX modes still gets the rename.
-  }
 }
 
 /**

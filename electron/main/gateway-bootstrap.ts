@@ -8,6 +8,7 @@ import { readGatewayConfig, type OCGatewayConfig } from '@exawatt/core/server';
 import { stopChildProcess } from './child-process-lifecycle';
 import {
   buildDestinationArgs,
+  namesUnreadableIdentityFile,
   resolveSshDestination,
   type SshDestination,
 } from './ssh-tunnel';
@@ -57,8 +58,9 @@ import {
  *    one copy of that rule; remote arguments are validated here (see
  *    `isSafeRemoteArgument`).
  * 2. No failure detail may carry infrastructure identity. `ssh` stderr names
- *    hosts, users, ports, and key paths; it never leaves this module. Each
- *    failure class maps to one fixed operator-facing sentence instead.
+ *    hosts, users, ports, and key paths; it never leaves this module. A failure
+ *    resolves to one of a fixed set of sentences written in this file instead,
+ *    and nothing is ever interpolated into one.
  */
 
 export interface RemoteExecResult {
@@ -182,17 +184,24 @@ const MESSAGE_MAX = 200;
 const SSH_LAUNCH_FAILED = 'exawatt:ssh-launch-failed';
 
 /**
- * One fixed sentence per class. These are the only strings that ever reach the
- * operator, which is what makes the redaction invariant checkable: no code path
- * interpolates a host, user, port, key path, or token into a failure message.
+ * The fallback sentence for each class, used when nothing more precise is
+ * known. Every string an operator ever reads is a literal in this file, which
+ * is what makes the redaction invariant checkable: no code path interpolates a
+ * host, user, port, key path, or token into a failure message.
+ *
+ * A class may have several fixed sentences (see `SPECIFIC_MESSAGES`), because
+ * the class says what kind of failure it was and the sentence has to say which
+ * field the operator got wrong.
  */
 const FAILURE_MESSAGES: Record<GatewayBootstrapFailure, string> = {
   'invalid-target':
     'That server target is not usable. Check the SSH alias, or the host, login, port, and key file you entered.',
   unreachable:
     'Could not reach that server over SSH. Check that it is online and reachable from this machine.',
+  // Not "authorized for this alias": a manually entered server has no alias,
+  // and this module serves both transports.
   'auth-rejected':
-    'The server refused the SSH login. Check that your key is loaded and authorized for this alias.',
+    'The server refused the SSH login. Check that your key is loaded and authorized for that login.',
   'openclaw-missing':
     'OpenClaw was not found on that server. Check that it is installed for this login and try again.',
   'token-unavailable':
@@ -203,14 +212,35 @@ const FAILURE_MESSAGES: Record<GatewayBootstrapFailure, string> = {
     'The Gateway credential could not be read for an unrecognized reason. Open source diagnostics for the connection detail.',
 };
 
+/**
+ * The sentences that name a FIELD rather than a category. Each stays inside an
+ * existing class, so the product's failure vocabulary is unchanged and only the
+ * operator's next step gets sharper.
+ */
+const SPECIFIC_MESSAGES = {
+  identity_file_unreadable:
+    'That key file could not be read. Check the path to the private key file and that this account can open it.',
+  identity_file_refused:
+    'That key file was refused. Check that it is the private key for this login and that only you can read it.',
+  address_unresolved:
+    'That server address could not be found. Check the hostname or IP address you entered for the server.',
+  ssh_port_silent:
+    'Nothing answered on that SSH port. Check the SSH port you entered, and that the server is online.',
+  host_key_changed:
+    'The server offered a different SSH host key than the one this machine already trusts. Verify the server first.',
+} as const;
+
 function bounded(text: string): string {
   return text.length <= MESSAGE_MAX
     ? text
     : `${text.slice(0, MESSAGE_MAX - 1)}…`;
 }
 
-function failed(failure: GatewayBootstrapFailure): GatewayBootstrapResult {
-  return { ok: false, failure, message: bounded(FAILURE_MESSAGES[failure]) };
+function failed(
+  failure: GatewayBootstrapFailure,
+  message: string = FAILURE_MESSAGES[failure]
+): GatewayBootstrapResult {
+  return { ok: false, failure, message: bounded(message) };
 }
 
 /**
@@ -248,6 +278,17 @@ function isSafeRemoteArgument(value: unknown): value is string {
  *   common failure is classified by `ssh` rather than by our outer deadline.
  * - `StrictHostKeyChecking=accept-new` accepts a first-sight host key but still
  *   refuses a CHANGED one, which is the case that means interception.
+ * - `ControlMaster=no` with `ControlPath=none` refuses connection multiplexing,
+ *   for a reason a live run proved rather than a reason of principle. With the
+ *   operator's own `ControlMaster auto` in effect and a control socket already
+ *   open to that server, these commands ride the existing master and NO
+ *   AUTHENTICATION HAPPENS AT ALL. A manually entered server whose key file did
+ *   not exist bootstrapped successfully that way. That is the worst possible
+ *   failure for this module: Exawatt tells the operator their details work,
+ *   saves them, and the source breaks the moment the operator's own session
+ *   expires. Owning the connection is what makes this read a real test of the
+ *   credentials it was given. `ssh-tunnel.ts` refuses multiplexing for its own
+ *   reason, and neither refusal covers the other module's case.
  * - The destination tail from `buildDestinationArgs` ends with `--`, so the
  *   destination can never be read as an option and the remote command follows
  *   it as ordinary arguments.
@@ -275,6 +316,10 @@ export function buildRemoteExecArgs(
     `ConnectTimeout=${CONNECT_TIMEOUT_SECONDS}`,
     '-o',
     'StrictHostKeyChecking=accept-new',
+    '-o',
+    'ControlMaster=no',
+    '-o',
+    'ControlPath=none',
     ...buildDestinationArgs(destination),
     ...argv,
   ];
@@ -456,19 +501,83 @@ function parseCliToken(stdout: unknown): string | null {
 const TRANSPORT_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
   failure: GatewayBootstrapFailure;
+  /** Names the field the operator got wrong, when `ssh` said which it was. */
+  message?: string;
 }> = [
+  /*
+   * The key-file phrases come BEFORE the generic refusal phrases, for the
+   * reason `ssh-tunnel.ts` orders them the same way: an unreadable or wrongly
+   * permissioned `-i` never arrives alone. `ssh` warns about the key, offers
+   * nothing, and the server ends the session with `Permission denied
+   * (publickey).`, so below that phrase these could never win a match.
+   */
+  {
+    pattern: /identity file .* not accessible/i,
+    failure: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /no such identity/i,
+    failure: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /bad permissions|unprotected private key file/i,
+    failure: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+  {
+    pattern: /invalid format|error in libcrypto/i,
+    failure: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.identity_file_refused,
+  },
+
+  {
+    pattern:
+      /host key verification failed|remote host identification has changed/i,
+    failure: 'auth-rejected',
+    message: SPECIFIC_MESSAGES.host_key_changed,
+  },
+
   { pattern: /permission denied/i, failure: 'auth-rejected' },
   { pattern: /publickey/i, failure: 'auth-rejected' },
   { pattern: /too many authentication failures/i, failure: 'auth-rejected' },
-  { pattern: /host key verification failed/i, failure: 'auth-rejected' },
 
-  { pattern: /could not resolve hostname/i, failure: 'unreachable' },
-  { pattern: /name or service not known/i, failure: 'unreachable' },
-  { pattern: /no route to host/i, failure: 'unreachable' },
-  { pattern: /network is unreachable/i, failure: 'unreachable' },
-  { pattern: /operation timed out/i, failure: 'unreachable' },
-  { pattern: /connection timed out/i, failure: 'unreachable' },
-  { pattern: /connection refused/i, failure: 'unreachable' },
+  {
+    pattern: /could not resolve hostname/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.address_unresolved,
+  },
+  {
+    pattern: /name or service not known|nodename nor servname/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.address_unresolved,
+  },
+  {
+    pattern: /no route to host/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /network is unreachable/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /operation timed out/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /connection timed out/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
+  {
+    pattern: /connection refused/i,
+    failure: 'unreachable',
+    message: SPECIFIC_MESSAGES.ssh_port_silent,
+  },
   { pattern: /connection closed by remote host/i, failure: 'unreachable' },
 ];
 
@@ -482,23 +591,32 @@ const SSH_ERROR_EXIT_CODE = 255;
  * Why the SSH leg failed, or null when the leg worked and the REMOTE command is
  * what failed. Called only on a non-zero exit.
  */
-function classifyTransport(
-  result: RemoteExecResult
-): GatewayBootstrapFailure | null {
+interface TransportFault {
+  failure: GatewayBootstrapFailure;
+  message: string;
+}
+
+function classifyTransport(result: RemoteExecResult): TransportFault | null {
   const text = typeof result.stderr === 'string' ? result.stderr : '';
-  if (text.includes(SSH_LAUNCH_FAILED)) return 'unknown';
+  if (text.includes(SSH_LAUNCH_FAILED)) {
+    return { failure: 'unknown', message: FAILURE_MESSAGES.unknown };
+  }
   // The exit-status gate is load-bearing, not a shortcut. A remote
   // `cat: …/openclaw.json: Permission denied` exits 1 and contains a phrase
   // this table maps to a refused login. Without the gate the operator would be
   // told to check their SSH key when the real answer is a file permission.
   if (result.code !== null && result.code !== SSH_ERROR_EXIT_CODE) return null;
-  for (const { pattern, failure } of TRANSPORT_PATTERNS) {
-    if (pattern.test(text)) return failure;
+  for (const { pattern, failure, message } of TRANSPORT_PATTERNS) {
+    if (pattern.test(text)) {
+      return { failure, message: message ?? FAILURE_MESSAGES[failure] };
+    }
   }
   // Killed at our own deadline with nothing classifiable to say. For a
   // bootstrap read whose every command is sub-second, that is the server not
   // answering rather than the command misbehaving.
-  if (result.code === null) return 'unreachable';
+  if (result.code === null) {
+    return { failure: 'unreachable', message: FAILURE_MESSAGES.unreachable };
+  }
   return null;
 }
 
@@ -564,7 +682,13 @@ async function runRemote(
  */
 export async function bootstrapGatewayCredentialOverSsh(
   destination: SshDestination,
-  exec: RemoteExec
+  exec: RemoteExec,
+  /**
+   * Injected for the same reason `LocalGatewaySource` is: a unit test must be
+   * able to describe a key file without one existing on the machine running
+   * the test. The default is the real readability check.
+   */
+  canReadIdentityFile?: (path: string) => boolean
 ): Promise<GatewayBootstrapResult> {
   // Before ANY execution: a leading dash would make ssh read part of the
   // destination as an option, and `-oProxyCommand=…` is remote code execution
@@ -573,6 +697,19 @@ export async function bootstrapGatewayCredentialOverSsh(
   if (!resolved.ok) return failed('invalid-target');
   const target = resolved.destination;
   if (typeof exec !== 'function') return failed('unknown');
+
+  // A key file this machine cannot read is a mistake in the target, not a
+  // refusal by the server. Caught here, the operator is told which field is
+  // wrong; left to `ssh`, it becomes a refused login on their server that
+  // reports back as an authorization problem. `ssh-tunnel.ts` owns the rule so
+  // both transports answer the same way about the same field.
+  if (
+    canReadIdentityFile === undefined
+      ? namesUnreadableIdentityFile(target)
+      : namesUnreadableIdentityFile(target, canReadIdentityFile)
+  ) {
+    return failed('invalid-target', SPECIFIC_MESSAGES.identity_file_unreadable);
+  }
 
   // 1. Version. Also the cheapest proof that the login works and OpenClaw is
   //    there, so its failure classification stands in for the whole session.
@@ -583,7 +720,7 @@ export async function bootstrapGatewayCredentialOverSsh(
     version = parseOpenClawVersion(versionRun.result.stdout);
   } else {
     const transport = classifyTransport(versionRun.result);
-    if (transport) return failed(transport);
+    if (transport) return failed(transport.failure, transport.message);
     if (indicatesMissingCommand(versionRun.result.stderr)) {
       return failed('openclaw-missing');
     }
@@ -605,7 +742,7 @@ export async function bootstrapGatewayCredentialOverSsh(
     cliToken = parseCliToken(cliRun.result.stdout);
   } else {
     const transport = classifyTransport(cliRun.result);
-    if (transport) return failed(transport);
+    if (transport) return failed(transport.failure, transport.message);
   }
 
   // 3. The config file. Read even when the CLI already answered, because it is
@@ -613,11 +750,14 @@ export async function bootstrapGatewayCredentialOverSsh(
   const configRun = await runRemote(exec, target, ['cat', REMOTE_CONFIG_PATH]);
   if (!configRun.ok) return failed(configRun.failure);
   let configText: string | null = null;
-  let configFailure: GatewayBootstrapFailure | null = null;
+  let configFailure: TransportFault | null = null;
   if (configRun.result.code === 0) {
     configText = configRun.result.stdout;
   } else {
-    configFailure = classifyTransport(configRun.result) ?? 'unreadable-config';
+    configFailure = classifyTransport(configRun.result) ?? {
+      failure: 'unreadable-config',
+      message: FAILURE_MESSAGES['unreadable-config'],
+    };
   }
 
   const gatewayPort =
@@ -675,7 +815,9 @@ export async function bootstrapGatewayCredentialOverSsh(
     };
   }
 
-  return failed(configFailure ?? 'unreadable-config');
+  return configFailure
+    ? failed(configFailure.failure, configFailure.message)
+    : failed('unreadable-config');
 }
 
 /**
@@ -808,6 +950,8 @@ export interface GatewayCredentialDependencies {
   exec: RemoteExec;
   /** This machine's own installation. Defaults to the real one. */
   local?: LocalGatewaySource;
+  /** Whether a named private key file can be read here. Defaults to the real check. */
+  canReadIdentityFile?: (path: string) => boolean;
 }
 
 /**
@@ -832,7 +976,8 @@ export async function resolveGatewayCredential(
     case 'ssh-alias':
       return await bootstrapGatewayCredentialOverSsh(
         { kind: 'ssh-alias', alias: transport.alias },
-        deps.exec
+        deps.exec,
+        deps.canReadIdentityFile
       );
     case 'ssh-manual':
       return await bootstrapGatewayCredentialOverSsh(
@@ -843,7 +988,8 @@ export async function resolveGatewayCredential(
           port: transport.port,
           identityFile: transport.identityFile,
         },
-        deps.exec
+        deps.exec,
+        deps.canReadIdentityFile
       );
     case 'local-loopback':
       return await bootstrapLocalGatewayCredential(deps.local);
