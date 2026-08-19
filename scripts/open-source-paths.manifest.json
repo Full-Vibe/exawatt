@@ -184,6 +184,7 @@
         "scripts/r3f-eval/**",
         "scripts/renderer-session-lifecycle-leak-probe.mjs",
         "scripts/run-next-with-distribution.mjs",
+        "scripts/secret-scan.mjs",
         "scripts/session-lifecycle-leak-probe.mjs",
         "scripts/sign-renderer-archive.cjs",
         "scripts/terminal-cost-probe.mjs",
