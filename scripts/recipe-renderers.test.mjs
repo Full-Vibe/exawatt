@@ -454,3 +454,48 @@ test('the public path manifest keeps only public rules and names no private dire
   // public repository cannot classify its own file.
   assert.match(text, /docs\/research\/spatial-memory\/README\.md/u);
 });
+
+test('the rendered manifest is valid FOR the public tree, not just well formed', async () => {
+  // The public repository runs `open-source:paths:check` against its own
+  // manifest, and the validator rejects a pattern matching nothing. Two stale
+  // classes reached the real repository before this test existed, both found by
+  // the public repository's own CI on 2026-08-19:
+  //   - an `exclude` naming a directory that is private, so absent publicly
+  //   - an exact exception for a GENERATED path whose recipe does not render
+  // Well-formedness is not the property that matters; agreement with the tree
+  // is.
+  const { execFileSync } = await import('node:child_process');
+  const { readPathManifest, validateTrackedPathCoverage } = await import(
+    './lib/open-source-paths.mjs'
+  );
+  const { projectPublicHistory } = await import('./lib/public-projection.mjs');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const nodePath = await import('node:path');
+
+  const destination = await mkdtemp(nodePath.join(tmpdir(), 'exa-manifest-'));
+  await rm(destination, { recursive: true, force: true });
+  try {
+    await projectPublicHistory({
+      sourceRepo: ROOT,
+      sourceSha: 'HEAD',
+      destination,
+    });
+    const manifest = await readPathManifest(
+      nodePath.join(destination, 'scripts/open-source-paths.manifest.json')
+    );
+    const files = execFileSync('git', ['-C', destination, 'ls-files'], {
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n');
+    // Throws on an unclassified path, a stale rule, or a stale exception.
+    validateTrackedPathCoverage(
+      manifest,
+      files.map(file => ({ path: file }))
+    );
+    assert.ok(files.length > 1000, 'expected a full public tree');
+  } finally {
+    await rm(destination, { recursive: true, force: true });
+  }
+});

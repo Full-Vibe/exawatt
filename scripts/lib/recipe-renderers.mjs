@@ -646,12 +646,63 @@ const RENDERERS = new Map([
         // several read private release-custody files in order to prove a public
         // output does not reference them — so a manifest that kept its recipes
         // would publish the names of the private files it exists to keep out.
-        const keep = entry =>
-          entry.classification === 'PUBLIC' ||
-          entry.classification === 'GENERATED';
+        // An entry survives only if its paths can actually EXIST in the public
+        // tree. PUBLIC always can. GENERATED can only when its recipe renders
+        // that path: the official brand marks are declared GENERATED and have
+        // no renderer on purpose, so they never arrive, and a manifest that
+        // still named them would carry an exception matching nothing.
+        //
+        // This is the third face of one mistake. The original recipe reason
+        // said pruning needed the whole tracked tree; it was dismissed twice as
+        // unnecessary, and both dismissals were wrong in a different direction:
+        // once for EXCLUDES naming dropped territory, once for GENERATED paths
+        // that never render. Includes were the only part that was safe, because
+        // an include only ever names territory that survives with it.
+        const renderedPaths = new Set();
+        for (const [, recipe] of Object.entries(manifest.recipes ?? {})) {
+          for (const output of recipe.outputs ?? []) {
+            if (rendersOutput(recipe.kind, output.path)) {
+              renderedPaths.add(output.path);
+            }
+          }
+        }
+        const keep = entry => {
+          if (entry.classification === 'PUBLIC') return true;
+          if (entry.classification !== 'GENERATED') return false;
+          // A GENERATED rule (rather than an exact exception) covers globs; keep
+          // it, because its own outputs are enumerated by the recipe above.
+          return entry.path === undefined || renderedPaths.has(entry.path);
+        };
+        // Everything a dropped rule or exception used to claim. A surviving
+        // rule's `exclude` that names one of these is now STALE: it carves out
+        // territory the public tree does not contain, and the manifest
+        // validator rejects a pattern that matches nothing.
+        //
+        // The public repository's own CI found this on its first run
+        // (2026-08-19): `public-documentation` excluded
+        // `docs/engineering/incidents/**`, which exists only privately. This is
+        // the "prune rules that match no projected path" the original recipe
+        // reason warned about — unnecessary for INCLUDES, which only ever name
+        // surviving territory, and necessary for EXCLUDES, which name absent
+        // territory by construction.
+        const droppedClaims = new Set([
+          ...(manifest.rules ?? [])
+            .filter(entry => !keep(entry))
+            .flatMap(entry => entry.include ?? []),
+          ...(manifest.exceptions ?? [])
+            .filter(entry => !keep(entry))
+            .map(entry => entry.path),
+        ]);
         const publicize = entry => {
           const { recipe, ...rest } = entry;
-          return { ...rest, classification: 'PUBLIC' };
+          const exclude = (entry.exclude ?? []).filter(
+            pattern => !droppedClaims.has(pattern)
+          );
+          return {
+            ...rest,
+            ...(entry.exclude === undefined ? {} : { exclude }),
+            classification: 'PUBLIC',
+          };
         };
         const rules = (manifest.rules ?? []).filter(keep).map(publicize);
         const exceptions = (manifest.exceptions ?? [])
