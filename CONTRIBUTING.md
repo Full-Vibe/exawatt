@@ -110,6 +110,14 @@ Contributors retain copyright in their work. The CLA grants Full Vibe AI the
 rights needed to keep the contribution open source and offer alternative
 commercial licenses; it is not a copyright assignment.
 
+**How to accept it.** Open a pull request that adds your GitHub login to
+`.github/cla-signatures.json`, and say in the description that you have read
+and accept `CLA.md` at the version recorded there. A maintainer merges it, and
+the CLA check passes on your next push. There is no bot and no third-party
+service: your acceptance lives in this repository's history, where it survives
+any service going away, and no external application holds write access to the
+organization.
+
 Do not add a dependency or asset without recording its source, author,
 license, modification status, and distribution basis. Do not paste code from
 another project without preserving all notices and proving compatibility.
