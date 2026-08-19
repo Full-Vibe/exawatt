@@ -6,52 +6,67 @@ import {
   parseGoalVisualResponse,
 } from './contract';
 
+const IDENTITY_KEY = 'a3f1'.repeat(16);
+
 describe('goal visual transport contract', () => {
-  it('accepts only a bounded project key and accepted context label', () => {
+  it('accepts an opaque identity and nothing else', () => {
     expect(
       parseGoalVisualRequest(
         JSON.stringify({
           schemaVersion: GOAL_VISUAL_SCHEMA_VERSION,
-          projectKey: '  Exawatt  ',
-          label: 'Improve agent context summaries',
+          identityKey: IDENTITY_KEY,
         })
       )
-    ).toEqual({
-      schemaVersion: 1,
-      projectKey: 'Exawatt',
-      label: 'Improve agent context summaries',
-    });
+    ).toEqual({ schemaVersion: 1, identityKey: IDENTITY_KEY });
   });
 
-  it('rejects raw instructions, invalid accepted labels, and oversized keys', () => {
+  it('refuses every field that could carry operator text', () => {
+    // BUG-091: `label` was a real field until 2026-08-19, and the label is
+    // text an operator may have typed. A closed object means a client that
+    // regresses is refused rather than quietly transmitting it.
+    for (const extra of [
+      { label: 'Improve agent context summaries' },
+      { projectKey: 'project:deadbeef' },
+      { recentInstructions: ['secret raw instruction'] },
+    ]) {
+      expect(() =>
+        parseGoalVisualRequest(
+          JSON.stringify({
+            schemaVersion: 1,
+            identityKey: IDENTITY_KEY,
+            ...extra,
+          })
+        )
+      ).toThrow('unsupported fields');
+    }
+  });
+
+  it('rejects an identity that is not a SHA-256 digest', () => {
+    for (const identityKey of [
+      'Improve agent context summaries',
+      IDENTITY_KEY.toUpperCase(),
+      `${IDENTITY_KEY}0`,
+      IDENTITY_KEY.slice(1),
+      42,
+    ]) {
+      expect(() =>
+        parseGoalVisualRequest(
+          JSON.stringify({ schemaVersion: 1, identityKey })
+        )
+      ).toThrow('Identity key is invalid');
+    }
+  });
+
+  it('bounds the request far below a sentence', () => {
     expect(() =>
       parseGoalVisualRequest(
         JSON.stringify({
           schemaVersion: 1,
-          projectKey: 'project',
-          label: 'A durable goal',
-          recentInstructions: ['secret raw instruction'],
+          identityKey: IDENTITY_KEY,
+          transcript: 'x'.repeat(600),
         })
       )
-    ).toThrow('unsupported fields');
-    expect(() =>
-      parseGoalVisualRequest(
-        JSON.stringify({
-          schemaVersion: 1,
-          projectKey: 'project',
-          label: '/tmp/operator-private-context.txt',
-        })
-      )
-    ).toThrow('Accepted label');
-    expect(() =>
-      parseGoalVisualRequest(
-        JSON.stringify({
-          schemaVersion: 1,
-          projectKey: 'x'.repeat(241),
-          label: 'A durable goal',
-        })
-      )
-    ).toThrow('Project key');
+    ).toThrow('too large');
   });
 
   it('round-trips the bounded private data URL response', () => {

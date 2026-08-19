@@ -137,14 +137,17 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // stays internal.
     label: 'Agent tile backgrounds',
     purpose: 'Generates the ambient imagery behind Team tiles.',
-    // CORRECTED 2026-08-19. This read "No text you wrote", which is true of
-    // what fal.ai receives and false of what EXAWATT receives: the request is
-    // `{ schemaVersion, projectKey, label }` and that label is the accepted
-    // Session label, which the operator may have typed himself. The intended
-    // protocol sends an opaque `identityKey` instead, and until it ships this
-    // sentence must describe the request that actually leaves the machine.
+    // RESTORED 2026-08-19 (BUG-091), and the detour is worth recording. This
+    // sentence was weakened the same week because it was false: the request
+    // carried `{ schemaVersion, projectKey, label }`, and that label is the
+    // accepted Session label, which an operator correction may have typed. The
+    // weaker sentence was a holding position for a payload that should not
+    // have existed, not a decision. The request now carries `{ schemaVersion,
+    // identityKey }` — one opaque digest computed in `context-summarizer.ts`
+    // and nothing else — so the stronger claim is true of Exawatt and not only
+    // of fal.ai. It may be weakened again only if the payload widens again.
     sends:
-      'The Session label, which may be text you typed, plus a Project key. Exawatt turns it into a prompt from a fixed word list in its own source; that prompt, and no text of yours, is what reaches fal.ai.',
+      'No text you wrote. A prompt assembled from a fixed word list in Exawatt’s source, chosen by a one-way hash of the goal.',
     destination: 'Exawatt, then fal.ai',
     cost: 'Tiles use a plain background; images already generated stay.',
     defaultEnabled: true,

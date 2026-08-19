@@ -69,14 +69,12 @@ The 2026-08-02 demo arc **landed in one day**: ENG-036 G0/G1, ENG-026 N0–N5, E
    enqueued rather than left in the backlog, because each gets worse the later
    it is taken.
 
-   **BUG-091** is a live product defect, not a doc defect: the goal-visual
-   request carries the Session label, which the operator may have typed, to
-   Exawatt, and nothing downstream needs it. The disclosure has been corrected
-   to describe the real payload, so the product is honest today, but honesty
-   about a payload that should not exist is a holding position. Fix it before
-   OS6 puts strangers in front of the product, because it is precisely what a
-   privacy-minded reader checks first, and because the published Apache
-   contract already specifies the request the client should have been sending.
+   **BUG-091 is done (2026-08-19).** It was a live product defect, not a doc
+   defect: the goal-visual request carried the Session label, which the
+   operator may have typed, to Exawatt, and nothing downstream needed it. The
+   client now sends the opaque `identityKey` the published Apache contract
+   always specified, no cached image was invalidated, and the Settings
+   disclosure is back to "No text you wrote".
 
    **BUG-090** taxes every agent, every day: a correct change to a widely
    imported module cannot land while a sibling session is busy, and the

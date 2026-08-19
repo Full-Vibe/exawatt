@@ -140,7 +140,7 @@ describe('Agent tile visual language bench', () => {
     getSession.mockResolvedValue({
       data: { session: { access_token: 'bench-token' } },
     });
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       Promise.resolve(
         new Response(
           JSON.stringify({
@@ -170,6 +170,19 @@ describe('Agent tile visual language bench', () => {
         }),
       })
     );
+    // The bench is the second caller of this service and sends the same
+    // request the product does: one opaque identity, no goal text (BUG-091).
+    const bodies = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(String(init?.body))
+    );
+    for (const body of bodies) {
+      expect(Object.keys(body).sort()).toEqual([
+        'identityKey',
+        'schemaVersion',
+      ]);
+      expect(body.identityKey).toMatch(/^[a-f0-9]{64}$/);
+    }
+    expect(new Set(bodies.map(body => body.identityKey)).size).toBe(21);
     expect(container.querySelectorAll('img')).toHaveLength(21);
   });
 

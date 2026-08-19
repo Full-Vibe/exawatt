@@ -1,15 +1,28 @@
-import { cleanContextLabel } from '@/lib/context-labels/contract';
-
 export const GOAL_VISUAL_SCHEMA_VERSION = 1;
-export const MAX_GOAL_VISUAL_REQUEST_BYTES = 2_048;
-export const MAX_GOAL_VISUAL_PROJECT_KEY_CHARS = 240;
+/**
+ * A request is an envelope plus one 64-character key: about 100 bytes. The
+ * bound is deliberately far below anything that could carry a sentence, so a
+ * caller that tried to smuggle text is refused by size before it is refused by
+ * shape (BUG-091).
+ */
+export const MAX_GOAL_VISUAL_REQUEST_BYTES = 512;
 export const MAX_GOAL_VISUAL_BYTES = 2_000_000;
 export const GOAL_VISUAL_MIME_TYPE = 'image/jpeg' as const;
 
+/** Lowercase SHA-256 hex, the only identity shape this service accepts. */
+export const GOAL_VISUAL_IDENTITY_KEY_PATTERN = /^[a-f0-9]{64}$/;
+
+/**
+ * The V1 goal-visual request (`contracts/services/v1/schemas/goal-visuals.schema.json`).
+ *
+ * `identityKey` is derived on the client and opaque here: no Project name, no
+ * accepted goal label, no prompt, instruction, path, or transcript. The service
+ * cannot recover the goal it stands for, and does not need to — the prompt is
+ * assembled from fixed word lists indexed by bytes of the key itself.
+ */
 export interface GoalVisualRequest {
   schemaVersion: typeof GOAL_VISUAL_SCHEMA_VERSION;
-  projectKey: string;
-  label: string;
+  identityKey: string;
 }
 
 export interface GoalVisualResponse {
@@ -28,10 +41,6 @@ export type GoalVisualErrorCode =
   | 'generation_failed'
   | 'safety_rejected';
 
-function cleanInline(value: string): string {
-  return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
-}
-
 export function parseGoalVisualRequest(raw: string): GoalVisualRequest {
   if (Buffer.byteLength(raw, 'utf8') > MAX_GOAL_VISUAL_REQUEST_BYTES) {
     throw new Error('Request is too large');
@@ -49,24 +58,23 @@ export function parseGoalVisualRequest(raw: string): GoalVisualRequest {
   if (input.schemaVersion !== GOAL_VISUAL_SCHEMA_VERSION) {
     throw new Error('Schema version is unsupported');
   }
-  const allowedFields = new Set(['schemaVersion', 'projectKey', 'label']);
+  // Closed object: a request carrying anything besides the identity is
+  // refused rather than ignored, so a client that regresses to sending a
+  // label learns immediately instead of transmitting it successfully.
+  const allowedFields = new Set(['schemaVersion', 'identityKey']);
   if (Object.keys(input).some(field => !allowedFields.has(field))) {
     throw new Error('Request contains unsupported fields');
   }
-  if (typeof input.projectKey !== 'string') {
-    throw new Error('Project key is invalid');
-  }
-  const projectKey = cleanInline(input.projectKey);
   if (
-    !projectKey ||
-    projectKey.length > MAX_GOAL_VISUAL_PROJECT_KEY_CHARS ||
-    /\p{Cc}/u.test(projectKey)
+    typeof input.identityKey !== 'string' ||
+    !GOAL_VISUAL_IDENTITY_KEY_PATTERN.test(input.identityKey)
   ) {
-    throw new Error('Project key is invalid');
+    throw new Error('Identity key is invalid');
   }
-  const label = cleanContextLabel(input.label);
-  if (!label) throw new Error('Accepted label is invalid');
-  return { schemaVersion: GOAL_VISUAL_SCHEMA_VERSION, projectKey, label };
+  return {
+    schemaVersion: GOAL_VISUAL_SCHEMA_VERSION,
+    identityKey: input.identityKey,
+  };
 }
 
 export function goalVisualDataUrl(bytes: Uint8Array): string {
@@ -83,7 +91,7 @@ export function parseGoalVisualResponse(value: unknown): GoalVisualResponse {
   const response = value as Record<string, unknown>;
   if (
     typeof response.identityKey !== 'string' ||
-    !/^[a-f0-9]{64}$/.test(response.identityKey) ||
+    !GOAL_VISUAL_IDENTITY_KEY_PATTERN.test(response.identityKey) ||
     typeof response.dataUrl !== 'string' ||
     !response.dataUrl.startsWith(`data:${GOAL_VISUAL_MIME_TYPE};base64,`) ||
     response.dataUrl.length > Math.ceil((MAX_GOAL_VISUAL_BYTES * 4) / 3) + 64

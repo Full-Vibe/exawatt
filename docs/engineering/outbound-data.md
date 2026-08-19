@@ -230,11 +230,15 @@ claude-haiku-4-5`).
   2026-08-18: that second caller ignored the preference until this audit gated
   it, so "Agent tile backgrounds" now genuinely prevents every goal-visual
   request rather than only the product one. **Server**
-  `src/app/api/goal-visuals/route.ts`, `src/lib/goal-visuals/server.ts`.
-- **Sent to Exawatt** (≤2 KB, three fields): `schemaVersion`, `projectKey` —
-  a SHA-256 digest of the project directory or name, so the path never leaves —
-  and `label`, the accepted context label (≤72 characters).
-- **Sent to fal.ai**: **not the label.** Bytes of the identity digest index
+  `src/app/api/goal-visuals/route.ts`, `src/lib/goal-visuals/server.ts`, both
+  composed into an official build from `company/overlay/web/`.
+- **Sent to Exawatt** (≤512 bytes, two fields): `schemaVersion` and
+  `identityKey`, a SHA-256 digest of the project key and the accepted context
+  label computed on the machine. Neither input leaves it. Corrected 2026-08-19
+  (BUG-091): the request carried the accepted label itself until that date, and
+  an operator correction is one of the things that queues it, so text the
+  operator typed was crossing the boundary for nothing.
+- **Sent to fal.ai**: **no text of yours.** Bytes of the identity digest index
   fixed scene/palette/atmosphere/composition tables to build a generic
   landscape prompt plus a deterministic seed (`goalVisualProviderPrompt`).
   fal.ai receives no Exawatt content. `X-Fal-Store-IO: 0` is set.
@@ -244,9 +248,9 @@ claude-haiku-4-5`).
 - **Off**: Settings → Privacy → Agent tile backgrounds (also "Backgrounds" in
   Team's chrome — same preference); `EXAWATT_GOAL_VISUAL_ENDPOINT` redirects it.
 - **Published contract**: `contracts/services/v1/schemas/goal-visuals.schema.json`
-  specifies a client-derived `identityKey` and no label at all. That is the
-  migration target, not the shipped request; `contracts/README.md` now says so
-  rather than reading as a present-tense guarantee.
+  specifies a client-derived `identityKey` and no label at all. The shipped
+  request is that request as of 2026-08-19; the response envelope and headers
+  are still the private route's own and remain a separate migration.
 
 ## 5. Supabase — account, sync, feedback, stats
 
