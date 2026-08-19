@@ -1523,7 +1523,7 @@ Milestones:
 - C2 Connect flow and coworker projection — LANDED 2026-08-18: `/hud-gallery` review, then **⌘N →
   Connect existing Agent…**, explicit Project mapping, and read-only Agent/Team
   views with bounded primary-conversation history and meaningful current work.
-- C3 Relaunch and dogfood proof — outage, source restart, rename, detach,
+- C3 Relaunch and dogfood proof — LANDED 2026-08-19: outage, source restart, rename, detach,
   reattach, and retired-Agent cases against both operator Gateways.
 
 Exit criteria: active discovery offers Marcus, Scout, and Tyler exactly once;

@@ -349,7 +349,7 @@ simulated evidence.
   in `/hud-gallery`, then wire **⌘N → Connect existing Agent…**, explicit
   Project mapping, and read-only Marcus/Scout/Tyler Agent + Team views with a
   bounded primary-conversation history and compact current-work stack.
-- **C3 Relaunch and dogfood proof.** Quit/relaunch, endpoint outage, source
+- **C3 Relaunch and dogfood proof — LANDED 2026-08-19.** Quit/relaunch, endpoint outage, source
   restart, renamed Project, detach/reattach, and retired-Agent cases preserve
   identity and never mutate the VPS.
 
@@ -853,3 +853,96 @@ Team tile drew its mark from the status projection and its label from the turn
 vocabulary, two channels that could disagree and did: a tile whose Agent had
 failed announced "result ready" beside a red light. Both now derive from one
 projection.
+
+### 2026-08-19 — the contract found six defects, and two claims that were not true
+
+C3's first deliverable is a lifecycle contract written once and run against a
+Demo source in CI, which is also the last unmet H1 criterion: _"Demo and live
+adapters pass the same projection and lifecycle contract tests."_ Standing the
+real runtime and the real session up over simulated evidence, with the real
+store on a temp directory, found six defects in code that had passed every
+suite and two live probes.
+
+Three would have been felt.
+
+**Pressing Reconnect blinded the session and leaked a tunnel.** `connect()`
+established a new tunnel and client over a live one without tearing the old
+down, and the drop watcher refused to attach because a previous one existed. So
+after one Reconnect the session could never see a drop again, kept reporting
+`Live`, and left an orphaned `ssh` child holding a port open to the operator's
+server.
+
+**Retiring one Agent emptied the whole roster.** A plan mapping whose Agent the
+source no longer declares is a fatal projection error, so `agents()` returned
+nothing at all: one Agent retiring on one server removed every connected
+coworker from every source, with no explanation on screen.
+
+**Detach left the coworkers standing.** The record and credential went, but the
+session, its snapshot, and the source's mappings stayed, so detached coworkers
+remained in the roster until quit and the projection file grew forever. And
+reattaching the same server minted new ids, so the same people came back as
+strangers.
+
+Two entries above this one claimed more than the code did, and the contract is
+how that surfaced.
+
+The C2 entry says a failing automation "makes `error` reachable". The kernel did
+derive it, and `discover()` did fetch `cron.list` and `status`, but it never
+passed them to the adapter and the runtime never read the kernel's answer. The
+evidence was gathered, thrown away, and recomputed less well. `error` was
+unreachable end to end for as long as that entry has been written down.
+
+The H2 entry describes following a reply as it arrives. The subscription was
+taken before a connection existed, and the seam returned a no-op unsubscribe in
+exactly that case, so nothing was ever subscribed and replies only appeared on
+the next authoritative read. Degraded rather than wrong, but not what was
+claimed.
+
+Both are now fixed rather than reworded. The lesson is the one the contract was
+built for: a claim in a milestone log is not evidence, and a live probe that
+exercises the happy path will not catch a signal that is collected and
+discarded.
+
+### 2026-08-19 — C3 landed, and the defect that was the milestone
+
+The live proof drives the shipping runtime against both dogfood Gateways: real
+store, real plan, real session, real client, real tunnel, with two seams only,
+so the outage is Exawatt closing its own transport and a refusal is quoted in
+the source's own words. Twenty-nine cases, green on both, and each server ends
+the run holding exactly one device: the operator's own.
+
+It found a seventh defect that the hermetic contract could not, and it was the
+whole promise.
+
+Exawatt persisted the scoped device token so that a saved source would
+reconnect without ever re-reading the admin-capable Gateway secret again. It
+was persisting half a credential. `OCClient` minted a fresh keypair in its
+constructor, the session built a new client per connection, and the Gateway
+derives a device id from the public key and binds the token to it. Every launch
+after the first therefore presented a stranger holding someone else's token and
+was refused. Because credential resolution short-circuits whenever a stored
+token exists, nothing re-bootstrapped: a saved source was permanently
+unavailable. Quit overnight, come back, and the coworker was gone, which is the
+one story this milestone exists to make true.
+
+No fixture could see it and neither could the new contract, because both build
+one client per test and a relaunch is the second one. That is the shape worth
+remembering: a promise about the SECOND time cannot be proved by a suite that
+only ever does something once.
+
+The identity is persisted with the token now, encrypted alike, cleared
+together, gone on detach, and owned by the session rather than the socket so
+the first connect, each reconnect, and a scope renegotiation are all one
+device. A token found without a keypair is ignored, which repairs the state the
+shipped build left behind. A refused credential is discarded and named in the
+source's words rather than reported as an unreachable Gateway, and the ladder
+stops rather than re-pairing on a timer, since re-pairing mints a device and
+re-reads the secret and that is the operator's decision to make.
+
+**H1 is complete.** Both Gateways connect by alias with no address typed,
+discovery offers only what the source declares configured, retained identities
+never rejoin on their own, contexts stay subordinate through every transition,
+rename and Project mapping leave the source byte-identical, detach removes
+Exawatt's record and nothing else, reattaching returns the same coworkers
+rather than strangers, identity drift is reported rather than guessed, and a
+relaunch returns to the same Agent on the credential it kept.
