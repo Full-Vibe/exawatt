@@ -399,9 +399,15 @@ governance, policy ceilings, and billing. Neither owns a parallel roster.
 - Disconnecting or detaching never deletes the remote installation, Agent,
   workspace, contexts, automations, or credentials.
 - H1 contains no remote command path, even if the protocol client already has
-  one.
+  one. **Superseded by H2 on 2026-08-18**, which added one deliberately: send,
+  abort, steer, and cancel, gated on authority the Gateway granted and refused
+  locally until it does. The criterion did its job, which was to keep the
+  command path out of H1 rather than out of the product.
 - H1 contains no remote Pause implementation, cron mutation, Gateway control,
-  or VPS lifecycle control.
+  or VPS lifecycle control. **This one still holds after H2** and is the sharper
+  half: cron mutation, configuration, and Agent lifecycle need `operator.admin`,
+  which Exawatt never requests, and a generic remote Pause is still deferred
+  until a source can prove a named halted scope.
 - Demo and live adapters pass the same projection and lifecycle contract tests.
 
 ## Non-goals for H1
