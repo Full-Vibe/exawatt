@@ -24,8 +24,10 @@ import type {
   AuthorityRequestResult,
   ConnectedGatewayPhase,
   ConnectedGatewaySession,
+  GatewayIdentity,
 } from './connected-gateway';
 import type { ConnectedSourceStore } from './connected-source-store';
+import type { DiagnosticRecorder } from './diagnostics-log';
 
 /**
  * The main-process owner of every configured Agent Source (ENG-010 C2).
@@ -84,9 +86,26 @@ export interface ConnectedAgentMapping extends AgentProjectionMapping {
   projectLabel: string;
 }
 
+/**
+ * Exawatt's projection plan: who is bound to whom, and to what.
+ *
+ * `boundIdentities` is the second half of that sentence, keyed by configured
+ * source id. A mapping says "this coworker is that source's `market-watch`";
+ * the bound identity says which installation was answering when the operator
+ * said so. Without it a relaunch has nothing to compare the next snapshot
+ * against, and a Gateway swapped for a different installation while Exawatt
+ * was closed — the moment a swap is most likely and least visible — is
+ * accepted in silence. It lives here rather than on the source record because
+ * it is what the plan is bound to: it is written when a binding is confirmed,
+ * and it goes when the plan does.
+ *
+ * It carries only what `GatewayIdentity` carries: a version string and sorted
+ * native Agent ids. No display name, no host, no alias, no address.
+ */
 export interface ConnectedAgentProjectionPlan {
   projectionVersion: typeof AGENT_PROJECTION_VERSION;
   mappings: readonly ConnectedAgentMapping[];
+  boundIdentities: Readonly<Record<string, GatewayIdentity>>;
 }
 
 export interface ConnectedAgentProjectionPlanStore {
@@ -108,7 +127,38 @@ function validText(value: unknown, max = MAX_TEXT_LENGTH): value is string {
 export const EMPTY_PROJECTION_PLAN: ConnectedAgentProjectionPlan = {
   projectionVersion: AGENT_PROJECTION_VERSION,
   mappings: [],
+  boundIdentities: {},
 };
+
+/**
+ * Read one persisted bound identity. Fails closed per source, exactly as a
+ * mapping row does: an unreadable entry costs that source its drift check,
+ * never the whole file. The session sanitises again on the way in, so this
+ * only has to refuse what is not an identity at all.
+ */
+function parseBoundIdentities(
+  value: unknown
+): Readonly<Record<string, GatewayIdentity>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const identities: Record<string, GatewayIdentity> = {};
+  for (const [sourceId, candidate] of Object.entries(value).slice(
+    0,
+    MAX_MAPPINGS
+  )) {
+    if (!validText(sourceId, MAX_ID_LENGTH)) continue;
+    if (!candidate || typeof candidate !== 'object') continue;
+    const row = candidate as Record<string, unknown>;
+    const ids = Array.isArray(row.nativeAgentIds)
+      ? row.nativeAgentIds.filter(
+          (id): id is string => typeof id === 'string' && id.length > 0
+        )
+      : [];
+    const version = typeof row.version === 'string' ? row.version : '';
+    if (ids.length === 0 && version.length === 0) continue;
+    identities[sourceId] = { version, nativeAgentIds: ids };
+  }
+  return identities;
+}
 
 /**
  * Parse one persisted mapping. Fails closed per row: a hand-edited or
@@ -164,11 +214,21 @@ export class FileConnectedAgentProjectionPlanStore implements ConnectedAgentProj
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return EMPTY_PROJECTION_PLAN;
     }
-    const rows = (parsed as { mappings?: unknown }).mappings;
-    if (!Array.isArray(rows)) return EMPTY_PROJECTION_PLAN;
+    const record = parsed as {
+      mappings?: unknown;
+      boundIdentities?: unknown;
+    };
+    const rows = record.mappings;
+    // A file written before bound identities existed simply has none, which
+    // reads as "never seen" and is the right answer for a source Exawatt has
+    // no history with.
+    const boundIdentities = parseBoundIdentities(record.boundIdentities);
+    if (!Array.isArray(rows))
+      return { ...EMPTY_PROJECTION_PLAN, boundIdentities };
     return {
       projectionVersion: AGENT_PROJECTION_VERSION,
       mappings: normalizeMappings(rows.slice(0, MAX_MAPPINGS)),
+      boundIdentities,
     };
   }
 
@@ -183,6 +243,7 @@ export class FileConnectedAgentProjectionPlanStore implements ConnectedAgentProj
           schemaVersion: PLAN_SCHEMA_VERSION,
           projectionVersion: AGENT_PROJECTION_VERSION,
           mappings: plan.mappings,
+          boundIdentities: plan.boundIdentities,
         },
         null,
         2
@@ -316,14 +377,25 @@ export interface RemoteAgentView {
   /** The source-declared `main` context, or null when it declares none. */
   primaryContextId: string | null;
   /**
-   * D40 work state, in the vocabulary a local Agent already uses.
+   * D40 work state, in the vocabulary a local Agent already uses, or null when
+   * the source has evidenced none.
+   *
+   * The kernel's answer, read rather than recomputed: `ProjectedAgent.workState`
+   * states the derivation once — a fault outranks a run in flight, a run in
+   * flight outranks quiet — and a surface that derived its own would drift from
+   * it the day the evidence grew.
+   *
+   * Null is unknown, and unknown is an answer. It must never render as a
+   * positive claim: a coworker whose source said nothing about any of its
+   * contexts is not idle, and showing it as idle would be Exawatt inventing a
+   * state nobody reported.
    *
    * Observed at `observedAt` and nowhere else: a stale or unavailable
    * connection leaves this exactly as it was last observed, and `connection`
    * is what tells the operator the view is not current. Nothing in this field
    * may move because observation moved.
    */
-  workState: AgentStatus;
+  workState: AgentStatus | null;
   contextCount: number;
   observedAt: number;
   createdAt: number;
@@ -587,15 +659,41 @@ export type ConnectedSourceSession = Pick<
   | 'onPhaseChange'
   | 'snapshot'
   | 'phase'
+  | 'identity'
   | 'identityDrift'
 > &
   ConnectedSourceCommandSurface;
 
+/**
+ * What the runtime knows about a source before its session exists.
+ *
+ * One field, and it is here rather than on the record because it is Exawatt's
+ * own observation history rather than the operator's configuration. A session
+ * cannot detect drift against an installation it never saw, and a relaunch
+ * builds a fresh one, so the previous identity has to be handed to it.
+ */
+export interface ConnectedSourceSessionContext {
+  /** The installation this source's projection is bound to. Null: never seen. */
+  knownIdentity: GatewayIdentity | null;
+}
+
 export interface ConnectedSourceRuntimeDeps {
   store: Pick<ConnectedSourceStore, 'list' | 'get'>;
   plans: ConnectedAgentProjectionPlanStore;
-  createSession: (record: ConnectedSourceRecord) => ConnectedSourceSession;
+  createSession: (
+    record: ConnectedSourceRecord,
+    context: ConnectedSourceSessionContext
+  ) => ConnectedSourceSession;
   now: () => number;
+  /**
+   * Where a refused projection is reported. Absent is a no-op, so nothing
+   * here depends on a log being wired; wired, it is what keeps a broken plan
+   * from costing the operator a roster with no explanation anywhere.
+   *
+   * It carries issue codes and counts only. No native Agent id, display name,
+   * alias, host, address, or transcript may travel through it.
+   */
+  recordDiagnostic?: DiagnosticRecorder;
 }
 
 interface SessionEntry {
@@ -703,6 +801,7 @@ export class ConnectedSourceRuntime {
 
     const entry = this.ensureSession(record);
     const result = await entry.session.connect();
+    this.rememberBoundIdentity(entry);
     if (this.disposed) {
       return {
         ok: false,
@@ -790,20 +889,45 @@ export class ConnectedSourceRuntime {
   /**
    * The projected coworkers.
    *
-   * Only mappings whose source has a snapshot in hand take part. The kernel
+   * A mapping takes part only when the source it names is being observed AND
+   * that source's own snapshot still declares its Agent configured. Both
+   * exclusions are narrow, and they are narrow for the same reason: the kernel
    * treats a mapping with no matching source Agent as a fatal topology error,
-   * which is right for a snapshot that lost an Agent and wrong for a source
-   * this launch has simply not opened yet; filtering keeps an unopened source
-   * silent instead of emptying the whole roster.
+   * so anything that reaches it and should not costs the operator every
+   * coworker of every source at once.
+   *
+   * A source this launch has not opened yet has told Exawatt nothing, and
+   * silence about one server must not empty the roster of the others.
+   *
+   * An Agent a source no longer declares configured is a retirement, and a
+   * retirement is ordinary: somebody deleted an Agent on their own server.
+   * That costs the operator that one coworker, quietly, and nobody else. It
+   * does not come back on its own either — the plan row stays, unprojected,
+   * so returning is an explicit choice rather than a resnapshot's side effect.
+   *
+   * What is deliberately NOT filtered is a plan that is broken rather than
+   * outdated: a duplicate mapping, two coworkers claiming one Exawatt id, an
+   * unreadable row. Those still reach the kernel, still refuse the projection,
+   * and are reported. Quietly dropping them would turn corruption into a
+   * roster that is silently missing people.
    */
   agents(): RemoteAgentView[] {
     const snapshots: AgentSourceTopologySnapshot[] = [];
     const entries = new Map<string, SessionEntry>();
+    const configured = new Map<string, Set<string>>();
     for (const entry of this.sessions.values()) {
       const snapshot = entry.session.snapshot;
       if (!snapshot) continue;
       snapshots.push(snapshot);
       entries.set(snapshot.configuredSourceId, entry);
+      configured.set(
+        snapshot.configuredSourceId,
+        new Set(
+          snapshot.agents
+            .filter(agent => agent.discoveryState !== 'retired')
+            .map(agent => agent.nativeAgentId)
+        )
+      );
     }
     if (snapshots.length === 0) return [];
 
@@ -815,7 +939,11 @@ export class ConnectedSourceRuntime {
       ])
     );
     const mappings: AgentProjectionMapping[] = plan.mappings
-      .filter(mapping => entries.has(mapping.configuredSourceId))
+      .filter(mapping =>
+        Boolean(
+          configured.get(mapping.configuredSourceId)?.has(mapping.nativeAgentId)
+        )
+      )
       .map(mapping => ({
         configuredSourceId: mapping.configuredSourceId,
         nativeAgentId: mapping.nativeAgentId,
@@ -828,7 +956,22 @@ export class ConnectedSourceRuntime {
       projectionVersion: plan.projectionVersion,
       mappings,
     });
-    if (!projected.ok) return [];
+    if (!projected.ok) {
+      this.deps.recordDiagnostic?.('connected-sources.projection-refused', {
+        codes: [
+          ...new Set(
+            projected.issues
+              .filter(issue => issue.severity === 'error')
+              .map(issue => issue.code)
+          ),
+        ].sort(),
+        errorCount: projected.issues.filter(issue => issue.severity === 'error')
+          .length,
+        mappingCount: mappings.length,
+        sourceCount: snapshots.length,
+      });
+      return [];
+    }
 
     const views: RemoteAgentView[] = [];
     for (const agent of projected.projection.agents) {
@@ -1161,6 +1304,7 @@ export class ConnectedSourceRuntime {
     this.deps.plans.write({
       projectionVersion: AGENT_PROJECTION_VERSION,
       mappings: [...others, ...next],
+      boundIdentities: plan.boundIdentities,
     });
 
     const entry = this.sessions.get(sourceId);
@@ -1182,6 +1326,59 @@ export class ConnectedSourceRuntime {
     await entry.session.disconnect();
     this.emit(entry);
     return { ok: true };
+  }
+
+  /**
+   * Detach one source: everything this process and this plan hold about it.
+   *
+   * The counterpart to `disconnect`, and the difference is the whole point.
+   * Disconnecting stops watching a source the operator still has; detaching is
+   * the operator saying they no longer have it, so the session, its last
+   * authoritative snapshot, and that source's rows in the projection plan all
+   * go. Leaving any of them behind is what kept detached coworkers in the
+   * roster until the app quit and left their mappings on disk forever.
+   *
+   * Nothing here reaches the source beyond closing the connection Exawatt
+   * opened. The remote installation, its Agents, workspaces, contexts,
+   * history, automations, and its own credentials are exactly as they were,
+   * and the device Exawatt paired stays revocable with the source's own
+   * tooling. The registry record and the stored credential are the store's to
+   * remove, and the caller removes them after this returns.
+   */
+  async detach(sourceId: string): Promise<void> {
+    const plan = this.deps.plans.read();
+    const kept = plan.mappings.filter(
+      mapping => mapping.configuredSourceId !== sourceId
+    );
+    const boundIdentities = { ...plan.boundIdentities };
+    const wasBound = sourceId in boundIdentities;
+    delete boundIdentities[sourceId];
+    if (kept.length !== plan.mappings.length || wasBound) {
+      this.deps.plans.write({
+        projectionVersion: AGENT_PROJECTION_VERSION,
+        mappings: kept,
+        boundIdentities,
+      });
+    }
+
+    this.awaitingApproval.delete(sourceId);
+    for (const key of [...this.inflightSends.keys()]) {
+      if (key.startsWith(`${sourceId}\0`)) this.inflightSends.delete(key);
+    }
+
+    const entry = this.sessions.get(sourceId);
+    this.sessions.delete(sourceId);
+    if (!entry) return;
+    if (!entry.closed) {
+      entry.closed = true;
+      entry.offPhase();
+      entry.offEvents();
+      entry.forwardedByRun.clear();
+      await entry.session.disconnect();
+    }
+    // One last change, so a renderer holding a roster reads it again and finds
+    // the coworkers of a source Exawatt no longer knows about gone.
+    this.emit(entry);
   }
 
   /**
@@ -1211,13 +1408,54 @@ export class ConnectedSourceRuntime {
 
   // ---- Internals ---------------------------------------------------------
 
+  /**
+   * Persist the installation this source's projection is bound to.
+   *
+   * Written after every observation, so the next launch has something to
+   * compare against and a Gateway swapped while Exawatt was closed cannot be
+   * accepted in silence. Unconditional on purpose: a session that just
+   * reported drift still answers `identity` with the BOUND identity rather
+   * than the drifted one, so writing it back preserves the binding the
+   * operator has not yet been asked about. A session with nothing observed
+   * writes nothing.
+   */
+  private rememberBoundIdentity(entry: SessionEntry): void {
+    const identity = entry.session.identity;
+    if (!identity) return;
+    const plan = this.deps.plans.read();
+    const current = plan.boundIdentities[entry.record.id];
+    if (
+      current &&
+      current.version === identity.version &&
+      current.nativeAgentIds.length === identity.nativeAgentIds.length &&
+      current.nativeAgentIds.every(
+        (id, index) => id === identity.nativeAgentIds[index]
+      )
+    ) {
+      return;
+    }
+    this.deps.plans.write({
+      projectionVersion: AGENT_PROJECTION_VERSION,
+      mappings: plan.mappings,
+      boundIdentities: {
+        ...plan.boundIdentities,
+        [entry.record.id]: {
+          version: identity.version,
+          nativeAgentIds: [...identity.nativeAgentIds],
+        },
+      },
+    });
+  }
+
   private ensureSession(record: ConnectedSourceRecord): SessionEntry {
     const existing = this.sessions.get(record.id);
     if (existing) {
       existing.record = record;
       return existing;
     }
-    const session = this.deps.createSession(record);
+    const session = this.deps.createSession(record, {
+      knownIdentity: this.deps.plans.read().boundIdentities[record.id] ?? null,
+    });
     const entry: SessionEntry = {
       record,
       session,
@@ -1268,6 +1506,9 @@ export class ConnectedSourceRuntime {
     }
     if (phase !== 'connected' || !entry.awaitingResnapshot) return;
     entry.awaitingResnapshot = false;
+    // The session resnapshots on its own way back up, so this is the other
+    // place an observation is confirmed and the plan's binding is refreshed.
+    this.rememberBoundIdentity(entry);
     for (const target of this.primaryTargetsOf(entry)) {
       this.publish({
         agentId: target.agentId,
@@ -1691,21 +1932,27 @@ export function boundConversation(
 }
 
 /**
- * One projected coworker's D40 work state.
+ * One projected coworker's D40 work state: the kernel's answer, read.
  *
- * Deliberately only the two states the source's evidence supports. A run in
- * flight is `working`, exactly as a local Session with `working: true` is.
- * Everything else is `idle`: `sessions.list` reports no turn boundary, no
- * human gate, and no fault, so `complete`, `blocked`, and `error` would each
- * be a claim Exawatt has not observed. Read-only H1 earns two of D40's states
- * honestly rather than approximating five.
+ * Read and not recomputed, deliberately. `projectAgentTopology` derives this
+ * from the evidence carried on the Agent's own records — an enabled automation
+ * whose last run failed is `error`, a context with a run in flight is
+ * `working`, a context that explicitly reports none is `idle` — and it states
+ * that precedence once so no surface can drift from it. This runtime used to
+ * answer `hasActiveRun ? 'working' : 'idle'`, which threw away the fault the
+ * discovery reads had already paid for and turned "the source said nothing"
+ * into a claim that the coworker is quiet.
+ *
+ * Every value the kernel can return is a word D40 already uses, so a remote
+ * coworker still needs no second status vocabulary. Null is unknown and stays
+ * null all the way to the renderer.
  *
  * The connection is not an input. An Agent observed working before its source
  * went stale is still working as far as anyone knows; the freshness lens
  * beside the name is what says how old that knowledge is.
  */
-function projectedWorkState(agent: ProjectedAgent): AgentStatus {
-  return agent.hasActiveRun ? 'working' : 'idle';
+function projectedWorkState(agent: ProjectedAgent): AgentStatus | null {
+  return agent.workState;
 }
 
 /**

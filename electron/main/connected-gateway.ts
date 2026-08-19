@@ -2,6 +2,8 @@ import {
   adaptOpenClawTopology,
   readGrantedAuthority,
   resolveConnectionStatus,
+  type AgentSourceAdapterId,
+  type AgentSourceEvidenceBasis,
   type AgentSourceTopologySnapshot,
   type ConnectedSourceRecord,
   type ConnectionStatus,
@@ -330,6 +332,23 @@ export interface ConnectedGatewaySessionDeps {
   setTimer: (fn: () => void, ms: number) => unknown;
   clearTimer: (handle: unknown) => void;
   maxReconnectAttempts?: number;
+  /**
+   * The identity Exawatt last observed behind this source, when it holds one.
+   *
+   * Drift is a comparison, so a session with nothing to compare against
+   * cannot make it. A relaunch builds a fresh session, and a relaunch is
+   * exactly when a Gateway swapped for a different installation is most
+   * likely and least visible: the app was closed while it happened. Learning
+   * the previous identity only by watching would therefore accept the swap in
+   * silence, which is the one outcome the doc rules out.
+   *
+   * So the previous identity is an input. The caller that owns the record
+   * persists what `identity` reports after a successful snapshot and hands it
+   * back here on the next launch; this session compares against it, reports
+   * drift, and never guesses by display name. Read once, at construction, and
+   * sanitised on the way in because it arrives from disk.
+   */
+  knownIdentity?: GatewayIdentity | null;
 }
 
 /**
@@ -489,6 +508,58 @@ function countAutomations(payload: unknown): number {
   return 0;
 }
 
+/**
+ * What a source's answers are entitled to claim about themselves.
+ *
+ * Read off the source's own adapter rather than asserted at the call site. A
+ * Demo source drives this exact lifecycle over a simulated Gateway, and
+ * recording its answers as `observed` would let simulated data claim an
+ * observation, which is precisely what the Demo-and-live parity criterion
+ * exists to prevent. Every other adapter is reading a real installation over a
+ * real socket, so what comes back is an observation.
+ */
+export function evidenceBasisForAdapter(
+  adapterId: AgentSourceAdapterId
+): AgentSourceEvidenceBasis {
+  return adapterId === 'demo' ? 'simulated' : 'observed';
+}
+
+/**
+ * A previously observed identity, made safe to compare against.
+ *
+ * It arrives from whatever persisted it, so it is read like any other
+ * untrusted input: non-strings, blanks, over-long ids, and duplicates are
+ * dropped, and the roster is sorted the way an observed one is, so a store
+ * that wrote the ids in another order cannot read as a different
+ * installation. Nothing usable collapses to null, which is the same as never
+ * having seen this source: no drift rather than a false one.
+ */
+function normalizeIdentity(
+  identity: GatewayIdentity | null | undefined
+): GatewayIdentity | null {
+  if (identity === null || identity === undefined) return null;
+  const version =
+    typeof identity.version === 'string'
+      ? identity.version.trim().slice(0, MAX_LABEL_LENGTH)
+      : '';
+  const candidates = Array.isArray(identity.nativeAgentIds)
+    ? identity.nativeAgentIds
+    : [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates.slice(0, MAX_DISCOVERY_AGENTS)) {
+    if (typeof candidate !== 'string') continue;
+    if (candidate.trim().length === 0 || candidate.length > MAX_ID_LENGTH) {
+      continue;
+    }
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    ids.push(candidate);
+  }
+  if (ids.length === 0 && version.length === 0) return null;
+  return { version, nativeAgentIds: ids.sort() };
+}
+
 function identityOf(
   snapshot: AgentSourceTopologySnapshot,
   version: string
@@ -532,6 +603,12 @@ function isIdentityDrift(
   return !observed.nativeAgentIds.some(id => known.has(id));
 }
 
+/** One carried event subscription: what to listen for, and who to tell. */
+interface GatewayEventSubscription {
+  eventName: string;
+  handler: (payload: unknown) => void;
+}
+
 export class ConnectedGatewaySession {
   private readonly record: ConnectedSourceRecord;
   private readonly deps: ConnectedGatewaySessionDeps;
@@ -545,7 +622,21 @@ export class ConnectedGatewaySession {
   private tunnel: SshTunnel | null = null;
   private stopWatchingTunnel: (() => void) | null = null;
   private client: ConnectedGatewayClient | null = null;
-  private clientStatusHandler: ((status: string) => void) | null = null;
+  private stopWatchingClient: (() => void) | null = null;
+  /**
+   * Event subscriptions this session carries, whether or not a connection is
+   * open. A caller subscribes when it takes an interest, which is when the
+   * session is created and before anything has connected; holding the
+   * subscriptions here rather than on a client is what lets that interest
+   * survive into the connection that follows and into every later one.
+   */
+  private readonly subscriptions = new Set<GatewayEventSubscription>();
+  /**
+   * The client every carried subscription is attached to right now, if any.
+   * Held so a teardown detaches from the client the handlers actually reached
+   * rather than from whatever `this.client` has become by then.
+   */
+  private subscribedClient: ConnectedGatewayClient | null = null;
   /**
    * The config object the live client kept. Held because a scope change is a
    * property of the handshake, so renegotiating means changing `scopes` on the
@@ -592,6 +683,13 @@ export class ConnectedGatewaySession {
     this.record = record;
     this.deps = deps;
     this.grantedAuthority = readGrantedAuthority(record.grantedAuthority);
+    /*
+     * What the last process saw behind this source, when the caller kept it.
+     * A relaunch is a fresh session over a source that has a history, and this
+     * is that history: without it the first snapshot has nothing to be drift
+     * against and a swapped installation is accepted in silence.
+     */
+    this.lastIdentity = normalizeIdentity(deps.knownIdentity);
     const configured =
       deps.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.maxReconnectAttempts = Math.max(
@@ -637,11 +735,23 @@ export class ConnectedGatewaySession {
     };
   }
 
+  /**
+   * Open observation, from whatever state this session is in.
+   *
+   * The first thing it does is close whatever is already open, exactly as the
+   * reconnect ladder does. Connecting over a live connection would leave an
+   * orphaned `ssh` child holding a port open on the operator's server and an
+   * unwatched socket carrying the traffic, so the session would keep
+   * reporting Live through a drop it could no longer see. Reconnect is a
+   * button in the product and it calls straight through to here, so this is
+   * not a defensive nicety: it is the ordinary path.
+   */
   async connect(): Promise<ConnectResult> {
     this.detached = false;
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
     this.retrying = false;
+    await this.teardownConnection();
     const result = await this.establish();
     if (!result.ok) {
       // An operator-initiated connect reports its failure rather than starting
@@ -652,16 +762,6 @@ export class ConnectedGatewaySession {
     return result;
   }
 
-  /**
-   * Authoritative resnapshot. Discards the cached topology and rebuilds it from
-   * a fresh `agents.list`/`sessions.list`; it never merges deltas into a cached
-   * view, and it stores no frame sequence as a catch-up cursor because the
-   * Gateway resets that sequence per connection and replays nothing.
-   *
-   * Idempotent by construction: the adapter orders every Agent and context
-   * deterministically and `observedAt` is the only field that moves, so running
-   * this twice over identical source state produces an identical topology.
-   */
   /**
    * Follow Gateway events for this source.
    *
@@ -674,22 +774,41 @@ export class ConnectedGatewaySession {
    * Ordering across a reconnect is deliberately NOT this method's problem.
    * The frame sequence resets per connection, so the consumer reconciles
    * against an authoritative read instead of trusting event order to survive.
+   *
+   * Connection order is not the caller's problem either. A subscription taken
+   * before anything is connected is carried by the session and attached to the
+   * connection that follows, and it is re-established on every later
+   * connection rather than resumed: the client is new, the handlers are
+   * registered on it afresh, and no sequence number is kept anywhere, because
+   * the Gateway replays nothing and a resumed cursor would silently skip
+   * whatever arrived while the socket was down.
    */
   onGatewayEvent(
     eventName: string,
     handler: (payload: unknown) => void
   ): () => void {
-    const client = this.client;
-    if (!client) return () => {};
-    client.onOCEvent(eventName, handler);
+    const subscription: GatewayEventSubscription = { eventName, handler };
+    this.subscriptions.add(subscription);
+    this.subscribedClient?.onOCEvent(eventName, handler);
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      client.offOCEvent(eventName, handler);
+      this.subscriptions.delete(subscription);
+      this.subscribedClient?.offOCEvent(eventName, handler);
     };
   }
 
+  /**
+   * Authoritative resnapshot. Discards the cached topology and rebuilds it from
+   * a fresh `agents.list`/`sessions.list`; it never merges deltas into a cached
+   * view, and it stores no frame sequence as a catch-up cursor because the
+   * Gateway resets that sequence per connection and replays nothing.
+   *
+   * Idempotent by construction: the adapter orders every Agent and context
+   * deterministically and `observedAt` is the only field that moves, so running
+   * this twice over identical source state produces an identical topology.
+   */
   async resnapshot(): Promise<SnapshotResult> {
     if (!this.client) {
       return {
@@ -714,9 +833,10 @@ export class ConnectedGatewaySession {
    * leaves the operator reading replies on the next authoritative read, which
    * is slower and still correct; failing the whole connection over it would
    * trade a working read-only source for nothing. The subscription is
-   * re-established after every reconnect rather than resumed, because events
-   * are not replayed and a resumed cursor would silently skip whatever
-   * arrived while the socket was down.
+   * re-established on every socket this session opens rather than resumed:
+   * after a reconnect, and after a scope change that cycles the socket
+   * deliberately. Events are not replayed, so a resumed cursor would silently
+   * skip whatever arrived while the socket was down.
    */
   private async followConversations(): Promise<void> {
     const snapshot = this.snapshot;
@@ -993,6 +1113,13 @@ export class ConnectedGatewaySession {
     this.retrying = false;
     this.terminalFailure = null;
     this.watchForDrops();
+    /*
+     * Every connection asks the Gateway to stream again. This is a fresh
+     * subscription on a fresh socket, never a resumed one: the Gateway replays
+     * nothing, so what arrived while Exawatt was away is recovered from the
+     * authoritative snapshot taken a moment ago rather than from a cursor.
+     */
+    await this.followConversations();
     this.setPhase('connected');
     return discovered;
   }
@@ -1122,6 +1249,12 @@ export class ConnectedGatewaySession {
     const client = this.deps.createClient(config);
     this.client = client;
     this.clientConfig = config;
+    /*
+     * Before the handshake, so a subscription taken while nothing was
+     * connected hears this connection from its first frame rather than from
+     * whenever the caller happens to ask again.
+     */
+    this.attachSubscriptions(client);
     if (credential.deviceToken !== null) {
       client.deviceToken = credential.deviceToken;
     }
@@ -1211,6 +1344,10 @@ export class ConnectedGatewaySession {
    * keypair the Gateway knows this device by, and it keeps the persisted
    * device token. A fresh client would generate a fresh keypair, which is a
    * new device, which is exactly the outcome the doc rules out.
+   *
+   * What the cycle does cost is the Gateway-side stream, which belongs to the
+   * socket rather than to the device. It is asked for again here rather than
+   * left for the next reconnect to repair.
    */
   private async renegotiate(
     client: ConnectedGatewayClient,
@@ -1228,7 +1365,18 @@ export class ConnectedGatewaySession {
       // is the point of this call.
     }
     const opened = await this.openHandshake(client);
-    if (opened.ok) return { ok: true };
+    if (opened.ok) {
+      /*
+       * A new socket carries no subscription, so the stream has to be asked
+       * for again. The moment is the reason this is not optional: this runs
+       * when the source has just granted the operator a voice, so the very
+       * next thing they do is send a message, and a stream nobody re-asked
+       * for would leave their first reply to appear on the next authoritative
+       * read. Asked again, never resumed: the Gateway replays nothing.
+       */
+      await this.followConversations();
+      return { ok: true };
+    }
     return {
       ok: false,
       message: opened.message,
@@ -1313,10 +1461,25 @@ export class ConnectedGatewaySession {
        */
       gatewayId: this.record.id,
       placement: this.record.placement,
-      evidenceBasis: 'observed',
+      /*
+       * Both come from the configured source rather than from this call site.
+       * A Demo source runs this same path, and a snapshot that asserted
+       * `observed` and `openclaw` over it would let simulated evidence wear a
+       * live adapter's name.
+       */
+      adapterId: this.record.adapterId,
+      evidenceBasis: evidenceBasisForAdapter(this.record.adapterId),
       observedAt,
       agentsList,
       sessionLists,
+      /*
+       * The evidence discovery just paid for. Without these the kernel cannot
+       * derive a failing automation or a run's outcome, so a coworker whose
+       * work is erroring reads as idle: the reads happened and the answers
+       * were thrown away.
+       */
+      cronList,
+      statusPayload,
     });
     if (!adapted.ok) {
       return {
@@ -1425,10 +1588,24 @@ export class ConnectedGatewaySession {
 
   // ---- Reconnect ---------------------------------------------------------
 
+  /**
+   * Watch whatever connection is open right now.
+   *
+   * Always the current tunnel and the current client, never "the first one
+   * that turned up": any watch left from an earlier connection is released
+   * first, and each new watch checks that the handle it fired for is still
+   * the one this session holds. The earlier version refused to attach while
+   * its handles were set, so a second connect left the socket actually
+   * carrying traffic unwatched and the session reported Live through a drop
+   * it could not see.
+   */
   private watchForDrops(): void {
+    this.stopWatching();
+
     const tunnel = this.tunnel;
-    if (tunnel && !this.stopWatchingTunnel) {
+    if (tunnel) {
       this.stopWatchingTunnel = tunnel.onClosed(failure => {
+        if (this.tunnel !== tunnel) return;
         this.handleDrop(
           failure === null
             ? null
@@ -1438,14 +1615,56 @@ export class ConnectedGatewaySession {
     }
 
     const client = this.client;
-    if (client && !this.clientStatusHandler) {
+    if (client) {
       const handler = (status: string): void => {
+        if (this.client !== client) return;
         if (status === 'disconnected' || status === 'error') {
           this.handleDrop(status === 'error' ? 'gateway-down' : null);
         }
       };
-      this.clientStatusHandler = handler;
       client.on('connection:status', handler);
+      this.stopWatchingClient = () => {
+        client.off('connection:status', handler);
+      };
+    }
+  }
+
+  /**
+   * Stop watching. Safe to call twice, and it releases each watch through the
+   * handle that created it, so a watch is never removed from an object it was
+   * not attached to.
+   */
+  private stopWatching(): void {
+    const stopTunnel = this.stopWatchingTunnel;
+    this.stopWatchingTunnel = null;
+    stopTunnel?.();
+
+    const stopClient = this.stopWatchingClient;
+    this.stopWatchingClient = null;
+    stopClient?.();
+  }
+
+  /** Put every carried subscription on the connection that is current now. */
+  private attachSubscriptions(client: ConnectedGatewayClient): void {
+    if (this.subscribedClient !== null) {
+      this.detachSubscriptions();
+    }
+    this.subscribedClient = client;
+    for (const subscription of [...this.subscriptions]) {
+      client.onOCEvent(subscription.eventName, subscription.handler);
+    }
+  }
+
+  /**
+   * Take them off again. The subscriptions themselves survive: the caller's
+   * interest outlives one socket, and the next connection re-establishes them.
+   */
+  private detachSubscriptions(): void {
+    const client = this.subscribedClient;
+    this.subscribedClient = null;
+    if (!client) return;
+    for (const subscription of [...this.subscriptions]) {
+      client.offOCEvent(subscription.eventName, subscription.handler);
     }
   }
 
@@ -1523,18 +1742,12 @@ export class ConnectedGatewaySession {
   private async teardownConnection(): Promise<void> {
     this.tearingDown = true;
     try {
-      const stopWatching = this.stopWatchingTunnel;
-      this.stopWatchingTunnel = null;
-      stopWatching?.();
+      this.stopWatching();
+      this.detachSubscriptions();
 
       const client = this.client;
-      const statusHandler = this.clientStatusHandler;
       this.client = null;
-      this.clientStatusHandler = null;
       this.clientConfig = null;
-      if (client && statusHandler) {
-        client.off('connection:status', statusHandler);
-      }
       try {
         client?.disconnect();
       } catch {

@@ -81,7 +81,14 @@ export function remoteAgentToExawattAgent(
   return {
     id: remote.id,
     name: remote.displayName,
-    status: remote.workState,
+    /*
+     * Null is the source having evidenced no state at all. `ExawattAgent` has
+     * no word for unknown, and `idle` is the one it already gives an Agent
+     * nothing is known about — a newly created one starts there — so unknown
+     * lands on the same unlit light rather than on a claim. Nothing here
+     * upgrades it: `error` and `working` arrive as themselves.
+     */
+    status: remote.workState ?? 'idle',
     goal: '',
     projectId: remote.projectId,
     project: remote.projectLabel,
