@@ -21,6 +21,7 @@ import {
   renderRecipe,
   rendersOutput,
   unrenderedReason,
+  renderRecipeOutput,
 } from './lib/recipe-renderers.mjs';
 import {
   findImageMetadataFindings,
@@ -377,4 +378,79 @@ test('the public package.json keeps every dependency and drops private scripts',
     assert.equal(publicPackage.scripts[name], undefined, name);
   }
   assert.equal(publicPackage.scripts.dev, privatePackage.scripts.dev);
+});
+
+test('the public lockfile is the private one, and the premise that allows it holds', async () => {
+  // `regenerate-public-lockfile-after-public-package` renders the lockfile
+  // verbatim. That is only correct while the public `package.json` prunes
+  // NOTHING that pnpm resolves against: pnpm keys importers by dependency
+  // graph, so identical dependency sections mean identical resolution.
+  //
+  // If a future change ever prunes a dependency from the public manifest, this
+  // test fails and the recipe must become a real resolver rather than
+  // publishing a lockfile that installs a tree nobody built.
+  const source = await readFile(
+    new URL('../package.json', import.meta.url)
+  );
+  const rendered = renderRecipeOutput({
+    recipeId: 'public-document-set',
+    kind: 'render-public-document-set',
+    path: 'package.json',
+    source,
+  });
+  const before = JSON.parse(source.toString('utf8'));
+  const after = JSON.parse(rendered.toString('utf8'));
+
+  for (const section of [
+    'dependencies',
+    'devDependencies',
+    'optionalDependencies',
+    'peerDependencies',
+    'pnpm',
+    'packageManager',
+  ]) {
+    assert.deepEqual(
+      after[section],
+      before[section],
+      `public package.json changed ${section}, so the verbatim lockfile is no longer correct`
+    );
+  }
+});
+
+test('the public path manifest keeps only public rules and names no private directory', async () => {
+  const source = await readFile(
+    new URL('../scripts/open-source-paths.manifest.json', import.meta.url)
+  );
+  const rendered = renderRecipeOutput({
+    recipeId: 'public-path-manifest',
+    kind: 'project-public-path-manifest',
+    path: 'scripts/open-source-paths.manifest.json',
+    source,
+  });
+  const after = JSON.parse(rendered.toString('utf8'));
+
+  for (const entry of [...after.rules, ...after.exceptions]) {
+    assert.ok(
+      entry.classification === 'PUBLIC' || entry.classification === 'GENERATED',
+      `${entry.id ?? entry.path} is ${entry.classification} and must not be published`
+    );
+  }
+  // No recipes: they declare private inputs, so publishing them would name
+  // the very files the manifest exists to keep out.
+  // The key stays, required by the schema, but carries nothing.
+  assert.deepEqual(after.recipes, {});
+  const text = rendered.toString('utf8');
+  for (const privatePath of [
+    'electron-builder.release.yml',
+    'scripts/release-package.mjs',
+    'scripts/lib/exawatt-official-distribution.mjs',
+    'company/',
+    'supabase/',
+  ]) {
+    assert.doesNotMatch(text, new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'));
+  }
+  // `docs/research/spatial-memory/README.md` is deliberately PUBLIC, so a
+  // blanket ban on the directory name would be wrong: it must survive, or the
+  // public repository cannot classify its own file.
+  assert.match(text, /docs\/research\/spatial-memory\/README\.md/u);
 });

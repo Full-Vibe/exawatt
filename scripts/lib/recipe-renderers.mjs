@@ -529,15 +529,19 @@ const RENDERERS = new Map([
     {
       // `scripts/delivery-documentation.test.mjs` is a document by subject: it
       // pins the prose contract in `AGENTS.md`, so it moves with the set.
-      renders: path => path !== 'README.md',
-      unrenderable: path =>
-        path === 'README.md'
-          ? 'the public README is a crafted launch artifact in the operator’s ' +
-            'own voice, not a subset of the private one. It is authored once ' +
-            'by the launch craft lane and then carries directives like every ' +
-            'other document in this set; a mechanical transformation of the ' +
-            'private README would publish an internal index as a front door.'
-          : null,
+      // README.md renders like every other document here. The exclusion this
+      // replaces was written when the private README WAS an internal index,
+      // and rendering it would have published a table of contents as a front
+      // door. That premise expired on 2026-08-18, when the private README was
+      // rewritten as the public one: it now opens with what the app is, for a
+      // stranger, and references nothing private. So the public and private
+      // README are the same document and the honest transform is the identity.
+      //
+      // A public repository with NO README is strictly worse than one with a
+      // plain, true README, and the launch lane's crafted version replaces
+      // this file rather than needing a separate path for it.
+      renders: () => true,
+      unrenderable: () => null,
       render: (path, source, recipeId) => {
         const render = path.endsWith('.json') ? renderJson : renderText;
         const rendered = render(source, {
@@ -599,6 +603,74 @@ const RENDERERS = new Map([
         }),
     },
   ],
+  [
+    'regenerate-public-lockfile-after-public-package',
+    {
+      // The public lockfile is the private one, byte for byte, and that is a
+      // fact rather than a hope: the public `package.json` prunes only
+      // `scripts`, and pnpm keys importers by dependency graph, so the two
+      // trees resolve identically. `recipe-renderers.test.mjs` asserts the
+      // dependency sections are identical between the private and rendered
+      // public `package.json`, which is the premise this identity rests on —
+      // if a future change ever prunes a DEPENDENCY, that test fails and this
+      // recipe must become a real resolver rather than silently publishing a
+      // lockfile for a tree nobody built.
+      renders: () => true,
+      unrenderable: () => null,
+      render: (path, source) => source,
+    },
+  ],
+  [
+    'project-public-path-manifest',
+    {
+      // A pure function of the manifest blob after all: drop every PRIVATE and
+      // EXCLUDED rule and exception, keep PUBLIC and GENERATED.
+      //
+      // The earlier reasoning said this needed the whole tracked tree, because
+      // it wanted to prune rules matching no projected path. It does not: the
+      // public tree contains only paths those PUBLIC and GENERATED rules
+      // classified, so keeping exactly those rules covers exactly those paths.
+      // Pruning by classification is both sufficient and better, because the
+      // published manifest then stops naming the private directories, which
+      // the path-matching version would have kept describing.
+      renders: () => true,
+      unrenderable: () => null,
+      render: (path, source) => {
+        const manifest = JSON.parse(source.toString('utf8'));
+        // In the public repository nothing is generated: a GENERATED path is
+        // just a file that exists, because rendering happened privately before
+        // it got there. So the public manifest classifies everything PUBLIC and
+        // carries no `recipes` at all.
+        //
+        // Dropping recipes is not tidiness. A recipe declares its INPUTS, and
+        // several read private release-custody files in order to prove a public
+        // output does not reference them — so a manifest that kept its recipes
+        // would publish the names of the private files it exists to keep out.
+        const keep = entry =>
+          entry.classification === 'PUBLIC' ||
+          entry.classification === 'GENERATED';
+        const publicize = entry => {
+          const { recipe, ...rest } = entry;
+          return { ...rest, classification: 'PUBLIC' };
+        };
+        const rules = (manifest.rules ?? []).filter(keep).map(publicize);
+        const exceptions = (manifest.exceptions ?? [])
+          .filter(keep)
+          .map(publicize);
+        // `recipes` stays as an EMPTY object rather than being removed: the
+        // manifest schema requires the key, and the public repository
+        // validates its own manifest with the same validator.
+        return Buffer.from(
+          JSON.stringify(
+            { ...manifest, rules, exceptions, recipes: {} },
+            null,
+            2
+          ) + '\n',
+          'utf8'
+        );
+      },
+    },
+  ],
 ]);
 
 /**
@@ -613,29 +685,6 @@ export const UNRENDERED_RECIPE_KINDS = new Map([
       'hosted service: its processors, its contact addresses, its retention. ' +
       'A public fork must not inherit them as its own, and no pure function of ' +
       'the private bytes can write a fork’s policy for it.',
-  ],
-  [
-    'regenerate-public-lockfile-after-public-package',
-    'a lockfile is resolver output, not a text transformation, and it is the ' +
-      'one output in this set whose correctness a pure function of its own ' +
-      'bytes cannot establish. The public `package.json` now renders and ' +
-      'prunes only `scripts` entries, and pnpm records importers by dependency ' +
-      'graph rather than by `scripts`, so the correct public lockfile is the ' +
-      'private one verbatim — but proving that needs both blobs at once, and ' +
-      'the file-info callback sees one. It becomes a verbatim copy the moment ' +
-      'a commit-scoped substitution can assert the two package graphs are ' +
-      'equal; a real resolver is needed only if the public package graph ever ' +
-      'drops a dependency, and guessing would publish a lockfile installing a ' +
-      'tree nobody built.',
-  ],
-  [
-    'project-public-path-manifest',
-    '`projectPublicPathManifest` is already automatic, but it is a function of ' +
-      'the whole tracked tree at a commit — it prunes rules and exceptions ' +
-      'that match no projected path — not of the manifest blob alone. The ' +
-      'file-info callback sees one blob at a time, so this output needs either ' +
-      'a commit-scoped substitution or a manifest projection that no longer ' +
-      'prunes against the tree.',
   ],
 ]);
 
