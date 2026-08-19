@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import {
+  describeEntryBoundaries,
   describeUnrendered,
   projectToPublicRemote,
   publicPushArgs,
@@ -349,4 +350,39 @@ test('the unrendered summary names what the public repository did not receive', 
     }),
     /did not receive 8 generated outputs: a, b, c, d, e, f, and 2 more/u
   );
+});
+
+test('the report names where a rendered path enters public history', () => {
+  assert.equal(describeEntryBoundaries({ entryBoundaries: [] }), null);
+
+  // A path that simply predates its recipe is ordinary and is only counted.
+  const ordinary = {
+    path: 'README.md',
+    entryCommit: 'a'.repeat(40),
+    skippedRevisions: 12,
+    renderableSkipped: 0,
+    lastUnrenderableCommit: 'b'.repeat(40),
+  };
+  assert.match(
+    describeEntryBoundaries({ entryBoundaries: [ordinary] }),
+    /1 rendered paths enter public history after their first source revision: README\.md enters at aaaaaaaaaaaa, 12 earlier revisions do not carry it$/u
+  );
+
+  // A path whose entry MOVED is named first and says what held it back, so an
+  // operator reads it instead of finding it in a diff.
+  const moved = {
+    path: 'AGENTS.md',
+    entryCommit: 'c'.repeat(40),
+    skippedRevisions: 894,
+    renderableSkipped: 14,
+    lastUnrenderableCommit: 'd'.repeat(40),
+  };
+  const described = describeEntryBoundaries({
+    entryBoundaries: [ordinary, moved],
+  });
+  assert.match(
+    described,
+    /2 rendered paths enter public history after their first source revision: AGENTS\.md enters at cccccccccccc, 894 earlier revisions do not carry it \(14 of them render, held back by dddddddddddd\)$/u
+  );
+  assert.doesNotMatch(described, /README/u);
 });
