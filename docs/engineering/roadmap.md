@@ -1477,8 +1477,8 @@ Decision record:
 ### ENG-010 Connected OpenClaw on customer infrastructure
 
 Status: active-build — shaped 2026-08-16 from the operator's two live OpenClaw
-VPS installations. C0 landed 2026-08-16; C1 is the first unclaimed
-implementation packet.
+VPS installations. C0–C4 landed; H2 write authority landed under ENG-033. The
+read path is proved against both dogfood Gateways and hardened.
 
 Scope: connect existing OpenClaw before provisioning anything. Preserve each
 Gateway's native configured-Agent/context graph, project one stable Exawatt
@@ -1526,6 +1526,18 @@ Milestones:
   views with bounded primary-conversation history and meaningful current work.
 - C3 Relaunch and dogfood proof — LANDED 2026-08-19: outage, source restart, rename, detach,
   reattach, and retired-Agent cases against both operator Gateways.
+- C4 Hardening — LANDED 2026-08-19: the surface's first visual review, the
+  manual transport proved against a real machine, and a type-check for the
+  Electron tests, which nothing had ever compiled. It found three defects the
+  suite was green about, each because a double could do something the real
+  boundary cannot: the connection checklist never received a stage, since its
+  callback crossed `ipcRenderer.invoke`, which carries only structured-clonable
+  values; the credential bootstrap authenticated over a multiplexed socket it
+  had not opened, so a key file that does not exist read a credential
+  successfully; and a work state nobody reported rendered as Idle. The last
+  adds an `unreported` status-light reading with its own mark and word, and
+  makes `ExawattAgent.status` nullable so an absence cannot be coerced back
+  into a claim of rest.
 
 Exit criteria: active discovery offers Marcus, Scout, and Tyler exactly once;
 Priya remains retired unless explicitly selected; source Sessions/cron/helpers
