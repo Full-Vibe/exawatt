@@ -364,7 +364,15 @@ simulated evidence.
   steer/abort/schedule/context verbs only where OpenClaw reports support and
   outcome evidence. Generic remote Pause is not a prerequisite: it lands only
   if OpenClaw can prove resumable continuity for a clearly named halted scope.
-- **H3 Exawatt-managed placement.** Provision and operate an Exawatt-managed
+- **H3 Exawatt-managed placement — BLOCKED ON A DESIGN PASS (operator,
+  2026-08-19).** H3 is where the product starts charging rather than shipping a
+  capability, and the operator asked that it be shaped deliberately rather than
+  fallen into from momentum. It stays unshaped until that pass happens. The
+  questions it raises are ones the earlier milestones never had to answer:
+  what becomes of a machine when someone stops paying, who can reach it, what
+  detach and delete each mean when Exawatt owns the box, and whether an
+  operator may hold their own credentials for infrastructure Exawatt runs.
+  Nobody should answer those in passing. Provision and operate an Exawatt-managed
   OpenClaw behind the same source, Agent, Project, state, and command contracts.
 - **H4 Clone or move.** Offer a source-to-source handoff only after the product
   can enumerate workspace, secrets, memory, automations, history, and identity
