@@ -26,6 +26,7 @@ import {
   mergeTurns,
   normalizeSendRefusal,
   outboxReducer,
+  EMPTY_OUTBOX,
   type ConversationLoad,
   type ConversationTurn,
   type OutboundMessage,
@@ -613,6 +614,7 @@ describe('the outbox', () => {
         text: message.text,
         status: 'sending',
         refusal: null,
+        acceptedAt: null,
       },
     ]);
   });
@@ -652,6 +654,7 @@ describe('the outbox', () => {
     const accepted = outboxReducer(sent(), {
       type: 'accepted',
       localId: 'out-1',
+      at: 1_700_000_000_000,
     });
     expect(accepted).toHaveLength(1);
   });
@@ -735,5 +738,57 @@ describe('refusal normalization', () => {
     ]) {
       expect(normalizeSendRefusal(value)).toBe('unrecognized');
     }
+  });
+});
+
+/**
+ * The rule a live Gateway corrected.
+ *
+ * `chat.history` returns the AGENT's messages and not the operator's: a
+ * message sent through the gateway arrives wrapped in an envelope the history
+ * projection strips. Retiring an outbox entry only when the transcript echoes
+ * it back would leave every sent message pending forever, which reads to the
+ * operator as "it did not go" for a message that went and was answered.
+ */
+describe('the outbox retires on the answer, not on an echo', () => {
+  const message = { localId: 'out-1', text: 'hello' };
+  const accepted = (at: number) =>
+    outboxReducer(outboxReducer(EMPTY_OUTBOX, { type: 'send', ...message }), {
+      type: 'accepted',
+      localId: 'out-1',
+      at,
+    });
+
+  it('keeps a message the coworker has not answered', () => {
+    expect(
+      outboxReducer(accepted(1_000), { type: 'reconcile', turns: [] })
+    ).toHaveLength(1);
+  });
+
+  it('retires it when a reply arrives after it was accepted', () => {
+    const turns = [
+      { id: 't1', role: 'agent' as const, text: 'ACK', timestamp: 1_500 },
+    ];
+    expect(
+      outboxReducer(accepted(1_000), { type: 'reconcile', turns })
+    ).toHaveLength(0);
+  });
+
+  it('is not retired by a reply that predates it', () => {
+    const turns = [
+      { id: 't0', role: 'agent' as const, text: 'earlier', timestamp: 500 },
+    ];
+    expect(
+      outboxReducer(accepted(1_000), { type: 'reconcile', turns })
+    ).toHaveLength(1);
+  });
+
+  it('still retires on an echoed operator turn where a source provides one', () => {
+    const turns = [
+      { id: 't1', role: 'operator' as const, text: 'hello', timestamp: 900 },
+    ];
+    expect(
+      outboxReducer(accepted(1_000), { type: 'reconcile', turns })
+    ).toHaveLength(0);
   });
 });

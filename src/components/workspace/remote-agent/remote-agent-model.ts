@@ -412,13 +412,15 @@ export interface OutboundMessage {
   text: string;
   status: 'sending' | 'refused';
   refusal: SendRefusal | null;
+  /** When the source accepted it. Null until it does. */
+  acceptedAt: number | null;
 }
 
 export type OutboxAction =
   /** The operator pressed send. A retry reuses its original localId. */
   | { type: 'send'; localId: string; text: string }
-  /** The source accepted it. The transcript is now the record. */
-  | { type: 'accepted'; localId: string }
+  /** The source accepted it, at this moment on Exawatt's clock. */
+  | { type: 'accepted'; localId: string; at: number }
   | { type: 'refused'; localId: string; refusal: SendRefusal }
   /**
    * An authoritative transcript arrived. Anything it already carries is
@@ -430,15 +432,45 @@ export type OutboxAction =
 
 export const EMPTY_OUTBOX: readonly OutboundMessage[] = [];
 
-/** True when this transcript already carries the message. */
+/**
+ * True when the source's own record shows this message was received.
+ *
+ * The obvious rule, that the transcript echoes the operator's own turn back,
+ * is wrong against a real Gateway. `chat.history` returns the AGENT's messages
+ * and not the operator's: a message sent through the gateway arrives wrapped
+ * in an envelope that the history projection strips, so a sent message never
+ * appears in the transcript no matter how long anyone waits. Retiring on that
+ * echo would leave every sent message pending forever, which reads as "it did
+ * not go" for a message that went.
+ *
+ * Verified live: a message sent to a real coworker was answered, and the
+ * transcript afterwards carried the reply alone.
+ *
+ * So the evidence of receipt is a reply that came AFTER the message was
+ * accepted. An echoed operator turn still counts when a source does provide
+ * one, since some may, and a matching client id counts wherever it appears.
+ */
 export function historyCarries(
   turns: readonly ConversationTurn[],
-  message: { localId: string; text: string }
+  message: { localId: string; text: string; acceptedAt?: number | null }
 ): boolean {
-  return turns.some(turn => {
-    if (turn.clientId != null) return turn.clientId === message.localId;
-    return turn.role === 'operator' && turn.text === message.text;
-  });
+  if (
+    turns.some(
+      turn => turn.clientId != null && turn.clientId === message.localId
+    )
+  ) {
+    return true;
+  }
+  if (
+    turns.some(turn => turn.role === 'operator' && turn.text === message.text)
+  ) {
+    return true;
+  }
+  const acceptedAt = message.acceptedAt;
+  if (acceptedAt == null) return false;
+  return turns.some(
+    turn => turn.role === 'agent' && turn.timestamp >= acceptedAt
+  );
 }
 
 export function outboxReducer(
@@ -453,7 +485,7 @@ export function outboxReducer(
         // own history can tell later whether the first attempt landed.
         return state.map(entry =>
           entry.localId === action.localId
-            ? { ...entry, status: 'sending', refusal: null }
+            ? { ...entry, status: 'sending' as const, refusal: null }
             : entry
         );
       }
@@ -462,16 +494,22 @@ export function outboxReducer(
         {
           localId: action.localId,
           text: action.text,
-          status: 'sending',
+          status: 'sending' as const,
           refusal: null,
+          acceptedAt: null,
         },
       ];
     }
     case 'accepted':
-      // Accepted is not delivered evidence on its own; the turn arriving by
-      // stream or by snapshot is. The entry stays until the transcript shows
-      // it, which is what `reconcile` decides.
-      return state;
+      // Accepted is not answered. The entry stays until the source's own
+      // record shows the coworker received it, which `reconcile` decides;
+      // stamping the moment is what lets it tell a reply to THIS message from
+      // one that was already there.
+      return state.map(entry =>
+        entry.localId === action.localId
+          ? { ...entry, acceptedAt: action.at }
+          : entry
+      );
     case 'refused':
       return state.map(entry =>
         entry.localId === action.localId

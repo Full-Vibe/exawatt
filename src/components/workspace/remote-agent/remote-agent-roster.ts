@@ -27,7 +27,10 @@ import type {
   RemoteAgentView,
   SourceCommandAuthorityView,
 } from '@/types/electron';
-import type { RemoteConnectionView, WriteAuthority } from './remote-agent-model';
+import type {
+  RemoteConnectionView,
+  WriteAuthority,
+} from './remote-agent-model';
 
 /**
  * One connected coworker, projected for the surfaces that paint it.
