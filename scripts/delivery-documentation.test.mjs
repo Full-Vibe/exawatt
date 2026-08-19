@@ -18,6 +18,11 @@ test('agent instructions describe the queued delivery contract, not the retired 
   assert.match(agents, /rebases in the author's own bootstrapped worktree/);
   assert.match(agents, /`installed=queued` is not installed/);
   assert.match(agents, /every tracked path has an open-source disposition/);
+  // BUG-090: the floor re-runs a named failure alone before believing it, and
+  // an agent that does not know that will still go hunting in the files the
+  // machine's load named.
+  assert.match(agents, /pnpm test:alone <paths\.\.\.>/);
+  assert.match(agents, /reported as suspected flakes/);
   assert.match(agents, /only PUBLIC\/GENERATED paths/);
   assert.match(agents, /PRIVATE\/EXCLUDED paths remain classified/);
   assert.match(agents, /open a pull request against `master`/);
@@ -68,6 +73,12 @@ test('the operational reference covers lifecycle, state, policy, recovery, and e
   assert.match(guide, /refs\/heads\/ci-batches\/master/);
   assert.match(guide, /two hours/);
   assert.match(guide, /`actions_run`/);
+  // The two intermittents are operational knowledge with an implementation
+  // behind them now: one is re-run and reported, the other explicitly is not.
+  assert.match(guide, /SUSPECTED FLAKE/);
+  assert.match(guide, /pnpm test:alone <files\.\.\.>/);
+  assert.match(guide, /flaked=<check>:<n>/);
+  assert.match(guide, /names no failing test file/);
 });
 
 test('architecture, decisions, project state, and roadmap link to the current runbook', async () => {

@@ -102,6 +102,26 @@ export async function readDeliveryMetrics(root) {
   }
 }
 
+/** Suspected-flake counts per test file, worst first, then by name so the
+ *  rollup is stable. */
+export function tallyFlakedFiles(events) {
+  const counts = new Map();
+  for (const event of events) {
+    if (event.type !== 'floor_check' || event.status !== 'flaked') continue;
+    for (const entry of event.flakedFiles ?? []) {
+      if (!entry?.file) continue;
+      counts.set(entry.file, (counts.get(entry.file) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([file, count]) => ({ file, count }))
+    .sort((left, right) =>
+      right.count === left.count
+        ? left.file.localeCompare(right.file)
+        : right.count - left.count
+    );
+}
+
 export function summarizeDeliveryMetrics(events) {
   const terminal = events.filter(event => event.type === 'queue_terminal');
   const locks = events.filter(event => event.type === 'integration_lock');
@@ -126,6 +146,15 @@ export function summarizeDeliveryMetrics(events) {
     floorFailures: events.filter(
       event => event.type === 'floor_check' && event.status === 'failed'
     ).length,
+    // BUG-090: a check that failed and then passed with the machine to itself
+    // is kept, not hidden. The count says how often the floor had to re-run to
+    // be believed; the per-file tally is what makes a real regression hiding
+    // behind flakiness findable, because a genuine defect flakes repeatedly on
+    // the same file while contention moves around.
+    flakedChecks: events.filter(
+      event => event.type === 'floor_check' && event.status === 'flaked'
+    ).length,
+    flakedFiles: tallyFlakedFiles(events),
     actionsMinutes: events
       .filter(event => event.type === 'actions_run')
       .reduce((sum, event) => sum + (event.minutes ?? 0), 0),

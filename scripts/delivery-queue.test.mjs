@@ -111,6 +111,21 @@ test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evi
     { type: 'integration_lock', durationMs: 80 },
     { type: 'stale_stop' },
     { type: 'floor_check', status: 'failed' },
+    // BUG-090: a check that failed and then passed with the machine to itself.
+    // It is neither a landing failure nor invisible.
+    {
+      type: 'floor_check',
+      status: 'flaked',
+      flakedFiles: [
+        { file: 'src/a.test.tsx', tests: ['a > times out'] },
+        { file: 'src/b.test.tsx', tests: ['b > times out'] },
+      ],
+    },
+    {
+      type: 'floor_check',
+      status: 'flaked',
+      flakedFiles: [{ file: 'src/b.test.tsx', tests: ['b > times out'] }],
+    },
     { type: 'actions_run', minutes: 6 },
     { type: 'dogfood_installed', freshnessMs: 900 },
   ]);
@@ -123,6 +138,13 @@ test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evi
     lockHoldP95Ms: 80,
     staleStopCount: 1,
     floorFailures: 1,
+    // A file that flakes repeatedly is the shape of a real regression hiding
+    // behind flakiness; contention moves around instead.
+    flakedChecks: 2,
+    flakedFiles: [
+      { file: 'src/b.test.tsx', count: 2 },
+      { file: 'src/a.test.tsx', count: 1 },
+    ],
     actionsMinutes: 6,
     dogfoodFreshnessP95Ms: 900,
   });

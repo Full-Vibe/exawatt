@@ -360,14 +360,19 @@ async function main() {
     });
   }
 
+  // A check that failed and then passed with the machine to itself is
+  // reported, never swallowed (BUG-090). The status line carries the count so
+  // a landing cannot look unconditionally clean when the floor had to re-run.
+  const flakes = [];
+  const recordFloorCheck = extra => async result => {
+    if (result.status === 'flaked') flakes.push(result);
+    await appendDeliveryMetric(root, 'floor_check', { ...extra, ...result });
+  };
+
   const checks = classifyDeliveryPolicy(files, options.verify);
   const evidence = await runDeliveryChecks(root, checks, {
     phase: 'candidate',
-    onResult: result =>
-      appendDeliveryMetric(root, 'floor_check', {
-        candidateSha,
-        ...result,
-      }),
+    onResult: recordFloorCheck({ candidateSha }),
   });
   await requireClean(root, 'Agent worktree after verification');
 
@@ -471,12 +476,10 @@ async function main() {
         const rebaseChecks = classifyDeliveryPolicy(rebasedFiles);
         const rebaseEvidence = await runDeliveryChecks(root, rebaseChecks, {
           phase: 'rebase',
-          onResult: result =>
-            appendDeliveryMetric(root, 'floor_check', {
-              ticketId: ticket.id,
-              candidateSha: rebasedSha,
-              ...result,
-            }),
+          onResult: recordFloorCheck({
+            ticketId: ticket.id,
+            candidateSha: rebasedSha,
+          }),
         });
         await requireClean(
           root,
@@ -621,9 +624,29 @@ async function main() {
     publicProjection.state === 'inert'
       ? ''
       : ` public=${publicProjection.state}`;
+  // Absent when nothing flaked, so a clean landing reads exactly as it did
+  // before the rerun existed; present, and naming the check and the files,
+  // whenever evidence had to be re-run to be believed.
+  const flakedState =
+    flakes.length === 0
+      ? ''
+      : ` flaked=${flakes
+          .map(
+            result =>
+              `${result.id}:${(result.flakedFiles ?? []).length}` +
+              (result.phase === 'rebase' ? '(rebase)' : '')
+          )
+          .join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${publicState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}`
   );
+  for (const result of flakes) {
+    for (const entry of result.flakedFiles ?? []) {
+      console.log(
+        `[agent-land] suspected flake: ${result.id} ${entry.file} (passed alone)`
+      );
+    }
+  }
   if (masterWorktree) {
     console.log(
       `[agent-land] remove this worktree from ${masterWorktree}, then delete local branch ${branch}.`

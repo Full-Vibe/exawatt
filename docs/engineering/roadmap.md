@@ -84,7 +84,9 @@ The 2026-08-02 demo arc **landed in one day**: ENG-036 G0/G1, ENG-026 N0–N5, E
    as "your change broke these". Six attempts on a verified-sound change on
    2026-08-18 is the measured cost. It compounds with fleet size, so it is
    cheapest to fix before the contribution loops of OS6.2 add outside PRs to
-   the same queue.
+   the same queue. **LANDED 2026-08-18:** the floor re-runs the files it names,
+   once, alone, and reports a pass-on-retry as a recorded suspected flake
+   rather than as your break.
 
 4. **ENG-031 website** — if demoing is a standing posture, the site is the always-on demo, and it is where users and contributors land. Still unshaped; a design pass precedes any building.
 
