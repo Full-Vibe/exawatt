@@ -138,6 +138,15 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
     const sourceId = piece.agentId
       ? sourceByAgentId.get(piece.agentId)
       : undefined;
+    // The Demo corpus reports a work state for every Agent, so the frozen
+    // capture never carries a unit nobody has reported. The board has a band
+    // for one; this capture's ordinals do not, and inventing an ordinal here
+    // would put a claim on a public surface. Fail the build instead.
+    if (piece.status === null) {
+      throw new Error(
+        `hero capture: piece ${piece.id} has no reported work state`
+      );
+    }
     return {
       x: round(piece.x),
       y: round(piece.y),

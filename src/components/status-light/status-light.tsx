@@ -2,7 +2,7 @@ import { CircleCheck, CircleDashed, CircleDot, CircleX } from 'lucide-react';
 import {
   STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
   STATUS_LIGHT_META,
-  type StatusLightState,
+  type StatusLightReading,
 } from './protocol';
 
 const SIZE = {
@@ -17,24 +17,17 @@ export const STATUS_THEME_COLOR = {
   result: 'var(--exa-status-result, #9bf396)',
   'needs-you': 'var(--exa-status-needs-you, #ffd0b8)',
   fault: 'var(--exa-status-fault, #ff7373)',
-} as const satisfies Record<StatusLightState, string>;
+  // The unlit register's own paint. `unreported` does not get a sixth status
+  // colour: hue would be the one channel that disappears when colour does,
+  // and this is precisely the distinction that has to survive that.
+  unreported: 'var(--exa-status-off, #dce5ed)',
+} as const satisfies Record<StatusLightReading, string>;
 
 export type StatusLightSize = keyof typeof SIZE;
 
-function ActiveMark({
-  size,
-  animated,
-}: {
-  size: number;
-  animated: boolean;
-}) {
+function ActiveMark({ size, animated }: { size: number; animated: boolean }) {
   return (
-    <svg
-      aria-hidden="true"
-      height={size}
-      viewBox="0 0 16 16"
-      width={size}
-    >
+    <svg aria-hidden="true" height={size} viewBox="0 0 16 16" width={size}>
       <circle
         cx="8"
         cy="8"
@@ -59,15 +52,47 @@ function ActiveMark({
   );
 }
 
+/**
+ * No reading, drawn as no reading (ENG-010).
+ *
+ * An instrument with nothing to report shows a dash, not a zero. The socket
+ * ring keeps the constant footprint every other mark holds, and the bar
+ * across it is the whole signal: the lamp is here, and it has no value. It is
+ * the only mark in the family whose interior is a straight line, so a reader
+ * separates it from a quietly waiting Agent by shape alone.
+ */
+function UnreportedMark({ size }: { size: number }) {
+  return (
+    <svg aria-hidden="true" height={size} viewBox="0 0 16 16" width={size}>
+      <circle
+        cx="8"
+        cy="8"
+        fill="none"
+        opacity="0.35"
+        r="6.4"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <path
+        d="M5 8h6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
 export function StatusLightMark({
   state,
   size,
   animated = true,
 }: {
-  state: StatusLightState;
+  state: StatusLightReading;
   size: number;
   animated?: boolean;
 }) {
+  if (state === 'unreported') return <UnreportedMark size={size} />;
   if (state === 'active') return <ActiveMark animated={animated} size={size} />;
   if (state === 'result') {
     return <CircleCheck aria-hidden="true" size={size} strokeWidth={1.7} />;
@@ -99,7 +124,7 @@ export function StatusLight({
   decorative = false,
   className = '',
 }: {
-  state: StatusLightState;
+  state: StatusLightReading;
   size?: StatusLightSize;
   decorative?: boolean;
   className?: string;
@@ -108,12 +133,12 @@ export function StatusLight({
   const color = STATUS_THEME_COLOR[state];
   const iconSize = SIZE[size];
   const boxSize = iconSize + (size === 'compact' ? 4 : 7);
-  const glow =
-    state === 'off'
-      ? 'none'
-      : state === 'active'
-        ? `0 0 9px color-mix(in srgb, ${color} 46%, transparent)`
-        : `0 0 6px color-mix(in srgb, ${color} 24%, transparent)`;
+  const unlit = state === 'off' || state === 'unreported';
+  const glow = unlit
+    ? 'none'
+    : state === 'active'
+      ? `0 0 9px color-mix(in srgb, ${color} 46%, transparent)`
+      : `0 0 6px color-mix(in srgb, ${color} 24%, transparent)`;
 
   return (
     <span
@@ -126,10 +151,9 @@ export function StatusLight({
         width: boxSize,
         height: boxSize,
         color,
-        background:
-          state === 'off'
-            ? `color-mix(in srgb, ${color} 3.5%, transparent)`
-            : `color-mix(in srgb, ${color} 10%, transparent)`,
+        background: unlit
+          ? `color-mix(in srgb, ${color} 3.5%, transparent)`
+          : `color-mix(in srgb, ${color} 10%, transparent)`,
         boxShadow: glow,
       }}
     >

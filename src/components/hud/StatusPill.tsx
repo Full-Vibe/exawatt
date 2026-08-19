@@ -1,5 +1,6 @@
-import type { AgentStatus } from '@exawatt/core';
-import { chamferPolygon, HUD_STATUS_COLOR, withAlpha } from './tokens';
+import type { AgentStatus, AgentWorkState } from '@exawatt/core';
+import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
+import { chamferPolygon, hudStatusColor, withAlpha } from './tokens';
 
 const LABEL: Record<AgentStatus, string> = {
   working: 'Working',
@@ -10,15 +11,22 @@ const LABEL: Record<AgentStatus, string> = {
   idle: 'Idle',
 };
 
+/** The design system owns this word; the pill does not keep a second copy. */
+const UNREPORTED_LABEL = STATUS_LIGHT_META.unreported.label;
+
+function pillLabel(status: AgentWorkState): string {
+  return status === null ? UNREPORTED_LABEL : LABEL[status];
+}
+
 /** Agent status chip — chamfered, semantic color, glowing dot. */
 export function StatusPill({
   status,
   className,
 }: {
-  status: AgentStatus;
+  status: AgentWorkState;
   className?: string;
 }) {
-  const color = HUD_STATUS_COLOR[status];
+  const color = hudStatusColor(status);
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2 py-0.5 ${className ?? ''}`}
@@ -35,7 +43,7 @@ export function StatusPill({
         style={{ background: color, boxShadow: `0 0 6px ${color}` }}
       />
       <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.12em]">
-        {LABEL[status]}
+        {pillLabel(status)}
       </span>
     </span>
   );

@@ -15,6 +15,7 @@
  * the zone's DOM control still carries the exact count.
  */
 
+import type { AgentWorkState } from '@exawatt/core';
 import {
   SPATIAL_BOARD_ZONE_METRICS,
   SPATIAL_DENSITY_ZONE_PITCH,
@@ -22,7 +23,15 @@ import {
   type SpatialBoardProjectZone,
 } from '@exawatt/ui-model';
 
-/** Matches the board model's aggregate emission order (attention first). */
+/**
+ * Matches the board model's aggregate emission order (attention first), with
+ * the unreported band last.
+ *
+ * `null` is a band rather than a gap because population is a counted channel:
+ * dropping the Agents nobody has reported would draw a zone of ten as nine,
+ * and banding them with `idle` would say ten Agents are resting when the
+ * source only said so about nine.
+ */
 const STATUS_ORDER = [
   'blocked',
   'error',
@@ -30,9 +39,10 @@ const STATUS_ORDER = [
   'working',
   'idle',
   'complete',
+  null,
 ] as const;
 
-const STATUS_INDEX = new Map<string, number>(
+const STATUS_INDEX = new Map<AgentWorkState, number>(
   STATUS_ORDER.map((status, index) => [status, index])
 );
 
@@ -162,8 +172,7 @@ function centeredSlots(
   const distances = new Float64Array(slots.length);
   for (let index = 0; index < slots.length; index += 1) {
     const slot = slots[index]!;
-    distances[index] =
-      (slot.x - centerX) ** 2 + (slot.y - centerY) ** 2;
+    distances[index] = (slot.x - centerX) ** 2 + (slot.y - centerY) ** 2;
   }
   // Sorting a copy of the DISTANCES rather than the slots is what keeps this
   // affordable: it allocates nothing per slot, and the slot list is already

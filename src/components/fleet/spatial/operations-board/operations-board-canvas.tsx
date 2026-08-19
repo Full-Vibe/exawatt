@@ -33,7 +33,8 @@ import {
 import {
   STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
   STATUS_LIGHT_META,
-  statusLightStateForAgentStatus,
+  workStateReading,
+  type StatusLightReading,
   type StatusLightState,
 } from '@/components/status-light/protocol';
 import {
@@ -594,7 +595,8 @@ function BoardCameraRig({
         flightFrom.current !== null &&
         Math.abs(next.x - target.current.x) < 1e-3 &&
         Math.abs(next.y - target.current.y) < 1e-3 &&
-        Math.abs(Math.log(next.zoom / Math.max(target.current.zoom, 1e-6))) < 1e-3;
+        Math.abs(Math.log(next.zoom / Math.max(target.current.zoom, 1e-6))) <
+          1e-3;
       if (!alreadyFlying) {
         target.current.x = next.x;
         target.current.y = next.y;
@@ -704,7 +706,10 @@ function BoardCameraRig({
       });
       if (action === 'ignore') return;
       if (event.pointerType === 'touch') {
-        state.touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        state.touches.set(event.pointerId, {
+          x: event.clientX,
+          y: event.clientY,
+        });
         element.setPointerCapture(event.pointerId);
         if (state.touches.size === 2) {
           beginPinch();
@@ -1260,10 +1265,20 @@ function ZoneLayer({
 }) {
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
-  const plateRefs = useRef(new Map<string, THREE.Object3D & { color?: THREE.Color }>());
+  const plateRefs = useRef(
+    new Map<string, THREE.Object3D & { color?: THREE.Color }>()
+  );
   const zoneIds = useMemo(() => zones.map(zone => zone.id), [zones]);
-  const recession = useBoardFocusRecession(zoneIds, altitude, focusedProjectId, reduced);
-  const recessionScratch = useMemo(() => ({ a: new THREE.Color(), b: new THREE.Color() }), []);
+  const recession = useBoardFocusRecession(
+    zoneIds,
+    altitude,
+    focusedProjectId,
+    reduced
+  );
+  const recessionScratch = useMemo(
+    () => ({ a: new THREE.Color(), b: new THREE.Color() }),
+    []
+  );
   const lastRecession = useRef(new Map<string, number>());
   const geometry = useMemo(() => {
     const next = new THREE.CylinderGeometry(0.5, 0.5, 1, 64);
@@ -1285,12 +1300,21 @@ function ZoneLayer({
       if (!plate?.color) continue;
       const amount = recession(zone.id, now);
       const previous = lastRecession.current.get(zone.id);
-      if (previous !== undefined && Math.abs(previous - amount) < 0.002) continue;
+      if (previous !== undefined && Math.abs(previous - amount) < 0.002)
+        continue;
       lastRecession.current.set(zone.id, amount);
-      const base = hoveredId === zone.id ? theme.zoneHover : spatialProjectZoneFill(theme, zone.id);
+      const base =
+        hoveredId === zone.id
+          ? theme.zoneHover
+          : spatialProjectZoneFill(theme, zone.id);
       recessionScratch.a.set(base);
       recessionScratch.b.set(theme.zone);
-      plate.color.copy(recessionScratch.a.lerp(recessionScratch.b, amount * FOCUS_RECESSION_MIX));
+      plate.color.copy(
+        recessionScratch.a.lerp(
+          recessionScratch.b,
+          amount * FOCUS_RECESSION_MIX
+        )
+      );
       if (amount > 0.001 && amount < 0.999) receding = true;
     }
     if (receding) state.invalidate();
@@ -1371,25 +1395,33 @@ function ProjectHealthRail({
   theme: SpatialThemeSnapshot;
 }) {
   const total = Math.max(zone.agentCount, 1);
-  const segments: Array<[StatusLightState, number]> = [
-    ['active', zone.statusCounts.working + zone.statusCounts.reviewing],
-    ['needs-you', zone.statusCounts.blocked],
-    ['fault', zone.statusCounts.error],
-    ['result', zone.statusCounts.complete],
-    ['off', zone.statusCounts.idle],
+  // Keyed by reading, painted by light state. The unreported band is its own
+  // segment so the rail's widths still add up to the zone's population; it
+  // shares the unlit paint because hue is not what separates it from idle.
+  const segments: Array<[StatusLightReading, StatusLightState, number]> = [
+    [
+      'active',
+      'active',
+      zone.statusCounts.working + zone.statusCounts.reviewing,
+    ],
+    ['needs-you', 'needs-you', zone.statusCounts.blocked],
+    ['fault', 'fault', zone.statusCounts.error],
+    ['result', 'result', zone.statusCounts.complete],
+    ['off', 'off', zone.statusCounts.idle],
+    ['unreported', 'off', zone.statusCounts.unreported],
   ];
   return (
     <span
       className="mt-1 flex h-[3px] w-full overflow-hidden"
       style={{ background: spatialColorWithAlpha(theme.unitMuted, 0.28) }}
     >
-      {segments.map(([status, count]) =>
+      {segments.map(([reading, paint, count]) =>
         count > 0 ? (
           <span
-            key={status}
+            key={reading}
             style={{
               width: `${(count / total) * 100}%`,
-              background: theme.status[status],
+              background: theme.status[paint],
             }}
           />
         ) : null
@@ -1573,9 +1605,7 @@ function ProjectControls({
             {zone.blockedCount > 0 && (
               <span
                 className={
-                  compact
-                    ? 'font-mono text-chrome-nano tabular-nums'
-                    : 'hidden'
+                  compact ? 'font-mono text-chrome-nano tabular-nums' : 'hidden'
                 }
                 style={{ color: theme.status['needs-you'] }}
               >
@@ -1585,9 +1615,7 @@ function ProjectControls({
             {burnShare && (
               <span
                 className={
-                  compact
-                    ? 'font-mono text-chrome-nano tabular-nums'
-                    : 'hidden'
+                  compact ? 'font-mono text-chrome-nano tabular-nums' : 'hidden'
                 }
                 style={{
                   color: spatialPressureColor(theme, zone.burn!.intensity),
@@ -1695,6 +1723,12 @@ const STATUS_MARK_GEOMETRY = {
   backing: new THREE.CircleGeometry(0.34, 32),
   ring: new THREE.RingGeometry(0.18, 0.28, 32),
   offSegment: new THREE.RingGeometry(0.21, 0.27, 8, 1, 0, Math.PI / 4),
+  // The unreported mark, matching the DOM atom: an unbroken socket ring that
+  // holds the footprint, and one bar across it standing for no reading. It is
+  // the only mark in the family whose interior is a straight line, so the
+  // board separates "quietly waiting" from "nobody said" by shape, not hue.
+  socketRing: new THREE.RingGeometry(0.225, 0.265, 32),
+  noReadingBar: new THREE.PlaneGeometry(0.3, 0.055),
   rotor: new THREE.CircleGeometry(0.2, 24, -Math.PI / 2, Math.PI),
   signal: new THREE.CircleGeometry(0.28, 28),
   check: checkGeometry(),
@@ -1796,12 +1830,11 @@ function useDelegationExits(
   exitsRef.current = exits;
   const timers = useRef(new Set<number>());
   useLayoutEffect(() => {
-    const { exits: next, departed, changed } = nextDelegationExits(
-      exitsRef.current,
-      previous.current,
-      units,
-      reduced
-    );
+    const {
+      exits: next,
+      departed,
+      changed,
+    } = nextDelegationExits(exitsRef.current, previous.current, units, reduced);
     previous.current = units;
     if (changed) setExits(next);
     if (departed.length === 0) return;
@@ -2105,25 +2138,25 @@ function StatusMarkLayer({
   const rotorRefs = useRef(new Map<string, THREE.Object3D>());
   // Every mark instance a piece owns, so its light scales with its body.
   const markRefs = useRef(new Map<string, Set<THREE.Object3D>>());
-  const collectMark = (pieceId: string) => (instance: THREE.Object3D | null) => {
-    if (!instance) return;
-    let set = markRefs.current.get(pieceId);
-    if (!set) {
-      set = new Set();
-      markRefs.current.set(pieceId, set);
-    }
-    set.add(instance);
-  };
+  const collectMark =
+    (pieceId: string) => (instance: THREE.Object3D | null) => {
+      if (!instance) return;
+      let set = markRefs.current.get(pieceId);
+      if (!set) {
+        set = new Set();
+        markRefs.current.set(pieceId, set);
+      }
+      set.add(instance);
+    };
   const sizeById = useMemo(
     () => new Map(pieces.map(piece => [piece.id, piece.size])),
     [pieces]
   );
   const agentPieces = pieces.filter(piece => piece.kind === 'agent');
-  const byState = (state: StatusLightState) =>
-    agentPieces.filter(
-      piece => statusLightStateForAgentStatus(piece.status) === state
-    );
+  const byState = (state: StatusLightReading) =>
+    agentPieces.filter(piece => workStateReading(piece.status) === state);
   const off = byState('off');
+  const unreported = byState('unreported');
   const rotating = byState('active');
   const result = byState('result');
   const needsYou = byState('needs-you');
@@ -2252,6 +2285,49 @@ function StatusMarkLayer({
               />
             ))
           )}
+        </Instances>
+      )}
+      {unreported.length > 0 && (
+        <Instances
+          geometry={geometries.socketRing}
+          limit={1024}
+          range={unreported.length}
+          renderOrder={2}
+        >
+          <meshBasicMaterial
+            toneMapped={false}
+            transparent
+            opacity={0.35}
+            depthWrite={false}
+          />
+          {unreported.map(piece => (
+            <Instance
+              {...instance(piece)}
+              key={`status-unreported-ring:${piece.id}`}
+              raycast={() => null}
+            />
+          ))}
+        </Instances>
+      )}
+      {unreported.length > 0 && (
+        <Instances
+          geometry={geometries.noReadingBar}
+          limit={1024}
+          range={unreported.length}
+          renderOrder={2}
+        >
+          <meshBasicMaterial
+            toneMapped={false}
+            opacity={1}
+            depthWrite={false}
+          />
+          {unreported.map(piece => (
+            <Instance
+              {...instance(piece)}
+              key={`status-unreported-bar:${piece.id}`}
+              raycast={() => null}
+            />
+          ))}
         </Instances>
       )}
       {rotating.length > 0 && (
@@ -2478,7 +2554,8 @@ function AgentPieceLayer({
     );
     const next = emergence.current!.retiring(now);
     setRetiringIds(previous =>
-      previous.length === next.length && previous.every((id, i) => id === next[i])
+      previous.length === next.length &&
+      previous.every((id, i) => id === next[i])
         ? previous
         : next
     );
@@ -2534,7 +2611,8 @@ function AgentPieceLayer({
   );
   /** Per-frame scale for a piece from its emergence, 1 when settled. */
   const emergenceScale = useCallback(
-    (pieceId: string, nowMs: number) => emergence.current!.scaleOf(pieceId, nowMs),
+    (pieceId: string, nowMs: number) =>
+      emergence.current!.scaleOf(pieceId, nowMs),
     []
   );
 
@@ -3308,7 +3386,10 @@ function AgentControls({
         piece.projectId === focusedProjectId
     )
     .map(piece => {
-      const lightState = statusLightStateForAgentStatus(piece.status);
+      // The READING, not the light state: an Agent whose source reported
+      // nothing must not be announced as idle in the accessible name, which
+      // is the only channel a screen reader or a colourless capture has.
+      const lightState = workStateReading(piece.status);
       // Delegation joins the control copy as labels (ENG-023 D3b): the count
       // and the team's kinds. Full child descriptions stay at the Sessions
       // and Terminal altitudes — a board tooltip is not a roster.
@@ -3392,8 +3473,6 @@ function AgentControls({
       );
     });
 }
-
-
 
 /**
  * DOM equivalents for delegated child units (D3c). WebGL stays out of the
@@ -3648,101 +3727,101 @@ export function OperationsBoardCanvas({
       <ambientLight intensity={1.15} />
       <directionalLight position={[26, 42, 80]} intensity={0.65} />
       <BoardTransitionProvider>
-      <BoardCameraRig
-        layout={layout}
-        projection={projection}
-        reduced={reduced}
-        controllerRef={controllerRef}
-        onViewportChange={onViewportChange}
-        onZoomChange={handleZoomChange}
-        onBandSelect={onBandSelect}
-        bandOverlayRef={bandOverlayRef}
-        suppressMissRef={suppressMissRef}
-        followSelection={followSelection}
-        touchSelectionMode={touchSelectionMode}
-        onManualCameraInput={onManualCameraInput}
-        onClampEdges={onClampEdges}
-      />
-      <BoardField
-        pieces={layout.pieces}
-        altitude={layout.altitude}
-        focusedProjectId={layout.focusedProjectId}
-        reduced={reduced}
-      >
-      <BoardGrid bounds={layout.bounds} theme={theme} />
-      <ZoneLayer
-        zones={visibleZones}
-        altitude={layout.altitude}
-        focusedProjectId={layout.focusedProjectId}
-        reduced={reduced}
-        onDrillProject={onDrillProject}
-        onToggleZoneSelect={onToggleZoneSelect}
-        onHover={setHoveredZoneId}
-        hoveredId={hoveredZoneId}
-        theme={theme}
-      />
-      <AgentPieceLayer
-        pieces={layout.pieces}
-        delegationUnits={delegationUnits}
-        hoveredDelegationId={hoveredDelegationId}
-        selectedDelegationUnitId={selectedDelegationUnitId}
-        altitude={layout.altitude}
-        focusedProjectId={layout.focusedProjectId}
-        reduced={reduced}
-        ambient={ambient}
-        lens={lens}
-        onSelectAgent={onSelectAgent}
-        onToggleAgentSelect={onToggleAgentSelect}
-        theme={theme}
-      />
-      <PopulationDotLayer
-        zones={layout.zones}
-        pieces={layout.pieces}
-        altitude={layout.altitude}
-        reduced={reduced}
-        lens={lens}
-        theme={theme}
-      />
-      {multiSelection && multiSelection.size > 0 && (
-        <MultiSelectionLayer
+        <BoardCameraRig
           layout={layout}
-          selection={multiSelection}
-          theme={theme}
+          projection={projection}
+          reduced={reduced}
+          controllerRef={controllerRef}
+          onViewportChange={onViewportChange}
+          onZoomChange={handleZoomChange}
+          onBandSelect={onBandSelect}
+          bandOverlayRef={bandOverlayRef}
+          suppressMissRef={suppressMissRef}
+          followSelection={followSelection}
+          touchSelectionMode={touchSelectionMode}
+          onManualCameraInput={onManualCameraInput}
+          onClampEdges={onClampEdges}
         />
-      )}
-      <ProjectControls
-        zones={visibleZones}
-        altitude={layout.altitude}
-        focusedProjectId={layout.focusedProjectId}
-        labelTierStore={labelTierStore}
-        reduced={reduced}
-        lens={lens}
-        onDrillProject={onDrillProject}
-        onToggleZoneSelect={onToggleZoneSelect}
-        theme={theme}
-      />
-      <AgentControls
-        pieces={layout.pieces}
-        altitude={layout.altitude}
-        focusedProjectId={layout.focusedProjectId}
-        onSelectAgent={onSelectAgent}
-        onToggleAgentSelect={onToggleAgentSelect}
-        multiSelection={multiSelection}
-        reduced={reduced}
-        theme={theme}
-      />
-      <DelegationControls
-        units={delegationUnits}
-        pieces={layout.pieces}
-        altitude={layout.altitude}
-        focusedProjectId={layout.focusedProjectId}
-        onSelectAgent={onSelectAgent}
-        onSelectDelegationChild={onSelectDelegationChild}
-        onHoverChange={setHoveredDelegationId}
-        reduced={reduced}
-        theme={theme}
-      />
-      </BoardField>
+        <BoardField
+          pieces={layout.pieces}
+          altitude={layout.altitude}
+          focusedProjectId={layout.focusedProjectId}
+          reduced={reduced}
+        >
+          <BoardGrid bounds={layout.bounds} theme={theme} />
+          <ZoneLayer
+            zones={visibleZones}
+            altitude={layout.altitude}
+            focusedProjectId={layout.focusedProjectId}
+            reduced={reduced}
+            onDrillProject={onDrillProject}
+            onToggleZoneSelect={onToggleZoneSelect}
+            onHover={setHoveredZoneId}
+            hoveredId={hoveredZoneId}
+            theme={theme}
+          />
+          <AgentPieceLayer
+            pieces={layout.pieces}
+            delegationUnits={delegationUnits}
+            hoveredDelegationId={hoveredDelegationId}
+            selectedDelegationUnitId={selectedDelegationUnitId}
+            altitude={layout.altitude}
+            focusedProjectId={layout.focusedProjectId}
+            reduced={reduced}
+            ambient={ambient}
+            lens={lens}
+            onSelectAgent={onSelectAgent}
+            onToggleAgentSelect={onToggleAgentSelect}
+            theme={theme}
+          />
+          <PopulationDotLayer
+            zones={layout.zones}
+            pieces={layout.pieces}
+            altitude={layout.altitude}
+            reduced={reduced}
+            lens={lens}
+            theme={theme}
+          />
+          {multiSelection && multiSelection.size > 0 && (
+            <MultiSelectionLayer
+              layout={layout}
+              selection={multiSelection}
+              theme={theme}
+            />
+          )}
+          <ProjectControls
+            zones={visibleZones}
+            altitude={layout.altitude}
+            focusedProjectId={layout.focusedProjectId}
+            labelTierStore={labelTierStore}
+            reduced={reduced}
+            lens={lens}
+            onDrillProject={onDrillProject}
+            onToggleZoneSelect={onToggleZoneSelect}
+            theme={theme}
+          />
+          <AgentControls
+            pieces={layout.pieces}
+            altitude={layout.altitude}
+            focusedProjectId={layout.focusedProjectId}
+            onSelectAgent={onSelectAgent}
+            onToggleAgentSelect={onToggleAgentSelect}
+            multiSelection={multiSelection}
+            reduced={reduced}
+            theme={theme}
+          />
+          <DelegationControls
+            units={delegationUnits}
+            pieces={layout.pieces}
+            altitude={layout.altitude}
+            focusedProjectId={layout.focusedProjectId}
+            onSelectAgent={onSelectAgent}
+            onSelectDelegationChild={onSelectDelegationChild}
+            onHoverChange={setHoveredDelegationId}
+            reduced={reduced}
+            theme={theme}
+          />
+        </BoardField>
       </BoardTransitionProvider>
       {!lowPower && effectsReady && theme.bloom.enabled && (
         <Suspense fallback={null}>

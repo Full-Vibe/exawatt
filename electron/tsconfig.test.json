@@ -1,0 +1,46 @@
+{
+  /*
+   * Type-check the Electron tests that nothing else does.
+   *
+   * The build config excludes `*.test.ts` because those files must not be
+   * compiled into `dist-electron`, and the root config excludes `electron/`
+   * entirely. Between the two, no Electron test file had ever been
+   * type-checked, which is not a theoretical gap: a refactor moved two exports
+   * to a new module without updating an importer, and the whole live suite
+   * became unrunnable in silence. `tsc` said nothing because nothing was
+   * looking, and the tests that would have failed do not run in CI.
+   *
+   * This config compiles nothing. It exists so that a moved export breaks a
+   * check instead of a test run nobody performs.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // The runner, not the build, decides what these files may use: vitest runs
+    // them on the same Node the app ships, and resolves `@/` the way the app
+    // does. The build config is deliberately narrower because its output has
+    // to run inside Electron's main process.
+    "lib": ["ES2023"],
+    "types": ["node", "vitest/globals"],
+    "baseUrl": "..",
+    "paths": { "@/*": ["src/*"] }
+  },
+  /*
+   * Scoped to the connected-source subsystem on purpose.
+   *
+   * Widening it to every Electron test surfaces a backlog this change did not
+   * create and cannot honestly fix in passing. A check that runs on a real
+   * subsystem today is worth more than a comprehensive one that stays
+   * unwired, so this covers the files whose refactor exposed the gap, and
+   * grows by deleting lines from `include` as other areas are cleared.
+   */
+  "include": [
+    "main/connected-*.ts",
+    "main/ssh-*.ts",
+    "main/gateway-bootstrap*.ts",
+    "main/atomic-json-file.ts",
+    "main/untrusted-input.ts",
+    "main/gateway-identity.ts"
+  ],
+  "exclude": ["node_modules"]
+}

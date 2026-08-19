@@ -188,11 +188,23 @@ in protocol/HUD helpers are compatibility metadata, not universal colors.
 
 | State     | Theme role (Classic exemplar) | Meaning                                     | Priority |
 | --------- | ----------------------------- | ------------------------------------------- | -------- |
-| Off       | `status.off` (`#DCE5ED`)      | idle, new, or quietly waiting               | 0        |
+| Off       | `status.off` (`#DCE5ED`)      | reported at rest: idle, new, quietly waiting | 0        |
 | Active    | `status.active` (`#9CD5FE`)   | reasoning, streaming, tools                 | 1        |
 | Result    | `status.result` (`#9BF396`)   | turn finished, result waiting               | 2        |
 | Needs you | `status.needsYou` (`#FFD0B8`) | approval / question / credential / Decision | 3        |
 | Fault     | `status.fault` (`#FF7373`)    | failed or intervention required             | 4        |
+
+**The unlit lamp has two readings** (ENG-010). Off is a _report_: a source said this Agent is resting. A source that said nothing at all is the opposite claim, and it used to land on the same unlit lamp under the same word, **Idle**. The sixth rung separates them:
+
+| Reading    | Mark                            | Paint        | Word         | Priority |
+| ---------- | ------------------------------- | ------------ | ------------ | -------- |
+| Unreported | socket ring + one bar across it | `status.off` | Not reported | 0        |
+
+- **A reading, not a sixth light.** `STATUS_LIGHT_STATES` stays five. Legends, status filters, and the protocol legend enumerate what a source can _say_, and silence is not one of those things. `STATUS_LIGHT_READINGS` is the six-name vocabulary a surface renders from, and `workStateReading` is the only door from a possibly-absent work state onto it — so `?? 'idle'` has nowhere left to be written.
+- **Shape and word carry it; hue does not.** Unreported wears `status.off`'s own paint deliberately. Hue is the first channel to go (colour-vision deficiency, a monochrome capture, a low-contrast board), and this is the distinction that must survive that. The mark is the only one in the family whose interior is a straight line — an instrument with no reading shows a dash, not a zero — and the word differs everywhere the word is shown, which since ENG-033 H2 is beside the light.
+- **It claims nothing about the Agent.** The word states a fact about the _source_. Nothing in this rung may say stopped, paused, lost, ended, or finished: Exawatt does not know, and a coworker's work is unaffected by Exawatt not knowing. It is not the connection's word either — freshness stays a separate readout, and this one never becomes "Stale".
+- **It ranks last.** Priority 0, and after every reported state in every attention order (`STATUS_RANK`, `STATUS_PRIORITY`, the board's aggregate bands). Silence asks for nothing.
+- **Counted, never folded.** Count and population channels give it its own tally instead of adding it to Idle, so "Idle 3" means three Agents somebody reported as resting. Status buckets are free to sum to less than the population; the population itself is not. Where a surface has no room for a sixth band — the frozen public hero capture — it refuses to encode the state rather than borrowing a neighbouring one.
 
 Standing rules, all operator-reviewed:
 
@@ -344,6 +356,26 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-08-19 — **Unreported** added to Status iconography (ENG-010). A
+  deliberate improvement, not an adherence: the system had one unlit lamp
+  doing two opposite jobs. `STATUS_LIGHT_META.off` was labelled **Idle** and
+  described "Available, new, or quietly waiting", and the renderer coerced a
+  remote coworker's absent work state onto it (`status: remote.workState ?? 'idle'`)
+  because `AgentStatus` had no member for unknown. A source that had never
+  said anything therefore produced a positive claim that the Agent was
+  resting, on the surface whose whole job is not to do that. The fix is in
+  three places that hold each other up. (1) `ExawattAgent.status` is
+  `AgentStatus | null`, matching the projection kernel and the main process,
+  so the renderer carries the absence instead of naming it; the D40 _work_
+  vocabulary stays six work states and gains no non-work member. (2) The
+  protocol gains a sixth **reading**, `unreported`, with its own mark and its
+  own word, sharing the unlit paint. (3) Every count channel gives it its own
+  tally. What generalises past this rung: **an absence is a different fact
+  from the quietest available claim, and the design system needs a word for
+  it before the type system can stop inventing one.** Evidence:
+  `/hud-gallery#status-light-protocol` (five lamps, unchanged) and the fleet
+  status row with a source reporting nothing.
 
 - 2026-08-17 — **Dialogs** section added (BUG-049). Not a new rung so much as a
   missing one: the system said which Button recipe a primary action wears and

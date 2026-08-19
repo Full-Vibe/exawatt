@@ -9,6 +9,7 @@ import {
   type AgentSourceAdapterId,
   type AgentSourceEvidenceBasis,
   type ConnectedSourceRecord,
+  type CoreEventMap,
   type OCClientConfig,
   type SourceTransport,
 } from '@exawatt/core';
@@ -192,7 +193,9 @@ class DemoGatewayClient implements ConnectedGatewayClient {
   deviceToken: string | null = null;
   grantedScopes: readonly string[] | null = null;
   private status = 'disconnected';
-  private readonly statusHandlers = new Set<(status: string) => void>();
+  private readonly statusHandlers = new Set<
+    (status: CoreEventMap['connection:status']) => void
+  >();
 
   constructor(
     readonly config: OCClientConfig,
@@ -224,17 +227,27 @@ class DemoGatewayClient implements ConnectedGatewayClient {
   onOCEvent(): void {}
   offOCEvent(): void {}
 
-  on(event: string, handler: (data: never) => void): void {
+  on<E extends keyof CoreEventMap>(
+    event: E,
+    handler: (data: CoreEventMap[E]) => void
+  ): void {
     if (event !== 'connection:status') return;
-    this.statusHandlers.add(handler as unknown as (status: string) => void);
+    this.statusHandlers.add(
+      handler as (status: CoreEventMap['connection:status']) => void
+    );
   }
 
-  off(_event: string, handler: (data: never) => void): void {
-    this.statusHandlers.delete(handler as unknown as (status: string) => void);
+  off<E extends keyof CoreEventMap>(
+    _event: E,
+    handler: (data: CoreEventMap[E]) => void
+  ): void {
+    this.statusHandlers.delete(
+      handler as (status: CoreEventMap['connection:status']) => void
+    );
   }
 
   /** The socket dropping underneath a healthy session. */
-  emitStatus(status: string): void {
+  emitStatus(status: CoreEventMap['connection:status']): void {
     for (const handler of [...this.statusHandlers]) handler(status);
   }
 }

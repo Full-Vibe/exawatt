@@ -8,6 +8,7 @@
 import type { FleetManager } from '../state/fleet-manager';
 import {
   createAgent,
+  exhaustiveWorkState,
   INITIAL_AGENT_METRICS,
   type ExawattAgent,
   type AgentStatus,
@@ -933,6 +934,13 @@ export class MockFleetTransport {
         case 'complete':
           idleCount++;
           break;
+        // Named, not defaulted: a coworker whose source reported no work
+        // state joins no bucket. `idleCount` counts Agents somebody said were
+        // resting, so these three are free to sum to less than the fleet.
+        case null:
+          break;
+        default:
+          exhaustiveWorkState(agent.status);
       }
 
       totalCost += agent.metrics.estimatedCost;

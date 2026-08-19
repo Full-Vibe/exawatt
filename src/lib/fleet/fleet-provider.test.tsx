@@ -179,6 +179,48 @@ describe('remoteAgentToExawattAgent', () => {
     expect(stale.presence?.stalePresentation).toBe(true);
   });
 
+  it('carries a source that reported nothing as nothing', () => {
+    // The one line this whole seam exists for. `?? 'idle'` used to live here,
+    // and it told the operator an Agent was resting on the strength of a
+    // report that was never made.
+    const silent = remoteAgentToExawattAgent(remoteAgent({ workState: null }));
+    expect(silent.status).toBeNull();
+    expect(silent.status).not.toBe('idle');
+    // Silence about the work is not silence about the coworker: it is still a
+    // real Agent, on a real source, in a real Project.
+    expect(silent.name).toBe('Tyler');
+    expect(silent.presence?.source.displayName).toBe('Workshop box');
+  });
+
+  it('leaves a reported idle Agent reading idle', () => {
+    // The fix distinguishes absence of evidence from evidence of absence. A
+    // source that says `idle` is evidence, and it survives untouched.
+    expect(remoteAgentToExawattAgent(remoteAgent()).status).toBe('idle');
+    expect(
+      remoteAgentToExawattAgent(remoteAgent({ workState: 'idle' })).status
+    ).toBe('idle');
+  });
+
+  it('never upgrades silence when observation is lost', () => {
+    // Two independent absences: the source reported no work state, and
+    // Exawatt cannot currently reach it. Neither may fill in for the other.
+    const silentAndStale = remoteAgentToExawattAgent(
+      remoteAgent({
+        workState: null,
+        connection: {
+          state: 'stale',
+          label: 'Stale',
+          detail: 'Last seen 2 hours ago',
+          observationAgeMs: 7_200_000,
+          stalePresentation: true,
+          failure: null,
+        },
+      })
+    );
+    expect(silentAndStale.status).toBeNull();
+    expect(silentAndStale.presence?.stalePresentation).toBe(true);
+  });
+
   it('carries source identity as secondary metadata, never as the name', () => {
     const agent = remoteAgentToExawattAgent(remoteAgent());
     expect(agent.name).toBe('Tyler');

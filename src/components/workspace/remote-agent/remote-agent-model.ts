@@ -340,6 +340,28 @@ const RECONNECT_ACTION: ComposerAction = {
   label: 'Reconnect',
 };
 
+/**
+ * The control that completes a refusal's own next step.
+ *
+ * The refusal copy names what to do; without this the surface printed
+ * "Request send access, then approve it on the source" beside no way to
+ * request it, which is an instruction the operator cannot follow. The action
+ * is decided here, beside the copy it belongs to, so the two can never
+ * disagree.
+ */
+export function sendRefusalAction(
+  refusal: SendRefusal,
+  host: { canRequestWriteAccess?: boolean; canReconnect?: boolean }
+): ComposerAction | null {
+  if (refusal === 'no-write-authority') {
+    return host.canRequestWriteAccess ? REQUEST_ACCESS_ACTION : null;
+  }
+  if (refusal === 'disconnected' || refusal === 'unrecognized') {
+    return host.canReconnect ? RECONNECT_ACTION : null;
+  }
+  return null;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Turns                                                                      */
 /* -------------------------------------------------------------------------- */

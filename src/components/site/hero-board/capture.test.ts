@@ -97,7 +97,19 @@ describe('hero board capture', () => {
   });
 
   it('keeps the ordinal contract with the production board', () => {
-    expect([...HERO_STATUS_ORDER]).toEqual([...POPULATION_STATUS_ORDER]);
+    // Ordinal 0..5 mean the same thing on both boards, so a hero unit and a
+    // board unit numbered alike are the same state.
+    expect(POPULATION_STATUS_ORDER.slice(0, HERO_STATUS_ORDER.length)).toEqual([
+      ...HERO_STATUS_ORDER,
+    ]);
+    // The production board carries one band the hero capture does not: the
+    // Agents whose source reported nothing. It is last, so it cannot shift a
+    // shared ordinal, and the capture refuses to encode one at all rather
+    // than borrow a neighbouring state's number.
+    expect(POPULATION_STATUS_ORDER.slice(HERO_STATUS_ORDER.length)).toEqual([
+      null,
+    ]);
+    expect([...HERO_STATUS_ORDER]).not.toContain(null);
   });
 
   it('matches the Demo Workspace board model', async () => {

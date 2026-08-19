@@ -41,3 +41,49 @@ describe('StatusLight Active motion', () => {
     }
   });
 });
+
+describe('the unreported mark (ENG-010)', () => {
+  function markOf(state: 'off' | 'unreported') {
+    const { container, unmount } = render(<StatusLight state={state} />);
+    const host = container.querySelector<HTMLElement>('[data-status-light]')!;
+    const shape = host.innerHTML;
+    const name = host.getAttribute('aria-label') ?? '';
+    const color = host.style.color;
+    unmount();
+    return { shape, name, color };
+  }
+
+  it('draws a different shape from a quietly waiting Agent', () => {
+    const off = markOf('off');
+    const unreported = markOf('unreported');
+    expect(unreported.shape).not.toBe(off.shape);
+    expect(unreported.shape.length).toBeGreaterThan(0);
+  });
+
+  it('survives colour being switched off', () => {
+    const off = markOf('off');
+    const unreported = markOf('unreported');
+    // Same paint on purpose: hue is the channel that disappears first.
+    expect(unreported.color).toBe(off.color);
+    // So the two channels that remain both have to carry it.
+    expect(unreported.shape).not.toBe(off.shape);
+    expect(unreported.name).not.toBe(off.name);
+  });
+
+  it('announces silence rather than idleness', () => {
+    const { name } = markOf('unreported');
+    expect(name).toContain('Not reported');
+    expect(name).not.toMatch(/\bidle\b/i);
+    expect(name).not.toMatch(/stopped|paused|lost|ended|finished/i);
+  });
+
+  it('marks itself in the DOM as its own reading', () => {
+    const { container } = render(<StatusLight state="unreported" />);
+    expect(
+      container.querySelector('[data-status-light="unreported"]')
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('.status-light-active-rotor')
+    ).not.toBeInTheDocument();
+  });
+});

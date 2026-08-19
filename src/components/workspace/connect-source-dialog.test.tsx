@@ -21,12 +21,13 @@ import {
   ConnectSourceDialog,
   type ConnectAttemptResult,
   type ConnectSourceBridge,
+  type ConnectSourceProgress,
   type ConnectSourceResult,
 } from './connect-source-dialog';
 import {
   CONNECT_FAILURE_COPY,
+  CONNECT_STAGES,
   CONNECT_STAGE_COPY,
-  type ConnectStage,
   type DiscoveredAgent,
 } from './connect-source-model';
 
@@ -76,6 +77,35 @@ const OBSERVED = {
   observedAt: 1,
 };
 
+/**
+ * The change channel main broadcasts on, as a double.
+ *
+ * `emit` is how a test plays the phases a real session moves through, which
+ * is the only way this surface learns them: there is no progress callback on
+ * `connect`, because a function cannot cross the context bridge.
+ */
+interface ProgressChannel {
+  emit(phase: string, sourceId?: string): void;
+  subscribers(): number;
+}
+
+function makeProgress(): ProgressChannel &
+  Pick<ConnectSourceBridge, 'onSourceChanged'> {
+  const handlers = new Set<(change: ConnectSourceProgress) => void>();
+  return {
+    onSourceChanged: handler => {
+      handlers.add(handler);
+      return () => {
+        handlers.delete(handler);
+      };
+    },
+    emit: (phase, sourceId = 'source-1') => {
+      for (const handler of [...handlers]) handler({ sourceId, phase });
+    },
+    subscribers: () => handlers.size,
+  };
+}
+
 function makeBridge(
   overrides: Partial<ConnectSourceBridge> = {}
 ): ConnectSourceBridge {
@@ -93,6 +123,7 @@ function makeBridge(
         observed: OBSERVED,
       })
     ),
+    onSourceChanged: () => () => {},
     detach: vi.fn(async () => ({ ok: true })),
     ...overrides,
   };
@@ -238,17 +269,35 @@ describe('Connect existing Agent: choosing a server', () => {
   });
 });
 
+function stageRow(stage: (typeof CONNECT_STAGES)[number]): HTMLElement {
+  const row = screen.getByText(CONNECT_STAGE_COPY[stage]).closest('li');
+  if (!(row instanceof HTMLElement)) throw new Error(`No row for ${stage}`);
+  return row;
+}
+
 describe('Connect existing Agent: the bounded test', () => {
-  it('names the stage in progress rather than showing a bare spinner', async () => {
-    let emit: ((stage: ConnectStage) => void) | undefined;
+  /**
+   * The regression this file did not have.
+   *
+   * The checklist used to be driven by a callback handed to `connect`, and
+   * the desktop bridge could not deliver one: `connect` is an `invoke`, so
+   * the function was dropped at the boundary and every real connection showed
+   * a frozen "Opening the SSH tunnel" for the whole round trip. So the test
+   * plays the phases the way main actually reports them — over the change
+   * channel, while the connect call is still in flight — and asserts the
+   * operator is looking at the step the connection is really on.
+   */
+  it('ticks through the phases the connection is actually in', async () => {
+    const progress = makeProgress();
     let settle: ((result: ConnectAttemptResult) => void) | undefined;
     const bridge = makeBridge({
-      connect: vi.fn(async (_sourceId, options) => {
-        emit = options?.onStage;
-        return new Promise<ConnectAttemptResult>(resolve => {
-          settle = resolve;
-        });
-      }),
+      onSourceChanged: progress.onSourceChanged,
+      connect: vi.fn(
+        () =>
+          new Promise<ConnectAttemptResult>(resolve => {
+            settle = resolve;
+          })
+      ),
     });
     renderDialog({ bridge });
     await chooseAtlas();
@@ -256,16 +305,55 @@ describe('Connect existing Agent: the bounded test', () => {
     expect(
       await screen.findByText(CONNECT_STAGE_COPY.tunnel)
     ).toBeInTheDocument();
-    for (const stage of ['credential', 'pairing', 'discovery'] as const) {
-      act(() => emit?.(stage));
-      const row = screen.getByText(CONNECT_STAGE_COPY[stage]).closest('li');
-      expect(row).toHaveAttribute('aria-current', 'step');
+
+    const phases = [
+      ['opening-tunnel', 'tunnel'],
+      ['bootstrapping', 'credential'],
+      ['pairing', 'pairing'],
+      ['discovering', 'discovery'],
+    ] as const;
+    for (const [phase, stage] of phases) {
+      act(() => progress.emit(phase));
+      expect(stageRow(stage)).toHaveAttribute('aria-current', 'step');
+      expect(stageRow(stage)).toHaveAttribute('data-stage-state', 'active');
     }
+    // Everything the connection already passed reads as done rather than
+    // pending, so the operator can see how far it got at a glance.
+    expect(stageRow('tunnel')).toHaveAttribute('data-stage-state', 'done');
 
     await act(async () => {
       settle?.({ ok: true, agents: AGENTS, observed: OBSERVED });
     });
     await screen.findByRole('heading', { name: 'Agents' });
+  });
+
+  it('ignores progress from a server this flow is not testing', async () => {
+    const progress = makeProgress();
+    const bridge = makeBridge({
+      onSourceChanged: progress.onSourceChanged,
+      connect: vi.fn(() => new Promise<ConnectAttemptResult>(() => {})),
+    });
+    renderDialog({ bridge });
+    await chooseAtlas();
+    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
+
+    act(() => progress.emit('discovering', 'some-other-source'));
+    expect(stageRow('tunnel')).toHaveAttribute('aria-current', 'step');
+    expect(stageRow('discovery')).toHaveAttribute(
+      'data-stage-state',
+      'waiting'
+    );
+  });
+
+  it('drops the subscription when the dialog closes', async () => {
+    const progress = makeProgress();
+    const bridge = makeBridge({ onSourceChanged: progress.onSourceChanged });
+    renderDialog({ bridge });
+    await chooseOpenClaw();
+    expect(progress.subscribers()).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(progress.subscribers()).toBe(0));
   });
 
   it('leaves the source and the remote runtime alone when the operator cancels', async () => {
@@ -336,6 +424,44 @@ describe('Connect existing Agent: failures', () => {
       ).toBeInTheDocument();
     });
   }
+
+  it('leaves the failed step showing rather than resetting to the first', async () => {
+    const progress = makeProgress();
+    let settle: ((result: ConnectAttemptResult) => void) | undefined;
+    renderDialog({
+      bridge: makeBridge({
+        onSourceChanged: progress.onSourceChanged,
+        connect: vi.fn(
+          () =>
+            new Promise<ConnectAttemptResult>(resolve => {
+              settle = resolve;
+            })
+        ),
+      }),
+    });
+    await chooseAtlas();
+    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
+
+    act(() => progress.emit('pairing'));
+    await act(async () => {
+      settle?.({
+        ok: false,
+        failure: 'approval-required',
+        message: 'The Gateway is waiting for an approval.',
+      });
+    });
+
+    await screen.findByText(CONNECT_FAILURE_COPY['approval-required'].headline);
+    // How far it got is half the diagnosis: the tunnel and the credential
+    // were fine, and pairing is the step that did not complete.
+    expect(stageRow('tunnel')).toHaveAttribute('data-stage-state', 'done');
+    expect(stageRow('credential')).toHaveAttribute('data-stage-state', 'done');
+    expect(stageRow('pairing')).toHaveAttribute('data-stage-state', 'failed');
+    expect(stageRow('discovery')).toHaveAttribute(
+      'data-stage-state',
+      'waiting'
+    );
+  });
 
   it('retries the same server rather than saving a second one', async () => {
     const connect = vi
@@ -488,6 +614,29 @@ describe('Connect existing Agent: Project mapping', () => {
     expect(onConnected).not.toHaveBeenCalled();
   });
 
+  /*
+   * Connecting closes through to the coworker. There is no "Connected." page
+   * with a Done button on it, because the operator asked to open somebody and
+   * a confirmation screen is one keystroke standing in the way.
+   */
+  it('closes straight through to the Agent with no confirmation screen', async () => {
+    const bridge = makeBridge();
+    const onConnected = vi.fn();
+    renderDialog({ bridge, onConnected });
+    await reachMapping();
+
+    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
+
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    await waitFor(() =>
+      expect(document.querySelector('[data-connect-source]')).toBeNull()
+    );
+    // The record is the operator's now. Closing releases an abandoned
+    // attempt; it must never release a connection they just kept.
+    expect(bridge.detach).not.toHaveBeenCalled();
+  });
+
   it('steps back to the Agent choice with the selection intact', async () => {
     renderDialog({ bridge: makeBridge() });
     await reachMapping();
@@ -552,5 +701,76 @@ describe('Connect existing Agent: voice', () => {
       expect(text).not.toContain('—');
       expect(text).not.toMatch(/\bstopped\b|\bpaused\b|\blost\b/i);
     }
+  });
+});
+
+/**
+ * The desktop path, wired the way production wires it.
+ *
+ * Every other test in this file injects a bridge, which is exactly how a
+ * frozen checklist survived review: the injected double honoured a progress
+ * callback the real preload could never deliver. This one mounts the dialog
+ * with no bridge prop at all, so it builds its own over
+ * `window.electron.connectedSources` and can only tick if the seam it uses is
+ * one the preload actually exposes.
+ */
+describe('Connect existing Agent: the desktop bridge', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'electron');
+  });
+
+  it('carries the connection phase from the preload to the checklist', async () => {
+    const handlers = new Set<(change: ConnectSourceProgress) => void>();
+    let settle: ((result: ConnectAttemptResult) => void) | undefined;
+    const connectedSources = {
+      sshAliases: vi.fn(async () => ({
+        aliases: ALIASES,
+        configPresent: true,
+        incompleteIncludes: false,
+      })),
+      add: vi.fn(async () => ({ ok: true, source: { id: 'source-1' } })),
+      connect: vi.fn(
+        () =>
+          new Promise<ConnectAttemptResult>(resolve => {
+            settle = resolve;
+          })
+      ),
+      onChanged: (handler: (change: ConnectSourceProgress) => void) => {
+        handlers.add(handler);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      detach: vi.fn(async () => ({ ok: true })),
+    };
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: { isElectron: true, platform: 'darwin', connectedSources },
+    });
+
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return <ConnectSourceDialog open={open} onOpenChange={setOpen} />;
+    }
+    render(<Harness />);
+
+    await chooseAtlas();
+    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
+    // Main broadcasts the phase per source; nothing is handed to `connect`.
+    expect(connectedSources.connect).toHaveBeenCalledExactlyOnceWith(
+      'source-1'
+    );
+
+    act(() => {
+      for (const handler of [...handlers]) {
+        handler({ sourceId: 'source-1', phase: 'discovering' });
+      }
+    });
+    expect(stageRow('discovery')).toHaveAttribute('aria-current', 'step');
+
+    await act(async () => {
+      settle?.({ ok: true, agents: AGENTS, observed: OBSERVED });
+    });
+    await screen.findByRole('heading', { name: 'Agents' });
   });
 });

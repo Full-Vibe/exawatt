@@ -29,7 +29,10 @@ import {
   type SendToAgentOptions,
 } from './connected-source-runtime';
 import type { AuthorityRequestResult } from './connected-gateway-authority';
-import type { ConnectedGatewayPhase } from './connected-gateway';
+import type {
+  ConnectedGatewayPhase,
+  ObservedGatewayFacts,
+} from './connected-gateway';
 import type { GatewayIdentity } from './gateway-identity';
 
 /**
@@ -242,10 +245,18 @@ interface SessionScript {
   authorityResult?: AuthorityRequestResult;
   /** The version the source reports as part of its installation identity. */
   version?: string;
+  /** Scheduled jobs the source reported on the last discovery. */
+  automationCount?: number;
 }
 
 class FakeSession implements ConnectedSourceSession {
   snapshot: AgentSourceTopologySnapshot | null = null;
+  /**
+   * What the last discovery observed about the installation itself. Null
+   * until one lands, exactly like the real session: a source nobody has
+   * reached has reported no version and no automation count.
+   */
+  facts: ObservedGatewayFacts | null = null;
   phase: ConnectedGatewayPhase = 'idle';
   identityDrift: null = null;
   disconnectCalls = 0;
@@ -301,17 +312,18 @@ class FakeSession implements ConnectedSourceSession {
         .map(agent => agent.nativeAgentId)
         .sort(),
     };
+    this.facts = {
+      version: this.script.version ?? '',
+      configuredAgentCount: next.agents.length,
+      automationCount: this.script.automationCount ?? 0,
+      observedAt: next.observedAt,
+    };
     return {
       ok: true as const,
       outcome: 'connected' as const,
       snapshot: next,
       identity: this.identity,
-      facts: {
-        version: '',
-        configuredAgentCount: next.agents.length,
-        automationCount: 0,
-        observedAt: next.observedAt,
-      },
+      facts: this.facts,
       issues: [],
     };
   });
@@ -343,20 +355,21 @@ class FakeSession implements ConnectedSourceSession {
   /** Every write. The read-only tests assert this stays empty. */
   readonly writes: { method: string; params?: unknown }[] = [];
 
-  read = vi.fn(async (method: string, params?: unknown) => {
+  async read<R = unknown>(method: string, params?: unknown): Promise<R> {
     this.reads.push({ method, params });
-    if (method !== 'chat.history') return {};
+    if (method !== 'chat.history') return {} as R;
     const key = (params as { sessionKey?: string } | undefined)?.sessionKey;
-    return (
-      this.script.history?.[key ?? ''] ?? { sessionKey: key, messages: [] }
-    );
-  });
+    return (this.script.history?.[key ?? ''] ?? {
+      sessionKey: key,
+      messages: [],
+    }) as R;
+  }
 
-  write = vi.fn(async (method: string, params?: unknown) => {
+  async write<R = unknown>(method: string, params?: unknown): Promise<R> {
     this.writes.push({ method, params });
     if (this.script.sendError) throw this.script.sendError;
-    return this.script.sendResult ?? { runId: 'run-1', status: 'ok' };
-  });
+    return (this.script.sendResult ?? { runId: 'run-1', status: 'ok' }) as R;
+  }
 
   requestWriteAuthority = vi.fn(
     async (): Promise<AuthorityRequestResult> =>
@@ -1563,6 +1576,153 @@ describe('ConnectedSourceRuntime — freshness never implies stopped work', () =
   });
 });
 
+describe('ConnectedSourceRuntime — what the source said about itself', () => {
+  function alphaWith(script: SessionScript) {
+    return harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+        ...script,
+      },
+    });
+  }
+
+  it('carries the observed version and capabilities into the status view', async () => {
+    const { runtime } = alphaWith({ version: '4.2.0', automationCount: 3 });
+    await runtime.connect('alpha');
+
+    const row = runtime.status()[0];
+    expect(row.version).toEqual({
+      value: '4.2.0',
+      basis: 'observed',
+      provenance: 'Gateway status',
+    });
+    expect(row.capabilities).toEqual([
+      {
+        label: 'Conversation',
+        value: 'Read only',
+        basis: 'observed',
+        provenance: 'Gateway scope grant',
+      },
+      {
+        label: 'Automations',
+        value: '3 listed, not editable',
+        basis: 'observed',
+        provenance: 'Gateway automation list',
+      },
+    ]);
+  });
+
+  it('reports nothing at all about a source it has not reached', () => {
+    const { runtime } = alphaWith({});
+    const row = runtime.status()[0];
+    expect(row.observing).toBe(false);
+    expect(row.version).toBeNull();
+    expect(row.capabilities).toEqual([]);
+  });
+
+  it('says nothing rather than inventing a version the source withheld', async () => {
+    const { runtime } = alphaWith({ version: '   ' });
+    await runtime.connect('alpha');
+
+    const row = runtime.status()[0];
+    expect(row.version).toBeNull();
+    // The capability rows do not depend on a version, so they still answer.
+    expect(row.capabilities.map(entry => entry.label)).toEqual([
+      'Conversation',
+      'Automations',
+    ]);
+  });
+
+  it('reports the voice the Gateway granted, not the one Exawatt wants', async () => {
+    const { runtime } = harness(
+      {
+        alpha: {
+          snapshots: [
+            snapshot('alpha', [
+              { nativeAgentId: 'scout', displayName: 'scout' },
+            ]),
+          ],
+          version: '4.2.0',
+        },
+      },
+      [record('alpha', { grantedAuthority: 'write' })]
+    );
+    await runtime.connect('alpha');
+
+    const conversation = runtime
+      .status()[0]
+      .capabilities.find(entry => entry.label === 'Conversation');
+    expect(conversation?.value).toBe('Read and send');
+  });
+
+  it('marks a simulated source as simulated rather than observed', async () => {
+    const { runtime } = harness(
+      {
+        alpha: {
+          snapshots: [
+            snapshot('alpha', [
+              { nativeAgentId: 'scout', displayName: 'scout' },
+            ]),
+          ],
+          version: '0.1.0-demo',
+        },
+      },
+      [record('alpha', { adapterId: 'demo' })]
+    );
+    await runtime.connect('alpha');
+
+    const row = runtime.status()[0];
+    expect(row.version?.basis).toBe('simulated');
+    expect(row.capabilities.every(entry => entry.basis === 'simulated')).toBe(
+      true
+    );
+  });
+
+  /*
+   * Last observed, not last connected. A connection that drops leaves the
+   * facts exactly where the last discovery put them; `connection` is what
+   * says the view is not current, and nothing here may move because
+   * observation moved.
+   */
+  it('keeps the last observed facts through a dropped connection', async () => {
+    const { runtime, sessions } = alphaWith({
+      version: '4.2.0',
+      automationCount: 1,
+    });
+    await runtime.connect('alpha');
+    sessions.get('alpha')?.setStatus({
+      state: 'unavailable',
+      observationAgeMs: 600_000,
+      stalePresentation: true,
+      failure: 'host-unreachable',
+    });
+
+    const row = runtime.status()[0];
+    expect(row.connection.state).toBe('unavailable');
+    expect(row.version?.value).toBe('4.2.0');
+    expect(
+      row.capabilities.find(entry => entry.label === 'Automations')?.value
+    ).toBe('1 listed, not editable');
+  });
+
+  it('hands the Connect flow the same observation as raw tokens', async () => {
+    const { runtime } = alphaWith({ version: '4.2.0' });
+    const connected = await runtime.connect('alpha');
+    if (!connected.ok) throw new Error('the fixture connects');
+
+    expect(connected.observed).toEqual({
+      // A Gateway reports a version and a roster, never a name for itself,
+      // and Exawatt's own name for the connection is not an observation.
+      identity: null,
+      version: '4.2.0',
+      capabilities: ['operator.read'],
+      observedAt: 10_000,
+    });
+  });
+});
+
 describe("ConnectedSourceRuntime — work state is the source's, not the connection's", () => {
   /** The D40 state the local path gives a Session its harness reports busy. */
   const LOCAL_WORKING = sessionStatus(
@@ -2112,7 +2272,7 @@ describe('ConnectedSourceRuntime — sending to the primary conversation', () =>
       expect(result.message).toMatch(/write access/i);
     }
     expect(session.writes).toEqual([]);
-    expect(session.write).not.toHaveBeenCalled();
+    expect(session.writes).toEqual([]);
   });
 
   it('separates a standing approval request from a source never asked', async () => {

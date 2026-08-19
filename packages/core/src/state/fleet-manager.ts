@@ -1,4 +1,5 @@
 import { TypedEmitter, type CoreEventMap } from '../events/emitter';
+import { exhaustiveWorkState } from '../types/agent';
 import type { ExawattAgent, AgentActivity } from '../types/agent';
 import type { FleetState, FleetMetrics } from '../types/fleet';
 import type { OCGatewayClient } from '../oc/client';
@@ -304,6 +305,13 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
         case 'complete':
           idleCount++;
           break;
+        // Named, not defaulted: a coworker whose source reported no work
+        // state joins no bucket. `idleCount` counts Agents somebody said were
+        // resting, so these three are free to sum to less than the fleet.
+        case null:
+          break;
+        default:
+          exhaustiveWorkState(agent.status);
       }
 
       totalCost += agent.metrics.estimatedCost;

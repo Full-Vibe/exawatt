@@ -337,6 +337,49 @@ describe('the composer', () => {
 
 /* -------------------------------------------------------------------------- */
 
+describe('the connection chip', () => {
+  /*
+   * One fact, one colour, wherever it is shown.
+   *
+   * A connection Exawatt cannot see is not a D40 fault: the coworker on that
+   * server may be working perfectly and Exawatt is the one that lost the
+   * thread. So this chip wears the chrome attention role rather than the
+   * fault role, and Settings paints the same state with `--settings-amber`,
+   * which resolves to the same `--exa-hud-amber`. The two surfaces agree.
+   */
+  it('marks an unavailable connection with attention, never fault colour', async () => {
+    const { container } = await renderSurface({
+      connection: connection('unavailable'),
+      onReconnect: vi.fn(),
+    });
+    const chip = container.querySelector<HTMLElement>(
+      '[data-connection-chip="unavailable"]'
+    );
+    expect(chip).not.toBeNull();
+    expect(chip!.style.color).toContain('--exa-hud-amber');
+    expect(chip!.style.color).not.toContain('--exa-status-fault');
+    expect(chip!.style.color).not.toContain('--exa-hud-red');
+    // Hue never carries it alone: the state's own word is in the chip.
+    expect(chip).toHaveTextContent('Server unreachable');
+  });
+
+  it('leaves the states Exawatt can still see in the quiet role', async () => {
+    for (const state of ['live', 'reconnecting', 'stale'] as const) {
+      cleanup();
+      const { container } = await renderSurface({
+        connection: connection(state),
+      });
+      const chip = container.querySelector<HTMLElement>(
+        `[data-connection-chip="${state}"]`
+      );
+      expect(chip).not.toBeNull();
+      expect(chip!.style.color).not.toContain('--exa-status-fault');
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
 describe('the Agent whose source declares no conversation', () => {
   const noConversation = makeBridge({
     conversation: vi.fn(async () => ({ ok: true as const, contextId: null })),

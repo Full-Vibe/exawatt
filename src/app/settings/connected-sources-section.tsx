@@ -75,6 +75,8 @@ import {
 import type {
   ConnectedSourceStatusView,
   ElectronConnectedSourcesApi,
+  ObservedSourceCapability,
+  ObservedSourceFact,
 } from '@/types/electron';
 
 /* ------------------------------------------------------------------ */
@@ -82,27 +84,17 @@ import type {
 /* ------------------------------------------------------------------ */
 
 /**
- * One observation of one configured source: the landed `status()` row plus
- * the seam this packet could not close. The registry owes an observed version
- * and observed capabilities with their evidence basis, and the status contract
- * does not carry either yet, so both are optional and every row reports their
- * absence rather than inventing a value.
+ * One observation of one configured source, exactly as `status()` reports it.
+ *
+ * Version and capabilities are part of that contract rather than a local
+ * augmentation of it: the session reads both on every discovery, so the rows
+ * below render what the source actually said. Null and empty still mean "not
+ * observed this launch", and every row says so rather than inventing a value.
  */
-export type ConnectedSourceObservation = ConnectedSourceStatusView & {
-  version?: ObservedFact | null;
-  capabilities?: readonly ObservedCapability[];
-};
+export type ConnectedSourceObservation = ConnectedSourceStatusView;
 
-export interface ObservedFact {
-  value: string;
-  basis: AgentSourceEvidenceBasis;
-  /** Which check produced it, in the register the registry rows already use. */
-  provenance?: string;
-}
-
-export interface ObservedCapability extends ObservedFact {
-  label: string;
-}
+export type ObservedFact = ObservedSourceFact;
+export type ObservedCapability = ObservedSourceCapability;
 
 /**
  * `window.electron.connectedSources`, or null outside the desktop app. Every
@@ -173,18 +165,49 @@ function PlacementGlyph({ placement }: { placement: AgentSourcePlacement }) {
   return <Server aria-hidden size={size} />;
 }
 
+/**
+ * The sentence under the Connection fact when the bridge sends none.
+ *
+ * One per state, because the previous two-way fallback keyed on
+ * `stalePresentation` and told an operator watching a RECONNECTING source
+ * that Exawatt was "receiving current snapshots" — a false freshness claim on
+ * the surface whose job is freshness truth. None of these may say the Gateway
+ * stopped; losing sight of a server is a fact about Exawatt.
+ */
+const CONNECTION_FALLBACK_DETAIL: Readonly<
+  Record<SourceConnectionState, string>
+> = {
+  live: 'Exawatt is receiving current snapshots.',
+  reconnecting:
+    'Exawatt is reopening the connection. The Gateway keeps working meanwhile.',
+  stale:
+    'Last-known content, not a current report. The Gateway keeps working whether or not Exawatt is watching.',
+  unavailable:
+    'Last-known content, not a current report. The Gateway keeps working whether or not Exawatt is watching.',
+};
+
+/**
+ * Connection ink, and it never borrows work state's.
+ *
+ * `--settings-red` resolves to the D40 fault role, which means this Agent's
+ * own work failed or needs a person. A server Exawatt cannot currently see is
+ * not that: the coworker on it may be working perfectly, and Exawatt is the
+ * one that lost the thread. So an unavailable connection wears the chrome
+ * attention role, which is what the remote coworker surface already uses for
+ * the same fact, and the two surfaces say the same thing about it.
+ */
 const CONNECTION_TONE: Readonly<Record<SourceConnectionState, string>> = {
   live: 'var(--settings-teal)',
   reconnecting: 'var(--settings-amber)',
   stale: 'var(--settings-dim)',
-  unavailable: 'var(--settings-red)',
+  unavailable: 'var(--settings-amber)',
 };
 
 const CONNECTION_WASH: Readonly<Record<SourceConnectionState, string>> = {
   live: 'var(--settings-teal-wash)',
   reconnecting: 'var(--settings-amber-wash)',
   stale: 'color-mix(in srgb, var(--settings-dim) 8%, transparent)',
-  unavailable: 'var(--settings-red-wash)',
+  unavailable: 'var(--settings-amber-wash)',
 };
 
 /** Shape, icon, and text all carry the state; hue is never alone (D30). */
@@ -323,8 +346,16 @@ function SectionHeading({ id, children }: { id: string; children: string }) {
   );
 }
 
+/**
+ * Where a value came from, or what has to happen before there is one.
+ *
+ * The absent sentence is written for the operator: it says what Exawatt will
+ * do, not what kind of check it runs. "A bounded check on the Gateway" is a
+ * phrase from an engineering doc, and an operator reading a row that has no
+ * value needs to know it fills itself in, not what the protocol calls it.
+ */
 function evidenceMeta(fact: ObservedFact | null | undefined): string {
-  if (!fact) return 'Awaiting a bounded check on the Gateway.';
+  if (!fact) return 'Exawatt reads this the next time it connects.';
   return fact.provenance
     ? `${BASIS_LABELS[fact.basis]} · ${fact.provenance}`
     : BASIS_LABELS[fact.basis];
@@ -402,6 +433,16 @@ export function useConnectedSources(): ConnectedSourcesState {
   }, [readList, readStatus]);
 
   /**
+   * The records this surface has seen, read from inside a subscription that
+   * outlives any one of them.
+   */
+  const knownIds = useRef<ReadonlySet<string>>(new Set());
+  knownIds.current = useMemo(
+    () => new Set(sources.map(source => source.id)),
+    [sources]
+  );
+
+  /**
    * Two inputs, because they answer different questions. The bridge's own
    * change tick says a source moved, so freshness follows the source rather
    * than a clock; the interval only keeps the displayed age from drifting
@@ -412,8 +453,13 @@ export function useConnectedSources(): ConnectedSourcesState {
     const api = connectedSourcesBridge();
     const stop =
       typeof api?.onChanged === 'function'
-        ? api.onChanged(() => {
+        ? api.onChanged(change => {
             void readStatus();
+            // A source this surface has never listed just moved, which is what
+            // connecting one from here looks like from this side. Settings is
+            // the page the operator is standing on while it happens, so the
+            // rail picks it up rather than waiting to be reopened.
+            if (!knownIds.current.has(change.sourceId)) void readList();
           })
         : null;
     const timer = window.setInterval(() => {
@@ -423,7 +469,7 @@ export function useConnectedSources(): ConnectedSourcesState {
       stop?.();
       window.clearInterval(timer);
     };
-  }, [available, readStatus]);
+  }, [available, readList, readStatus]);
 
   const reconnect = useCallback(
     async (id: string) => {
@@ -557,7 +603,7 @@ export function ConnectedSourcesRail({
   observations: Map<string, ConnectedSourceObservation>;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  /** Provided by the ⌘N Connect route once it exports an opener. */
+  /** Opens the Connect existing Agent route. The host owns the dialog. */
   onConnect?: () => void;
 }) {
   return (
@@ -628,7 +674,10 @@ export function ConnectedSourcesRail({
                     </span>
                   </span>
                 </span>
-                <span className="hidden shrink-0 lg:block">
+                {/* Connection state at every width. Hiding it under `lg`
+                    left a narrow window with no channel for the one fact
+                    this list exists to carry. */}
+                <span className="shrink-0">
                   <ConnectionGlyph state={status.state} />
                 </span>
               </button>
@@ -651,6 +700,11 @@ function ConnectedSourcesEmpty({ onConnect }: { onConnect?: () => void }) {
       className="px-3 py-2.5 font-ui text-chrome-label leading-4.5 text-[var(--settings-dim)]"
     >
       <p>Gateways you connect appear here with their own health.</p>
+      {/* A route, or nothing. Naming a chord here was navigation the operator
+          could read and not take: this empty state is exactly where somebody
+          with no sources arrives, and the one thing it owes them is the way
+          in. The host always passes one; a surface that cannot connect says
+          less rather than pointing at a keystroke. */}
       {onConnect ? (
         <button
           type="button"
@@ -659,11 +713,7 @@ function ConnectedSourcesEmpty({ onConnect }: { onConnect?: () => void }) {
         >
           Connect existing Agent
         </button>
-      ) : (
-        <p className="mt-1.5 text-[var(--settings-faint)]">
-          Connect existing Agent, from <span className="font-mono">⌘N</span>.
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -858,9 +908,7 @@ export function ConnectedSourceDetail({
           value={describeConnectionStatus(status)}
           detail={
             observation?.connection.detail?.trim() ||
-            (status.stalePresentation
-              ? 'Last-known content, not a current report. The Gateway keeps working whether or not Exawatt is watching.'
-              : 'Exawatt is receiving current snapshots.')
+            CONNECTION_FALLBACK_DETAIL[status.state]
           }
           tone={CONNECTION_TONE[status.state]}
           testState={status.state}

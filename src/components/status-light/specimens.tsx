@@ -3,6 +3,7 @@ import { StatusLight } from './status-light';
 import {
   STATUS_LIGHT_META,
   STATUS_LIGHT_STATES,
+  type StatusLightReading,
   type StatusLightState,
 } from './protocol';
 
@@ -197,10 +198,55 @@ export function SessionStatusSpecimens() {
   );
 }
 
+/**
+ * The two readings of the unlit lamp, side by side (ENG-010).
+ *
+ * They are shown together because the only way to review this rung is to see
+ * how far apart they read at the size they actually ship at. Same paint on
+ * both, which is the point: what separates them is the interior of the mark
+ * and the word beside it, and neither needs colour.
+ */
+function UnlitReadingSpecimen({ reading }: { reading: StatusLightReading }) {
+  const meta = STATUS_LIGHT_META[reading];
+  return (
+    <div
+      className="flex min-w-0 items-start gap-2.5 rounded-[6px] border px-3 py-2.5"
+      data-unlit-reading={reading}
+      style={{
+        borderColor: HUD.strokeFaint,
+        background: HUD.bg.panelFill,
+      }}
+    >
+      <StatusLight decorative size="standard" state={reading} />
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold" style={{ color: HUD.text }}>
+          {meta.label}
+        </p>
+        <p className="mt-0.5 text-[11px]" style={{ color: HUD.textDim }}>
+          {meta.description}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function UnlitReadingSpecimens() {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <SpecimenHeading>Unlit · two readings, one lamp</SpecimenHeading>
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <UnlitReadingSpecimen reading="off" />
+        <UnlitReadingSpecimen reading="unreported" />
+      </div>
+    </div>
+  );
+}
+
 export function StatusLightDomSpecimens() {
   return (
     <div className="flex max-w-3xl flex-col gap-8">
       <StatusLightProtocolLegend />
+      <UnlitReadingSpecimens />
       <AgentTabStatusSpecimens />
       <SessionStatusSpecimens />
     </div>

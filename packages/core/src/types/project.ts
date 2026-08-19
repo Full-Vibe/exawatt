@@ -10,7 +10,7 @@
  * projection via `kind: 'initiative'` — it must never become a stored parent here.
  */
 
-import type { AgentStatus } from './agent';
+import type { AgentWorkState } from './agent';
 
 /** A source-owned Project that exists independently of its current Agents. */
 export interface ProjectCatalogEntry {
@@ -36,7 +36,8 @@ export interface ProjectSummary {
   activeCount: number;
   /** blocked + error */
   blockedCount: number;
-  /** idle + complete */
+  /** idle + complete. A coworker whose source reported no work state joins
+   *  no bucket, so these three may sum to less than `agentCount`. */
   idleCount: number;
   /** sum of agent costRate ($/hr) */
   costRate: number;
@@ -44,8 +45,10 @@ export interface ProjectSummary {
   totalCost: number;
   /** 0..1 attention pressure; blockers weighted heavily, computed in resolver */
   attentionPressure: number;
-  /** worst agent status in the cluster, for the boundary tint */
-  dominantStatus: AgentStatus;
+  /** Worst REPORTED agent status in the cluster, for the boundary tint.
+   *  `null` when no coworker in it has reported one, including an empty
+   *  cluster — the tint then claims nothing. */
+  dominantStatus: AgentWorkState;
 }
 
 /** A resolved grouping LENS over agents — derived, never stored. */

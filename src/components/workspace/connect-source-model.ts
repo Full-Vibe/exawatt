@@ -67,6 +67,33 @@ export const CONNECT_STAGES = [
 ] as const;
 export type ConnectStage = (typeof CONNECT_STAGES)[number];
 
+/**
+ * The connection phase a session reports, translated into the stage the
+ * operator is watching.
+ *
+ * The four stages are not a second vocabulary invented for the dialog: they
+ * are the four phases the session actually moves through on the way to a
+ * snapshot, named in the operator's words. Keeping the translation here is
+ * what lets the surface read the phase channel main already broadcasts
+ * instead of waiting on a progress callback that cannot cross the bridge.
+ *
+ * The phases missing from this table are deliberate. `idle`, `connected`,
+ * `reconnecting`, and `failed` are not steps of the bounded test: the first
+ * two bracket it and the last two are answers the invoke itself carries, so
+ * none of them may move the checklist. A phase this table does not know
+ * leaves the checklist exactly where it was.
+ */
+const STAGE_FOR_PHASE: Readonly<Partial<Record<string, ConnectStage>>> = {
+  'opening-tunnel': 'tunnel',
+  bootstrapping: 'credential',
+  pairing: 'pairing',
+  discovering: 'discovery',
+};
+
+export function stageForPhase(phase: string): ConnectStage | null {
+  return STAGE_FOR_PHASE[phase] ?? null;
+}
+
 /** One configured Agent as the source reported it. */
 export interface DiscoveredAgent {
   nativeAgentId: string;
@@ -169,6 +196,14 @@ export type ConnectStep =
   | {
       kind: 'failed';
       alias: string;
+      /**
+       * The stage the test was standing on when it stopped. Carried so the
+       * failure screen can leave the operator looking at the step that
+       * failed: "the pairing never completed" and "the server never answered"
+       * are different problems with different next actions, and a report that
+       * always pointed at the first step would hide which one they have.
+       */
+      stage: ConnectStage;
       failure: SourceFailureClass;
       message: string;
     }
@@ -185,8 +220,7 @@ export type ConnectStep =
       alias: string;
       sourceId: string;
       rows: readonly AgentMappingRow[];
-    }
-  | { kind: 'saved'; sourceId: string; openAgentId: string | null };
+    };
 
 export interface ConnectFlowState {
   step: ConnectStep;
@@ -203,6 +237,16 @@ export interface ConnectFlowState {
   pendingAlias: string | null;
   /** True when the operator described the server rather than picking one. */
   operatorAuthored: boolean;
+  /**
+   * The mapping has been handed on and the record belongs to the operator.
+   *
+   * There is no step for this, because the product closes straight through to
+   * the Agent rather than parking on a confirmation nobody asked for. The
+   * fact still has to survive the close: it is what tells `cancelConnectFlow`
+   * that the source it can see is a connection the operator kept, not a
+   * half-finished attempt to release.
+   */
+  settled: boolean;
   issues: readonly ConnectIssue[];
 }
 
@@ -560,17 +604,51 @@ export function initialConnectFlowState(): ConnectFlowState {
     pendingSourceId: null,
     pendingAlias: null,
     operatorAuthored: false,
+    settled: false,
     issues: [],
   };
 }
 
 export function canGoBack(state: ConnectFlowState): boolean {
-  return state.history.length > 0 && state.step.kind !== 'saved';
+  return state.history.length > 0 && !state.settled;
 }
 
-/** The source id the flow has saved, which only the terminal step has. */
-export function savedSourceId(state: ConnectFlowState): string | null {
-  return state.step.kind === 'saved' ? state.step.sourceId : null;
+/**
+ * What saving produces, decided once.
+ *
+ * The flow has no terminal screen: connecting closes through to the coworker,
+ * because that is what the operator asked for and a "Connected." page with a
+ * Done button on it is a step between them and the person they came to see.
+ * So the outcome is a value the caller acts on rather than a state the
+ * machine rests in, and the reducer reads this same function, which is what
+ * stops the surface and the machine from holding two opinions about whether a
+ * mapping was good enough to keep.
+ */
+export type ConnectSaveOutcome =
+  | { ok: false; issues: readonly ConnectIssue[] }
+  | {
+      ok: true;
+      sourceId: string;
+      /** The Agent to open once the roster has it. */
+      openAgentId: string | null;
+      rows: readonly AgentMappingRow[];
+    };
+
+export function saveConnectFlow(
+  state: ConnectFlowState,
+  knownProjectIds: readonly string[]
+): ConnectSaveOutcome {
+  if (state.step.kind !== 'map-projects') {
+    return { ok: false, issues: [] };
+  }
+  const issues = validateMappingRows(state.step.rows, knownProjectIds);
+  if (issues.length > 0) return { ok: false, issues };
+  return {
+    ok: true,
+    sourceId: state.step.sourceId,
+    openAgentId: state.step.rows[0]?.nativeAgentId ?? null,
+    rows: state.step.rows,
+  };
 }
 
 /**
@@ -594,12 +672,11 @@ export function existingSourceIdForAlias(
  */
 export function cancelConnectFlow(state: ConnectFlowState): CancelOutcome {
   const draft = manualDraftOf(state);
-  const settled = state.step.kind === 'saved';
   const authored =
     state.operatorAuthored || (draft !== null && draftHasContent(draft));
   return {
     savedSource: null,
-    releaseSourceId: settled ? null : state.pendingSourceId,
+    releaseSourceId: state.settled ? null : state.pendingSourceId,
     retainedDraft: authored ? draft : null,
   };
 }
@@ -716,12 +793,14 @@ export function connectFlowReducer(
     case 'test-failed': {
       if (state.step.kind !== 'testing') return state;
       // No roster Agent exists yet and none is created here. The flow keeps
-      // the alias so a retry costs one keystroke.
+      // the alias so a retry costs one keystroke, and the stage it stopped on
+      // so the report names the step that failed rather than the first one.
       return {
         ...state,
         step: {
           kind: 'failed',
           alias: state.step.alias,
+          stage: state.step.stage,
           failure: action.failure,
           message: action.message,
         },
@@ -803,21 +882,12 @@ export function connectFlowReducer(
 
     case 'save': {
       if (state.step.kind !== 'map-projects') return state;
-      const issues = validateMappingRows(
-        state.step.rows,
-        action.knownProjectIds
-      );
-      if (issues.length > 0) return { ...state, issues };
-      return {
-        ...state,
-        issues: [],
-        history: push(state.history, state.step),
-        step: {
-          kind: 'saved',
-          sourceId: state.step.sourceId,
-          openAgentId: state.step.rows[0]?.nativeAgentId ?? null,
-        },
-      };
+      const outcome = saveConnectFlow(state, action.knownProjectIds);
+      if (!outcome.ok) return { ...state, issues: outcome.issues };
+      // The step does not move: the caller opens the coworker and the dialog
+      // closes. What changes is custody — this source is the operator's now,
+      // so leaving no longer releases it.
+      return { ...state, issues: [], settled: true };
     }
 
     case 'back': {

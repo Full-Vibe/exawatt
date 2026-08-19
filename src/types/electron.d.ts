@@ -5,6 +5,7 @@ import type {
   AgentSourceActionResult,
   AgentSourceAdapterId,
   AgentSourceCatalogEntry,
+  AgentSourceEvidenceBasis,
   AgentSourceFact,
   AgentSourceRegistryLoadResult,
   AgentSourceRegistryLoadStatus,
@@ -779,6 +780,32 @@ export type ConnectedSourcePhase =
   | 'reconnecting'
   | 'failed';
 
+/**
+ * One thing the source itself said, with the standing of the claim attached.
+ * A surface that prints a version has to be able to say which check produced
+ * it and whether the source was live or simulated.
+ */
+export interface ObservedSourceFact {
+  value: string;
+  basis: AgentSourceEvidenceBasis;
+  /** Which check produced it, in the operator's words. */
+  provenance: string;
+}
+
+/** One thing Exawatt may do with this source, and how it knows. */
+export interface ObservedSourceCapability extends ObservedSourceFact {
+  label: string;
+}
+
+/** The installation's own answers as raw tokens, for the Connect flow. */
+export interface ObservedSourceFactsView {
+  identity: string | null;
+  version: string | null;
+  /** Scope tokens the Gateway granted this device. */
+  capabilities: string[];
+  observedAt: number | null;
+}
+
 export interface ConnectedSourceStatusView {
   sourceId: string;
   displayName: string;
@@ -789,6 +816,13 @@ export interface ConnectedSourceStatusView {
   observing: boolean;
   phase: ConnectedSourcePhase;
   connection: ConnectedSourceConnectionView;
+  /**
+   * What the source reported about itself when Exawatt last reached it. Null
+   * and empty mean "not observed this launch", never "the source has none":
+   * a connection Exawatt has not opened has told it nothing.
+   */
+  version: ObservedSourceFact | null;
+  capabilities: ObservedSourceCapability[];
   identityDrift: boolean;
   snapshotRevision: number;
 }
@@ -853,6 +887,8 @@ export type ConnectSourceResult =
       sourceId: string;
       agents: DiscoveredSourceAgent[];
       status: ConnectedSourceStatusView;
+      /** What the source said about itself on this connection. */
+      observed: ObservedSourceFactsView | null;
     }
   | {
       ok: false;

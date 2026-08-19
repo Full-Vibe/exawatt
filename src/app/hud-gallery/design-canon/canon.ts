@@ -99,7 +99,11 @@ export interface Altitude {
 }
 
 export const ALTITUDES: Altitude[] = [
-  { name: 'Agent', looking: 'One live Agent and its work.', renderer: 'DOM, xterm' },
+  {
+    name: 'Agent',
+    looking: 'One live Agent and its work.',
+    renderer: 'DOM, xterm',
+  },
   {
     name: 'Team',
     looking: 'Your Projects and the Agents on them.',
@@ -143,7 +147,12 @@ export interface TypeRung {
 }
 
 export const TYPE_SCALE: TypeRung[] = [
-  { rung: 'nano', size: '9', utility: 'text-chrome-nano', use: 'Mono ordinals only' },
+  {
+    rung: 'nano',
+    size: '9',
+    utility: 'text-chrome-nano',
+    use: 'Mono ordinals only',
+  },
   {
     rung: 'chrome-micro',
     size: '10',
@@ -168,7 +177,12 @@ export const TYPE_SCALE: TypeRung[] = [
     utility: 'text-chrome-title',
     use: 'Row and panel titles',
   },
-  { rung: 'body', size: '14', utility: 'text-sm', use: 'Default reading and controls' },
+  {
+    rung: 'body',
+    size: '14',
+    utility: 'text-sm',
+    use: 'Default reading and controls',
+  },
   { rung: 'reading', size: '15', utility: 'text-reading', use: 'Prose' },
   { rung: 'title', size: '16', utility: 'text-base', use: 'In-surface titles' },
   { rung: 'section', size: '18', utility: 'text-lg', use: 'Section headings' },
@@ -233,11 +247,12 @@ export interface StatusState {
 }
 
 export const STATUS_PROTOCOL: StatusState[] = [
-  { state: 'Off', meaning: 'Idle, new, or quietly waiting' },
+  { state: 'Off', meaning: 'Reported at rest: idle, new, quietly waiting' },
   { state: 'Active', meaning: 'Reasoning, streaming, tools' },
   { state: 'Result', meaning: 'Turn finished, result waiting' },
   { state: 'Needs you', meaning: 'Approval, question, credential, Decision' },
   { state: 'Fault', meaning: 'Failed, or intervention required' },
+  { state: 'Unreported', meaning: 'The source has said nothing. Not idle' },
 ];
 
 export const KERNEL_RULES: Rule[] = [
@@ -259,6 +274,11 @@ export const KERNEL_RULES: Rule[] = [
     state: 'canon',
     claim: 'Every state carries three of shape, icon, colour and text.',
     note: 'hue never signals alone',
+  },
+  {
+    state: 'canon',
+    claim: 'An absence is never rendered as the quietest available claim.',
+    note: 'unreported is its own mark and word',
   },
   {
     state: 'canon',
@@ -286,11 +306,13 @@ export const PRESETS: Preset[] = [
 export const THEME_RULES: Rule[] = [
   {
     state: 'canon',
-    claim: 'A theme owns colour, type and material. Never motion, spacing, density or layout.',
+    claim:
+      'A theme owns colour, type and material. Never motion, spacing, density or layout.',
   },
   {
     state: 'canon',
-    claim: 'Glass sits above content, never on it, and always has an opaque fallback.',
+    claim:
+      'Glass sits above content, never on it, and always has an opaque fallback.',
   },
 ];
 
@@ -301,7 +323,8 @@ export const THEME_RULES: Rule[] = [
 export const BOARD_RULES: Rule[] = [
   {
     state: 'canon',
-    claim: 'Instrument first, stage second: where do I look, then how much is running.',
+    claim:
+      'Instrument first, stage second: where do I look, then how much is running.',
   },
   {
     state: 'canon',
@@ -310,7 +333,8 @@ export const BOARD_RULES: Rule[] = [
   },
   {
     state: 'canon',
-    claim: 'Drag selects, scroll pans, arrows walk units, selection fills one panel.',
+    claim:
+      'Drag selects, scroll pans, arrows walk units, selection fills one panel.',
     note: 'operator: StarCraft, manipulating units on the map',
   },
   {
@@ -346,7 +370,11 @@ export const SITE_MEASUREMENTS: Measurement[] = [
     value: '320 to 520',
     source: 'the graphic argues, so prose need not',
   },
-  { metric: 'Screens per chapter', value: '1.0 to 1.4', source: 'one idea per screen' },
+  {
+    metric: 'Screens per chapter',
+    value: '1.0 to 1.4',
+    source: 'one idea per screen',
+  },
   {
     metric: 'Closing type',
     value: '3x to 7x a heading',
@@ -357,17 +385,23 @@ export const SITE_MEASUREMENTS: Measurement[] = [
     value: 'Under 5% of pixels per second',
     source: 'GitHub 0%, Vercel 0.6%, Lusion 46%',
   },
-  { metric: 'Hero DPR', value: '1.5', source: 'sharpness is the first thing given up' },
+  {
+    metric: 'Hero DPR',
+    value: '1.5',
+    source: 'sharpness is the first thing given up',
+  },
 ];
 
 export const SITE_RULES: Rule[] = [
   {
     state: 'canon',
-    claim: 'The altitude ladder is the narrative, so the vision costs zero words.',
+    claim:
+      'The altitude ladder is the narrative, so the vision costs zero words.',
   },
   {
     state: 'canon',
-    claim: 'Every panel is a lens over the same board, never a section that replaces it.',
+    claim:
+      'Every panel is a lens over the same board, never a section that replaces it.',
   },
   {
     state: 'canon',
@@ -385,7 +419,8 @@ export const SITE_RULES: Rule[] = [
   },
   {
     state: 'canon',
-    claim: 'Copy leads with direction, and never claims a present tense that is false.',
+    claim:
+      'Copy leads with direction, and never claims a present tense that is false.',
   },
 ];
 
@@ -483,7 +518,11 @@ export const LINK_GROUPS: LinkGroup[] = [
         label: 'Stripe Press',
         url: 'https://press.stripe.com/',
       },
-      { label: 'Arc', url: 'https://arc.net/', note: 'one video, one sentence' },
+      {
+        label: 'Arc',
+        url: 'https://arc.net/',
+        note: 'one video, one sentence',
+      },
       {
         label: 'Apple MacBook Pro',
         url: 'https://www.apple.com/macbook-pro/',
@@ -500,7 +539,11 @@ export const LINK_GROUPS: LinkGroup[] = [
         label: 'Datadog',
         url: 'https://www.datadoghq.com/',
       },
-      { label: 'Grafana', url: 'https://grafana.com/', note: 'timeline panels' },
+      {
+        label: 'Grafana',
+        url: 'https://grafana.com/',
+        note: 'timeline panels',
+      },
     ],
   },
   {
@@ -542,8 +585,16 @@ export const LINK_GROUPS: LinkGroup[] = [
         label: 'Zed',
         url: 'https://zed.dev/',
       },
-      { label: 'Ghostty', url: 'https://ghostty.org/', note: '25 words, one screen' },
-      { label: 'Vercel', url: 'https://vercel.com/', note: 'the reduced-motion pattern' },
+      {
+        label: 'Ghostty',
+        url: 'https://ghostty.org/',
+        note: '25 words, one screen',
+      },
+      {
+        label: 'Vercel',
+        url: 'https://vercel.com/',
+        note: 'the reduced-motion pattern',
+      },
     ],
   },
   {
@@ -560,7 +611,11 @@ export const LINK_GROUPS: LinkGroup[] = [
         url: 'https://github.blog/2020-12-21-how-we-built-the-github-globe/',
       },
       { label: 'Stripe globe', url: 'https://stripe.com/blog/globe' },
-      { label: 'COBE', url: 'https://cobe.vercel.app/', note: '5kB, one shader' },
+      {
+        label: 'COBE',
+        url: 'https://cobe.vercel.app/',
+        note: '5kB, one shader',
+      },
       {
         label: 'R3F performance',
         url: 'https://r3f.docs.pmnd.rs/advanced/scaling-performance',
@@ -646,7 +701,10 @@ export const LINK_GROUPS: LinkGroup[] = [
         label: 'CSS user preferences',
         url: 'https://www.w3.org/TR/mediaqueries-5/#mf-user-preferences',
       },
-      { label: 'CSS forced colours', url: 'https://www.w3.org/TR/css-color-adjust-1/' },
+      {
+        label: 'CSS forced colours',
+        url: 'https://www.w3.org/TR/css-color-adjust-1/',
+      },
       {
         label: 'Next.js fonts',
         url: 'https://nextjs.org/docs/app/getting-started/fonts',
@@ -708,22 +766,26 @@ export interface OpenItem {
 export const OPEN_ITEMS: OpenItem[] = [
   {
     title: 'The New Agent flow',
-    detail: 'The surface is drawn. The flow, from deciding to work to an Agent running, is not.',
+    detail:
+      'The surface is drawn. The flow, from deciding to work to an Agent running, is not.',
     where: '/hud-gallery/agent-launcher',
   },
   {
     title: 'Homepage positioning',
-    detail: 'It communicates a feeling, not a what and why. Read cold by developers, VCs, founders.',
+    detail:
+      'It communicates a feeling, not a what and why. Read cold by developers, VCs, founders.',
     where: '/v2',
   },
   {
     title: 'Visualising thousands',
-    detail: 'The control grammar is settled. The picture at four orders of magnitude is not.',
+    detail:
+      'The control grammar is settled. The picture at four orders of magnitude is not.',
     where: 'the Fleet altitude',
   },
   {
     title: 'Ground, accent, display face',
-    detail: 'Free choices. Off-white plus grotesk plus floating window is the 2026 uniform.',
+    detail:
+      'Free choices. Off-white plus grotesk plus floating window is the 2026 uniform.',
     where: 'ENG-031, ENG-032',
   },
   {
@@ -733,7 +795,8 @@ export const OPEN_ITEMS: OpenItem[] = [
   },
   {
     title: 'Isometric, and motion on the board',
-    detail: 'A direction, not a decision. It has to survive the board rules above.',
+    detail:
+      'A direction, not a decision. It has to survive the board rules above.',
     where: 'ENG-004',
   },
 ];
@@ -745,7 +808,10 @@ export interface WorkbenchRoute {
 
 export const WORKBENCH_ROUTES: WorkbenchRoute[] = [
   { href: '/hud-gallery', title: 'The atoms, DOM beside WebGL' },
-  { href: '/hud-gallery/hero-board', title: 'The marketing board, 173 live agents' },
+  {
+    href: '/hud-gallery/hero-board',
+    title: 'The marketing board, 173 live agents',
+  },
   { href: '/hud-gallery/goal-visuals', title: 'Goal visual languages' },
   { href: '/hud-gallery/agent-launcher', title: 'New Agent launcher' },
   { href: '/hud-gallery/fold-close', title: 'Fold and close copy' },

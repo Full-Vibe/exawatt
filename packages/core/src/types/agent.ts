@@ -7,13 +7,50 @@ import type { AgentSourceAdapterId } from '../agent-sources';
 import type { AgentSourcePlacement } from '../agent-projection';
 import type { SourceConnectionState } from '../sources/connected-source';
 
-export type AgentStatus =
-  | 'working'
-  | 'blocked'
-  | 'idle'
-  | 'reviewing'
-  | 'complete'
-  | 'error';
+/**
+ * D40's WORK vocabulary: the six things a coworker can be doing.
+ *
+ * Every member is a claim about work, so the union deliberately has no member
+ * for "nobody said". Unknown is the ABSENCE of a work state, not one more of
+ * them, and a source that reported nothing must not be given a word from this
+ * list. `AgentWorkState` is where that absence lives.
+ *
+ * The runtime vocabulary below is the source of this union, so adding a state
+ * is one edit that then fails to compile at every consumer.
+ */
+export const AGENT_STATUSES = [
+  'working',
+  'blocked',
+  'idle',
+  'reviewing',
+  'complete',
+  'error',
+] as const;
+
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+
+/**
+ * A work state, or the source's silence about it (ENG-010).
+ *
+ * `null` means the projection kernel found no evidence of any work state.
+ * That is not idle. Idle is a coworker that is quietly waiting, which is
+ * something a source has to actually report; `null` is Exawatt having been
+ * told nothing, and every surface must render it as nothing rather than as
+ * the quietest available claim. The kernel returns it, the main process
+ * carries it, and this is the type that lets the renderer keep it instead of
+ * coercing it into a lie.
+ */
+export type AgentWorkState = AgentStatus | null;
+
+/**
+ * Compile-time proof that a branch covered every work state, including the
+ * absence of one. A new member of `AGENT_STATUSES` stops being assignable to
+ * `never` here, so every switch that buckets work states has to be visited
+ * before the union can widen.
+ */
+export function exhaustiveWorkState(status: never): never {
+  throw new Error(`unhandled work state: ${String(status)}`);
+}
 
 /** Optional Session-backed runtime state. Provider-native Agents may omit it;
  * local terminal Agents use it to preserve stopped-but-owned Sessions. */
@@ -129,7 +166,14 @@ export interface AgentPresence {
 export interface ExawattAgent {
   id: string;
   name: string;
-  status: AgentStatus;
+  /**
+   * The work state, or `null` when the source has evidenced none (ENG-010).
+   *
+   * Read it through `workStateReading` in the status-light protocol rather
+   * than defaulting it: `status ?? 'idle'` is the specific lie this type
+   * exists to make unwritable.
+   */
+  status: AgentWorkState;
   goal: string;
   /** Source-owned stable Project identity. `project` remains the display label. */
   projectId?: string;
@@ -170,6 +214,9 @@ export function createAgent(
   partial: Partial<ExawattAgent> & { id: string; name: string }
 ): ExawattAgent {
   return {
+    // Exawatt is the source for an Agent it just created, and it knows this
+    // one has not been given work yet. That is evidence, so `idle` is a
+    // report here rather than a default standing in for one.
     status: 'idle',
     goal: '',
     project: '',

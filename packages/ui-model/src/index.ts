@@ -2,6 +2,7 @@ import {
   resolveContextGroups,
   type AgentActivity,
   type AgentStatus,
+  type AgentWorkState,
   type BlockerType,
   type ContextGroup,
   type ContextGroupKind,
@@ -21,7 +22,8 @@ export * from './roadmap-attention';
 export interface FleetAgentView {
   id: string;
   name: string;
-  status: AgentStatus;
+  /** `null` when the source reported no work state. Never defaulted here. */
+  status: AgentWorkState;
   goal: string;
   project: string;
   sessionKey: string;
@@ -116,8 +118,9 @@ export interface SpatialProjectZone {
   activeCount: number;
   blockedCount: number;
   idleCount: number;
-  /** worst status in the cluster; lets the focused zone re-derive its rim/tier */
-  dominantStatus: AgentStatus;
+  /** worst REPORTED status in the cluster; lets the focused zone re-derive
+   *  its rim/tier. `null` when nothing in the zone has reported one. */
+  dominantStatus: AgentWorkState;
   costRate: number;
   totalCost: number;
   attentionPressure: number; // 0..1
@@ -159,7 +162,8 @@ export interface SpatialAgentTile {
   agentId: string;
   clusterId: string;
   label: string;
-  status: AgentStatus;
+  /** `null` when the source reported no work state. */
+  status: AgentWorkState;
   statusColor: string;
   needsOperator: boolean;
   active: boolean;
@@ -321,6 +325,28 @@ export const STATUS_COLORS: Record<AgentStatus, string> = {
   idle: '#6a7585',
 };
 
+/**
+ * A work state nobody reported sorts after every state somebody did. The
+ * rank is an attention order and silence asks for nothing; giving it `idle`'s
+ * rank would be the same claim wearing a number.
+ */
+const UNREPORTED_PRIORITY = STATUS_PRIORITY.idle + 1;
+
+export function statusPriorityOf(status: AgentWorkState): number {
+  return status === null ? UNREPORTED_PRIORITY : STATUS_PRIORITY[status];
+}
+
+/**
+ * The unlit register's paint, shared with `idle` on purpose: hue is not where
+ * the reported/unreported distinction lives (it would vanish the moment
+ * colour did). Shape and word carry it; see the status-light protocol.
+ */
+export const UNREPORTED_COLOR = STATUS_COLORS.idle;
+
+export function statusColorOf(status: AgentWorkState): string {
+  return status === null ? UNREPORTED_COLOR : STATUS_COLORS[status];
+}
+
 const ACTIVITY_TONES: Record<AgentActivity['type'], ActivityFeedItem['tone']> =
   {
     status_change: 'neutral',
@@ -335,7 +361,7 @@ function getAgents(state: FleetState): ExawattAgent[] {
 }
 
 function sortAgents(a: ExawattAgent, b: ExawattAgent): number {
-  const priorityDelta = STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status];
+  const priorityDelta = statusPriorityOf(a.status) - statusPriorityOf(b.status);
   if (priorityDelta !== 0) return priorityDelta;
   if (b.lastActivityAt !== a.lastActivityAt) {
     return b.lastActivityAt - a.lastActivityAt;
@@ -370,7 +396,7 @@ function toAgentView(agent: ExawattAgent): FleetAgentView {
     blockerDescription: agent.blockerInfo?.description,
     needsOperator,
     active,
-    statusRank: STATUS_PRIORITY[agent.status],
+    statusRank: statusPriorityOf(agent.status),
   };
 }
 
@@ -400,7 +426,10 @@ export function filterFleetState(
 
   const agents: Record<string, ExawattAgent> = {};
   for (const agent of Object.values(state.agents)) {
-    if (statuses && !statuses.has(agent.status)) continue;
+    // A status filter selects REPORTED states. An Agent whose source said
+    // nothing matches none of them, and is not quietly folded into `idle`.
+    if (statuses && (agent.status === null || !statuses.has(agent.status)))
+      continue;
     if (
       query &&
       !`${agent.name} ${agent.goal} ${agent.project}`
@@ -782,7 +811,7 @@ function heroAgentId(state: FleetState, now?: number): string | null {
 function zoneTier(
   ownsHero: boolean,
   blockedCount: number,
-  dominantStatus: AgentStatus
+  dominantStatus: AgentWorkState
 ): ProjectAttentionTier {
   if (ownsHero) return 'hero';
   if (blockedCount > 0) return 'secondary';
@@ -848,7 +877,10 @@ function aggregateGroup(hidden: ContextGroup[]): ContextGroup {
       costRate: round4(costRate),
       totalCost: round4(totalCost),
       attentionPressure: 0,
-      dominantStatus: 'idle',
+      // A rollup of hidden Projects reports nobody's work state. It used to
+      // say `idle`, which was a claim about Agents this summary never looked
+      // at one by one.
+      dominantStatus: null,
     },
   };
 }
@@ -1037,7 +1069,7 @@ export function selectSpatialAgentTiles(
         clusterId: zone.clusterId,
         label: selectShortGoalLabel(agent.goal) || agent.name,
         status: agent.status,
-        statusColor: STATUS_COLORS[agent.status],
+        statusColor: statusColorOf(agent.status),
         needsOperator,
         active,
         selected,

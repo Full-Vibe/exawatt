@@ -40,7 +40,14 @@ import type {
   SourceTransport,
   SshHostAlias,
 } from '@exawatt/core';
-import { ArrowLeft, Check, Circle, Server } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  Circle,
+  LoaderCircle,
+  Server,
+  TriangleAlert,
+} from 'lucide-react';
 import { OpenClawIcon } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
@@ -59,6 +66,8 @@ import {
   partitionAgents,
   placementForTransport,
   resolvedDisplayName,
+  saveConnectFlow,
+  stageForPhase,
   validateManualDraft,
   type AgentMappingRow,
   type ConnectIssue,
@@ -98,9 +107,26 @@ export type ConnectAttemptResult =
       ok: true;
       agents: readonly DiscoveredAgent[];
       /** What the source declared about itself during the test. */
-      observed?: ObservedSourceFacts;
+      observed?: ObservedSourceFacts | null;
     }
-  | { ok: false; failure: SourceFailureClass; message: string };
+  | {
+      ok: false;
+      /** Null is main declining to classify; the surface reads it as unknown. */
+      failure: SourceFailureClass | null;
+      message: string;
+    };
+
+/**
+ * One tick of main's per-source connection channel.
+ *
+ * Structurally the front of `ConnectedSourceChange`, and deliberately only
+ * the front: this surface needs to know which source moved and what phase it
+ * is in, and nothing else on that payload is progress.
+ */
+export interface ConnectSourceProgress {
+  sourceId: string;
+  phase: string;
+}
 
 /** The main-process capability this dialog drives. */
 export interface ConnectSourceBridge {
@@ -120,11 +146,21 @@ export interface ConnectSourceBridge {
     | { ok: true; source: { id: string } | null }
     | { ok: false; issues: readonly string[] }
   >;
-  /** Bounded test plus read-only discovery. `onStage` reports each stage. */
-  connect(
-    sourceId: string,
-    options?: { onStage?: (stage: ConnectStage) => void }
-  ): Promise<ConnectAttemptResult>;
+  /** Bounded test plus read-only discovery. Answers once, at the end. */
+  connect(sourceId: string): Promise<ConnectAttemptResult>;
+  /**
+   * Main's per-source connection channel, where the bounded test's progress
+   * actually lives.
+   *
+   * Progress cannot ride on `connect`. That call is an `invoke` across the
+   * context bridge and a function is not a structured-clonable argument, so a
+   * callback handed to it is dropped on the way over and the operator watches
+   * a frozen checklist for the whole round trip. The session already
+   * broadcasts every phase it enters on this channel for every source, so the
+   * fix is to listen to the channel that is already right rather than to
+   * build a second one for one dialog.
+   */
+  onSourceChanged(handler: (change: ConnectSourceProgress) => void): () => void;
   /** Removes Exawatt's record only. The remote installation is untouched. */
   detach(sourceId: string): Promise<{ ok: boolean }>;
 }
@@ -141,15 +177,17 @@ type ConnectedSourcesApi = NonNullable<
  */
 function electronBridge(): ConnectSourceBridge | null {
   if (typeof window === 'undefined') return null;
-  const api = window.electron?.connectedSources as
-    | (ConnectedSourcesApi & Partial<Pick<ConnectSourceBridge, 'connect'>>)
-    | undefined;
+  const api: ConnectedSourcesApi | undefined =
+    window.electron?.connectedSources;
   if (!api || typeof api.connect !== 'function') return null;
-  const connect = api.connect;
   return {
     sshAliases: () => api.sshAliases(),
     add: input => api.add(input),
-    connect: (sourceId, options) => connect(sourceId, options),
+    connect: sourceId => api.connect(sourceId),
+    // Older bridges predate the channel. A dialog with no progress still
+    // connects; it just cannot tick, so this degrades rather than throwing.
+    onSourceChanged: handler =>
+      typeof api.onChanged === 'function' ? api.onChanged(handler) : () => {},
     detach: sourceId => api.detach(sourceId),
   };
 }
@@ -178,6 +216,8 @@ export function ConnectSourceDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const aliasesRequested = useRef(false);
+  /** The step's own content, so focus can follow a step change into it. */
+  const bodyRef = useRef<HTMLDivElement>(null);
   const retainedDraft = useRef<ManualServerDraft | null>(null);
   /** Bumped whenever a result in flight stops being the one on screen. */
   const attempt = useRef(0);
@@ -190,6 +230,9 @@ export function ConnectSourceDialog({
   bridgeRef.current = resolvedBridge;
 
   const step = state.step;
+  /** The source under test, read from inside a subscription that outlives it. */
+  const pendingSourceId = useRef<string | null>(null);
+  pendingSourceId.current = state.pendingSourceId;
   const knownProjectIds = useMemo(
     () => projects.map(project => project.id),
     [projects]
@@ -267,6 +310,30 @@ export function ConnectSourceDialog({
       });
   }, [open, step.kind]);
 
+  /**
+   * The bounded test ticks from main's own connection channel.
+   *
+   * Subscribed for as long as the dialog is open, which is what makes the
+   * first stage real: the tunnel phase is broadcast before `connect` resolves
+   * and often before the operator's click has finished settling, so a
+   * subscription taken when the test starts would miss the one stage that
+   * takes the longest.
+   *
+   * Two filters keep somebody else's server off this screen. The change has
+   * to name the source this flow is testing, and the reducer accepts a stage
+   * only while the flow is standing on the bounded test, so a reconnect
+   * ladder running behind Settings cannot drive the checklist.
+   */
+  useEffect(() => {
+    if (!open || !resolvedBridge) return;
+    return resolvedBridge.onSourceChanged(change => {
+      if (change.sourceId !== pendingSourceId.current) return;
+      const stage = stageForPhase(change.phase);
+      if (stage === null) return;
+      dispatch({ type: 'test-stage', stage });
+    });
+  }, [open, resolvedBridge]);
+
   const observe = useCallback(
     async (input: {
       sourceId: string;
@@ -277,12 +344,7 @@ export function ConnectSourceDialog({
       const api = bridgeRef.current;
       if (!api) return;
       try {
-        const result = await api.connect(input.sourceId, {
-          onStage: stage => {
-            if (input.token !== attempt.current) return;
-            dispatch({ type: 'test-stage', stage });
-          },
-        });
+        const result = await api.connect(input.sourceId);
         if (input.token !== attempt.current) return;
         if (result.ok) {
           dispatch({
@@ -298,7 +360,7 @@ export function ConnectSourceDialog({
         }
         dispatch({
           type: 'test-failed',
-          failure: result.failure,
+          failure: result.failure ?? 'unknown',
           message: result.message,
         });
       } catch {
@@ -387,19 +449,24 @@ export function ConnectSourceDialog({
   }, [observe, state.operatorAuthored, state.pendingSourceId, step]);
 
   /**
-   * Saving runs the reducer's own decision rather than a second copy of it:
-   * the mapping is handed on only if the machine actually reached `saved`.
+   * Saving runs the machine's own decision rather than a second copy of it:
+   * `saveConnectFlow` is the same function the reducer consults, so a mapping
+   * this surface hands on is exactly a mapping the model accepted.
+   *
+   * Success closes through to the Agent. There is no confirmation screen to
+   * land on, because the operator asked to open a coworker and a page that
+   * says "Connected." with a Done button on it is one keystroke standing
+   * between them and the person they came to see.
    */
   const finish = useCallback(() => {
     if (step.kind !== 'map-projects') return;
-    const action = { type: 'save', knownProjectIds } as const;
-    const next = connectFlowReducer(state, action);
-    dispatch(action);
-    if (next.step.kind !== 'saved') return;
+    const outcome = saveConnectFlow(state, knownProjectIds);
+    dispatch({ type: 'save', knownProjectIds });
+    if (!outcome.ok) return;
     onConnected?.({
-      sourceId: step.sourceId,
-      openAgentId: next.step.openAgentId,
-      agents: step.rows.map(row => ({
+      sourceId: outcome.sourceId,
+      openAgentId: outcome.openAgentId,
+      agents: outcome.rows.map(row => ({
         nativeAgentId: row.nativeAgentId,
         displayName: resolvedDisplayName(row),
         project: row.project,
@@ -412,6 +479,35 @@ export function ConnectSourceDialog({
     step.kind === 'choose-server' && step.manual
       ? validateManualDraft(step.draft)
       : [];
+
+  /**
+   * Focus follows the step.
+   *
+   * Each step replaces the whole body, which destroys whatever the operator
+   * had focused. Radix then falls back to the dialog element itself, which
+   * paints the browser's own focus ring around the entire modal and leaves
+   * Tab starting from the footer rather than from the step's own controls.
+   * Moving focus to the first control of the new step is both the keyboard
+   * path and the fix for the ring.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const body = bodyRef.current;
+    if (!body) return;
+    // Only when focus is orphaned. Keying on the step alone was not enough:
+    // the server step renders empty and fills in when the alias read answers,
+    // so the one pass happened while there was nothing to focus. Running on
+    // every step update is safe because focus already inside the step is left
+    // exactly where the operator put it.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && body.contains(active)) return;
+    const first = body.querySelector<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    // A step with nothing to press (the bounded test) keeps focus in the
+    // dialog so Escape still cancels; it just does not steal it back.
+    first?.focus();
+  }, [open, step]);
 
   const primaryAction = (() => {
     switch (step.kind) {
@@ -466,8 +562,6 @@ export function ConnectSourceDialog({
           run: finish,
         };
       }
-      case 'saved':
-        return { label: 'Done', run: () => onOpenChange(false) };
     }
   })();
 
@@ -476,7 +570,7 @@ export function ConnectSourceDialog({
       <DialogContent
         data-connect-source
         primaryAction={primaryAction}
-        className="max-h-[min(760px,calc(100vh-3rem))] w-[min(720px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border p-0"
+        className="max-h-[min(760px,calc(100vh-3rem))] w-[min(720px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border p-0 outline-none"
         style={{ background: HUD.bg.deep, borderColor: HUD.strokeSoft }}
       >
         <DialogHeader
@@ -490,14 +584,14 @@ export function ConnectSourceDialog({
             Connect existing Agent
           </DialogTitle>
           <DialogDescription
-            className="font-mono text-chrome-meta"
+            className="text-chrome-meta"
             style={{ color: HUD.textDim }}
           >
             {describeStep(step.kind)}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" ref={bodyRef}>
           {step.kind === 'choose-source' && (
             <SourceChooser
               available={resolvedBridge !== null}
@@ -516,6 +610,7 @@ export function ConnectSourceDialog({
               draft={step.draft}
               busy={busy}
               error={serverError}
+              issues={manualIssues}
               onSetManual={manual => dispatch({ type: 'set-manual', manual })}
               onEdit={patch => dispatch({ type: 'edit-manual', patch })}
               onChooseAlias={alias =>
@@ -534,15 +629,26 @@ export function ConnectSourceDialog({
           )}
 
           {step.kind === 'testing' && (
-            <StageList alias={step.alias} stage={step.stage} />
+            <div className="grid gap-3">
+              <p className="text-sm" style={{ color: HUD.text }}>
+                {step.alias}
+              </p>
+              <StageList stage={step.stage} outcome="running" />
+            </div>
           )}
 
           {step.kind === 'failed' && (
-            <FailureReport failure={step.failure} message={step.message} />
+            <FailureReport
+              alias={step.alias}
+              stage={step.stage}
+              failure={step.failure}
+              message={step.message}
+            />
           )}
 
           {step.kind === 'choose-agents' && (
             <AgentChooser
+              alias={step.alias}
               agents={step.agents}
               selected={step.selected}
               facts={step.facts}
@@ -562,12 +668,6 @@ export function ConnectSourceDialog({
               }
             />
           )}
-
-          {step.kind === 'saved' && (
-            <p className="text-sm" style={{ color: HUD.text }}>
-              Connected. Your roster has the Agents you chose.
-            </p>
-          )}
         </div>
 
         <DialogFooter
@@ -579,22 +679,20 @@ export function ConnectSourceDialog({
               <button
                 type="button"
                 onClick={() => dispatch({ type: 'back' })}
-                className="inline-flex h-8 items-center gap-2 rounded px-2 font-mono text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="inline-flex h-8 items-center gap-2 rounded px-2 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{ color: HUD.textDim }}
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Back
               </button>
             )}
-            {step.kind !== 'saved' && (
-              <button
-                type="button"
-                onClick={leave}
-                className="inline-flex h-8 items-center rounded border px-3 font-mono text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{ color: HUD.text, borderColor: HUD.strokeSoft }}
-              >
-                Cancel
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={leave}
+              className="inline-flex h-8 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              style={{ color: HUD.text, borderColor: HUD.strokeSoft }}
+            >
+              Cancel
+            </button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -606,7 +704,6 @@ function describeStep(kind: ConnectStep['kind']): string {
   switch (kind) {
     case 'choose-source':
     case 'testing':
-    case 'saved':
       return 'Read only. Nothing on the server changes.';
     case 'choose-server':
       return 'Exawatt reaches a server only once you choose it.';
@@ -650,10 +747,7 @@ function SourceChooser({
         <span className="block text-sm font-medium" style={{ color: HUD.text }}>
           OpenClaw
         </span>
-        <span
-          className="block font-mono text-chrome-meta"
-          style={{ color: HUD.textDim }}
-        >
+        <span className="block text-chrome-meta" style={{ color: HUD.textDim }}>
           Gateway on a server you host
         </span>
       </span>
@@ -669,6 +763,7 @@ function ServerChooser({
   draft,
   busy,
   error,
+  issues,
   onSetManual,
   onEdit,
   onChooseAlias,
@@ -680,6 +775,8 @@ function ServerChooser({
   draft: ManualServerDraft;
   busy: boolean;
   error: string | null;
+  /** What the draft still needs. The model already names each one. */
+  issues: readonly ConnectIssue[];
   onSetManual: (manual: boolean) => void;
   onEdit: (patch: Partial<ManualServerDraft>) => void;
   onChooseAlias: (alias: SshHostAlias) => void;
@@ -689,10 +786,7 @@ function ServerChooser({
       {manual ? (
         <div className="grid gap-3">
           {!configPresent && (
-            <p
-              className="font-mono text-chrome-meta"
-              style={{ color: HUD.textDim }}
-            >
+            <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
               This machine has no SSH configuration yet. Describe the server and
               Exawatt connects over SSH.
             </p>
@@ -738,10 +832,23 @@ function ServerChooser({
             value={draft.identityFile}
             onChange={value => onEdit({ identityFile: value })}
           />
-          <p
-            className="font-mono text-chrome-meta"
-            style={{ color: HUD.textDim }}
-          >
+          {issues.length > 0 && (
+            // The model has always computed these and the surface only used
+            // them to disable the button, which left the operator looking at
+            // a dead primary action with no reason on screen.
+            <ul className="grid gap-0.5" data-manual-issues>
+              {issues.map(entry => (
+                <li
+                  className="text-chrome-meta"
+                  key={entry.code}
+                  style={{ color: HUD.textDim }}
+                >
+                  {entry.message}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
             These details go to your keychain. Leave the key file empty to use
             your SSH default.
           </p>
@@ -751,11 +858,20 @@ function ServerChooser({
           {aliases.length === 0 ? (
             <p className="text-sm" style={{ color: HUD.textDim }}>
               {configPresent
-                ? 'Your SSH configuration lists no host aliases.'
+                ? 'No servers saved on this machine yet.'
                 : 'Reading your SSH configuration.'}
             </p>
           ) : (
             <div className="grid gap-1">
+              {/* The list is a chooser, so it says what choosing does.
+                  Without a heading it is three bare names under a caption
+                  about privacy, and the operator has to guess the verb. */}
+              <h3
+                className="px-3 pb-1 text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
+                Choose a server
+              </h3>
               {aliases.map(alias => (
                 <button
                   key={alias.alias}
@@ -796,10 +912,7 @@ function ServerChooser({
             </div>
           )}
           {incompleteIncludes && (
-            <p
-              className="font-mono text-chrome-meta"
-              style={{ color: HUD.textDim }}
-            >
+            <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
               Your SSH configuration includes other files Exawatt did not read.
             </p>
           )}
@@ -808,13 +921,22 @@ function ServerChooser({
 
       {configPresent && (
         <div>
+          {/* With no saved servers to choose from, describing one IS the path,
+              so it wears a control's border rather than sitting under a
+              negative sentence as a text link the operator has to find. */}
           <button
             type="button"
             onClick={() => onSetManual(!manual)}
-            className="inline-flex h-8 items-center rounded px-2 font-mono text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-            style={{ color: HUD.textDim }}
+            className="inline-flex h-9 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            style={{
+              color: !manual && aliases.length === 0 ? HUD.text : HUD.textDim,
+              borderColor:
+                !manual && aliases.length === 0
+                  ? HUD.strokeSoft
+                  : 'transparent',
+            }}
           >
-            {manual ? 'Choose a saved alias' : 'Describe a server instead'}
+            {manual ? 'Choose a saved server' : 'Describe a server instead'}
           </button>
         </div>
       )}
@@ -822,7 +944,7 @@ function ServerChooser({
       {error && (
         <p
           role="alert"
-          className="font-mono text-chrome-label"
+          className="text-chrome-label"
           style={{ color: HUD.red }}
         >
           {error}
@@ -851,7 +973,7 @@ function ManualField({
     <div className="grid gap-1">
       <label
         htmlFor={id}
-        className="font-mono text-chrome-meta"
+        className="text-chrome-meta"
         style={{ color: HUD.textDim }}
       >
         {label}
@@ -894,89 +1016,152 @@ function toPort(value: string): number {
 }
 
 /**
- * The bounded test, stage by stage. Naming the stage in progress is the point:
- * a spinner would leave the operator guessing which half of the handshake is
- * slow. Nothing here animates, so reduced motion needs no separate path.
+ * The bounded test, stage by stage.
+ *
+ * Naming the stage in progress is the point: a bare spinner would leave the
+ * operator guessing which half of the handshake is slow, and the tunnel is
+ * usually the slow half. The stages here are the session's own phases, so
+ * this list moves because the connection moved and for no other reason.
+ *
+ * `outcome` decides what the row the flow stopped on means. While the test
+ * runs it is the step in progress and turns; once it has failed it is the
+ * step that failed and holds still, so the operator reads the report against
+ * the point the connection actually reached.
  */
-function StageList({ alias, stage }: { alias: string; stage: ConnectStage }) {
+function StageList({
+  stage,
+  outcome,
+}: {
+  stage: ConnectStage;
+  outcome: 'running' | 'failed';
+}) {
   const current = CONNECT_STAGES.indexOf(stage);
+  const failed = outcome === 'failed';
   return (
-    <div className="grid gap-3">
-      <p className="text-sm" style={{ color: HUD.text }}>
-        {alias}
-      </p>
-      <ol className="grid gap-1.5" aria-live="polite">
-        {CONNECT_STAGES.map((entry, index) => {
-          const done = index < current;
-          const active = index === current;
-          return (
-            <li
-              key={entry}
-              aria-current={active ? 'step' : undefined}
-              className="flex items-center gap-2 font-mono text-chrome-label"
-              style={{ color: active || done ? HUD.text : HUD.textDim }}
-            >
-              <span className="grid h-4 w-4 shrink-0 place-items-center">
-                {done ? (
-                  <Check
-                    className="h-3 w-3"
-                    aria-hidden
-                    style={{ color: HUD.green }}
-                  />
-                ) : (
-                  <Circle
-                    className="h-2 w-2"
-                    aria-hidden
-                    style={{
-                      color: active ? HUD.cyan : HUD.idle,
-                      fill: active ? HUD.cyan : 'transparent',
-                    }}
-                  />
-                )}
+    <ol
+      className="grid gap-1.5"
+      // Live only while it is live. The failure screen is already an alert,
+      // and a frozen list inside it announcing itself a second time would
+      // read the whole checklist back over the sentence that matters.
+      aria-live={failed ? undefined : 'polite'}
+      data-connect-stages={outcome}
+    >
+      {CONNECT_STAGES.map((entry, index) => {
+        const done = index < current;
+        const active = index === current;
+        return (
+          <li
+            key={entry}
+            data-stage={entry}
+            data-stage-state={
+              active
+                ? failed
+                  ? 'failed'
+                  : 'active'
+                : done
+                  ? 'done'
+                  : 'waiting'
+            }
+            aria-current={active ? 'step' : undefined}
+            className="flex items-center gap-2 text-chrome-label"
+            style={{ color: active || done ? HUD.text : HUD.textDim }}
+          >
+            <span className="grid h-4 w-4 shrink-0 place-items-center">
+              {done ? (
+                <Check
+                  className="h-3 w-3"
+                  aria-hidden
+                  style={{ color: HUD.green }}
+                />
+              ) : active && failed ? (
+                <TriangleAlert
+                  className="h-3 w-3"
+                  aria-hidden
+                  style={{ color: HUD.amber }}
+                />
+              ) : active ? (
+                // The one moving thing on the screen, and it moves only while
+                // the round trip is actually open. Reduced motion renders the
+                // same mark held still.
+                <LoaderCircle
+                  className="h-3 w-3 animate-spin motion-reduce:animate-none"
+                  aria-hidden
+                  style={{ color: HUD.cyan }}
+                />
+              ) : (
+                <Circle
+                  className="h-2 w-2"
+                  aria-hidden
+                  style={{ color: HUD.idle, fill: 'transparent' }}
+                />
+              )}
+            </span>
+            {CONNECT_STAGE_COPY[entry]}
+            {/* Shape and icon already separate the four row states; this is
+                the third channel, so none of it is carried by hue alone. */}
+            {active && failed && (
+              <span className="text-chrome-meta" style={{ color: HUD.textDim }}>
+                did not complete
               </span>
-              {CONNECT_STAGE_COPY[entry]}
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
 function FailureReport({
+  alias,
+  stage,
   failure,
   message,
 }: {
+  alias: string;
+  stage: ConnectStage;
   failure: SourceFailureClass;
   message: string;
 }) {
   const copy = CONNECT_FAILURE_COPY[failure];
   return (
-    <div className="grid gap-2" role="alert">
-      <p className="text-base font-semibold" style={{ color: HUD.text }}>
-        {copy.headline}
-      </p>
-      <p className="text-sm" style={{ color: HUD.text }}>
-        {copy.nextStep}
-      </p>
-      {message && (
-        <p
-          className="font-mono text-chrome-meta"
-          style={{ color: HUD.textDim }}
-        >
-          {message}
+    <div className="grid gap-3" role="alert">
+      <div className="grid gap-2">
+        {/* Which server. A operator with several saved servers reads this
+            screen after a wait and otherwise cannot tell which one failed. */}
+        <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
+          {alias}
         </p>
-      )}
+        <p className="text-base font-semibold" style={{ color: HUD.text }}>
+          {copy.headline}
+        </p>
+        <p className="text-sm" style={{ color: HUD.text }}>
+          {copy.nextStep}
+        </p>
+        {message && (
+          <p
+            className="font-mono text-chrome-meta"
+            style={{ color: HUD.textDim }}
+          >
+            {message}
+          </p>
+        )}
+      </div>
+      {/* The checklist the operator was already reading, held at the step it
+          stopped on. How far the connection got is half the diagnosis, and
+          resetting it to the first step would throw that half away. */}
+      <StageList stage={stage} outcome="failed" />
     </div>
   );
 }
 
 function AgentChooser({
+  alias,
   agents,
   selected,
   facts,
   onToggle,
 }: {
+  alias: string;
   agents: readonly DiscoveredAgent[];
   selected: ReadonlySet<string>;
   facts: readonly ConnectionFact[];
@@ -985,17 +1170,21 @@ function AgentChooser({
   const { configured, retired } = partitionAgents(agents);
   return (
     <div className="grid gap-4">
+      {/* The connected server, so the facts beneath it have a subject. */}
+      <p className="text-sm font-medium" style={{ color: HUD.text }}>
+        {alias}
+      </p>
       <dl className="grid gap-1.5">
         {facts.map(fact => (
           <div key={fact.id} className="flex items-baseline gap-3">
             <dt
-              className="w-28 shrink-0 font-mono text-chrome-meta"
+              className="w-28 shrink-0 text-chrome-meta"
               style={{ color: HUD.textDim }}
             >
               {fact.label}
             </dt>
             <dd
-              className="min-w-0 font-mono text-chrome-label"
+              className="min-w-0 text-chrome-label"
               style={{ color: HUD.text }}
             >
               {fact.value}
@@ -1022,10 +1211,7 @@ function AgentChooser({
             selected={selected}
             onToggle={onToggle}
           />
-          <p
-            className="font-mono text-chrome-meta"
-            style={{ color: HUD.textDim }}
-          >
+          <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
             These join your roster when you choose them.
           </p>
         </div>
@@ -1047,7 +1233,7 @@ function AgentGroup({
 }) {
   return (
     <section className="grid gap-1">
-      <h3 className="font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
+      <h3 className="text-chrome-meta" style={{ color: HUD.textDim }}>
         {heading}
       </h3>
       {agents.length === 0 ? (
@@ -1083,7 +1269,7 @@ function AgentGroup({
                   {agent.displayName}
                 </span>
                 <span
-                  className="block truncate font-mono text-chrome-meta"
+                  className="block truncate text-chrome-meta"
                   style={{ color: HUD.textDim }}
                 >
                   {agent.hasPrimaryConversation
@@ -1135,10 +1321,19 @@ function ProjectMapper({
               background: HUD.surfaceInputSoft,
             }}
           >
+            {/* Three identical forms stacked with the Agent's name only in a
+                placeholder is unreadable at a glance. The card says whose
+                settings these are. */}
+            <h3
+              className="text-chrome-title font-medium"
+              style={{ color: HUD.text }}
+            >
+              {resolvedDisplayName(row)}
+            </h3>
             <div className="grid gap-1">
               <label
                 htmlFor={nameId}
-                className="font-mono text-chrome-meta"
+                className="text-chrome-meta"
                 style={{ color: HUD.textDim }}
               >
                 Name
@@ -1159,10 +1354,7 @@ function ProjectMapper({
                   background: HUD.surfaceInput,
                 }}
               />
-              <p
-                className="font-mono text-chrome-meta"
-                style={{ color: HUD.textDim }}
-              >
+              <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
                 {`The server calls it ${row.sourceName}.`}
               </p>
             </div>
@@ -1170,7 +1362,7 @@ function ProjectMapper({
             <div className="grid gap-1">
               <label
                 htmlFor={projectId}
-                className="font-mono text-chrome-meta"
+                className="text-chrome-meta"
                 style={{ color: HUD.textDim }}
               >
                 Project
@@ -1216,7 +1408,7 @@ function ProjectMapper({
               <div className="grid gap-1">
                 <label
                   htmlFor={projectNameId}
-                  className="font-mono text-chrome-meta"
+                  className="text-chrome-meta"
                   style={{ color: HUD.textDim }}
                 >
                   Project name
@@ -1246,7 +1438,7 @@ function ProjectMapper({
               <p
                 key={entry.message}
                 role="alert"
-                className="font-mono text-chrome-label"
+                className="text-chrome-label"
                 style={{ color: HUD.red }}
               >
                 {entry.message}

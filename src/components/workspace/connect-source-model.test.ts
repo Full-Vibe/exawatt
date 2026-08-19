@@ -32,7 +32,8 @@ import {
   placementForTransport,
   preselectedAgentIds,
   resolvedDisplayName,
-  savedSourceId,
+  saveConnectFlow,
+  stageForPhase,
   validateManualDraft,
   validateMappingRows,
   type AgentMappingRow,
@@ -128,7 +129,7 @@ const TO_MAPPING: readonly ConnectAction[] = [
   { type: 'to-mapping' },
 ];
 
-const TO_SAVED: readonly ConnectAction[] = [
+const TO_SETTLED: readonly ConnectAction[] = [
   ...TO_MAPPING,
   { type: 'save', knownProjectIds: [] },
 ];
@@ -138,7 +139,7 @@ describe('Connect flow: choosing a source', () => {
     const state = initialConnectFlowState();
     expect(state.step.kind).toBe('choose-source');
     expect(state.pendingSourceId).toBeNull();
-    expect(savedSourceId(state)).toBeNull();
+    expect(state.settled).toBe(false);
   });
 
   it('moves to the server choice once OpenClaw is chosen', () => {
@@ -247,6 +248,44 @@ describe('Connect flow: the bounded test', () => {
     }
   });
 
+  /*
+   * The four stages are the session's own phases in the operator's words.
+   * This is the translation, and it is the whole reason the checklist can
+   * move: the surface reads the phase channel main already broadcasts.
+   */
+  it('reads each stage off the phase the connection is actually in', () => {
+    expect(stageForPhase('opening-tunnel')).toBe('tunnel');
+    expect(stageForPhase('bootstrapping')).toBe('credential');
+    expect(stageForPhase('pairing')).toBe('pairing');
+    expect(stageForPhase('discovering')).toBe('discovery');
+  });
+
+  it('lets no phase outside the bounded test move the checklist', () => {
+    for (const phase of [
+      'idle',
+      'connected',
+      'reconnecting',
+      'failed',
+      'something-a-later-gateway-invented',
+    ]) {
+      expect(stageForPhase(phase)).toBeNull();
+    }
+  });
+
+  it('leaves the operator on the stage that failed, not the first one', () => {
+    const state = run([
+      ...TO_TESTING,
+      { type: 'test-stage', stage: 'pairing' },
+      {
+        type: 'test-failed',
+        failure: 'approval-required',
+        message: 'The Gateway is waiting for approval.',
+      },
+    ]);
+    if (state.step.kind !== 'failed') throw new Error('wrong step');
+    expect(state.step.stage).toBe('pairing');
+  });
+
   it('remembers the record so a retry reuses one server', () => {
     const state = run(TO_TESTING);
     expect(existingSourceIdForAlias(state, 'atlas-box')).toBe('source-1');
@@ -264,7 +303,7 @@ describe('Connect flow: the bounded test', () => {
     ]);
     if (state.step.kind !== 'failed') throw new Error('wrong step');
     expect(state.step.failure).toBe('gateway-down');
-    expect(savedSourceId(state)).toBeNull();
+    expect(state.settled).toBe(false);
   });
 
   it('retries from the failure without stacking a second server', () => {
@@ -559,16 +598,49 @@ describe('Connect flow: Project mapping', () => {
       { type: 'save', knownProjectIds: [] },
     ]);
     expect(state.step.kind).toBe('map-projects');
-    expect(savedSourceId(state)).toBeNull();
+    expect(state.settled).toBe(false);
     expect(state.issues.map(issue => issue.code)).toEqual(['project-unknown']);
   });
 
-  it('saves the source and opens the first chosen Agent', () => {
-    const state = run(TO_SAVED);
-    if (state.step.kind !== 'saved') throw new Error('wrong step');
-    expect(state.step.sourceId).toBe('source-1');
-    expect(state.step.openAgentId).toBe('agent-alpha');
-    expect(savedSourceId(state)).toBe('source-1');
+  it('refuses to save a fault without inventing an outcome', () => {
+    const state = run([
+      ...TO_MAPPING,
+      {
+        type: 'edit-mapping',
+        nativeAgentId: 'agent-alpha',
+        patch: { nameOverride: ' ' },
+      },
+    ]);
+    const outcome = saveConnectFlow(state, []);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error('a faulty mapping must not save');
+    expect(outcome.issues.map(issue => issue.code)).toEqual([
+      'agent-name-required',
+    ]);
+  });
+
+  it('hands the mapping on and opens the first chosen Agent', () => {
+    const state = run(TO_MAPPING);
+    const outcome = saveConnectFlow(state, []);
+    if (!outcome.ok) throw new Error('a valid mapping must save');
+    expect(outcome.sourceId).toBe('source-1');
+    expect(outcome.openAgentId).toBe('agent-alpha');
+    expect(outcome.rows.map(row => row.nativeAgentId)).toEqual([
+      'agent-alpha',
+      'agent-beta',
+    ]);
+  });
+
+  /*
+   * There is no terminal screen and there must not be one: connecting closes
+   * through to the coworker. The flow still has to remember that it settled,
+   * because that is what stops the close from releasing the record it just
+   * handed over.
+   */
+  it('settles in place rather than resting on a confirmation screen', () => {
+    const state = run(TO_SETTLED);
+    expect(state.step.kind).toBe('map-projects');
+    expect(state.settled).toBe(true);
   });
 });
 
@@ -631,8 +703,8 @@ describe('Connect flow: going back', () => {
     ]);
   });
 
-  it('never reverses a saved connection', () => {
-    const state = run(TO_SAVED);
+  it('never reverses a settled connection', () => {
+    const state = run(TO_SETTLED);
     expect(canGoBack(state)).toBe(false);
     expect(connectFlowReducer(state, { type: 'back' })).toBe(state);
   });
@@ -666,9 +738,7 @@ describe('Connect flow: cancelling', () => {
       const outcome = cancelConnectFlow(state);
       expect(outcome.savedSource).toBeNull();
       expect(outcome.releaseSourceId).toBe(step.releases);
-      expect(
-        savedSourceId(connectFlowReducer(state, { type: 'cancel' }))
-      ).toBeNull();
+      expect(connectFlowReducer(state, { type: 'cancel' }).settled).toBe(false);
     });
   }
 
@@ -692,7 +762,7 @@ describe('Connect flow: cancelling', () => {
   });
 
   it('leaves a saved source alone when the dialog closes on the last step', () => {
-    const outcome = cancelConnectFlow(run(TO_SAVED));
+    const outcome = cancelConnectFlow(run(TO_SETTLED));
     expect(outcome.savedSource).toBeNull();
     expect(outcome.releaseSourceId).toBeNull();
   });

@@ -15,8 +15,8 @@
  * the Agent ended.
  */
 
-import { statusLightStateForAgentStatus } from '@/components/status-light';
-import type { StatusLightState } from '@/components/status-light';
+import { workStateReading } from '@/components/status-light';
+import type { StatusLightReading } from '@/components/status-light';
 import type {
   AgentSourcePlacement,
   ConnectedSourceView,
@@ -52,7 +52,12 @@ export interface RemoteCoworkerTile {
   placement: AgentSourcePlacement;
   /** `Local` | `Remote` | `Exawatt Cloud`. Quiet metadata, never a status. */
   placementLabel: string;
-  workState: StatusLightState;
+  /**
+   * The reading of the source's D40 report, including `unreported` for a
+   * source that made none. It is a reading rather than a light state so the
+   * tile can say which of the two unlit meanings it holds.
+   */
+  workState: StatusLightReading;
   connection: RemoteConnectionView;
   /** What the source says this device may do. Read, never assumed. */
   authority: WriteAuthority;
@@ -119,12 +124,10 @@ export function projectCoworkers(roster: RemoteRoster): RemoteCoworkerTile[] {
       placement: agent.placement,
       placementLabel: agent.placementLabel,
       // D40, from the source. Not derived from the connection, ever. A source
-      // that evidenced no state at all gets the unlit light rather than a
-      // borrowed one: Exawatt has nothing to show, and says nothing.
-      workState:
-        agent.workState === null
-          ? 'off'
-          : statusLightStateForAgentStatus(agent.workState),
+      // that evidenced no state at all reads as `unreported`: the unlit
+      // register, with the word that says nobody has reported anything rather
+      // than the word for an Agent quietly waiting.
+      workState: workStateReading(agent.workState),
       connection: connectionViewOf(agent),
       authority: writeAuthorityFor(agent.source.id, roster.authorities),
     }))

@@ -7,6 +7,7 @@ import {
   sourceAgentKey,
   type AgentProjectionMapping,
   type AgentSourceAdapterId,
+  type AgentSourceEvidenceBasis,
   type AgentStatus,
   type AgentSourcePlacement,
   type AgentSourceTopologySnapshot,
@@ -37,10 +38,13 @@ import {
   type ConversationRequest,
   type ConversationTurnView,
 } from './connected-conversation';
+import { SCOPES_FOR_AUTHORITY } from './connected-gateway-authority';
 import type { AuthorityRequestResult } from './connected-gateway-authority';
-import type {
-  ConnectedGatewayPhase,
-  ConnectedGatewaySession,
+import {
+  evidenceBasisForAdapter,
+  type ConnectedGatewayPhase,
+  type ConnectedGatewaySession,
+  type ObservedGatewayFacts,
 } from './connected-gateway';
 import { sameGatewayIdentity, type GatewayIdentity } from './gateway-identity';
 import type { ConnectedSourceStore } from './connected-source-store';
@@ -129,6 +133,40 @@ export interface SourceConnectionView {
   failure: SourceFailureClass | null;
 }
 
+/**
+ * One thing the source itself said, with the standing of the claim attached.
+ *
+ * `basis` and `provenance` travel with the value because a surface that shows
+ * a version has to be able to say where it came from: a Demo source's answers
+ * are simulated, and an operator reading a source-detail page is entitled to
+ * know which check produced each line rather than being handed five sentences
+ * of equal-looking authority.
+ */
+export interface ObservedSourceFact {
+  value: string;
+  basis: AgentSourceEvidenceBasis;
+  /** Which check produced it, in the operator's words. */
+  provenance: string;
+}
+
+/** One thing Exawatt may do with this source, and how it knows. */
+export interface ObservedSourceCapability extends ObservedSourceFact {
+  label: string;
+}
+
+/**
+ * The installation's own answers, as the Connect flow's fact list wants them:
+ * raw tokens, so the surface owns the vocabulary it renders them in.
+ */
+export interface ObservedSourceFactsView {
+  /** The source's own reported identity, or null when it declared none. */
+  identity: string | null;
+  version: string | null;
+  /** Scope tokens the Gateway granted this device. */
+  capabilities: readonly string[];
+  observedAt: number | null;
+}
+
 export interface ConnectedSourceStatusView {
   sourceId: string;
   displayName: string;
@@ -139,6 +177,18 @@ export interface ConnectedSourceStatusView {
   observing: boolean;
   phase: ConnectedGatewayPhase;
   connection: SourceConnectionView;
+  /**
+   * The version the source reported, or null when this launch has not read
+   * one. Null is "not observed", never "no version": every discovery pays for
+   * this read, and a source Exawatt has not reached yet has told it nothing.
+   */
+  version: ObservedSourceFact | null;
+  /**
+   * What Exawatt may do with this source, and what it saw of its automations.
+   * Empty for the same reason `version` is null, and empty is the honest
+   * answer rather than a claim that the source can do nothing.
+   */
+  capabilities: readonly ObservedSourceCapability[];
   /** The source now reports a different installation than the plan maps. */
   identityDrift: boolean;
   /**
@@ -245,6 +295,13 @@ export type ConnectSourceResult =
       sourceId: string;
       agents: readonly DiscoveredSourceAgent[];
       status: ConnectedSourceStatusView;
+      /**
+       * What the source said about itself on this connection. The Connect
+       * dialog shows it beside the Agents it discovered, so the operator
+       * confirms which installation they just reached before they import
+       * anyone out of it.
+       */
+      observed: ObservedSourceFactsView | null;
     }
   | {
       ok: false;
@@ -418,6 +475,11 @@ export interface ConnectedSourceCommandSurface {
  * so a source Exawatt is not observing still answers what it may be asked to
  * do. Leaving them in the list would let a future edit reach around both of
  * those decisions without anyone having to argue for it.
+ *
+ * `facts` is on the list, and read live rather than captured at connect time,
+ * because the reconnect ladder resnapshots inside the session: a version or
+ * an automation count captured once would keep reporting what an earlier
+ * observation found while the surface beside it says the connection is Live.
  */
 export type ConnectedSourceSession = Pick<
   ConnectedGatewaySession,
@@ -431,6 +493,7 @@ export type ConnectedSourceSession = Pick<
   | 'onPhaseChange'
   | 'snapshot'
   | 'phase'
+  | 'facts'
   | 'identity'
   | 'identityDrift'
 > &
@@ -618,6 +681,7 @@ export class ConnectedSourceRuntime {
       sourceId,
       agents: describeDiscoveredAgents(result.snapshot, this.deps.plans.read()),
       status: this.statusFor(entry, record),
+      observed: observedFactsView(entry.session.facts, record),
     };
   }
 
@@ -1572,6 +1636,16 @@ export class ConnectedSourceRuntime {
       observing: entry !== null,
       phase: entry?.session.phase ?? 'idle',
       connection: this.connectionFor(entry),
+      /*
+       * Last observed, not last connected. The session keeps what it read
+       * across a drop, so a stale or unavailable source still reports the
+       * version and capabilities it actually had; `connection` and the
+       * snapshot age are what say how current the view is. A source this
+       * launch has never reached reports nothing, which is why these are
+       * read off the session rather than off the record.
+       */
+      version: observedVersion(entry?.session.facts ?? null, record),
+      capabilities: observedCapabilities(entry?.session.facts ?? null, record),
       identityDrift: entry?.session.identityDrift != null,
       snapshotRevision: entry?.snapshotRevision ?? 0,
     };
@@ -1587,6 +1661,102 @@ export class ConnectedSourceRuntime {
     };
     for (const listener of this.listeners) listener(change);
   }
+}
+
+/* ---- Observed source facts ------------------------------------------------ */
+
+/**
+ * Where each observed fact came from, in the operator's words rather than the
+ * protocol's. Method names are diagnostics; these are the sentence fragments a
+ * source-detail row prints under a value.
+ */
+const VERSION_PROVENANCE = 'Gateway status';
+const AUTHORITY_PROVENANCE = 'Gateway scope grant';
+const AUTOMATION_PROVENANCE = 'Gateway automation list';
+
+/**
+ * The version the source reported, or null when it reported none.
+ *
+ * A Gateway that declares no version leaves this empty, and empty stays null
+ * all the way to the surface: a row that says "not observed yet" is true, and
+ * a row that invented "unknown version" would be Exawatt speaking for a
+ * server that said nothing.
+ */
+function observedVersion(
+  facts: ObservedGatewayFacts | null,
+  record: ConnectedSourceRecord
+): ObservedSourceFact | null {
+  const version = facts?.version.trim() ?? '';
+  if (version.length === 0) return null;
+  return {
+    value: version,
+    basis: evidenceBasisForAdapter(record.adapterId),
+    provenance: VERSION_PROVENANCE,
+  };
+}
+
+/**
+ * What Exawatt may do with this source, once it has actually reached it.
+ *
+ * Both rows are observations rather than promises. Conversation reads the
+ * authority the Gateway granted this device, which is the same value the send
+ * path gates on, so the page cannot advertise a voice the transport would
+ * refuse. Automations reads the count discovery already paid for and says
+ * plainly that Exawatt does not edit them: scheduling is `operator.admin`,
+ * which Exawatt never requests.
+ *
+ * Nothing is reported before the first discovery. Authority survives on the
+ * record across launches, but a capability list assembled without an
+ * observation would tell an operator what Exawatt could do to a server it has
+ * not managed to reach.
+ */
+function observedCapabilities(
+  facts: ObservedGatewayFacts | null,
+  record: ConnectedSourceRecord
+): readonly ObservedSourceCapability[] {
+  if (facts === null) return [];
+  const basis = evidenceBasisForAdapter(record.adapterId);
+  return [
+    {
+      label: 'Conversation',
+      value:
+        record.grantedAuthority === 'write' ? 'Read and send' : 'Read only',
+      basis,
+      provenance: AUTHORITY_PROVENANCE,
+    },
+    {
+      label: 'Automations',
+      value:
+        facts.automationCount === 0
+          ? 'None listed'
+          : `${facts.automationCount} listed, not editable`,
+      basis,
+      provenance: AUTOMATION_PROVENANCE,
+    },
+  ];
+}
+
+/**
+ * The same observation, as the Connect flow's fact list wants it: raw tokens
+ * and nulls, because that surface owns its own vocabulary for them.
+ *
+ * The scopes are the ones this source's granted authority presents on the
+ * handshake, which is what the Gateway approved on the device record. Identity
+ * stays null: a Gateway reports a version and a roster, never a name for
+ * itself, and Exawatt's own name for the connection is not an observation.
+ */
+function observedFactsView(
+  facts: ObservedGatewayFacts | null,
+  record: ConnectedSourceRecord
+): ObservedSourceFactsView | null {
+  if (facts === null) return null;
+  const version = facts.version.trim();
+  return {
+    identity: null,
+    version: version.length > 0 ? version : null,
+    capabilities: [...SCOPES_FOR_AUTHORITY[record.grantedAuthority]],
+    observedAt: facts.observedAt,
+  };
 }
 
 /* ---- Pure projection helpers --------------------------------------------- */

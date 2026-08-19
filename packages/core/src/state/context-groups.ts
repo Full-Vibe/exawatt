@@ -1,4 +1,4 @@
-import type { AgentStatus, ExawattAgent } from '../types/agent';
+import type { AgentStatus, AgentWorkState, ExawattAgent } from '../types/agent';
 import type { FleetState } from '../types/fleet';
 import type {
   ContextGroup,
@@ -16,12 +16,26 @@ const STATUS_RANK: Record<AgentStatus, number> = {
   idle: 4,
 };
 
+/**
+ * Where a coworker nobody has heard from sorts: after every reported state.
+ *
+ * The rank is an attention order, and silence asks for nothing. Ranking it
+ * alongside `idle` would be the same claim by another route — it would put an
+ * Agent whose source said nothing in the same breath as one reported to be
+ * quietly waiting.
+ */
+const UNREPORTED_RANK = STATUS_RANK.idle + 1;
+
+function rankOf(status: AgentWorkState): number {
+  return status === null ? UNREPORTED_RANK : STATUS_RANK[status];
+}
+
 const GROUPING_KEY: Record<string, (a: ExawattAgent) => string> = {
   project: a => a.project,
 };
 
 function sortAgentsForCluster(a: ExawattAgent, b: ExawattAgent): number {
-  const d = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+  const d = rankOf(a.status) - rankOf(b.status);
   if (d !== 0) return d;
   if (b.lastActivityAt !== a.lastActivityAt)
     return b.lastActivityAt - a.lastActivityAt;
@@ -71,14 +85,20 @@ export function resolveContextGroups(
     let idle = 0;
     let costRate = 0;
     let totalCost = 0;
-    let dominant: AgentStatus = 'idle';
+    // Null until a coworker reports something. A cluster whose sources have
+    // all gone quiet has no dominant work state, and an empty cluster never
+    // had one; both used to read as `idle`, which is a claim neither earned.
+    let dominant: AgentWorkState = null;
     for (const a of sorted) {
       if (a.status === 'working' || a.status === 'reviewing') active++;
       else if (a.status === 'blocked' || a.status === 'error') blocked++;
-      else idle++;
+      // `idle` counts Agents REPORTED to be resting. A null work state joins
+      // no bucket: the counts describe what sources said, so the three of
+      // them are free to sum to less than `agentCount`.
+      else if (a.status !== null) idle++;
       costRate += a.metrics.costRate;
       totalCost += a.metrics.estimatedCost;
-      if (STATUS_RANK[a.status] < STATUS_RANK[dominant]) dominant = a.status;
+      if (rankOf(a.status) < rankOf(dominant)) dominant = a.status;
     }
     const reviewing = sorted.filter(a => a.status === 'reviewing').length;
     const denom = Math.max(1, sorted.length * 3);

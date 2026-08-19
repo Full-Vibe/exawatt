@@ -364,3 +364,53 @@ describe('FleetManager', () => {
     });
   });
 });
+
+describe('fleet metrics and a work state nobody reported (ENG-010)', () => {
+  it('leaves it out of every bucket instead of calling it idle', () => {
+    const manager = new FleetManager();
+    manager.upsertAgent(
+      createAgent({ id: 'a', name: 'Busy', status: 'working' })
+    );
+    manager.upsertAgent(
+      createAgent({ id: 'b', name: 'Resting', status: 'idle' })
+    );
+    manager.upsertAgent(
+      createAgent({ id: 'c', name: 'Unheard', status: null })
+    );
+
+    const { metrics, agents } = manager.getFleetState();
+    expect(Object.keys(agents)).toHaveLength(3);
+    expect(metrics.activeCount).toBe(1);
+    expect(metrics.blockedCount).toBe(0);
+    // One reported idle, not two.
+    expect(metrics.idleCount).toBe(1);
+    expect(metrics.activeCount + metrics.blockedCount + metrics.idleCount).toBe(
+      2
+    );
+  });
+
+  it('does not invent a work state from a chat message', async () => {
+    const { manager } = makeConnectedManager();
+    hoisted.mockFetchAgents.mockResolvedValueOnce([
+      makeAgent({ id: 'agent-1', status: null }),
+    ]);
+    await manager.refresh();
+
+    hoisted.latestChatAdapter?.emit('chat:message', {
+      agentId: 'agent-1',
+      activity: {
+        id: 'activity-1',
+        timestamp: 123_456,
+        type: 'chat_message',
+        content: 'hello',
+      },
+    });
+
+    // A reported-idle Agent is promoted to working by a chat message, because
+    // Exawatt watched that happen. Here the source has still never stated a
+    // work state, and one message does not let Exawatt state one for it.
+    const updated = manager.getAgent('agent-1');
+    expect(updated?.status).toBeNull();
+    expect(updated?.lastActivityAt).toBe(123_456);
+  });
+});

@@ -72,7 +72,16 @@ contextBridge.exposeInMainWorld('electron', {
     add: (input: unknown) => ipcRenderer.invoke('connected-sources:add', input),
     rename: (id: string, displayName: string) =>
       ipcRenderer.invoke('connected-sources:rename', id, displayName),
-    /** The operator act that reaches a server. Read-only end to end. */
+    /**
+     * The operator act that reaches a server. Read-only end to end.
+     *
+     * One argument and one answer, deliberately. An `invoke` carries
+     * structured-clonable arguments only, so a progress callback handed to
+     * this call would be dropped on the way over and the caller would watch a
+     * frozen checklist for the whole round trip. Progress travels on
+     * `onChanged` below, which already broadcasts every phase the session
+     * enters, per source.
+     */
     connect: (id: string) =>
       ipcRenderer.invoke('connected-sources:connect', id),
     /** Per-source observation freshness. Never a claim about remote work. */
@@ -87,7 +96,12 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('connected-sources:disconnect', id),
     /** Removes Exawatt's record only. The remote installation is untouched. */
     detach: (id: string) => ipcRenderer.invoke('connected-sources:detach', id),
-    /** Which source moved and how fresh it is — never a topology payload. */
+    /**
+     * Which source moved, which phase it is in, and how fresh it is — never a
+     * topology payload. Also the connect flow's progress channel: the phases
+     * a session passes through on its way to a snapshot are the steps the
+     * operator is watching.
+     */
     onChanged: subscribe<unknown>('connected-sources:changed'),
     /** What Exawatt may do with each source. Never a freshness signal. */
     commandAuthority: () =>

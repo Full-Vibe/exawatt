@@ -172,10 +172,7 @@ const TILE_H = 252;
 const EMPTY_MAP = Object.freeze({}) as Record<string, never>;
 const EMPTY_COWORKERS = Object.freeze([]) as readonly RemoteCoworkerTile[];
 
-const COWORKER_PLACEMENT_GLYPH: Record<
-  AgentSourcePlacement,
-  typeof Monitor
-> = {
+const COWORKER_PLACEMENT_GLYPH: Record<AgentSourcePlacement, typeof Monitor> = {
   local: Monitor,
   'customer-hosted': Server,
   'exawatt-hosted': Cloud,
@@ -834,7 +831,13 @@ export function ExposeOverlay({
           }}
         >
           <span className="flex min-w-0 items-start gap-2.5">
-            <StatusLight size="standard" state={agent?.workState ?? 'off'} />
+            {/* An Agent the roster does not carry reads as unreported, not
+                as the unlit lamp's other meaning. `?? 'off'` here said Idle
+                about a coworker Exawatt cannot currently see at all. */}
+            <StatusLight
+              size="standard"
+              state={agent?.workState ?? 'unreported'}
+            />
             <span className="min-w-0 flex-1">
               <span
                 className="block truncate font-sans text-sm font-semibold"

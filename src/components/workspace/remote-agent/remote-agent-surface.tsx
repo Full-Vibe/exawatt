@@ -41,11 +41,15 @@ import {
   Unplug,
 } from 'lucide-react';
 import type { AgentSourcePlacement } from '@exawatt/core';
-import { StatusLight, type StatusLightState } from '@/components/status-light';
+import {
+  StatusLight,
+  type StatusLightReading,
+} from '@/components/status-light';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from '../workspace-theme';
 import {
   EMPTY_OUTBOX,
   EMPTY_WORK_STACK,
+  LAST_KNOWN_BADGE,
   SEND_REFUSAL_COPY,
   applyConversationUpdate,
   describeRemoteAgent,
@@ -53,6 +57,7 @@ import {
   mergeTurns,
   normalizeSendRefusal,
   outboxReducer,
+  sendRefusalAction,
   type ConversationLoad,
   type ConversationTurn,
   type ConversationUpdate,
@@ -222,8 +227,10 @@ function QuietButton({
   emphasis?: 'quiet' | 'standard';
 }) {
   return (
+    // `self-start` is load-bearing: every caller sits in a column, where a
+    // stretched button reads as a text field rather than a control.
     <button
-      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded px-3 text-chrome-label ${TRANSITION} ${FOCUS_RING} disabled:opacity-60`}
+      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 self-start rounded px-3 text-chrome-label ${TRANSITION} ${FOCUS_RING} disabled:opacity-60`}
       style={{
         color: emphasis === 'quiet' ? HUD.textDim : HUD.text,
         border:
@@ -366,11 +373,24 @@ function PendingTurn({ entry }: { entry: OutboundMessage }) {
 /* Work stack                                                                 */
 /* -------------------------------------------------------------------------- */
 
-function WorkStackSection({ section }: { section: WorkSection }) {
+function WorkStackSection({
+  section,
+  lastKnown,
+  lastKnownLabel,
+}: {
+  section: WorkSection;
+  /** True while this content is Exawatt's last look, not a current report. */
+  lastKnown: boolean;
+  lastKnownLabel: string;
+}) {
   const [open, setOpen] = useState(!section.collapsed);
   const bodyId = useId();
   const body = (
-    <ul className="flex flex-col gap-2" id={bodyId}>
+    <ul
+      className="flex flex-col gap-2"
+      id={bodyId}
+      style={{ opacity: lastKnown ? 0.62 : 1 }}
+    >
       {section.items.map(item => (
         <li
           className="flex flex-col gap-0.5"
@@ -390,8 +410,18 @@ function WorkStackSection({ section }: { section: WorkSection }) {
     </ul>
   );
 
+  // A run and its start time are the loudest "this is happening now" claim on
+  // the surface. When Exawatt cannot see the source, the same badge the header
+  // carries repeats here, because the header's badge is off screen by the time
+  // the operator reads a run line.
+  const mark = lastKnown ? <LastKnownBadge label={lastKnownLabel} /> : null;
+
   return (
-    <section className="flex flex-col gap-1.5" data-work-section={section.id}>
+    <section
+      className="flex flex-col gap-1.5"
+      data-work-current={lastKnown ? 'false' : 'true'}
+      data-work-section={section.id}
+    >
       {section.collapsed ? (
         <>
           <button
@@ -422,12 +452,15 @@ function WorkStackSection({ section }: { section: WorkSection }) {
         </>
       ) : (
         <>
-          <h3
-            className="text-chrome-title font-medium"
-            style={{ color: HUD.text }}
-          >
-            {section.title}
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3
+              className="text-chrome-title font-medium"
+              style={{ color: HUD.text }}
+            >
+              {section.title}
+            </h3>
+            {mark}
+          </div>
           {body}
         </>
       )}
@@ -444,8 +477,9 @@ export interface RemoteAgentSurfaceProps {
     id: string;
     name: string;
     project: string;
-    /** D40 work state, in the same vocabulary a local Agent uses. */
-    workState: StatusLightState;
+    /** D40 work state, in the same vocabulary a local Agent uses, plus
+     *  `unreported` for a source that has stated none. */
+    workState: StatusLightReading;
     placement: AgentSourcePlacement;
     sourceName: string;
   };
@@ -495,6 +529,10 @@ export function RemoteAgentSurface({
   > | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const composerId = useId();
+  /** The end of the transcript, scrolled to when a conversation opens. */
+  const endRef = useRef<HTMLLIElement>(null);
+  /** Which conversation the surface has already landed the operator in. */
+  const landedContext = useRef<string | null>(null);
   /** What is in the field right now, readable from an awaited send. */
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -717,10 +755,65 @@ export function RemoteAgentSurface({
     }
   }, [agent.id, load]);
 
+  /**
+   * Open at the newest turn, once per conversation.
+   *
+   * Only on the first read of a context, never on later turns: a jump while
+   * the operator is reading history would take the screen away from them.
+   * `auto` rather than `smooth`, so reduced-motion needs no separate path.
+   */
+  const openedContextId =
+    presentation.frontDoor.kind === 'conversation'
+      ? presentation.frontDoor.contextId
+      : null;
+  useEffect(() => {
+    if (openedContextId === null) return;
+    if (landedContext.current === openedContextId) return;
+    landedContext.current = openedContextId;
+    const end = endRef.current;
+    // Guarded because a DOM without a layout engine has no `scrollIntoView`,
+    // and landing the operator at the newest turn is a nicety, not a rule.
+    if (typeof end?.scrollIntoView !== 'function') return;
+    end.scrollIntoView({ block: 'end', behavior: 'auto' });
+  }, [openedContextId]);
+
   const { frontDoor, composer, freshness, sections, subordinateOpen } =
     presentation;
   const placement = PLACEMENT[agent.placement];
   const dimmed = freshness.marked;
+
+  /**
+   * An Agent with no conversation on its source leads with Automations, the
+   * way the reviewed treatment in `/hud-gallery/connected-source` does. The
+   * note about the missing conversation is the last thing on the surface, not
+   * the first: opening a coworker on an empty bordered box that says what is
+   * NOT there reads as a broken pane, and buries the two automations that are
+   * the whole of what this Agent does.
+   */
+  const automationsLead = frontDoor.kind === 'automations-lead';
+
+  /** The control that completes what the refusal told the operator to do. */
+  const refusalAction =
+    refusal === null
+      ? null
+      : sendRefusalAction(refusal, {
+          canRequestWriteAccess: Boolean(onRequestWriteAccess),
+          canReconnect: Boolean(onReconnect),
+        });
+
+  const workStack =
+    sections.length > 0 ? (
+      <div className="flex flex-col gap-3" data-work-stack>
+        {sections.map(section => (
+          <WorkStackSection
+            key={section.id}
+            lastKnown={freshness.marked}
+            lastKnownLabel={freshness.badge ?? LAST_KNOWN_BADGE}
+            section={section}
+          />
+        ))}
+      </div>
+    ) : null;
 
   return (
     <section
@@ -809,6 +902,11 @@ export function RemoteAgentSurface({
               {outbox.map(entry => (
                 <PendingTurn entry={entry} key={entry.localId} />
               ))}
+              {/* The newest turn, and the thing the surface scrolls to when
+                  a conversation first opens. Without it a coworker with any
+                  real history opens at its OLDEST message, with the composer
+                  several screens below the fold. */}
+              <li aria-hidden="true" ref={endRef} />
             </ul>
           )}
         </div>
@@ -828,6 +926,8 @@ export function RemoteAgentSurface({
           </p>
         </section>
       ) : null}
+
+      {automationsLead ? workStack : null}
 
       {composer.kind === 'ready' ? (
         <form
@@ -886,15 +986,19 @@ export function RemoteAgentSurface({
             </QuietButton>
           </div>
         </form>
+      ) : composer.reason === 'no-primary-conversation' ? (
+        <p
+          className="text-chrome-meta"
+          data-composer-withheld={composer.reason}
+          data-conversation-state="unavailable"
+          style={{ color: HUD.textDim }}
+        >
+          {composer.headline}
+        </p>
       ) : (
         <div
-          className="flex flex-col gap-1.5 rounded border p-3"
+          className="flex flex-col items-start gap-1.5 rounded border p-3"
           data-composer-withheld={composer.reason}
-          data-conversation-state={
-            composer.reason === 'no-primary-conversation'
-              ? 'unavailable'
-              : undefined
-          }
           style={{ borderColor: withThemeAlpha(HUD.textDim, 0.22) }}
         >
           <p className="text-sm" style={{ color: HUD.text }}>
@@ -923,7 +1027,7 @@ export function RemoteAgentSurface({
 
       {refusal ? (
         <div
-          className="flex flex-col gap-1.5 rounded border p-3"
+          className="flex flex-col items-start gap-1.5 rounded border p-3"
           data-send-refusal={refusal}
           role="status"
           style={{
@@ -937,28 +1041,37 @@ export function RemoteAgentSurface({
           <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
             {SEND_REFUSAL_COPY[refusal].nextStep}
           </p>
-          {outbox
-            .filter(entry => entry.status === 'refused')
-            .map(entry => (
+          <div className="flex flex-wrap items-center gap-2">
+            {outbox
+              .filter(entry => entry.status === 'refused')
+              .map(entry => (
+                <QuietButton
+                  data-retry={entry.localId}
+                  key={entry.localId}
+                  onClick={() => void deliver(entry.localId, entry.text)}
+                >
+                  <RefreshCw size={12} />
+                  Send again
+                </QuietButton>
+              ))}
+            {refusalAction ? (
               <QuietButton
-                data-retry={entry.localId}
-                key={entry.localId}
-                onClick={() => void deliver(entry.localId, entry.text)}
+                data-refusal-action={refusalAction.id}
+                emphasis="standard"
+                onClick={
+                  refusalAction.id === 'request-send-access'
+                    ? onRequestWriteAccess
+                    : onReconnect
+                }
               >
-                <RefreshCw size={12} />
-                Send again
+                {refusalAction.label}
               </QuietButton>
-            ))}
+            ) : null}
+          </div>
         </div>
       ) : null}
 
-      {sections.length > 0 ? (
-        <div className="flex flex-col gap-3" data-work-stack>
-          {sections.map(section => (
-            <WorkStackSection key={section.id} section={section} />
-          ))}
-        </div>
-      ) : null}
+      {automationsLead ? null : workStack}
     </section>
   );
 }

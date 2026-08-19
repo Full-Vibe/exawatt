@@ -55,6 +55,7 @@ import {
   SlidersHorizontal,
   TriangleAlert,
 } from 'lucide-react';
+import { ConnectSourceDialog } from '@/components/workspace/connect-source-dialog';
 import { AgentSourcesSettings } from './agent-sources-settings';
 import { AppearanceSettings } from './appearance-settings';
 import { PrivacySettings } from './privacy-settings';
@@ -182,6 +183,18 @@ interface SystemHotkeyTable {
 export function SettingsClient() {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>('agent-sources');
+  /**
+   * The Connect existing Agent route, mounted where the operator with no
+   * sources actually stands.
+   *
+   * Agent Sources is the page somebody lands on when they have nothing
+   * connected, and its empty state is the first thing they read. Naming a
+   * chord there was not navigation: the surface has to own a control that
+   * opens the flow, so the dialog lives here and Settings hands the opener
+   * down. The connected source appears in the rail on its own, because the
+   * registry follows the bridge's change channel.
+   */
+  const [connectOpen, setConnectOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedKeys, setRecordedKeys] = useState<KeyBinding[]>([]);
   const [bindingError, setBindingError] = useState<string | null>(null);
@@ -399,7 +412,11 @@ export function SettingsClient() {
           active={activeSection}
           onChange={setActiveSection}
         />
-        {activeSection === 'agent-sources' && <AgentSourcesSettings />}
+        {activeSection === 'agent-sources' && (
+          <AgentSourcesSettings
+            onConnectExistingAgent={() => setConnectOpen(true)}
+          />
+        )}
         {activeSection === 'privacy' && <PrivacySettings />}
         {activeSection === 'preferences' && (
           <section
@@ -583,6 +600,11 @@ export function SettingsClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* The Connect existing Agent route. It closes itself on success and
+          leaves the operator on Settings, where the connection it just made
+          is now a source with its own health. */}
+      <ConnectSourceDialog open={connectOpen} onOpenChange={setConnectOpen} />
     </main>
   );
 }

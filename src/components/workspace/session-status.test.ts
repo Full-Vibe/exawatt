@@ -681,3 +681,43 @@ describe('the D40 word (ENG-033 H2)', () => {
     }
   });
 });
+
+describe('the local path and the unreported word (ENG-010)', () => {
+  const GLYPH_STATES = [
+    'working',
+    'blocked',
+    'done',
+    'fresh',
+    'quiet',
+  ] as const;
+
+  it('never says "Not reported" about a Session on this machine', () => {
+    // A local Session is directly observed: Exawatt watches the PTY, so there
+    // is always a report. The unreported word belongs to sources Exawatt only
+    // hears from, and the local derivation must not be able to reach it.
+    for (const state of GLYPH_STATES) {
+      for (const attention of [
+        undefined,
+        { kind: 'bell', since: 1 } as const,
+        { kind: 'turn-end', since: 1 } as const,
+      ]) {
+        for (const fault of [false, true]) {
+          const word = sessionStateWord({ state, attention, fault });
+          expect(word).not.toBe(statusLightWord('unreported'));
+          expect(word).not.toMatch(/not reported/i);
+        }
+      }
+    }
+  });
+
+  it('still reads a quiet local Session as idle', () => {
+    expect(sessionStateWord({ state: 'quiet' })).toBe('Idle');
+    expect(sessionStateWord({ state: 'fresh' })).toBe('Idle');
+  });
+
+  it('keeps the unreported word out of the five-signal vocabulary', () => {
+    expect(STATUS_LIGHT_STATES.map(statusLightWord)).not.toContain(
+      statusLightWord('unreported')
+    );
+  });
+});

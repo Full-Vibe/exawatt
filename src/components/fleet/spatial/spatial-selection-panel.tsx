@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   STATUS_LIGHT_META,
   StatusLight,
-  statusLightStateForAgentStatus,
+  workStateReading,
 } from '@/components/status-light';
 import type { SpatialCalloutTheme } from './spatial-theme';
 import { agentGoalDisplay, delegationElapsedLabel } from './spatial-agent-copy';
@@ -182,31 +182,31 @@ function MultiSelectionCommand({
       )}
 
       {agents.length > 0 && (
-      <PanelSection title="Selected" count={agents.length}>
-        <ul className="space-y-1">
-          {agents.map(agent => {
-            const light = statusLightStateForAgentStatus(agent.status);
-            return (
-              <li key={agent.id}>
-                <button
-                  type="button"
-                  data-selection-member={agent.id}
-                  onClick={() => onInspect(agent.id)}
-                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <StatusLight decorative size="compact" state={light} />
-                  <span className="min-w-0 flex-1 truncate text-chrome-meta text-foreground">
-                    {agentGoalDisplay(agent.goal).summary}
-                  </span>
-                  <span className="shrink-0 truncate text-chrome-micro text-muted-foreground">
-                    {agent.project}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </PanelSection>
+        <PanelSection title="Selected" count={agents.length}>
+          <ul className="space-y-1">
+            {agents.map(agent => {
+              const light = workStateReading(agent.status);
+              return (
+                <li key={agent.id}>
+                  <button
+                    type="button"
+                    data-selection-member={agent.id}
+                    onClick={() => onInspect(agent.id)}
+                    className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <StatusLight decorative size="compact" state={light} />
+                    <span className="min-w-0 flex-1 truncate text-chrome-meta text-foreground">
+                      {agentGoalDisplay(agent.goal).summary}
+                    </span>
+                    <span className="shrink-0 truncate text-chrome-micro text-muted-foreground">
+                      {agent.project}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </PanelSection>
       )}
     </>
   );
@@ -262,7 +262,7 @@ export function SpatialSelectionPanel({
   const workers = selectedChildren ?? [];
   const multi = selectedAgents.length > 0 || workers.length > 0;
   const goal = agent ? agentGoalDisplay(agent.goal) : null;
-  const light = agent ? statusLightStateForAgentStatus(agent.status) : null;
+  const light = agent ? workStateReading(agent.status) : null;
   const shownChildren = delegation?.children ?? [];
   const hiddenChildren = delegation
     ? Math.max(0, delegation.count - shownChildren.length)
@@ -294,9 +294,7 @@ export function SpatialSelectionPanel({
               </h2>
             </div>
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border bg-background px-2 py-1 font-mono text-chrome-meta text-foreground">
-              {light && (
-                <StatusLight decorative size="compact" state={light} />
-              )}
+              {light && <StatusLight decorative size="compact" state={light} />}
               {agent.sessionState === 'stopped'
                 ? 'Stopped'
                 : light
@@ -390,9 +388,7 @@ export function SpatialSelectionPanel({
                       }
                       aria-current={highlighted ? 'true' : undefined}
                       className={`flex items-baseline gap-2 rounded-sm ${
-                        highlighted
-                          ? '-mx-1.5 bg-secondary px-1.5 py-0.5'
-                          : ''
+                        highlighted ? '-mx-1.5 bg-secondary px-1.5 py-0.5' : ''
                       }`}
                     >
                       <span className="shrink-0 font-mono text-chrome-micro text-muted-foreground">

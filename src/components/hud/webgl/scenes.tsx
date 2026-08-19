@@ -15,7 +15,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, Text, useCursor } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import type { AgentStatus } from '@exawatt/core';
+import type { AgentStatus, AgentWorkState } from '@exawatt/core';
 import {
   STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
   STATUS_LIGHT_META,
@@ -25,8 +25,8 @@ import {
 import {
   HUD,
   TONE_COLOR,
-  HUD_STATUS_COLOR,
-  STATUS_TONE,
+  hudStatusColor,
+  hudStatusTone,
   type HudTone,
 } from '../tokens';
 
@@ -42,8 +42,14 @@ const STAGE_PAD = 14;
 /** Scales scene content to fit the canvas, leaving headroom for the hover-
  *  expanded state + glow so nothing clips. `width` is the natural content
  *  extent (px); a narrow column shrinks the content instead of clipping. */
-function FitToWidth({ width, children }: { width: number; children: ReactNode }) {
-  const vw = useThree((s) => s.viewport.width);
+function FitToWidth({
+  width,
+  children,
+}: {
+  width: number;
+  children: ReactNode;
+}) {
+  const vw = useThree(s => s.viewport.width);
   const scale = Math.max(
     0.1,
     Math.min(1, (vw - STAGE_PAD * 2) / (width * HOVER_MAX))
@@ -90,7 +96,12 @@ function InteractiveCard({
     group.current.scale.setScalar(
       reduced
         ? want
-        : THREE.MathUtils.damp(group.current.scale.x, want, 14, Math.min(delta, 0.05))
+        : THREE.MathUtils.damp(
+            group.current.scale.x,
+            want,
+            14,
+            Math.min(delta, 0.05)
+          )
     );
   });
   return (
@@ -98,7 +109,7 @@ function InteractiveCard({
       {children}
       <mesh
         position={[0, 0, 3]}
-        onPointerOver={(e) => {
+        onPointerOver={e => {
           e.stopPropagation();
           setHovered(true);
         }}
@@ -106,7 +117,7 @@ function InteractiveCard({
           setHovered(false);
           setPressed(false);
         }}
-        onPointerDown={(e) => {
+        onPointerDown={e => {
           e.stopPropagation();
           setPressed(true);
         }}
@@ -169,7 +180,7 @@ function WebglStage({
 }
 
 function ExposeEvalRenderer() {
-  const gl = useThree((state) => state.gl);
+  const gl = useThree(state => state.gl);
   useEffect(() => {
     const target = window as unknown as {
       __EVAL_GL__?: THREE.WebGLRenderer;
@@ -226,9 +237,20 @@ function Frame({
     <group>
       <mesh position={[0, 0, -1]}>
         <shapeGeometry args={[shape]} />
-        <meshBasicMaterial color="#0a131a" transparent opacity={0.92} toneMapped={false} />
+        <meshBasicMaterial
+          color="#0a131a"
+          transparent
+          opacity={0.92}
+          toneMapped={false}
+        />
       </mesh>
-      <Line points={outline} color={color} lineWidth={2} toneMapped={false} raycast={() => null} />
+      <Line
+        points={outline}
+        color={color}
+        lineWidth={2}
+        toneMapped={false}
+        raycast={() => null}
+      />
       {bracket && (
         <>
           <Line
@@ -261,10 +283,20 @@ export function WebglFramesScene() {
   const W = 188;
   const H = 150;
   // three frames laid out in a row, matching the DOM trio
-  const specs: Array<{ tone: HudTone; label: string; title: string; bracket?: boolean }> = [
+  const specs: Array<{
+    tone: HudTone;
+    label: string;
+    title: string;
+    bracket?: boolean;
+  }> = [
     { tone: 'cyan', label: 'PROJECT', title: 'OpenClaw Local Parity' },
     { tone: 'amber', label: 'REVIEWING', title: 'Merge open PRs' },
-    { tone: 'magenta', label: 'SELECTED', title: 'Competitor pricing', bracket: true },
+    {
+      tone: 'magenta',
+      label: 'SELECTED',
+      title: 'Competitor pricing',
+      bracket: true,
+    },
   ];
   const gap = 24;
   const totalW = W * 3 + gap * 2;
@@ -278,28 +310,28 @@ export function WebglFramesScene() {
           <group key={s.tone} position={[cx, 0, 0]}>
             <InteractiveCard w={W} h={H}>
               <Frame w={W} h={H} tone={s.tone} bracket={s.bracket} />
-            <Text
-              font={FONT}
-              position={[-W / 2 + 16, H / 2 - 22, 2]}
-              fontSize={11}
-              color={color}
-              anchorX="left"
-              anchorY="middle"
-              letterSpacing={0.08}
-            >
-              {s.label}
-            </Text>
-            <Text
-              font={FONT}
-              position={[-W / 2 + 16, H / 2 - 48, 2]}
-              fontSize={17}
-              color="#EAF2FB"
-              anchorX="left"
-              anchorY="middle"
-              maxWidth={W - 32}
-            >
-              {s.title}
-            </Text>
+              <Text
+                font={FONT}
+                position={[-W / 2 + 16, H / 2 - 22, 2]}
+                fontSize={11}
+                color={color}
+                anchorX="left"
+                anchorY="middle"
+                letterSpacing={0.08}
+              >
+                {s.label}
+              </Text>
+              <Text
+                font={FONT}
+                position={[-W / 2 + 16, H / 2 - 48, 2]}
+                fontSize={17}
+                color="#EAF2FB"
+                anchorX="left"
+                anchorY="middle"
+                maxWidth={W - 32}
+              >
+                {s.title}
+              </Text>
             </InteractiveCard>
           </group>
         );
@@ -333,10 +365,26 @@ export function WebglBracketsScene() {
       />
       {(
         [
-          [[-x + len, y], [-x, y], [-x, y - len]],
-          [[x - len, y], [x, y], [x, y - len]],
-          [[x - len, -y], [x, -y], [x, -y + len]],
-          [[-x + len, -y], [-x, -y], [-x, -y + len]],
+          [
+            [-x + len, y],
+            [-x, y],
+            [-x, y - len],
+          ],
+          [
+            [x - len, y],
+            [x, y],
+            [x, y - len],
+          ],
+          [
+            [x - len, -y],
+            [x, -y],
+            [x, -y + len],
+          ],
+          [
+            [-x + len, -y],
+            [-x, -y],
+            [-x, -y + len],
+          ],
         ] as Array<[number, number][]>
       ).map((pts, i) => (
         <Line
@@ -480,17 +528,38 @@ function Gauge({
   const start = Math.PI / 2 + (Math.PI * 2 - sweep) / 2;
   const track = useMemo<V3[]>(() => {
     const c = new THREE.EllipseCurve(0, 0, r, r, start, start + sweep, false);
-    return c.getPoints(64).map((p) => [p.x, p.y, 0]);
+    return c.getPoints(64).map(p => [p.x, p.y, 0]);
   }, [start, sweep, r]);
   const arc = useMemo<V3[]>(() => {
-    const c = new THREE.EllipseCurve(0, 0, r, r, start, start + sweep * value, false);
-    return c.getPoints(64).map((p) => [p.x, p.y, 1]);
+    const c = new THREE.EllipseCurve(
+      0,
+      0,
+      r,
+      r,
+      start,
+      start + sweep * value,
+      false
+    );
+    return c.getPoints(64).map(p => [p.x, p.y, 1]);
   }, [start, sweep, value, r]);
   return (
     <group position={[cx, 6, 0]}>
-      <Line points={track} color={color} lineWidth={2} transparent opacity={0.18} />
+      <Line
+        points={track}
+        color={color}
+        lineWidth={2}
+        transparent
+        opacity={0.18}
+      />
       <Line points={arc} color={color} lineWidth={3} toneMapped={false} />
-      <Text font={FONT} position={[0, 2, 2]} fontSize={18} color={HUD.text} anchorX="center" anchorY="middle">
+      <Text
+        font={FONT}
+        position={[0, 2, 2]}
+        fontSize={18}
+        color={HUD.text}
+        anchorX="center"
+        anchorY="middle"
+      >
         {`${Math.round(value * 100)}%`}
       </Text>
       <Text
@@ -519,21 +588,32 @@ export function WebglGaugesScene() {
   return (
     <WebglStage w={step * specs.length} h={140}>
       {specs.map((s, i) => (
-        <Gauge key={s.label} value={s.v} tone={s.tone} label={s.label} cx={startX + i * step} />
+        <Gauge
+          key={s.label}
+          value={s.v}
+          tone={s.tone}
+          label={s.label}
+          cx={startX + i * step}
+        />
       ))}
     </WebglStage>
   );
 }
 
 function Pill({ status, cx }: { status: AgentStatus; cx: number }) {
-  const color = HUD_STATUS_COLOR[status];
+  const color = hudStatusColor(status);
   const w = 92;
   const h = 22;
   return (
     <group position={[cx, 0, 0]}>
       <mesh>
         <planeGeometry args={[w, h]} />
-        <meshBasicMaterial color={color} transparent opacity={0.14} toneMapped={false} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.14}
+          toneMapped={false}
+        />
       </mesh>
       <Line
         points={[
@@ -599,8 +679,7 @@ export function WebglPillsScene() {
 function ActiveSpatialFill({ color }: { color: string }) {
   const rotor = useRef<THREE.Mesh>(null);
   const reduced = useReducedMotion();
-  const radiansPerSecond =
-    (Math.PI * 2) / STATUS_LIGHT_ACTIVE_ROTATION_SECONDS;
+  const radiansPerSecond = (Math.PI * 2) / STATUS_LIGHT_ACTIVE_ROTATION_SECONDS;
 
   useFrame((_, delta) => {
     if (!rotor.current) return;
@@ -809,7 +888,7 @@ export function WebglComposedScene({
 }: {
   name: string;
   blocker: string;
-  status: AgentStatus;
+  status: AgentWorkState;
   costRate: number;
   cost: number;
   turns: number;
@@ -817,45 +896,98 @@ export function WebglComposedScene({
 }) {
   const W = 332;
   const H = 200;
-  const tone = STATUS_TONE[status];
+  const tone = hudStatusTone(status);
   const color = TONE_COLOR[tone];
   const x0 = -W / 2 + 18;
   return (
     <WebglStage w={W + 8} h={H + 8}>
       <InteractiveCard w={W} h={H}>
-      <Frame w={W} h={H} tone={tone} bracket />
-      <Text font={FONT} position={[x0, H / 2 - 26, 2]} fontSize={16} color="#EAF2FB" anchorX="left" anchorY="middle" maxWidth={W - 90}>
-        {name}
-      </Text>
-      <Text font={FONT} position={[W / 2 - 18, H / 2 - 24, 2]} fontSize={10} color={color} anchorX="right" anchorY="middle" letterSpacing={0.1}>
-        {status.toUpperCase()}
-      </Text>
-      <Text font={FONT} position={[x0, H / 2 - 56, 2]} fontSize={12} color={HUD.textDim} anchorX="left" anchorY="middle" maxWidth={W - 36}>
-        {blocker}
-      </Text>
-      <Text font={FONT} position={[x0, H / 2 - 84, 2]} fontSize={9} color={HUD.textDim} anchorX="left" anchorY="middle" letterSpacing={0.12}>
-        COST RATE
-      </Text>
-      <Segments value={costRate / 2} tone="amber" y={H / 2 - 100} w={W - 36} x0={x0} />
-      {(
-        [
-          ['COST', `$${cost.toFixed(2)}`],
-          ['TURNS', String(turns)],
-          ['FLEET SPEND', `$${fleetSpend.toFixed(2)}`],
-        ] as const
-      ).map(([label, value], i) => {
-        const cx = x0 + 4 + i * ((W - 44) / 3) + (W - 44) / 6;
-        return (
-          <group key={label} position={[cx, -H / 2 + 34, 2]}>
-            <Text font={FONT} position={[0, 11, 0]} fontSize={9} color={HUD.textDim} anchorX="center" anchorY="middle" letterSpacing={0.08}>
-              {label}
-            </Text>
-            <Text font={FONT} position={[0, -6, 0]} fontSize={14} color="#CFE3F2" anchorX="center" anchorY="middle">
-              {value}
-            </Text>
-          </group>
-        );
-      })}
+        <Frame w={W} h={H} tone={tone} bracket />
+        <Text
+          font={FONT}
+          position={[x0, H / 2 - 26, 2]}
+          fontSize={16}
+          color="#EAF2FB"
+          anchorX="left"
+          anchorY="middle"
+          maxWidth={W - 90}
+        >
+          {name}
+        </Text>
+        <Text
+          font={FONT}
+          position={[W / 2 - 18, H / 2 - 24, 2]}
+          fontSize={10}
+          color={color}
+          anchorX="right"
+          anchorY="middle"
+          letterSpacing={0.1}
+        >
+          {(status ?? STATUS_LIGHT_META.unreported.protocolLabel).toUpperCase()}
+        </Text>
+        <Text
+          font={FONT}
+          position={[x0, H / 2 - 56, 2]}
+          fontSize={12}
+          color={HUD.textDim}
+          anchorX="left"
+          anchorY="middle"
+          maxWidth={W - 36}
+        >
+          {blocker}
+        </Text>
+        <Text
+          font={FONT}
+          position={[x0, H / 2 - 84, 2]}
+          fontSize={9}
+          color={HUD.textDim}
+          anchorX="left"
+          anchorY="middle"
+          letterSpacing={0.12}
+        >
+          COST RATE
+        </Text>
+        <Segments
+          value={costRate / 2}
+          tone="amber"
+          y={H / 2 - 100}
+          w={W - 36}
+          x0={x0}
+        />
+        {(
+          [
+            ['COST', `$${cost.toFixed(2)}`],
+            ['TURNS', String(turns)],
+            ['FLEET SPEND', `$${fleetSpend.toFixed(2)}`],
+          ] as const
+        ).map(([label, value], i) => {
+          const cx = x0 + 4 + i * ((W - 44) / 3) + (W - 44) / 6;
+          return (
+            <group key={label} position={[cx, -H / 2 + 34, 2]}>
+              <Text
+                font={FONT}
+                position={[0, 11, 0]}
+                fontSize={9}
+                color={HUD.textDim}
+                anchorX="center"
+                anchorY="middle"
+                letterSpacing={0.08}
+              >
+                {label}
+              </Text>
+              <Text
+                font={FONT}
+                position={[0, -6, 0]}
+                fontSize={14}
+                color="#CFE3F2"
+                anchorX="center"
+                anchorY="middle"
+              >
+                {value}
+              </Text>
+            </group>
+          );
+        })}
       </InteractiveCard>
     </WebglStage>
   );

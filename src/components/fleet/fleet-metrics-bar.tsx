@@ -3,7 +3,8 @@ import { useFleet, useFleetConnection } from '@/lib/fleet/fleet-provider';
 import {
   STATUS_LIGHT_META,
   StatusLight,
-  statusLightStateForAgentStatus,
+  workStateReading,
+  type StatusLightReading,
   type StatusLightState,
 } from '@/components/status-light';
 
@@ -27,12 +28,15 @@ export function FleetMetricsBar({
   const { agents, metrics } = useFleet();
   const { status } = useFleetConnection();
   const isStale = status === 'disconnected' || status === 'error';
-  const counts = agents.reduce<Record<StatusLightState, number>>(
+  // Counted by READING. An Agent whose source reported no work state used to
+  // land on `off` and be announced as one more idle Agent; it now has its own
+  // tally, so the Idle figure only counts Agents somebody reported as idle.
+  const counts = agents.reduce<Record<StatusLightReading, number>>(
     (result, agent) => {
-      result[statusLightStateForAgentStatus(agent.status)] += 1;
+      result[workStateReading(agent.status)] += 1;
       return result;
     },
-    { active: 0, 'needs-you': 0, fault: 0, result: 0, off: 0 }
+    { active: 0, 'needs-you': 0, fault: 0, result: 0, off: 0, unreported: 0 }
   );
 
   const formatCost = (v: number) => `$${v.toFixed(2)}`;
@@ -84,6 +88,21 @@ export function FleetMetricsBar({
           </span>
         );
       })}
+      {/* Not a filter: the status filter selects reported states, and there
+          is no reported state to select here. It is a readout, and it appears
+          only when it is true of somebody. */}
+      {counts.unreported > 0 && (
+        <span
+          className="inline-flex items-center gap-1 whitespace-nowrap text-muted-foreground"
+          title={STATUS_LIGHT_META.unreported.description}
+        >
+          <StatusLight decorative size="compact" state="unreported" />
+          <span>{STATUS_LIGHT_META.unreported.label}</span>
+          <span className="tabular-nums text-foreground">
+            {counts.unreported}
+          </span>
+        </span>
+      )}
       <span className="flex-1" />
       {/* Spend renders only when a source actually reports cost. The local
           and Demo transports deliberately report none (dollars derived from

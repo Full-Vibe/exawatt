@@ -22,8 +22,8 @@ function zone(
     agentIds: [],
     rect,
     slotPitch: 1.3,
-  unitSize: 2.2,
-  radius: rect.width / 2,
+    unitSize: 2.2,
+    radius: rect.width / 2,
     minimapRect: rect,
     visible,
     selected: false,
@@ -43,6 +43,7 @@ function zone(
       idle: 0,
       complete: 0,
       error: 0,
+      unreported: 0,
     },
     burn: null,
   };
@@ -55,13 +56,13 @@ function aggregate(
   visible = true
 ): SpatialBoardPiece {
   return {
-    id: `aggregate:${projectId}:${status}`,
+    id: `aggregate:${projectId}:${status ?? 'unreported'}`,
     slotIndex: 0,
     kind: 'aggregate',
     projectId,
     agentId: null,
-    label: status,
-    summary: `${count} ${status}`,
+    label: status ?? 'not reported',
+    summary: `${count} ${status ?? 'not reported'}`,
     status,
     count,
     x: 0,

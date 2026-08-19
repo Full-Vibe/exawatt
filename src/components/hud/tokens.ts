@@ -3,7 +3,7 @@
  * future WebGL (emissive colors / bloom). Values mirror the @theme entries in
  * globals.css. Pure data; safe to import anywhere.
  */
-import type { AgentStatus } from '@exawatt/core';
+import type { AgentStatus, AgentWorkState } from '@exawatt/core';
 
 export const HUD = {
   bg: {
@@ -66,6 +66,21 @@ export const STATUS_TONE: Record<AgentStatus, HudTone> = {
   complete: 'green',
   idle: 'idle',
 };
+
+/**
+ * The two records above stay exhaustive over the WORK vocabulary, so a
+ * seventh work state still fails to compile here. A work state nobody
+ * reported is not one of them: it takes the unlit register's paint and tone,
+ * the same one `idle` wears, because hue is not the channel that separates
+ * them. The word does that, and the word survives colour being switched off.
+ */
+export function hudStatusColor(status: AgentWorkState): string {
+  return status === null ? HUD.idle : HUD_STATUS_COLOR[status];
+}
+
+export function hudStatusTone(status: AgentWorkState): HudTone {
+  return status === null ? 'idle' : STATUS_TONE[status];
+}
 
 /** Neon glow recipe (drop-shadow follows the element's alpha shape). */
 export function glow(color: string, intensity = 1): string {

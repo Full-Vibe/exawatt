@@ -1,4 +1,4 @@
-import type { AgentStatus } from '@exawatt/core';
+import type { AgentWorkState } from '@exawatt/core';
 import {
   correctAccentContrast,
   mixHexColors,
@@ -282,11 +282,22 @@ export function spatialProjectZoneFill(
   );
 }
 
+/**
+ * The board's paint for a work state, including the absence of one.
+ *
+ * A null work state takes the unlit register's own colour, the same one an
+ * Agent reported idle wears. Hue deliberately does not separate them: it is
+ * the channel that disappears under a colour-vision deficiency or a
+ * monochrome capture, and this distinction has to survive that. The mark and
+ * the word carry it instead.
+ */
 export function spatialStatusColor(
   theme: SpatialThemeSnapshot,
-  status: AgentStatus
+  status: AgentWorkState
 ): string {
-  return theme.status[statusLightStateForAgentStatus(status)];
+  return theme.status[
+    status === null ? 'off' : statusLightStateForAgentStatus(status)
+  ];
 }
 
 /** Continuous Consumption pressure ramp, expressed as concrete sRGB hex. */

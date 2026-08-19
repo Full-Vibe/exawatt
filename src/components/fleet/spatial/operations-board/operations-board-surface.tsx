@@ -35,7 +35,7 @@ import type {
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
-import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
+import { workStateReading } from '@/components/status-light/protocol';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import { mixHexColors } from '@/lib/appearance/color';
 import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
@@ -186,7 +186,11 @@ function BoardClampIndicator({
       className="pointer-events-none absolute inset-0 z-10"
     >
       {edges.left &&
-        bar('left-0 top-0 h-full', 'w-6', `linear-gradient(90deg, ${wash}, ${fade})`)}
+        bar(
+          'left-0 top-0 h-full',
+          'w-6',
+          `linear-gradient(90deg, ${wash}, ${fade})`
+        )}
       {edges.right &&
         bar(
           'right-0 top-0 h-full',
@@ -194,7 +198,11 @@ function BoardClampIndicator({
           `linear-gradient(270deg, ${wash}, ${fade})`
         )}
       {edges.top &&
-        bar('left-0 top-0 w-full', 'h-6', `linear-gradient(180deg, ${wash}, ${fade})`)}
+        bar(
+          'left-0 top-0 w-full',
+          'h-6',
+          `linear-gradient(180deg, ${wash}, ${fade})`
+        )}
       {edges.bottom &&
         bar(
           'bottom-0 left-0 w-full',
@@ -467,7 +475,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         ...new Set(
           layout.pieces
             .filter(piece => piece.visible && piece.kind === 'agent')
-            .map(piece => statusLightStateForAgentStatus(piece.status))
+            .map(piece => workStateReading(piece.status))
         ),
       ]
         .sort()

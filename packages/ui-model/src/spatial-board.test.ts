@@ -355,9 +355,9 @@ describe('selectSpatialBoardLayout', () => {
     const overviewBetaPieces = overview.pieces.filter(
       piece => piece.projectId === 'project:Beta'
     );
-    expect(focusedBetaPieces.map(p => [p.id, p.kind, p.x, p.y, p.size])).toEqual(
-      overviewBetaPieces.map(p => [p.id, p.kind, p.x, p.y, p.size])
-    );
+    expect(
+      focusedBetaPieces.map(p => [p.id, p.kind, p.x, p.y, p.size])
+    ).toEqual(overviewBetaPieces.map(p => [p.id, p.kind, p.x, p.y, p.size]));
     expect(focused.cameraBounds).toEqual(
       focused.zones.find(zone => zone.id === 'project:Alpha')!.rect
     );
@@ -383,7 +383,13 @@ describe('selectSpatialBoardLayout', () => {
       previousLayout: focusAlpha,
     });
     const geometry = (layout: typeof overview) => ({
-      zones: layout.zones.map(z => [z.id, z.rect, z.radius, z.slotPitch, z.unitSize]),
+      zones: layout.zones.map(z => [
+        z.id,
+        z.rect,
+        z.radius,
+        z.slotPitch,
+        z.unitSize,
+      ]),
       pieces: layout.pieces.map(p => [p.id, p.kind, p.x, p.y, p.size]),
     });
     expect(geometry(focusAlpha)).toEqual(geometry(overview));
@@ -823,9 +829,9 @@ describe('delegated children as selection targets', () => {
       'up'
     );
     expect(target?.kind).toBe('child');
-    expect(units.some(unit => unit.id === (target as { unitId: string }).unitId)).toBe(
-      true
-    );
+    expect(
+      units.some(unit => unit.id === (target as { unitId: string }).unitId)
+    ).toBe(true);
   });
 
   it('walks back off a child, so a child is never a dead end', () => {
@@ -856,7 +862,8 @@ describe('delegated children as selection targets', () => {
         { kind: 'agent', agentId: 'a' },
         direction
       );
-      if (target?.kind === 'child') expect(lobeIds.has(target.unitId)).toBe(false);
+      if (target?.kind === 'child')
+        expect(lobeIds.has(target.unitId)).toBe(false);
     }
   });
 
@@ -911,7 +918,9 @@ describe('selectSpatialBandSelection', () => {
       width: 2,
       height: 2,
     };
-    expect(selectSpatialBandSelection(layout, [], band).agentIds).toEqual(['a']);
+    expect(selectSpatialBandSelection(layout, [], band).agentIds).toEqual([
+      'a',
+    ]);
   });
 
   it('normalizes a band dragged up-left (negative width/height)', () => {
@@ -923,7 +932,9 @@ describe('selectSpatialBandSelection', () => {
       width: -2,
       height: -2,
     };
-    expect(selectSpatialBandSelection(layout, [], band).agentIds).toEqual(['a']);
+    expect(selectSpatialBandSelection(layout, [], band).agentIds).toEqual([
+      'a',
+    ]);
   });
 
   it('captures a dot-rendered zone whole when the band intersects it, aggregated Agents included', () => {
@@ -942,14 +953,18 @@ describe('selectSpatialBandSelection', () => {
       width: 4,
       height: 4,
     };
-    expect(selectSpatialBandSelection(layout, [], edge).agentIds).toHaveLength(40);
+    expect(selectSpatialBandSelection(layout, [], edge).agentIds).toHaveLength(
+      40
+    );
     const emptyCorner = {
       x: zone.rect.x - 1,
       y: zone.rect.y - 1,
       width: 2,
       height: 2,
     };
-    expect(selectSpatialBandSelection(layout, [], emptyCorner).agentIds).toHaveLength(0);
+    expect(
+      selectSpatialBandSelection(layout, [], emptyCorner).agentIds
+    ).toHaveLength(0);
     // A band that misses the zone captures nothing.
     const outside = {
       x: zone.rect.x + zone.rect.width + 5,
@@ -957,7 +972,9 @@ describe('selectSpatialBandSelection', () => {
       width: 4,
       height: 4,
     };
-    expect(selectSpatialBandSelection(layout, [], outside).agentIds).toHaveLength(0);
+    expect(
+      selectSpatialBandSelection(layout, [], outside).agentIds
+    ).toHaveLength(0);
   });
 
   it('keeps filtered-out Agents out of zone captures and lets pieces own their zone', () => {
@@ -973,9 +990,9 @@ describe('selectSpatialBandSelection', () => {
       width: zone.rect.width + 2,
       height: zone.rect.height + 2,
     };
-    expect(selectSpatialBandSelection(layout, [], fullBand, visible).agentIds).toHaveLength(
-      5
-    );
+    expect(
+      selectSpatialBandSelection(layout, [], fullBand, visible).agentIds
+    ).toHaveLength(5);
     // Focused Project altitude renders individual pieces, so the piece rule
     // owns the zone: a small band inside it grabs only what it covers.
     const focused = selectSpatialBoardLayout(state, {
@@ -1044,5 +1061,59 @@ describe('selectSpatialScopeActivity', () => {
     });
     // Nothing in scope reports → burn is null, never zero.
     expect(selectSpatialScopeActivity(state, new Set(['c'])).burn).toBeNull();
+  });
+});
+
+/*
+ * ENG-010: the board's population channel is counted, so silence has to be
+ * counted too. Folding it into `idle` makes the board say a coworker is
+ * resting; dropping it makes the board draw fewer Agents than exist.
+ */
+describe('a work state nobody reported, on the board', () => {
+  const mixed = () =>
+    fleet([
+      agent('a', 'Alpha', 'working'),
+      agent('b', 'Alpha', 'idle'),
+      agent('c', 'Alpha', null),
+      agent('d', 'Alpha', null),
+    ]);
+
+  it('counts it in its own band, not in idle', () => {
+    const [zone] = selectSpatialBoardLayout(mixed()).zones;
+    expect(zone!.agentCount).toBe(4);
+    expect(zone!.statusCounts.idle).toBe(1);
+    expect(zone!.statusCounts.unreported).toBe(2);
+    expect(zone!.statusCounts.working).toBe(1);
+  });
+
+  it('keeps the population total honest', () => {
+    const [zone] = selectSpatialBoardLayout(mixed()).zones;
+    const counted = Object.values(zone!.statusCounts).reduce(
+      (sum, count) => sum + count,
+      0
+    );
+    expect(counted).toBe(zone!.agentCount);
+  });
+
+  it('never becomes the zone dominant state', () => {
+    const [zone] = selectSpatialBoardLayout(mixed()).zones;
+    expect(zone!.dominantStatus).toBe('working');
+  });
+
+  it('leaves a zone nobody has reported on with no dominant state', () => {
+    const [zone] = selectSpatialBoardLayout(
+      fleet([agent('c', 'Quiet', null), agent('d', 'Quiet', null)])
+    ).zones;
+    expect(zone!.dominantStatus).toBeNull();
+    expect(zone!.statusCounts.idle).toBe(0);
+    expect(zone!.statusCounts.unreported).toBe(2);
+  });
+
+  it('carries a null status onto the piece rather than a substitute', () => {
+    const layout = selectSpatialBoardLayout(mixed());
+    const piece = layout.pieces.find(p => p.agentId === 'c');
+    expect(piece?.status).toBeNull();
+    const resting = layout.pieces.find(p => p.agentId === 'b');
+    expect(resting?.status).toBe('idle');
   });
 });

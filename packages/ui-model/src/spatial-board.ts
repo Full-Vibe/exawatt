@@ -1,6 +1,7 @@
 import {
   resolveContextGroups,
   type AgentStatus,
+  type AgentWorkState,
   type ContextGroup,
   type ExawattAgent,
   type FleetState,
@@ -38,6 +39,13 @@ export interface SpatialBoardStatusCounts {
   idle: number;
   complete: number;
   error: number;
+  /**
+   * Agents whose source reported no work state (ENG-010). They are counted
+   * here rather than folded into `idle` or dropped: the population channel
+   * has to stay true, and a dot that stands for an Agent nobody has heard
+   * from must not be banded with the ones reported to be resting.
+   */
+  unreported: number;
 }
 
 export interface SpatialBoardProjectZone {
@@ -67,7 +75,8 @@ export interface SpatialBoardProjectZone {
   blockedCount: number;
   attentionPressure: number;
   costRate: number;
-  dominantStatus: AgentStatus;
+  /** `null` when no Agent in the zone has reported a work state. */
+  dominantStatus: AgentWorkState;
   statusCounts: SpatialBoardStatusCounts;
   /** Consumption burn rollup (ENG-008): null when no Agent in the zone
    *  reports usage — absent, never zero. `share` is the zone's slice of the
@@ -105,7 +114,9 @@ export interface SpatialBoardPiece {
   summary: string;
   /** Latest source-reported activity sentence; absent when unreported. */
   activity?: string | null;
-  status: AgentStatus;
+  /** `null` when the source reported no work state. An aggregate piece with
+   *  a null status is the zone's unreported population. */
+  status: AgentWorkState;
   sessionState?: 'live' | 'stopped';
   count: number;
   x: number;
@@ -245,20 +256,29 @@ function emptyCounts(): SpatialBoardStatusCounts {
     idle: 0,
     complete: 0,
     error: 0,
+    unreported: 0,
   };
 }
 
 function statusCounts(agents: ExawattAgent[]): SpatialBoardStatusCounts {
   const counts = emptyCounts();
-  for (const agent of agents) counts[agent.status]++;
+  for (const agent of agents) {
+    if (agent.status === null) counts.unreported++;
+    else counts[agent.status]++;
+  }
   return counts;
 }
 
-function dominantStatus(counts: SpatialBoardStatusCounts): AgentStatus {
+/**
+ * The worst state anyone REPORTED. `STATUS_ORDER` holds only work states, so
+ * a zone whose Agents have all gone unreported answers `null` — and so does
+ * an empty zone, which used to answer `idle` about nobody at all.
+ */
+function dominantStatus(counts: SpatialBoardStatusCounts): AgentWorkState {
   for (const status of STATUS_ORDER) {
     if (counts[status] > 0) return status;
   }
-  return 'idle';
+  return null;
 }
 
 function boundsOf(rects: SpatialBoardRect[]): SpatialBoardRect {
@@ -599,10 +619,14 @@ function slotPieceSizeFor(
   // other's parent: adjacent rosettes can point straight at one another, so
   // the requirement is `2 * constellationRadius <= spacing`.
   const constellation =
-    SPATIAL_DELEGATION_UNIT.orbitRadius + SPATIAL_DELEGATION_UNIT.childScale / 2;
+    SPATIAL_DELEGATION_UNIT.orbitRadius +
+    SPATIAL_DELEGATION_UNIT.childScale / 2;
   const fits = (pitch * Math.sqrt(3)) / (2 * constellation);
   return round4(
-    Math.max(pieceSize * SPATIAL_DELEGATION_UNIT.minimumUnitScale, Math.min(pieceSize, fits))
+    Math.max(
+      pieceSize * SPATIAL_DELEGATION_UNIT.minimumUnitScale,
+      Math.min(pieceSize, fits)
+    )
   );
 }
 
@@ -762,7 +786,12 @@ function projectZone(
     unitSize,
     // The minimap is always the fixed Fleet footprint (F7), so it takes the
     // same fleet radius and lattice scale the world does.
-    minimapRect: fleetZoneRect(slotIndex, agents.length, fleetRadius, latticeScale),
+    minimapRect: fleetZoneRect(
+      slotIndex,
+      agents.length,
+      fleetRadius,
+      latticeScale
+    ),
     visible:
       isAggregate ||
       visible.length > 0 ||
@@ -901,7 +930,9 @@ function individualPieces(
                   agentType: child.agentType,
                   description: child.description ?? null,
                   startedAt:
-                    typeof child.startedAt === 'number' ? child.startedAt : null,
+                    typeof child.startedAt === 'number'
+                      ? child.startedAt
+                      : null,
                 })),
             },
           }
@@ -923,21 +954,38 @@ function individualPieces(
   });
 }
 
+/**
+ * Aggregate bands, attention first, with the unreported population last.
+ *
+ * It comes last for the same reason it ranks last everywhere else: silence
+ * asks for nothing. It is emitted at all because dropping it would make the
+ * density view undercount the fleet, and folding it into `idle` would make
+ * the density view lie about it.
+ */
+const AGGREGATE_BANDS = [...STATUS_ORDER, null] as const;
+
+/** The band's own word. `null` is not a status, so it does not borrow one. */
+function bandLabel(status: AgentWorkState): string {
+  return status ?? 'not reported';
+}
+
 function aggregatePieces(zone: SpatialBoardProjectZone): SpatialBoardPiece[] {
   const pieces: SpatialBoardPiece[] = [];
-  const marks = STATUS_ORDER.filter(status => zone.statusCounts[status] > 0);
+  const marks = AGGREGATE_BANDS.filter(
+    status => zone.statusCounts[status ?? 'unreported'] > 0
+  );
   for (const status of marks) {
-    const count = zone.statusCounts[status];
+    const count = zone.statusCounts[status ?? 'unreported'];
     const slotIndex = pieces.length;
     const position = slotPosition(zone, slotIndex);
     pieces.push({
-      id: `aggregate:${zone.id}:${status}`,
+      id: `aggregate:${zone.id}:${status ?? 'unreported'}`,
       slotIndex,
       kind: 'aggregate',
       projectId: zone.id,
       agentId: null,
-      label: status,
-      summary: `${count} ${status}`,
+      label: bandLabel(status),
+      summary: `${count} ${bandLabel(status)}`,
       status,
       count,
       x: position.x,
@@ -1070,13 +1118,16 @@ export function selectSpatialBoardLayout(
   // small busy Project look bigger than a large quiet one. Delegation is
   // absorbed inside the slot instead — see `delegationFitFor`.
   const fleetFootprints = new Map(
-    groups.map(group => [
-      group.clusterId,
-      {
-        pitch: BOARD.fleetHexPitch,
-        radius: fleetZoneRadius(group.agentIds.length),
-      },
-    ] as const)
+    groups.map(
+      group =>
+        [
+          group.clusterId,
+          {
+            pitch: BOARD.fleetHexPitch,
+            radius: fleetZoneRadius(group.agentIds.length),
+          },
+        ] as const
+    )
   );
   // Unit size is a property of the BOARD, not of a Project. Sizing it per
   // Project would make two Projects with the same population look different

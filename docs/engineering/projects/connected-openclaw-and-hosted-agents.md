@@ -954,3 +954,54 @@ rename and Project mapping leave the source byte-identical, detach removes
 Exawatt's record and nothing else, reattaching returns the same coworkers
 rather than strangers, identity drift is reported rather than guessed, and a
 relaunch returns to the same Agent on the credential it kept.
+
+### 2026-08-19 — the hardening pass, and what looking at it found
+
+The operator asked that connecting to a Gateway you already run be bulletproof
+before anything is built on top of it. Three passes ran: a first-ever visual
+review, the manual-server transport proved against a real machine, and an
+architecture and correctness sweep.
+
+**Nobody had ever looked at the UI.** Three milestones of surface shipped
+unit-tested and protocol-proved and unseen, against a standing rule that every
+UI change is screenshotted on localhost first. Fifty screenshots later, the
+review found the whole Connect dialog set in monospace across twenty-one sites,
+which the design system reserves for tracked micro-labels and never for a
+sentence, so the flow read as a terminal dump. It found stale and unavailable
+dimming the transcript while leaving the work stack at full strength, which is
+"no stale result is presented as current" broken on the loudest claim on the
+page. It found a conversation opening at its oldest message, with the composer
+four screens below the fold. None of that is subtle, and none of it needed a
+user to discover.
+
+**Two lies the fakes were telling.** The four-step connection checklist never
+moved: `ipcRenderer.invoke` arguments must be structured-clonable, so the stage
+callback was dropped at the process boundary and could never have arrived. It
+survived review because every test injected a bridge double that honoured a
+callback the real preload cannot deliver. The doubles were more capable than
+reality, so the suite was green about a thing that had never once worked. The
+fix subscribes to the phase broadcast that already existed, and the new test
+builds its bridge from the real preload surface rather than from a fixture.
+
+The same shape appeared in the credential bootstrap. It lacked the multiplexing
+refusal the tunnel had, so on a machine whose SSH config sets `ControlMaster
+auto` it rode a socket an earlier connection had opened. The proof is a manual
+server naming a key file that does not exist, reading the Gateway credential
+successfully. Exawatt would have told an operator their details worked, saved
+the source, and broken when the borrowed socket expired.
+
+**A verification hole underneath both.** The Electron build config excludes
+`*.test.ts` and the root config excludes `electron/`, so no Electron test file
+had ever been type-checked. A refactor moved two exports and the entire live
+suite became unrunnable in silence, because the only thing that would have
+complained was a test run that does not happen in CI. `electron/tsconfig.test.json`
+now checks the connected-source subsystem's tests, scoped deliberately: the
+backlog elsewhere is real and not this change's to fix, and a check that runs is
+worth more than a comprehensive one that stays unwired.
+
+**One operational finding worth keeping.** One of the dogfood servers runs
+fail2ban with an empty `ignoreip`, five attempts, an hour's ban. A refused-login
+probe is a counted failure there, so a few suite runs would have banned the
+operator from their own production machine. That probe is now opt-in behind its
+own flag; every other failure case uses a name that never resolves or a port
+nothing answers, so none of them reach sshd at all.

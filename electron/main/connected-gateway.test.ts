@@ -520,6 +520,7 @@ function sshAliasRecord(): ConnectedSourceRecord {
     transport: { kind: 'ssh-alias', alias: ALIAS, remotePort: REMOTE_PORT },
     credentialOwner: 'source-owned-ssh',
     hasDeviceCredential: false,
+    grantedAuthority: 'read',
     createdAt: FIXED_NOW - 86_400_000,
   };
 }

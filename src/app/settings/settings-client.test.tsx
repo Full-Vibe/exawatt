@@ -57,8 +57,25 @@ vi.mock('./appearance-settings', () => ({
   AppearanceSettings: () => <div data-appearance-settings />,
 }));
 
+// The section stands in for the real one, but it keeps the prop that matters
+// here: whether Settings actually hands it a route to Connect existing Agent.
+// Without one, the empty state has nothing for an operator to press.
 vi.mock('./agent-sources-settings', () => ({
-  AgentSourcesSettings: () => <div data-agent-sources-settings />,
+  AgentSourcesSettings: ({
+    onConnectExistingAgent,
+  }: {
+    onConnectExistingAgent?: () => void;
+  }) => (
+    <div data-agent-sources-settings>
+      {onConnectExistingAgent ? (
+        <button type="button" onClick={onConnectExistingAgent}>
+          Connect existing Agent
+        </button>
+      ) : (
+        <span data-no-connect-route />
+      )}
+    </div>
+  ),
 }));
 
 function editShortcut(label: string): HTMLElement {
@@ -272,5 +289,40 @@ describe('shortcut settings policy', () => {
       screen.getByText(/reserved for Project switching/)
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+});
+
+describe('Settings: the Connect existing Agent route', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: { platform: 'darwin' },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(window, 'electron');
+  });
+
+  /*
+   * Agent Sources is where an operator with nothing connected lands, so the
+   * route has to exist on this page rather than being named as a chord in its
+   * empty state. Settings owns the dialog and hands the section an opener.
+   */
+  it('hands the sources section a route and opens the flow on it', async () => {
+    await renderSettings();
+    expect(document.querySelector('[data-no-connect-route]')).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Connect existing Agent' })
+    );
+    await act(async () => undefined);
+
+    const dialog = document.querySelector('[data-connect-source]');
+    expect(dialog).not.toBeNull();
+    expect(
+      screen.getByRole('heading', { name: 'Connect existing Agent' })
+    ).toBeVisible();
   });
 });

@@ -26,9 +26,11 @@ import {
   type AddConnectedSourceInput,
 } from './connected-source-store';
 import {
-  ConnectedSourceRuntime,
   FileConnectedAgentProjectionPlanStore,
   deriveRemoteAgentId,
+} from './connected-agent-projection-plan';
+import {
+  ConnectedSourceRuntime,
   type ConnectedSourceStatusView,
   type DiscoveredSourceAgent,
   type RemoteAgentView,
@@ -98,9 +100,7 @@ async function connectReadOnly(localPort: number, token: string) {
  * second copy of the cleanup for the second transport would be a second chance
  * to leave a dead device on someone's server.
  */
-async function deviceListing(
-  destination: SshDestination
-): Promise<{
+async function deviceListing(destination: SshDestination): Promise<{
   pending: unknown[];
   paired: { deviceId?: string; scopes?: string[] }[];
 }> {
@@ -2116,13 +2116,9 @@ describe.skipIf(!MANUAL_CONFIGURED)(
         `exawatt-live-probe-absent-key-${Date.now()}`
       );
       const result = await resolveGatewayCredential(
-        {
-          kind: 'ssh-manual',
-          host: MANUAL_HOST,
-          user: MANUAL_USER,
-          port: MANUAL_PORT,
-          identityFile: missing,
-        },
+        // The bootstrap runs commands rather than forwarding a port, so the
+        // Gateway's own port is not part of this question.
+        { ...manualDestination({ identityFile: missing }), remotePort: 0 },
         { exec: createSshRemoteExec() }
       );
       expect(result.ok).toBe(false);

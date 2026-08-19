@@ -232,7 +232,7 @@ describe('Connected sources in Agent Source Settings', () => {
   });
 
   /** The most recent handler the bridge's `onChanged` was given, if any. */
-  let changeTick: (() => void) | null = null;
+  let changeTick: ((change: { sourceId: string }) => void) | null = null;
 
   function connection(
     overrides: Partial<ConnectedSourceView> & { id: string }
@@ -266,6 +266,10 @@ describe('Connected sources in Agent Source Settings', () => {
       placementLabel: 'Remote',
       observing: state === 'live',
       phase: state === 'live' ? 'connected' : 'reconnecting',
+      // Null and empty are what a source Exawatt has not read yet reports.
+      // Tests that care about observed values pass their own.
+      version: null,
+      capabilities: [],
       identityDrift: false,
       snapshotRevision: 1,
       ...overrides,
@@ -319,7 +323,7 @@ describe('Connected sources in Agent Source Settings', () => {
       connect: options.connect ?? vi.fn(async () => ({ ok: true })),
       // The bridge's change tick. Every connected test therefore exercises
       // the subscribe/unsubscribe path, not only the interval fallback.
-      onChanged: vi.fn((handler: () => void) => {
+      onChanged: vi.fn((handler: (change: { sourceId: string }) => void) => {
         changeTick = handler;
         return () => {
           changeTick = null;
@@ -404,6 +408,50 @@ describe('Connected sources in Agent Source Settings', () => {
         )
       ).not.toBeNull();
     }
+  });
+
+  /*
+   * One fact, one colour, on both surfaces that show it.
+   *
+   * `--settings-red` resolves to the D40 fault role, which claims this Agent's
+   * own work failed or needs a person. A server Exawatt cannot see is not
+   * that: the coworker on it may be working perfectly. The remote coworker
+   * surface already paints this state with the chrome attention role
+   * (`--exa-hud-amber`, through `HUD.amber`), and `--settings-amber` resolves
+   * to the same role, so the two surfaces now say the same thing.
+   */
+  it('paints an unavailable connection with attention, never fault colour', async () => {
+    mountBridge({
+      sources: [connection({ id: 'd', displayName: 'Delta gateway' })],
+      statuses: [
+        observation({
+          id: 'd',
+          connection: {
+            state: 'unavailable',
+            observationAgeMs: 7_200_000,
+            stalePresentation: true,
+            failure: 'host-unreachable',
+          },
+        }),
+      ],
+    });
+    render(<AgentSourcesSettings />);
+    await openConnection('Delta gateway');
+
+    const detail = document.querySelector('[data-connected-source]')!;
+    const pill = detail.querySelector<HTMLElement>(
+      '[data-connection-pill="unavailable"]'
+    )!;
+    expect(pill.style.color).toBe('var(--settings-amber)');
+    expect(pill.style.background).toBe('var(--settings-amber-wash)');
+
+    const fact = detail.querySelector<HTMLElement>(
+      '[data-connected-fact="Connection"][data-connected-fact-state="unavailable"]'
+    )!;
+    expect(fact.innerHTML).not.toContain('--settings-red');
+    // Hue is never the only channel: the state word is on the pill and the
+    // row keeps its own glyph.
+    expect(pill).toHaveTextContent('Server unreachable');
   });
 
   it('keeps the observation age legible on its own when the view is stale', async () => {
@@ -542,9 +590,12 @@ describe('Connected sources in Agent Source Settings', () => {
     // rather than waiting for the drift interval.
     expect(changeTick).not.toBeNull();
     await reactAct(async () => {
-      changeTick?.();
+      changeTick?.({ sourceId: 'a' });
     });
     await waitFor(() => expect(bridge.status).toHaveBeenCalledTimes(3));
+    // A source already in the rail moved, so freshness is the only re-read:
+    // the record list is unchanged and nothing asks for it again.
+    expect(bridge.list).toHaveBeenCalledTimes(1);
   });
 
   it('renames a connection in place and shows the new name', async () => {
@@ -569,8 +620,9 @@ describe('Connected sources in Agent Source Settings', () => {
   });
 
   it('offers one route to Connect existing Agent and no invented roster', async () => {
+    const onConnect = vi.fn();
     mountBridge({ sources: [], statuses: [] });
-    render(<AgentSourcesSettings />);
+    render(<AgentSourcesSettings onConnectExistingAgent={onConnect} />);
 
     const empty = await waitFor(() => {
       const node = document.querySelector('[data-connected-sources-empty]');
@@ -580,17 +632,52 @@ describe('Connected sources in Agent Source Settings', () => {
     expect(empty).toHaveTextContent(
       'Gateways you connect appear here with their own health.'
     );
-    expect(empty).toHaveTextContent('Connect existing Agent');
     expect(document.querySelector('[data-connected-source]')).toBeNull();
 
-    cleanup();
-    const onConnect = vi.fn();
-    mountBridge({ sources: [], statuses: [] });
-    render(<AgentSourcesSettings onConnectExistingAgent={onConnect} />);
     fireEvent.click(
       await screen.findByRole('button', { name: 'Connect existing Agent' })
     );
     expect(onConnect).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * A chord printed in prose is not navigation. This empty state is exactly
+   * where an operator with nothing connected lands, and what it owes them is
+   * a control, not the name of a keystroke to go and find.
+   */
+  it('never names a chord in place of the control', async () => {
+    mountBridge({ sources: [], statuses: [] });
+    render(<AgentSourcesSettings onConnectExistingAgent={vi.fn()} />);
+
+    const empty = await waitFor(() => {
+      const node = document.querySelector('[data-connected-sources-empty]');
+      expect(node).not.toBeNull();
+      return node!;
+    });
+    expect(empty.textContent ?? '').not.toMatch(/⌘/);
+    expect(
+      within(empty as HTMLElement).getByRole('button', {
+        name: 'Connect existing Agent',
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('picks up a source connected while Settings is open', async () => {
+    const bridge = mountBridge({ sources: [], statuses: [] });
+    render(<AgentSourcesSettings onConnectExistingAgent={vi.fn()} />);
+    await waitFor(() => expect(bridge.list).toHaveBeenCalledTimes(1));
+
+    bridge.list.mockImplementation(async () => [
+      connection({ id: 'new', displayName: 'Studio gateway' }),
+    ]);
+    bridge.status.mockImplementation(async () => [observation({ id: 'new' })]);
+    await reactAct(async () => {
+      changeTick?.({ sourceId: 'new' });
+    });
+
+    expect(
+      await screen.findByRole('button', { name: /^Studio gateway,/ })
+    ).toBeInTheDocument();
   });
 
   it('says who holds the credential, for an SSH configuration and for the keychain', async () => {
@@ -688,9 +775,12 @@ describe('Connected sources in Agent Source Settings', () => {
     expect(
       document.querySelector('[data-connected-fact="Version"]')
     ).toHaveTextContent('Not observed yet');
+    // Operator voice: what happens next, not what the check is called.
     expect(
-      screen.getAllByText('Awaiting a bounded check on the Gateway.').length
+      screen.getAllByText('Exawatt reads this the next time it connects.')
+        .length
     ).toBeGreaterThan(0);
+    expect(document.body.textContent ?? '').not.toContain('bounded check');
   });
 
   it('keeps placement as quiet metadata beside a redundant glyph', async () => {
