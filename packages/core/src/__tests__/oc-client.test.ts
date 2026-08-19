@@ -1,6 +1,18 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { OCClient } from '../oc/client';
 import * as auth from '../oc/auth';
+
+/**
+ * An invented device identity, in the encodings the Gateway parses: a 32-byte
+ * secret as hex, and the raw public key bytes as unpadded base64url. Fixed
+ * rather than generated so the assertions below are about the client.
+ */
+const SAVED_KEYPAIR = {
+  privateKey:
+    '7c1d0e5a93b46f2081ca35e7d9481b60f3a27c5e6d80194b2fe3a70c58d9126b',
+  publicKey: 'pB97LGDZjjUXBCumz40Z43tcIE72Go2Ty3Di9Bhdagk',
+};
 
 vi.mock('../oc/auth', async () => {
   const actual =
@@ -47,6 +59,15 @@ class MockWebSocket {
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
+};
+
+/**
+ * Long enough for real WebCrypto to answer. The mocked auth module resolves
+ * in a microtask, but a test that puts the real device-id derivation back
+ * needs the digest to actually finish before the connect frame exists.
+ */
+const settle = async (): Promise<void> => {
+  await new Promise(resolve => setTimeout(resolve, 0));
 };
 
 const beginConnect = async (
@@ -99,6 +120,9 @@ const completeHandshake = async (
 
 describe('OCClient', () => {
   beforeEach(() => {
+    // Call history only; the module mock's implementations stay. Without it
+    // one test's handshake is counted against the next one's keygen.
+    vi.clearAllMocks();
     MockWebSocket.instances = [];
     Object.defineProperty(globalThis, 'WebSocket', {
       value: MockWebSocket,
@@ -303,6 +327,159 @@ describe('OCClient', () => {
 
     expect(MockWebSocket.instances).toHaveLength(2);
     expect(client.getStatus()).toBe('connected');
+  });
+
+  describe('device identity', () => {
+    it('mints one when the caller keeps none, and exposes what it minted', async () => {
+      const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+      // Nothing to expose before a connect: the client has not had to be
+      // anybody yet.
+      expect(client.deviceKeypair).toBeNull();
+
+      const { connectPromise, socket } = await beginConnect(client);
+      await completeHandshake(socket);
+      await connectPromise;
+
+      expect(auth.generateDeviceKeypair).toHaveBeenCalledTimes(1);
+      // Readable, because the caller has to persist it beside the token the
+      // Gateway just issued. A token kept without it is refused next launch.
+      expect(client.deviceKeypair).toEqual({
+        privateKey: 'a'.repeat(64),
+        publicKey: 'b'.repeat(64),
+      });
+      expect(client.deviceToken).toBe('device-token-1');
+    });
+
+    it('presents the keypair it was given instead of minting a new device', async () => {
+      const client = new OCClient({
+        url: 'ws://127.0.0.1:18789',
+        deviceKeypair: SAVED_KEYPAIR,
+      });
+      expect(client.deviceKeypair).toEqual(SAVED_KEYPAIR);
+
+      const { connectPromise, socket } = await beginConnect(client);
+      await completeHandshake(socket);
+      await connectPromise;
+
+      // The whole seam: a client handed an identity is that device, and never
+      // mints a second one.
+      expect(auth.generateDeviceKeypair).not.toHaveBeenCalled();
+      expect(auth.deriveDeviceId).toHaveBeenCalledWith(SAVED_KEYPAIR.publicKey);
+      expect(auth.signDevicePayload).toHaveBeenCalledWith(
+        SAVED_KEYPAIR.privateKey,
+        'signed-payload'
+      );
+
+      const connectRequest = JSON.parse(socket.sentMessages[0]) as {
+        params: { device: { publicKey: string } };
+      };
+      expect(connectRequest.params.device.publicKey).toBe(
+        SAVED_KEYPAIR.publicKey
+      );
+      expect(client.deviceKeypair).toEqual(SAVED_KEYPAIR);
+    });
+
+    it('sends the device id the Gateway itself would derive from that key', async () => {
+      // The real derivation for this one handshake, checked against Node's
+      // own crypto rather than against this module. An id derived any other
+      // way is a device the Gateway has never approved, whatever the token
+      // says.
+      const actual =
+        await vi.importActual<typeof import('../oc/auth')>('../oc/auth');
+      vi.mocked(auth.deriveDeviceId).mockImplementationOnce(
+        actual.deriveDeviceId
+      );
+
+      const client = new OCClient({
+        url: 'ws://127.0.0.1:18789',
+        deviceKeypair: SAVED_KEYPAIR,
+      });
+      const { connectPromise, socket } = await beginConnect(client);
+      socket.serverSend({
+        type: 'event',
+        event: 'connect.challenge',
+        payload: { nonce: 'nonce-1', ts: 1111 },
+      });
+      await settle();
+      await completeHandshake(socket, { sendChallenge: false });
+      await connectPromise;
+
+      const connectRequest = JSON.parse(socket.sentMessages[0]) as {
+        params: { device: { id: string } };
+      };
+      expect(connectRequest.params.device.id).toBe(
+        createHash('sha256')
+          .update(Buffer.from(SAVED_KEYPAIR.publicKey, 'base64url'))
+          .digest('hex')
+      );
+    });
+
+    it('refuses an unusable keypair rather than quietly becoming a new device', () => {
+      expect(
+        () =>
+          new OCClient({
+            url: 'ws://127.0.0.1:18789',
+            deviceKeypair: { privateKey: 'not-hex', publicKey: 'not base64!' },
+          })
+      ).toThrow(/device keypair/iu);
+      expect(auth.generateDeviceKeypair).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a refused handshake', () => {
+    it("rejects connect with the Gateway's own sentence, not a generic one", async () => {
+      const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+      const reported: Error[] = [];
+      client.on('connection:error', error => {
+        reported.push(error);
+      });
+
+      const { connectPromise, socket } = await beginConnect(client);
+      const rejection = expect(connectPromise).rejects.toThrow(
+        'unauthorized: device token mismatch (rotate/reissue device token)'
+      );
+
+      socket.serverSend({
+        type: 'event',
+        event: 'connect.challenge',
+        payload: { nonce: 'nonce-refused', ts: 1111 },
+      });
+      await flush();
+      const connectRequest = JSON.parse(socket.sentMessages[0]) as {
+        id: string;
+      };
+      socket.serverSend({
+        type: 'res',
+        id: connectRequest.id,
+        ok: false,
+        error: {
+          message:
+            'unauthorized: device token mismatch (rotate/reissue device token)',
+        },
+      });
+      await flush();
+
+      await rejection;
+      // The sentence the event carried and the sentence connect() rejects
+      // with are now the same one. They were not, and every caller above
+      // reported "connection failed" over a Gateway that was answering fine.
+      expect(reported.map(error => error.message)).toEqual([
+        'unauthorized: device token mismatch (rotate/reissue device token)',
+      ]);
+    });
+
+    it('still reports a generic failure when the connection said nothing', async () => {
+      const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+      const { connectPromise, socket } = await beginConnect(client);
+      const rejection = expect(connectPromise).rejects.toThrow(
+        /connection failed with status/u
+      );
+
+      socket.close();
+      await flush();
+
+      await rejection;
+    });
   });
 
   it('emits expected status transitions', async () => {

@@ -20,6 +20,30 @@ export interface OCGatewayConfig {
 }
 
 /**
+ * One device's identity, as the Gateway knows it.
+ *
+ * The pair travels together or not at all. The Gateway derives the device id
+ * from the public half and binds every token it issues to that id, so a token
+ * kept without its keypair belongs to a device this process can no longer be,
+ * and a keypair kept without its token is a device with nothing to present.
+ */
+export interface OCDeviceKeypair {
+  /**
+   * Hex-encoded Ed25519 secret. It never goes on the wire, and a caller that
+   * persists it owes it exactly the custody the device token gets: OS
+   * encryption, never a records file, never a log line, never an error.
+   */
+  privateKey: string;
+  /** base64url raw public key bytes, in the one form the Gateway parses. */
+  publicKey: string;
+}
+
+/** 32 raw bytes, hex encoded. */
+const PRIVATE_KEY_HEX_PATTERN = /^[0-9a-f]{64}$/u;
+const PUBLIC_KEY_BYTE_LENGTH = 32;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/u;
+
+/**
  * Device identity encoding (corrected 2026-08-17 against a live Gateway).
  *
  * The Gateway decodes `device.publicKey` as base64url raw Ed25519 bytes (or
@@ -31,16 +55,43 @@ export interface OCGatewayConfig {
  * The private key stays hex because it never leaves this process; only the
  * material the Gateway parses is encoded its way.
  */
-export async function generateDeviceKeypair(): Promise<{
-  privateKey: string;
-  publicKey: string;
-}> {
+export async function generateDeviceKeypair(): Promise<OCDeviceKeypair> {
   const privateKeyBytes = ed.utils.randomSecretKey();
   const publicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
   return {
     privateKey: bytesToHex(privateKeyBytes),
     publicKey: bytesToBase64Url(publicKeyBytes),
   };
+}
+
+/**
+ * A keypair read back from wherever a caller kept it, or null when the shape
+ * is not one this process could present.
+ *
+ * The one canonical check, here rather than at each storage site, because the
+ * encodings were corrected against a live Gateway once and a second opinion
+ * about them would be a second chance to get them wrong. A rejected keypair
+ * means the caller pairs again, which costs an operator one approval; an
+ * accepted-but-wrong one means every handshake is refused with nothing to
+ * point at.
+ */
+export function parseDeviceKeypair(value: unknown): OCDeviceKeypair | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as { privateKey?: unknown; publicKey?: unknown };
+  const { privateKey, publicKey } = candidate;
+  if (typeof privateKey !== 'string' || typeof publicKey !== 'string') {
+    return null;
+  }
+  if (!PRIVATE_KEY_HEX_PATTERN.test(privateKey)) return null;
+  if (!BASE64URL_PATTERN.test(publicKey)) return null;
+  try {
+    if (base64UrlToBytes(publicKey).length !== PUBLIC_KEY_BYTE_LENGTH) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return { privateKey, publicKey };
 }
 
 export async function signChallenge(

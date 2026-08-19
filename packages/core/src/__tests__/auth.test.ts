@@ -2,6 +2,7 @@ import { createHash, createPublicKey, verify } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
   generateDeviceKeypair,
+  parseDeviceKeypair,
   signChallenge,
   buildDeviceAuthPayload,
   signDevicePayload,
@@ -99,5 +100,53 @@ describe('Auth utilities', () => {
     );
     // The old scheme truncated the key itself, which no current Gateway accepts.
     expect(deviceId).not.toBe(publicKey.slice(0, 32));
+  });
+
+  it('derives one id for one keypair, however many times it is presented', async () => {
+    const keypair = await generateDeviceKeypair();
+
+    // The property the whole custody model rests on: a keypair kept across
+    // launches is the same device to the Gateway every time it connects, so
+    // the token bound to that device keeps working.
+    const first = await deriveDeviceId(keypair.publicKey);
+    const second = await deriveDeviceId(keypair.publicKey);
+    expect(second).toBe(first);
+
+    const other = await generateDeviceKeypair();
+    expect(await deriveDeviceId(other.publicKey)).not.toBe(first);
+  });
+
+  it('parses back a keypair it generated, in exactly the shape it stored', async () => {
+    const keypair = await generateDeviceKeypair();
+    expect(parseDeviceKeypair(keypair)).toEqual(keypair);
+    // Round-tripped through storage, which is how a caller actually holds it.
+    expect(parseDeviceKeypair(JSON.parse(JSON.stringify(keypair)))).toEqual(
+      keypair
+    );
+  });
+
+  it('refuses a keypair no Gateway could read', async () => {
+    const { privateKey, publicKey } = await generateDeviceKeypair();
+
+    for (const broken of [
+      null,
+      undefined,
+      'not-an-object',
+      [privateKey, publicKey],
+      {},
+      { privateKey },
+      { publicKey },
+      { privateKey: privateKey.toUpperCase(), publicKey },
+      { privateKey: privateKey.slice(0, 62), publicKey },
+      { privateKey: `${privateKey}ff`, publicKey },
+      { privateKey, publicKey: `${publicKey}=` },
+      { privateKey, publicKey: Buffer.from('short').toString('base64url') },
+      { privateKey, publicKey: `${publicKey}AAAA` },
+    ]) {
+      // Refusing costs an operator one re-pairing. Accepting a key the
+      // Gateway derives a different device id from costs them a source that
+      // is refused on every connect with nothing to point at.
+      expect(parseDeviceKeypair(broken)).toBeNull();
+    }
   });
 });

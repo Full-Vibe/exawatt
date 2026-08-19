@@ -48,6 +48,29 @@ const SECOND_TRANSPORT = {
 const BUILD_BOX = deriveConnectedSourceId(ALIAS_TRANSPORT);
 const SECOND_BOX = deriveConnectedSourceId(SECOND_TRANSPORT);
 
+/*
+ * An invented device identity, in the encodings the Gateway actually parses:
+ * a 32-byte secret as hex, and the raw public key bytes as unpadded base64url.
+ * Never a key any real device has held, and never generated here, so every
+ * assertion below is about the store rather than about a keygen.
+ */
+const DEVICE_KEYPAIR = {
+  privateKey:
+    '7c1d0e5a93b46f2081ca35e7d9481b60f3a27c5e6d80194b2fe3a70c58d9126b',
+  publicKey: 'pB97LGDZjjUXBCumz40Z43tcIE72Go2Ty3Di9Bhdagk',
+};
+
+const SECOND_KEYPAIR = {
+  privateKey:
+    '2b9d47f0c6183ae5920d74bc1f3e08a6574d29be0c1783fa6d5b04e29c7f1a38',
+  publicKey: 'GefDuECiXW9xxA6JO9KvVhCXPOJIG9BvWj6XxBjSsGQ',
+};
+
+/** The whole credential, as everything but a deliberate half-write writes it. */
+function credential(token: string, keypair = DEVICE_KEYPAIR) {
+  return { token, keypair };
+}
+
 describe('ConnectedSourceStore', () => {
   let dir: string;
   let deps: ConnectedSourceStoreDependencies;
@@ -119,7 +142,7 @@ describe('ConnectedSourceStore', () => {
       const target = store();
       const first = addOne(target);
       target.setGrantedAuthority(BUILD_BOX, 'write');
-      target.writeDeviceToken(BUILD_BOX, 'device-token-value');
+      target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
 
       const second = target.add({
         adapterId: 'openclaw',
@@ -253,45 +276,55 @@ describe('ConnectedSourceStore', () => {
     it('round-trips a token and flags the record', () => {
       const target = store();
       addOne(target);
-      expect(target.writeDeviceToken(BUILD_BOX, 'device-token-value')).toEqual({
-        ok: true,
-      });
+      expect(
+        target.writeDeviceCredential(
+          BUILD_BOX,
+          credential('device-token-value')
+        )
+      ).toEqual({ ok: true });
       expect(target.readDeviceToken(BUILD_BOX)).toBe('device-token-value');
+      expect(target.readDeviceKeypair(BUILD_BOX)).toEqual(DEVICE_KEYPAIR);
       expect(target.get(BUILD_BOX)?.hasDeviceCredential).toBe(true);
     });
 
     it('never writes the token to disk in the clear', () => {
       const target = store();
       addOne(target);
-      target.writeDeviceToken(BUILD_BOX, 'super-secret-token');
+      target.writeDeviceCredential(BUILD_BOX, credential('super-secret-token'));
 
       for (const file of fs.readdirSync(dir)) {
         const contents = fs.readFileSync(path.join(dir, file), 'utf8');
         expect(contents).not.toContain('super-secret-token');
+        // The private key is credential material on exactly the same terms.
+        // A device identity at rest in the clear is a device anyone reading
+        // this directory can be.
+        expect(contents).not.toContain(DEVICE_KEYPAIR.privateKey);
       }
     });
 
     it('keeps credential material out of the records file entirely', () => {
       const target = store();
       addOne(target);
-      target.writeDeviceToken(BUILD_BOX, 'super-secret-token');
+      target.writeDeviceCredential(BUILD_BOX, credential('super-secret-token'));
 
       const records = fs.readFileSync(
         path.join(dir, 'connected-sources.json'),
         'utf8'
       );
       expect(records).not.toContain('super-secret-token');
+      expect(records).not.toContain(DEVICE_KEYPAIR.privateKey);
+      expect(records).not.toContain(DEVICE_KEYPAIR.publicKey);
       expect(records).not.toContain('enc:');
       expect(records).not.toContain('tokens');
+      expect(records).not.toContain('devices');
     });
 
     it('fails closed rather than storing a token without OS encryption', () => {
       const target = store({ encryption: fakeEncryption(false) });
       addOne(target);
-      expect(target.writeDeviceToken(BUILD_BOX, 'plain')).toEqual({
-        ok: false,
-        reason: 'encryption-unavailable',
-      });
+      expect(
+        target.writeDeviceCredential(BUILD_BOX, credential('plain'))
+      ).toEqual({ ok: false, reason: 'encryption-unavailable' });
       expect(
         fs.existsSync(path.join(dir, 'connected-source-secrets.json'))
       ).toBe(false);
@@ -301,34 +334,135 @@ describe('ConnectedSourceStore', () => {
     it('rejects an empty or oversized token', () => {
       const target = store();
       addOne(target);
-      expect(target.writeDeviceToken(BUILD_BOX, '')).toEqual({
+      expect(target.writeDeviceCredential(BUILD_BOX, credential(''))).toEqual({
         ok: false,
         reason: 'invalid-token',
       });
-      expect(target.writeDeviceToken(BUILD_BOX, 'x'.repeat(16_385))).toEqual({
-        ok: false,
-        reason: 'invalid-token',
-      });
+      expect(
+        target.writeDeviceCredential(BUILD_BOX, credential('x'.repeat(16_385)))
+      ).toEqual({ ok: false, reason: 'invalid-token' });
     });
 
     it('reports absence when stored bytes cannot be decrypted', () => {
       const target = store();
       addOne(target);
-      target.writeDeviceToken(BUILD_BOX, 'device-token-value');
+      target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
       fs.writeFileSync(
         path.join(dir, 'connected-source-secrets.json'),
-        JSON.stringify({ tokens: { [BUILD_BOX]: 'bm90LWRlY3J5cHRhYmxl' } })
+        JSON.stringify({
+          tokens: { [BUILD_BOX]: 'bm90LWRlY3J5cHRhYmxl' },
+          devices: { [BUILD_BOX]: 'bm90LWRlY3J5cHRhYmxl' },
+        })
       );
       expect(target.readDeviceToken(BUILD_BOX)).toBeNull();
+      expect(target.readDeviceKeypair(BUILD_BOX)).toBeNull();
     });
 
     it('clears the token and lowers the flag', () => {
       const target = store();
       addOne(target);
-      target.writeDeviceToken(BUILD_BOX, 'device-token-value');
+      target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
       target.clearDeviceToken(BUILD_BOX);
       expect(target.readDeviceToken(BUILD_BOX)).toBeNull();
+      // Both halves, always. A device nobody can present and a token no device
+      // can present are the same unusable state, reached two different ways.
+      expect(target.readDeviceKeypair(BUILD_BOX)).toBeNull();
       expect(target.get(BUILD_BOX)?.hasDeviceCredential).toBe(false);
+    });
+
+    it('gives a relaunch back the same device it paired as', () => {
+      addOne();
+      store().writeDeviceCredential(
+        BUILD_BOX,
+        credential('device-token-value')
+      );
+
+      // A second process over the same files. This is the whole custody
+      // promise: quit Exawatt overnight and it is still the device this
+      // source approved, holding the token that source issued to it.
+      const relaunched = store();
+      expect(relaunched.readDeviceKeypair(BUILD_BOX)).toEqual(DEVICE_KEYPAIR);
+      expect(relaunched.readDeviceToken(BUILD_BOX)).toBe('device-token-value');
+    });
+
+    it('fails closed rather than storing a private key without OS encryption', () => {
+      const target = store({ encryption: fakeEncryption(false) });
+      addOne(target);
+
+      expect(
+        target.writeDeviceCredential(
+          BUILD_BOX,
+          credential('device-token-value')
+        )
+      ).toEqual({ ok: false, reason: 'encryption-unavailable' });
+
+      // Nothing at all was written: an operator who has to pair again is a
+      // better outcome than a device identity at rest in the clear.
+      expect(
+        fs.existsSync(path.join(dir, 'connected-source-secrets.json'))
+      ).toBe(false);
+      expect(target.readDeviceKeypair(BUILD_BOX)).toBeNull();
+      expect(target.get(BUILD_BOX)?.hasDeviceCredential).toBe(false);
+    });
+
+    it('refuses a keypair the Gateway could not read, rather than storing one', () => {
+      const target = store();
+      addOne(target);
+
+      for (const broken of [
+        { privateKey: 'not-hex', publicKey: DEVICE_KEYPAIR.publicKey },
+        { privateKey: DEVICE_KEYPAIR.privateKey, publicKey: 'not base64url!' },
+        // A public key of the wrong length is a device id the Gateway would
+        // derive differently, which is a device that can never connect.
+        { privateKey: DEVICE_KEYPAIR.privateKey, publicKey: 'c2hvcnQ' },
+      ]) {
+        expect(
+          target.writeDeviceCredential(BUILD_BOX, {
+            token: 'device-token-value',
+            keypair: broken,
+          })
+        ).toEqual({ ok: false, reason: 'invalid-keypair' });
+      }
+
+      expect(target.readDeviceToken(BUILD_BOX)).toBeNull();
+      expect(target.get(BUILD_BOX)?.hasDeviceCredential).toBe(false);
+    });
+
+    it('reports no credential at all when only one half survived', () => {
+      const target = store();
+      addOne(target);
+      target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
+
+      // The state the shipped defect left behind: a token on disk with no
+      // identity beside it. It is a credential nothing can present, so the
+      // caller must be told the device is gone rather than handed the token.
+      const secrets = JSON.parse(
+        fs.readFileSync(path.join(dir, 'connected-source-secrets.json'), 'utf8')
+      ) as { tokens: Record<string, string> };
+      fs.writeFileSync(
+        path.join(dir, 'connected-source-secrets.json'),
+        JSON.stringify({ tokens: secrets.tokens })
+      );
+
+      expect(target.readDeviceKeypair(BUILD_BOX)).toBeNull();
+      expect(target.readDeviceToken(BUILD_BOX)).toBe('device-token-value');
+    });
+
+    it('lets a cleared source pair again cleanly', () => {
+      const target = store();
+      addOne(target);
+      target.writeDeviceCredential(BUILD_BOX, credential('first-token'));
+      target.clearDeviceToken(BUILD_BOX);
+
+      expect(
+        target.writeDeviceCredential(
+          BUILD_BOX,
+          credential('second-token', SECOND_KEYPAIR)
+        )
+      ).toEqual({ ok: true });
+      expect(target.readDeviceToken(BUILD_BOX)).toBe('second-token');
+      expect(target.readDeviceKeypair(BUILD_BOX)).toEqual(SECOND_KEYPAIR);
+      expect(target.get(BUILD_BOX)?.hasDeviceCredential).toBe(true);
     });
   });
 
@@ -336,17 +470,19 @@ describe('ConnectedSourceStore', () => {
     it('removes the record and its credential', () => {
       const target = store();
       addOne(target);
-      target.writeDeviceToken(BUILD_BOX, 'device-token-value');
+      target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
 
       expect(target.remove(BUILD_BOX)).toBe(true);
       expect(target.list()).toEqual([]);
       expect(target.readDeviceToken(BUILD_BOX)).toBeNull();
+      expect(target.readDeviceKeypair(BUILD_BOX)).toBeNull();
 
       const secrets = fs.readFileSync(
         path.join(dir, 'connected-source-secrets.json'),
         'utf8'
       );
       expect(secrets).not.toContain(BUILD_BOX);
+      expect(secrets).not.toContain(DEVICE_KEYPAIR.publicKey);
     });
 
     it('leaves other sources and their credentials intact', () => {
@@ -359,13 +495,17 @@ describe('ConnectedSourceStore', () => {
         transport: SECOND_TRANSPORT,
         credentialOwner: 'source-owned-ssh',
       });
-      target.writeDeviceToken(BUILD_BOX, 'first-token');
-      target.writeDeviceToken(SECOND_BOX, 'second-token');
+      target.writeDeviceCredential(BUILD_BOX, credential('first-token'));
+      target.writeDeviceCredential(
+        SECOND_BOX,
+        credential('second-token', SECOND_KEYPAIR)
+      );
 
       target.remove(BUILD_BOX);
 
       expect(target.list().map(r => r.id)).toEqual([SECOND_BOX]);
       expect(target.readDeviceToken(SECOND_BOX)).toBe('second-token');
+      expect(target.readDeviceKeypair(SECOND_BOX)).toEqual(SECOND_KEYPAIR);
     });
 
     it('reports false for an unknown source', () => {
@@ -443,7 +583,7 @@ describe('ConnectedSourceStore', () => {
       addOne(target);
       target.setGrantedAuthority(BUILD_BOX, 'write');
 
-      target.writeDeviceToken(BUILD_BOX, 'device-token-value');
+      target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
       target.rename(BUILD_BOX, 'Renamed box');
 
       const record = store().get(BUILD_BOX);

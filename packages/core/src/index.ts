@@ -12,11 +12,13 @@ export { TypedEmitter } from './events/emitter';
 export type { CoreEventMap, CoreEmitter } from './events/emitter';
 export {
   generateDeviceKeypair,
+  parseDeviceKeypair,
   signChallenge,
   buildDeviceAuthPayload,
   signDevicePayload,
   deriveDeviceId,
 } from './oc/auth';
+export type { OCDeviceKeypair } from './oc/auth';
 export { OCClient } from './oc/client';
 export { OCMethods } from './oc/methods';
 export type {

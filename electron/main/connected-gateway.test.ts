@@ -1,14 +1,17 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   describeConnectionStatus,
   type ConnectedSourceRecord,
   type OCClientConfig,
+  type OCDeviceKeypair,
   type SourceAuthority,
   type SourceFailureClass,
 } from '@exawatt/core';
 import {
   BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE,
   ConnectedGatewaySession,
+  classifyHandshakeFailure,
   H1_READ_METHODS,
   H1_READ_SCOPES,
   H2_WRITE_METHODS,
@@ -73,8 +76,30 @@ const AUTOMATION_NAME = 'nightly-sweep';
 
 const FIXED_NOW = 1_760_000_000_000;
 
-/** Distinguishes one client instance's device identity from another's. */
-let deviceKeys = 0;
+/** Invented device material, in the encodings the Gateway parses. */
+let mintedKeys = 0;
+function mintKeypair(): OCDeviceKeypair {
+  const seed = `fixture-device-${++mintedKeys}`;
+  const publicKey = createHash('sha256').update(seed).digest('base64url');
+  return {
+    privateKey: createHash('sha256').update(`${seed}-secret`).digest('hex'),
+    publicKey,
+  };
+}
+
+/**
+ * The device id a Gateway derives from a public key: SHA-256 over the raw key
+ * bytes. Written the Gateway's way rather than the client's so a test cannot
+ * agree with an implementation that is wrong in the same direction.
+ */
+function deviceIdOf(keypair: OCDeviceKeypair): string {
+  return createHash('sha256')
+    .update(Buffer.from(keypair.publicKey, 'base64url'))
+    .digest('hex');
+}
+
+/** The identity a saved source paired with, as a relaunch reads it back. */
+const SAVED_KEYPAIR = mintKeypair();
 
 /** Words the product may never use about work it merely stopped watching. */
 const STOPPED_WORK_WORDS = /stopped|paused|ended|halted|finished|terminated/iu;
@@ -104,6 +129,18 @@ class FakeGateway {
   approvedScopes: string[] | null = null;
   /** Scopes presented on each handshake, in order. */
   readonly handshakes: string[][] = [];
+  /** The device id presented on each handshake, in order. */
+  readonly deviceIds: string[] = [];
+  /**
+   * Which device each issued token belongs to.
+   *
+   * This is the rule the live run found and no fixture modelled: a Gateway
+   * derives the device id from the public key on the handshake and refuses a
+   * token it issued to some other device. A token this fake has never issued
+   * is accepted and bound to whoever presents it, so a test may seed a saved
+   * credential without having watched it be issued.
+   */
+  private readonly tokenOwners = new Map<string, string>();
   /** Errors to answer the next handshakes with, consumed one per attempt. */
   private readonly handshakeErrors: string[] = [];
 
@@ -119,11 +156,24 @@ class FakeGateway {
    */
   pair(
     requested: readonly string[],
-    deviceToken: string | null
+    deviceToken: string | null,
+    deviceId: string
   ): { ok: true } | { ok: false; message: string } {
     this.handshakes.push([...requested]);
+    this.deviceIds.push(deviceId);
     const scripted = this.handshakeErrors.shift();
     if (scripted !== undefined) return { ok: false, message: scripted };
+
+    const owner =
+      deviceToken === null ? undefined : this.tokenOwners.get(deviceToken);
+    if (owner !== undefined && owner !== deviceId) {
+      // Verbatim from a live Gateway, 2026-08-18.
+      return {
+        ok: false,
+        message:
+          'unauthorized: device token mismatch (rotate/reissue device token)',
+      };
+    }
 
     if (this.approvedScopes === null || deviceToken === null) {
       this.approvedScopes = [...requested];
@@ -141,6 +191,11 @@ class FakeGateway {
   /** The operator approving the Exawatt device on the source itself. */
   approve(scopes: readonly string[]): void {
     this.approvedScopes = [...scopes];
+  }
+
+  /** A scoped token, bound to the device it was issued to. */
+  issueToken(token: string, deviceId: string): void {
+    this.tokenOwners.set(token, deviceId);
   }
 
   /** Script the next handshakes to fail, one message per attempt. */
@@ -232,8 +287,13 @@ class FakeGatewayClient {
   grantedScopes: readonly string[] | null = null;
   disconnectCount = 0;
   presentedToken: string | null = null;
-  /** The device keypair a real client generates once and keeps for its life. */
-  readonly deviceKey = `device-key-${++deviceKeys}`;
+  /**
+   * The identity this client presents. Supplied by the caller when it keeps
+   * one, minted here when it does not, exactly as the real client does; the
+   * device id follows from it the way the Gateway derives it.
+   */
+  readonly deviceKeypair: OCDeviceKeypair;
+  readonly deviceKey: string;
   private status = 'disconnected';
   readonly calls: { method: string; params: unknown }[] = [];
   private readonly statusHandlers = new Set<(status: string) => void>();
@@ -248,12 +308,19 @@ class FakeGatewayClient {
     private readonly issueToken: string | null,
     private readonly refuse: boolean,
     private readonly reportGrantedScopes: readonly string[] | null = null
-  ) {}
+  ) {
+    this.deviceKeypair = config.deviceKeypair ?? mintKeypair();
+    this.deviceKey = deviceIdOf(this.deviceKeypair);
+  }
 
   async connect(): Promise<void> {
     if (this.refuse) throw new Error('gateway refused the handshake');
     const requested = [...(this.config.scopes ?? [])];
-    const paired = this.gateway.pair(requested, this.deviceToken);
+    const paired = this.gateway.pair(
+      requested,
+      this.deviceToken,
+      this.deviceKey
+    );
     if (!paired.ok) {
       this.status = 'error';
       throw new Error(paired.message);
@@ -261,6 +328,9 @@ class FakeGatewayClient {
     this.presentedToken = this.deviceToken ?? this.config.token ?? null;
     if (this.deviceToken === null && this.issueToken !== null) {
       this.deviceToken = this.issueToken;
+      // The Gateway remembers which device it issued this to, which is what
+      // makes presenting it from a different device a refusal.
+      this.gateway.issueToken(this.issueToken, this.deviceKey);
     }
     this.grantedScopes = this.reportGrantedScopes;
     this.status = 'connected';
@@ -360,31 +430,48 @@ function createFakeTunnel(localPort = LOCAL_PORT): FakeTunnelHandle {
   };
 }
 
+/**
+ * The keychain, as this session sees it.
+ *
+ * A saved source holds a whole credential, so seeding a token seeds the
+ * identity it was issued to as well. That pairing is the fixture's honest
+ * shape: a token on its own is not a state a correct pairing can produce, and
+ * the one test that wants it constructs it deliberately.
+ */
 function createFakeStore(initial: Record<string, string> = {}) {
   const tokens = new Map(Object.entries(initial));
-  const writes: { id: string; token: string }[] = [];
+  const keypairs = new Map(
+    Object.keys(initial).map(id => [id, SAVED_KEYPAIR] as const)
+  );
+  const writes: { id: string; token: string; keypair: OCDeviceKeypair }[] = [];
   const cleared: string[] = [];
   const authorities: { id: string; authority: SourceAuthority }[] = [];
   let refuseWrites = false;
   return {
     tokens,
+    keypairs,
     writes,
     cleared,
     refuseEncryption(): void {
       refuseWrites = true;
     },
     readDeviceToken: vi.fn((id: string) => tokens.get(id) ?? null),
-    writeDeviceToken: vi.fn((id: string, token: string) => {
-      writes.push({ id, token });
-      if (refuseWrites) {
-        return { ok: false, reason: 'encryption-unavailable' } as const;
+    readDeviceKeypair: vi.fn((id: string) => keypairs.get(id) ?? null),
+    writeDeviceCredential: vi.fn(
+      (id: string, credential: { token: string; keypair: OCDeviceKeypair }) => {
+        writes.push({ id, ...credential });
+        if (refuseWrites) {
+          return { ok: false, reason: 'encryption-unavailable' } as const;
+        }
+        tokens.set(id, credential.token);
+        keypairs.set(id, credential.keypair);
+        return { ok: true } as const;
       }
-      tokens.set(id, token);
-      return { ok: true } as const;
-    }),
+    ),
     clearDeviceToken: vi.fn((id: string) => {
       cleared.push(id);
       tokens.delete(id);
+      keypairs.delete(id);
     }),
     authorities,
     setGrantedAuthority: vi.fn((id: string, authority: SourceAuthority) => {
@@ -486,12 +573,19 @@ interface HarnessOptions {
   maxReconnectAttempts?: number;
   /** What the last process saw behind this source, as a relaunch supplies it. */
   knownIdentity?: GatewayIdentity | null;
+  /**
+   * A relaunch: the same server and the same keychain, a new process. Passing
+   * a previous harness's gateway and store is how a test asks the question
+   * only a second launch can answer.
+   */
+  gateway?: FakeGateway;
+  store?: ReturnType<typeof createFakeStore>;
 }
 
 function createHarness(options: HarnessOptions = {}) {
   const record = options.record ?? sshAliasRecord();
-  const gateway = new FakeGateway();
-  const store = createFakeStore(options.storedTokens);
+  const gateway = options.gateway ?? new FakeGateway();
+  const store = options.store ?? createFakeStore(options.storedTokens);
   const timers = createFakeTimers();
   const tunnels: FakeTunnelHandle[] = [];
   const clients: FakeGatewayClient[] = [];
@@ -753,6 +847,8 @@ describe('ConnectedGatewaySession — credential custody', () => {
     expect(harness.resolveCredential).toHaveBeenCalledTimes(0);
     expect(harness.clients[0]?.presentedToken).toBe(DEVICE_TOKEN);
     expect(harness.clients[0]?.config.token).toBeUndefined();
+    // Presented as the device the token belongs to, not as a new one.
+    expect(harness.clients[0]?.deviceKeypair).toEqual(SAVED_KEYPAIR);
     expect(harness.store.writes).toEqual([]);
     expect(harness.phases).not.toContain('bootstrapping');
   });
@@ -768,8 +864,14 @@ describe('ConnectedGatewaySession — credential custody', () => {
       { exec: harness.remoteExec }
     );
     expect(harness.clients[0]?.presentedToken).toBe(SHARED_SECRET);
+    // The token and the identity it was issued to, written together. Either
+    // half alone is a credential the next launch cannot present.
     expect(harness.store.writes).toEqual([
-      { id: SOURCE_ID, token: DEVICE_TOKEN },
+      {
+        id: SOURCE_ID,
+        token: DEVICE_TOKEN,
+        keypair: harness.clients[0]?.deviceKeypair,
+      },
     ]);
 
     // The shared secret is admin-capable: it may not survive anywhere Exawatt
@@ -810,6 +912,238 @@ describe('ConnectedGatewaySession — credential custody', () => {
 
     expect(harness.clients[0]?.config.scopes).toEqual(['operator.read']);
     expect(H1_READ_SCOPES).toEqual(['operator.read']);
+  });
+});
+
+describe('ConnectedGatewaySession — one device, once, forever', () => {
+  it('presents on the next launch the same device the token was issued to', async () => {
+    // The regression. Exawatt minted a keypair per client, the Gateway
+    // derives the device id from that key and binds the issued token to it,
+    // so a token persisted by one launch was presented by a different device
+    // on the next one and refused: "device token mismatch". Every relaunch
+    // and every automatic reconnect of every saved source failed, and the
+    // source stayed unavailable until someone cleared the token by hand.
+    const first = createHarness();
+    await first.session.connect();
+    const pairedAs = first.clients[0]!.deviceKey;
+    const writesWhenPaired = first.store.writes.length;
+
+    // A second process over the same server and the same keychain.
+    const relaunch = createHarness({
+      gateway: first.gateway,
+      store: first.store,
+    });
+    const result = await relaunch.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(relaunch.session.phase).toBe('connected');
+    // One device across both launches, so the token still belongs to it.
+    expect(relaunch.clients[0]?.deviceKey).toBe(pairedAs);
+    expect(relaunch.gateway.deviceIds).toEqual([pairedAs, pairedAs]);
+    expect(relaunch.clients[0]?.presentedToken).toBe(DEVICE_TOKEN);
+    // No second device record on the operator's server, and the
+    // admin-capable shared secret was never read a second time.
+    expect(relaunch.resolveCredential).not.toHaveBeenCalled();
+    expect(relaunch.store.writes).toHaveLength(writesWhenPaired);
+    expect(relaunch.phases).not.toContain('bootstrapping');
+  });
+
+  it('is the same device across every connection one session opens', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+
+    harness.tunnels[0]!.drop(null);
+    harness.timers.fireNext();
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    await harness.session.connect();
+
+    expect(harness.gateway.deviceIds.length).toBeGreaterThan(1);
+    expect(new Set(harness.gateway.deviceIds).size).toBe(1);
+    expect(harness.gateway.deviceIds[0]).toBe(deviceIdOf(SAVED_KEYPAIR));
+  });
+
+  it('pairs again as the device it already is when only the token is gone', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    harness.store.tokens.delete(SOURCE_ID);
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    // A reissued token for the device this source already approved, rather
+    // than a second device on the operator's server wearing the same name.
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
+    expect(harness.clients[0]?.deviceKeypair).toEqual(SAVED_KEYPAIR);
+    expect(harness.gateway.deviceIds).toEqual([deviceIdOf(SAVED_KEYPAIR)]);
+    expect(harness.store.writes).toEqual([
+      { id: SOURCE_ID, token: DEVICE_TOKEN, keypair: SAVED_KEYPAIR },
+    ]);
+  });
+
+  it('treats a token with no identity beside it as no credential at all', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    // What the shipped defect left on disk: a token, and no device that can
+    // present it. Reading it back as a credential is what wedged the source.
+    harness.store.keypairs.delete(SOURCE_ID);
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
+    expect(harness.clients[0]?.presentedToken).toBe(SHARED_SECRET);
+    expect(harness.store.writes).toEqual([
+      {
+        id: SOURCE_ID,
+        token: DEVICE_TOKEN,
+        keypair: harness.clients[0]?.deviceKeypair,
+      },
+    ]);
+  });
+
+  it('keeps the identity out of everything it hands a caller', async () => {
+    const harness = createHarness();
+
+    const result = await harness.session.connect();
+
+    const exposed = JSON.stringify({
+      result,
+      phase: harness.session.phase,
+      status: harness.session.status(),
+      snapshot: harness.session.snapshot,
+      identity: harness.session.identity,
+      facts: harness.session.facts,
+      drift: harness.session.identityDrift,
+    });
+    expect(exposed).not.toContain(harness.clients[0]!.deviceKeypair.privateKey);
+  });
+});
+
+describe('ConnectedGatewaySession — a credential the source refuses', () => {
+  /** A saved credential the source has since bound to a different device. */
+  function refusedCredentialHarness() {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    harness.gateway.issueToken(DEVICE_TOKEN, 'a-device-that-is-not-exawatt');
+    return harness;
+  }
+
+  it('names the credential rather than sending the operator to a healthy Gateway', async () => {
+    const harness = refusedCredentialHarness();
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.outcome !== 'failed') return;
+    // Not `gateway-down`. The Gateway answered, and it answered about the
+    // credential; classifying it as an outage costs the operator the one
+    // sentence that makes the next step obvious.
+    expect(result.failure).toBe('auth-rejected');
+    expect(result.message).toMatch(/credential/iu);
+    expect(result.message).toContain('device token mismatch');
+    expect(result.message).not.toMatch(STOPPED_WORK_WORDS);
+  });
+
+  it('discards the refused credential so the source can recover', async () => {
+    const harness = refusedCredentialHarness();
+
+    await harness.session.connect();
+
+    expect(harness.store.clearDeviceToken).toHaveBeenCalledWith(SOURCE_ID);
+    expect(harness.store.tokens.has(SOURCE_ID)).toBe(false);
+    expect(harness.store.keypairs.has(SOURCE_ID)).toBe(false);
+  });
+
+  it('pairs a new device on the next connect, and never inside the refused one', async () => {
+    const harness = refusedCredentialHarness();
+
+    const refused = await harness.session.connect();
+    // Reading the admin-capable shared secret again is the cost of recovery,
+    // so it is reported and deliberate rather than retried inside the failure.
+    expect(refused.ok).toBe(false);
+    expect(harness.resolveCredential).not.toHaveBeenCalled();
+
+    const recovered = await harness.session.connect();
+
+    expect(recovered.ok).toBe(true);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
+    expect(harness.store.writes).toHaveLength(1);
+    expect(harness.session.phase).toBe('connected');
+  });
+
+  it('stops the retry ladder rather than pairing a new device on a timer', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+    const devicesSeen = harness.gateway.deviceIds.length;
+
+    // The source reissues Exawatt's token to a different device while nobody
+    // is looking, and then the connection drops.
+    harness.gateway.issueToken(DEVICE_TOKEN, 'a-device-that-is-not-exawatt');
+    harness.tunnels[0]!.drop(null);
+    harness.timers.fireNext();
+
+    await vi.waitFor(() => expect(harness.session.phase).toBe('failed'));
+    // The credential is gone, so the only way back is a pairing that mints a
+    // new device and reads the source's admin-capable secret again. That is
+    // an operator's decision, not a timer's: the ladder stops here.
+    expect(harness.store.clearDeviceToken).toHaveBeenCalledWith(SOURCE_ID);
+    expect(harness.timers.pending.size).toBe(0);
+    expect(harness.resolveCredential).not.toHaveBeenCalled();
+    expect(harness.gateway.deviceIds).toHaveLength(devicesSeen + 1);
+
+    // And connecting again is all it takes.
+    const recovered = await harness.session.connect();
+    expect(recovered.ok).toBe(true);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a credential the source refused for some other reason', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    harness.gateway.failHandshakes('INTERNAL: the Gateway is restarting');
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.outcome !== 'failed') return;
+    expect(result.failure).toBe('gateway-down');
+    // The source's words travel either way; what changes is what Exawatt
+    // concludes from them. A refusal that says nothing about the credential
+    // must not cost the operator the device they already paired.
+    expect(result.message).toContain('the Gateway is restarting');
+    expect(harness.store.clearDeviceToken).not.toHaveBeenCalled();
+    expect(harness.store.tokens.get(SOURCE_ID)).toBe(DEVICE_TOKEN);
+  });
+
+  it('classifies what the source said, and guesses nothing when it said nothing', () => {
+    for (const sentence of [
+      'unauthorized: device token mismatch (rotate/reissue device token)',
+      'device identity mismatch',
+      'NOT_PAIRED: pairing required',
+      'FORBIDDEN: operator.write scope required',
+      'invalid token',
+    ]) {
+      expect(classifyHandshakeFailure(sentence)).toBe('auth-rejected');
+    }
+
+    for (const sentence of [
+      'INTERNAL: the Gateway is restarting',
+      'connection closed',
+      null,
+    ]) {
+      // An unexplained refusal is not evidence about the credential. Guessing
+      // one would discard a working device and send the operator to re-pair
+      // something that was never the problem.
+      expect(classifyHandshakeFailure(sentence)).toBe('gateway-down');
+    }
   });
 });
 

@@ -3,7 +3,9 @@ import {
   generateDeviceKeypair,
   deriveDeviceId,
   buildDeviceAuthPayload,
+  parseDeviceKeypair,
   signDevicePayload,
+  type OCDeviceKeypair,
 } from './auth';
 import { MAX_PROTOCOL, MIN_PROTOCOL } from './protocol-types';
 import type {
@@ -38,6 +40,18 @@ export interface OCClientConfig {
    * embedding this client should receive.
    */
   scopes?: readonly OCGatewayOperatorScope[];
+  /**
+   * The device identity to present, when the caller keeps one.
+   *
+   * Omitted means mint a fresh identity, which is right for a caller with
+   * nowhere to keep one and wrong for every caller that persists a device
+   * token. The Gateway derives the device id from the public key and binds
+   * the token it issues to that id, so a caller that stores the token and
+   * lets this client mint a new keypair presents a token belonging to a
+   * device it no longer is, and every relaunch is refused with
+   * "device token mismatch". Supply the keypair the token was issued to.
+   */
+  deviceKeypair?: OCDeviceKeypair;
 }
 
 /** Values accepted by OpenClaw protocol v3 (2026.6.11). */
@@ -107,8 +121,16 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = false;
-  private devicePrivateKey: string | null = null;
-  private devicePublicKey: string | null = null;
+  private keypair: OCDeviceKeypair | null = null;
+  /**
+   * Why the Gateway refused the last handshake, in its own words.
+   *
+   * Held for exactly as long as it takes `_setStatus` to reject the pending
+   * `connect()`. A refusal arrives as a precise protocol sentence, and
+   * replacing it with "connection failed" sends the operator to check a
+   * Gateway that is perfectly healthy.
+   */
+  private handshakeFailure: Error | null = null;
   /**
    * The scoped credential the Gateway issues on a successful pairing.
    *
@@ -116,6 +138,10 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
    * to the OS keychain and presents it on the next launch so the
    * admin-capable shared secret is never read again. Keeping it private only
    * forced that caller to cast, which hid the seam rather than protecting it.
+   *
+   * It travels with `deviceKeypair` or it does not travel at all. The Gateway
+   * binds the token to the device that asked for it, so a token persisted
+   * without its keypair is refused on the next launch.
    */
   deviceToken: string | null = null;
   private _ocEventHandlers = new Map<string, Set<(payload: unknown) => void>>();
@@ -124,6 +150,34 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
 
   constructor(private config: OCClientConfig) {
     super();
+    if (config.deviceKeypair !== undefined) {
+      const supplied = parseDeviceKeypair(config.deviceKeypair);
+      if (supplied === null) {
+        /*
+         * Loud rather than quiet, and deliberately not "mint one instead":
+         * falling back to a fresh keypair would present a new device wearing
+         * the caller's persisted token, which is precisely the failure this
+         * seam exists to remove. Callers read their keypair through a parse
+         * that already refuses a broken one, so this is unreachable from a
+         * correct call site and worth failing on when it is reached.
+         */
+        throw new Error('OCClient was given an unusable device keypair.');
+      }
+      this.keypair = supplied;
+    }
+  }
+
+  /**
+   * The device identity this client presents.
+   *
+   * Whatever the caller supplied, or the one `connect()` minted when they
+   * supplied nothing; null before a first connect on a client that was left
+   * to mint. Read it after a first pairing and persist it beside the token
+   * the Gateway issued: the token is bound to this identity, so keeping one
+   * without the other keeps a credential nothing can present.
+   */
+  get deviceKeypair(): OCDeviceKeypair | null {
+    return this.keypair;
   }
 
   async connect(): Promise<void> {
@@ -220,15 +274,16 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     this._ocEventHandlers.get(eventName)?.delete(handler);
   }
 
+  /**
+   * Mint an identity only when the caller kept none. Once per client either
+   * way: a second keypair would be a second device on the operator's server.
+   */
   private async _initKeypair(): Promise<void> {
-    if (!this.devicePrivateKey) {
-      const keypair = await generateDeviceKeypair();
-      this.devicePrivateKey = keypair.privateKey;
-      this.devicePublicKey = keypair.publicKey;
-    }
+    this.keypair ??= await generateDeviceKeypair();
   }
 
   private _openConnection(): void {
+    this.handshakeFailure = null;
     console.log(
       `[OCClient] Opening WebSocket: ${this.config.url.replace(/token=[^&]*/u, 'token=***')}`
     );
@@ -347,12 +402,13 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
 
   private async _handleChallenge(challenge: OCConnectChallenge): Promise<void> {
     console.log('[OCClient] Received connect.challenge, signing...');
-    if (!this.devicePrivateKey || !this.devicePublicKey) {
+    const keypair = this.keypair;
+    if (!keypair) {
       this.emit('connection:error', new Error('No device keypair available'));
       return;
     }
 
-    const deviceId = await deriveDeviceId(this.devicePublicKey);
+    const deviceId = await deriveDeviceId(keypair.publicKey);
     const signedAtMs = Date.now();
     const clientId = this.config.clientId ?? 'webchat';
     const clientMode = this.config.clientMode ?? 'webchat';
@@ -374,7 +430,7 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       token: this.deviceToken ?? this.config.token ?? null,
       nonce: challenge.nonce,
     });
-    const signature = await signDevicePayload(this.devicePrivateKey, payload);
+    const signature = await signDevicePayload(keypair.privateKey, payload);
 
     const auth: OCConnectParams['auth'] = {};
     if (this.config.password) {
@@ -395,7 +451,7 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       auth: Object.keys(auth).length > 0 ? auth : undefined,
       device: {
         id: deviceId,
-        publicKey: this.devicePublicKey,
+        publicKey: keypair.publicKey,
         signature,
         signedAt: signedAtMs,
         nonce: challenge.nonce,
@@ -424,12 +480,20 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       this.reconnectAttempts = 0;
       this._setStatus('connected');
     } catch (err) {
-      console.warn('[OCClient] connect request rejected:', err);
+      const failure = err instanceof Error ? err : new Error(String(err));
+      console.warn('[OCClient] connect request rejected:', failure.message);
+      /*
+       * A refused handshake arrives as one precise protocol sentence, such as
+       * "unauthorized: device token mismatch (rotate/reissue device token)".
+       * `_setStatus` is what rejects the pending `connect()`, so the sentence
+       * is handed to it here instead of being replaced by a generic one:
+       * every caller above this line was reading "connection failed" and
+       * telling the operator to go check a Gateway that was answering fine.
+       * Protocol text, never transport text.
+       */
+      this.handshakeFailure = failure;
       this._setStatus('error');
-      this.emit(
-        'connection:error',
-        err instanceof Error ? err : new Error(String(err))
-      );
+      this.emit('connection:error', failure);
     }
   }
 
@@ -468,7 +532,14 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       const reject = this.connectReject;
       this.connectResolve = null;
       this.connectReject = null;
-      reject(new Error(`OC gateway connection failed with status: ${status}`));
+      // The source's own account of the refusal when there is one; the
+      // generic sentence only when the connection died without saying why.
+      const refusal = this.handshakeFailure;
+      this.handshakeFailure = null;
+      reject(
+        refusal ??
+          new Error(`OC gateway connection failed with status: ${status}`)
+      );
     }
   }
 
