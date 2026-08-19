@@ -1,12 +1,16 @@
 <!-- Generated for the public repository by the "public-document-set" recipe. -->
 # Exawatt
 
-A Mac app for running several coding agents at once and seeing what each one is
-doing, what it needs from you, and what it costs.
+Command many agents at once, and see what each one is doing, what it needs from
+you, and what it costs.
 
-Claude Code, Codex, and other harnesses each give you one agent in one terminal.
-Exawatt is the surface above them: every session in one place, with truthful
-status, so you can run ten without losing track of any.
+Claude Code, Codex, OpenClaw and other harnesses each give you one agent in one
+terminal. Exawatt is the surface above them: every session in one place, with
+truthful status, so you can run ten without losing track of any.
+
+Coding is the first thing most people point a fleet at, and it is not the
+boundary. The same surface commands research, writing, operations, and anything
+else a compatible agent can do.
 
 <!-- LAUNCH LANE (L3): one screenshot goes here, the grid of parallel agents.
      Deliberately not referenced until the file exists: a broken image in the

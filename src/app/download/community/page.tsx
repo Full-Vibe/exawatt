@@ -49,7 +49,7 @@ export default function CommunityDownloadPage() {
           Build Exawatt from source
         </h1>
         <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
-          Exawatt is a Mac app for running several coding agents at once and
+          Exawatt is a Mac app for commanding many agents at once and
           seeing what each one is doing, what it needs from you, and what it
           costs. The source is public. Build it and the app is yours to run,
           with no account and no Exawatt service behind it.
