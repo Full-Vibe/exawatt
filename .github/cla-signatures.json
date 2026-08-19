@@ -1,0 +1,11 @@
+{
+  "$comment": "Contributors who have accepted CLA.md. A pull request from a login absent here fails the CLA check. Add a login by merging a pull request that appends it, which is itself the record of acceptance: the contributor states in that pull request that they have read and accept CLA.md at the recorded version.",
+  "claVersion": "1.0",
+  "signatures": [
+    {
+      "login": "JakeSc",
+      "acceptedAt": "2026-08-19",
+      "note": "Operator and principal of Full Vibe AI, the grantee. Recorded so the check is honest about who has accepted rather than special-casing an exemption."
+    }
+  ]
+}

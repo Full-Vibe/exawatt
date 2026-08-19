@@ -1,0 +1,38 @@
+name: CLA
+
+# Runs on `pull_request`, NOT `pull_request_target`.
+#
+# The usual CLA bot needs `pull_request_target` so it can comment on a fork's
+# pull request with a repository token. That trigger is the one this project
+# refuses: it runs privileged in the base repository's context, and the moment
+# anyone later adds a checkout of the fork's code to a workflow shaped like
+# that, untrusted code executes with the repository's secrets. The gap between
+# "safe today" and "one commit from a compromise" is not worth the convenience
+# at this project's size.
+#
+# So this workflow reads only the pull request's author login, needs no
+# secrets, and cannot write anything. Acceptance is recorded by merging a
+# change to `.github/cla-signatures.json`, which is a maintainer action and
+# leaves the acceptance in the repository's own history rather than in a third
+# party's database.
+on:
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Check the author has accepted the CLA
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        run: node .github/scripts/check-cla.mjs
