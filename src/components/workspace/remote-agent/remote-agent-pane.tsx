@@ -16,7 +16,10 @@
  *   step, not an empty pane.
  */
 
-import { RemoteAgentSurface, type RemoteAgentBridge } from './remote-agent-surface';
+import {
+  RemoteAgentSurface,
+  type RemoteAgentBridge,
+} from './remote-agent-surface';
 import {
   REMOTE_MISSING_COPY,
   resolveRemoteAgentTab,
@@ -51,7 +54,10 @@ export function RemoteAgentPane({
   if (resolution.kind === 'present') {
     const agent = resolution.agent;
     return (
-      <div className="h-full min-h-0 overflow-y-auto p-3" data-remote-agent-pane={tab.agentId}>
+      <div
+        className="h-full min-h-0 overflow-y-auto p-3"
+        data-remote-agent-pane={tab.agentId}
+      >
         <RemoteAgentSurface
           agent={{
             id: agent.agentId,

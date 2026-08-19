@@ -662,7 +662,7 @@ export function RemoteAgentSurface({
         reply = { ok: false, refusal: 'disconnected' };
       }
       if (reply.ok) {
-        dispatchOutbox({ type: 'accepted', localId });
+        dispatchOutbox({ type: 'accepted', localId, at: Date.now() });
         return;
       }
       const normalized = normalizeSendRefusal(reply.refusal);
