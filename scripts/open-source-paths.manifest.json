@@ -180,6 +180,7 @@
         "scripts/qa-browser-doctor.mjs",
         "scripts/qa-browser-smoke.mjs",
         "scripts/r3f-eval/**",
+        "scripts/readme-shots.mjs",
         "scripts/renderer-session-lifecycle-leak-probe.mjs",
         "scripts/run-next-with-distribution.mjs",
         "scripts/secret-scan.mjs",

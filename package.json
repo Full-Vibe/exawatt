@@ -63,6 +63,7 @@
     "qa:browser:smoke": "node scripts/qa-browser-smoke.mjs",
     "eval:consumption-scan": "node --expose-gc scripts/consumption-scan-eval.mjs",
     "eval:r3f": "node scripts/r3f-eval/run.mjs",
+    "shots:readme": "node scripts/readme-shots.mjs",
     "eval:hero-board": "node scripts/hero-board-idle-eval.mjs",
     "eval:theme-system": "node scripts/theme-system-eval.mjs",
     "eval:navigation-paint": "node scripts/navigation-paint-eval.mjs",

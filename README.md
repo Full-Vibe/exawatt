@@ -1,8 +1,44 @@
 <!-- Generated for the public repository by the "public-document-set" recipe. -->
-# Exawatt
+<div align="center">
 
-Command many agents at once, and see what each one is doing, what it needs from
-you, and what it costs.
+<img src="electron/resources/icon-master.png" alt="" width="96" />
+
+<h1>Exawatt</h1>
+
+<p>
+  <b>Command many agents at once.</b>
+  <br />
+  See what each one is doing, what it needs from you, and what it costs.
+</p>
+
+<p>
+  <a href="https://exawatt.ai">Website</a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="#try-it-without-installing-anything">Demo Mode</a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="docs/engineering/roadmap.md">Roadmap</a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="CONTRIBUTING.md">Contributing</a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="LICENSING.md">Licensing</a>
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-2f6fe4" alt="License: AGPL-3.0-or-later" />
+  <img src="https://img.shields.io/badge/macOS-Apple%20silicon-1f2328?logo=apple&logoColor=white" alt="macOS on Apple silicon" />
+</p>
+
+<img src="public/images/readme/fleet.png" alt="The Fleet view: 173 agents across ten projects, with counts for working, needs you, error, result ready, and idle" width="100%" />
+
+<p><sub>173 agents across ten projects, marketing and research beside the code. Sixteen need an answer from you.</sub></p>
+
+<img src="public/images/readme/usage.png" alt="The Usage view: headroom against each harness window, burn rate against an even-pace line, and modelled spend per harness" width="100%" />
+
+<p><sub>What the work cost, read from local harness logs. No provider API, nothing leaves the machine.</sub></p>
+
+<p><sub>Both shots are Demo Mode, the synthetic workspace that ships with this repository.</sub></p>
+
+</div>
 
 Claude Code, Codex, OpenClaw and other harnesses each give you one agent in one
 terminal. Exawatt is the surface above them: every session in one place, with
@@ -11,10 +47,6 @@ truthful status, so you can run ten without losing track of any.
 Coding is the first thing most people point a fleet at, and it is not the
 boundary. The same surface commands research, writing, operations, and anything
 else a compatible agent can do.
-
-<!-- LAUNCH LANE (L3): one screenshot goes here, the grid of parallel agents.
-     Deliberately not referenced until the file exists: a broken image in the
-     first screenful is worse than no image. -->
 
 ## What it does
 
