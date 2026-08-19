@@ -1233,15 +1233,25 @@ html:has(main[data-home-arrangement='proposed']) body {
 
    Scoped like the snap rules above, by `:has()` on the arrangement, so it is
    route-stable and follows the page when `HOMEPAGE_ARRANGEMENT` flips onto
-   `/`. Gated on `prefers-reduced-motion: no-preference` because Chromium does
-   NOT honour the preference for `scroll-behavior: smooth` on its own: a reader
-   who asked for stillness gets the same link and an instant jump.
+   `/`. Stated as a base rule with a REDUCE override, exactly the shape the
+   snap rules above use, rather than as a rule nested inside a
+   `no-preference` query: Lightning CSS dropped the nested form outright in
+   this pipeline (compiled sheet carried the keyframe below and no
+   `scroll-behavior` at all), and the two-rule shape is what the rest of this
+   file already proves works. The override is required rather than assumed,
+   because Chromium does NOT honour the preference for `scroll-behavior:
+   smooth` on its own: without it a reader who asked for stillness would get
+   an animated jump.
    ---- */
-@media (prefers-reduced-motion: no-preference) {
+html:has(main[data-home-arrangement='proposed'] [data-pinned-board-sequence]) {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
   html:has(
     main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
   ) {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
 }
 

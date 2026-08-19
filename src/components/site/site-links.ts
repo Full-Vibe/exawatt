@@ -17,11 +17,16 @@
  *   no line.
  *
  * **GitHub is present and its repository is private until ENG-030 flips it.**
- * That is a knowing bet rather than an oversight: the two-license split in the
- * footer is meaningless without somewhere to read the licenses, the repository
- * goes public at the same launch moment this page is built for, and the URL is
- * already canonical in `package.json` and in `contracts/`. If the launch order
- * changes, this is the one link on the page that has to move with it.
+ * The two-license split in the footer is meaningless without somewhere to read
+ * the licenses, the repository goes public at the same launch moment this page
+ * is built for, and the URL is already canonical in `package.json` and in
+ * `contracts/`.
+ *
+ * THE INTERIM 404 IS AN ACCEPTED OPERATOR DECISION, 2026-08-19, not an open
+ * risk: "Keep github pointing to the right spot. That'll launch imminently and
+ * I get zero traffic today." So the link keeps its real destination and gets
+ * no badge, no tooltip, no disabled state and no fallback, and this is not
+ * raised again.
  */
 
 /** The repository, from `package.json`'s own `repository.url`. */
@@ -47,8 +52,33 @@ export interface SiteNavLink {
  */
 export const SITE_NAV_LINKS: SiteNavLink[] = [
   { label: 'Changelog', href: `${GITHUB_URL}/releases`, external: true },
+  // LEADERBOARD IS BACK IN THE NAV (operator, 2026-08-19: "Also keep
+  // leaderboard"). It is a live public surface, it is in `proxy.ts`'s
+  // signed-out allowlist, and it was in the shipped homepage's nav, so losing
+  // it to the promotion would be a surface going quietly dark rather than a
+  // decision anyone made. It sits between the two external links because the
+  // one Exawatt page in this row should not be the last thing before the
+  // button. Architecture stays OUT and stays in the footer, per W6.
+  { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'GitHub', href: GITHUB_URL, external: true },
 ];
+
+/**
+ * What the phone's menu lists (ENG-031 W12).
+ *
+ * The menu has always been the nav links plus the footer's `Product` column,
+ * because a phone visitor must be able to reach everything the wide layout
+ * shows. Now that `Leaderboard` is in BOTH, the merge has to de-duplicate or
+ * the menu prints it twice. Derived here rather than in the header, so the
+ * rule lives beside the two lists it reconciles.
+ */
+export function siteMenuLinks(): SiteNavLink[] {
+  const product =
+    SITE_FOOTER_COLUMNS.find(column => column.heading === 'Product')?.links ??
+    [];
+  const seen = new Set(SITE_NAV_LINKS.map(link => link.href));
+  return [...SITE_NAV_LINKS, ...product.filter(link => !seen.has(link.href))];
+}
 
 export interface SiteFooterColumn {
   heading: string;

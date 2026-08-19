@@ -45,10 +45,7 @@ import {
   usesDarkPublicChrome,
   usesProposedSiteChrome,
 } from './surfaces';
-import {
-  SITE_FOOTER_COLUMNS,
-  SITE_NAV_LINKS,
-} from '@/components/site/site-links';
+import { SITE_NAV_LINKS, siteMenuLinks } from '@/components/site/site-links';
 import { SiteNavDownload } from '@/components/site/site-nav-download';
 import {
   AMBIENT_CHROME_METER_ENABLED,
@@ -386,8 +383,12 @@ export function SiteHeaderNav({
                   <Menu className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
+              {/* The nav links plus the footer's Product column, de-duplicated
+                  in `siteMenuLinks()` because `Leaderboard` is now in both
+                  (ENG-031 W12). A phone visitor reaches everything the wide
+                  layout shows, and reaches it once. */}
               <DropdownMenuContent align="end" className="w-44">
-                {SITE_NAV_LINKS.map(link => (
+                {siteMenuLinks().map(link => (
                   <DropdownMenuItem key={link.label} asChild>
                     <Link
                       href={link.href}
@@ -400,20 +401,6 @@ export function SiteHeaderNav({
                     </Link>
                   </DropdownMenuItem>
                 ))}
-                {SITE_FOOTER_COLUMNS.filter(
-                  column => column.heading === 'Product'
-                ).flatMap(column =>
-                  column.links.map(link => (
-                    <DropdownMenuItem key={link.label} asChild>
-                      <Link
-                        href={link.href}
-                        data-site-nav-menu-link={link.label}
-                      >
-                        {link.label}
-                      </Link>
-                    </DropdownMenuItem>
-                  ))
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <SiteNavDownload />
