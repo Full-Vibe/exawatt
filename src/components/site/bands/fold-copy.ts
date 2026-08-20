@@ -104,7 +104,7 @@ export const FOLD_CLOSE_VARIANTS: FoldCloseVariant[] = [
     kicker: null,
     headline: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
     subhead: ['Exawatt is the command interface for your agent fleet.'],
-    close: 'The economy is refactoring. Your tools need to keep up.',
+    close: 'The economy is refactoring.',
     note: 'His draft, tightened to 20. Both halves of the climb at 60px; the thesis and the enemy spend at 72px, right above the button.',
   },
   {

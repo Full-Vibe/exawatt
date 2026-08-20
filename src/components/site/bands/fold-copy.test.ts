@@ -96,10 +96,17 @@ describe('fold and close copy', () => {
     }
   });
 
-  it('names the tools as the bottleneck somewhere in every arrangement', () => {
+  it('never makes the reader the bottleneck', () => {
+    // The rule this guards (marketing.md, "Reader is never the bottleneck") is
+    // that copy must not tell the reader what they cannot do. It used to be
+    // enforced by REQUIRING "your tools" somewhere, which conflated the rule
+    // with one particular way of satisfying it. The operator removed "Your
+    // tools need to keep up." from the shipped close on 2026-08-19: naming no
+    // enemy at all is fine, and the trajectory ("today 10, tomorrow 10,000")
+    // already carries the argument. Naming the READER as what fails is not.
     for (const variant of FOLD_CLOSE_VARIANTS) {
-      expect(variantProse(variant).toLowerCase(), variant.id).toMatch(
-        /your tools/u
+      expect(variantProse(variant).toLowerCase(), variant.id).not.toMatch(
+        /you (can ?not|cannot|can't)|too many for you|more than you can/u
       );
     }
   });

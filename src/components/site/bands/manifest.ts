@@ -818,7 +818,7 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
  */
 export type HomepageArrangement = 'shipped' | 'proposed';
 
-export const HOMEPAGE_ARRANGEMENT: HomepageArrangement = 'shipped';
+export const HOMEPAGE_ARRANGEMENT: HomepageArrangement = 'proposed';
 
 export function bandById(id: BandId): HomepageBand {
   // ids are a closed union, so a miss is a programming error, not a state.
