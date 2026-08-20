@@ -45,7 +45,7 @@ export function CloseBand({
       data-close-variant={copy.id}
       data-public-exhibition-surface="true"
     >
-      <BandContent className="gap-10 pb-20 sm:pb-24" data-close-content>
+      <BandContent className="gap-10 pb-44 sm:pb-56 lg:pb-64" data-close-content>
         <BandHeading
           band={band}
           className="max-w-5xl text-balance text-white"
