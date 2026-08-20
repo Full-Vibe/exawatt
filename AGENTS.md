@@ -90,6 +90,13 @@ Do not create competing plans. Replace, archive, or explicitly mark stale docs. 
 - Avoid making a roadmap layer cake. Roadmap items should be cohesive, sequenced, and executable.
 - **Before editing any React Three Fiber / Three.js code (anything under a `<Canvas>`), read `docs/engineering/r3f-authoring-guide.md`.** It is the version-pinned rulebook (frameloop/invalidate, `toneMapped`+bloom, `damp` motion, interactivity, the 3D-failure rubric, and the WebGL self-check). Verify R3F APIs against the installed versions, not generic tutorials. After any R3F change, run `pnpm eval:r3f` and/or a Playwright screenshot self-check.
 
+- **Test the contract, never the current appearance** (operator, 2026-08-19: "I don't need a unit test to validate that the h1 says exawatt", after a one-line homepage change broke six tests that had nothing to do with the change). A test earns its place by failing when behaviour BREAKS. A test that fails when the product legitimately CHANGES is not protection, it is a second copy of the product that has to be edited in lockstep, and it converts every intentional change into an archaeology session.
+  - Do not assert today's copy, today's rendered element list, today's heading text, or today's layout constants. Those are snapshots of a moment, not invariants. Derive expectations from the same source the product derives them from (the manifest, the contract, the fixture) so a legitimate change moves both together.
+  - Before writing an assertion, ask what real defect it catches. "The h1 is not empty" catches a broken render; "the h1 says Exawatt" catches nothing and breaks on a headline edit. If the answer is "it would catch us changing our minds", delete it.
+  - Marketing and copy surfaces get the lightest coverage in the repo, not the heaviest. Their correctness is judged by eye on a deployed page, and the operator judges it. Reserve real test weight for behaviour a human cannot see: status truth, delivery, security boundaries, data that leaves the machine, money.
+  - When a legitimate change breaks a test, fix the TEST'S PREMISE rather than bending the product or weakening the check. If the premise cannot be repaired quickly, skip it with a dated reason and a backlog id and keep moving; a blocked operator is a worse outcome than a temporarily unasserted invariant.
+  - The meta-rule: velocity on a fast-moving product is a first-class engineering property. A test suite that makes an intentional one-line change cost an hour has failed at its job even when every assertion in it is individually defensible.
+
 ## Existing Local Rules
 
 - Never use `git add -A`; stage files explicitly because the user may be working in the repo at the same time.
