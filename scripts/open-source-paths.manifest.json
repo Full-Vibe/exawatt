@@ -188,6 +188,8 @@
         "scripts/sign-renderer-archive.cjs",
         "scripts/terminal-cost-probe.mjs",
         "scripts/transcript-replay-probe.mjs",
+        "scripts/with-machine-slot.mjs",
+        "scripts/worktree-roster.mjs",
         "scripts/worktree-setup.mjs"
       ],
       "exclude": []

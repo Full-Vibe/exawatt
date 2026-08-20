@@ -12,7 +12,7 @@ function delay(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-function processExists(pid) {
+export function processExists(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -54,7 +54,7 @@ async function lockAge(lockPath) {
   }
 }
 
-async function commonGitDirectory(root) {
+export async function commonGitDirectory(root) {
   const { stdout } = await execFileAsync(
     'git',
     ['rev-parse', '--path-format=absolute', '--git-common-dir'],

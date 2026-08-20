@@ -42,6 +42,16 @@ floor. The repository always owns that floor. `--keep-branch` retains immutable
 attempt refs for diagnosis. `--direct` is an operator-only incident path, not a
 second normal workflow.
 
+Every floor run holds one machine slot while its checks execute (ENG-022
+H15, `scripts/lib/machine-slots.mjs`): a small machine-wide pool bounds how
+many floors, full test runs, and builds compute at once, so concurrent
+worktrees queue briefly instead of inflating each other's check durations by
+two orders of magnitude. The slot token is exported to child commands, making
+nested heavy commands reentrant. The pool is QoS, never a gate — acquisition
+failure or a 20-minute wait proceeds UNSLOTTED with a warning naming the
+holders, dead holders are reclaimed by PID, and `EXAWATT_MACHINE_SLOTS=0`
+disables the pool on a machine.
+
 ## A known intermittent
 
 `pnpm test:run` has exited non-zero three times across 2026-08-07..13 with

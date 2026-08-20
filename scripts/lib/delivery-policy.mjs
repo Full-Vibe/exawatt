@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { acquireMachineSlot } from './machine-slots.mjs';
+
 /**
  * Flake-aware reruns for the vitest checks (BUG-090).
  *
@@ -786,31 +788,45 @@ export async function runDeliveryChecks(
   { phase = 'candidate', onResult = async () => {} } = {}
 ) {
   const evidence = [];
-  for (const check of checks) {
-    const startedAt = Date.now();
-    console.log(
-      `[agent-land] ${phase} floor: ${check.command} ${check.args.join(' ')}`
-    );
-    let outcome;
-    try {
-      outcome = await runOneCheck(root, check);
-    } catch (error) {
-      outcome = { status: 'failed', message: error.message };
-    }
-    const result = {
-      id: check.id,
-      phase,
-      status: outcome.status,
-      durationMs: Date.now() - startedAt,
-      completedAt: new Date().toISOString(),
-      ...(outcome.detail ?? {}),
-    };
-    if (outcome.status === 'failed') {
+  // One machine slot bounds this floor run's compute: a dozen concurrent
+  // worktree floors each capped at 25% of cores still oversubscribe the
+  // machine threefold, and the delivery metrics show the same check going
+  // from 9 seconds alone to 46 minutes under that load (ENG-022 H15). The
+  // failed-check throw below leaves through the finally, so a red floor can
+  // never leak its slot.
+  const slot = await acquireMachineSlot({
+    root,
+    label: `agent-land floor (${phase})`,
+  });
+  try {
+    for (const check of checks) {
+      const startedAt = Date.now();
+      console.log(
+        `[agent-land] ${phase} floor: ${check.command} ${check.args.join(' ')}`
+      );
+      let outcome;
+      try {
+        outcome = await runOneCheck(root, check);
+      } catch (error) {
+        outcome = { status: 'failed', message: error.message };
+      }
+      const result = {
+        id: check.id,
+        phase,
+        status: outcome.status,
+        durationMs: Date.now() - startedAt,
+        completedAt: new Date().toISOString(),
+        ...(outcome.detail ?? {}),
+      };
+      if (outcome.status === 'failed') {
+        await onResult(result);
+        throw new Error(outcome.message);
+      }
+      evidence.push(result);
       await onResult(result);
-      throw new Error(outcome.message);
     }
-    evidence.push(result);
-    await onResult(result);
+    return evidence;
+  } finally {
+    await slot.release();
   }
-  return evidence;
 }

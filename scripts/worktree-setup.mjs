@@ -15,6 +15,7 @@ import {
   prepareWorktreeEnv,
 } from './lib/worktree-env.mjs';
 import { runWorktreeSetup } from './lib/worktree-setup.mjs';
+import { printWorktreeRoster } from './lib/worktree-roster.mjs';
 
 const root = process.cwd();
 const run = command => execSync(command, { stdio: 'inherit', cwd: root });
@@ -28,6 +29,11 @@ const mainCheckout = execSync('git worktree list --porcelain', { cwd: root })
   .trim();
 
 const vercelExecutable = findExecutableOnPath('vercel');
+
+// The in-flight roster first (ENG-022 H14): a new agent must see orphaned
+// unlanded branches BEFORE starting adjacent work, or it redoes them.
+// Advisory — printWorktreeRoster never throws.
+await printWorktreeRoster({ root, say });
 
 runWorktreeSetup({
   platform: process.platform,
