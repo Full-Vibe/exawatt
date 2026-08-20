@@ -30,6 +30,7 @@ export const ALLOWED_LICENSE_EXPRESSIONS = new Set([
   'Python-2.0',
   'WTFPL',
   'Zlib',
+  '(AFL-2.1 OR BSD-3-Clause)',
   '(Apache-2.0 AND MIT)',
   '(MIT OR CC0-1.0)',
   '(MPL-2.0 OR Apache-2.0)',
@@ -40,6 +41,10 @@ export const ALLOWED_LICENSE_EXPRESSIONS = new Set([
 const REVIEWED_EXCEPTIONS = new Map([
   ['caniuse-lite@1.0.30001757', 'CC-BY-4.0'],
   ['dompurify@3.4.13', '(MPL-2.0 OR Apache-2.0)'],
+  // Transitive via @ai-sdk/provider (ai, @ai-sdk/anthropic). Disjunctive
+  // license: BSD-3-Clause alone is already an allowed expression above, so
+  // this is compliant under either branch.
+  ['json-schema@0.4.0', '(AFL-2.1 OR BSD-3-Clause)'],
   ['posthog-js@1.413.2', '(Apache-2.0 AND MIT)'],
   ['postprocessing@6.39.1', 'Zlib'],
   ['sanitize-filename@1.6.3', 'WTFPL OR ISC'],
