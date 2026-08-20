@@ -132,6 +132,7 @@
     "electron:build:dogfood:official": "EXAWATT_DISTRIBUTION_PROFILE=official node scripts/build-dogfood.mjs"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.40",
     "@exawatt/core": "workspace:*",
     "@exawatt/ui-model": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.23",
@@ -152,6 +153,7 @@
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
+    "ai": "^7.0.70",
     "camera-controls": "^3.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

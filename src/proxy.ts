@@ -41,6 +41,11 @@ const PUBLIC_PREFIXES = [
   '/auth',
   '/architecture',
   '/leaderboard',
+  // Hackathon toy (temporary): simulates a small X/Twitter population from a
+  // public profile. No user data involved; the API route it depends on must
+  // stay public too or client-side fetches 307 to /sign-in.
+  '/world',
+  '/api/world',
   // Retired route: keep it outside the auth gate so Next returns the intended
   // 404 instead of redirecting signed-out visitors to /sign-in.
   '/agentmaxxing',
