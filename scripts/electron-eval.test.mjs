@@ -259,3 +259,29 @@ test('a bundle path reports every package it passes through', () => {
   );
   assert.deepEqual(packagesAlongPath('dist-electron/main/main.js'), []);
 });
+
+test('the launcher eval drives the composer through the shared settle owner', () => {
+  // BUG-101: the eval reimplemented a local `showLauncherDrawer` that waited
+  // for the drawer handle to be VISIBLE rather than ENABLED, skipping
+  // `waitForLauncherToSettle`. Until the Agent Source registry answers for
+  // every harness the setup chips render role="presentation" with no
+  // aria-checked, so `.count()`/`.innerText()` — neither of which auto-waits —
+  // asserted against a placeholder row and failed with zero retries.
+  const evalSource = readFileSync(
+    new URL('./electron-project-agent-launcher-eval.mjs', import.meta.url),
+    'utf8'
+  );
+  assert.doesNotMatch(
+    evalSource,
+    /function showLauncherDrawer/,
+    'the local drawer helper is back; drive the launcher through openSetupDrawer'
+  );
+  assert.match(
+    evalSource,
+    /waitForLauncherToSettle/,
+    'the eval must wait for the launcher to settle before reading setup state'
+  );
+  // Every read of the selected configuration is settle-dependent.
+  const radioReads = evalSource.split('[role="radio"][aria-checked="true"]').length - 1;
+  assert.ok(radioReads > 0, 'expected the eval to assert on the selected setup');
+});

@@ -9,7 +9,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  openSetupDrawer,
+  waitForLauncherToSettle,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'exawatt-project-launcher-'));
 const userData = join(root, 'userData');
@@ -222,18 +226,6 @@ async function waitForBuffer(page, sessionId, fragment) {
 
 function launcherAxis(page, id) {
   return page.locator(`[data-detail-axis="${id}"] [data-option-menu-trigger]`);
-}
-
-async function showLauncherDrawer(page) {
-  const openDrawer = page.locator('[data-setup-detail][data-open="true"]');
-  if (await openDrawer.isVisible().catch(() => false)) return openDrawer;
-  const handle = page.locator('[data-setup-drawer-handle]');
-  await handle.waitFor({ state: 'visible' });
-  if ((await handle.getAttribute('aria-expanded')) !== 'true') {
-    await handle.click();
-  }
-  await openDrawer.waitFor({ state: 'visible' });
-  return openDrawer;
 }
 
 let completed = false;
@@ -479,6 +471,12 @@ try {
       const launcher = page.locator('[data-agent-launcher]');
       const setupRow = launcher.locator('[data-setup-row]');
       await setupRow.waitFor();
+      // Until the Agent Source registry answers for every harness, the chips
+      // render role="presentation" with no aria-checked (setup-chip.tsx), so
+      // the radio locator matches NOTHING. `.count()` and `.innerText()` below
+      // do not auto-wait, so reading them before the launcher settles asserts
+      // against a placeholder row and fails with zero retries. BUG-101.
+      await waitForLauncherToSettle(page);
       const selectedConfiguration = setupRow.locator(
         '[role="radio"][aria-checked="true"]'
       );
@@ -572,7 +570,7 @@ try {
       await page
         .getByRole('radio', { name: /Claude Code.*Eval Claude Fable/i })
         .waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'the operator can choose an explicit Claude model',
         (await launcherAxis(page, 'model').innerText()).includes(
@@ -597,7 +595,7 @@ try {
         .getByRole('option', { name: /^High\b.*Strong balance/i })
         .click();
       await page.getByRole('radio', { name: /Claude Code.*High/i }).waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       await page.waitForFunction(
         () =>
           document
@@ -821,7 +819,7 @@ try {
       // while the composer was always-open.)
       await page.locator('[data-composer-toggle]').click();
       await page.locator('[data-agent-composer]').waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       const sourceTrigger = launcherAxis(page, 'engine');
       check(
         'Engine trigger owns exactly one harness glyph',
@@ -880,7 +878,7 @@ try {
       await page
         .getByRole('radio', { name: /Codex.*Eval Codex Terra/i })
         .waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'the operator can override the model for one new Agent',
         (await launcherAxis(page, 'model').innerText()).includes(
@@ -909,7 +907,7 @@ try {
         .getByRole('option', { name: /Max.*Maximum evaluator reasoning/i })
         .click();
       await page.getByRole('radio', { name: /Codex.*Max/i }).waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'the operator can override Codex effort for one new Agent',
         (await launcherAxis(page, 'thinking').innerText()).includes('Max')
@@ -1009,7 +1007,7 @@ try {
       );
       await page.getByText('Claude Code', { exact: true }).click();
       await page.getByLabel('Initial task for the new Agent').waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       await page.waitForFunction(
         () =>
           document
@@ -1059,7 +1057,7 @@ try {
         ledger.length === 2
       );
       await page.locator('[data-agent-composer]').waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'closing the last Agent leaves the empty Project selected',
         await page.locator('[data-project="alpha"]').isVisible()
@@ -1165,7 +1163,7 @@ try {
       await closeTab(page, 'Codex');
       await waitForClosedSessionCount(page, 2);
       await page.locator('[data-agent-composer]').waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'source recommendation survives the close and restore cycle',
         (await launcherAxis(page, 'engine').innerText()).includes('Codex')
@@ -1176,14 +1174,14 @@ try {
       );
       await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Claude Code' }).click();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'Claude and Codex retain independent permission choices',
         (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
       );
       await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Codex' }).click();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
 
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].setSize(800, 600)
@@ -1324,7 +1322,7 @@ try {
       );
       await alphaTile.click();
       await page.locator('[data-agent-composer]').waitFor();
-      await showLauncherDrawer(page);
+      await openSetupDrawer(page);
       check(
         'source recommendation survives a full app restart',
         (await launcherAxis(page, 'engine').innerText()).includes('Codex')
