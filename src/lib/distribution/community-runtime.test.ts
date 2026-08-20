@@ -59,6 +59,9 @@ const ENTRYPOINTS: Record<string, Disposition> = {
   // but is now a tombstone: OS-local credentials never cross a web response.
   'api/dev-identity/route.ts': 'account-free',
   'api/oc/token/route.ts': 'account-free',
+  // Hackathon toy (temporary): generates a fabricated timeline from a public
+  // handle via the Anthropic API. Never touches the account seam.
+  'api/world/simulate/route.ts': 'account-free',
 };
 
 /**
