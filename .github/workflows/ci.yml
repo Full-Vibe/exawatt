@@ -26,7 +26,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # A push supersedes the run before it ON A BRANCH, where only the newest
+  # commit matters. On master it must not: the fleet lands roughly every nine
+  # minutes and CI takes longer than that, so a shared master group cancelled
+  # every run before it finished and the public repository showed `cancelled`
+  # forever, which reads as broken rather than busy. Keying master by SHA gives
+  # each commit its own group, so runs proceed independently instead of
+  # cancelling or queueing behind each other. `cancel-in-progress` stays true:
+  # with a per-SHA group there is never a previous run in the group to cancel.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.ref == 'refs/heads/master' && github.sha || 'shared' }}
   cancel-in-progress: true
 
 jobs:
