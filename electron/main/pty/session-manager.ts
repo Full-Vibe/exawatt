@@ -338,14 +338,15 @@ export class PtySessionManager extends EventEmitter {
           )
         );
       } catch (error) {
+        // A transient pre-spawn catalog read (e.g. shell startup noise ahead
+        // of the JSON on stdout) must not abort the whole launch. Leaving
+        // this `null` defers the snapshot to `beginOpencodeIdentityCapture`,
+        // which already retries it post-spawn and degrades gracefully -
+        // discarding the buffered turn with an inline "try again" notice -
+        // instead of losing the PTY session outright.
         console.warn(
           'OpenCode pre-launch identity baseline unavailable',
           error
-        );
-        throw new Error(
-          `OpenCode launch requires an exact pre-turn session snapshot: ${
-            error instanceof Error ? error.message : String(error)
-          }`
         );
       }
     }
