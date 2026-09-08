@@ -4,11 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { parse } from 'yaml';
+import { format } from 'prettier';
 import {
   ALLOWED_LICENSE_EXPRESSIONS,
   flattenLicenseReport,
   renderNotice,
   runLicenseCheck,
+  validateNotice,
 } from './check-dependency-licenses.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,6 +27,10 @@ test(
   async () => {
     const result = await runLicenseCheck();
     assert.ok(result.packageVersions > 800);
+    // Exercise the Linux comparison against the checked-in, formatted notice
+    // even when the maintainer runs this gate on macOS.
+    const linux = await runLicenseCheck({ platform: 'linux' });
+    assert.equal(linux.packageVersions, result.packageVersions);
   }
 );
 
@@ -68,6 +74,110 @@ test('reviewed native attribution follows the installed libvips version', () => 
   ];
   assert.match(renderNotice(rows), /@img\/sharp-libvips-<platform> 9\.8\.7/u);
   assert.throws(() => renderNotice([]), /no reviewed sharp-libvips row/u);
+});
+
+const inventoryFixture = [
+  {
+    name: '@img/sharp-libvips-<platform>',
+    version: '9.8.7',
+    license: 'LGPL-3.0-or-later',
+  },
+  { name: '@types/dependency__core', version: '1.2.3', license: 'MIT' },
+  { name: 'mac-only-dependency', version: '4.5.6', license: 'Apache-2.0' },
+];
+
+async function noticeFixture() {
+  const lockfileHash = 'fixture-lockfile-sha256';
+  const expectedNotice = await format(
+    renderNotice(inventoryFixture, lockfileHash),
+    { parser: 'markdown' }
+  );
+  return {
+    actualNotice: expectedNotice,
+    expectedNotice,
+    lockfileHash,
+    noticeRows: inventoryFixture.slice(0, 2),
+    platform: 'linux',
+  };
+}
+
+test('Linux inventory comparison accepts formatted table cells, Markdown escapes and a platform subset', async () => {
+  const fixture = await noticeFixture();
+  assert.deepEqual(validateNotice(fixture), []);
+  assert.deepEqual(
+    validateNotice({
+      ...fixture,
+      actualNotice: renderNotice(inventoryFixture, fixture.lockfileHash),
+    }),
+    []
+  );
+});
+
+test('Linux inventory comparison rejects missing packages, version drift and license drift with the exact tuple', async () => {
+  const fixture = await noticeFixture();
+  for (const change of [
+    { name: 'missing-dependency' },
+    { version: '2.0.0' },
+    { license: 'Apache-2.0' },
+  ]) {
+    const missing = { ...inventoryFixture[1], ...change };
+    const failures = validateNotice({ ...fixture, noticeRows: [missing] });
+    assert.ok(
+      failures.some(
+        failure =>
+          failure.includes(`${missing.name}@${missing.version}`) &&
+          failure.includes(missing.license)
+      ),
+      failures.join('\n')
+    );
+  }
+});
+
+test('Linux inventory comparison still requires the lockfile hash', async () => {
+  const fixture = await noticeFixture();
+  const failures = validateNotice({
+    ...fixture,
+    lockfileHash: 'different-lockfile-sha256',
+  });
+  assert.ok(failures.some(failure => /lockfile/i.test(failure)));
+});
+
+test('Linux inventory rows outside the inventory section cannot satisfy attribution', async () => {
+  const fixture = await noticeFixture();
+  assert.notDeepEqual(
+    validateNotice({
+      ...fixture,
+      actualNotice: fixture.actualNotice.replace(
+        '## Installed package inventory',
+        '## Some other table'
+      ),
+    }),
+    []
+  );
+});
+
+test('macOS notice comparison retains exact formatting and the complete inventory', async () => {
+  const fixture = await noticeFixture();
+  assert.deepEqual(validateNotice({ ...fixture, platform: 'darwin' }), []);
+  assert.notDeepEqual(
+    validateNotice({
+      ...fixture,
+      platform: 'darwin',
+      actualNotice: renderNotice(inventoryFixture, fixture.lockfileHash),
+    }),
+    []
+  );
+  assert.notDeepEqual(
+    validateNotice({
+      ...fixture,
+      platform: 'darwin',
+      actualNotice: await format(
+        renderNotice(fixture.noticeRows, fixture.lockfileHash),
+        { parser: 'markdown' }
+      ),
+    }),
+    []
+  );
 });
 
 test('first-party package metadata declares AGPL and the public repository', async () => {

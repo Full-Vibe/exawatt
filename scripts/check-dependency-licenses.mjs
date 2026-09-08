@@ -360,7 +360,59 @@ export function renderNotice(rows, lockfileHash = '<lockfile-sha256>') {
   return lines.join('\n');
 }
 
-export async function runLicenseCheck({ write = false } = {}) {
+export function validateNotice({
+  actualNotice,
+  expectedNotice,
+  noticeRows,
+  lockfileHash,
+  platform = process.platform,
+}) {
+  if (platform === 'darwin') {
+    return actualNotice === expectedNotice
+      ? []
+      : [
+          'THIRD_PARTY_NOTICES.md differs from the complete generated macOS notice',
+        ];
+  }
+
+  const failures = [];
+  if (!actualNotice.includes(`Lockfile SHA-256: \`${lockfileHash}\`.`)) {
+    failures.push(
+      `THIRD_PARTY_NOTICES.md is missing lockfile SHA-256 ${lockfileHash}`
+    );
+  }
+  // Linux installs a subset of the macOS optional-dependency graph. Compare
+  // complete tuples within the inventory table, ignoring Markdown cell padding
+  // and punctuation escapes (for example babel\_\_core). Keep escaped pipes
+  // inside their cells; package/version/license text must still match exactly.
+  const inventory =
+    actualNotice
+      .split(/^## Installed package inventory\s*$/mu)[1]
+      ?.split(/^## /mu)[0] ?? '';
+  const tuple = line => {
+    const cells = line
+      .trim()
+      .split(/(?<!\\)\|/u)
+      .map(cell => cell.trim().replace(/\\([!-/:-@[-`{-~])/gu, '$1'));
+    return cells.length === 5 && cells[0] === '' && cells[4] === ''
+      ? JSON.stringify(cells.slice(1, 4))
+      : null;
+  };
+  const actualRows = new Set(inventory.split('\n').map(tuple).filter(Boolean));
+  for (const row of noticeRows) {
+    if (!actualRows.has(tuple(inventoryRow(row)))) {
+      failures.push(
+        `THIRD_PARTY_NOTICES.md is missing inventory tuple ${packageId(row.name, row.version)} / ${row.license}`
+      );
+    }
+  }
+  return failures;
+}
+
+export async function runLicenseCheck({
+  write = false,
+  platform = process.platform,
+} = {}) {
   // Establish that node_modules is trustworthy before reporting on it. A stale
   // tree makes every row below describe packages the repository does not
   // declare, and in --write mode it would COMMIT that fiction.
@@ -381,12 +433,15 @@ export async function runLicenseCheck({ write = false } = {}) {
     await writeFile(NOTICE_PATH, expectedNotice);
   } else {
     const actualNotice = await readFile(NOTICE_PATH, 'utf8').catch(() => '');
-    const platformComplete =
-      process.platform === 'darwin'
-        ? actualNotice === expectedNotice
-        : actualNotice.includes(`Lockfile SHA-256: \`${lockfileHash}\`.`) &&
-          noticeRows.every(row => actualNotice.includes(inventoryRow(row)));
-    if (!platformComplete) {
+    const noticeFailures = validateNotice({
+      actualNotice,
+      expectedNotice,
+      noticeRows,
+      lockfileHash,
+      platform,
+    });
+    if (noticeFailures.length > 0) {
+      failures.push(...noticeFailures);
       failures.push(
         'THIRD_PARTY_NOTICES.md does not match the installed dependency set; ' +
           'run `pnpm licenses:generate` on macOS (dependencies verified installed ' +
