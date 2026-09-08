@@ -217,10 +217,17 @@ describe('the scratch directory', () => {
     expect(fs.existsSync(plan.cwd)).toBe(true);
   });
 
-  it('falls back to a directory that certainly exists when it cannot be made', () => {
-    configureLoginShellScratchDir('/proc/nope/exawatt-shell-startup');
+  it('falls back to a directory that certainly exists when it cannot be made', async () => {
+    const root = await tempDir('exawatt-scratch-blocked-');
+    const file = path.join(root, 'regular-file');
+    await fs.promises.writeFile(file, 'not a directory');
+    // A regular-file parent yields ENOTDIR regardless of permissions. /proc
+    // instead yields ENOENT on Linux, which Node's recursive mkdir can retry
+    // forever under an existing parent, blocking the worker itself (BUG-110).
+    configureLoginShellScratchDir(path.join(file, 'shell-startup'));
     const plan = planLoginShell('/bin/zsh', { command: 'true' });
-    expect(fs.existsSync(plan.cwd)).toBe(true);
+    expect(plan.cwd).toBe(os.tmpdir());
+    expect(fs.statSync(plan.cwd).isDirectory()).toBe(true);
   });
 
   it('is created empty and reports what a shell startup wrote there', async () => {
