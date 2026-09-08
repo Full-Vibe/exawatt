@@ -910,6 +910,7 @@ export const architectureManifest = {
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Public-source publication preserves its published prefix, classifies later commits independently, and requires exact-candidate certification for an explicit snapshot recovery; ordinary publication never rewrites public history.',
     'Distribution services are optional versioned capabilities resolved before build; community identity is isolated and service-neutral, while operator-configured Agent Source WebSockets remain an independent local/customer-owned transport.',
+    'Distribution artwork crosses process creation as a validated file reference and digest; binary asset bytes never ride in child environment values.',
     'Coding is the first dogfood workload, not the Agent boundary; compatible non-coding sources use the same command and evidence contracts.',
     'Source entitlement and Consumption are separate: a compatible subscription-backed harness does not require Exawatt API billing, and unreported plan headroom stays unknown.',
     'A Launch Configuration is one exact configured source/model/effort choice; only successful launches train per-Project frecency, Project pins stay local, and unavailable choices never silently substitute.',

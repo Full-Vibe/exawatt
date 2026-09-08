@@ -72,6 +72,11 @@ analytics, protocol, branded icon, or update capability. The resolved canonical
 JSON and SHA-256 digest feed Next explicitly, are mirrored beside Electron
 build-info, and are passed after ambient env to the packaged loopback child.
 Main refuses disagreement among its mirror, the renderer digest, and build-info.
+Distribution artwork crosses the Next launch boundary as a prepared file path
+and SHA-256 digest, never as binary bytes in an environment value. The static
+icon route validates those bytes before materializing the response, preserving
+the same contract-owned icon in dev and packaged builds without depending on
+platform-specific process environment limits (BUG-123).
 A resolved product identity is also the single owner of the bundle and
 executable paths, launch/header/metadata name, native lifecycle name, protocol,
 and the `appId`-derived state and cache namespaces. Community therefore
