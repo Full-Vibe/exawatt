@@ -103,6 +103,33 @@ test('the resolver reads the shell contract, not the last build left on disk', a
   assert.notEqual(official.digest, prepared.digest);
 });
 
+test('implicit package resolution uses the canonical distribution profile selector', async () => {
+  const previousProfile = process.env.EXAWATT_DISTRIBUTION_PROFILE;
+  const previousJson = process.env.EXAWATT_DISTRIBUTION_CONFIG_JSON;
+  try {
+    delete process.env.EXAWATT_DISTRIBUTION_CONFIG_JSON;
+    process.env.EXAWATT_DISTRIBUTION_PROFILE = 'misspelled-profile';
+    await assert.rejects(
+      resolvePackagedApp({ root: ROOT, appPathOverride: undefined }),
+      /must be "official" or "community"/
+    );
+
+    const explicitCommunity = await resolvePackagedApp({
+      root: ROOT,
+      appPathOverride: undefined,
+      inputJson: undefined,
+    });
+    assert.equal(explicitCommunity.identity.appId, 'ai.exawatt.community');
+  } finally {
+    if (previousProfile === undefined)
+      delete process.env.EXAWATT_DISTRIBUTION_PROFILE;
+    else process.env.EXAWATT_DISTRIBUTION_PROFILE = previousProfile;
+    if (previousJson === undefined)
+      delete process.env.EXAWATT_DISTRIBUTION_CONFIG_JSON;
+    else process.env.EXAWATT_DISTRIBUTION_CONFIG_JSON = previousJson;
+  }
+});
+
 test('EXAWATT_APP_PATH moves the bundle without moving the expectations', async () => {
   const resolved = await resolvePackagedApp({
     root: ROOT,

@@ -37,7 +37,9 @@ function agentView(overrides: Partial<FleetAgentView> = {}): FleetAgentView {
   };
 }
 
-function renderPanel(props: Partial<Parameters<typeof SpatialSelectionPanel>[0]>) {
+function renderPanel(
+  props: Partial<Parameters<typeof SpatialSelectionPanel>[0]>
+) {
   return render(
     <SpatialSelectionPanel
       agent={null}
@@ -97,6 +99,34 @@ describe('SpatialSelectionPanel', () => {
     expect(screen.queryByText(/waiting for events/i)).not.toBeInTheDocument();
   });
 
+  it('shows remote presence separately and opens the projected Agent', () => {
+    renderPanel({
+      agent: agentView({
+        presence: {
+          placement: 'customer-hosted',
+          placementLabel: 'Remote',
+          connection: 'live',
+          connectionLabel: 'Live',
+          stalePresentation: false,
+          source: {
+            id: 'source-1',
+            displayName: 'Workshop box',
+            adapterId: 'openclaw',
+          },
+        },
+      }),
+    });
+
+    expect(screen.getByText('Remote · Live · Workshop box')).toHaveAttribute(
+      'data-agent-presence',
+      'live'
+    );
+    expect(screen.getByRole('button', { name: 'Open Agent' })).toHaveAttribute(
+      'data-open-agent',
+      'a1'
+    );
+  });
+
   it('renders delegated children with type, description, and elapsed', () => {
     renderPanel({
       agent: agentView(),
@@ -136,8 +166,18 @@ describe('SpatialSelectionPanel', () => {
       delegation: {
         count: 2,
         children: [
-          { id: 'c1', agentType: 'Explore', description: 'First', startedAt: null },
-          { id: 'c2', agentType: 'Explore', description: 'Second', startedAt: null },
+          {
+            id: 'c1',
+            agentType: 'Explore',
+            description: 'First',
+            startedAt: null,
+          },
+          {
+            id: 'c2',
+            agentType: 'Explore',
+            description: 'Second',
+            startedAt: null,
+          },
         ],
       },
     });
@@ -157,7 +197,12 @@ describe('SpatialSelectionPanel', () => {
       delegation: {
         count: 1,
         children: [
-          { id: 'c1', agentType: 'Explore', description: null, startedAt: null },
+          {
+            id: 'c1',
+            agentType: 'Explore',
+            description: null,
+            startedAt: null,
+          },
         ],
       },
     });
@@ -172,7 +217,12 @@ describe('SpatialSelectionPanel', () => {
       delegation: {
         count: 17,
         children: [
-          { id: 'c1', agentType: 'Explore', description: null, startedAt: null },
+          {
+            id: 'c1',
+            agentType: 'Explore',
+            description: null,
+            startedAt: null,
+          },
         ],
       },
     });

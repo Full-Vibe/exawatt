@@ -3,12 +3,19 @@ import type { RecentProject } from './switcher-rows';
 
 export interface WorkspaceProjectSummary {
   dir: string;
+  rootPath?: string | null;
+  registryId?: string | null;
   name: string;
   color?: string | null;
 }
 
 export interface ProjectLibraryEntry {
+  /** Workspace grouping key: folder for legacy local Projects, id otherwise. */
   dir: string;
+  /** Durable Exawatt identity when the registry knows this Project. */
+  projectId: string;
+  /** Null is a valid folderless Project, not a missing lookup. */
+  rootPath: string | null;
   name: string;
   color: string | null;
   registryId: string | null;
@@ -24,9 +31,11 @@ export function mergeProjectLibrary(
 ): ProjectLibraryEntry[] {
   const entries = new Map<string, ProjectLibraryEntry>();
   for (const project of synced) {
-    if (!project.root_path) continue;
-    entries.set(project.root_path, {
-      dir: project.root_path,
+    const dir = project.root_path ?? project.id;
+    entries.set(dir, {
+      dir,
+      projectId: project.id,
+      rootPath: project.root_path,
       name: project.name,
       color: project.color,
       registryId: project.id,
@@ -39,9 +48,11 @@ export function mergeProjectLibrary(
     if (entries.has(project.dir)) continue;
     entries.set(project.dir, {
       dir: project.dir,
+      projectId: project.registryId ?? project.dir,
+      rootPath: project.rootPath === undefined ? project.dir : project.rootPath,
       name: project.name,
       color: project.color ?? null,
-      registryId: null,
+      registryId: project.registryId ?? null,
       lastOpenedAt: 0,
     });
   }
@@ -49,6 +60,8 @@ export function mergeProjectLibrary(
     if (entries.has(project.dir)) continue;
     entries.set(project.dir, {
       dir: project.dir,
+      projectId: project.dir,
+      rootPath: project.dir,
       name: project.name,
       color: project.color ?? null,
       registryId: null,

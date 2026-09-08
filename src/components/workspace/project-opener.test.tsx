@@ -35,7 +35,7 @@ vi.mock('./connect-source-dialog', () => ({
     onOpenChange: (open: boolean) => void;
     onConnected: (result: {
       sourceId: string;
-      openAgentId: string | null;
+      openNativeAgentId: string | null;
       agents: readonly unknown[];
     }) => void;
   }) =>
@@ -47,7 +47,7 @@ vi.mock('./connect-source-dialog', () => ({
           onClick={() =>
             onConnected({
               sourceId: 'source-1',
-              openAgentId: 'tyler',
+              openNativeAgentId: 'tyler',
               agents: [],
             })
           }
@@ -118,7 +118,12 @@ describe('Project opener', () => {
     renderControlledProjectOpener({
       onOpenChange,
       workspaceProjects: [
-        { dir: '/project', name: 'Project', color: '#19E6FF' },
+        {
+          dir: '/project',
+          registryId: 'project-1',
+          name: 'Project',
+          color: '#19E6FF',
+        },
       ],
       onOpenProject,
       onImportProjects: vi.fn(async () => true),
@@ -128,6 +133,43 @@ describe('Project opener', () => {
     await waitFor(() => expect(onOpenProject).toHaveBeenCalledWith('/project'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(window.electron?.pty).toBeUndefined();
+  });
+
+  it('opens a folderless Context Group without asking Finder for a path', async () => {
+    listProjects.mockResolvedValue([
+      {
+        id: 'project-manual',
+        user_id: 'u',
+        name: 'Remote operations',
+        color: null,
+        kind: 'manual',
+        root_path: null,
+        git_remote: null,
+        last_opened_at: null,
+        archived_at: null,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    const onOpenContextProject = vi.fn();
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+      onOpenContextProject,
+    });
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Remote operations/ })
+    );
+
+    expect(onOpenContextProject).toHaveBeenCalledWith({
+      id: 'project-manual',
+      name: 'Remote operations',
+      color: null,
+    });
+    expect(window.electron!.dialog!.pathExists).not.toHaveBeenCalled();
   });
 
   it('releases the in-app modal before opening the native folder picker', async () => {
@@ -276,7 +318,7 @@ describe('Project opener', () => {
     await waitFor(() =>
       expect(onAgentSourceConnected).toHaveBeenCalledWith({
         sourceId: 'source-1',
-        openAgentId: 'tyler',
+        openNativeAgentId: 'tyler',
         agents: [],
       })
     );
@@ -292,7 +334,12 @@ describe('Project opener', () => {
     renderControlledProjectOpener({
       onOpenChange,
       workspaceProjects: [
-        { dir: '/project', name: 'Project', color: '#19E6FF' },
+        {
+          dir: '/project',
+          registryId: 'project-1',
+          name: 'Project',
+          color: '#19E6FF',
+        },
       ],
       onOpenProject: vi.fn(async () => true),
       onImportProjects: vi.fn(async () => true),

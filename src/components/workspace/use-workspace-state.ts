@@ -406,8 +406,10 @@ export function tabFromPtySession(
 }
 
 export interface Project {
-  /** projectDir — the identity/grouping key */
+  /** Workspace grouping key: root path for legacy/local groups, Project id for folderless groups. */
   dir: string;
+  /** Local folder binding. Null is a valid folderless Project; absent is legacy `dir`. */
+  rootPath?: string | null;
   name: string;
   /** distinct per-project hue (least-used at creation; operator can pick) */
   color: string;
@@ -416,6 +418,11 @@ export interface Project {
   registryId?: string | null;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
+}
+
+/** Folder-dependent verbs go through this boundary, never through identity. */
+export function projectRootPath(project: Project): string | null {
+  return project.rootPath === undefined ? project.dir : project.rootPath;
 }
 
 export function resumableAgentTabsInProject(
@@ -448,6 +455,8 @@ export interface PersistedV6 {
   }>;
   projects: Array<{
     dir: string;
+    /** Added without a schema bump: absent layouts used `dir` as their path. */
+    rootPath?: string | null;
     name: string;
     color?: string;
     activeTabId: string | null;
@@ -977,6 +986,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const dismissReentryRecap = useCallback(() => setReentryRecap(null), []);
   const stateRef = useRef({ projects, activeDir, lastUsedDir, pinnedTabId });
   stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
+  /** One projected Agent can have one tab-opening transaction at a time. */
+  const remoteAgentOpenInFlightRef = useRef<
+    Array<{ agentId: string; task: Promise<string> }>
+  >([]);
   // dirs whose identity the operator edited locally — the reconcile-on-load
   // must not clobber a rename/recolor made while the registry fetch was still
   // in flight (its snapshot is already stale), and instead pushes it up.
@@ -1014,7 +1027,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // here keeps that fact in one place instead of teaching the owner about a
   // second kind of tab it would then have to keep ignoring.
   const sessionScopeLayout = useMemo(
-    () => projects.map(project => ({ tabs: project.tabs.filter(isSessionTab) })),
+    () =>
+      projects.map(project => ({ tabs: project.tabs.filter(isSessionTab) })),
     [projects]
   );
   useSessionScopeRelease(sessionScope, sessionScopeLayout);
@@ -1029,6 +1043,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 ? {
                     ...group,
                     registryId: proj.id,
+                    rootPath: proj.root_path,
                     name: proj.name || group.name,
                     color: proj.color || group.color,
                   }
@@ -1135,23 +1150,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * remote tab reaches this only through a bug, and ignoring it keeps that bug
    * from writing a lifecycle onto someone else's Agent.
    */
-  const updateTab = useCallback(
-    (tabId: string, patch: Partial<SessionTab>) => {
-      setProjects(prev =>
-        prev.map(g =>
-          g.tabs.some(t => t.id === tabId && isSessionTab(t))
-            ? {
-                ...g,
-                tabs: g.tabs.map(t =>
-                  t.id === tabId && isSessionTab(t) ? { ...t, ...patch } : t
-                ),
-              }
-            : g
-        )
-      );
-    },
-    []
-  );
+  const updateTab = useCallback((tabId: string, patch: Partial<SessionTab>) => {
+    setProjects(prev =>
+      prev.map(g =>
+        g.tabs.some(t => t.id === tabId && isSessionTab(t))
+          ? {
+              ...g,
+              tabs: g.tabs.map(t =>
+                t.id === tabId && isSessionTab(t) ? { ...t, ...patch } : t
+              ),
+            }
+          : g
+      )
+    );
+  }, []);
 
   /** S13.3 secondary path: attach a running Session to an item locally. */
   const attachRoadmapItem = useCallback(
@@ -1364,6 +1376,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
         const restored: Project[] = persisted.projects.map((g, gi) => ({
           dir: g.dir,
+          rootPath: g.rootPath,
           name: g.name,
           color:
             g.color ??
@@ -1548,20 +1561,29 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       void listProjects()
         .then(registry => {
           if (cancelled || registry.length === 0) return;
-          const byPath = new Map(registry.map(p => [p.root_path, p]));
+          const byPath = new Map(
+            registry
+              .filter(project => project.root_path !== null)
+              .map(project => [project.root_path, project] as const)
+          );
+          const byId = new Map(registry.map(project => [project.id, project]));
           setProjects(prev =>
             prev.map(g => {
-              const r = byPath.get(g.dir);
+              const rootPath = projectRootPath(g);
+              const r =
+                (rootPath ? byPath.get(rootPath) : undefined) ??
+                byId.get(g.dir);
               if (!r) return g;
               // A rename/recolor made during this async window must win over
               // the now-stale registry snapshot: link the row but keep the
               // local edit (it's pushed up below so it still syncs). Otherwise
               // adopt the synced name/color.
               return editedDirsRef.current.has(g.dir)
-                ? { ...g, registryId: r.id }
+                ? { ...g, registryId: r.id, rootPath: r.root_path }
                 : {
                     ...g,
                     registryId: r.id,
+                    rootPath: r.root_path,
                     name: r.name || g.name,
                     color: r.color || g.color,
                   };
@@ -1570,7 +1592,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           // Edits made before the row's id was known couldn't sync (the verbs
           // guard on registryId); now that we have the ids, push them up.
           for (const g of stateRef.current.projects) {
-            const r = byPath.get(g.dir);
+            const rootPath = projectRootPath(g);
+            const r =
+              (rootPath ? byPath.get(rootPath) : undefined) ?? byId.get(g.dir);
             if (!r || !editedDirsRef.current.has(g.dir)) continue;
             if (g.name && g.name !== r.name) {
               void registryRenameProject(r.id, g.name).catch(() => {});
@@ -1808,6 +1832,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             });
           return {
             dir: g.dir,
+            ...(g.rootPath !== undefined ? { rootPath: g.rootPath } : {}),
             name: g.name,
             color: g.color,
             activeTabId: tabs.some(t => t.id === g.activeTabId)
@@ -2725,7 +2750,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const launchHere = useCallback(
     (harness: PtyHarness): boolean => {
       const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
-      const dir = gs.find(g => g.dir === ad)?.dir ?? (lu || null);
+      const activeProject = gs.find(group => group.dir === ad);
+      const dir = activeProject ? projectRootPath(activeProject) : lu || null;
       if (!dir) {
         setError(
           'Project directory is required — pick where this session lives.'
@@ -2790,72 +2816,138 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * the conversation.
    */
   const openRemoteAgent = useCallback(
-    (ref: RemoteAgentOpenRef): string => {
-      const dir = remoteAgentGroupDir(ref);
-      const existing = stateRef.current.projects
-        .flatMap(project =>
-          project.tabs.map(tab => ({ dir: project.dir, tab }))
-        )
-        .find(
-          entry =>
-            isRemoteAgentTab(entry.tab) && entry.tab.agentId === ref.agentId
+    (ref: RemoteAgentOpenRef): Promise<string> => {
+      const inFlight = remoteAgentOpenInFlightRef.current.find(
+        entry => entry.agentId === ref.agentId
+      );
+      if (inFlight) return inFlight.task;
+      const task = (async () => {
+        const claim = operatorPosition.claimHere();
+        const registryProject = await listProjects()
+          .then(
+            rows => rows.find(project => project.id === ref.projectId) ?? null
+          )
+          .catch(() => null);
+        const currentProject = stateRef.current.projects.find(
+          project =>
+            project.registryId === ref.projectId ||
+            project.dir === ref.projectId ||
+            (registryProject?.root_path !== null &&
+              registryProject?.root_path !== undefined &&
+              projectRootPath(project) === registryProject.root_path)
         );
-      if (existing) {
-        // The source owns the names; a rename there shows here on next open.
-        setProjects(prev =>
-          prev.map(project => ({
-            ...project,
-            tabs: project.tabs.map(tab =>
-              isRemoteAgentTab(tab) && tab.agentId === ref.agentId
-                ? {
-                    ...tab,
-                    title: ref.displayName,
-                    projectLabel: ref.projectLabel,
-                  }
-                : tab
-            ),
-          }))
-        );
-        moveOperator(existing.dir, existing.tab.id);
-        return existing.tab.id;
-      }
-      const tab: RemoteAgentTab = {
-        kind: 'remote-agent',
-        id: newTabId(),
-        title: ref.displayName,
-        sourceId: ref.sourceId,
-        nativeAgentId: ref.nativeAgentId,
-        agentId: ref.agentId,
-        projectLabel: ref.projectLabel,
-      };
-      setProjects(prev => {
-        const index = prev.findIndex(project => project.dir === dir);
-        if (index === -1) {
-          // The Project this Agent was mapped to at Connect time is not open.
-          // It is still where the coworker belongs, so the group opens with
-          // the mapping's own label rather than the coworker landing in
-          // whichever Project the operator happens to be standing in.
-          return [
-            ...prev,
-            {
-              dir,
-              name: ref.projectLabel || ref.displayName,
-              color: pickDistinctColor(prev.map(project => project.color)),
-              tabs: [tab],
-              activeTabId: tab.id,
-            },
-          ];
+        const dir =
+          currentProject?.dir ??
+          registryProject?.root_path ??
+          remoteAgentGroupDir(ref);
+        const existing = stateRef.current.projects
+          .flatMap(project =>
+            project.tabs.map(tab => ({ dir: project.dir, tab }))
+          )
+          .find(
+            entry =>
+              isRemoteAgentTab(entry.tab) && entry.tab.agentId === ref.agentId
+          );
+        if (existing) {
+          // The source owns the names; a rename there shows here on next open.
+          setProjects(prev =>
+            prev.map(project => ({
+              ...project,
+              tabs: project.tabs.map(tab =>
+                isRemoteAgentTab(tab) && tab.agentId === ref.agentId
+                  ? {
+                      ...tab,
+                      title: ref.displayName,
+                      projectLabel: ref.projectLabel,
+                    }
+                  : tab
+              ),
+            }))
+          );
+          if (claim.stillCurrent()) moveOperator(existing.dir, existing.tab.id);
+          return existing.tab.id;
         }
-        const next = [...prev];
-        next[index] = {
-          ...next[index],
-          tabs: [...next[index].tabs, tab],
-          activeTabId: next[index].activeTabId ?? tab.id,
+        const tab: RemoteAgentTab = {
+          kind: 'remote-agent',
+          id: newTabId(),
+          title: ref.displayName,
+          sourceId: ref.sourceId,
+          nativeAgentId: ref.nativeAgentId,
+          agentId: ref.agentId,
+          projectLabel: ref.projectLabel,
         };
-        return next;
+        setProjects(prev => {
+          const index = prev.findIndex(project => project.dir === dir);
+          if (index === -1) {
+            // The Project this Agent was mapped to at Connect time is not open.
+            // It is still where the coworker belongs, so the group opens with
+            // the mapping's own label rather than the coworker landing in
+            // whichever Project the operator happens to be standing in.
+            return [
+              ...prev,
+              {
+                dir,
+                rootPath: registryProject?.root_path ?? null,
+                registryId: registryProject?.id ?? ref.projectId,
+                name: ref.projectLabel || ref.displayName,
+                color: pickDistinctColor(prev.map(project => project.color)),
+                tabs: [tab],
+                activeTabId: tab.id,
+              },
+            ];
+          }
+          const next = [...prev];
+          next[index] = {
+            ...next[index],
+            tabs: [...next[index].tabs, tab],
+            activeTabId: next[index].activeTabId ?? tab.id,
+          };
+          return next;
+        });
+        if (claim.stillCurrent()) moveOperator(dir, tab.id);
+        return tab.id;
+      })();
+      const transaction = { agentId: ref.agentId, task };
+      remoteAgentOpenInFlightRef.current.push(transaction);
+      const release = () => {
+        remoteAgentOpenInFlightRef.current =
+          remoteAgentOpenInFlightRef.current.filter(
+            entry => entry !== transaction
+          );
+      };
+      task.then(
+        () => release(),
+        () => release()
+      );
+      return task;
+    },
+    [moveOperator]
+  );
+
+  /** Open a durable Context Group whose local folder binding is absent. */
+  const openContextProject = useCallback(
+    (ref: { id: string; name: string; color: string | null }): void => {
+      setProjects(prev => {
+        const index = prev.findIndex(
+          project => project.registryId === ref.id || project.dir === ref.id
+        );
+        if (index !== -1) return prev;
+        return [
+          ...prev,
+          {
+            dir: ref.id,
+            rootPath: null,
+            registryId: ref.id,
+            name: ref.name,
+            color:
+              ref.color ??
+              pickDistinctColor(prev.map(project => project.color)),
+            tabs: [],
+            activeTabId: null,
+          },
+        ];
       });
-      moveOperator(dir, tab.id);
-      return tab.id;
+      moveOperator(ref.id, null);
     },
     [moveOperator]
   );
@@ -3315,6 +3407,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     cloneSession,
     launchHere,
     openProject,
+    openContextProject,
     importProjects,
     closeProject,
     closeTab,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   OPERATOR_LANE,
@@ -117,10 +117,23 @@ test('an unresolvable account never earns canon authority', () => {
 test('the drain CLI defaults to the operator lane and gates the other behind a flag', () => {
   // The script talks to production Supabase, so it cannot be executed here.
   // Guard the wiring instead: default `list` must select the operator lane.
-  const cli = readFileSync(
-    new URL('./feedback-triage.mjs', import.meta.url),
-    'utf8'
-  );
+  const cliUrl = new URL('./feedback-triage.mjs', import.meta.url);
+  if (!existsSync(cliUrl)) {
+    const disposition = JSON.parse(
+      readFileSync(
+        new URL('./open-source-paths.manifest.json', import.meta.url),
+        'utf8'
+      )
+    );
+    assert.deepEqual(
+      disposition.recipes,
+      {},
+      'only the projected public tree may omit the private feedback drain CLI'
+    );
+    return;
+  }
+
+  const cli = readFileSync(cliUrl, 'utf8');
   assert.match(cli, /from '\.\/lib\/feedback-lanes\.mjs'/);
   assert.match(cli, /EXAWATT_ADMIN_EMAILS/);
   assert.match(cli, /parseOperatorEmails\(configuredOperatorEmails\)/);

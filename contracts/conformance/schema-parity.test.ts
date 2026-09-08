@@ -19,6 +19,7 @@ interface FixtureCase {
 type JsonObject = Record<string, unknown>;
 
 const CONTRACT_ROOT = fileURLToPath(new URL('../', import.meta.url));
+const CONFORMANCE_ROOT = fileURLToPath(new URL('./', import.meta.url));
 const SERVICE_ROOT = fileURLToPath(new URL('../services/v1/', import.meta.url));
 const SCHEMA_ROOT = fileURLToPath(
   new URL('../services/v1/schemas/', import.meta.url)
@@ -109,6 +110,25 @@ describe('Apache compatibility contracts', () => {
       const schema = await json<AnySchema>(`${SCHEMA_ROOT}${file}`);
       expect(() => validator.addSchema(schema)).not.toThrow();
     }
+    const conformanceCases = await json<AnySchema>(
+      `${CONFORMANCE_ROOT}cases.schema.json`
+    );
+    expect(() => validator.addSchema(conformanceCases)).not.toThrow();
+  });
+
+  it('keeps every executable case field inside the asserted case contract', async () => {
+    const validator = ajv();
+    const validate = validator.compile(
+      await json<AnySchema>(`${CONFORMANCE_ROOT}cases.schema.json`)
+    );
+    const cases = await json<unknown>(`${CONFORMANCE_ROOT}cases.json`);
+    expect(validate(cases), formatErrors(validate.errors)).toBe(true);
+
+    const withUnassertedExpectation = structuredClone(cases) as Array<{
+      expected: Record<string, unknown>;
+    }>;
+    withUnassertedExpectation[0].expected.unassertedField = true;
+    expect(validate(withUnassertedExpectation)).toBe(false);
   });
 
   it('keeps OpenAPI operations on the canonical standalone schemas', async () => {
@@ -400,22 +420,35 @@ describe('Apache compatibility contracts', () => {
     );
   });
 
-  it('commits the absence, custom, incompatible, N-1, and rollback cases', async () => {
+  it('commits every executable absence, version, envelope, and replay case', async () => {
     const cases = await json<
       Array<{
         id: string;
         expected: JsonObject;
         distributionFixture?: string | null;
         serviceFixture?: string;
+        kind?: string;
       }>
     >(`${CONTRACT_ROOT}conformance/cases.json`);
     expect(cases.map(item => item.id)).toEqual([
       'community-all-null',
       'no-exawatt-fallback',
-      'custom-distributor-v1',
       'configured-incompatible-version',
+      'custom-distributor-v1-current',
       'n-minus-one-additive-response',
+      'missing-response-version',
+      'malformed-response-version',
+      'unknown-response-version',
       'live-rollback-version-mismatch',
+      'schema-version-mismatch',
+      'wrong-success-media',
+      'wrong-success-status',
+      'malformed-json',
+      'malformed-success-envelope',
+      'problem-envelope-v1',
+      'malformed-problem-envelope',
+      'mutating-no-ambiguous-replay',
+      'product-feedback-idempotent-repeat',
     ]);
     expect(
       cases.find(item => item.id === 'community-all-null')?.expected
@@ -426,6 +459,10 @@ describe('Apache compatibility contracts', () => {
     expect(
       cases.find(item => item.id === 'live-rollback-version-mismatch')?.expected
     ).toMatchObject({ automaticReplay: false });
+    expect(
+      cases.find(item => item.id === 'mutating-no-ambiguous-replay')?.expected
+    ).toMatchObject({ automaticReplay: false, error: 'transport_error' });
+    expect(cases.filter(item => item.kind === 'wire')).toHaveLength(15);
     for (const item of cases) {
       for (const fixture of [item.distributionFixture, item.serviceFixture]) {
         if (fixture) {

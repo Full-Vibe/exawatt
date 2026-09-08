@@ -21,6 +21,7 @@ import path from 'node:path';
 
 import {
   distributionDigest,
+  resolveDistributionInput,
   selectDistributionContract,
 } from './distribution-build.mjs';
 import { readAsarFile } from './asar.mjs';
@@ -43,11 +44,18 @@ export function packagedBuilderConfigPath(
  *   BUNDLE, never the expectations: the contract still decides what the package
  *   owes, and `assertPackagedContract` proves the two agree.
  */
-export async function resolvePackagedApp({
-  root = process.cwd(),
-  appPathOverride = process.env.EXAWATT_APP_PATH,
-  inputJson = process.env.EXAWATT_DISTRIBUTION_CONFIG_JSON,
-} = {}) {
+export async function resolvePackagedApp(options = {}) {
+  const {
+    root = process.cwd(),
+    appPathOverride = process.env.EXAWATT_APP_PATH,
+  } = options;
+  // An explicit property is authoritative, including `undefined` for a
+  // deliberately selected community fixture. An ordinary caller inherits the
+  // same env/profile/custody selector as build preparation; otherwise an
+  // official artifact can be judged against the community default.
+  const inputJson = Object.hasOwn(options, 'inputJson')
+    ? options.inputJson
+    : (await resolveDistributionInput()).inputJson;
   // Read the shell's INTENT, not `.exawatt-build/distribution.json`. The
   // prepared artifact is whatever the last build left behind, so resolving from
   // it lets an official-contract shell silently prove the community package —

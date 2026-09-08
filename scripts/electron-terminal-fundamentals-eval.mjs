@@ -23,7 +23,10 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openShellFromLauncher, withElectronApp } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-terminal-eval-'));
 const BASE = process.env.EXA_BASE ?? 'http://localhost:7000';
@@ -36,7 +39,9 @@ const EVAL_URL = 'https://exawatt.ai/eval-link-4c1d';
 
 const failures = [];
 const check = (name, ok, detail) => {
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${ok || !detail ? '' : ` — ${detail}`}`);
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'} ${name}${ok || !detail ? '' : ` — ${detail}`}`
+  );
   if (!ok) failures.push(name);
 };
 
@@ -339,7 +344,7 @@ await withElectronApp(
     await page.evaluate(async id => {
       await window.electron?.pty?.write(
         id,
-        "/usr/bin/awk 'BEGIN { for (i = 1; i <= 20000; i++) printf \"EXAWATT_LINE_%05d\\n\", i }'\n"
+        '/usr/bin/awk \'BEGIN { for (i = 1; i <= 20000; i++) printf "EXAWATT_LINE_%05d\\n", i }\'\n'
       );
     }, sessionId);
     await page.waitForFunction(async id => {
@@ -410,6 +415,128 @@ await withElectronApp(
         existsSync(imagePaste.path),
       JSON.stringify(imagePaste)
     );
+
+    // A display-scale change updates xterm's cell metrics without changing
+    // the container's CSS box (BUG-092). Two hidden panes must stay frozen,
+    // then independently fit the latest metrics on reveal. This uses idle
+    // shells: no provider account, prompt execution, or TUI redraw timer.
+    for (let index = 0; index < 2; index += 1) {
+      await page.keyboard.press('Meta+t');
+      await page.locator('[data-agent-composer]').waitFor();
+      await openShellFromLauncher(page);
+      await page.waitForFunction(
+        count => Object.keys(window.__XTERMS__ ?? {}).length === count,
+        index + 2
+      );
+    }
+    await page.evaluate(async () => {
+      const sessions = await window.electron.pty.list();
+      for (const { id } of sessions.slice(1)) {
+        await window.electron.pty.write(
+          id,
+          "/usr/bin/printf 'EXAWATT_GEOMETRY_READY\\n'\n"
+        );
+      }
+    });
+    await page.waitForFunction(() =>
+      Object.values(window.__XTERMS__)
+        .slice(1)
+        .every(term => {
+          const buffer = term.buffer.active;
+          for (let row = 0; row < buffer.length; row += 1) {
+            if (
+              buffer.getLine(row)?.translateToString(true) ===
+              'EXAWATT_GEOMETRY_READY'
+            )
+              return true;
+          }
+          return false;
+        })
+    );
+    const beforeScale = await page.evaluate(async () => ({
+      dpr: devicePixelRatio,
+      width: innerWidth,
+      height: innerHeight,
+      sessions: (await window.electron.pty.list()).map(
+        ({ id, cols, rows }) => ({ id, cols, rows })
+      ),
+    }));
+    const cdp = await page.context().newCDPSession(page);
+    const activeId = beforeScale.sessions.at(-1).id;
+    const targetScale = beforeScale.dpr === 1 ? 2 : 1;
+    await page.evaluate(
+      ({ id, target }) => {
+        window.__geometryScaleRendered = false;
+        const subscription = window.__XTERMS__[id].onRender(() => {
+          if (devicePixelRatio !== target) return;
+          window.__geometryScaleRendered = true;
+          subscription.dispose();
+        });
+      },
+      { id: activeId, target: targetScale }
+    );
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: beforeScale.width,
+      height: beforeScale.height,
+      deviceScaleFactor: targetScale,
+      mobile: false,
+    });
+    const assertFitted = async id => {
+      await page.waitForFunction(async sessionId => {
+        const term = window.__XTERMS__?.[sessionId];
+        const pane = term?.element?.closest('.terminal-pane');
+        const screen = term?.element?.querySelector('.xterm-screen');
+        if (!term || !pane || !screen || pane.dataset.pane === 'hidden')
+          return false;
+        const cell = screen.getBoundingClientRect().width / term.cols;
+        const available =
+          pane.getBoundingClientRect().width -
+          Number(pane.dataset.terminalInsetX) * 2 -
+          14;
+        const session = (await window.electron.pty.list()).find(
+          entry => entry.id === sessionId
+        );
+        return (
+          cell > 0 &&
+          term.cols === Math.max(2, Math.floor(available / cell)) &&
+          session?.cols === term.cols &&
+          session?.rows === term.rows
+        );
+      }, id);
+    };
+    // Wait for the renderer to consume the changed display scale before
+    // asserting the fit; otherwise the old, internally consistent metrics
+    // could satisfy the check before Chromium delivered the scale event.
+    await page.waitForFunction(() => window.__geometryScaleRendered);
+    await assertFitted(activeId);
+    check(
+      'display-scale metrics refit the visible pane without a window resize',
+      true
+    );
+    const hiddenSizes = await page.evaluate(async () =>
+      (await window.electron.pty.list())
+        .slice(0, 2)
+        .map(({ cols, rows }) => ({ cols, rows }))
+    );
+    check(
+      'display-scale changes leave both hidden PTYs frozen',
+      hiddenSizes.every(
+        (size, index) =>
+          size.cols === beforeScale.sessions[index].cols &&
+          size.rows === beforeScale.sessions[index].rows
+      )
+    );
+    for (let index = 0; index < 2; index += 1) {
+      await page.keyboard.press(`Meta+${index + 1}`);
+      await assertFitted(beforeScale.sessions[index].id);
+    }
+    check('both hidden panes independently recover on reveal', true);
+    if (process.env.EXAWATT_EVAL_GEOMETRY_SCREENSHOT) {
+      await page.screenshot({
+        path: process.env.EXAWATT_EVAL_GEOMETRY_SCREENSHOT,
+      });
+    }
+    await cdp.detach();
   },
   { maxMs: 240_000 }
 );

@@ -14,6 +14,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { acquireInstallationLock } from './lib/delivery-lock.mjs';
+import { resolveDistributionInput } from './lib/distribution-build.mjs';
 import {
   commitStagedApp,
   recoverAtomicDogfoodSwap,
@@ -37,13 +38,15 @@ import { dogfoodInstallLayout } from './lib/dogfood-install-identity.mjs';
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
 const requireOfficial = process.env.EXAWATT_REQUIRE_OFFICIAL_DOGFOOD === '1';
+const { inputJson } = await resolveDistributionInput();
 const packaged = requireOfficial
   ? await requireOfficialPackagedApp({
       root,
       appPathOverride: undefined,
+      inputJson,
       purpose: 'Operator dogfood',
     })
-  : await resolvePackagedApp({ root, appPathOverride: undefined });
+  : await resolvePackagedApp({ root, appPathOverride: undefined, inputJson });
 const installDir = process.env.EXAWATT_INSTALL_DIR ?? '/Applications';
 const { target, staging, statePath } = dogfoodInstallLayout(packaged, {
   installDir,

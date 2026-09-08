@@ -8,33 +8,22 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const scriptsDirectory = path.join(root, 'scripts');
 const INTENTIONAL_DIRECTORIES = new Set(['lib', 'r3f-eval']);
 
-const INTENTIONAL_NON_PACKAGE_FILES = new Set([
-  'README.md',
-  'agent-stop-check.mjs',
-  'app-update-config.cjs',
-  'ci-batch-worker.mjs',
-  'distribution.official.example.json',
-  'dogfood-worker.mjs',
-  'fathom-transcript.mjs',
-  'gitleaks.toml',
-  'macos-atomic-swap.c',
-  'open-source-paths.manifest.json',
-  'pace-opportunity-shot.mjs',
-  'palette-projects-eval.mjs',
-  'prepare-release-metadata.mjs',
-  'production-audit-baseline.json',
-  'publish-supabase-updates.mjs',
-  'registry-e2e-eval.mjs',
-  'release-after-pack.cjs',
-  'renderer-session-lifecycle-leak-probe.mjs',
-  'session-lifecycle-leak-probe.mjs',
-  'sign-renderer-archive.cjs',
-  'terminal-cost-probe.mjs',
-  'transcript-replay-probe.mjs',
-]);
-
 async function packageJson() {
   return JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+}
+
+async function documentedNonPackageFiles() {
+  const readme = await readFile(
+    path.join(scriptsDirectory, 'README.md'),
+    'utf8'
+  );
+  const start = readme.indexOf('## Intentional non-package entrypoints');
+  const end = readme.indexOf('## Adding or changing a script', start);
+  assert.notEqual(start, -1, 'scripts/README.md lost its exception catalog');
+  assert.ok(end > start, 'scripts/README.md exception catalog is unbounded');
+  return [...readme.slice(start, end).matchAll(/^(?:\|\s*|-\s*)`([^`]+)`/gm)].map(
+    match => match[1]
+  );
 }
 
 function scriptPaths(command) {
@@ -88,6 +77,8 @@ test('every root script test has a package command', async () => {
 
 test('every top-level file has a declared invocation class', async () => {
   const packageFile = await packageJson();
+  const documented = await documentedNonPackageFiles();
+  const intentionalNonPackageFiles = new Set(['README.md', ...documented]);
   const packageBacked = new Set(
     Object.values(packageFile.scripts)
       .flatMap(scriptPaths)
@@ -100,7 +91,7 @@ test('every top-level file has a declared invocation class', async () => {
     .sort();
 
   const unclassified = files.filter(
-    file => !packageBacked.has(file) && !INTENTIONAL_NON_PACKAGE_FILES.has(file)
+    file => !packageBacked.has(file) && !intentionalNonPackageFiles.has(file)
   );
   assert.deepEqual(
     unclassified,
@@ -108,7 +99,7 @@ test('every top-level file has a declared invocation class', async () => {
     'register a command or document the intentional external/direct consumer in scripts/README.md and this test'
   );
 
-  const staleExceptions = [...INTENTIONAL_NON_PACKAGE_FILES]
+  const staleExceptions = [...intentionalNonPackageFiles]
     .filter(file => !files.includes(file))
     .sort();
   assert.deepEqual(
@@ -132,13 +123,17 @@ test('every top-level directory has a declared role', async () => {
 });
 
 test('the README catalogs every intentional non-package file', async () => {
-  const readme = await readFile(
-    path.join(scriptsDirectory, 'README.md'),
-    'utf8'
+  const documented = await documentedNonPackageFiles();
+  assert.ok(documented.length > 0, 'expected documented direct consumers');
+  assert.equal(
+    new Set(documented).size,
+    documented.length,
+    'scripts/README.md lists a non-package file more than once'
   );
-  for (const file of [...INTENTIONAL_NON_PACKAGE_FILES].filter(
-    file => file !== 'README.md'
-  )) {
-    assert.match(readme, new RegExp(`\\b${file.replaceAll('.', '\\.')}\\b`));
-  }
+  const files = new Set(await readdir(scriptsDirectory));
+  assert.deepEqual(
+    documented.filter(file => !files.has(file)),
+    [],
+    'remove stale direct consumers from scripts/README.md'
+  );
 });

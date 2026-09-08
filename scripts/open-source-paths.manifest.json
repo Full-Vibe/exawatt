@@ -144,7 +144,6 @@
       "id": "public-script-tools",
       "classification": "PUBLIC",
       "include": [
-        "scripts/README.md",
         "scripts/agent-land.mjs",
         "scripts/agent-launcher-bench-shot.mjs",
         "scripts/agent-stop-check.mjs",
@@ -153,6 +152,7 @@
         "scripts/check-dependency-licenses.mjs",
         "scripts/check-production-theme-literals.mjs",
         "scripts/ci-batch-worker.mjs",
+        "scripts/cold-composer-probe.mjs",
         "scripts/community-network-observatory.mjs",
         "scripts/company-compose.mjs",
         "scripts/company-proof.mjs",
@@ -161,6 +161,7 @@
         "scripts/dogfood-worker.mjs",
         "scripts/electron-dev.mjs",
         "scripts/electron-packaged-smoke.mjs",
+        "scripts/exact-public-recertification.mjs",
         "scripts/generate-agent-source-declarations.mjs",
         "scripts/generate-app-icon.mjs",
         "scripts/generate-themes.mjs",
@@ -175,7 +176,9 @@
         "scripts/prepare-electron-renderer.mjs",
         "scripts/production-audit-baseline.json",
         "scripts/production-dependency-audit.mjs",
+        "scripts/public-catchup.mjs",
         "scripts/public-content-scan.mjs",
+        "scripts/public-metadata-audit.mjs",
         "scripts/publication-check.mjs",
         "scripts/qa-browser-doctor.mjs",
         "scripts/qa-browser-smoke.mjs",
@@ -323,11 +326,6 @@
       "reason": "community defaults with official identity supplied by overlay"
     },
     {
-      "path": "electron/resources/icon-community-master.png",
-      "classification": "PUBLIC",
-      "reason": "source master for the community mark"
-    },
-    {
       "path": "electron/resources/icon-community.icns",
       "classification": "PUBLIC",
       "reason": "the community mark ships in the public tree; the Exawatt mark does not"
@@ -346,6 +344,11 @@
       }
     },
     {
+      "path": "public/icon-community.png",
+      "classification": "PUBLIC",
+      "reason": "community browser mark and source master for the community package icon"
+    },
+    {
       "path": "scripts/app-update-config.test.mjs",
       "classification": "PUBLIC",
       "reason": "generic update contract without official release assertions"
@@ -359,6 +362,11 @@
       "path": "scripts/delivery-documentation.test.mjs",
       "classification": "PUBLIC",
       "reason": "pins the public agent contract"
+    },
+    {
+      "path": "scripts/README.md",
+      "classification": "PUBLIC",
+      "reason": "omits private operational entrypoints from the public script catalog"
     },
     {
       "path": "scripts/distribution.official.example.json",

@@ -487,3 +487,249 @@ Claude Code's stream-json) remains out of scope.
   missing fact, and disables launch. It never disappears or silently
   substitutes another value. The ENG-028 rule — Types declare what they
   require, sources declare what they can do — remains the capability frame.
+
+## S2.1 OpenCode prelaunch discovery fails soft (landed 2026-08-20)
+
+Feedback `ee18e704-1dbb-4259-b93f-7d369dcb0bcb` showed OpenCode launch
+aborting on invalid JSON before the harness could own its error. Commit
+`a03119b4` already resolves it: the redundant pre-spawn catalog snapshot is
+best-effort, while exact-model launch requirements remain fail-closed.
+`opencode-launch-baseline.test.ts` pins the distinction; no silent model
+substitution is allowed.
+
+## 2026-09-07 — Adoption source investigation
+
+**Prove each native capability before selecting its integration.** ENG-003 owns
+the source investigation supporting ENG-016 D54/D71. Full packet, references,
+UX consequences and acceptance are in the [adoption execution brief](daily-driver-adoption.md#2026-09-07--adoption-execution-brief).
+
+Inventory existing catalog/registry and Codex read-side app-server ownership;
+probe Claude Code and Codex at recorded versions. Distinguish retained reading,
+live observation, exact resume, native commands, and cloud attachment. The
+source capability matrix must state evidence, unsupported cases, authentication
+and cost mode, approvals, cancellation, replay and version compatibility.
+Investigation is authorized; unsupported capabilities are not selected for build.
+
+Discoverable source setup is accepted; source-owned sign-in remains current
+architecture. Lanes-style presentation does not decide Exawatt's custody of
+third-party credentials. ENG-009 remains the owner of that separate decision.
+Provider-hosted session access is demanded but unproven and distinct from
+ENG-033 managed placement. Publish investigation verdicts here and a decision
+record when choosing a durable protocol; update architecture and its runtime
+manifest when implementation actually changes their ownership.
+
+### 2026-09-07 — Native retained-history probe verdict
+
+**Native reading is feasible; native execution remains a separate decision.**
+Read-only probes succeeded against Codex `0.153.4` and local Claude Code
+`2.1.251` history through Anthropic's separately downloaded SDK `0.3.263`.
+No agent prompt, resume, fork, approval response, cancellation, account login,
+cloud attach, or provider-account mutation was issued. These are observed
+versions, not a declared minimum supported range. No runtime dependency or
+source ownership changed in this investigation.
+
+The Codex protocol client already belongs to
+`electron/main/harness-events/codex-app-server.ts` (ENG-023 D5). D71 should
+extend that read-side ownership behind a shared port; it must not introduce
+another per-pane app-server. Coordinate that extraction with D67's recovery
+work on the same client. The conversation catalog continues to own discovery;
+a reader receives an exact provider conversation ID and Project context.
+
+#### Capability matrix
+
+**Proved** means a safe local operation actually succeeded. **Documented** means
+the installed help/schema or primary documentation describes it, but this probe
+did not exercise it. **Unproven** is not an assertion of provider impossibility.
+
+| Capability                             | Codex 0.153.4                                                                                                                           | Claude Code 2.1.251 / SDK 0.3.263                                                                                                               | D71 consequence                                                                                                             |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| List retained local conversations      | Proved: `thread/list`, two rows, cursor present; `useStateDbOnly: true` avoids metadata repair scans                                    | Proved: SDK `listSessions({dir,limit:3})`, three rows with exact IDs                                                                            | Reuse catalog ownership; do not list the filesystem from the renderer                                                       |
+| Read exact retained identity           | Proved: `thread/read({includeTurns:false})` returned the selected ID                                                                    | Proved: SDK `getSessionMessages` returned matching `session_id` values                                                                          | Never substitute nearest or most recent history                                                                             |
+| Page readable records                  | Proved: `thread/turns/list({limit:3,itemsView:'full',sortDirection:'asc'})`; three turns with stable item IDs                           | Proved: two `limit:3` pages at offsets 0 and 3, six distinct UUIDs                                                                              | Presentation pagination works; source IO bounds need separate proof                                                         |
+| Item-level pagination                  | Sampled older history returned JSON-RPC `-32601`, `thread/items/list is not supported yet`, despite the generated schema advertising it | SDK returns conversation messages, with typed content blocks inside `message`                                                                   | Method availability depends on stored history as well as installed version; use turn paging or explicit unavailable history |
+| Read without loading an execution      | Proved: separate observer's `thread/loaded/list` remained empty before and after all reads; selected thread reported `notLoaded`        | Proved: standalone SDK history functions returned without `query()` or CLI execution                                                            | Reader opening must preserve execution ownership; this does not prove arbitrary live attach                                 |
+| Observe existing running execution     | Existing D5 polls provider lineage/turn metadata; the probe did not attach or subscribe                                                 | `claude agents --json --all` proved machine-readable roster access: three background rows with exact `sessionId`; no retained-history guarantee | Roster/status is separate from conversation streaming                                                                       |
+| Live stream and replay/backfill        | Documented for app-server-owned threads; not proved for an arbitrary existing TUI through a second server                               | SDK streams its own `query()` execution; existing TUI adoption not proved                                                                       | Initial reading surface says retained history; no live badge from polling assumptions                                       |
+| Resume exact idle conversation         | Documented `thread/resume`; not invoked                                                                                                 | Documented SDK `resume` and CLI `--resume`; not invoked                                                                                         | Resume is an execution operation, never a side effect of reading                                                            |
+| New turn / attachments                 | Documented app-server turn input; no submit or attachment probe                                                                         | Documented SDK structured input; no query or attachment probe                                                                                   | Retain terminal input until independently verified                                                                          |
+| Tool events/results                    | Generated schema includes command/tool variants; sampled turns included user, reasoning, and assistant items                            | Sampled SDK records included `thinking` and `tool_use`; `tool_result` exists in documented structured message formats                           | Keep tool correlation and unsupported records; do not turn tool output into user prose                                      |
+| Approvals / cancellation               | Protocol operations documented; no response or interrupt issued                                                                         | SDK permission/interrupt operations documented; not exercised                                                                                   | Native controls cannot graduate without end-to-end approval/cancel proof                                                    |
+| Model / effort / Project configuration | Metadata and generated schemas describe them; launch parity unproved                                                                    | Installed CLI help describes them; SDK defaults are a separate configuration contract                                                           | Do not assume reading proves new execution inherits the TUI configuration                                                   |
+| Authentication and inference cost      | `account/read({refreshToken:false})` reported existing `chatgpt` mode; reads submitted no inference                                     | History functions required no query/auth API; no subscription inference was attempted                                                           | Retained reading needs no new API-key ceremony; native SDK execution has separate authentication constraints                |
+| Reconnect / unsupported versions       | One initialize/read/close cycle proved; no reconnect or old-binary compatibility proof                                                  | Local history read proved; no corrupt, partial-write or version-migration probe yet                                                             | Fail visibly per source; add scenario contracts before enabling production reading                                          |
+| Provider-hosted cloud history/attach   | Unproven                                                                                                                                | Installed CLI advertises `--cloud` and `--teleport`; no remote command invoked or public native-attach interface proved                         | Preserve ENG-003/ENG-033 research boundary; local success is not cloud proof                                                |
+
+#### Reproducible probe boundary and evidence
+
+Run these probes in a temporary directory, record CLI and SDK versions, and
+report only counts, field names, types and equality assertions. Do not persist
+conversation bodies, provider IDs, account details, signed URLs or credentials
+in repository evidence.
+
+For Codex, generate the installed protocol schema with
+`codex app-server generate-json-schema --experimental --out <temporary-directory>`.
+Start one `codex app-server --stdio`, initialize with
+`capabilities: { experimentalApi: true, requestAttestation: false }`, and send
+`initialized`. Issue only this bounded read sequence:
+
+```text
+account/read          { refreshToken: false }
+thread/loaded/list    {}
+thread/list           { limit: 2, sortKey: "created_at", sortDirection: "asc",
+                        useStateDbOnly: true }
+thread/read           { threadId: selected.id, includeTurns: false }
+thread/turns/list     { threadId: selected.id, limit: 3,
+                        sortDirection: "asc", itemsView: "full" }
+thread/items/list     { threadId: selected.id, limit: 3, sortDirection: "asc" }
+thread/loaded/list    {}
+```
+
+Close the observer afterwards; requests have a timeout and failure does not
+fall through to resume/start. Observed: identity equality true, turn item IDs
+present, older cursor present, loaded count `0 → 0`. One
+`remoteControl/status/changed` notification arrived during initialization;
+that notification is not proof of a conversation subscription. The failed item
+read did not prevent the succeeding turn read or metadata operations.
+`thread/read(includeTurns:true)` is deliberately excluded: the installed
+schema deprecates full-history hydration for paginated threads.
+
+For Claude, `claude agents --json --all` is a documented read-only roster
+command; its short background `id` is **not** the conversation `sessionId`.
+The SDK was fetched as the official `@anthropic-ai/claude-agent-sdk@0.3.263`
+registry tarball into a temporary directory, without changing the repository
+lockfile or installing optional platform binaries. Only these exports ran:
+
+```typescript
+const sessions = await listSessions({ dir: projectPath, limit: 3 });
+const first = await getSessionMessages(sessions[0].sessionId, {
+  dir: projectPath,
+  limit: 3,
+  offset: 0,
+  includeSystemMessages: true,
+});
+const next = await getSessionMessages(sessions[0].sessionId, {
+  dir: projectPath,
+  limit: 3,
+  offset: 3,
+  includeSystemMessages: true,
+});
+```
+
+Observed: three listed sessions; both pages contained three records; all six
+UUIDs were distinct; all sampled `session_id` values matched the requested
+conversation. Rows carried `type`, `uuid`, `session_id`, `message`,
+`parent_tool_use_id`, `parent_agent_id`, and `timestamp`. The inspected exported
+type does not promise `timestamp`, so consumers must treat it as optional.
+
+#### Smallest implementation and dependency decision
+
+**Adopt a dependency-free read model first; do not add the Claude SDK merely
+because its read probe passed.** Its `sdk.mjs` is 1,522,502 bytes in this
+version and the package declares optional per-platform native packages.
+Source inspection shows `getSessionMessages` resolves and parses transcript
+content before applying message pagination: `limit` is a response bound, not
+a demonstrated IO or memory bound. Importing it into Electron main and calling
+it on each page would not meet the adoption brief's responsiveness contract.
+This investigation does not select a replacement handwritten full transcript
+parser either.
+
+The next implementation slice should:
+
+- Define a source-agnostic retained-history page and pure normalization below
+  the Session/Event boundary, without adding a second live-state owner.
+- Reuse the Codex read client with bounded turn paging. Treat item-method
+  rejection as a history capability result, not evidence that Codex is absent.
+  Cap bytes as well as records: one full turn can contain a huge tool result.
+- Keep Claude access behind the same port. Compare a version-pinned isolated
+  SDK reader with explicit resource limits against extending the existing
+  bounded transcript ownership. Prove parent-chain selection, compaction,
+  partial writes and long-history costs before selecting either. Do not copy
+  minified SDK internals into the product or silently add its platform binary.
+- Defer live attach, prompt submission, approvals, cancellation and cloud
+  access to individually proven capability exits. No guessed support through
+  private service endpoints or terminal ANSI reconstruction.
+
+The minimal read envelope carries `sourceId`, `providerSessionId`, `projectId`,
+ordered records, opaque older-page cursor, history completeness
+(`complete | partial | unknown`) and observation kind (`retained` initially).
+Each record has a stable source item ID, kind, optional timestamp, typed content
+blocks, and source-reported tool correlation where present. Keep loading/error/
+unsupported separate from an empty successful page. Do not fabricate a turn ID
+where the source gives only message identity; do not expose private reasoning
+as ordinary assistant prose. Code text remains exact; unknown block types have
+a visible bounded fallback. None of these names creates new product concepts.
+
+Gallery work can proceed with synthetic data on that contract. Production
+admission additionally needs pagination/order/deduplication, malformed data,
+partial histories, deleted sources, source-switch cancellation, byte bounds,
+and same-Session terminal/reading identity evidence. No production reading
+capability is marked complete by this spike.
+
+#### Primary references and revisit triggers
+
+- [Codex App Server](https://developers.openai.com/codex/app-server): explicit
+  read-without-resume semantics, thread pagination, rich-client controls and
+  authentication. Installed generated schemas and local responses outrank a
+  generic assumption of uniform method support.
+- [Claude SDK sessions](https://code.claude.com/docs/en/agent-sdk/sessions):
+  continue, resume and fork semantics. These are execution APIs.
+- [Claude SDK TypeScript reference](https://code.claude.com/docs/en/agent-sdk/typescript):
+  history exports; the web retrieval exceeded its content limit, so the actual
+  inspected `sdk.d.ts` and exported functions from the pinned official package
+  provide this probe's type and behavior evidence.
+- [Claude agent view](https://code.claude.com/docs/en/agent-view): roster JSON,
+  distinct background and conversation IDs, terminal attach and supervisor
+  lifecycle. A terminal attach command is not a native transcript protocol.
+- [Claude SDK overview](https://code.claude.com/docs/en/agent-sdk/overview):
+  third-party SDK products use the documented API-key authentication route
+  unless separately approved for claude.ai login/rate limits. Reading retained
+  local records does not establish subscription compatibility for new SDK
+  turns. No legal interpretation or new credential custody is selected here.
+
+Revisit native controls when one source proves an execution owner that supports
+its actual authentication mode, exact identity, approvals, cancellation and
+replay without disrupting the existing TUI. Re-run the read probes after a
+provider upgrade or store-format change; record capability results per source
+and history, not only a permissive minimum-version comparison.
+
+### 2026-09-07 — Retained-history normalization groundwork
+
+**The shared reading boundary now exists without adding source IO.** D71's
+`packages/core/src/conversation/retained-history.ts` accepts already-read Codex
+full-turn pages or Claude SDK message records selected onto their conversation
+chain. It exports one bounded page model and two pure normalizers. No SDK,
+filesystem parser, app-server connection, renderer or native control was added.
+
+Exact source/Session/Project identity scopes stable record keys; Codex keys
+also include the source turn ID, while Claude does not invent one. Source order
+is authoritative; descending pages are reversed without mutating their input,
+and repeated source item IDs keep the first record without spending the text
+budget again. Claude cross-Session records are rejected. Tool calls/results
+retain source correlation and do not impersonate the operator. Withheld Claude
+tool input is explicitly marked omitted/partial; an in-progress Codex turn
+cannot declare complete history. Private reasoning is omitted, unknown blocks remain explicit, and raw markdown stays
+inert data for a future safe renderer. Missing timestamps remain absent.
+
+The page distinguishes invalid address/page errors, successful emptiness,
+partial history and unknown completeness. Version strings are provenance,
+not a compatibility or native-execution grant. Work is bounded by source rows,
+items and inspected blocks; output also has per-block and total text budgets.
+Clipping is explicit and avoids splitting UTF-16 surrogate pairs. Adapters must
+still bound file/protocol IO and confirm that a Codex response belongs to the
+requested thread: turn rows do not repeat that identity. Claude raw JSONL is
+**not** this input contract; reconstructing its parent chain remains source work.
+
+The older connected Gateway `ConversationTurnView` is deliberately retained:
+it owns its existing flat text projection and command authority. This module
+provides typed blocks for retained source data, using the same operator/agent
+voice vocabulary; it does not create a second Session, Event, or lifecycle model.
+The architecture document and `/architecture` source-adapter description name
+this implemented boundary while stating production reading is unwired.
+
+Verification covers exact identity/order, replay duplicates, mismatched Session
+records, tool correlation, reasoning omission, untrusted text preservation,
+unknown versions/records, malformed or partial history, processing/output
+bounds, and optional timestamps. Production admission remains the source-IO,
+renderer and same-Session gates in the adoption brief. Because no runtime caller
+uses this pure module and no Electron-facing behavior changes, this groundwork
+requires the repository floor and relevant core tests, not a dogfood package.

@@ -1593,6 +1593,7 @@ describe.skipIf(ALIASES.length < 2)('live OpenClaw identity', () => {
           readDeviceKeypair: () => null,
           writeDeviceCredential: () => ({ ok: true as const }),
           clearDeviceToken: () => {},
+          setDiscoveredGatewayPort: () => true,
           setGrantedAuthority: () => true,
         },
         openTunnel: async (target, deps) => {

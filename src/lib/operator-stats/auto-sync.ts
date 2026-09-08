@@ -30,6 +30,12 @@
 import type { Session, UserIdentity } from '@supabase/supabase-js';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
 import {
+  getOperatorStatsProfile,
+  isCompatibleServiceProblemError,
+  isCompatibleServiceProtocolError,
+  publishOperatorStats,
+} from '@exawatt/core/distribution';
+import {
   analyticsSurface,
   captureAnalyticsEvent,
   hostedFailureForStatus,
@@ -170,9 +176,25 @@ export async function performOperatorStatsSync(
     >;
     try {
       hosted = await deps.getHostedProfileState(session.access_token);
-    } catch {
-      deps.captureFailure('network', null);
-      return { outcome: 'failed', snapshot: null, failure: 'network' };
+    } catch (cause) {
+      if (isCompatibleServiceProblemError(cause)) {
+        deps.captureFailure(hostedFailureForStatus(cause.status), cause.status);
+        return {
+          outcome: 'failed',
+          snapshot: null,
+          failure: syncFailureForStatus(cause.status),
+        };
+      }
+      const protocolFailure = isCompatibleServiceProtocolError(cause);
+      deps.captureFailure(
+        protocolFailure ? 'invalid_response' : 'network',
+        null
+      );
+      return {
+        outcome: 'failed',
+        snapshot: null,
+        failure: protocolFailure ? 'service' : 'network',
+      };
     }
     if (!hosted.ok) {
       deps.captureFailure(hostedFailureForStatus(hosted.status), hosted.status);
@@ -231,9 +253,22 @@ export async function performOperatorStatsSync(
         failure: syncFailureForStatus(response.status),
       };
     }
-  } catch {
-    deps.captureFailure('network', null);
-    return { outcome: 'failed', snapshot: null, failure: 'network' };
+  } catch (cause) {
+    if (isCompatibleServiceProblemError(cause)) {
+      deps.captureFailure(hostedFailureForStatus(cause.status), cause.status);
+      return {
+        outcome: 'failed',
+        snapshot: null,
+        failure: syncFailureForStatus(cause.status),
+      };
+    }
+    const protocolFailure = isCompatibleServiceProtocolError(cause);
+    deps.captureFailure(protocolFailure ? 'invalid_response' : 'network', null);
+    return {
+      outcome: 'failed',
+      snapshot: null,
+      failure: protocolFailure ? 'service' : 'network',
+    };
   }
 
   const syncedAt = deps.now();
@@ -360,20 +395,11 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
       return settings.operatorProfile ?? {};
     },
     getHostedProfileState: async accessToken => {
-      const response = await fetch(endpoint.url, {
-        method: 'GET',
-        headers: { authorization: `Bearer ${accessToken}` },
-      });
-      if (!response.ok) {
-        return { ok: false, status: response.status, profile: null };
-      }
-      const body = (await response.json()) as {
-        profile?: HostedOperatorProfileState | null;
-      };
+      const body = await getOperatorStatsProfile(endpoint, accessToken);
       return {
         ok: true,
-        status: response.status,
-        profile: body.profile ?? null,
+        status: 200,
+        profile: body.profile,
       };
     },
     recordPublicationState: async publication => {
@@ -386,15 +412,12 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
     },
     scan: (since, timezone) => scanApi.scan(since, timezone),
     post: async (body, accessToken) => {
-      const response = await fetch(endpoint.url, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          'content-type': 'application/json',
-        },
-        body,
-      });
-      return { ok: response.ok, status: response.status };
+      await publishOperatorStats(
+        endpoint,
+        accessToken,
+        JSON.parse(body) as OperatorStatsPublishPayload
+      );
+      return { ok: true, status: 200 };
     },
     captureFailure: (failure, statusCode) => {
       captureAnalyticsEvent({

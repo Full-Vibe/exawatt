@@ -154,6 +154,27 @@ describe('HarnessEventChannel', () => {
     expect(seen).toEqual([]);
   });
 
+  it('contains a normalizer failure and keeps serving later events', async () => {
+    const target = await started();
+    const broken = target.register('pty-broken', () => {
+      throw new Error('malformed provider event');
+    })!;
+    expect(await post(broken, {}, { 'x-exawatt-token': broken.token })).toBe(
+      200
+    );
+
+    const seen = collect(target);
+    const healthy = target.register('pty-healthy', claudeHookEvent)!;
+    expect(
+      await post(
+        healthy,
+        { hook_event_name: 'Stop' },
+        { 'x-exawatt-token': healthy.token }
+      )
+    ).toBe(200);
+    expect(seen).toHaveLength(1);
+  });
+
   it('drops an oversized body instead of buffering it', async () => {
     const target = await started();
     const seen = collect(target);

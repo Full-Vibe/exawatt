@@ -121,6 +121,13 @@ export const MARK_SCALE = 1.7;
 export const MARK_GLYPH_RADIUS = 0.3;
 
 /**
+ * Full side length of a delegated child's shader quad, as a multiple of the
+ * child's mark footprint. The child and its lineage tether share this quad so
+ * the entire delegation beat remains one draw call.
+ */
+export const DELEGATION_QUAD = 2.4;
+
+/**
  * HOW FAR OUT THE DRAWN ROSETTE SITS, against the board model's own orbit
  * (ENG-031 W13).
  *
@@ -159,6 +166,10 @@ export const MARK_GLYPH_RADIUS = 0.3;
  */
 export const DELEGATION_ORBIT_GAIN = 1.2;
 
+/** An overflow lobe stands for several Agents, so it is drawn larger than one
+ *  child. It is the exact census, never a decoration. */
+export const DELEGATION_OVERFLOW_SCALE = 1.25;
+
 /** Units that carry at least one delegated child, by index. */
 export function heroDelegationParents(capture: HeroBoardCapture): Set<number> {
   return new Set(capture.delegations.map(child => child.parent));
@@ -174,6 +185,68 @@ export function heroDelegationPosition(
   return {
     x: parent.x + (child.x - parent.x) * DELEGATION_ORBIT_GAIN,
     y: parent.y + (child.y - parent.y) * DELEGATION_ORBIT_GAIN,
+  };
+}
+
+export interface HeroDelegationRenderGeometry {
+  /** Final child centre in board X/Y coordinates. */
+  slot: { x: number; y: number };
+  /** Offset that moves the child quad back onto its parent at zero bloom. */
+  parentOffset: { x: number; y: number };
+  /** Full side length of the rendered quad in board world units. */
+  quadWorldSize: number;
+  /** Child-side tether endpoint in the rotated PlaneGeometry's UV space. */
+  childEdgeUv: { x: number; y: number };
+  /** Parent-side tether endpoint in the rotated PlaneGeometry's UV space. */
+  parentEdgeUv: { x: number; y: number };
+}
+
+/**
+ * Geometry for one delegated child and its lineage tether.
+ *
+ * The shader quad begins as XY `PlaneGeometry` and is rotated -90 degrees onto
+ * the board's XZ plane. That keeps local X aligned with board X but reverses
+ * local/UV Y against board Y (which becomes world Z). Keeping that conversion
+ * here is load-bearing: applying a board-Y offset directly in UV space mirrors
+ * the tether vertically, so it points away from the parent while the child
+ * itself still lands in the correct slot.
+ */
+export function heroDelegationRenderGeometry(
+  capture: HeroBoardCapture,
+  index: number
+): HeroDelegationRenderGeometry {
+  const child = capture.delegations[index]!;
+  const owner = capture.units[child.parent];
+  const slot = heroDelegationPosition(capture, index);
+  const overflowScale = child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1;
+  const quadWorldSize =
+    child.size * MARK_SCALE * DELEGATION_QUAD * overflowScale;
+  const ownerX = owner?.x ?? slot.x;
+  const ownerY = owner?.y ?? slot.y;
+  const dx = slot.x - ownerX;
+  const dy = slot.y - ownerY;
+  const run = Math.hypot(dx, dy) || 1;
+  const ux = dx / run;
+  const uy = dy / run;
+  const parentEdge =
+    MARK_GLYPH_RADIUS * (owner?.size ?? child.size) * MARK_SCALE;
+  const childEdge = MARK_GLYPH_RADIUS * child.size * MARK_SCALE * overflowScale;
+
+  const boardOffsetToUv = (x: number, y: number) => ({
+    x: x / quadWorldSize,
+    // PlaneGeometry.rotateX(-PI / 2) maps local +Y onto world -Z.
+    y: -y / quadWorldSize,
+  });
+
+  return {
+    slot,
+    parentOffset: { x: ownerX - slot.x, y: ownerY - slot.y },
+    quadWorldSize,
+    childEdgeUv: boardOffsetToUv(-ux * childEdge, -uy * childEdge),
+    parentEdgeUv: boardOffsetToUv(
+      -ux * (run - parentEdge),
+      -uy * (run - parentEdge)
+    ),
   };
 }
 
@@ -238,10 +311,6 @@ export function heroDelegationClearance(capture: HeroBoardCapture): {
   }
   return { parent, sibling, neighbour };
 }
-
-/** An overflow lobe stands for several Agents, so it is drawn larger than one
- *  child. It is the exact census, never a decoration. */
-export const DELEGATION_OVERFLOW_SCALE = 1.25;
 
 export interface HeroBoardFraming {
   center: THREE.Vector3;

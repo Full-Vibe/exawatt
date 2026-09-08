@@ -382,3 +382,12 @@ reference scope:
 The plan does not require an optimization to exist. Discovering that current
 critical interactions already meet the bar, or that a proposed change adds more
 fragility than speed, is a successful stop.
+
+## 2026-08-20 evidence that reopens measurement, not optimization
+
+Feedback `4a720856-7e14-401d-8bc5-5a959c7c004d` reports material laptop drain.
+D55 proved warm acknowledgment latency, not energy efficiency. ENG-008 E14 owns
+the operator power instrument; this brief contributes attribution and the stop
+rule. Measure regime/visibility/projection/motion/DPR and battery controls
+before proposing a renderer change, and retain only an installed-build gain
+that preserves visual, semantic, and accessibility parity.

@@ -75,8 +75,9 @@ authentication remains source-owned.
 Exawatt may launch the harness's supported sign-in command and recheck status,
 but does not collect or store the provider token. Gateway and future custom
 source credentials may be stored as narrowly scoped connection material in the
-operating system keychain. This is distinct from ENG-009's future general
-Secrets/Credentials broker for Agent tool use.
+operating system's protected encrypted storage behind Electron main. This is
+distinct from ENG-009's future general Secrets/Credentials broker for Agent
+tool use.
 
 That source-owned path includes eligible subscription-backed accounts. A user
 who signs Claude Code or Codex in through a compatible paid plan can launch the
@@ -114,10 +115,12 @@ treated as proof. Gateway launch remains outside the current Agent composer.
 Demo Mode uses the same record and fact shapes with every value marked as
 simulated.
 
-Remote OpenClaw attach is planned, not implemented. Its first slice extends the
-same registry with customer-hosted placement and read-only Gateway discovery;
-it does not add a remote-only roster or provision a server. The complete plan
-is `docs/engineering/projects/connected-openclaw-and-hosted-agents.md`.
+Customer-hosted OpenClaw attach now uses the same registry with saved placement,
+bounded Gateway discovery, continuous authoritative observation, stable
+folder-optional Project mappings, and coworker projection through Agent, Team,
+and Fleet. Source-granted write authority adds primary-conversation send; the
+path neither adds a remote-only roster nor provisions a server. The complete
+plan is `docs/engineering/projects/connected-openclaw-and-hosted-agents.md`.
 
 Recheck repeats source discovery. When a local CLI reports that sign-in is
 required, Settings can open that source's own login command as a terminal tab and
@@ -180,25 +183,33 @@ Launching creates new work. Connecting imports an existing configured source
 and projects existing source Agents without starting or modifying them. The two
 verbs stay distinct even when they eventually share the New flow.
 
-The planned OpenClaw path is **⌘N → Connect existing Agent…**: choose OpenClaw,
+The OpenClaw path is **⌘N → Connect existing Agent…**: choose OpenClaw,
 select an existing SSH host alias or supported Gateway endpoint, test the
 connection, inspect discovered configured Agents, and confirm an editable
 Project mapping for each selected Agent. Active configured Agents are suggested;
 retired or historical identities are never activated silently.
 
-The first slice is read-only. Connection material remains in source-owned SSH
-configuration or the operating-system keychain and never reaches the renderer.
-SSH may bootstrap an authenticated tunnel, but source data comes from the
-OpenClaw Gateway contract rather than remote shell scraping.
+The mapping is persisted before Connect closes, and the source-qualified native
+identity resolves to one stable Exawatt Agent id before that Agent opens. A new
+Project is a durable, opaque, folder-optional Context Group; its display label
+is not its identity, and local-path actions remain unavailable without a folder.
+
+Connection material remains in source-owned SSH configuration or OS-protected
+encrypted storage behind Electron main and never reaches the renderer. SSH may
+bootstrap an authenticated tunnel, but source data comes from the OpenClaw
+Gateway contract rather than remote shell scraping.
 
 Remote execution lifecycle and Exawatt attachment are independent. Closing or
 quitting Exawatt leaves the remote Agent running; relaunch reconnects to the
 same configured source, resnapshots authoritative state, and reconciles later
 events by stable source identity. A connection-local sequence is not a durable
 cursor; replay positions are optional declared capabilities. `Stale` or
-`Unavailable` describes observation, not a stopped Agent. Write commands appear
-only after the adapter reports their exact semantics and the runtime confirms
-the capability.
+`Unavailable` describes observation, not a stopped Agent. Conversation send
+appears only when the source grants write authority and always resolves the
+configured Agent's declared primary conversation. Electron main allowlists
+`chat.send`, `chat.abort`, `sessions.steer`, and `tasks.cancel`; the production
+UI exposes primary-conversation send. No schedule/configuration mutation,
+Gateway administration, or VPS lifecycle control is implemented.
 
 Remote pause is a separate, stronger capability than attach. Exawatt uses the
 generic **Pause Agent** / **Resume Agent** pair only when the source can declare
@@ -230,8 +241,18 @@ mutate the user's Codex or Claude configuration. A dominant environment effort
 is shown as fixed because the harness would ignore a conflicting CLI choice. If
 a harness cannot describe an exact value or live catalog, Exawatt labels the
 harness default honestly and lets the harness remain the authority instead of
-inventing one. Cached catalog values carry source provenance and freshness;
-hard-coded provider catalogs are fixtures only and never product truth.
+inventing one. Cached catalog values carry source provenance and freshness and
+remain Project-scoped because cwd configuration may legitimately change a
+harness's answer. They paint immediately; demand after five minutes
+revalidates in the background, and a changed successful observation
+invalidates sibling Project rows for that harness so each re-probes in its own
+cwd. **Check for new models** forces the current Project/harness probe. A failed
+probe preserves the last-known-good value and its original freshness. The
+launcher does not silently change an already-selected model, and an already-
+open composer may keep its frozen catalog until its next entry unless the
+operator explicitly refreshes it. Hard-coded provider catalogs are fixtures
+only and never product truth; Exawatt does not maintain a web feed, RSS
+watcher, or parallel model registry.
 
 The common keyboard contract is likewise whole-configuration based: `⌘T`, type,
 Enter starts the selected Agent; `⌘T`, `⌥↑/↓`, type, Enter cycles to another

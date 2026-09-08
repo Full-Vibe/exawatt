@@ -74,18 +74,18 @@ function HeroCard({
 
 const ROWS = [
   {
-    title: 'Hosted beside local',
+    title: 'Existing fleet control',
     detail:
-      'Cloud Agents appear in the same Team and Fleet views as local ones, each marked by source.',
+      'Customer-hosted Agents use the same Agent, Team, and Fleet surfaces as local ones.',
   },
   {
-    title: 'Any source',
-    detail: 'Hosted OpenClaw first; other Agent Sources follow.',
+    title: 'Managed placement',
+    detail: 'Not active. Provisioning and paid plans are not implemented.',
   },
   {
-    title: 'Plan-aware capacity',
+    title: 'Move or clone',
     detail:
-      'Hosted plan windows appear in the Consumption capacity view, like Codex plan windows today.',
+      'Not active. A future transfer manifest must state exactly what moves.',
   },
 ] as const;
 
@@ -95,11 +95,11 @@ export default function CloudPage() {
       surfaceId="cloud"
       width="wide"
       owner="ENG-033"
-      today="Exawatt runs Agents on this machine and connects to Agents on servers you run. Exawatt-hosted placement is what this page previews. The Session shown is Voltaic demo content."
+      today="Connect to Agents on servers you run. Managed placement, transfer, and billing are not active. The Session shown is Voltaic demo content."
     >
-      {/* The one action, before and after. */}
+      {/* A future placement specimen; neither side is an active transition. */}
       <section
-        aria-label="Push to cloud, before and after"
+        aria-label="Future managed placement concept"
         className="rounded-lg border border-border bg-card/50 p-4"
       >
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
@@ -108,7 +108,7 @@ export default function CloudPage() {
             detail="Runs while this machine is awake."
           />
           <div className="flex shrink-0 flex-col items-center gap-1.5 self-center px-1">
-            <AnnouncedChip coming="one-click hosted agents (ENG-033)">
+            <AnnouncedChip coming="managed placement and explicit transfer (ENG-033 H3/H4)">
               <CloudUpload aria-hidden className="h-3.5 w-3.5" />
               Push to cloud
             </AnnouncedChip>
@@ -119,12 +119,12 @@ export default function CloudPage() {
           </div>
           <HeroCard
             hosted
-            where="Exawatt-hosted plan"
-            detail="Keeps running when this machine sleeps."
+            where="Managed placement"
+            detail="Provisioning is not active."
           />
         </div>
         <p className="mt-3 text-chrome-meta text-muted-foreground">
-          Same Session, same Project, same tab after the push.
+          Session, Project, identity, and tab continuity are not promised.
         </p>
       </section>
 

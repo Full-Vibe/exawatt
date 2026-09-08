@@ -181,6 +181,30 @@ describe('@exawatt/ui-model', () => {
     ]);
   });
 
+  it('preserves remote presence through the Fleet command projection', () => {
+    const remote = agent({
+      id: 'remote-1',
+      presence: {
+        placement: 'customer-hosted',
+        placementLabel: 'Remote',
+        connection: 'stale',
+        connectionLabel: 'Stale',
+        stalePresentation: true,
+        source: {
+          id: 'source-1',
+          displayName: 'Workshop box',
+          adapterId: 'openclaw',
+        },
+      },
+    });
+    const view = selectFleetCommandView({
+      agents: { [remote.id]: remote },
+      metrics,
+      lastUpdated: 1,
+    });
+    expect(view.agents[0]?.presence).toEqual(remote.presence);
+  });
+
   it('builds an operator queue with deterministic priority', () => {
     expect(selectOperatorQueue(state())).toEqual([
       expect.objectContaining({
@@ -283,12 +307,11 @@ describe('@exawatt/ui-model', () => {
 
   it('elects a single hero blocker (oldest) with grouped secondary attention', () => {
     const scene = selectFleetSpatialScene(multiState());
-    const attention = selectSpatialAttention(
-      multiState(),
-      scene.tiles
-    );
+    const attention = selectSpatialAttention(multiState(), scene.tiles);
     expect(attention.hero?.agentId).toBe('beta-blocked-old');
-    expect(attention.secondary.map(s => s.agentId)).toContain('beta-blocked-new');
+    expect(attention.secondary.map(s => s.agentId)).toContain(
+      'beta-blocked-new'
+    );
     expect(attention.overflowCount).toBe(0);
     expect(attention.ambientActiveCount).toBe(2); // working + reviewing
   });
@@ -444,7 +467,9 @@ describe('@exawatt/ui-model', () => {
     expect(heroSelected.selectedTileGlassAgentId).toBeNull(); // carve-out
     expect(count(heroSelected)).toBe(1); // never glass on both for the hero
 
-    expect(count(resolveTransmission(sceneWith('alpha-working'), true))).toBe(0);
+    expect(count(resolveTransmission(sceneWith('alpha-working'), true))).toBe(
+      0
+    );
 
     const calm = state();
     delete calm.agents['blocked-1'];
@@ -498,7 +523,9 @@ describe('@exawatt/ui-model', () => {
           const dx = Math.abs(group[i]!.x - group[j]!.x);
           const dz = Math.abs(group[i]!.z - group[j]!.z);
           expect(dx > 1e-6 || dz > 1e-6).toBe(true); // distinct
-          expect(Math.max(dx, dz)).toBeGreaterThanOrEqual(group[i]!.width - 1e-6);
+          expect(Math.max(dx, dz)).toBeGreaterThanOrEqual(
+            group[i]!.width - 1e-6
+          );
         }
       }
     }
@@ -755,13 +782,17 @@ describe('@exawatt/ui-model', () => {
     expect(input.reason).toBe('Needs input · 30m waiting · 2 stalled in P');
 
     const cred = schedule.find(i => i.agentId === 'new-cred')!;
-    expect(cred.reason).toMatch(/^Credentials needed · \d+m waiting · 2 stalled in P$/);
+    expect(cred.reason).toMatch(
+      /^Credentials needed · \d+m waiting · 2 stalled in P$/
+    );
 
     // age clamps at 240m
     const farFuture = selectAttentionSchedule(leverageState(), {
       now: 999 * 60000,
     });
-    expect(farFuture.find(i => i.agentId === 'old-input')!.ageMinutes).toBe(240);
+    expect(farFuture.find(i => i.agentId === 'old-input')!.ageMinutes).toBe(
+      240
+    );
   });
 
   it('is deterministic and age-free when now is omitted', () => {
@@ -772,7 +803,9 @@ describe('@exawatt/ui-model', () => {
   });
 
   it('limits the schedule and omits the fan-out clause for a lone blocker', () => {
-    expect(selectAttentionSchedule(leverageState(), { limit: 1 })).toHaveLength(1);
+    expect(selectAttentionSchedule(leverageState(), { limit: 1 })).toHaveLength(
+      1
+    );
     // multi-blocker project keeps the clause
     const beta = selectAttentionSchedule(multiState()).find(
       i => i.agentId === 'beta-blocked-old'
@@ -825,7 +858,12 @@ describe('@exawatt/ui-model', () => {
           createdAt: 0,
         },
       }),
-      agent({ id: 'p1-work', project: 'P1', status: 'working', lastActivityAt: 6 }),
+      agent({
+        id: 'p1-work',
+        project: 'P1',
+        status: 'working',
+        lastActivityAt: 6,
+      }),
       agent({
         id: 'p2-input',
         project: 'P2',
@@ -839,7 +877,12 @@ describe('@exawatt/ui-model', () => {
           createdAt: 0,
         },
       }),
-      agent({ id: 'p2-work', project: 'P2', status: 'working', lastActivityAt: 8 }),
+      agent({
+        id: 'p2-work',
+        project: 'P2',
+        status: 'working',
+        lastActivityAt: 8,
+      }),
     ];
     return {
       agents: Object.fromEntries(agents.map(a => [a.id, a])),
@@ -927,8 +970,18 @@ describe('@exawatt/ui-model fleet-scale (V0.5)', () => {
     const state: FleetState = {
       agents: Object.fromEntries(
         [
-          agent({ id: 'a', name: 'Alpha', project: 'Polish', status: 'working' }),
-          agent({ id: 'b', name: 'Beta', project: 'Parity', status: 'blocked' }),
+          agent({
+            id: 'a',
+            name: 'Alpha',
+            project: 'Polish',
+            status: 'working',
+          }),
+          agent({
+            id: 'b',
+            name: 'Beta',
+            project: 'Parity',
+            status: 'blocked',
+          }),
           agent({ id: 'c', name: 'Gamma', project: 'Polish', status: 'idle' }),
         ].map(a => [a.id, a])
       ),
@@ -938,13 +991,21 @@ describe('@exawatt/ui-model fleet-scale (V0.5)', () => {
     // identity when no filter (same reference, no behavior change)
     expect(filterFleetState(state, {})).toBe(state);
     // query matches name / project (case-insensitive)
-    expect(Object.keys(filterFleetState(state, { query: 'polish' }).agents).sort()).toEqual(['a', 'c']);
-    expect(Object.keys(filterFleetState(state, { query: 'beta' }).agents)).toEqual(['b']);
+    expect(
+      Object.keys(filterFleetState(state, { query: 'polish' }).agents).sort()
+    ).toEqual(['a', 'c']);
+    expect(
+      Object.keys(filterFleetState(state, { query: 'beta' }).agents)
+    ).toEqual(['b']);
     // status narrows
-    expect(Object.keys(filterFleetState(state, { statuses: ['blocked'] }).agents)).toEqual(['b']);
+    expect(
+      Object.keys(filterFleetState(state, { statuses: ['blocked'] }).agents)
+    ).toEqual(['b']);
     // query + status combine (AND)
     expect(
-      Object.keys(filterFleetState(state, { query: 'polish', statuses: ['idle'] }).agents)
+      Object.keys(
+        filterFleetState(state, { query: 'polish', statuses: ['idle'] }).agents
+      )
     ).toEqual(['c']);
     // deterministic
     expect(filterFleetState(state, { query: 'a' })).toEqual(

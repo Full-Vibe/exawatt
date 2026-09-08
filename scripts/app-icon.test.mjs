@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -13,10 +13,16 @@ import {
   measureIcon,
   parseIcns,
 } from './lib/app-icon.mjs';
-import { checkCommittedIcon, ICNS_PATH, MASTER_PATH } from './generate-app-icon.mjs';
+import {
+  COMMUNITY_ICNS_PATH,
+  checkCommittedIcons,
+} from './generate-app-icon.mjs';
 
-const ICNS = readFileSync(ICNS_PATH);
-const MASTER = readFileSync(MASTER_PATH);
+const COMMITTED = checkCommittedIcons();
+const REFERENCE =
+  COMMITTED.find(icon => icon.id === 'official') ?? COMMITTED[0];
+const ICNS = readFileSync(REFERENCE.icnsPath);
+const MASTER = readFileSync(REFERENCE.masterPath);
 
 function canvas(size) {
   return { width: size, height: size, data: new Uint8Array(size * size * 4) };
@@ -31,7 +37,10 @@ function paint(image, x, y) {
 }
 
 /** A filled square container: what a macOS app icon is. */
-function square(size, { span = 0.805, offsetX = 0, offsetY = 0, aspect = 1 } = {}) {
+function square(
+  size,
+  { span = 0.805, offsetX = 0, offsetY = 0, aspect = 1 } = {}
+) {
   const image = canvas(size);
   const width = Math.round(size * span);
   const height = Math.round(size * span * aspect);
@@ -59,21 +68,38 @@ function glyph(size, { span = 0.805 } = {}) {
   return image;
 }
 
-test('the committed icon.icns is the icon generated from the committed master', () => {
-  const { sizes } = checkCommittedIcon();
-  assert.deepEqual(sizes, [32, 64, 128, 256, 512, 1024]);
+test('every distributed .icns matches its committed master', () => {
+  assert.ok(
+    COMMITTED.some(icon => icon.icnsPath === COMMUNITY_ICNS_PATH),
+    'the community icon is required in every distribution tree'
+  );
+  for (const icon of COMMITTED) {
+    assert.deepEqual(icon.sizes, [32, 64, 128, 256, 512, 1024], icon.icnsPath);
+  }
 });
 
 // The exact artwork that shipped as the macOS app icon from v0.1.4 to v0.1.9:
 // correct as a favicon, and as an app icon a bare hexagon ring with no
 // container, off-centre and taller than wide (BUG-005). One brand source was
 // doing two jobs that need different renderings, and nothing could tell.
-test('the web favicon is refused as an app icon', () => {
-  const favicon = decodePng(readFileSync('src/app/icon.png'));
+test('a separately supplied web favicon is refused as an app icon', () => {
+  const faviconPath = 'src/app/icon.png';
+  if (!existsSync(faviconPath)) {
+    assert.equal(
+      existsSync('public/icon-community.png'),
+      true,
+      'a community tree without the branded favicon still owes its public mark'
+    );
+    return;
+  }
+  const favicon = decodePng(readFileSync(faviconPath));
   const measured = measureIcon(favicon);
-  assert.ok(measured.fill < 0.6, `favicon fills ${measured.fill} of its bounds`);
+  assert.ok(
+    measured.fill < 0.6,
+    `favicon fills ${measured.fill} of its bounds`
+  );
   assert.throws(
-    () => assertAppleIconGrid(favicon, 'src/app/icon.png'),
+    () => assertAppleIconGrid(favicon, faviconPath),
     /not square|paints only/
   );
 });
@@ -89,11 +115,17 @@ test('a free-standing glyph is refused for having no container', () => {
 });
 
 test('a container smaller than the grid is refused', () => {
-  assert.throws(() => assertAppleIconGrid(square(512, { span: 0.6 })), /outside the/);
+  assert.throws(
+    () => assertAppleIconGrid(square(512, { span: 0.6 })),
+    /outside the/
+  );
 });
 
 test('a container larger than the grid is refused', () => {
-  assert.throws(() => assertAppleIconGrid(square(512, { span: 0.95 })), /outside the/);
+  assert.throws(
+    () => assertAppleIconGrid(square(512, { span: 0.95 })),
+    /outside the/
+  );
 });
 
 test('an off-centre container is refused', () => {
@@ -104,13 +136,21 @@ test('an off-centre container is refused', () => {
 });
 
 test('a non-square container is refused', () => {
-  assert.throws(() => assertAppleIconGrid(square(512, { aspect: 0.85 })), /not square/);
+  assert.throws(
+    () => assertAppleIconGrid(square(512, { aspect: 0.85 })),
+    /not square/
+  );
 });
 
 test('a non-square canvas is refused', () => {
   const wide = square(512);
   assert.throws(
-    () => assertAppleIconGrid({ ...wide, height: 256, data: wide.data.slice(0, 512 * 256 * 4) }),
+    () =>
+      assertAppleIconGrid({
+        ...wide,
+        height: 256,
+        data: wide.data.slice(0, 512 * 256 * 4),
+      }),
     /not square/
   );
 });
@@ -139,28 +179,52 @@ test('icns encode and parse round-trip', () => {
 
 function withSliceReplaced(type, png) {
   return encodeIcns(
-    parseIcns(ICNS).map(chunk => (chunk.type === type ? { type, data: png } : chunk))
+    parseIcns(ICNS).map(chunk =>
+      chunk.type === type ? { type, data: png } : chunk
+    )
   );
 }
 
 test('an .icns whose master slice is different artwork is refused', () => {
-  const swapped = withSliceReplaced('ic10', encodePng(square(1024, { span: 0.79 })));
-  assert.throws(() => assertIcnsMatchesMaster(swapped, MASTER), /does not match the committed master/);
+  const swapped = withSliceReplaced(
+    'ic10',
+    encodePng(square(1024, { span: 0.79 }))
+  );
+  assert.throws(
+    () => assertIcnsMatchesMaster(swapped, MASTER),
+    /does not match the committed master/
+  );
 });
 
-test('an .icns carrying the favicon in its master slice is refused', () => {
-  const swapped = withSliceReplaced('ic10', readFileSync('src/app/icon.png'));
-  assert.throws(() => assertIcnsMatchesMaster(swapped, MASTER), /macOS icon grid/);
+test('an .icns carrying a free-standing web glyph is refused', () => {
+  const webGlyph = existsSync('src/app/icon.png')
+    ? readFileSync('src/app/icon.png')
+    : encodePng(glyph(1024));
+  const swapped = withSliceReplaced('ic10', webGlyph);
+  assert.throws(
+    () => assertIcnsMatchesMaster(swapped, MASTER),
+    /macOS icon grid/
+  );
 });
 
 test('an .icns missing a size is refused', () => {
-  const stripped = encodeIcns(parseIcns(ICNS).filter(chunk => chunk.type !== 'ic07'));
-  assert.throws(() => assertIcnsMatchesMaster(stripped, MASTER), /has no 128pt slice/);
+  const stripped = encodeIcns(
+    parseIcns(ICNS).filter(chunk => chunk.type !== 'ic07')
+  );
+  assert.throws(
+    () => assertIcnsMatchesMaster(stripped, MASTER),
+    /has no 128pt slice/
+  );
 });
 
 test('an .icns missing the raw small representations is refused', () => {
-  const stripped = encodeIcns(parseIcns(ICNS).filter(chunk => chunk.type !== 'ic04'));
-  assert.throws(() => assertIcnsMatchesMaster(stripped, MASTER), /has no ic04 chunk/);
+  const stripped = encodeIcns(
+    parseIcns(ICNS).filter(chunk => chunk.type !== 'ic04')
+  );
+  assert.throws(
+    () => assertIcnsMatchesMaster(stripped, MASTER),
+    /has no ic04 chunk/
+  );
 });
 
 test('every generated slice clears the grid thresholds with margin', () => {

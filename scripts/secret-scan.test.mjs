@@ -4,6 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { parse } from 'yaml';
+
 import {
   GITLEAKS_ARCHIVE_SHA256,
   GITLEAKS_VERSION,
@@ -18,14 +20,12 @@ function read(relative) {
 
 const CONFIG = read('scripts/gitleaks.toml');
 const WORKFLOW = read('.github/workflows/gitleaks.yml');
+const WORKFLOW_DOCUMENT = parse(WORKFLOW);
 
 test('the local scan pins the same gitleaks release public CI installs', () => {
-  assert.match(
-    WORKFLOW,
-    new RegExp(
-      `GITLEAKS_VERSION:\\s*${GITLEAKS_VERSION.replace(/\./gu, '\\.')}\\b`,
-      'u'
-    ),
+  assert.equal(
+    WORKFLOW_DOCUMENT.jobs.gitleaks.env.GITLEAKS_VERSION,
+    GITLEAKS_VERSION,
     'the workflow and scripts/secret-scan.mjs must install the same gitleaks version'
   );
   assert.match(

@@ -410,6 +410,37 @@ snapshot, never an intermediate layout storm.
   near the frame edge rather than being clipped by it**, because a name sliced
   mid-word against a hard edge reads as a bug and not as a crop when the ground
   is the same on both sides.
+- 2026-08-20 — ENG-004 V3.9 Fleet direction bench. **Hover, focus, press, and
+  committed selection are separate states even when they share the selection
+  role.** The real board bench now tests a solid padded hex for Agent hover and
+  keyboard focus, a contracted thicker hex on press, and the existing dashed
+  circular reticle for committed selection. The indicator follows the Agent's
+  shape rather than exposing the DOM hit box; the control behind it remains the
+  existing 44px target. W3C's two-pixel perimeter guidance, Apple's warning that
+  hover scale can crowd a dense field, and Material 3's separable interaction
+  states support that choice. Selected-Project studies likewise use only the
+  existing selection colour, Project identity, canvas, and motion rungs: outer
+  ring, same-address plate lift, or peer recession. No new colour, type, spacing,
+  status, or elevation rung is introduced. Gallery policy remains an explicit
+  override of production defaults until operator acceptance. Evidence: the
+  standing `/hud-gallery/board-study`, shared presentation-policy tests, geometry
+  invariants, `pnpm eval:r3f`, and `pnpm eval:spatial`.
+- 2026-08-20 — ENG-004 V3.8 Fleet density. **Spatial packing must preserve the
+  mental map without making the current fleet shape pay for a future fleet.**
+  Project addresses grow from a stable 2x2 core in opposing outward pairs;
+  they never choose a column count from the number of Projects currently
+  present, because that would move every learned address when one arrives.
+  Four Projects therefore read as a square instead of a horizontal strip, and
+  the default ten read as one near-square field. Free circle packing and
+  force-directed packing remain inappropriate for the automatic baseline:
+  their tighter fill is bought by data/order-sensitive positions. Project
+  labels use the reading face at `chrome-title` or above, while the board's
+  persistent controls fit in one compact cluster and the full shortcut grammar
+  lives behind the header's keyboard-help control. This is the product-board
+  application of the existing rule below that a surface-carrying name is not a
+  micro-label; no new type, colour, spacing, or control rung was introduced.
+  Evidence: the standing `/hud-gallery/board-study`, `pnpm eval:spatial`, and
+  the geometry invariants in `spatial-board.test.ts`.
 - 2026-08-17 — ENG-031 W2c hero board labels. **A name that carries a surface
   is not a micro-label.** The marketing board's Project names shipped at 10px
   `font-mono` with tracking, which is the chrome-micro rung; the operator read

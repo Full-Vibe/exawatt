@@ -22,7 +22,12 @@ describe('Project library', () => {
       ],
       [
         { dir: '/one', name: 'Stale local name' },
-        { dir: '/two', name: 'Local', color: '#222' },
+        {
+          dir: '/two',
+          name: 'Local',
+          color: '#222',
+          registryId: 'project-two',
+        },
       ],
       [
         { dir: '/two', name: 'Duplicate recent' },
@@ -33,7 +38,43 @@ describe('Project library', () => {
     expect(entries[0]).toMatchObject({
       name: 'Synced name',
       registryId: 'one',
+      projectId: 'one',
+      rootPath: '/one',
     });
-    expect(entries[1]).toMatchObject({ name: 'Local', lastOpenedAt: 0 });
+    expect(entries[1]).toMatchObject({
+      name: 'Local',
+      projectId: 'project-two',
+      registryId: 'project-two',
+      lastOpenedAt: 0,
+    });
+  });
+
+  it('keeps a manual Project addressable without turning its id into a path', () => {
+    const [entry] = mergeProjectLibrary(
+      [
+        {
+          id: 'project-manual',
+          user_id: 'u',
+          name: 'Remote operations',
+          kind: 'manual',
+          root_path: null,
+          git_remote: null,
+          color: null,
+          sort_order: 0,
+          last_opened_at: null,
+          archived_at: null,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      [],
+      []
+    );
+    expect(entry).toMatchObject({
+      dir: 'project-manual',
+      projectId: 'project-manual',
+      rootPath: null,
+      registryId: 'project-manual',
+    });
   });
 });

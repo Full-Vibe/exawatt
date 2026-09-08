@@ -150,7 +150,7 @@ export function claudeProbeJs() {
 }
 
 /** Node probe answers for a fake `codex`. */
-export function codexProbeJs() {
+export function codexProbeJs({ appServer = false } = {}) {
   return [
     `{`,
     `  const probeArgv = process.argv.slice(2);`,
@@ -166,7 +166,9 @@ export function codexProbeJs() {
     `    process.stdout.write(${JSON.stringify(`${FIXTURE_CODEX_CATALOG_JSON}\n`)});`,
     `    process.exit(0);`,
     `  }`,
-    `  if (probeArgv[0] === 'app-server') process.exit(0);`,
+    ...(appServer
+      ? []
+      : [`  if (probeArgv[0] === 'app-server') process.exit(0);`]),
     `}`,
   ].join('\n');
 }

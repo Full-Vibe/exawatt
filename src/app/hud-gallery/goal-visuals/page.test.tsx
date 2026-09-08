@@ -40,6 +40,18 @@ vi.mock('@/lib/distribution/resolved', () => ({
 
 import GoalVisualBenchPage from './page';
 
+function goalVisualResponse(init?: RequestInit): Response {
+  const request = JSON.parse(String(init?.body)) as { identityKey: string };
+  return Response.json(
+    {
+      schemaVersion: 1,
+      identityKey: request.identityKey,
+      dataUrl: 'data:image/jpeg;base64,/9j/2Q==',
+    },
+    { headers: { 'Exawatt-Service-Version': '1' } }
+  );
+}
+
 describe('Agent tile visual language bench', () => {
   beforeEach(() => {
     getSession.mockReset();
@@ -140,16 +152,8 @@ describe('Agent tile visual language bench', () => {
     getSession.mockResolvedValue({
       data: { session: { access_token: 'bench-token' } },
     });
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            identityKey: 'a'.repeat(64),
-            dataUrl: 'data:image/jpeg;base64,/9j/2Q==',
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
-      )
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      goalVisualResponse(init)
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -161,15 +165,12 @@ describe('Agent tile visual language bench', () => {
 
     expect(await screen.findByText(/21 studies ready/)).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(21);
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://services.example.test/v1/goal-visuals',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          Authorization: 'Bearer bench-token',
-        }),
-      })
-    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://services.example.test/v1/goal-visuals');
+    expect(init).toMatchObject({ method: 'POST' });
+    const headers = new Headers(init?.headers);
+    expect(headers.get('Authorization')).toBe('Bearer bench-token');
+    expect(headers.get('Exawatt-Service-Version')).toBe('1');
     // The bench is the second caller of this service and sends the same
     // request the product does: one opaque identity, no goal text (BUG-091).
     const bodies = fetchMock.mock.calls.map(([, init]) =>
@@ -201,16 +202,8 @@ describe('Agent tile visual language bench', () => {
     vi.stubGlobal('Image', DeferredImage);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              identityKey: 'b'.repeat(64),
-              dataUrl: 'data:image/jpeg;base64,/9j/2Q==',
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } }
-          )
-        )
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        goalVisualResponse(init)
       )
     );
 
@@ -240,16 +233,10 @@ describe('Agent tile visual language bench', () => {
     let request = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => {
+      vi.fn(async (_url: string, init?: RequestInit) => {
         request += 1;
         if (request === 1) throw new Error('network unavailable');
-        return new Response(
-          JSON.stringify({
-            identityKey: request.toString(16).padStart(64, '0'),
-            dataUrl: 'data:image/jpeg;base64,/9j/2Q==',
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        );
+        return goalVisualResponse(init);
       })
     );
 

@@ -42,6 +42,32 @@ const OFFICIAL_ENRICHMENT_DISTRIBUTION = {
   },
 } satisfies DistributionContractV2;
 
+function serviceResponse(body: unknown, status = 200): Response {
+  if (status >= 400) {
+    return Response.json(
+      {
+        schemaVersion: 1,
+        type: 'https://exawatt.ai/problems/test-refusal',
+        title: 'Test service refusal',
+        status,
+        code: 'test_refusal',
+        retryable: status >= 500,
+      },
+      {
+        status,
+        headers: {
+          'content-type': 'application/problem+json',
+          'Exawatt-Service-Version': '1',
+        },
+      }
+    );
+  }
+  return Response.json(body, {
+    status,
+    headers: { 'Exawatt-Service-Version': '1' },
+  });
+}
+
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();
   sessions = [
@@ -513,7 +539,10 @@ describe('hosted Session context ownership', () => {
 });
 
 describe('distribution-owned enrichment capability', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('keeps local labels and deterministic visuals without auth or fetch in community builds', async () => {
     const fetchMock = vi.fn(async () => {
@@ -544,27 +573,30 @@ describe('distribution-owned enrichment capability', () => {
   });
 
   it('uses the exact official context-label and goal-visual endpoints', async () => {
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.endsWith('/context-labels')) {
-        return new Response(
-          JSON.stringify({
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/context-labels')) {
+          return serviceResponse({
+            schemaVersion: 1,
             label: 'Configured service boundary',
             relationship: 'new_context',
             confidence: 0.98,
-          })
-        );
-      }
-      if (url.endsWith('/goal-visuals')) {
-        return new Response(
-          JSON.stringify({
-            identityKey: 'configured-goal-identity',
+          });
+        }
+        if (url.endsWith('/goal-visuals')) {
+          const request = JSON.parse(String(init?.body)) as {
+            identityKey: string;
+          };
+          return serviceResponse({
+            schemaVersion: 1,
+            identityKey: request.identityKey,
             dataUrl: 'data:image/jpeg;base64,YWJj',
-          })
-        );
+          });
+        }
+        throw new Error(`unexpected enrichment URL ${url}`);
       }
-      throw new Error(`unexpected enrichment URL ${url}`);
-    });
+    );
     vi.stubGlobal('fetch', fetchMock);
     const manager = new FakeManager();
     const service = new ContextSummarizer({
@@ -580,8 +612,107 @@ describe('distribution-owned enrichment capability', () => {
       'https://services.example.test/v1/goal-visuals',
     ]);
     expect(service.getGoalVisual('session-1')).toMatchObject({
-      identityKey: 'configured-goal-identity',
+      identityKey: expect.stringMatching(/^[a-f0-9]{64}$/),
       state: 'ready',
+    });
+    service.stop();
+  });
+
+  it('does not retry a context-label response encoded with another protocol', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        {
+          schemaVersion: 1,
+          label: 'Response in the wrong codec',
+          relationship: 'new_context',
+          confidence: 1,
+        },
+        { headers: { 'Exawatt-Service-Version': '2' } }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const manager = new FakeManager();
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+      retryBaseMs: 1,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    service.restore('session-1', 'Last compatible label');
+    service.setAccessToken('official-token');
+    service.noteInput('live-1', 'Use the configured service boundary\r');
+
+    await flush();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(service.getSummary('session-1')).toBe('Last compatible label');
+    service.stop();
+  });
+
+  it('uses a validated Retry-After for an explicitly retryable refusal', async () => {
+    vi.useFakeTimers();
+    const diagnose = vi.fn();
+    const fetchMock = vi.fn(async () => {
+      const response = serviceResponse({}, 503);
+      response.headers.set('Retry-After', '3600');
+      return response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const manager = new FakeManager();
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+      retryBaseMs: 1,
+      diagnose,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setAccessToken('official-token');
+    service.noteInput('live-1', 'Respect the service retry boundary\r');
+
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(diagnose).toHaveBeenCalledWith(
+      'context-label.request-failure',
+      expect.objectContaining({ retryMs: 3_600_000 })
+    );
+    service.stop();
+  });
+
+  it('does not retry a goal visual response without a protocol header', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        schemaVersion: 1,
+        identityKey: 'ignored-before-body-decode',
+        dataUrl: 'data:image/jpeg;base64,YWJj',
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const manager = new FakeManager();
+    const service = new ContextSummarizer({
+      distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
+      generateLabel: async () => ({
+        label: 'Compatible service boundary',
+        relationship: 'new_context' as const,
+        confidence: 1,
+      }),
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setAccessToken('official-token');
+    service.noteInput('live-1', 'Use the configured service boundary\r');
+
+    await flush();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(service.getGoalVisual('session-1')).toMatchObject({
+      state: 'fallback',
+      dataUrl: null,
     });
     service.stop();
   });
@@ -828,17 +959,24 @@ describe('main-process hosted-call failures are counted', () => {
   });
 
   it('queues the HTTP status when the context-label endpoint refuses', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 503 }));
+    const fetchMock = vi.fn(async () => serviceResponse({}, 503));
+    const diagnose = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const service = new ContextSummarizer({
       distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
       retryBaseMs: 60_000,
+      diagnose,
     });
     service.attach(manager as unknown as PtySessionManager);
     service.setAccessToken('jwt');
     service.noteInput('live-1', 'Improve the stale tab summary\r');
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    await flush();
+    await vi.waitFor(() =>
+      expect(diagnose).toHaveBeenCalledWith(
+        'context-label.request-failure',
+        expect.any(Object)
+      )
+    );
     expect(drainMainAnalyticsEvents()).toEqual([
       {
         name: 'hosted_call_failed',
@@ -876,7 +1014,7 @@ describe('main-process hosted-call failures are counted', () => {
   });
 
   it('never counts context labels the operator switched off', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 503 }));
+    const fetchMock = vi.fn(async () => serviceResponse({}, 503));
     vi.stubGlobal('fetch', fetchMock);
     const service = new ContextSummarizer({
       distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
@@ -893,7 +1031,8 @@ describe('main-process hosted-call failures are counted', () => {
   });
 
   it('queues the HTTP status when the goal-visual endpoint fails', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 500 }));
+    const fetchMock = vi.fn(async () => serviceResponse({}, 500));
+    const diagnose = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const service = new ContextSummarizer({
       distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,
@@ -903,12 +1042,18 @@ describe('main-process hosted-call failures are counted', () => {
         confidence: 0.9,
       }),
       retryBaseMs: 60_000,
+      diagnose,
     });
     service.attach(manager as unknown as PtySessionManager);
     service.setAccessToken('jwt');
     service.noteInput('live-1', 'First work\r');
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    await flush();
+    await vi.waitFor(() =>
+      expect(diagnose).toHaveBeenCalledWith(
+        'goal-visual.request-failure',
+        expect.any(Object)
+      )
+    );
     expect(drainMainAnalyticsEvents()).toEqual([
       {
         name: 'hosted_call_failed',
@@ -921,7 +1066,7 @@ describe('main-process hosted-call failures are counted', () => {
   });
 
   it('never counts goal visuals the operator switched off', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 500 }));
+    const fetchMock = vi.fn(async () => serviceResponse({}, 500));
     vi.stubGlobal('fetch', fetchMock);
     const service = new ContextSummarizer({
       distribution: OFFICIAL_ENRICHMENT_DISTRIBUTION,

@@ -434,7 +434,7 @@ async function checkBoardTools(page) {
         ?.getAttribute('data-board-projection') === 'top-down'
   );
   await page
-    .getByRole('button', { name: 'Recenter board', exact: true })
+    .getByRole('button', { name: 'Fit Fleet overview', exact: true })
     .click();
   return { widthBefore, widthAfter, quaternionDelta };
 }
@@ -458,9 +458,7 @@ async function checkAgentProjectionPersistence(page) {
     'Projection lost Agent altitude'
   );
   check(
-    await page
-      .locator('[data-spatial-selection-panel="agent"]')
-      .isVisible(),
+    await page.locator('[data-spatial-selection-panel="agent"]').isVisible(),
     'Projection hid the Agent selection panel'
   );
   await page.getByRole('button', { name: 'Top' }).click();

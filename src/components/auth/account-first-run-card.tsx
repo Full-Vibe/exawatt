@@ -96,16 +96,14 @@ export function AccountFirstRunCard() {
       setAuth('unavailable');
       return;
     }
-    let active = true;
-    void supabase.auth.getSession().then(({ data }) => {
-      if (active) setAuth(data.session ? 'signed-in' : 'signed-out');
-    });
+    // INITIAL_SESSION and later auth changes share one ordered source. A
+    // separate getSession read can settle after sign-out and retire this
+    // invitation using an obsolete account (BUG-118).
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) =>
         setAuth(session ? 'signed-in' : 'signed-out')
     );
     return () => {
-      active = false;
       subscription.subscription.unsubscribe();
     };
   }, []);

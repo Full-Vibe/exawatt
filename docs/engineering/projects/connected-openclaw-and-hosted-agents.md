@@ -1,8 +1,9 @@
 # Connected OpenClaw and hosted Agents (ENG-010 / ENG-033)
 
-ENG-010 owns the connect-to-existing implementation. ENG-033 owns the hosted
-product progression. This document is their shared execution detail, not a
-second roadmap.
+ENG-010's connect-to-existing implementation is complete through C5. ENG-033
+owns the hosted product progression; H3/H4 remain planned and inactive, with no
+paid-cloud implementation active. This document is their shared execution
+detail, not a second roadmap.
 
 ## Outcome
 
@@ -251,8 +252,11 @@ source-native continuity and say whether active work, queues, triggers, or a
 narrower subset are halted. Exawatt will not approximate it with a prompt, cron
 mutation, Gateway stop, or VPS shutdown.
 
-The H1 read-only slice exposes no write, pause, resume, stop, scheduling, or
-configuration control. H2 earns those controls one capability at a time.
+The H1 slice shipped with no write, pause, resume, stop, scheduling, or
+configuration control. H2 later added source-granted primary-conversation send
+plus the main-process allowlist for `chat.abort`, `sessions.steer`, and
+`tasks.cancel`. It did not add Pause, scheduling/configuration mutation,
+Gateway administration, or VPS lifecycle control.
 
 ### Source and data contract
 
@@ -276,18 +280,18 @@ Connection material has two tiers, and Exawatt holds as little as it can:
   an SSH alias stores the alias only, and reaching the server uses the
   operator's existing SSH configuration, agent, and key. Manually entered
   servers are the fallback for an operator without an alias; only that path
-  writes host/user/key material, and it writes it to the OS keychain.
+  stores explicit server access material behind Electron main.
 - **The Gateway's shared secret is never persisted.** On first connect Exawatt
   resolves the source's own declared Gateway token through the authorized
   tunnel, holds it in process memory only, and uses it once: to pair Exawatt's
   own device identity with exactly the scopes the current milestone needs. The
   Gateway answers with a device token bound to that identity and those scopes.
-  Exawatt persists **that** device token in the OS keychain and never touches
-  the shared secret again. The persisted credential is therefore per-device,
-  scoped (read-only through H1), and revocable on the server with the source's
-  own tooling; the credential that could do anything never rests anywhere
-  Exawatt owns. Pasting a shared token is a fallback for a source that does not
-  declare one, not the normal path.
+  Exawatt persists **that** device token and keypair in OS-protected encrypted
+  storage and never exposes either to the renderer. The persisted credential is
+  therefore per-device, scoped (read-only through H1), and revocable on the
+  server with the source's own tooling; the credential that could do anything
+  never rests anywhere Exawatt owns. Pasting a shared token is a fallback for a
+  source that does not declare one, not the normal path.
 
 No connection material of either tier crosses into renderer state.
 
@@ -312,6 +316,8 @@ simulated evidence.
 | C1   | Saved read-only source and Gateway transport            | Exawatt can safely test, remember, diagnose, and reconnect to each Hetzner source    |
 | C2   | Connect flow plus Agent/Team projection                 | Marcus, Scout, and Tyler appear as remote coworkers with read-only conversation/work |
 | C3   | Relaunch, outage, rename, detach, and retirement proof  | Quit/reopen and transient failures preserve the same coworkers without VPS mutation  |
+| C4   | Visual, transport, and contract hardening               | The attach path tells only facts the real runtime can support                        |
+| C5   | Existing-fleet control and installed-app proof          | Packaged and official installed-app/live-fleet acceptance passed                     |
 | H2   | Capability-declared command path                        | Talk to a coworker; exact controls follow only where OpenClaw proves their effect    |
 | H3   | Exawatt-managed OpenClaw placement                      | Create a hosted coworker without learning a second roster or control surface         |
 | H4   | Explicit clone/move with a transfer manifest            | Move or copy a coworker only after seeing exactly what transfers and what does not   |
@@ -352,6 +358,18 @@ simulated evidence.
 - **C3 Relaunch and dogfood proof — LANDED 2026-08-19.** Quit/relaunch, endpoint outage, source
   restart, renamed Project, detach/reattach, and retired-Agent cases preserve
   identity and never mutate the VPS.
+- **C4 Hardening — LANDED 2026-08-19.** Visual review, manual transport proof,
+  and Electron-test type-checking corrected the Connect progress channel,
+  credential bootstrap, and unreported work-state presentation.
+- **C5 Existing-fleet control proof — LANDED 2026-08-20.** The packaged
+  two-Gateway gate passed initial launch and relaunch at `436286f5a155`. The
+  exact installed official app at
+  `7dc07d2c29c31e26917c001f63038c07b30a7b23` then connected both live
+  SSH-alias Gateways, projected three source-qualified Agents, opened them
+  through Team and Fleet, and preserved Agent, Project, and UI identity across
+  relaunch. Both sources correctly remained observation-only because neither
+  granted write authority; no send was attempted. The gate removed its exact
+  new device IDs, and independent readback found zero Exawatt UI read devices.
 
 ### ENG-033 — one hosted progression
 
@@ -359,15 +377,18 @@ simulated evidence.
   placement orthogonal and keeps ENG-010/011/012 as execution owners.
 - **H1 Observe existing infrastructure.** ENG-010 C0–C3; customer-hosted
   OpenClaw, read-only first.
-- **H2 Command connected Agents — LANDED 2026-08-18.** Send/follow up through the configured Agent's
-  primary conversation (OpenClaw `main`), then add exact
-  steer/abort/schedule/context verbs only where OpenClaw reports support and
-  outcome evidence. Generic remote Pause is not a prerequisite: it lands only
-  if OpenClaw can prove resumable continuity for a clearly named halted scope.
-- **H3 Exawatt-managed placement — BLOCKED ON A DESIGN PASS (operator,
-  2026-08-19).** H3 is where the product starts charging rather than shipping a
-  capability, and the operator asked that it be shaped deliberately rather than
-  fallen into from momentum. It stays unshaped until that pass happens. The
+- **H2 Command connected Agents — LANDED 2026-08-20.** Request and record
+  Gateway-granted `operator.write`, read and follow the configured Agent's
+  primary conversation (OpenClaw `main`), and send by Exawatt Agent identity.
+  Electron main allowlists `chat.send`, `chat.abort`, `sessions.steer`, and
+  `tasks.cancel`; the production UI exposes primary-conversation send. No
+  Pause, schedule/configuration mutation, Gateway administration, or VPS
+  lifecycle control is included.
+- **H3 Exawatt-managed placement — NOT ACTIVE; REQUIRES A DESIGN PASS (operator,
+  2026-08-19).** H3 would force business and custody decisions, including
+  whether and how the product charges, and the operator asked that it be shaped
+  deliberately rather than fallen into from momentum. It stays unshaped until
+  that pass happens. No paid-cloud implementation is active. The
   questions it raises are ones the earlier milestones never had to answer:
   what becomes of a machine when someone stops paying, who can reach it, what
   detach and delete each mean when Exawatt owns the box, and whether an
@@ -635,9 +656,11 @@ and Automations all have observed sources.
 was written before pairing was understood. Persisting nothing would force
 Exawatt to re-read the admin-capable shared secret over SSH on every launch,
 which is a worse posture than holding a read-only, per-device, revocable
-token. The rule is now: shared secret in memory only and used once; scoped
-device token persisted in the OS keychain. H2 upgrades that token's scope
-explicitly rather than re-pairing.
+token. The rule is now: shared secret in memory for one issuance handshake;
+scoped device token persisted in the OS keychain. The later H2 live proof
+refined the second half: after source-side approval, an explicit write request
+resolves the secret again and reissues the SAME device keypair at the wider
+scope. Ordinary launch and reconnect still use only the scoped token.
 
 ### 2026-08-17 — C1 landed, and four things only a live run could find
 
@@ -1050,3 +1073,70 @@ sessions against a single server. Neither dogfood box throttles at that rate
 and production opens a handful per source, so nothing needs changing -- but the
 number is the kind that stops being free at a customer's scale, and it should
 be known before it is discovered.
+
+### 2026-08-20 — runtime truth closed the gaps between green seams
+
+The source kernel now does what the live protocol and fleet surface claim. A
+conversation send uses the Gateway's `message` field. An approved write request
+re-reads the source-owned issuer secret only on the explicit gesture, presents
+the same persisted device keypair, and persists the newly issued scoped token;
+pending or refused approval restores the read token, and no local path widens
+authority. A fresh SSH-alias source reads its declared Gateway port before the
+first forward, persists that mutable port without changing source identity, and
+uses it instead of the renderer's valid-but-placeholder default.
+
+Observation is continuous rather than a connect-time snapshot. Healthy sources
+replace topology every thirty seconds, presence bursts coalesce into one
+authoritative read, and each replacement reaches the runtime revision seam.
+Failed reads and first-launch outages are visibly Reconnecting. The fast retry
+ladder becomes one quiet maintenance retry per minute instead of a terminal
+wall, while credential refusal, incompatible protocol, and identity drift stay
+terminal because waiting cannot repair them. Contract tests cover the exact
+send envelope, same-device scope reissue, non-default alias port, periodic and
+coalesced replacement, initial recovery, and recovery after the fast ladder.
+
+### 2026-08-20 — the existing-fleet surfaces became one product path
+
+The Connect dialog now persists the complete Agent mapping before it closes,
+then resolves the source-qualified native identity through the refreshed roster
+and opens the stable projected Agent. Team reads that same roster, while Fleet
+preserves placement and connection freshness and hands the same projected id
+back to the Agent altitude instead of routing a remote coworker through a local
+PTY Session path.
+
+Connect-created Projects are durable `manual` records with opaque Exawatt ids,
+renameable labels, and `root_path: null`. A folderless Project remains openable;
+Finder, local launch, worktree, and other local-path verbs are withheld rather
+than receiving a synthetic path. Existing Projects remain shareable across
+Agents and sources, and source detach does not delete them.
+
+One assembled renderer/preload contract now exercises Connect, the atomic
+mapping acknowledgement, roster refresh, Team projection, and Agent open as a
+single path. The current-work and automation presentation remains intentionally
+empty in production because the renderer roster does not yet carry the
+runtime's bounded work/automation evidence. A later packet must add a bounded,
+source-reported DTO at the existing roster boundary and feed
+`RemoteAgentSurface.work`; inventing it from `contextCount` here would turn a
+count into work-state truth.
+
+### 2026-08-20 — C5 closed in the official app against the existing fleet
+
+The final packaged two-Gateway gate at `436286f5a155` passed initial launch and
+relaunch through the real preload/IPC/runtime/UI: three Agents,
+Agent/Team/Fleet DOM and open parity, authority-gated send/reply,
+outage/recovery, and credential reuse.
+
+Separately, dogfood installed the exact official app from
+`7dc07d2c29c31e26917c001f63038c07b30a7b23`. The exact `436286f5a155` gate
+script was overlaid in a detached checkout without changing the installed app.
+That app connected the operator's two live Gateways by their existing SSH
+aliases and returned three source-qualified Agents. Team and Fleet opened those
+same Agents, and a full quit and relaunch preserved the Agent identities,
+Project mappings, and UI open paths without duplication.
+
+The live pass was deliberately observation-only: neither Gateway had granted
+`operator.write`, the app exposed no send authority, no message was sent, and
+Exawatt did not widen scope. The gate removed the exact device IDs it created.
+Independent readback then found one older pre-existing CLI device and zero
+Exawatt UI read devices on each source. C5 and ENG-010 are complete. ENG-033
+H3/H4 remain future design work; no paid-cloud implementation is active.

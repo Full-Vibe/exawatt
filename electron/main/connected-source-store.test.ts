@@ -224,6 +224,23 @@ describe('ConnectedSourceStore', () => {
 
       expect(withKey).toBe(withoutKey);
     });
+
+    it('reuses the existing source when the same Gateway changes port', () => {
+      const target = store();
+      const first = addOne(target);
+      const second = target.add({
+        adapterId: 'openclaw',
+        placement: 'customer-hosted',
+        displayName: 'Build box, moved port',
+        transport: { ...ALIAS_TRANSPORT, remotePort: 4917 },
+        credentialOwner: 'source-owned-ssh',
+      });
+
+      expect(first.ok && second.ok).toBe(true);
+      if (!first.ok || !second.ok) return;
+      expect(second.record.id).toBe(first.record.id);
+      expect(target.list()).toHaveLength(1);
+    });
   });
 
   it('rejects an invalid source without writing anything', () => {
@@ -270,6 +287,50 @@ describe('ConnectedSourceStore', () => {
     expect(record?.displayName).toBe('Research box');
     expect(record?.transport).toEqual(ALIAS_TRANSPORT);
     expect(target.rename('missing', 'x')).toBe(false);
+  });
+
+  it('persists an alias-declared Gateway port without disturbing identity or custody', () => {
+    const target = store();
+    const added = addOne(target);
+    if (!added.ok) throw new Error('fixture source was not added');
+    target.setGrantedAuthority(BUILD_BOX, 'write');
+    target.writeDeviceCredential(BUILD_BOX, credential('device-token-value'));
+
+    expect(target.setDiscoveredGatewayPort(BUILD_BOX, 4917)).toBe(true);
+
+    const reopened = store();
+    expect(reopened.get(BUILD_BOX)).toMatchObject({
+      id: added.record.id,
+      grantedAuthority: 'write',
+      transport: { ...ALIAS_TRANSPORT, remotePort: 4917 },
+    });
+    expect(reopened.readDeviceToken(BUILD_BOX)).toBe('device-token-value');
+    expect(reopened.readDeviceKeypair(BUILD_BOX)).toEqual(DEVICE_KEYPAIR);
+  });
+
+  it('refuses invalid or non-alias discovered ports', () => {
+    const target = store();
+    addOne(target);
+    expect(target.setDiscoveredGatewayPort(BUILD_BOX, 0)).toBe(false);
+    expect(target.setDiscoveredGatewayPort(BUILD_BOX, 65_536)).toBe(false);
+    expect(target.setDiscoveredGatewayPort('missing', 4917)).toBe(false);
+
+    const manual = target.add({
+      adapterId: 'openclaw',
+      placement: 'customer-hosted',
+      displayName: 'Manual box',
+      transport: {
+        kind: 'ssh-manual',
+        host: 'invented.example',
+        user: 'operator',
+        port: 22,
+        identityFile: null,
+        remotePort: 1337,
+      },
+      credentialOwner: 'source-owned-ssh',
+    });
+    if (!manual.ok) throw new Error('manual fixture source was not added');
+    expect(target.setDiscoveredGatewayPort(manual.record.id, 4917)).toBe(false);
   });
 
   describe('device credential custody', () => {

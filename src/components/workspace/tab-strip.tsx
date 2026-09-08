@@ -100,6 +100,7 @@ import { useOrdinalHints } from './use-ordinal-hints';
 import {
   isRemoteAgentTab,
   isSessionTab,
+  projectRootPath,
   tabIsLive,
   type Project,
 } from './use-workspace-state';
@@ -1137,17 +1138,18 @@ export function TabStrip({
             if (token.kind === 'tab' && folded) return null;
 
             if (token.kind === 'project') {
+              const rootPath = projectRootPath(project);
               const dormantProject = dormant.has(project.dir);
               const pinned = pinnedDir === project.dir;
               const signal = projectSignals.get(project.dir) ?? 'quiet';
               const projectMenuItems: StripMenuItem[] = [
-                ...(onNewAgent
+                ...(onNewAgent && rootPath
                   ? [
                       {
                         id: 'new-agent',
                         label: 'New agent',
                         focusAfterSelect: 'none' as const,
-                        onSelect: () => onNewAgent(project.dir),
+                        onSelect: () => onNewAgent(rootPath),
                       },
                     ]
                   : []),
@@ -1162,12 +1164,12 @@ export function TabStrip({
                       value: project.name,
                     }),
                 },
-                ...(onRevealPath
+                ...(onRevealPath && rootPath
                   ? [
                       {
                         id: 'reveal-project',
                         label: 'Reveal in Finder',
-                        onSelect: () => onRevealPath(project.dir),
+                        onSelect: () => onRevealPath(rootPath),
                       },
                     ]
                   : []),
@@ -1312,7 +1314,7 @@ export function TabStrip({
                         keyboardMenuPoint(event.currentTarget)
                       );
                     }}
-                    title={`${project.dir}${
+                    title={`${rootPath ?? project.name}${
                       folded
                         ? `\n${project.tabs.length} Sessions — select to open`
                         : ''
@@ -1474,8 +1476,7 @@ export function TabStrip({
                   // A stopped Session cannot be working: its process is gone,
                   // and a flag left behind belongs to a turn that no longer
                   // exists.
-                  (facts =>
-                    dead ? { ...facts, working: false } : facts)(
+                  (facts => (dead ? { ...facts, working: false } : facts))(
                     sessionTurnFacts(session, {
                       activity,
                       engaged,
@@ -1496,7 +1497,11 @@ export function TabStrip({
               : // The source configured the coworker's name and Exawatt shows
                 // it. There is no default-title fallback to apply, because
                 // there is no untitled coworker.
-                { primary: tab.title, context: null, primaryKind: 'title' as const };
+                {
+                  primary: tab.title,
+                  context: null,
+                  primaryKind: 'title' as const,
+                };
             const ordinal = ordinalByTabId.get(tab.id);
             const stoppedStatus = !session
               ? null
@@ -1533,110 +1538,116 @@ export function TabStrip({
                 ]
               : session
                 ? isDraft
-                ? [
-                  {
-                    id: 'discard-draft',
-                    label: 'Discard',
-                    danger: true,
-                    onSelect: () => onCloseTab(tab.id),
-                  },
-                ]
-              : [
-                  ...(dead &&
-                  onResumeTab &&
-                  (session.harnessSessionId || session.harness === 'shell')
-                    ? [
-                        {
-                          id: 'resume',
-                          label:
-                            session.harness === 'shell'
-                              ? 'Start New Shell'
-                              : 'Resume This Agent',
-                          onSelect: () => onResumeTab(tab.id),
-                        },
-                      ]
-                    : []),
-                  {
-                    id: 'rename-tab',
-                    label: 'Rename…',
-                    focusAfterSelect: 'none',
-                    onSelect: () =>
-                      setEditing({ kind: 'tab', id: tab.id, value: session.title }),
-                  },
-                  ...(onCloneTab &&
-                  cloneTargets.length > 0 &&
-                  tabCanClone(session, {
-                    engaged: !!(session.sessionId && engaged[session.sessionId]),
-                    contextSummary: summary,
-                  })
-                    ? [
-                        {
-                          id: 'clone-to',
-                          label: 'Clone to…',
-                          // The SAME setups ⌘T offers, under the same names:
-                          // model on the anchor, engine-reported effort on the
-                          // quiet note. Two setups on one model share a label
-                          // by design, so the row's identity is the Launch
-                          // Configuration id and never the words.
-                          children: cloneTargets.map(target => ({
-                            id: target.id,
-                            label: target.label,
-                            detail: target.detail,
-                            accessibleLabel: `Clone to ${target.accessibleLabel}`,
-                            onSelect: () => onCloneTab(tab.id, target),
-                          })),
-                        },
-                      ]
-                    : []),
-                  ...(tabIsPinnable(tab) && onTogglePinTab
-                    ? [
-                        {
-                          id: 'pin-split',
-                          label:
-                            tab.id === pinnedTabId
-                              ? 'Unpin from split'
-                              : 'Pin in split',
-                          onSelect: () => onTogglePinTab(tab.id),
-                        },
-                      ]
-                    : []),
-                  ...(onRevealPath
-                    ? [
-                        {
-                          id: 'reveal-tab',
-                          label: 'Reveal in Finder',
-                          onSelect: () => onRevealPath(session.cwd),
-                        },
-                      ]
-                    : []),
-                  // ENG-026 N3 / ENG-033: the per-Agent Push to cloud control,
-                  // announced where it will really live, with the Cloud preview
-                  // surface's contextual entry point beside it (the ⌘K
-                  // preview-row pattern: real navigation, muted Coming soon).
-                  ...(session.harness !== 'shell'
-                    ? [
-                        {
-                          id: 'push-to-cloud',
-                          label: 'Push to cloud',
-                          announcedComing:
-                            'run this Agent on an Exawatt-hosted plan (Cloud)',
-                        },
-                        {
-                          id: 'cloud',
-                          label: 'Cloud',
-                          note: 'Coming soon',
-                          onSelect: () => router.push('/cloud'),
-                        },
-                      ]
-                    : []),
-                  {
-                    id: 'close-tab',
-                    label: 'Close',
-                    danger: true,
-                    focusAfterSelect: 'none',
-                    onSelect: () => onCloseTab(tab.id),
-                  },
-                ]
+                  ? [
+                      {
+                        id: 'discard-draft',
+                        label: 'Discard',
+                        danger: true,
+                        onSelect: () => onCloseTab(tab.id),
+                      },
+                    ]
+                  : [
+                      ...(dead &&
+                      onResumeTab &&
+                      (session.harnessSessionId || session.harness === 'shell')
+                        ? [
+                            {
+                              id: 'resume',
+                              label:
+                                session.harness === 'shell'
+                                  ? 'Start New Shell'
+                                  : 'Resume This Agent',
+                              onSelect: () => onResumeTab(tab.id),
+                            },
+                          ]
+                        : []),
+                      {
+                        id: 'rename-tab',
+                        label: 'Rename…',
+                        focusAfterSelect: 'none',
+                        onSelect: () =>
+                          setEditing({
+                            kind: 'tab',
+                            id: tab.id,
+                            value: session.title,
+                          }),
+                      },
+                      ...(onCloneTab &&
+                      cloneTargets.length > 0 &&
+                      tabCanClone(session, {
+                        engaged: !!(
+                          session.sessionId && engaged[session.sessionId]
+                        ),
+                        contextSummary: summary,
+                      })
+                        ? [
+                            {
+                              id: 'clone-to',
+                              label: 'Clone to…',
+                              // The SAME setups ⌘T offers, under the same names:
+                              // model on the anchor, engine-reported effort on the
+                              // quiet note. Two setups on one model share a label
+                              // by design, so the row's identity is the Launch
+                              // Configuration id and never the words.
+                              children: cloneTargets.map(target => ({
+                                id: target.id,
+                                label: target.label,
+                                detail: target.detail,
+                                accessibleLabel: `Clone to ${target.accessibleLabel}`,
+                                onSelect: () => onCloneTab(tab.id, target),
+                              })),
+                            },
+                          ]
+                        : []),
+                      ...(tabIsPinnable(tab) && onTogglePinTab
+                        ? [
+                            {
+                              id: 'pin-split',
+                              label:
+                                tab.id === pinnedTabId
+                                  ? 'Unpin from split'
+                                  : 'Pin in split',
+                              onSelect: () => onTogglePinTab(tab.id),
+                            },
+                          ]
+                        : []),
+                      ...(onRevealPath
+                        ? [
+                            {
+                              id: 'reveal-tab',
+                              label: 'Reveal in Finder',
+                              onSelect: () => onRevealPath(session.cwd),
+                            },
+                          ]
+                        : []),
+                      // ENG-026 N3 / ENG-033: the per-Agent Push to cloud control,
+                      // announced where it will really live, with the Cloud preview
+                      // surface's contextual entry point beside it (the ⌘K
+                      // preview-row pattern: real navigation, muted Coming soon).
+                      ...(session.harness !== 'shell'
+                        ? [
+                            {
+                              id: 'push-to-cloud',
+                              label: 'Push to cloud',
+                              announcedComing:
+                                'run this Agent on an Exawatt-hosted plan (Cloud)',
+                            },
+                            {
+                              id: 'cloud',
+                              label: 'Cloud',
+                              note: 'Coming soon',
+                              onSelect: () => router.push('/cloud'),
+                            },
+                          ]
+                        : []),
+                      {
+                        id: 'close-tab',
+                        label: 'Close',
+                        danger: true,
+                        focusAfterSelect: 'none',
+                        onSelect: () => onCloseTab(tab.id),
+                      },
+                    ]
                 : [];
             const openTabMenu = (
               trigger: HTMLElement,
@@ -1775,9 +1786,7 @@ export function TabStrip({
                   title={
                     remote
                       ? `${condensed ? `${display.primary}\n` : ''}${
-                          remote.projectLabel
-                            ? `${remote.projectLabel}\n`
-                            : ''
+                          remote.projectLabel ? `${remote.projectLabel}\n` : ''
                         }Connected coworker${
                           ordinal ? `\n⌘${ordinal} selects` : ''
                         }\n⌘W closes this view; the Agent keeps working`
@@ -1902,22 +1911,26 @@ export function TabStrip({
                       ○
                     </span>
                   )}
-                  {session && dead && !isDraft && !condensed && stoppedStatus && (
-                    <span
-                      aria-label={stoppedStatus}
-                      className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
-                      style={{
-                        color:
-                          session.lifecycle === 'interrupted'
-                            ? HUD.amber
-                            : session.lifecycle === 'failed'
-                              ? HUD.red
-                              : HUD.textDim,
-                      }}
-                    >
-                      {stoppedStatus}
-                    </span>
-                  )}
+                  {session &&
+                    dead &&
+                    !isDraft &&
+                    !condensed &&
+                    stoppedStatus && (
+                      <span
+                        aria-label={stoppedStatus}
+                        className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
+                        style={{
+                          color:
+                            session.lifecycle === 'interrupted'
+                              ? HUD.amber
+                              : session.lifecycle === 'failed'
+                                ? HUD.red
+                                : HUD.textDim,
+                        }}
+                      >
+                        {stoppedStatus}
+                      </span>
+                    )}
                 </EditableChrome>
                 {/* Context rating is a passenger on the tab, never a rival to
                 it. Two rules keep it from eating the selection target:

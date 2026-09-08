@@ -3,36 +3,30 @@
   "shippedAssetRoots": ["electron/resources", "public", "src/app"],
   "assets": [
     {
-      "path": "electron/resources/icon-community-master.png",
-      "status": "included",
-      "kind": "community brand master",
-      "sha256": "10522b173be7b4ea60c8b3c5e3590f2fbb57484d28ca8b06a97ffe9168d10cbc",
-      "origin": "Derived 2026-08-18 from electron/resources/icon-master.png, which is Exawatt-original: desaturated, black point raised to 30 percent, and tinted 10 percent toward slate, then packaged with iconutil. Same geometry, one neutral hue, following Chromium's community-mark shape so a community build is distinguishable from the official one in a Dock. No third-party input. Regenerate with the command recorded in docs/engineering/projects/open-source-readiness.md.",
-      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
-    },
-    {
       "path": "electron/resources/icon-community.icns",
       "status": "included",
       "kind": "community macOS package icon",
-      "sha256": "02b92b92ffba42c22dcf2d77ab77555d43eaaed716d0b58c7ffa8154cd4c3e55",
-      "origin": "Derived 2026-08-18 from electron/resources/icon-master.png, which is Exawatt-original: desaturated, black point raised to 30 percent, and tinted 10 percent toward slate, then packaged with iconutil. Same geometry, one neutral hue, following Chromium's community-mark shape so a community build is distinguishable from the official one in a Dock. No third-party input. Regenerate with the command recorded in docs/engineering/projects/open-source-readiness.md.",
+      "sha256": "fa099b6a846135366b6c392704afbad45ccd0429cb0687e2b2c3a5e274037bb6",
+      "origin": "Generated from public/icon-community.png by node scripts/generate-app-icon.mjs --community. That public master derives from first-party Exawatt artwork by desaturating, raising the black point to 30 percent, and tinting 10 percent toward slate. No third-party input.",
       "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
     },
     {
       "path": "electron/resources/icon-master.png",
-      "status": "included",
+      "status": "excluded-from-public-seed",
       "kind": "macOS application-icon source",
       "sha256": "a20111f7f628d46182167ceee04bc3cf5de57ee32cc032e32e68d2fe39949efc",
       "origin": "First-party Exawatt artwork. The operator created the original glyph in the ChatGPT image editor; this 2026-08-16 macOS container is derived from that glyph with no known third-party input.",
-      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
+      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed only with official builds and subject to the trademark policy.",
+      "exclusionReason": "The official Exawatt mark remains private distribution custody; public source builds use public/icon-community.png."
     },
     {
       "path": "electron/resources/icon.icns",
-      "status": "included",
+      "status": "excluded-from-public-seed",
       "kind": "generated macOS application icon",
       "sha256": "bdc5e3e766402228b5d129da44790912da35bb7aac1793b9e8efb67bd4c50c6d",
       "origin": "Generated from electron/resources/icon-master.png by pnpm icon:generate; pnpm icon:check proves the committed slices match that source.",
-      "distributionBasis": "Generated form of the first-party Exawatt mark; distributed under the repository license and subject to the trademark policy."
+      "distributionBasis": "Generated form of the first-party Exawatt mark; distributed only with official builds and subject to the trademark policy.",
+      "exclusionReason": "The official Exawatt package icon remains private distribution custody; public source builds package electron/resources/icon-community.icns."
     },
     {
       "path": "public/fonts/Exo2-Medium.ttf",
@@ -41,6 +35,14 @@
       "sha256": "956d939727817620d6b8c3b459d8086151bd6c2b6a48258d134f60a0dcb2b6d2",
       "origin": "Exo 2 Medium, vendored for Troika/WebGL rendering. Exact source provenance is recorded in LICENSES/fonts/README.md.",
       "distributionBasis": "SIL Open Font License 1.1; license text is LICENSES/fonts/Exo-2-OFL-1.1.txt."
+    },
+    {
+      "path": "public/icon-community.png",
+      "status": "included",
+      "kind": "community browser and brand mark",
+      "sha256": "0c923fcfac19e4fd3378a44cc6188bb21bb527e7c95be1864404b11a329699af",
+      "origin": "Derived 2026-08-18 from first-party Exawatt artwork: desaturated, black point raised to 30 percent, and tinted 10 percent toward slate. Same geometry, one neutral hue, following Chromium's community-mark shape so a source build is distinguishable from the official product. No third-party input. Regenerate with the command recorded in docs/engineering/projects/open-source-readiness.md.",
+      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
     },
     {
       "path": "public/images/hero-bg.png",
@@ -101,11 +103,12 @@
     },
     {
       "path": "src/app/icon.png",
-      "status": "included",
+      "status": "excluded-from-public-seed",
       "kind": "web application icon",
       "sha256": "41edec98a434410b0eb024bf9ac349c5519a43b0a70ae7942da860487fd0e92e",
       "origin": "First-party Exawatt artwork created by the operator in the ChatGPT image editor with no known third-party input; PNG text metadata was removed without changing pixels.",
-      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed under the repository license and subject to the trademark policy."
+      "distributionBasis": "First-party asset owned by Full Vibe AI; distributed only with official builds and subject to the trademark policy.",
+      "exclusionReason": "Next's conventional /icon.png is the legacy official Exawatt web mark. Every distribution now derives /exawatt-distribution/icon.png at build time from its contract-owned ICNS source, so this private file is not needed by public or downstream builds."
     }
   ]
 }

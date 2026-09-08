@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClaudeModelCatalog,
+  AgentModelObservationCoordinator,
   formatAgentEffortLabel,
   formatAgentModelLabel,
   isValidAgentEffort,
@@ -32,6 +33,33 @@ function claudeInitializeResponse(models: unknown[]): string {
 }
 
 describe('Agent model catalogs', () => {
+  it('coalesces every outer demand for the same Project context', async () => {
+    const coordinator = new AgentModelObservationCoordinator();
+    let probes = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const probe = async () => {
+      probes += 1;
+      await gate;
+      return parseCodexModelCatalog('', 'fixture-model');
+    };
+
+    const staleBackground = coordinator.observe('codex\0fish\0/repo', probe);
+    const manualRefresh = coordinator.observe('codex\0fish\0/repo', probe);
+    const concurrentMiss = coordinator.observe('codex\0fish\0/repo', probe);
+    expect(probes).toBe(1);
+    release?.();
+    const catalogs = await Promise.all([
+      staleBackground,
+      manualRefresh,
+      concurrentMiss,
+    ]);
+    expect(catalogs[1]).toBe(catalogs[0]);
+    expect(catalogs[2]).toBe(catalogs[0]);
+  });
+
   it('reads the root Codex model without mistaking a profile model for it', () => {
     expect(
       parseCodexConfiguredModel(`
@@ -368,6 +396,35 @@ openai/gpt-5.3-codex
     expect(probes).toBe(2);
   });
 
+  it('forces past settled OpenCode cache but joins an in-flight observation', async () => {
+    let probes = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const cache = new OpencodeModelCatalogCache();
+    const probe = async () => {
+      const observation = ++probes;
+      if (observation === 3) await gate;
+      return parseOpencodeModelCatalog(`fixture/model-${observation}
+{"providerID":"fixture","name":"Fixture ${observation}"}`);
+    };
+
+    await cache.read('context', probe);
+    await cache.read('context', probe, true);
+    expect(probes).toBe(2);
+
+    const ordinary = cache.read('other-context', probe);
+    const forced = cache.read('other-context', probe, true);
+    expect(probes).toBe(3);
+    release?.();
+    const [ordinaryCatalog, forcedCatalog] = await Promise.all([
+      ordinary,
+      forced,
+    ]);
+    expect(forcedCatalog).toBe(ordinaryCatalog);
+  });
+
   it('does not cache an unavailable OpenCode catalog', async () => {
     let probes = 0;
     const cache = new OpencodeModelCatalogCache();
@@ -539,9 +596,9 @@ describe('parseGrokAuthBanner', () => {
       authenticated: true,
       identity: 'XAI_API_KEY',
     });
-    expect(parseGrokAuthBanner('You are logged in with grok.com.')).toMatchObject(
-      { authenticated: true, identity: 'grok.com' }
-    );
+    expect(
+      parseGrokAuthBanner('You are logged in with grok.com.')
+    ).toMatchObject({ authenticated: true, identity: 'grok.com' });
     expect(
       parseGrokAuthBanner("Model 'local-llama' is using its own API key.")
     ).toMatchObject({ authenticated: true });

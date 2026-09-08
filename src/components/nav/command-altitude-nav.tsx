@@ -60,11 +60,11 @@ function AltitudeLevel({
   const Icon = ALTITUDE_ICONS[surface.id];
 
   return (
-    <div className="flex min-w-0 items-center">
+    <div className="flex shrink-0 items-center">
       {index > 0 && (
         <span
           aria-hidden="true"
-          className="h-px w-2 bg-[var(--exa-foundation-border)] sm:w-3"
+          className="h-px w-1 bg-[var(--exa-foundation-border)] sm:w-3"
         />
       )}
       <button
@@ -75,7 +75,7 @@ function AltitudeLevel({
         aria-label={`${surface.name}: ${surface.summary}${shortcut ? ` (${shortcut})` : ''}`}
         title={`${surface.summary}${shortcut ? ` · ${shortcut}` : ''}`}
         onClick={() => onActivate(surface)}
-        className={`group flex h-8 min-w-0 items-center gap-1.5 px-2 font-mono text-chrome-label font-medium outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--exa-foundation-focus)] motion-reduce:transition-none sm:px-2.5 ${
+        className={`group flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap px-1.5 font-mono text-chrome-label font-medium outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--exa-foundation-focus)] motion-reduce:transition-none sm:px-2.5 ${
           current
             ? 'bg-[var(--exa-foundation-secondary)] text-[var(--exa-foundation-secondary-text)]'
             : 'text-[var(--exa-foundation-text-muted)] hover:bg-[var(--exa-foundation-secondary)] hover:text-[var(--exa-foundation-text)] active:scale-[0.98]'
@@ -89,7 +89,7 @@ function AltitudeLevel({
               : 'text-[var(--exa-foundation-text-faint)]'
           }`}
         />
-        <span data-command-altitude-label className="hidden sm:inline">
+        <span data-command-altitude-label className="hidden md:inline">
           {surface.name}
         </span>
         {shortcut && (
@@ -130,9 +130,7 @@ export function CommandAltitudeNav() {
   );
   // which tenant key the currently recorded address was recorded under —
   // lets the effect tell "navigation landed" apart from "tenant changed"
-  const lastRecordedRef = useRef<{ key: string; address: string } | null>(
-    null
-  );
+  const lastRecordedRef = useRef<{ key: string; address: string } | null>(null);
 
   useEffect(() => {
     // Boot fence (ENG-027): child effects run before the provider's mount
@@ -184,7 +182,7 @@ export function CommandAltitudeNav() {
     <nav
       data-command-altitude
       aria-label="Command altitude"
-      className="exa-material-chrome mx-3 flex min-w-0 items-center border border-[var(--exa-foundation-border)] p-0.5 shadow-lg"
+      className="exa-material-chrome mx-1 flex shrink-0 items-center border border-[var(--exa-foundation-border)] p-0.5 shadow-lg md:mx-3"
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
       {SPINE_SURFACES.map((surface, index) => (

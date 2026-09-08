@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { spawn, type ChildProcess } from 'child_process';
+import { once } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { stopChildProcess } from '../child-process-lifecycle';
 import {
   configureLoginShellScratchDir,
   loginShellFamily,
@@ -14,16 +15,86 @@ import {
   shellQuote,
 } from './login-shell';
 
-const execFileAsync = promisify(execFile);
 const SCRATCH = '/tmp/exawatt-login-shell-scratch';
 const created: string[] = [];
+const ownedChildren = new Map<ChildProcess, string>();
+
+/**
+ * A test that launches a real process owns that process until `close`, not
+ * merely until its command produces output or emits `exit`. `execFile` hid the
+ * handle from this suite and left a writable stdin pipe open, so once the Linux
+ * child failed to close the suite could neither name nor clean up what it owned.
+ *
+ * The fixture has no input protocol, so stdin is EOF from spawn. Completion is
+ * the child's own `close` event, after both output pipes close. No duration is
+ * part of the contract.
+ */
+async function runOwnedChild(
+  file: string,
+  args: string[],
+  options: { cwd: string; label: string }
+): Promise<{ stdout: string; stderr: string }> {
+  const child = spawn(file, args, {
+    cwd: options.cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  ownedChildren.set(child, options.label);
+
+  let stdout = '';
+  let stderr = '';
+  let spawnError: Error | null = null;
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', chunk => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', chunk => {
+    stderr += chunk;
+  });
+  child.once('error', error => {
+    spawnError = error;
+  });
+
+  const [code, signal] = (await once(child, 'close')) as [
+    number | null,
+    NodeJS.Signals | null,
+  ];
+  ownedChildren.delete(child);
+
+  if (spawnError) throw spawnError;
+  if (code !== 0) {
+    throw new Error(
+      `${options.label} closed with code ${String(code)} signal ${String(signal)}: ${stderr.trim()}`
+    );
+  }
+  return { stdout, stderr };
+}
 
 afterEach(async () => {
   configureLoginShellScratchDir(
     path.join(os.tmpdir(), 'exawatt-shell-startup')
   );
+
+  const leaked = Array.from(ownedChildren.entries());
+  for (const [child] of leaked) {
+    await stopChildProcess(child, {
+      forceAfterMs: 250,
+      failAfterMs: 2_000,
+      failureMessage: 'Leaked login-shell test child did not stop',
+    });
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    ownedChildren.delete(child);
+  }
   for (const dir of created.splice(0)) {
     await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+  if (leaked.length > 0) {
+    throw new Error(
+      `Test required forced teardown for child process ownership before close: ${leaked
+        .map(([child, label]) => `${label} (pid ${String(child.pid)})`)
+        .join(', ')}`
+    );
   }
 });
 
@@ -186,9 +257,16 @@ describe('a shell whose startup writes into its working directory', () => {
     const fakeShell = path.join(root, 'dirty-shell');
     await fs.promises.writeFile(
       fakeShell,
-      ['#!/bin/sh', ': > ./-l', 'shift 2', 'exec /bin/sh -c "$1"', ''].join(
-        '\n'
-      ),
+      [
+        '#!/bin/sh',
+        // A shell startup may probe stdin. This fixture has no input protocol,
+        // so it must observe EOF instead of inheriting an open pipe forever.
+        'IFS= read -r _ignored || :',
+        ': > ./-l',
+        'shift 2',
+        'exec /bin/sh -c "$1"',
+        '',
+      ].join('\n'),
       { mode: 0o755 }
     );
 
@@ -197,11 +275,12 @@ describe('a shell whose startup writes into its working directory', () => {
       directory: project,
       scratchDir: scratch,
     });
-    const { stdout } = await execFileAsync(fakeShell, plan.args, {
+    const { stdout, stderr } = await runOwnedChild(fakeShell, plan.args, {
       cwd: plan.cwd,
-      encoding: 'utf8',
+      label: 'dirty login-shell fixture',
     });
 
+    expect(stderr).toBe('');
     expect(stdout.trim()).toBe(project);
     expect(await fs.promises.readdir(project)).toEqual([]);
     expect(await fs.promises.readdir(scratch)).toEqual(['-l']);

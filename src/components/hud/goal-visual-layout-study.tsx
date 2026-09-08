@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createGoalVisual } from '@exawatt/core/distribution';
 import { SessionOverviewCardContent } from '@/components/workspace/session-overview-card';
 import { PROJECT_PALETTE } from '@/components/workspace/project-colors';
 import {
@@ -96,17 +97,6 @@ const STUDIES = LANGUAGES.flatMap(language =>
 interface LoadedStudy {
   identityKey: string;
   dataUrl: string;
-}
-
-function isLoadedStudy(value: unknown): value is LoadedStudy {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.identityKey === 'string' &&
-    /^[a-f0-9]{64}$/.test(candidate.identityKey) &&
-    typeof candidate.dataUrl === 'string' &&
-    candidate.dataUrl.startsWith('data:image/jpeg;base64,')
-  );
 }
 
 async function decodeStudy(study: LoadedStudy): Promise<LoadedStudy | null> {
@@ -234,23 +224,15 @@ export function GoalVisualLanguageStudy() {
         const entries = await Promise.all(
           STUDIES.map(async study => {
             try {
-              const response = await fetch(endpoint.url, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${session.access_token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
+              const value = await createGoalVisual(
+                endpoint,
+                session.access_token,
+                {
                   schemaVersion: 1,
                   identityKey: study.identityKey,
-                }),
-              });
-              if (!response.ok) return [study.id, null] as const;
-              const value: unknown = await response.json();
-              return [
-                study.id,
-                isLoadedStudy(value) ? await decodeStudy(value) : null,
-              ] as const;
+                }
+              );
+              return [study.id, await decodeStudy(value)] as const;
             } catch {
               return [study.id, null] as const;
             }

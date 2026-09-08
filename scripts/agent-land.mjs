@@ -260,9 +260,29 @@ async function requestCi(root, sourceSha) {
  * point is reached, exactly as the CI and dogfood requests are, so a landing
  * with no public remote configured pays nothing and prints nothing.
  */
-async function projectPublic(root, integratedSha) {
+async function preparePublic(root, integratedSha) {
   const publicDelivery = await import('./lib/public-delivery.mjs');
-  return publicDelivery.projectToPublicRemote(root, { integratedSha });
+  return publicDelivery.preparePublicProjection(root, { integratedSha });
+}
+
+async function publishPublic(root, prepared) {
+  const publicDelivery = await import('./lib/public-delivery.mjs');
+  return publicDelivery.publishPreparedPublicProjection(root, prepared);
+}
+
+async function discardPublic(prepared) {
+  const publicDelivery = await import('./lib/public-delivery.mjs');
+  return publicDelivery.discardPreparedPublicProjection(prepared);
+}
+
+async function repairPublic(root, integratedSha) {
+  const publicDelivery = await import('./lib/public-delivery.mjs');
+  return publicDelivery.repairPublicProjectionBlocker(root, { integratedSha });
+}
+
+async function preparePublicHold(root, integratedSha) {
+  const publicDelivery = await import('./lib/public-delivery.mjs');
+  return publicDelivery.preparePublicMaintenanceHold(root, { integratedSha });
 }
 
 async function directLand(root, branch, options) {
@@ -498,9 +518,29 @@ async function main() {
       const integrationSha = await git(root, 'rev-parse', 'HEAD');
       const lock = await acquireDeliveryLock(root);
       const lockStartedAt = Date.now();
+      let preparedPublic = null;
       try {
         await run('git', ['fetch', 'origin', 'master'], root);
         if (!(await isAncestor(root, 'origin/master', 'HEAD'))) continue;
+        // A previous transient public push is repaired for the exact private
+        // master that already integrated before this candidate may widen the
+        // source/public split. A deterministic refusal stays latched for the
+        // explicit reviewed recovery path.
+        preparedPublic = await preparePublicHold(root, integrationSha);
+        if (!preparedPublic) {
+          await repairPublic(
+            root,
+            await git(root, 'rev-parse', 'origin/master')
+          );
+        }
+        // Once a public remote exists, a deterministic projection failure is
+        // discovered BEFORE private master moves. A transient push can still
+        // fail after private integration (two remotes cannot be atomic), but
+        // a broken classifier, renderer, or ancestry contract never creates a
+        // new private/public split merely because projection used to be last.
+        if (!preparedPublic) {
+          preparedPublic = await preparePublic(root, integrationSha);
+        }
         console.log('[agent-land] integrate: fast-forward origin/master');
         let integrated = false;
         try {
@@ -510,6 +550,8 @@ async function main() {
           await run('git', ['fetch', 'origin', 'master'], root);
           integrated = await isAncestor(root, integrationSha, 'origin/master');
           if (!integrated) {
+            await discardPublic(preparedPublic);
+            preparedPublic = null;
             console.warn(
               `[agent-land] master moved during the final push; retrying this ticket on the new base (${error.message}).`
             );
@@ -521,11 +563,7 @@ async function main() {
           integrated &&
           (await isAncestor(root, integrationSha, 'origin/master'));
         if (!integrated) continue;
-        // The public projection runs here, inside the delivery lock that
-        // already serializes master pushes, so two landings cannot race the
-        // public remote. It never fails the landing: the private push above is
-        // the source of truth and has already succeeded.
-        publicProjection = await projectPublic(root, integrationSha).catch(
+        publicProjection = await publishPublic(root, preparedPublic).catch(
           error => {
             console.warn(
               `[agent-land] integration succeeded; the public projection step failed: ${error.message}`
@@ -533,6 +571,7 @@ async function main() {
             return { state: 'pending', reason: error.message };
           }
         );
+        preparedPublic = null;
         ticket = await finishTicket(
           root,
           await readTicket(root, ticket.id),
@@ -563,6 +602,7 @@ async function main() {
         });
         break;
       } finally {
+        if (preparedPublic) await discardPublic(preparedPublic).catch(() => {});
         await lock.release();
       }
     }
@@ -624,6 +664,10 @@ async function main() {
     publicProjection.state === 'inert'
       ? ''
       : ` public=${publicProjection.state}`;
+  const publicRecordedState =
+    publicProjection.state === 'inert' || publicProjection.recorded !== false
+      ? ''
+      : ' public_recorded=false';
   // Absent when nothing flaked, so a clean landing reads exactly as it did
   // before the rerun existed; present, and naming the check and the files,
   // whenever evidence had to be re-run to be believed.
@@ -638,7 +682,7 @@ async function main() {
           )
           .join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {

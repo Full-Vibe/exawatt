@@ -6,20 +6,28 @@ import process from 'node:process';
 import {
   nextDistributionEnvironment,
   readPreparedDistribution,
+  readPreparedDistributionWebIcon,
 } from './lib/distribution-build.mjs';
-import { resolveDevPort, resolveIdleTtlMs, watchForIdle } from './lib/dev-idle-watch.mjs';
+import {
+  resolveDevPort,
+  resolveIdleTtlMs,
+  watchForIdle,
+} from './lib/dev-idle-watch.mjs';
 
 const root = process.cwd();
 const [command, ...args] = process.argv.slice(2);
 if (!command)
   throw new Error('Usage: run-next-with-distribution.mjs <command>');
 
-const prepared = await readPreparedDistribution(root);
+const [prepared, webIcon] = await Promise.all([
+  readPreparedDistribution(root),
+  readPreparedDistributionWebIcon(root),
+]);
 const require = createRequire(import.meta.url);
 const nextBin = require.resolve('next/dist/bin/next');
 const child = spawn(process.execPath, [nextBin, command, ...args], {
   cwd: root,
-  env: nextDistributionEnvironment(prepared),
+  env: nextDistributionEnvironment(prepared, process.env, webIcon),
   stdio: 'inherit',
   // Own process group so the whole `next dev` → `next-server` tree can be
   // signalled as a unit; `detached` here does not orphan it, the supervisor

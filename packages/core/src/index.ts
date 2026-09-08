@@ -81,3 +81,17 @@ export * from './shortcuts/command-verbs';
 export * from './shortcuts/accelerator';
 export * from './shortcuts/keyboard-overrides';
 export * from './distribution/index';
+export * from './service-protocol';
+// D71: pure reading projection only; adapters retain IO and execution ownership.
+export {
+  normalizeCodexRetainedHistory,
+  normalizeClaudeRetainedHistory,
+  RETAINED_HISTORY_LIMITS,
+} from './conversation/retained-history';
+export type {
+  RetainedConversationIdentity,
+  RetainedHistoryBlock,
+  RetainedHistoryRecord,
+  RetainedHistoryOptions,
+  RetainedHistoryPage,
+} from './conversation/retained-history';

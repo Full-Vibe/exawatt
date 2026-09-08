@@ -3,6 +3,8 @@
 
 Roadmap item: ENG-016
 
+Current adoption plan: [2026-09-07 execution brief](#2026-09-07--adoption-execution-brief).
+
 ## Outcome
 
 The operator replaces Terminal.app for daily Claude Code and Codex work without
@@ -1025,6 +1027,45 @@ strict signature verification and a two-distinct-build identity/policy
 round-trip on macOS with Little Snitch.
 
 ## Progress log
+
+- 2026-09-07, BUG-122: **Narrow windows keep the altitude controls readable.**
+  The recents evaluator exposed Agent/Team/Fleet labels drawing over one
+  another at 800px. The new geometric assertion also reproduced it on the
+  untouched 560px minimum: the entire altitude rail had shrunk to 18.5px,
+  while each button's content overflowed its 16px box. Header neighbors kept
+  their intrinsic widths and the rail's nested `min-w-0` flex items absorbed
+  the shortage. The rail and history/right controls now retain their widths;
+  the distribution name can truncate with its full accessible name/title.
+  Existing icon-only treatments progressively expose altitude labels at `md`,
+  shortcut hints at `lg`, and secondary destination labels at `xl`; narrow
+  chrome uses the design system's existing dense spacing rungs. No font, color,
+  command, or navigation owner changed. Signed-browser `eval:workspace:chrome`
+  proves containment across ten viewport/type-scale cases from 560 to 1600px,
+  including 800px at 120% text; `eval:navigation` and seventeen nav tests pass.
+  Separate Demo probes at 560/800px verified that Workspace identity, brand,
+  history, and all three altitude controls still fit together. Screenshots:
+  `/tmp/exawatt-bug122-fixed/` and `/tmp/exawatt-bug122-demo-{560,800}.png`.
+
+- 2026-09-07, D66 partial repair: **Display-scale changes now refit visible
+  terminals through the existing geometry owner.** A controlled Electron
+  probe held the container at 1400 CSS pixels and changed DPR 2 → 1. xterm
+  changed its cell width from 7.5 to 7 pixels, but the PTY stayed at 181
+  columns instead of the 194 that fit; only a window resize or tab reveal
+  repaired it. The pane observed the container, whose dimensions never changed,
+  and missed the renderer's new metrics. `observeTerminalGeometry` now watches
+  the public xterm screen alongside the container, coalesces notifications onto
+  one animation frame, and cancels queued work on disposal. Hidden panes remain
+  frozen and fit the current metrics independently on reveal. No appearance
+  rung changed (the design system's terminal font independence and 12/8px
+  operational inset remain authoritative), and no provider retry or redraw
+  timer was added. Unit scenarios cover fixed-container metric changes, two
+  panes, hidden suppression, coalescing, and disposal. The real-Electron
+  terminal evaluator covers scale changes plus two hidden panes; all 20
+  terminal checks passed during development, alongside type-check and ten
+  geometry/theme lifecycle tests. **BUG-092 remains open:** this proves the
+  display-scale failure, not the original screenshot's exact overnight Claude
+  garbling. Sleep/wake with paused Claude output remains a separate reproduction
+  requirement before D66 can be called complete.
 
 - 2026-07-24, D39 review-hardening: the close/recovery interaction contract now
   has one semantic attention merge (human gates outrank quiet results), an
@@ -6176,6 +6217,34 @@ green (see BUG-059). `pnpm type-check` green.
 change does not touch; the two representative files pass in isolation, and the
 host load average was 299 at the time.
 
+## D69: model catalogs converge without a cold launcher — landed 2026-09-06 (BUG-115)
+
+**The cache was fast inside one Project and stale across Projects.** The
+operator saw GPT-6-Astra in Exawatt's Codex menu and not in GPAgent's. D49
+keys catalogs by `(harness, shell, cwd)`, correctly preserving Project-local
+configuration, but treated each row as fresh for six hours with no probe. A
+successful observation in one Project therefore could not challenge a sibling
+row even when both came from the same harness installation.
+
+D69 amends only that freshness policy. Cached catalogs still paint the
+launcher immediately and the harness remains the sole authority. Demand after
+five minutes schedules one coalesced background probe for that Project row. A
+changed successful observation invalidates sibling rows for the same harness
+so their next demand re-probes their own cwd; it never copies one Project's
+models into another. **Check for new models** bypasses the window and waits for
+the current Project/harness probe. A failed probe keeps the last-known-good row
+and its original freshness, rather than replacing it with failure or
+pretending it was refreshed. The frozen D49 composer contract remains: an
+already-open composer may keep its snapshot until its next entry unless the
+operator forces a refresh. Exawatt does not add a web feed, RSS watcher, or
+model registry.
+
+Focused cache tests prove semantic sibling invalidation, Project-local
+isolation, five-minute stale-while-revalidate behavior, and force-refresh
+single-flight semantics. Composer tests prove a refreshed catalog adds choices
+without moving the selected model, effort, card order, or focus, and a degraded
+refresh retains the last-known-good catalog.
+
 ## BUG-080: unreachable code was rotting gates, so it was deleted — 2026-08-17
 
 **3,352 lines of source and six production dependencies deleted, across 64
@@ -6310,3 +6379,704 @@ it does not touch — are BUG-057. No duplicate rows were filed. What the sweep
 contributed there is the baselines: every one was reproduced on an untouched
 checkout before being reported, which is what let each owner separate the
 machine from the change.
+
+## 2026-08-20 feedback drain — three daily-driver packets
+
+- **D66 / BUG-092 — hidden-pane terminal geometry.** Feedback
+  `b8f985f3-c7dd-49c8-ac58-48be1ca24c11` shows paused Claude panes garbled on
+  return, with resize repairing only the visible tab. Reproduce across two
+  hidden panes, then repair through D58's sole terminal-geometry owner.
+- **D67 / BUG-093 — transport-fault reconciliation.** Feedback
+  `6f980c82-8f8e-4f3f-b92b-d87ef38a1033`, `68f8adfd-5501-43d2-bffe-b0c0ad44b398`,
+  and `4234f48d-478a-4584-b4a6-b08174232f33` is one sequence: wake/network
+  errors remain literal terminal evidence while app chrome keeps stale working
+  and child state. Normalize the fault into D40, then authoritatively resnapshot;
+  protocol loss withdraws to absent and never fabricates completion.
+- **D68 — terminal-safe universal shortcuts.** Feedback
+  `42c148a9-3e58-4d98-a18c-d075e9425edc` asks for faster Usage access and notes
+  that CLI input consumes some chord prefixes. Audit the family before choosing
+  a key; keep the command manifest-owned/rebindable and prove it under xterm focus.
+
+## 2026-09-07 — Connection refresh ordering (BUG-121)
+
+**A late Settings read cannot erase newer connection state.** Change ticks,
+reconnects, and observation-age refreshes share the existing list/status readers.
+Controlled overlapping reads reproduced three failures: older status replaced
+the latest observation, an older list removed a newly discovered connection,
+and an older list rejection displayed an error after a successful newer read.
+
+Each existing read channel now owns a monotonically advancing request identity;
+only its latest pending response may publish state. Unmount invalidates both
+channels. The implementation retains the existing source-owned observations,
+subscriptions and cadence, and sends no execution command. No new cache,
+transport, polling loop, or UI state is added. All three regressions fail before
+the repair and pass afterward; the complete 23-test Settings suite and focused
+lint pass. Normal source-gate and delivery evidence applies to the integrated
+candidate; this is an observation-ordering repair, not automatic task retry.
+
+## 2026-09-07 — Settings hydration repair (BUG-116)
+
+**Source Settings now hydrates without rebuilding its server-rendered shell.**
+The connected-source hook initialized bridge availability by reading
+`window.electron` during render. The server omitted its connection rail, while
+the desktop's first client render included it. React consequently discarded
+and regenerated the tree. An isolated server-render → desktop-hydration test
+reproduced that exact failure before the repair.
+
+The hook now begins with the same unavailable shell in both environments, then
+discovers the preload bridge in its mount effect. Connection lists, observations,
+and subscriptions retain their existing owners. No visual redesign, credential
+custody change, or hydration-error suppression is involved. The existing
+Settings operational-neutral colors and type/spacing rungs are preserved.
+
+Validation: all 18 Settings behavior tests pass, including DOM identity
+preservation through hydration; `eval:electron:agent-sources` passes the real
+registry, secret-boundary, theme, compact-layout, launch, exact-resume, and final
+uncaught-page-error checks against this worktree's own server. BUG-116's
+quarantine is removed. Both Settings source files now declare that gate, so a
+future edit to the source of this defect cannot bypass its behavioral evidence.
+Broader Connections layout and credential UX remain governed by the adoption
+brief's gallery review and source-owned setup boundary.
+
+## 2026-09-07 — Source setup cancellation and discovery (BUG-119)
+
+**Setup responses stay with the action that requested them.** Both sign-in and
+installation-guide responses previously updated whichever source detail the
+operator had selected by completion time. A late successful sign-in could
+restart cancelled polling and disable the new source's controls; the previous
+source retained an optimistic Connecting state indefinitely.
+
+The existing action generation now guards both external-action completions.
+Leaving a setup action restores the last source-owned registry snapshot and
+withdraws its optimistic state. The external sign-in or installer remains
+source-owned and continues independently. Two controlled-promise regressions
+fail on the previous behavior and pass after the repair; all 20 Settings tests
+pass. This adds no process, broker, polling loop, or visual state.
+
+The existing Settings destination now advertises Agent Sources and is searchable
+through ⌘K with connection, integration, harness, setup, installation, sign-in,
+and API-key terms. It opens the existing source registry, not a second setup
+surface. Registry actions still explain source-owned sign-in and installation;
+this improves discovery without committing the pending Connections redesign.
+
+## 2026-09-07 — Adoption execution brief
+
+**Make starting, reading, and recovering agent work feel effortless.** This is
+execution detail for ENG-016 D54/D66/D67/D70–D72, with source investigations
+owned by ENG-003 and bounded module work by ENG-039. The singular sequence and
+status index remain in [the roadmap](../roadmap.md). This planning amendment
+ships no product behavior. Earlier milestone logs remain historical evidence.
+
+### Direction and decision state
+
+| Decision | State | Execution consequence |
+| --- | --- | --- |
+| Improve the existing breadth before adding more features | Operator accepted, 2026-09-07 | Concentrate on start/resume, reading, recovery, and first use. |
+| Investigate native harness interfaces before choosing implementation | Operator accepted | Reading can precede native input; stop an integration that needs fragile emulation. |
+| Ship capabilities unevenly by harness | Operator accepted | Claude Code and Codex lead investigation; unsupported sources retain their terminal experience. |
+| Refactor holistically with scenario simulation | Operator accepted | Extract real ownership boundaries alongside fixes; no independent workspace rewrite. |
+| Setup must be discoverable, including harnesses and required credentials | Operator accepted; Lanes screenshot supplied | Make connection state and the next action visible from durable navigation and the launcher. |
+| Preserve fast keyboard habits; gallery review for changed interaction | Operator accepted | Existing command identities and draft behavior are acceptance contracts. |
+| Source-owned installation/sign-in versus a new vendor connection service | Proposed; scope clarification pending | Plan the source-owned route now; do not claim the operator approved a new vault, Gmail/Slack broker, or automatic installer. |
+| Reconnect observation automatically; do not replay ambiguous work | Working assumption, not an explicit operator answer | Recovery investigation must distinguish safe observation from execution. |
+
+### Evidence and reuse before building
+
+Baseline inspected: `origin/master` at `344ff6b0` (2026-09-06), rather than the
+older running dogfood build. Re-read the current tree and roster at pickup.
+
+- D49 already owns a launcher model, setup controls, recents, and source
+  discovery. D54 owns improving its flow; use those owners before inventing a
+  second onboarding wizard.
+- D69 / BUG-115 already fixed Project-scoped model-cache freshness. Preserve
+  immediate cached choices, source authority, explicit refresh, and stable
+  selection. A stale-model report is not evidence to redo that change.
+- BUG-062 is the cold composer delay; D55 measured a small warm production
+  corpus successfully and stopped its speculative refactor. Warm results do
+  not close cold or populated-corpus cases, and those cases do not invalidate
+  D55's existing evidence.
+- D66 / BUG-092 owns hidden-pane geometry; D67 / BUG-093 owns transport-fault
+  reconciliation. BUG-116 owns the Settings hydration mismatch observed on
+  baseline; restore its gate when its cause is repaired.
+- Main already has conversation adapters and exact Session identity storage.
+  `electron/main/harness-events/codex-app-server.ts` is an existing read-side
+  protocol observer owned by ENG-023 D5: investigate extending its ownership rather than starting
+  an independent observer/process for the same conversation.
+- ENG-030 has unlanded metadata, projection, certification, and release work
+  in the roster. D72 must inspect those branches' disposition with their
+  owners; do not duplicate or silently absorb their implementation.
+
+### UX brief: one path into useful work
+
+**Summary.** A developer with an existing terminal workflow should be able to
+pick up a conversation immediately. Someone missing a prerequisite should see
+one understandable action and return to their work after setup. Audience and
+brand follow [the design system](../design-system.md): approachable, lucid,
+fast, with the existing Classic/Air/Night and typography preferences preserved.
+
+**Primary action.** Start or resume the intended Agent in the intended Project.
+Connecting a source supports that action; browsing integrations is secondary.
+
+**Design direction.** Borrow the supplied Lanes reference's recognizable source
+cards, readable connection state, and obvious repair action. Keep Exawatt's
+existing system: `body` for controls, `reading` for prose, `chrome-title` for
+compact titles, named spacing steps, status color plus text. Prose uses the
+interface family; code and terminal remain monospace. No new palette or theme.
+
+**Layout, proposed for gallery review.** A persistent Connections entry in
+Settings and ⌘K leads to the existing Agent Source registry. Each source shows
+its name, execution location when meaningful, observed readiness, and one next
+action. The launcher offers the same setup action next to an unavailable
+source, with an inline summary rather than a second configuration model. The
+selected source's focused detail panel contains advanced configuration and
+credential-mode explanation. Do not expose local MCP URLs as the main
+first-use instruction merely because the reference screenshot shows one.
+
+**Concrete states and user consequences:**
+
+| Situation | What the person sees | What the system does |
+| --- | --- | --- |
+| CLI installed, signed in, capabilities known | Ready; Start or Resume | Reuse the source's existing account and configuration. No Exawatt API-key request. |
+| CLI missing | Install Claude Code / Install Codex | Open the source's supported install guidance; recheck on return. An in-app installer is a separate decision after environment discovery. |
+| CLI present, authentication needed | Sign in | Start supported source-owned sign-in with clear browser/terminal handoff. Cancellation preserves the draft. |
+| Selected provider requires a key | Set up this provider | Explain which provider needs it and open its supported configuration flow. A future Exawatt-owned field requires an explicit custody design under ENG-009. |
+| Discovery still running or failed | Checking, or a specific repair/recheck action | Never turn credential presence into a claim that execution was tested; never block other ready sources. |
+| Connected gateway unavailable | Unavailable with last observed state | Offer reconnect and source details; preserve Sessions and draft. |
+| Source supports reading but not native input | Readable conversation; Open terminal | Both views address the same Session. Switching views neither resumes nor spawns work. |
+| No source ready | Setup choices and Try Demo | Demo uses the same launch/command interface through its source boundary. |
+| Tool integration requested, e.g. Gmail | Proposed: open that harness's integration setup | Show source ownership; full Exawatt-managed service connections remain pending scope selection. |
+
+**Interaction.** Keep ⌘T, source/model keyboard selection, Escape, ⌘K, and
+terminal focus predictable. Setup round trips retain Project, prompt,
+attachments, selected model and effort; late discovery cannot replace a
+selection. Returning to a different Project cannot apply the old Project's
+result. No command is sent merely because sign-in or reconnect succeeded.
+
+**Content.** Name the missing prerequisite and an actionable next step. Show a
+short cause with optional detail for errors; avoid raw paths, UUIDs, or protocol
+names as primary copy. Titles can be absent without inventing conversation
+content. Distinguish Install, Sign in, Configure, Retry, and Resume by effect.
+
+**References.** Operator-supplied Lanes integrations screenshot and
+[Lanes' desktop connection documentation](https://lanes.sh/docs/desktop/lanes-link),
+reviewed 2026-09-07. Its desktop delegates OAuth and registration to its CLI;
+our inference is that an approachable UI can sit over source-owned setup.
+That does not select Lanes Link as a dependency or imply feature parity.
+
+**Open questions.** The operator has not yet selected whether downstream tool
+connections belong in this mile. The above is a concrete proposed brief,
+not a final accepted layout. Present the launcher/setup and reading states in
+`/hud-gallery` for review before production wiring; retire studies as they
+ship. Include an R3F sibling only for state changes that also affect Fleet.
+
+### Sequence and ownership
+
+These packets are subordinate execution slices, not new roadmap items or a
+second status system. Implementation agents should claim a packet and identify
+shared files before editing; no staffing or calendar commitment is implied.
+
+| Order | Roadmap owner | Packet / boundary | Dependencies |
+| --- | --- | --- | --- |
+| First | ENG-016 D70, D54; ENG-003 | Reproduce launch/recents failures; inventory native/setup capabilities | Current baseline and roster |
+| Alongside investigation | ENG-016 D66, D67 | Reproduce geometry and recovery; define lifecycle scenarios | Existing D58/D40 owners |
+| Next | D70; bounded ENG-039 M0–M2 | Repair catalog/start contracts and their necessary module seams | Reproduction with a falsifiable cause |
+| Next | D54 and ENG-003 | Review setup flow; repair source-state hydration | Source capability inventory and UX scope selection |
+| Next, independently of recovery fixes | D71 | Native reading, then individually proven native controls | Source spike, exact identity contract, gallery acceptance |
+| Then | D72; ENG-030 delivery boundary | Fresh install, upgrade, and end-to-end adoption pass | Relevant repairs integrated; release-path status reconciled |
+
+Do not make launch fixes wait for cloud attach research, a vault, full module
+migration, or a native composer for every harness. Do not make D66 wait for a
+new conversation renderer. Holistic means shared state ownership, not one
+large inseparable change.
+
+### D70 — Start and resume reliability
+
+**Entry and diagnosis.** Reproduce BUG-117 separately for Claude discovery and
+title quality, using the reported Project/cwd conditions where available and
+sanitized fixtures otherwise. Check source home overrides, canonical/symlink
+cwd matching, worktrees, archive/subagent filtering, mixed provider histories,
+missing native titles, generated-title failures, and renderer exclusion.
+Trace BUG-062 from command dispatch to first composer acknowledgment,
+interactive draft, and complete catalogs in a staged production renderer.
+Capture warm/cold, empty/populated, one/multiple Projects, source timeout, and
+keyboard invocation while xterm owns focus. Report corpus sizes and environment;
+do not use a development-only route stall to justify a production refactor.
+
+**Owners and change boundary.** Begin at
+`electron/main/pty/conversation-catalog.ts`, `agent-model-catalog-cache.ts`,
+`session-identity-store.ts`, `src/components/workspace/recent-conversations.tsx`,
+`launch-controls.tsx`, and `launcher/launcher-model.ts`. Follow the call graph
+before extracting. Separate provider reading/normalization from catalog
+coordination and from view selection; leave identity and process custody in
+main. Eliminate the diagnosed wait, stale result, or filter error in its owner.
+
+**Acceptance.** Every supported fixture conversation is discoverable in its
+correct Project. Claude and Codex failures are isolated. Native or generated
+titles survive; an absent title gets a useful neutral fallback rather than a
+primary UUID, while the exact provider ID stays available as identity. Selecting
+a recent resumes that exact provider conversation once, or gives a recoverable
+reason it cannot. No recency heuristic substitutes a different conversation.
+Cached choices render without waiting for fresh I/O; first acknowledgment is
+measured against D55's provisional 80ms budget, with cold evidence reported
+separately. If the budget misses, identify the owner before setting a target
+for asynchronous completion. Large histories are bounded/paged; scans stay off
+the renderer input path. Existing draft, attachment, focus and D69 selection
+contracts remain intact.
+
+**Verification.** Adapter fixtures plus main-to-renderer catalog contracts;
+existing recents/launcher DOM suites; `eval:workspace:launcher`,
+`eval:electron:project-agent`, and affected surface gates from delivery policy.
+Trace the exact staged renderer used for performance evidence. No unit test
+asserts elapsed wall time, today's labels, or fixed card order.
+
+### ENG-003 investigation supporting D71 — Native access without fragility
+
+**Deliverable before implementation.** A capability matrix keyed by source and
+installed version, with small reproducible probes, exact API/CLI references,
+and a supported/unsupported/unknown verdict for each cell. Local version-only
+checks in this planning session found Codex `0.153.4` and Claude Code `2.1.251`;
+these are observations, not minimum supported versions. No live agent execution
+or native-attach proof was performed during planning.
+
+Probe separately: list/read retained history; observe an existing running
+Session; subscribe/backfill; resume the exact idle conversation; submit a turn;
+attachments; tool events/results; approvals; cancellation; model/effort options;
+project configuration; authentication/cost mode; and reconnect. Distinguish
+read, attach, resume, fork, and new launch. Cover source upgrades and unsupported
+versions. Inspect the existing Codex observer before adding a second connection.
+
+Primary references, checked 2026-09-07:
+
+- [Codex App Server](https://developers.openai.com/codex/app-server) is a rich-client
+  interface with history, events and approval operations. It provides
+  version-specific schema generation; its WebSocket path is documented as
+  experimental. Prefer probing the local stdio ownership model before proposing
+  remote transport. The docs are not proof of adopting an arbitrary live TUI.
+- [Claude Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)
+  documents structured agent interaction and session operations, while stating
+  restrictions on third-party claude.ai login/rate-limit offerings. Verify the
+  precise integration and authentication mode at implementation time; do not
+  silently replace the user's terminal subscription flow with paid API calls.
+- Provider-hosted session discovery/attach needs a separate public-interface
+  proof. User-hosted gateway access, provider cloud access, and ENG-033 managed
+  placement are distinct capabilities. An undocumented endpoint is not the
+  required seam.
+
+**Go/no-go.** Adopt native controls only with exact identity, one execution
+owner, supported authentication, required approvals, cancellation and replay
+semantics. If any is unavailable, ship native reading where proved and retain
+the source terminal for interaction. Do not parse rendered ANSI as authoritative
+conversation structure, scrape private services, reconstruct an agent loop,
+or fork a second active execution to make a native pane look live. Record the
+verdict, rejected paths and revisit trigger in the source project doc; add a
+decision record when selecting a durable integration protocol.
+
+### D71 — Readable conversation, then supported native interaction
+
+**Outcome.** Long answers, headings, lists, code and tables are comfortable to
+read and copy. First support retained structured records; live updates and
+native composer controls are separate exits of the source investigation.
+
+**Ownership.** Source adapters normalize records below the shared Session/Event
+boundary. A shared read model handles stable item IDs, ordering, partial content,
+loading/error/absent history and pagination. The renderer handles presentation,
+selection, scroll anchoring and focus; it does not discover source files or
+own credentials. Demo supplies the same contract, including partial and failed
+states. Reuse existing connected-conversation handling where its contract fits.
+Do not duplicate a generic chat product alongside the workspace.
+
+**Acceptance.** Opening or switching between terminal and readable views never
+changes active agent execution ownership or execution state. A bounded, reused
+read-side observer may start under ENG-023 D5, with explicit teardown and no
+second execution owner. Exact Session identity, source,
+Project and history completeness remain attached to the content. Older-page
+loads and new events preserve the reader's position; auto-follow only while at
+the live edge. Tool output is bounded and expandable, code copy is exact, tables
+remain navigable at narrow widths, and untrusted markdown cannot execute HTML,
+fetch arbitrary remote images, or expose privileged local resources. Unsupported
+records degrade visibly without hiding the terminal. Keyboard and screen-reader
+access work under existing typography and motion preferences.
+
+**Verification.** Sanitized source fixtures test normalization and order;
+contract tests exercise partial writes, duplicate/out-of-order events, corrupt
+records, truncation, long history, unsupported versions and source switching.
+DOM tests protect copy/scroll/selection and safe rendering behavior, not
+headline text. Gallery review covers reading, loading, empty, error, tool-heavy,
+and partial history states; then the owning Electron/browser flow proves the
+same Session across both views. Native submission additionally proves no
+second execution and approval/cancel behavior end to end before enabling it.
+
+### D66 / D67 — Recovery as a shared lifecycle
+
+**Diagnosis first.** Reproduce two hidden Claude panes through pause/show,
+window resize and display-scale change using D58's sole geometry owner. For
+D67, distinguish network loss, Wi-Fi/cell changes, sleep/wake, gateway restart,
+auth expiry, TLS/certificate error, provider backoff and a terminated process.
+Check incident records before repeating external-cause diagnosis. Terminal
+bytes are supporting evidence; silence is not success or proof of a fault.
+
+**Ownership.** Keep transport connectivity, execution state, delegated-work
+state, evidence freshness and pending mutation acknowledgment separate. Source
+adapters report observations; one reconciliation owner consumes authoritative
+snapshots and events with Session/run identity. DOM Agent/Team and Fleet use
+the same derived state. Geometry recovery belongs to the existing pane owner,
+not the source retry policy or the conversation renderer.
+
+**Acceptance.** Reconnection can refresh observation automatically. A provider
+already retrying does not get a competing Exawatt retry. Stale events cannot
+mark a newer run complete or resurrect withdrawn children. Missing authority
+becomes unknown/unavailable, not finished. An unacknowledged send/resume is not
+replayed without source idempotency or an explicit user action explaining the
+uncertainty. Authentication and certificate failures offer relevant repair;
+no disabled certificate checking. Repeated wake/reconnect neither duplicates
+processes nor multiplies listeners. Hidden panes recover on reveal without a
+manual resize and without continuous background rendering of every terminal.
+
+**Verification.** Inject event sequences and lifecycle clocks; assert transitions,
+listeners and process counts rather than sleep durations. Exercise read-only
+reconnect separately from ambiguous mutations. Test main/transport contracts,
+shared status derivation, pane geometry and one integrated Electron reproduction
+of each observed failure. If shared visual state changes, review both DOM and
+R3F representations before percolating it; run `eval:r3f` for R3F changes.
+
+### Bounded ENG-039 seams and scenario ownership
+
+Adopt only seams demonstrated by the above fixes. Start with a dependency and
+runtime map; proposed boundaries below are hypotheses to validate:
+
+| Responsibility | Runtime / allowed direction | Scenario controls |
+| --- | --- | --- |
+| Source capability and setup discovery | Main source registry; publishes serializable facts | Installed/missing/version/auth/probe result; no real account required |
+| Conversation catalog and normalization | Main adapter I/O → pure normalized records → shared contract | Synthetic filesystem/protocol records, pagination and late results |
+| Launch/draft orchestration | Renderer command model → existing main launch port | Project changes, cancel, interrupted setup, duplicate submit |
+| Session identity and reconciliation | Main custody + pure state derivation → workspace source | Run IDs, reconnect snapshots, stale/duplicate events, ambiguous acknowledgments |
+| Conversation presentation | Shared view model → DOM | Record stream, bounded tool output, scroll position and incomplete history |
+| Pane geometry | Existing terminal owner only | Visibility, dimensions, device scale and render readiness |
+
+Use existing test-support and source fixtures first. Add the smallest injected
+ports needed for filesystem/process/transport/time rather than a universal
+simulation framework. Each adopted module gets a public entrypoint, dependency
+contract and unit/boundary coverage. Cross-module tests protect identity and
+command delivery. Shared Demo uses the same commands and view models, with
+failure scenarios injected at the source boundary, not scattered `isDemo`
+branches. Update architecture.md and the runtime manifest when ownership
+actually changes. The full ENG-039 verification-policy migration and 30-landing
+study are not prerequisites for this mile and are not silently waived by it.
+
+### D72 — Download to first useful result
+
+Run on the packaged immutable candidate using an isolated user-data directory,
+not the operator's active profile. Cover: clean install with a ready source;
+source missing; sign-in cancelled/expired; key-required provider; offline first
+open; Demo with no credentials; upgrade with existing Projects and histories;
+and close/reopen with an interrupted turn. Seed synthetic histories or use an
+explicitly designated test account; never erase a real provider home to simulate
+freshness. Include the distribution's real sign-in policy and account-first-run
+card, and verify it does not obscure the appropriate source setup path.
+
+For each route record the visible actions, first successful result, recovery
+from failure, and any fallback to external setup. Fix dead ends, misleading
+states and lost drafts before adding an onboarding tour. Verify download,
+notarization/launch, bundled renderer, deep links, update/restart and actionable
+errors on the candidate actually intended for distribution. Resolve ENG-030's
+in-flight delivery dependencies before duplicating release machinery.
+
+Exit: all applicable source and adoption contracts pass; BUG-117 and any claimed
+recovery fixes have reproduction-to-repair evidence; setup and reading designs
+have operator review; documentation describes actual setup paths; an installed
+candidate's SHA is verified. Record installed candidate identity and release
+evidence separately; integration alone is not an installed or public release.
+### Evidence, upgrades, and marketing follow-through
+
+Every implementation slice reports: symptom and cause, files/ownership changed,
+contract checks, actual app evidence, limitations and precise delivery state.
+No dependency upgrade is preselected. Upgrade only for a reproduced defect or
+required supported capability, with version-specific docs, compatibility tests,
+and rollback to the previous adapter/capability path. Avoid bundling unrelated
+framework upgrades with this work.
+
+### 2026-09-07 — D67 Codex census recovery
+
+**Codex recovery fixes are implemented; broader network recovery remains open.**
+
+Diagnosis on the existing source adapter identified independently reproducible
+faults, covered by injected protocol/process scenarios:
+
+- Completed-child caching used `updatedAt` as a lifecycle revision, so a
+  same-timestamp resume stayed invisible. Snapshot reads now recheck lifecycle.
+- Delta-event tombstones vetoed a source-authoritative resumed child. The
+  shared delegation monitor now accepts a current census atomically; a newly
+  running child is visible before another child's completion can raise attention.
+- Missing, failed and interrupted child observations emitted the same end
+  signal as a successful result. They now withdraw without inventing completion;
+  only explicitly completed source turns may publish completion attention.
+- One rejected Session census discarded healthy Session observations. Reads
+  now settle independently. Captured root identity objects reject late A → B → A
+  responses, and a replaced process's delayed output/error/exit cannot affect
+  the current connection. Concurrent connects share one launch; cancellation
+  during asynchronous launch closes the late process.
+- Independent review identified the cost of rechecking historical children.
+  Root/child worker bounds now cap observer-wide concurrent reads at eight;
+  failed child batches stop queued reads and settle in-flight requests before
+  another poll can begin. No timestamp cache is restored.
+
+The main-process monitor remains the shared owner; no provider mutation,
+resume, retry-send, credential workaround, terminal parser, renderer-specific
+status policy or extra runtime service was added. Source read reconnect keeps
+bounded backoff. Claude/OpenCode's terminal-only fault observations, provider
+retry/backoff, TLS/auth repair and broader wake/network classification remain
+D67 work, not capabilities claimed by this change. Withdrawal still hands D40
+back to byte inference: a quiet started Session can retain inferred ready
+styling. This packet suppresses synthetic completion attention; an explicit
+fault/unknown visual state remains the shared-model/gallery follow-up.
+
+Verification checkpoint: 50 focused protocol/delegation tests pass, Electron
+main compiles, and `EXA_BASE=http://localhost:7323 pnpm eval:electron:delegation`
+passed all checks on this worktree. The integrated delegation evaluator exercises same-timestamp
+resume, failed-child withdrawal and read-only disconnect/reconnect through the
+real IPC and Agent/Team/Fleet projection. Its initial run exposed an existing
+fixture interception: `codexProbeJs` exited before the opt-in fixture server
+could run. An explicit protocol-serving option repairs that fixture while the
+non-server default still exits rather than leaking a process. The normal landing reruns the gate on the exact candidate; installation is
+requested through the queued dogfood worker rather than claimed here.
+
+Installed-provider limitation, independently observed by the native-source
+investigation: Codex 0.153.4 advertises `thread/items/list` but returns method-not-
+supported for the inspected retained thread. This patch preserves withdrawal
+when required authority is unavailable. It does not claim a retained/full-turn
+read proves live external-TUI delegation or invent a fallback protocol.
+
+## 2026-09-07 — Adoption implementation progress
+
+**Parallel execution has begun; checkpoints preserve independent handoffs.**
+The operator authorized implementation and maximum useful parallelism after
+reviewing the execution brief. Source-owned setup is the current implementation
+boundary; downstream vendor credential custody remains a separate decision.
+
+| Owner branch | Scope | State at this checkpoint | Next evidence |
+| --- | --- | --- | --- |
+| `agent/adoption-recents` | D70 / BUG-117 catalog | 29 catalog tests and 17 exact-resume Electron checks pass; repairs checkpointed | Integration and packaged evidence |
+| `agent/adoption-launcher` | D70 / BUG-062, BUG-120 | Clipboard overwrite reproduced and repaired in candidate; cold measurements underway | Staged timing evidence and launcher gate |
+| `agent/adoption-geometry` | D66 / BUG-092 | Display-scale stale fit reproduced; original overnight report not yet proven | Geometry repair and reveal/scale scenarios |
+| `agent/adoption-recovery` | D67 / BUG-093 | 23 regression tests cover authoritative census and stale callback repairs | Synthetic Electron recovery evidence |
+| `agent/adoption-setup` | D54 / BUG-116 and setup races | Hydration regression repaired; real source gate passed | Further setup-race checks and integration |
+| `agent/adoption-native-spike` | ENG-003 / D71 | Read-only retained history proved for both sources without starting work | Persist matrix; choose bounded adapter path |
+| `agent/adoption-reading-gallery` | D71 | Reading prototype and five behavior tests pass; signed-browser review complete | Operator visual review; no live Session wiring yet |
+| `agent/adoption-coordination` | D72 / BUG-118, cross-lane progress | Two startup-auth regressions red before repair, 12 tests green after | Navigation gate, delivery floor and integrated evidence |
+
+This table records a dated checkpoint, not another roadmap. Later entries
+supersede these candidate states. Each owner pushes atomic checkpoints, uses
+its own bootstrapped checkout and renderer, and enters the normal delivery
+queue. Real Electron eval launches are serialized; source and DOM contracts
+run independently. No milestone is closed solely because one slice passes.
+
+### BUG-118 — Startup auth has one observation source
+
+The first-run invitation and feedback provider each combined an asynchronous
+`getSession()` with `onAuthStateChange`. A deterministic deferred-read scenario
+showed the old read winning after sign-out: the invitation persisted a dismissal
+for an obsolete account, and feedback reinstalled its token in Electron main.
+The installed Supabase auth client's subscription already emits
+`INITIAL_SESSION` after initialization, under its session lock; the site header
+already relies on that contract. Both affected consumers now use that same
+idiomatic subscription for initialization and later changes, retaining normal
+unsubscription and distribution capability absence. No additional auth cache,
+credentials store or hand-written session sequencer was added.
+
+Verification at this checkpoint: both regression scenarios failed before the
+change and passed after; all 12 first-run/feedback tests and focused lint pass.
+The UI structure is unchanged. This proves the race contract, not a new live
+account sign-in experiment or a packaged-install claim.
+
+### D70 Roadmap milestone log — 2026-09-07, BUG-117 catalog repair
+
+**Operator conversations now keep the catalog budget.** Read-only inspection of
+the reported Project on the current source catalog returned 24 Claude sessions
+with native titles: the original all-Claude-missing observation did not reproduce.
+The Codex sample did reproduce the label failure: 90 of its first 100 records
+were provider-declared subagent threads with no title, prompt, or preview. The
+query admitted those children before its result limit, and the empty-title
+fallback rendered their provider IDs.
+
+The catalog adapter now excludes declared Codex children in the indexed query
+before the limit, with equivalent filtering in the legacy transcript path.
+Schema introspection retains support for older indexes without source columns.
+A real read-only comparison returned 65 operator Codex conversations and zero
+ID-as-title rows after the repair; Claude retained all 24 native titles. Only
+aggregate counts were captured; tests use synthetic data.
+
+Separate Claude fixture reproductions established and repaired: a nonempty
+stale index hid newer unindexed transcripts; raw-path-only discovery missed
+canonical and nested launch directories; one rotating file's failed stat
+rejected the adapter; sidechain transcripts could be offered as independent
+resume targets. Discovery now merges unindexed files, respects source-declared
+sidechain exclusions, isolates disappearing files, and checks recorded cwd
+against the existing Project scope after selecting encoded directory candidates.
+That last check rejects neighboring paths whose lossy encodings collide.
+`CLAUDE_CONFIG_DIR` is honored alongside the existing explicit test override.
+
+The existing adapter seam and main-owned identity contract remain the ownership
+boundary; no renderer, IPC schema, launch process, or credential handling changed.
+Untitled operator records receive a neutral harness label, while provider IDs
+remain exact and independently available for resume. Existing native/generated
+labels and local-only summary policy remain covered.
+
+Verification checkpoint: 29 catalog tests pass, including six new scenario tests;
+Electron TypeScript compilation and focused ESLint pass. The real Electron
+recents gate passes all 17 checks, including exact resume and draft consumption;
+the repository floor passes. Integration and installation are pending at this
+checkpoint. This repairs
+reproduced causes and does not claim every historical missing-Claude report is
+explained. BUG-062 and the rest of D70 retain their separate owners and exits.
+
+### D70 — Cold-renderer diagnostic evidence
+
+**The sampled composer stayed responsive; BUG-062 remains unconfirmed.**
+The opt-in [probe](../../../scripts/cold-composer-probe.mjs) and
+[raw report](../../references/2026-09-07-cold-composer-report.json) preserve
+this evidence independently of temporary worktrees. The renderer was staged
+from `11798861db4741697d75b321106fd629f2893285`; the checkout had advanced to
+`d8e3e0c5ffa9ff78e383012abf991f4c95176ad2` when it was measured. Artifact hashes
+and BUILD_ID are in the report. Later clipboard fixes are not included in the
+staged renderer, and these measurements are not a speedup claim about them.
+
+Fixture: three temporary Projects, 12 real shell PTYs, 900 tiny Claude JSONL
+records and 900 legacy Codex JSONL records, no SQLite index, fake source
+metadata, no agent turns. The host had approximately 21 load on 12 cores.
+
+| Trial | Composer first observed | Focused enabled field | All source setup ready |
+| --- | --- | --- | --- |
+| Fresh renderer 1 | 8.3 ms | 17.1 ms | 1474.6 ms |
+| Fresh renderer 2 | 14.5 ms | 47.7 ms | 56.1 ms |
+| Fresh renderer 3 | 14.3 ms | 22.8 ms | 65.0 ms |
+| Warm 1 | 14.8 ms | 48.0 ms | 55.5 ms |
+| Warm 2 | 15.2 ms | 48.8 ms | 57.1 ms |
+| Warm 3 | 7.4 ms | 16.4 ms | 49.9 ms |
+
+Timing begins at the renderer keydown in these samples. Field focus/enabled
+state is observed at those times; actual typing was checked after catalog
+settlement, not at the earlier focus timestamp. All three fresh-renderer
+trials accepted input and emitted no page errors. Main and OS caches remained
+warm. This is not a full app restart, cold disk-cache result, representative
+population percentile, or installed-artifact measurement. Two earlier rig
+startup attempts collected no samples; this report cannot establish startup
+reliability. See the raw report's limits before generalizing.
+
+The asynchronous setup wait is a separate investigation target, not evidence
+that the composer blocks on every source. No timing-driven runtime refactor
+was justified by this run. D55's stop-on-passing-evidence rule still applies;
+BUG-062 remains open for its original conditions or new contradictory evidence.
+
+Reproduce from a clean, bootstrapped checkout, recording the renderer SHA at
+build time and using a free port. Run the opt-in probe after the staged server
+is ready; the normal Electron helper owns isolated profile cleanup and the
+machine-wide evaluator lock. Do not run against another worktree's renderer.
+
+```sh
+pnpm build
+pnpm electron:prepare-renderer
+HOSTNAME=127.0.0.1 PORT=7161 node dist-renderer/server.js
+```
+
+In another shell in the same checkout:
+
+```sh
+COMPOSER_PROBE_STAGED_SHA=<recorded-full-build-sha> \
+EXA_BASE=http://127.0.0.1:7161 node scripts/cold-composer-probe.mjs
+```
+
+Output defaults to `.artifacts/interaction-performance/cold-composer-report.json`;
+`COMPOSER_PROBE_OUTPUT` chooses a different path. This is a diagnostic, not a
+CI gate or a unit-test duration assertion. Never use the command to execute
+real source work or reset the operator's provider home.
+
+### Integrated checkpoint — 2026-09-07, first adoption repairs
+
+**Launch, geometry and startup-auth repairs are integrated; larger milestones remain open.**
+This supersedes the earlier candidate-state table for the rows below. Installed
+build identity is separate and is still pending the shared dogfood worker at
+this checkpoint.
+
+| Slice | Integrated commit | Evidence and remaining boundary |
+| --- | --- | --- |
+| D66 display-scale geometry | `fc61fd65` | 20 Electron terminal checks and chrome gate; original overnight Claude corruption remains open. |
+| D72 / BUG-118 startup auth | `e1f9295f` | Two reproduced regressions; 12 focused tests and navigation-spine Electron gate; no new live-account experiment. |
+| D70 / BUG-120 clipboard | `20963e6a` | Current draft/caret, simultaneous paste, Project/unmount cancellation, recoverable errors; 46 related tests and browser/Electron launcher gates. |
+| D70 / BUG-117 catalog | `c7557564` | 29 catalog tests and 17 real Electron recents checks; original missing-Claude report remains unconfirmed. |
+| ENG-003 / D71 retained-source proof | `38648adc` | Exact read-only history access demonstrated without agent turns; live attach/native controls remain unproven. |
+| D71 gallery | `6671e3ba` | Five behavior scenarios, Air/Night/narrow visual checks and signed-browser smoke; operator visual review requested, production wiring pending. |
+| D71 normalized history boundary | `08061009` | 12 focused scenarios and full related closure; bounded pure core transformation only, no source IO or production reader. |
+
+Independent review confirmed catalog, setup and auth ownership; it also caught
+and closed concurrent clipboard completion loss and unbounded recovery read
+fan-out before those candidates could be integrated. The source setup and
+recovery candidates retain their separate gate/integration logs until their
+queue entries land. No source control or command replay was enabled by the
+native reading work.
+
+### Integrated checkpoint — 2026-09-07, recovery and setup
+
+**The reviewed repair batch is integrated; native reading awaits visual acceptance.**
+This extends the first integrated checkpoint and supersedes candidate-only
+statements for these slices. The source-refresh ordering investigation
+(BUG-121) retains its own checkpoint until separately verified and integrated.
+
+| Slice | Integrated commit | Evidence and remaining boundary |
+| --- | --- | --- |
+| D67 Codex reconciliation | `0ec10751` | 50 focused scenarios, bounded observer reads, independent review, real Electron delegation and Project/Agent gates. Broader source faults and explicit unknown styling remain open. |
+| D54 / BUG-116 and BUG-119 source setup | `885df078` | SSR/client initial state agrees, source-switch cancellation rejects old action results, setup aliases improve discovery. The restored source gate, navigation gate, related tests and repository floor pass. |
+| BUG-122 compact workspace chrome | `daf89a58` | Controls fit at 560–1600px, including larger text and Demo; both navigation and chrome gates pass. |
+
+The dogfood worker recorded `c7557564` installed at 2026-09-08 00:58 UTC,
+covering the first repair packet. Later runtime commits queue superseding
+artifacts through the same worker; queued is not installed. A stale `daf89a58`
+artifact was deliberately rejected after recovery superseded it. The installed
+SHA must include the final runtime commits before calling this batch installed.
+No public release workflow was dispatched. Private integration succeeded;
+public projection continues to refuse its pre-existing divergent history.
+
+Resume from canonical state rather than old temporary branches:
+
+| Remaining work | Owner / next concrete evidence |
+| --- | --- |
+| Source status/list read ordering | BUG-121 / ENG-003: all three races reproduced; independent per-channel ordering repair and all 23 Settings tests pass. Independent review is clean; source gate and normal integration remain the delivery boundary at this checkpoint. |
+| Native reading | D71: obtain operator review of `/hud-gallery/native-conversation`; then connect bounded source IO to the existing core normalizers. Do not enable native controls without per-source proof. |
+| Geometry and fault reports | D66/D67: reproduce original overnight corruption; distinguish authoritative failure/unknown from quiet byte-inferred readiness, with shared model and gallery scenarios. |
+| Cold launch and missing Claude | D70: retain BUG-062 and the original BUG-117 observation until matching conditions reproduce or the operator confirms. Probe timings are diagnostic samples, not a launch-speed claim. |
+| Packaged adoption | D72: verify final installed SHA, then fresh-install/upgrade and first-use cohort coverage beyond the automated packaged smoke. |
+
+All source and UI packets used isolated worktrees, normal delivery floors and
+relevant surface gates. Review-driven changes addressed clipboard batching,
+observer fan-out and diagnostic retry ownership. Remote `agent-checkpoints/*`
+refs preserve atomic recovery points; integrated commits above are the source
+of truth. The roadmap remains the single status index, with this log carrying
+evidence and residual scope.
+
+### Final delivery checkpoint — 2026-09-07
+
+**The reviewed repair batch is integrated and installed.** The signed dogfood
+worker installed `00af8d3a01c052c891241d2872424b1714732593` at
+`2026-09-08T01:09:29.417Z` in `/Applications/Exawatt.app`. An ancestry check confirms
+that artifact contains every runtime commit in the integrated tables above.
+The running app was not restarted. This supersedes earlier queued installation
+and BUG-121 candidate-state statements in this log.
+
+BUG-121 integrated at `00af8d3a`: three overlapping-read regressions, all 23
+Settings tests, independent review, community build/runtime, restored source
+gate and the normal repository floor passed. The final signed artifact passed
+background launch, local renderer, capability-shaped preload/menu/diagnostics,
+PTY round trip and contract-declared updater smoke checks before installation.
+
+D72 remains active: this is verified local dogfood installation, not a public
+release or full fresh-install/upgrade cohort acceptance. The native-reading
+gallery and bounded normalizers are integrated, while operator visual review,
+source IO and production Session wiring remain open. Original BUG-062,
+overnight BUG-092 and broader BUG-093 fault/unknown scenarios keep their
+existing acceptance boundaries; do not mark them resolved from this batch.
+
+The roadmap, source architecture, runtime manifest, diagnostic evidence and
+marketing demonstration ideas are persisted. Temporary review servers are
+stopped; the native gallery can be reopened at `/hud-gallery/native-conversation`
+in any bootstrapped checkout. Remote atomic checkpoints remain available.
+Private `origin/master` contains the batch; public projection still refuses the
+pre-existing divergent history. No release workflow or public reseed was run.

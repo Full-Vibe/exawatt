@@ -1805,3 +1805,19 @@ Constraints inherited, not renegotiated:
 Sequencing (operator, 2026-08-03): land the launch path first. This stays an
 open item rather than a milestone so ENG-008 does not widen mid-flight; it
 becomes real when ENG-003 S2 has shipped and there are Sessions to measure.
+
+## 11. Live velocity and the operator power envelope (opened 2026-08-20)
+
+**E13 live work velocity** comes from feedback
+`2986a19e-97d7-4afd-ada4-2e048f2eda92`: a short-window token/turn rate may
+answer whether work is moving only as throughput, never productivity. State
+source coverage, window, staleness, and last observation; offline is
+`unreported`, not zero. Compaction, cached-input bursts, and absent live
+counters are required fixtures before Fleet or Usage uses it as connectivity.
+
+**E14 operator power envelope** comes from feedback
+`4a720856-7e14-401d-8bc5-5a959c7c004d`: Exawatt drains a laptop fast enough to
+change unplugged use. Measure CPU/GPU/energy by regime, visibility, projection,
+motion, DPR, scale, and power source before adding preferences. Fleet's parked
+demand loop is the baseline, not proof of whole-app efficiency; a later control
+must state its fidelity/cadence trade and never change Agent truth.

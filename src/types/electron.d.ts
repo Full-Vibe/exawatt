@@ -1251,6 +1251,15 @@ export interface ElectronAppApi {
   saveDiagnosticsReport: (
     signedIn: boolean
   ) => Promise<{ ok: boolean; filePath: string | null }>;
+  /** A route's error boundary caught a render exception. Written to
+   *  `logs/main.jsonl` (redacted, clipped) so it is readable after the fact
+   *  instead of only ever existing in a screenshot. Never throws. */
+  reportRenderError: (report: {
+    message: string;
+    stack?: string | null;
+    digest?: string | null;
+    pathname?: string | null;
+  }) => Promise<void>;
   /** Absent when this distribution has no product-update capability. */
   updates?: {
     getStatus: () => Promise<ProductUpdateStatus>;

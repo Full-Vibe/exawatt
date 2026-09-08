@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.dev/contracts/conformance/cases.schema.json",
+  "title": "Exawatt executable service conformance cases",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "oneOf": [
+      { "$ref": "#/$defs/distributionCase" },
+      { "$ref": "#/$defs/wireCase" }
+    ]
+  },
+  "$defs": {
+    "distributionExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resolvedDistribution": {
+          "type": "string",
+          "enum": ["community-all-null"]
+        },
+        "networkRequests": { "type": "integer", "minimum": 0 },
+        "fallback": { "type": "string", "enum": ["local-or-absent"] },
+        "error": { "type": ["string", "null"] }
+      },
+      "required": ["networkRequests", "fallback", "error"]
+    },
+    "distributionCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "const": "distribution" },
+        "distributionFixture": { "type": ["string", "null"] },
+        "environment": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]*$" }
+        },
+        "action": {
+          "type": "string",
+          "enum": ["exercise-all-hosted-capabilities", "resolve-distribution"]
+        },
+        "expected": { "$ref": "#/$defs/distributionExpectation" }
+      },
+      "required": ["id", "kind", "distributionFixture", "action", "expected"]
+    },
+    "wireExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "attemptsPerOperation": { "type": "integer", "minimum": 0 },
+        "automaticReplay": { "type": "boolean" },
+        "error": { "type": ["string", "null"] },
+        "fallback": { "type": "string", "enum": ["local-or-absent"] },
+        "ignoredFields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "problemCode": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" },
+        "retryAfterSeconds": { "type": ["integer", "null"], "minimum": 1 },
+        "duplicateSequence": {
+          "type": "array",
+          "items": { "type": "boolean" },
+          "minItems": 2
+        }
+      },
+      "required": ["accepted", "attemptsPerOperation", "error"]
+    },
+    "wireCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "const": "wire" },
+        "operations": {
+          "type": "string",
+          "enum": [
+            "all",
+            "all-with-response-body",
+            "mutating",
+            "product-feedback"
+          ]
+        },
+        "responseMode": {
+          "type": "string",
+          "enum": [
+            "current",
+            "additive",
+            "missing-version",
+            "malformed-version",
+            "unknown-version",
+            "rollback",
+            "schema-version-mismatch",
+            "wrong-success-media",
+            "wrong-success-status",
+            "malformed-json",
+            "malformed-envelope",
+            "problem",
+            "malformed-problem",
+            "idempotent-repeat",
+            "disconnect"
+          ]
+        },
+        "invocations": { "type": "integer", "minimum": 1, "default": 1 },
+        "expected": { "$ref": "#/$defs/wireExpectation" }
+      },
+      "required": ["id", "kind", "operations", "responseMode", "expected"]
+    }
+  }
+}

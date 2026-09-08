@@ -86,6 +86,20 @@ const PREVIEW = {
   runs: [],
 };
 
+function serviceResponse(body: unknown, status = 200): Response {
+  return Response.json(body, {
+    status,
+    headers: { 'Exawatt-Service-Version': '1' },
+  });
+}
+
+const PUBLISH_RESPONSE = {
+  schemaVersion: 1,
+  handle: 'operator',
+  days: 0,
+  runs: 0,
+};
+
 function installBridge(
   options: { autoPublish?: boolean; startedAt?: boolean } = {}
 ) {
@@ -172,7 +186,9 @@ describe('runOperatorStatsSync', () => {
   it('coalesces overlapping triggers into exactly one scan and one post', async () => {
     const { scan } = installBridge({ autoPublish: true });
     installSupabase();
-    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200 }));
+    const fetchSpy = vi.fn<typeof fetch>(async () =>
+      serviceResponse(PUBLISH_RESPONSE)
+    );
     vi.stubGlobal('fetch', fetchSpy);
 
     const first = runOperatorStatsSync();
@@ -189,6 +205,11 @@ describe('runOperatorStatsSync', () => {
       OPERATOR_STATS_URL,
       expect.objectContaining({ method: 'POST' })
     );
+    expect(
+      new Headers(fetchSpy.mock.calls[0][1]?.headers).get(
+        'Exawatt-Service-Version'
+      )
+    ).toBe('1');
 
     const state = readOperatorStatsSyncState();
     expect(state.phase).toBe('idle');
@@ -199,7 +220,7 @@ describe('runOperatorStatsSync', () => {
   it('is a paused no-op end to end when the preference is absent', async () => {
     const { scan } = installBridge(); // no operatorProfile key at all
     installSupabase();
-    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200 }));
+    const fetchSpy = vi.fn(async () => serviceResponse(PUBLISH_RESPONSE));
     vi.stubGlobal('fetch', fetchSpy);
 
     const result = await runOperatorStatsSync();
@@ -234,7 +255,7 @@ describe('runOperatorStatsSync', () => {
   it('runs again after a finished sync rather than reusing the settled promise', async () => {
     const { scan } = installBridge({ autoPublish: true });
     installSupabase();
-    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200 }));
+    const fetchSpy = vi.fn(async () => serviceResponse(PUBLISH_RESPONSE));
     vi.stubGlobal('fetch', fetchSpy);
 
     await runOperatorStatsSync();
@@ -248,11 +269,12 @@ describe('runOperatorStatsSync', () => {
     installBridge({ autoPublish: true, startedAt: false });
     installSupabase();
     const fetchSpy = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) => ({
-        ok: true,
-        status: 200,
-        json: async () => ({ profile: null }),
-      })
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        serviceResponse(
+          init?.method === 'GET'
+            ? { schemaVersion: 1, profile: null }
+            : PUBLISH_RESPONSE
+        )
     );
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -263,6 +285,11 @@ describe('runOperatorStatsSync', () => {
       [OPERATOR_STATS_URL, expect.objectContaining({ method: 'GET' })],
       [OPERATOR_STATS_URL, expect.objectContaining({ method: 'POST' })],
     ]);
+    for (const [, init] of fetchSpy.mock.calls) {
+      expect(new Headers(init?.headers).get('Exawatt-Service-Version')).toBe(
+        '1'
+      );
+    }
   });
 });
 

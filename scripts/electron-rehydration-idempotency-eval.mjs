@@ -9,7 +9,7 @@
  *
  * Each generation asserts:
  *   - confirmed quit leaves no orphan harness process
- *   - workspace.json stays v6 with the SAME tab set (same durable Session
+ *   - workspace.json stays v7 with the SAME tab set (same durable Session
  *     ids, exact provider ids, title ownership, no duplicates or strays)
  *   - relaunch spawns nothing; the resume banner counts only agents
  *   - workspace recovery resumes the exact same conversations as generation 0
@@ -308,8 +308,8 @@ try {
   await quitAndWaitClosed(app, page);
   app = null;
   const baselineWorkspace = readWorkspace();
-  if (baselineWorkspace.v !== 6) {
-    throw new Error(`Workspace is not v6: ${baselineWorkspace.v}`);
+  if (baselineWorkspace.v !== 7) {
+    throw new Error(`Workspace is not v7: ${baselineWorkspace.v}`);
   }
   const baselineTabs = tabFingerprint(baselineWorkspace);
   if (baselineTabs.length !== 4) {
@@ -383,7 +383,7 @@ try {
     app = null;
 
     const workspace = readWorkspace();
-    if (workspace.v !== 6) {
+    if (workspace.v !== 7) {
       throw new Error(`g${generation}: workspace version drifted`);
     }
     const tabs = tabFingerprint(workspace);

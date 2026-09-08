@@ -2,6 +2,7 @@ import {
   resolveContextGroups,
   type AgentActivity,
   type AgentStatus,
+  type AgentPresence,
   type AgentWorkState,
   type BlockerType,
   type ContextGroup,
@@ -28,6 +29,8 @@ export interface FleetAgentView {
   project: string;
   sessionKey: string;
   sessionState?: 'live' | 'stopped';
+  /** Placement/connection/source truth; absent means a local Agent. */
+  presence?: AgentPresence;
   lastActivityAt: number;
   cost: number;
   costRate: number;
@@ -381,6 +384,7 @@ function toAgentView(agent: ExawattAgent): FleetAgentView {
     project: agent.project,
     sessionKey: agent.sessionKey,
     ...(agent.sessionState ? { sessionState: agent.sessionState } : {}),
+    ...(agent.presence ? { presence: agent.presence } : {}),
     lastActivityAt: agent.lastActivityAt,
     cost: agent.metrics.estimatedCost,
     costRate: agent.metrics.costRate,

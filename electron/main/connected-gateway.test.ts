@@ -21,7 +21,10 @@ import {
 } from './connected-source-failure';
 import {
   ConnectedGatewaySession,
+  LONG_OUTAGE_RETRY_DELAY_MS,
+  PERIODIC_RESNAPSHOT_INTERVAL_MS,
   RECONNECT_BASE_DELAY_MS,
+  RESNAPSHOT_COALESCE_DELAY_MS,
   evidenceBasisForAdapter,
   type ConnectedGatewayClient,
   type ConnectedGatewayPhase,
@@ -132,6 +135,8 @@ class FakeGateway {
   readonly handshakes: string[][] = [];
   /** The device id presented on each handshake, in order. */
   readonly deviceIds: string[] = [];
+  /** Credential presented on every handshake, before its answer is known. */
+  readonly presentedCredentials: (string | null)[] = [];
   /**
    * Which device each issued token belongs to.
    *
@@ -176,7 +181,7 @@ class FakeGateway {
       };
     }
 
-    if (this.approvedScopes === null || deviceToken === null) {
+    if (this.approvedScopes === null) {
       this.approvedScopes = [...requested];
       return { ok: true };
     }
@@ -317,6 +322,8 @@ class FakeGatewayClient {
   async connect(): Promise<void> {
     if (this.refuse) throw new Error('gateway refused the handshake');
     const requested = [...(this.config.scopes ?? [])];
+    this.presentedToken = this.deviceToken ?? this.config.token ?? null;
+    this.gateway.presentedCredentials.push(this.presentedToken);
     const paired = this.gateway.pair(
       requested,
       this.deviceToken,
@@ -326,7 +333,6 @@ class FakeGatewayClient {
       this.status = 'error';
       throw new Error(paired.message);
     }
-    this.presentedToken = this.deviceToken ?? this.config.token ?? null;
     if (this.deviceToken === null && this.issueToken !== null) {
       this.deviceToken = this.issueToken;
       // The Gateway remembers which device it issued this to, which is what
@@ -447,6 +453,7 @@ function createFakeStore(initial: Record<string, string> = {}) {
   const writes: { id: string; token: string; keypair: OCDeviceKeypair }[] = [];
   const cleared: string[] = [];
   const authorities: { id: string; authority: SourceAuthority }[] = [];
+  const ports: { id: string; gatewayPort: number }[] = [];
   let refuseWrites = false;
   return {
     tokens,
@@ -475,6 +482,11 @@ function createFakeStore(initial: Record<string, string> = {}) {
       keypairs.delete(id);
     }),
     authorities,
+    ports,
+    setDiscoveredGatewayPort: vi.fn((id: string, gatewayPort: number) => {
+      ports.push({ id, gatewayPort });
+      return true;
+    }),
     setGrantedAuthority: vi.fn((id: string, authority: SourceAuthority) => {
       authorities.push({ id, authority });
       return true;
@@ -500,7 +512,16 @@ function createFakeTimers() {
     },
     /** Fire the earliest scheduled callback. Returns false when none is due. */
     fireNext(): boolean {
-      const entry = [...pending.entries()][0];
+      const entry = [...pending.entries()].sort(
+        (left, right) => left[1].ms - right[1].ms
+      )[0];
+      if (!entry) return false;
+      pending.delete(entry[0]);
+      entry[1].fn();
+      return true;
+    },
+    fireDelay(ms: number): boolean {
+      const entry = [...pending.entries()].find(([, value]) => value.ms === ms);
       if (!entry) return false;
       pending.delete(entry[0]);
       entry[1].fn();
@@ -573,6 +594,8 @@ interface HarnessOptions {
   /** Scopes the fake Gateway echoes back as granted, when it echoes any. */
   reportGrantedScopes?: readonly string[];
   maxReconnectAttempts?: number;
+  /** Port the source declares, independent of the saved/default record. */
+  declaredGatewayPort?: number;
   /** What the last process saw behind this source, as a relaunch supplies it. */
   knownIdentity?: GatewayIdentity | null;
   /**
@@ -620,7 +643,7 @@ function createHarness(options: HarnessOptions = {}) {
       ok: true,
       facts: {
         version: gateway.version,
-        gatewayPort: REMOTE_PORT,
+        gatewayPort: options.declaredGatewayPort ?? REMOTE_PORT,
         sharedToken: SHARED_SECRET,
         tokenSource: 'cli',
       },
@@ -717,6 +740,24 @@ describe('ConnectedGatewaySession — connecting', () => {
       'discovering',
       'connected',
     ]);
+  });
+
+  it('uses and persists the Gateway port an SSH alias actually declares', async () => {
+    const declaredGatewayPort = REMOTE_PORT + 17;
+    const harness = createHarness({ declaredGatewayPort });
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(true);
+    expect(harness.openTunnel).toHaveBeenCalledWith({
+      kind: 'ssh-alias',
+      alias: ALIAS,
+      remotePort: declaredGatewayPort,
+    });
+    expect(harness.store.ports).toEqual([
+      { id: SOURCE_ID, gatewayPort: declaredGatewayPort },
+    ]);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
   });
 
   it('discovers with agents.list, one sessions.list per Agent, cron.list, and status', async () => {
@@ -1167,7 +1208,7 @@ describe('ConnectedGatewaySession — failure classification', () => {
   ];
 
   it.each(cases)(
-    'maps the %s tunnel failure to its source failure class and phase failed',
+    'maps the %s tunnel failure to its source failure class and recovery state',
     async tunnelFailure => {
       const harness = createHarness({ tunnelFailures: [tunnelFailure] });
 
@@ -1180,9 +1221,16 @@ describe('ConnectedGatewaySession — failure classification', () => {
       expect(result.failure).toBe(
         TUNNEL_FAILURE_TO_SOURCE_FAILURE[tunnelFailure]
       );
-      expect(harness.session.phase).toBe('failed');
-      expect(harness.session.status().state).toBe('unavailable');
-      expect(harness.resolveCredential).not.toHaveBeenCalled();
+      const retryable =
+        result.failure === 'host-unreachable' ||
+        result.failure === 'gateway-down';
+      expect(harness.session.phase).toBe(retryable ? 'reconnecting' : 'failed');
+      expect(harness.session.status().state).toBe(
+        retryable ? 'reconnecting' : 'unavailable'
+      );
+      // An alias declares its Gateway port remotely, before a forward can be
+      // formed; tunnel failures therefore happen after that bounded read.
+      expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
     }
   );
 
@@ -1196,11 +1244,26 @@ describe('ConnectedGatewaySession — failure classification', () => {
     expect(result.failure).toBe(
       BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE['openclaw-missing']
     );
-    expect(harness.session.phase).toBe('failed');
+    expect(harness.session.phase).toBe('reconnecting');
   });
 });
 
 describe('ConnectedGatewaySession — losing the connection', () => {
+  it('recovers when a source that was down on first connect comes back', async () => {
+    const harness = createHarness({
+      tunnelFailures: ['host-unreachable'],
+    });
+
+    const first = await harness.session.connect();
+    expect(first.ok).toBe(false);
+    expect(harness.session.phase).toBe('reconnecting');
+    expect(harness.timers.fireDelay(RECONNECT_BASE_DELAY_MS)).toBe(true);
+
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    expect(harness.session.status().state).toBe('live');
+    expect(harness.openTunnel).toHaveBeenCalledTimes(2);
+  });
+
   it('goes reconnecting, retains the last-known snapshot, and never implies work stopped', async () => {
     const harness = createHarness();
     await harness.session.connect();
@@ -1259,7 +1322,7 @@ describe('ConnectedGatewaySession — losing the connection', () => {
     expect(harness.tunnels[0]!.closeCount()).toBe(1);
   });
 
-  it('backs off with a bounded ladder and gives up after the attempt budget', async () => {
+  it('backs off quickly, then keeps one quiet retry so a long outage heals', async () => {
     const harness = createHarness({
       storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
       maxReconnectAttempts: 2,
@@ -1280,15 +1343,31 @@ describe('ConnectedGatewaySession — losing the connection', () => {
     expect(harness.session.phase).toBe('reconnecting');
     harness.timers.fireNext();
 
-    await vi.waitFor(() => expect(harness.session.phase).toBe('failed'));
-    expect(harness.timers.pending.size).toBe(0);
-    expect(harness.timers.scheduled).toEqual([
-      RECONNECT_BASE_DELAY_MS,
-      RECONNECT_BASE_DELAY_MS * 2,
-    ]);
-    // Last-known content survives the give-up; it is stale, never stopped.
+    await vi.waitFor(() =>
+      expect(harness.timers.scheduled).toContain(LONG_OUTAGE_RETRY_DELAY_MS)
+    );
+    expect(harness.session.phase).toBe('reconnecting');
+    expect(harness.timers.pending.size).toBe(1);
+    expect(harness.timers.scheduled).toEqual(
+      expect.arrayContaining([
+        PERIODIC_RESNAPSHOT_INTERVAL_MS,
+        RECONNECT_BASE_DELAY_MS,
+        RECONNECT_BASE_DELAY_MS * 2,
+        LONG_OUTAGE_RETRY_DELAY_MS,
+      ])
+    );
+    // Last-known content survives the outage; it is stale, never stopped.
     expect(agentIdsOf(harness.session)).toEqual([AGENT_LUMEN, AGENT_QUILL]);
-    expect(harness.session.status().state).toBe('unavailable');
+    expect(harness.session.status().state).toBe('reconnecting');
+
+    failing.mockImplementation(async () => {
+      const handle = createFakeTunnel();
+      harness.tunnels.push(handle);
+      return { ok: true, tunnel: handle.tunnel };
+    });
+    harness.timers.fireNext();
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    expect(harness.session.status().state).toBe('live');
   });
 
   it('reports identity drift instead of silently rebinding the projection', async () => {
@@ -1366,6 +1445,80 @@ describe('ConnectedGatewaySession — resnapshot', () => {
     const result = await harness.session.resnapshot();
 
     expect(result.ok).toBe(false);
+  });
+
+  it('periodically replaces the snapshot before freshness can expire', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    const replacements: number[] = [];
+    harness.session.onSnapshot(() => {
+      replacements.push(harness.session.snapshot?.observedAt ?? 0);
+    });
+    harness.gateway.agentIds = [AGENT_QUILL, AGENT_TESSERA];
+    harness.advance(PERIODIC_RESNAPSHOT_INTERVAL_MS);
+
+    expect(harness.timers.fireDelay(PERIODIC_RESNAPSHOT_INTERVAL_MS)).toBe(
+      true
+    );
+
+    await vi.waitFor(() => expect(replacements).toHaveLength(1));
+    expect(agentIdsOf(harness.session)).toEqual([AGENT_QUILL, AGENT_TESSERA]);
+    expect(harness.session.facts?.observedAt).toBe(
+      FIXED_NOW + PERIODIC_RESNAPSHOT_INTERVAL_MS
+    );
+    expect(harness.session.status()).toMatchObject({
+      state: 'live',
+      stalePresentation: false,
+    });
+  });
+
+  it('coalesces a burst of presence hints into one authoritative read', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    const client = harness.clients[0]!;
+    const before = harness.gateway.received.filter(
+      entry => entry.method === 'agents.list'
+    ).length;
+
+    client.emitOCEvent('presence', { seq: 1 });
+    client.emitOCEvent('presence', { seq: 2 });
+    client.emitOCEvent('presence', { seq: 3 });
+
+    expect(
+      [...harness.timers.pending.values()].filter(
+        timer => timer.ms === RESNAPSHOT_COALESCE_DELAY_MS
+      )
+    ).toHaveLength(1);
+    expect(harness.timers.fireDelay(RESNAPSHOT_COALESCE_DELAY_MS)).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        harness.gateway.received.filter(entry => entry.method === 'agents.list')
+      ).toHaveLength(before + 1)
+    );
+  });
+
+  it('makes a failed periodic read visible and repairs it through reconnect', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+    const originalRespond = harness.gateway.respond.bind(harness.gateway);
+    const respond = vi
+      .spyOn(harness.gateway, 'respond')
+      .mockImplementationOnce(() => {
+        throw new Error('Gateway stopped answering');
+      })
+      .mockImplementation((method, params) => originalRespond(method, params));
+
+    expect(harness.timers.fireDelay(PERIODIC_RESNAPSHOT_INTERVAL_MS)).toBe(
+      true
+    );
+    await vi.waitFor(() => expect(harness.session.phase).toBe('reconnecting'));
+    expect(harness.session.status().stalePresentation).toBe(true);
+    expect(harness.timers.fireDelay(RECONNECT_BASE_DELAY_MS)).toBe(true);
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    expect(harness.session.status().state).toBe('live');
+    respond.mockRestore();
   });
 });
 
@@ -2035,7 +2188,7 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
     ]);
   });
 
-  it('asks as the device it already is, and never re-pairs', async () => {
+  it('reissues scope on the same device without persisting the shared secret', async () => {
     const harness = createHarness({
       storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
     });
@@ -2044,16 +2197,21 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
 
     await harness.session.requestWriteAuthority();
 
-    // One client for the life of the session means one device keypair, and the
-    // persisted device token is what it presents. A second client would be a
-    // second device on the operator's server: the failure mode this prevents.
+    // One client and one keypair for the life of the session means one device.
+    // The explicit ask rereads the source-owned issuer secret, then restores
+    // the read-scoped token when approval is still pending.
     expect(harness.clients).toHaveLength(1);
     expect(harness.clients[0]?.deviceKey).toBe(client.deviceKey);
     expect(client.presentedToken).toBe(DEVICE_TOKEN);
+    expect(harness.gateway.presentedCredentials).toEqual([
+      DEVICE_TOKEN,
+      SHARED_SECRET,
+      DEVICE_TOKEN,
+    ]);
+    expect(client.config.token).toBeUndefined();
     expect(harness.store.clearDeviceToken).not.toHaveBeenCalled();
     expect(harness.store.writes).toEqual([]);
-    // The admin-capable shared secret is not read again to buy authority.
-    expect(harness.resolveCredential).not.toHaveBeenCalled();
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
   });
 
   it('is granted once the operator approves the device on the source', async () => {
@@ -2075,13 +2233,56 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
     expect(harness.store.authorities).toEqual([
       { id: SOURCE_ID, authority: 'write' },
     ]);
+    expect(
+      harness.gateway.deviceIds.every(id => id === harness.gateway.deviceIds[0])
+    ).toBe(true);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(3);
+    expect(harness.store.writes.at(-1)).toMatchObject({
+      id: SOURCE_ID,
+      token: DEVICE_TOKEN,
+    });
 
     const client = harness.clients[0]!;
+    expect(client.config.token).toBeUndefined();
     const before = client.calls.length;
-    await harness.session.write('chat.send', { text: 'ready when you are' });
+    await harness.session.write('chat.send', {
+      message: 'ready when you are',
+    });
     expect(client.calls.slice(before)).toEqual([
-      { method: 'chat.send', params: { text: 'ready when you are' } },
+      { method: 'chat.send', params: { message: 'ready when you are' } },
     ]);
+  });
+
+  it('does not widen when the approved handshake issues no scoped token', async () => {
+    const harness = createHarness({ issueDeviceToken: null });
+    await harness.session.connect();
+    harness.gateway.approve([...H2_WRITE_SCOPES]);
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('refused');
+    expect(harness.session.authority).toBe('read');
+    expect(harness.store.authorities).toEqual([]);
+    await expect(harness.session.write('chat.send')).rejects.toThrow(
+      /read access only/u
+    );
+  });
+
+  it('keeps read authority when a newly issued write token cannot be stored safely', async () => {
+    const harness = createHarness({
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    await harness.session.connect();
+    harness.gateway.approve([...H2_WRITE_SCOPES]);
+    harness.store.refuseEncryption();
+
+    const result = await harness.session.requestWriteAuthority();
+
+    expect(result.outcome).toBe('refused');
+    expect(result.message).toMatch(/could not keep/iu);
+    expect(harness.session.authority).toBe('read');
+    expect(harness.store.authorities).toEqual([]);
+    expect(harness.clients[0]?.config.token).toBeUndefined();
   });
 
   it('reports a plain refusal as a refusal, with the source still observed', async () => {
@@ -2135,7 +2336,7 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
     expect(result.authority).toBe('read');
     // The lost socket is an outage like any other, not a new failure mode.
     expect(harness.session.phase).toBe('reconnecting');
-    expect(harness.timers.scheduled).toEqual([RECONNECT_BASE_DELAY_MS]);
+    expect(harness.timers.scheduled).toContain(RECONNECT_BASE_DELAY_MS);
     expect(describeConnectionStatus(harness.session.status())).not.toMatch(
       STOPPED_WORK_WORDS
     );

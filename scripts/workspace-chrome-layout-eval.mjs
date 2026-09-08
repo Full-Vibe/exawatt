@@ -419,14 +419,26 @@ try {
   const results = [];
   const viewports = [
     { width: 560, height: 400 },
+    { width: 640, height: 600 },
+    { width: 768, height: 600 },
     { width: 800, height: 600 },
+    { width: 800, height: 600, scale: 1.2 },
     { width: 1024, height: 700 },
+    { width: 1280, height: 700 },
     { width: 1312, height: 700 },
     { width: 1400, height: 900 },
     { width: 1600, height: 900 },
   ];
-  for (const { width, height } of viewports) {
+  for (const { width, height, scale = 1 } of viewports) {
     await page.setViewportSize({ width, height });
+    await page.evaluate(
+      value =>
+        document.documentElement.style.setProperty(
+          '--exa-interface-scale',
+          String(value)
+        ),
+      scale
+    );
     await page.evaluate(
       () =>
         new Promise(resolve =>
@@ -449,8 +461,7 @@ try {
       // into the detail, a way to everything, and Start — so it is restated
       // against what ships.
       const configurationRibbon = document.querySelector('[data-setup-row]');
-      const configurationViewport =
-        document.querySelector('[data-setup-chip]');
+      const configurationViewport = document.querySelector('[data-setup-chip]');
       const selectedConfiguration = document.querySelector(
         '[data-setup-chip][data-selected="true"]'
       );
@@ -489,8 +500,7 @@ try {
           `Workspace chrome fixture did not render: ${missing.join(', ')}; launcher=${JSON.stringify(
             {
               rowText: configurationRibbon?.textContent,
-              cards:
-                document.querySelectorAll('[data-setup-chip]').length,
+              cards: document.querySelectorAll('[data-setup-chip]').length,
               controls: Array.from(
                 panelElement?.querySelectorAll('button') ?? []
               ).map(button => button.getAttribute('aria-label')),
@@ -518,6 +528,34 @@ try {
         return Number.parseFloat(getComputedStyle(element).fontSize);
       };
       return {
+        header: (() => {
+          const header = document.querySelector('#site-header');
+          return {
+            width: header.clientWidth,
+            scrollWidth: header.scrollWidth,
+            groups: [...header.children].map(element => {
+              const rect = element.getBoundingClientRect();
+              return { left: rect.left, right: rect.right };
+            }),
+            controls: [
+              ...header.querySelectorAll('[data-command-altitude-level]'),
+            ].map(button => {
+              const rect = button.getBoundingClientRect();
+              const overflowing = [...button.children].some(child => {
+                if (getComputedStyle(child).display === 'none') return false;
+                const bounds = child.getBoundingClientRect();
+                return (
+                  bounds.left < rect.left - 1 || bounds.right > rect.right + 1
+                );
+              });
+              return {
+                name: button.getAttribute('aria-label'),
+                width: rect.width,
+                overflowing,
+              };
+            }),
+          };
+        })(),
         chrome: {
           left: chromeRect.left,
           right: chromeRect.right,
@@ -599,8 +637,26 @@ try {
     });
 
     await page.screenshot({
-      path: join(SCREENSHOT_DIR, `workspace-${width}x${height}.png`),
+      path: join(
+        SCREENSHOT_DIR,
+        `workspace-${width}x${height}${scale === 1 ? '' : `-scale-${scale}`}.png`
+      ),
     });
+
+    if (
+      metrics.header.scrollWidth > metrics.header.width + 1 ||
+      metrics.header.groups.some(
+        (group, index, groups) =>
+          index > 0 && group.left < groups[index - 1].right - 1
+      ) ||
+      metrics.header.controls.some(
+        control => control.width <= 0 || control.overflowing
+      )
+    ) {
+      throw new Error(
+        `Header navigation overlaps or clips at ${width}px: ${JSON.stringify(metrics.header)}`
+      );
+    }
 
     if (metrics.chrome.scrollWidth > metrics.chrome.width + 1) {
       throw new Error(
@@ -697,7 +753,7 @@ try {
         );
       }
     }
-    results.push({ width, height, metrics });
+    results.push({ width, height, scale, metrics });
   }
 
   // ── Turn-state legibility: spinning / finished / unstarted render
@@ -1176,9 +1232,9 @@ try {
   // share the same event/action seam, just like the tab arrangement family. ──
   const projectOrder = () =>
     page.evaluate(() =>
-      Array.from(
-        document.querySelectorAll('[data-ribbon-item="project"]')
-      ).map(node => node.getAttribute('data-project-dir'))
+      Array.from(document.querySelectorAll('[data-ribbon-item="project"]')).map(
+        node => node.getAttribute('data-project-dir')
+      )
     );
   const projectOrderBeforeMove = await projectOrder();
   if (projectOrderBeforeMove[1] !== '/tmp/exawatt') {
@@ -1449,7 +1505,9 @@ try {
   // pouring it onto the pane. The old assertion here waited for the retained
   // terminal's read-only badge, which is the surface that was removed.
   await page.locator('[data-paused-agent-record]').waitFor();
-  await page.getByText(/Stopped cleanly|Exited with code|Interrupted/).waitFor();
+  await page
+    .getByText(/Stopped cleanly|Exited with code|Interrupted/)
+    .waitFor();
   await page.locator('[data-show-transcript]').waitFor();
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'stopped-pane-read-only.png'),

@@ -1,3 +1,6 @@
+import { EventEmitter } from 'events';
+import { PassThrough } from 'stream';
+import type { ChildProcessWithoutNullStreams } from 'child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PtySessionInfo } from '../pty/session-manager';
 import {
@@ -5,6 +8,8 @@ import {
   type DelegationReportSink,
 } from './delegation-monitor';
 import {
+  CODEX_OBSERVER_MAX_CONCURRENT_READS,
+  CodexAppServerClient,
   CodexDelegationObserver,
   codexProtocolVersion,
   codexProtocolVersionSupported,
@@ -79,7 +84,7 @@ class FakeProtocol implements CodexDelegationProtocol {
     this.closeCalls += 1;
   }
 
-  async listDescendants(): Promise<CodexChildThread[]> {
+  async listDescendants(_root?: string): Promise<CodexChildThread[]> {
     if (this.fail) throw new Error('disconnected');
     return this.descendants;
   }
@@ -179,6 +184,74 @@ describe('Codex 0.147 protocol shape', () => {
   });
 });
 
+function fakeAppServer() {
+  const process = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    killed: false,
+    kill() {
+      this.killed = true;
+      return true;
+    },
+  });
+  process.stdin.on('data', bytes => {
+    const request = JSON.parse(String(bytes));
+    if (request.id === undefined) return;
+    process.stdout.write(
+      JSON.stringify({
+        id: request.id,
+        result:
+          request.method === 'initialize'
+            ? { userAgent: 'exawatt-delegation/0.147.0 (fixture)' }
+            : { data: [], nextCursor: null },
+      }) + '\n'
+    );
+  });
+  return process as unknown as ChildProcessWithoutNullStreams;
+}
+
+describe('Codex app-server connection custody', () => {
+  it('ignores late output, errors and exit from a closed process after reconnect', async () => {
+    const first = fakeAppServer();
+    const second = fakeAppServer();
+    const processes = [first, second];
+    const client = new CodexAppServerClient(async () => processes.shift()!);
+    await client.connect();
+    client.close();
+    await client.connect();
+    first.stdout.emit('data', 'invalid stale frame\n');
+    first.emit('error', new Error('old connection failed'));
+    first.emit('exit', 1, null);
+    expect(await client.listDescendants(ROOT)).toEqual([]);
+    expect(second.killed).toBe(false);
+    client.close();
+  });
+
+  it('closes a late launch and shares concurrent connect attempts', async () => {
+    const child = fakeAppServer();
+    let resolve!: (child: ChildProcessWithoutNullStreams) => void;
+    let launches = 0;
+    const client = new CodexAppServerClient(() => {
+      launches += 1;
+      return new Promise(done => {
+        resolve = done;
+      });
+    });
+    const first = client.connect();
+    const second = client.connect();
+    const outcomes = Promise.allSettled([first, second]);
+    expect(launches).toBe(1);
+    client.close();
+    resolve(child);
+    expect((await outcomes).map(result => result.status)).toEqual([
+      'rejected',
+      'rejected',
+    ]);
+    expect(child.killed).toBe(true);
+  });
+});
+
 describe('CodexDelegationObserver', () => {
   const observers: CodexDelegationObserver[] = [];
 
@@ -191,11 +264,11 @@ describe('CodexDelegationObserver', () => {
     const protocol = new FakeProtocol();
     const monitor = new DelegationMonitor();
     const lifecycle: unknown[] = [];
+    monitor.on('harness-event', (_id, event) => lifecycle.push(event));
     const sink: DelegationReportSink = {
-      report: (id, event) => {
-        lifecycle.push(event);
-        monitor.report(id, event);
-      },
+      report: (id, event) => monitor.report(id, event),
+      reconcileReportedChildren: (id, children, completed) =>
+        monitor.reconcileReportedChildren(id, children, completed),
       clearReportedChildren: id => monitor.clearReportedChildren(id),
     };
     const observer = new CodexDelegationObserver({
@@ -279,6 +352,143 @@ describe('CodexDelegationObserver', () => {
     h.protocol.fail = false;
     await h.observer.pollNow();
     expect(h.monitor.getLive('pty-codex')?.children).toHaveLength(1);
+  });
+
+  it('restores a resumed child even when the provider timestamp did not change', async () => {
+    const h = harness();
+    h.protocol.descendants = [child('resumed', 10)];
+    h.protocol.turns.set('resumed', {
+      status: 'inProgress',
+      completedAt: null,
+    });
+    await h.observer.pollNow();
+    h.protocol.turns.set('resumed', completed());
+    await h.observer.pollNow();
+    expect(h.monitor.isBusy('pty-codex')).toBe(false);
+    h.protocol.turns.set('resumed', {
+      status: 'inProgress',
+      completedAt: null,
+    });
+    await h.observer.pollNow();
+    expect(
+      h.monitor.getLive('pty-codex')?.children.map(item => item.id)
+    ).toEqual(['resumed']);
+  });
+
+  it.each(['failed', 'interrupted', 'absent'] as const)(
+    'withdraws a %s child without announcing a completed result',
+    async status => {
+      const h = harness();
+      h.protocol.descendants = [child('child', 10)];
+      h.protocol.turns.set('child', {
+        status: 'inProgress',
+        completedAt: null,
+      });
+      await h.observer.pollNow();
+      if (status === 'absent') h.protocol.descendants = [];
+      else h.protocol.turns.set('child', { status, completedAt: 20 });
+      await h.observer.pollNow();
+      expect(h.monitor.isBusy('pty-codex')).toBe(false);
+      expect(h.lifecycle).not.toContainEqual({
+        kind: 'child-end',
+        childId: 'child',
+      });
+    }
+  );
+
+  it('does not publish an in-flight census after an A → B → A identity change', async () => {
+    const h = harness();
+    let resolve!: (value: CodexChildThread[]) => void;
+    h.protocol.listDescendants = () =>
+      new Promise(done => {
+        resolve = done;
+      });
+    const poll = h.observer.pollNow();
+    // Wait for the protocol read to begin, not for an arbitrary duration.
+    await Promise.resolve();
+    h.observer.observe(session({ harnessSessionId: 'other-root' }));
+    h.observer.observe(session());
+    h.protocol.turns.set('old-child', {
+      status: 'inProgress',
+      completedAt: null,
+    });
+    resolve([child('old-child', 10)]);
+    await poll;
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+    expect(h.lifecycle).toEqual([]);
+  });
+
+  it('keeps a healthy Session current when another snapshot fails', async () => {
+    const h = harness();
+    h.observer.observe(
+      session({ id: 'other-pty', harnessSessionId: 'other-root' })
+    );
+    h.protocol.listDescendants = async (root?: string) => {
+      if (root === 'other-root') throw new Error('unavailable thread');
+      return [child('healthy-child', 10)];
+    };
+    h.protocol.turns.set('healthy-child', {
+      status: 'inProgress',
+      completedAt: null,
+    });
+    await h.observer.pollNow();
+    expect(
+      h.monitor.getLive('pty-codex')?.children.map(item => item.id)
+    ).toEqual(['healthy-child']);
+    expect(h.monitor.getLive('other-pty')).toBeNull();
+    h.observer.drop('other-pty');
+  });
+
+  it('bounds protocol concurrency across historical children and multiple Sessions', async () => {
+    const h = harness();
+    const roots = Array.from(
+      { length: CODEX_OBSERVER_MAX_CONCURRENT_READS + 1 },
+      (_, i) => `root-${i}`
+    );
+    for (const root of roots)
+      h.observer.observe(session({ id: root, harnessSessionId: root }));
+    h.protocol.descendants = Array.from(
+      { length: CODEX_OBSERVER_MAX_CONCURRENT_READS * 2 },
+      (_, i) => child(`child-${i}`, i)
+    );
+    let inFlight = 0;
+    let peak = 0;
+    let reads = 0;
+    h.protocol.latestTurn = async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      // Yield one protocol response turn; host speed does not affect the bound.
+      await Promise.resolve();
+      inFlight -= 1;
+      reads += 1;
+      return completed();
+    };
+    await h.observer.pollNow();
+    expect(peak).toBeLessThanOrEqual(CODEX_OBSERVER_MAX_CONCURRENT_READS);
+    expect(reads).toBe((roots.length + 1) * h.protocol.descendants.length);
+    expect(inFlight).toBe(0);
+    for (const root of roots) h.observer.drop(root);
+  });
+
+  it('stops queued child reads on failure and settles the in-flight batch', async () => {
+    const h = harness();
+    h.protocol.descendants = Array.from(
+      { length: CODEX_OBSERVER_MAX_CONCURRENT_READS * 2 },
+      (_, i) => child(`child-${i}`, i)
+    );
+    let reads = 0;
+    let inFlight = 0;
+    h.protocol.latestTurn = async () => {
+      reads += 1;
+      inFlight += 1;
+      await Promise.resolve();
+      inFlight -= 1;
+      throw new Error('disconnected');
+    };
+    await h.observer.pollNow();
+    expect(reads).toBeLessThanOrEqual(CODEX_OBSERVER_MAX_CONCURRENT_READS);
+    expect(inFlight).toBe(0);
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
   });
 
   it('drives Agent, Team, and Fleet through the existing source-agnostic model', async () => {

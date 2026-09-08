@@ -1,7 +1,14 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -9,6 +16,7 @@ import { promisify } from 'node:util';
 import {
   OPEN_SOURCE_PATH_MANIFEST,
   buildSeedPlan,
+  createPathClassifier,
   validatePathManifest,
 } from './open-source-paths.mjs';
 import {
@@ -16,10 +24,23 @@ import {
   rendersOutput,
   unrenderedReason,
 } from './recipe-renderers.mjs';
+import {
+  PUBLIC_PROJECTION_EPOCH_PATH,
+  readProjectionEpoch,
+  validateProjectionEpoch,
+} from './public-projection-epoch.mjs';
+import {
+  auditPublicGitMetadata,
+  PUBLIC_METADATA_POLICY_ID,
+  projectPublicCommitMetadata,
+  readPublicGitMetadata,
+} from './public-metadata-policy.mjs';
 
 const execFileAsync = promisify(execFile);
 
 export const GIT_FILTER_REPO = 'git-filter-repo';
+export const PUBLIC_PROJECTION_CONTRACT_ID =
+  'exawatt-public-projection-v2-prefix-stable-neutral-metadata';
 
 /**
  * Projects the public subset of this repository's history into a standalone
@@ -181,6 +202,7 @@ export async function buildProjectionPlan({
   sourceRepo,
   sourceSha,
   manifestPath = OPEN_SOURCE_PATH_MANIFEST,
+  blobCache = null,
 }) {
   if (typeof sourceRepo !== 'string' || sourceRepo.length === 0) {
     fail('sourceRepo must be a repository path');
@@ -216,10 +238,12 @@ export async function buildProjectionPlan({
       encoding: 'buffer',
     })
   );
-  const blobs = await readBlobBatch(
-    sourceRepo,
-    trackedEntries.map(entry => entry.object)
-  );
+  const blobs = blobCache ?? new Map();
+  const missingObjects = [
+    ...new Set(trackedEntries.map(entry => entry.object)),
+  ].filter(object => !blobs.has(object));
+  const loaded = await readBlobBatch(sourceRepo, missingObjects);
+  for (const [object, contents] of loaded) blobs.set(object, contents);
   const plan = await buildSeedPlan({
     manifest,
     source: { commit, tree, manifestPath, manifestBlob },
@@ -227,10 +251,15 @@ export async function buildProjectionPlan({
     readBlob: async object => blobs.get(object),
   });
 
-  const copiedPaths = plan.outputs
+  const copiedOutputs = plan.outputs
     .filter(output => output.recipe === null)
-    .map(output => output.path)
-    .sort();
+    .map(output => ({
+      path: output.path,
+      mode: output.mode,
+      sourceObject: output.sourceObject,
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const copiedPaths = copiedOutputs.map(output => output.path);
   const generatedOutputs = plan.outputs
     .filter(output => output.recipe !== null)
     .map(output => ({
@@ -238,6 +267,9 @@ export async function buildProjectionPlan({
       mode: output.mode,
       recipe: output.recipe,
       kind: manifest.recipes[output.recipe].kind,
+      sourceObject:
+        trackedEntries.find(entry => entry.path === output.path)?.object ??
+        null,
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
 
@@ -294,6 +326,7 @@ export async function buildProjectionPlan({
     sourceSha: commit,
     sourceTree: tree,
     planDigest: plan.planDigest,
+    copiedOutputs,
     copiedPaths,
     generatedOutputs,
     renderedOutputs,
@@ -394,6 +427,162 @@ return (filename, declared.encode('ascii'), cached)`;
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+async function gitInput(args, { cwd, input, env = process.env } = {}) {
+  const child = spawn('git', args, {
+    cwd,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on('data', chunk => stdout.push(chunk));
+  child.stderr.on('data', chunk => stderr.push(chunk));
+  const complete = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      if (code === 0) return resolve();
+      reject(
+        new Error(
+          '[public-projection] git ' +
+            args[0] +
+            ' failed (code ' +
+            (code ?? 'none') +
+            ', signal ' +
+            (signal ?? 'none') +
+            '): ' +
+            Buffer.concat(stderr).toString('utf8').trim()
+        )
+      );
+    });
+  });
+  child.stdin.end(input);
+  await complete;
+  return Buffer.concat(stdout);
+}
+
+async function hashBlob(repo, contents) {
+  return (
+    await gitInput(['hash-object', '-w', '--stdin'], {
+      cwd: repo,
+      input: contents,
+    })
+  )
+    .toString('utf8')
+    .trim();
+}
+
+async function writeTree(repo, outputs) {
+  const index = path.join(repo, '.git', 'exawatt-projection-index');
+  await rm(index, { force: true });
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  try {
+    await gitInput(['read-tree', '--empty'], {
+      cwd: repo,
+      input: Buffer.alloc(0),
+      env,
+    });
+    const records = outputs.map(output =>
+      Buffer.from(`${output.mode} ${output.object}\t${output.path}\0`, 'utf8')
+    );
+    await gitInput(['update-index', '-z', '--index-info'], {
+      cwd: repo,
+      input: Buffer.concat(records),
+      env,
+    });
+    return (
+      await gitInput(['write-tree'], {
+        cwd: repo,
+        input: Buffer.alloc(0),
+        env,
+      })
+    )
+      .toString('utf8')
+      .trim();
+  } finally {
+    await rm(index, { force: true });
+  }
+}
+
+function parseCommitIdentity(value, label) {
+  const match = /^(.*) <([^<>]*)> ([0-9]+) ([+-][0-9]{4})$/u.exec(value);
+  if (!match) fail(`cannot parse ${label} identity`);
+  return {
+    name: match[1],
+    email: match[2],
+    date: `${match[3]} ${match[4]}`,
+  };
+}
+
+async function readCommitMetadata(repo, commit) {
+  const raw = await git(['cat-file', 'commit', commit], {
+    cwd: repo,
+    encoding: 'buffer',
+  });
+  const boundary = raw.indexOf(Buffer.from('\n\n'));
+  if (boundary === -1) fail(`commit ${commit} has no message boundary`);
+  const headers = raw.subarray(0, boundary).toString('utf8').split('\n');
+  const author = headers.find(line => line.startsWith('author '));
+  const committer = headers.find(line => line.startsWith('committer '));
+  if (!author || !committer) fail(`commit ${commit} lacks identity headers`);
+  return {
+    message: raw.subarray(boundary + 2).toString('utf8'),
+    author: parseCommitIdentity(author.slice('author '.length), 'author'),
+    committer: parseCommitIdentity(
+      committer.slice('committer '.length),
+      'committer'
+    ),
+  };
+}
+
+async function createCommit(
+  repo,
+  { tree, parent = null, parents = null, metadata }
+) {
+  const projected = metadata;
+  for (const [label, identity] of [
+    ['author', projected.author],
+    ['committer', projected.committer],
+  ]) {
+    if (
+      !identity ||
+      typeof identity.name !== 'string' ||
+      typeof identity.email !== 'string' ||
+      typeof identity.date !== 'string'
+    ) {
+      fail(`metadata policy returned an invalid ${label}`);
+    }
+  }
+  if (typeof projected.message !== 'string') {
+    fail('metadata policy returned an invalid message');
+  }
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: projected.author.name,
+    GIT_AUTHOR_EMAIL: projected.author.email,
+    GIT_AUTHOR_DATE: projected.author.date,
+    GIT_COMMITTER_NAME: projected.committer.name,
+    GIT_COMMITTER_EMAIL: projected.committer.email,
+    GIT_COMMITTER_DATE: projected.committer.date,
+  };
+  const commitParents = parents ?? (parent ? [parent] : []);
+  return (
+    await gitInput(
+      [
+        'commit-tree',
+        tree,
+        ...commitParents.flatMap(commitParent => ['-p', commitParent]),
+      ],
+      {
+        cwd: repo,
+        input: Buffer.from(projected.message, 'utf8'),
+        env,
+      }
+    )
+  )
+    .toString('utf8')
+    .trim();
 }
 
 /**
@@ -700,6 +889,174 @@ async function runFilterRepo(workdir, pathsFile, substitution) {
   }
 }
 
+export function parseFilterRepoCommitMap(source) {
+  const reverse = new Map();
+  const rows = source.split(/\r?\n/u).filter(Boolean);
+  if (!/^old\s+new$/u.test(rows.shift() ?? '')) {
+    fail('git filter-repo commit map has an unexpected header');
+  }
+  for (const row of rows) {
+    const match = /^([0-9a-f]{40})\s+([0-9a-f]{40})$/u.exec(row);
+    if (!match) fail('git filter-repo commit map has a malformed row');
+    if (/^0{40}$/u.test(match[2])) continue;
+    const sources = reverse.get(match[2]) ?? [];
+    sources.push(match[1]);
+    reverse.set(match[2], sources.sort());
+  }
+  return reverse;
+}
+
+async function projectedCommitPaths(repo, commit, parents) {
+  const comparisons = parents.length > 0 ? parents : [null];
+  const paths = new Set();
+  for (const parent of comparisons) {
+    const args = parent
+      ? [
+          'diff-tree',
+          '--no-commit-id',
+          '--name-only',
+          '-r',
+          '-z',
+          parent,
+          commit,
+        ]
+      : [
+          'diff-tree',
+          '--root',
+          '--no-commit-id',
+          '--name-only',
+          '-r',
+          '-z',
+          commit,
+        ];
+    for (const file of nullSeparatedPaths(
+      await git(args, { cwd: repo, encoding: 'buffer' })
+    )) {
+      paths.add(file);
+    }
+  }
+  if (paths.size === 0) {
+    // A topology-only merge can survive filter-repo without changing its
+    // first-parent tree. Its public tree is still the only honest scope for a
+    // neutral metadata message; source message bytes are never reused.
+    for (const file of nullSeparatedPaths(
+      await git(['ls-tree', '-rz', '--name-only', '--full-tree', commit], {
+        cwd: repo,
+        encoding: 'buffer',
+      })
+    )) {
+      paths.add(file);
+    }
+  }
+  if (paths.size === 0) {
+    fail(`surviving projected commit ${commit} has no public path scope`);
+  }
+  return [...paths].sort();
+}
+
+/**
+ * Rebuilds filter-repo's surviving DAG with identical trees and topology but
+ * policy-owned metadata. This is deliberately WHOLE-HISTORY work: a reseed
+ * must remove private identities and prose from the already-published prefix,
+ * not merely sanitize commits appended after the continuous-projection epoch.
+ */
+async function sanitizeLegacyProjectionMetadata({
+  workdir,
+  metadataProjector = projectPublicCommitMetadata,
+}) {
+  const tagRefs = (
+    await git(['for-each-ref', '--format=%(refname)', 'refs/tags'], {
+      cwd: workdir,
+    })
+  )
+    .split('\n')
+    .filter(Boolean);
+  if (tagRefs.length > 0) {
+    fail(
+      `whole-history projection refuses ${tagRefs.length} tag(s); tags need ` +
+        'their own reviewed public-metadata policy before publication'
+    );
+  }
+
+  const sourceByFilteredCommit = parseFilterRepoCommitMap(
+    await readFile(
+      path.join(workdir, '.git', 'filter-repo', 'commit-map'),
+      'utf8'
+    )
+  );
+  const rows = (
+    await git(
+      ['rev-list', '--reverse', '--topo-order', '--parents', 'master'],
+      { cwd: workdir }
+    )
+  )
+    .split('\n')
+    .filter(Boolean)
+    .map(row => row.split(' '));
+  const rewritten = new Map();
+  for (const [filteredCommit, ...filteredParents] of rows) {
+    const sourceCandidates = sourceByFilteredCommit.get(filteredCommit);
+    if (!sourceCandidates) {
+      fail(`no source commit maps to projected commit ${filteredCommit}`);
+    }
+    // filter-repo can collapse multiple private-only/no-op source commits onto
+    // one surviving projected commit. Neutral metadata does not reuse source
+    // bytes or embed this id, so a sorted canonical source id keeps the policy
+    // input deterministic without rejecting that ordinary many-to-one map.
+    const sourceSha = sourceCandidates[0];
+    const parents = filteredParents.map(parent => {
+      const rewrittenParent = rewritten.get(parent);
+      if (!rewrittenParent) {
+        fail(
+          `projected parent ${parent} was not sanitized before ${filteredCommit}`
+        );
+      }
+      return rewrittenParent;
+    });
+    const publicPaths = await projectedCommitPaths(
+      workdir,
+      filteredCommit,
+      filteredParents
+    );
+    const sourceMetadata = await readCommitMetadata(workdir, filteredCommit);
+    const metadata = await metadataProjector({
+      sourceSha,
+      ...sourceMetadata,
+      publicChange: { hasChanges: true, paths: publicPaths },
+      privateChange: { hasChanges: false, paths: [] },
+    });
+    const tree = (
+      await git(['rev-parse', `${filteredCommit}^{tree}`], { cwd: workdir })
+    ).trim();
+    rewritten.set(
+      filteredCommit,
+      await createCommit(workdir, { tree, parents, metadata })
+    );
+  }
+
+  const previousMaster = (
+    await git(['rev-parse', 'refs/heads/master^{commit}'], { cwd: workdir })
+  ).trim();
+  const publicSha = rewritten.get(previousMaster);
+  if (!publicSha) fail('filtered public master was not metadata-sanitized');
+  await git(['update-ref', 'refs/heads/master', publicSha, previousMaster], {
+    cwd: workdir,
+  });
+  await git(['reflog', 'expire', '--expire=now', '--all'], { cwd: workdir });
+  await git(['gc', '--prune=now', '--quiet'], { cwd: workdir });
+
+  const audit = auditPublicGitMetadata(
+    await readPublicGitMetadata({ repo: workdir })
+  );
+  if (audit.findings.length > 0 || audit.tags !== 0) {
+    fail(
+      `whole-history metadata audit refused the projection ` +
+        `(${audit.findings.length} finding(s), ${audit.tags} tag(s))`
+    );
+  }
+  return { publicSha, audit };
+}
+
 export const EXISTING_PUBLIC_REF = 'refs/exawatt/existing-public';
 
 /**
@@ -728,6 +1085,387 @@ async function fetchExistingPublicTip(workdir, { repository, ref = 'master' }) {
   return EXISTING_PUBLIC_REF;
 }
 
+function nullSeparatedPaths(value) {
+  return value.toString('utf8').split('\0').filter(Boolean).sort();
+}
+
+async function materializePublicSnapshot({
+  sourceRepo,
+  sourceSha,
+  projectionRepo,
+  manifestPath,
+  blobCache,
+  renderedObjectCache,
+}) {
+  const plan = await buildProjectionPlan({
+    sourceRepo,
+    sourceSha,
+    manifestPath,
+    blobCache,
+  });
+  const outputs = [];
+
+  for (const output of plan.copiedOutputs) {
+    outputs.push({
+      path: output.path,
+      mode: output.mode,
+      object: output.sourceObject,
+    });
+  }
+  for (const output of plan.renderedOutputs) {
+    const source = blobCache.get(output.sourceObject);
+    if (source === undefined) {
+      fail(`missing GENERATED blob ${output.sourceObject} for ${output.path}`);
+    }
+    const cacheKey = `${output.kind}\0${output.path}\0${output.sourceObject}`;
+    let object = renderedObjectCache.get(cacheKey);
+    if (!object) {
+      const rendered = renderRecipeOutput({
+        recipeId: output.recipe,
+        kind: output.kind,
+        path: output.path,
+        source,
+      });
+      object = await hashBlob(projectionRepo, rendered);
+      renderedObjectCache.set(cacheKey, object);
+    }
+    outputs.push({
+      path: output.path,
+      mode: output.mode,
+      object,
+    });
+  }
+  outputs.sort((a, b) => a.path.localeCompare(b.path));
+  return {
+    ...plan,
+    tree: await writeTree(projectionRepo, outputs),
+    outputs,
+    projectedPaths: outputs.map(output => output.path),
+    renderedVariants: plan.renderedOutputs.length,
+  };
+}
+
+async function readManifestState(sourceRepo, commit, manifestPath) {
+  const blob = (
+    await git(['rev-parse', `${commit}:${manifestPath}`], { cwd: sourceRepo })
+  ).trim();
+  let manifest;
+  try {
+    manifest = JSON.parse(
+      await git(['cat-file', 'blob', blob], { cwd: sourceRepo })
+    );
+  } catch (error) {
+    fail(`source manifest at ${commit} is invalid JSON: ${error.message}`);
+  }
+  validatePathManifest(manifest);
+  return { blob, manifest, classify: createPathClassifier(manifest) };
+}
+
+async function applyPublicCommitChanges({
+  sourceRepo,
+  commit,
+  changedPaths,
+  outputMap,
+  manifestState,
+  projectionRepo,
+  blobCache,
+  renderedObjectCache,
+}) {
+  const entries = parseTreeRecords(
+    await git(['ls-tree', '-rz', '--full-tree', commit], {
+      cwd: sourceRepo,
+      encoding: 'buffer',
+    })
+  );
+  const tracked = new Map(entries.map(entry => [entry.path, entry]));
+  const affectedRecipes = new Set();
+
+  for (const file of changedPaths) {
+    const classification = manifestState.classify(file);
+    if (classification.classification === 'PUBLIC') {
+      const entry = tracked.get(file);
+      if (entry) {
+        outputMap.set(file, {
+          path: file,
+          mode: entry.mode,
+          object: entry.object,
+        });
+      } else {
+        outputMap.delete(file);
+      }
+    } else {
+      outputMap.delete(file);
+    }
+    if (classification.recipe) affectedRecipes.add(classification.recipe);
+  }
+  for (const [recipeId, recipe] of Object.entries(
+    manifestState.manifest.recipes
+  )) {
+    if (recipe.inputs.some(input => changedPaths.includes(input))) {
+      affectedRecipes.add(recipeId);
+    }
+  }
+
+  let renderedVariants = 0;
+  for (const recipeId of [...affectedRecipes].sort()) {
+    const recipe = manifestState.manifest.recipes[recipeId];
+    if (!recipe) fail(`changed path names unknown recipe ${recipeId}`);
+    for (const output of recipe.outputs) {
+      if (!rendersOutput(recipe.kind, output.path)) {
+        outputMap.delete(output.path);
+        continue;
+      }
+      const entry = tracked.get(output.path);
+      if (!entry) {
+        outputMap.delete(output.path);
+        continue;
+      }
+      if (!recipe.inputs.includes(output.path)) {
+        fail(
+          `recipe ${recipeId} renders ${output.path} from that path, so it ` +
+            'must declare it as an input'
+        );
+      }
+      let source = blobCache.get(entry.object);
+      if (source === undefined) {
+        source = (await readBlobBatch(sourceRepo, [entry.object])).get(
+          entry.object
+        );
+        blobCache.set(entry.object, source);
+      }
+      const cacheKey = `${recipe.kind}\0${output.path}\0${entry.object}`;
+      let object = renderedObjectCache.get(cacheKey);
+      if (!object) {
+        object = await hashBlob(
+          projectionRepo,
+          renderRecipeOutput({
+            recipeId,
+            kind: recipe.kind,
+            path: output.path,
+            source,
+          })
+        );
+        renderedObjectCache.set(cacheKey, object);
+      }
+      outputMap.set(output.path, {
+        path: output.path,
+        mode: output.mode,
+        object,
+      });
+      renderedVariants += 1;
+    }
+  }
+  return renderedVariants;
+}
+
+async function sourceCommitsAfter(sourceRepo, epochSourceSha, sourceSha) {
+  const rows = (
+    await git(
+      [
+        'rev-list',
+        '--reverse',
+        '--topo-order',
+        '--parents',
+        `${epochSourceSha}..${sourceSha}`,
+      ],
+      { cwd: sourceRepo }
+    )
+  )
+    .split('\n')
+    .filter(Boolean)
+    .map(row => row.split(' '));
+  let expectedParent = epochSourceSha;
+  for (const [commit, ...parents] of rows) {
+    if (parents.length !== 1 || parents[0] !== expectedParent) {
+      fail(
+        `continuous projection requires a linear private master after the ` +
+          `epoch; ${commit} does not have ${expectedParent} as its sole parent`
+      );
+    }
+    expectedParent = commit;
+  }
+  return rows.map(([commit]) => commit);
+}
+
+async function replayAfterEpoch({
+  sourceRepo,
+  sourceSha,
+  projectionRepo,
+  epoch,
+  manifestPath,
+  metadataProjector = projectPublicCommitMetadata,
+}) {
+  const commits = await sourceCommitsAfter(
+    sourceRepo,
+    epoch.sourceSha,
+    sourceSha
+  );
+  let publicParent = epoch.publicSha;
+  let publicTree = (
+    await git(['rev-parse', `${publicParent}^{tree}`], { cwd: projectionRepo })
+  ).trim();
+  let previousSource = epoch.sourceSha;
+  let emittedCommits = 0;
+  let renderedVariants = 0;
+  let tipSnapshot = null;
+  const blobCache = new Map();
+  const renderedObjectCache = new Map();
+  let manifestState = await readManifestState(
+    sourceRepo,
+    epoch.sourceSha,
+    manifestPath
+  );
+  let outputMap = new Map(
+    parseTreeRecords(
+      await git(['ls-tree', '-rz', '--full-tree', epoch.publicSha], {
+        cwd: projectionRepo,
+        encoding: 'buffer',
+      })
+    ).map(entry => [entry.path, entry])
+  );
+
+  // PUBLIC blobs keep their source Git object identity. Fetching the source
+  // tip once makes those objects available without spawning one hash process
+  // per path per commit. The private ref is removed and unreachable objects
+  // are pruned before a destination is returned or any public ref is pushed.
+  await git(
+    [
+      '-c',
+      'uploadpack.allowAnySHA1InWant=true',
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      path.resolve(sourceRepo),
+      `${sourceSha}:refs/exawatt/source-tip`,
+    ],
+    { cwd: projectionRepo }
+  );
+
+  for (const commit of commits) {
+    const sourcePaths = nullSeparatedPaths(
+      await git(
+        [
+          'diff-tree',
+          '--no-commit-id',
+          '--name-only',
+          '-r',
+          '-z',
+          previousSource,
+          commit,
+        ],
+        { cwd: sourceRepo, encoding: 'buffer' }
+      )
+    );
+    const manifestBlob = (
+      await git(['rev-parse', `${commit}:${manifestPath}`], {
+        cwd: sourceRepo,
+      })
+    ).trim();
+    let nextTree;
+    if (manifestBlob !== manifestState.blob) {
+      manifestState = await readManifestState(sourceRepo, commit, manifestPath);
+      tipSnapshot = await materializePublicSnapshot({
+        sourceRepo,
+        sourceSha: commit,
+        projectionRepo,
+        manifestPath,
+        blobCache,
+        renderedObjectCache,
+      });
+      outputMap = new Map(
+        tipSnapshot.outputs.map(output => [output.path, output])
+      );
+      renderedVariants += tipSnapshot.renderedVariants;
+      nextTree = tipSnapshot.tree;
+    } else {
+      renderedVariants += await applyPublicCommitChanges({
+        sourceRepo,
+        commit,
+        changedPaths: sourcePaths,
+        outputMap,
+        manifestState,
+        projectionRepo,
+        blobCache,
+        renderedObjectCache,
+      });
+      nextTree = await writeTree(
+        projectionRepo,
+        [...outputMap.values()].sort((a, b) => a.path.localeCompare(b.path))
+      );
+    }
+    if (nextTree !== publicTree) {
+      const publicPaths = nullSeparatedPaths(
+        await git(
+          [
+            'diff-tree',
+            '--no-commit-id',
+            '--name-only',
+            '-r',
+            '-z',
+            publicTree,
+            nextTree,
+          ],
+          { cwd: projectionRepo, encoding: 'buffer' }
+        )
+      );
+      const publicSet = new Set(publicPaths);
+      const sourceMetadata = await readCommitMetadata(sourceRepo, commit);
+      const metadata = await metadataProjector({
+        sourceSha: commit,
+        ...sourceMetadata,
+        publicChange: {
+          hasChanges: publicPaths.length > 0,
+          paths: publicPaths,
+        },
+        privateChange: {
+          hasChanges: sourcePaths.some(file => !publicSet.has(file)),
+          paths: sourcePaths.filter(file => !publicSet.has(file)),
+        },
+      });
+      publicParent = await createCommit(projectionRepo, {
+        tree: nextTree,
+        parent: publicParent,
+        metadata,
+      });
+      publicTree = nextTree;
+      emittedCommits += 1;
+    }
+    previousSource = commit;
+  }
+
+  if (tipSnapshot?.sourceSha !== sourceSha) {
+    tipSnapshot = await materializePublicSnapshot({
+      sourceRepo,
+      sourceSha,
+      projectionRepo,
+      manifestPath,
+      blobCache,
+      renderedObjectCache,
+    });
+  }
+  if (tipSnapshot.tree !== publicTree) {
+    fail(
+      `incremental replay produced tree ${publicTree}, but Gate A produces ` +
+        `${tipSnapshot.tree} at ${sourceSha}`
+    );
+  }
+
+  await git(['update-ref', 'refs/heads/master', publicParent], {
+    cwd: projectionRepo,
+  });
+  await prunePrivateSourceObjects(projectionRepo);
+  return {
+    publicSha: publicParent,
+    replayedSourceCommits: commits.length,
+    emittedCommits,
+    renderedVariants,
+    tipSnapshot,
+    replayPlanDigest: sha256(
+      JSON.stringify({ commits, tipPlanDigest: tipSnapshot.planDigest })
+    ),
+  };
+}
+
 /**
  * Projects `sourceSha`'s public history into a fresh repository.
  *
@@ -740,12 +1478,14 @@ async function fetchExistingPublicTip(workdir, { repository, ref = 'master' }) {
  * given, the projection is refused — and the scratch clone destroyed — unless
  * the remote's current tip is an ancestor of the projected tip.
  */
-export async function projectPublicHistory({
+async function projectLegacyPublicHistory({
   sourceRepo,
   sourceSha,
   destination = null,
   fastForwardFrom = null,
   manifestPath = OPEN_SOURCE_PATH_MANIFEST,
+  sanitizeMetadata = false,
+  metadataProjector = projectPublicCommitMetadata,
 }) {
   const plan = await buildProjectionPlan({
     sourceRepo,
@@ -806,11 +1546,20 @@ export async function projectPublicHistory({
     }
     await rm(pathsFile, { force: true });
 
-    const publicSha = (
-      await git(['rev-parse', '--verify', 'refs/heads/master^{commit}'], {
-        cwd: workdir,
-      })
-    ).trim();
+    const sanitation = sanitizeMetadata
+      ? await sanitizeLegacyProjectionMetadata({
+          workdir,
+          metadataProjector,
+        })
+      : null;
+
+    const publicSha =
+      sanitation?.publicSha ??
+      (
+        await git(['rev-parse', '--verify', 'refs/heads/master^{commit}'], {
+          cwd: workdir,
+        })
+      ).trim();
     const projectedPaths = (
       await git(['ls-tree', '-rz', '--name-only', '--full-tree', publicSha], {
         cwd: workdir,
@@ -863,11 +1612,674 @@ export async function projectPublicHistory({
       renderedVariants: substitution?.renderedVariants ?? 0,
       skippedRevisions: substitution?.skippedRevisions ?? 0,
       entryBoundaries: substitution?.entryBoundaries ?? [],
+      metadataAudit: sanitation?.audit ?? null,
+      metadataPolicyId: sanitizeMetadata ? PUBLIC_METADATA_POLICY_ID : null,
+      projectionContractId: PUBLIC_PROJECTION_CONTRACT_ID,
       existingPublicSha,
       destination: resolvedDestination,
     };
   } catch (error) {
     await rm(workdir, { recursive: true, force: true });
     throw error;
+  }
+}
+
+/**
+ * Continuous projection freezes the already-published prefix at a verified
+ * epoch and appends the exact Gate A tree of each later private commit. A
+ * future source commit can therefore delete or rename a PUBLIC path without
+ * changing the public commits that introduced it.
+ *
+ * Repositories without an epoch (public clones and isolated fixtures) rebuild
+ * the complete surviving history with public-safe metadata. Tests can pass an
+ * explicit epoch to prove the forward-replay contract without committing
+ * fixture-specific policy.
+ */
+async function projectFromPublishedAnchor({
+  sourceRepo,
+  sourceSha,
+  destination,
+  fastForwardFrom,
+  manifestPath,
+  anchor,
+  metadataProjector,
+  verifySnapshotAnchor = false,
+}) {
+  if (!fastForwardFrom) {
+    fail('resumeFrom requires fastForwardFrom to verify the public prefix');
+  }
+  const isSourceAncestor = await git(
+    ['merge-base', '--is-ancestor', anchor.sourceSha, sourceSha],
+    { cwd: sourceRepo }
+  ).then(
+    () => true,
+    () => false
+  );
+  if (!isSourceAncestor) {
+    fail(
+      `resume source ${anchor.sourceSha} is not an ancestor of ${sourceSha}`
+    );
+  }
+
+  const resolvedDestination = destination ? path.resolve(destination) : null;
+  if (resolvedDestination && existsSync(resolvedDestination)) {
+    fail('projection destination already exists: ' + resolvedDestination);
+  }
+  const container = await mkdtemp(
+    path.join(
+      resolvedDestination ? path.dirname(resolvedDestination) : tmpdir(),
+      'exawatt-resumed-projection-'
+    )
+  );
+  const projectionRepo = path.join(container, 'public');
+  try {
+    await mkdir(projectionRepo);
+    await git(['init', '--quiet', '--initial-branch=master', '.'], {
+      cwd: projectionRepo,
+    });
+    const existingRef = await fetchExistingPublicTip(
+      projectionRepo,
+      fastForwardFrom
+    );
+    if (!existingRef) fail('resumeFrom cannot verify an empty public remote');
+    const existingPublicSha = (
+      await git(['rev-parse', `${existingRef}^{commit}`], {
+        cwd: projectionRepo,
+      })
+    ).trim();
+    if (!verifySnapshotAnchor && existingPublicSha !== anchor.publicSha) {
+      fail(
+        `source lock expects public ${anchor.publicSha}, but the remote is ` +
+          existingPublicSha
+      );
+    }
+    if (verifySnapshotAnchor) {
+      await git(
+        ['merge-base', '--is-ancestor', anchor.publicSha, existingPublicSha],
+        { cwd: projectionRepo }
+      ).catch(() => {
+        fail(
+          'published snapshot anchor is not an ancestor of the observed public tip'
+        );
+      });
+      const state = await readManifestState(
+        sourceRepo,
+        sourceSha,
+        manifestPath
+      );
+      if (
+        !['PRIVATE', 'EXCLUDED'].includes(
+          state.classify(PUBLIC_PROJECTION_EPOCH_PATH).classification
+        )
+      ) {
+        fail('the published snapshot epoch must remain private or excluded');
+      }
+      await fetchPrivateSourceObjects(
+        sourceRepo,
+        anchor.sourceSha,
+        projectionRepo
+      );
+      const snapshot = await materializePublicSnapshot({
+        sourceRepo,
+        sourceSha: anchor.sourceSha,
+        projectionRepo,
+        manifestPath,
+        blobCache: new Map(),
+        renderedObjectCache: new Map(),
+      });
+      assertCompleteSnapshot(snapshot);
+      const anchorTree = (
+        await git(['rev-parse', `${anchor.publicSha}^{tree}`], {
+          cwd: projectionRepo,
+        })
+      ).trim();
+      if (snapshot.tree !== anchorTree)
+        fail(
+          'published snapshot anchor tree does not match its declared private source'
+        );
+    }
+    await git(['update-ref', 'refs/heads/master', anchor.publicSha], {
+      cwd: projectionRepo,
+    });
+    await git(['symbolic-ref', 'HEAD', 'refs/heads/master'], {
+      cwd: projectionRepo,
+    });
+
+    const replay = await replayAfterEpoch({
+      sourceRepo,
+      sourceSha,
+      projectionRepo,
+      epoch: anchor,
+      manifestPath,
+      metadataProjector,
+    });
+    await assertFastForward({
+      repo: projectionRepo,
+      candidateSha: replay.publicSha,
+      existingRef,
+    });
+    const projectedPaths = nullSeparatedPaths(
+      await git(
+        ['ls-tree', '-rz', '--name-only', '--full-tree', replay.publicSha],
+        { cwd: projectionRepo, encoding: 'buffer' }
+      )
+    );
+    if (resolvedDestination) {
+      await rename(projectionRepo, resolvedDestination);
+      await git(['checkout', '--quiet', '--force', 'master'], {
+        cwd: resolvedDestination,
+      });
+    }
+    const tip = replay.tipSnapshot;
+    const result = {
+      publicSha: replay.publicSha,
+      outputCount: projectedPaths.length,
+      sourceSha,
+      planDigest: sha256(
+        JSON.stringify({
+          resumedPublicSha: anchor.publicSha,
+          replayPlanDigest: replay.replayPlanDigest,
+        })
+      ),
+      projectedPaths,
+      generatedOutputs: tip.generatedOutputs,
+      renderedOutputs: tip.renderedOutputs,
+      unrenderedOutputs: tip.unrenderedOutputs,
+      renderedVariants: replay.renderedVariants,
+      skippedRevisions: 0,
+      entryBoundaries: [],
+      metadataAudit: null,
+      metadataPolicyId: PUBLIC_METADATA_POLICY_ID,
+      projectionContractId: PUBLIC_PROJECTION_CONTRACT_ID,
+      existingPublicSha,
+      destination: resolvedDestination,
+      epoch: anchor,
+      replayedSourceCommits: replay.replayedSourceCommits,
+      emittedCommits: replay.emittedCommits,
+      rebuiltHistory: false,
+      resumedFrom: anchor,
+    };
+    if (!resolvedDestination) {
+      await rm(container, { recursive: true, force: true });
+    }
+    return result;
+  } catch (error) {
+    await rm(container, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export async function projectPublicHistory({
+  sourceRepo,
+  sourceSha,
+  destination = null,
+  fastForwardFrom = null,
+  manifestPath = OPEN_SOURCE_PATH_MANIFEST,
+  epoch: explicitEpoch = undefined,
+  metadataProjector = projectPublicCommitMetadata,
+  rebuildHistory = false,
+  resumeFrom = null,
+}) {
+  const resolvedSourceRepo = path.resolve(sourceRepo);
+  const resolvedSourceSha = (
+    await git(['rev-parse', '--verify', `${sourceSha}^{commit}`], {
+      cwd: resolvedSourceRepo,
+    })
+  ).trim();
+  const epoch =
+    explicitEpoch === undefined
+      ? await readProjectionEpoch(resolvedSourceRepo)
+      : explicitEpoch === null
+        ? null
+        : validateProjectionEpoch(explicitEpoch);
+  if (rebuildHistory) {
+    const rebuilt = await projectLegacyPublicHistory({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      destination,
+      fastForwardFrom,
+      manifestPath,
+      sanitizeMetadata: true,
+      metadataProjector,
+    });
+    return {
+      ...rebuilt,
+      epoch: null,
+      replayedSourceCommits: 0,
+      emittedCommits: 0,
+      rebuiltHistory: true,
+      metadataPolicyId: PUBLIC_METADATA_POLICY_ID,
+      projectionContractId: PUBLIC_PROJECTION_CONTRACT_ID,
+    };
+  }
+  if (resumeFrom) {
+    const currentContract =
+      resumeFrom.metadataPolicyId === PUBLIC_METADATA_POLICY_ID &&
+      resumeFrom.projectionContractId === PUBLIC_PROJECTION_CONTRACT_ID;
+    const recordedLegacyEpoch =
+      !resumeFrom.metadataPolicyId &&
+      !resumeFrom.projectionContractId &&
+      epoch &&
+      !epoch.metadataPolicyId &&
+      !epoch.projectionContractId &&
+      resumeFrom.privateSha === epoch.sourceSha &&
+      resumeFrom.publicSha === epoch.publicSha;
+    if (!currentContract && !recordedLegacyEpoch) {
+      fail(
+        'resumeFrom does not carry the current metadata/projection contract ' +
+          'and is not the exact recorded legacy epoch; reviewed reseed required'
+      );
+    }
+    const anchor = validateProjectionEpoch({
+      schemaVersion: 1,
+      sourceSha: resumeFrom.privateSha,
+      publicSha: resumeFrom.publicSha,
+      reason: 'Verified source-lock publication pair used as replay anchor',
+      ...(resumeFrom.metadataPolicyId
+        ? { metadataPolicyId: resumeFrom.metadataPolicyId }
+        : {}),
+      ...(resumeFrom.projectionContractId
+        ? { projectionContractId: resumeFrom.projectionContractId }
+        : {}),
+    });
+    return projectFromPublishedAnchor({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      destination,
+      fastForwardFrom,
+      manifestPath,
+      anchor,
+      metadataProjector,
+    });
+  }
+  if (
+    epoch?.metadataPolicyId &&
+    epoch.metadataPolicyId !== PUBLIC_METADATA_POLICY_ID
+  ) {
+    fail(
+      `epoch metadata policy ${epoch.metadataPolicyId} is unsupported; ` +
+        `expected ${PUBLIC_METADATA_POLICY_ID}`
+    );
+  }
+  if (
+    epoch?.projectionContractId &&
+    epoch.projectionContractId !== PUBLIC_PROJECTION_CONTRACT_ID
+  ) {
+    fail(
+      `epoch projection contract ${epoch.projectionContractId} is unsupported; ` +
+        `expected ${PUBLIC_PROJECTION_CONTRACT_ID}`
+    );
+  }
+
+  if (epoch?.mode === 'published-snapshot') {
+    return projectFromPublishedAnchor({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      destination,
+      fastForwardFrom,
+      manifestPath,
+      anchor: epoch,
+      metadataProjector,
+      verifySnapshotAnchor: true,
+    });
+  }
+
+  let usesEpoch = false;
+  if (epoch) {
+    usesEpoch = await git(
+      ['merge-base', '--is-ancestor', epoch.sourceSha, resolvedSourceSha],
+      { cwd: resolvedSourceRepo }
+    ).then(
+      () => true,
+      () => false
+    );
+  }
+  if (!usesEpoch || epoch.sourceSha === resolvedSourceSha) {
+    const legacy = await projectLegacyPublicHistory({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      destination,
+      fastForwardFrom,
+      manifestPath,
+      // No public prefix exists to preserve when there is no usable epoch.
+      // First seeds and deliberate rebuilds therefore sanitize by default.
+      // The sole legacy-metadata exception is reconstructing the exact frozen
+      // epoch already published before metadata policy v2 existed.
+      sanitizeMetadata:
+        !usesEpoch || epoch?.metadataPolicyId === PUBLIC_METADATA_POLICY_ID,
+      metadataProjector,
+    });
+    if (usesEpoch && legacy.publicSha !== epoch.publicSha) {
+      fail(
+        `the frozen epoch ${epoch.sourceSha} now projects to ` +
+          `${legacy.publicSha}, not recorded ${epoch.publicSha}; existing ` +
+          'renderer semantics changed and must be restored or deliberately reseeded'
+      );
+    }
+    return {
+      ...legacy,
+      epoch: usesEpoch ? epoch : null,
+      replayedSourceCommits: 0,
+      emittedCommits: 0,
+    };
+  }
+
+  const resolvedDestination = destination ? path.resolve(destination) : null;
+  if (resolvedDestination && existsSync(resolvedDestination)) {
+    fail('projection destination already exists: ' + resolvedDestination);
+  }
+  const container = await mkdtemp(
+    path.join(
+      resolvedDestination ? path.dirname(resolvedDestination) : tmpdir(),
+      'exawatt-continuous-projection-'
+    )
+  );
+  const projectionRepo = path.join(container, 'public');
+  try {
+    const prefix = await projectLegacyPublicHistory({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: epoch.sourceSha,
+      destination: projectionRepo,
+      manifestPath,
+      sanitizeMetadata: epoch.metadataPolicyId === PUBLIC_METADATA_POLICY_ID,
+      metadataProjector,
+    });
+    if (prefix.publicSha !== epoch.publicSha) {
+      fail(
+        `the frozen epoch ${epoch.sourceSha} projects to ${prefix.publicSha}, ` +
+          `not recorded ${epoch.publicSha}; existing renderer semantics ` +
+          'changed and must be restored or deliberately reseeded'
+      );
+    }
+
+    const replay = await replayAfterEpoch({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      projectionRepo,
+      epoch,
+      manifestPath,
+      metadataProjector,
+    });
+    const publicSha = replay.publicSha;
+    const projectedPaths = nullSeparatedPaths(
+      await git(['ls-tree', '-rz', '--name-only', '--full-tree', publicSha], {
+        cwd: projectionRepo,
+        encoding: 'buffer',
+      })
+    );
+
+    let existingPublicSha = null;
+    if (fastForwardFrom) {
+      const existingRef = await fetchExistingPublicTip(
+        projectionRepo,
+        fastForwardFrom
+      );
+      await assertFastForward({
+        repo: projectionRepo,
+        candidateSha: publicSha,
+        existingRef,
+      });
+      existingPublicSha = existingRef
+        ? (
+            await git(['rev-parse', `${existingRef}^{commit}`], {
+              cwd: projectionRepo,
+            })
+          ).trim()
+        : null;
+    }
+
+    if (resolvedDestination) {
+      await rename(projectionRepo, resolvedDestination);
+      await git(['checkout', '--quiet', '--force', 'master'], {
+        cwd: resolvedDestination,
+      });
+    }
+    const tip = replay.tipSnapshot;
+    return {
+      publicSha,
+      outputCount: projectedPaths.length,
+      sourceSha: resolvedSourceSha,
+      planDigest: sha256(
+        JSON.stringify({
+          epochPlanDigest: prefix.planDigest,
+          replayPlanDigest: replay.replayPlanDigest,
+        })
+      ),
+      projectedPaths,
+      generatedOutputs: tip?.generatedOutputs ?? prefix.generatedOutputs,
+      renderedOutputs: tip?.renderedOutputs ?? prefix.renderedOutputs,
+      unrenderedOutputs: tip?.unrenderedOutputs ?? prefix.unrenderedOutputs,
+      renderedVariants: prefix.renderedVariants + replay.renderedVariants,
+      skippedRevisions: prefix.skippedRevisions,
+      entryBoundaries: prefix.entryBoundaries,
+      existingPublicSha,
+      destination: resolvedDestination,
+      epoch,
+      replayedSourceCommits: replay.replayedSourceCommits,
+      emittedCommits: replay.emittedCommits,
+      metadataPolicyId: PUBLIC_METADATA_POLICY_ID,
+      projectionContractId: PUBLIC_PROJECTION_CONTRACT_ID,
+    };
+  } catch (error) {
+    if (resolvedDestination && existsSync(resolvedDestination)) {
+      await rm(resolvedDestination, { recursive: true, force: true });
+    }
+    throw error;
+  } finally {
+    await rm(container, { recursive: true, force: true });
+  }
+}
+
+async function fetchPrivateSourceObjects(
+  sourceRepo,
+  sourceSha,
+  projectionRepo
+) {
+  await git(
+    [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      path.resolve(sourceRepo),
+      `${sourceSha}:refs/exawatt/source-tip`,
+    ],
+    { cwd: projectionRepo }
+  );
+}
+
+async function prunePrivateSourceObjects(projectionRepo) {
+  await git(['update-ref', '-d', 'refs/exawatt/source-tip'], {
+    cwd: projectionRepo,
+  });
+  await rm(path.join(projectionRepo, '.git', 'FETCH_HEAD'), { force: true });
+  await git(['reflog', 'expire', '--expire=now', '--all'], {
+    cwd: projectionRepo,
+  });
+  await git(['gc', '--prune=now', '--quiet'], { cwd: projectionRepo });
+}
+
+function assertCompleteSnapshot(snapshot) {
+  if (snapshot.unrenderedOutputs.length > 0) {
+    fail(
+      'current public snapshot has unrendered outputs; no catch-up candidate was prepared'
+    );
+  }
+}
+
+/**
+ * Operator-reviewed catch-up: append today's complete Gate A snapshot to the
+ * exact existing public prefix. Never replays unpublished revisions, rewrites
+ * an existing commit, certifies a build, or pushes. Old public metadata stays
+ * reachable; this repairs synchronization, not historical metadata erasure.
+ */
+export async function projectPublicCatchup({
+  sourceRepo,
+  sourceSha,
+  destination = null,
+  fastForwardFrom,
+  expectedPublicSha,
+  manifestPath = OPEN_SOURCE_PATH_MANIFEST,
+}) {
+  if (!/^[0-9a-f]{40}$/u.test(expectedPublicSha ?? '') || !fastForwardFrom) {
+    fail(
+      'catch-up requires an exact expected public SHA and public repository'
+    );
+  }
+  const resolvedSourceRepo = path.resolve(sourceRepo);
+  const resolvedSourceSha = (
+    await git(['rev-parse', '--verify', `${sourceSha}^{commit}`], {
+      cwd: resolvedSourceRepo,
+    })
+  ).trim();
+  const resolvedDestination = destination ? path.resolve(destination) : null;
+  if (resolvedDestination && existsSync(resolvedDestination))
+    fail('projection destination already exists: ' + resolvedDestination);
+  const container = await mkdtemp(
+    path.join(
+      resolvedDestination ? path.dirname(resolvedDestination) : tmpdir(),
+      'exawatt-public-catchup-'
+    )
+  );
+  const projectionRepo = path.join(container, 'public');
+  try {
+    await mkdir(projectionRepo);
+    await git(['init', '--quiet', '--initial-branch=master', '.'], {
+      cwd: projectionRepo,
+    });
+    const existingRef = await fetchExistingPublicTip(
+      projectionRepo,
+      fastForwardFrom
+    );
+    if (!existingRef) fail('catch-up requires an existing public prefix');
+    const observed = (
+      await git(['rev-parse', `${existingRef}^{commit}`], {
+        cwd: projectionRepo,
+      })
+    ).trim();
+    if (observed !== expectedPublicSha)
+      fail(
+        `catch-up expected public ${expectedPublicSha}, observed ${observed}`
+      );
+    const state = await readManifestState(
+      resolvedSourceRepo,
+      resolvedSourceSha,
+      manifestPath
+    );
+    if (
+      !['PRIVATE', 'EXCLUDED'].includes(
+        state.classify(PUBLIC_PROJECTION_EPOCH_PATH).classification
+      )
+    ) {
+      fail('the catch-up epoch must remain private or excluded');
+    }
+    await fetchPrivateSourceObjects(
+      resolvedSourceRepo,
+      resolvedSourceSha,
+      projectionRepo
+    );
+    const snapshot = await materializePublicSnapshot({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      projectionRepo,
+      manifestPath,
+      blobCache: new Map(),
+      renderedObjectCache: new Map(),
+    });
+    assertCompleteSnapshot(snapshot);
+    const previousTree = (
+      await git(['rev-parse', `${expectedPublicSha}^{tree}`], {
+        cwd: projectionRepo,
+      })
+    ).trim();
+    const publicPaths = nullSeparatedPaths(
+      await git(
+        [
+          'diff-tree',
+          '--no-commit-id',
+          '--name-only',
+          '-r',
+          '-z',
+          previousTree,
+          snapshot.tree,
+        ],
+        { cwd: projectionRepo, encoding: 'buffer' }
+      )
+    );
+    let publicSha = expectedPublicSha;
+    if (snapshot.tree !== previousTree) {
+      const sourceMetadata = await readCommitMetadata(
+        resolvedSourceRepo,
+        resolvedSourceSha
+      );
+      const metadata = await projectPublicCommitMetadata({
+        sourceSha: resolvedSourceSha,
+        ...sourceMetadata,
+        publicChange: { hasChanges: true, paths: publicPaths },
+        // Catch-up spans unpublished private history: source prose is never a
+        // reviewed public message even when the last commit changed one file.
+        privateChange: { hasChanges: true, paths: [] },
+      });
+      publicSha = await createCommit(projectionRepo, {
+        tree: snapshot.tree,
+        parent: expectedPublicSha,
+        metadata,
+      });
+    }
+    await git(['update-ref', 'refs/heads/master', publicSha], {
+      cwd: projectionRepo,
+    });
+    await prunePrivateSourceObjects(projectionRepo);
+    await assertFastForward({
+      repo: projectionRepo,
+      candidateSha: publicSha,
+      existingRef,
+    });
+    if (resolvedDestination) {
+      await rename(projectionRepo, resolvedDestination);
+      await git(['checkout', '--quiet', '--force', 'master'], {
+        cwd: resolvedDestination,
+      });
+    }
+    const epochUpdate = {
+      schemaVersion: 1,
+      mode: 'published-snapshot',
+      sourceSha: resolvedSourceSha,
+      publicSha,
+      metadataPolicyId: PUBLIC_METADATA_POLICY_ID,
+      projectionContractId: PUBLIC_PROJECTION_CONTRACT_ID,
+      reason:
+        'Reviewed current snapshot appended to the existing public prefix; unpublished intermediate revisions were not replayed',
+    };
+    return {
+      publicSha,
+      sourceSha: resolvedSourceSha,
+      existingPublicSha: expectedPublicSha,
+      outputCount: snapshot.projectedPaths.length,
+      planDigest: sha256(
+        JSON.stringify({
+          catchupFrom: expectedPublicSha,
+          snapshotPlanDigest: snapshot.planDigest,
+        })
+      ),
+      projectedPaths: snapshot.projectedPaths,
+      generatedOutputs: snapshot.generatedOutputs,
+      renderedOutputs: snapshot.renderedOutputs,
+      unrenderedOutputs: snapshot.unrenderedOutputs,
+      renderedVariants: snapshot.renderedVariants,
+      skippedRevisions: 0,
+      entryBoundaries: [],
+      metadataAudit: null,
+      metadataPolicyId: PUBLIC_METADATA_POLICY_ID,
+      projectionContractId: PUBLIC_PROJECTION_CONTRACT_ID,
+      destination: resolvedDestination,
+      epoch: epochUpdate,
+      epochUpdate,
+      replayedSourceCommits: 0,
+      emittedCommits: publicSha === expectedPublicSha ? 0 : 1,
+      rebuiltHistory: false,
+      snapshotCatchup: true,
+    };
+  } finally {
+    await rm(container, { recursive: true, force: true });
   }
 }

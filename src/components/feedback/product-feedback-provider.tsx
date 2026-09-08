@@ -12,6 +12,11 @@ import {
 } from 'react';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import {
+  isCompatibleServiceProblemError,
+  isCompatibleServiceProtocolError,
+  submitProductFeedback,
+} from '@exawatt/core/distribution';
+import {
   Camera,
   Check,
   ImagePlus,
@@ -26,7 +31,9 @@ import type { DiagnosticsReport } from '@/types/electron';
 import type {
   FeedbackKind,
   ProductFeedbackRequest,
+  ProductFeedbackServiceRequestV1,
 } from '@/lib/feedback/contract';
+import { PRODUCT_FEEDBACK_SCHEMA_VERSION } from '@/lib/feedback/contract';
 import {
   applyBuildMetadata,
   type FeedbackBuildInfo,
@@ -166,9 +173,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       syncSession(null);
       return;
     }
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => syncSession(data.session));
+    // The subscription emits INITIAL_SESSION. A second startup read could
+    // complete after sign-out and reinstall an obsolete token in main.
+    // Keep one ordered auth source for both initialization and later changes.
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => syncSession(session)
     );
@@ -223,43 +230,34 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             // Build metadata is useful context, never a condition of feedback.
           }
           try {
-            const response = await fetch(endpoint.url, {
-              method: 'POST',
-              headers: {
-                authorization: `Bearer ${token}`,
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({
-                ...applyBuildMetadata(request, build),
-                platform:
-                  request.platform ??
-                  window.electron?.platform ??
-                  navigator.platform,
-                idempotencyKey: crypto.randomUUID(),
-              } satisfies ProductFeedbackRequest),
-            });
-            if (response.ok) {
-              window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
-            } else {
-              // ENG-030 OS1.2. Feedback is the channel the external-user audit
-              // found dead; a silent failure here is the one failure that also
-              // destroys the report of itself.
-              captureAnalyticsEvent({
-                name: 'hosted_call_failed',
-                surface: analyticsSurface(),
-                service: 'product_feedback',
-                failure: hostedFailureForStatus(response.status),
-                statusCode: response.status,
-              });
-            }
-            return response.ok;
-          } catch {
+            await submitProductFeedback(endpoint, token, {
+              schemaVersion: PRODUCT_FEEDBACK_SCHEMA_VERSION,
+              ...applyBuildMetadata(request, build),
+              platform:
+                request.platform ??
+                window.electron?.platform ??
+                navigator.platform,
+              idempotencyKey: crypto.randomUUID(),
+            } satisfies ProductFeedbackServiceRequestV1);
+            window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
+            return true;
+          } catch (cause) {
+            // ENG-030 OS1.2. Feedback is the channel the external-user audit
+            // found dead; a silent failure here is the one failure that also
+            // destroys the report of itself.
+            const problem = isCompatibleServiceProblemError(cause)
+              ? cause
+              : null;
             captureAnalyticsEvent({
               name: 'hosted_call_failed',
               surface: analyticsSurface(),
               service: 'product_feedback',
-              failure: 'network',
-              statusCode: null,
+              failure: problem
+                ? hostedFailureForStatus(problem.status)
+                : isCompatibleServiceProtocolError(cause)
+                  ? 'invalid_response'
+                  : 'network',
+              statusCode: problem?.status ?? null,
             });
             return false;
           }

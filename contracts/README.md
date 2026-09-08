@@ -27,19 +27,35 @@ the application's AGPL license. See `LICENSING.md` and
    request and response bodies against the referenced JSON Schemas.
 5. Run `pnpm test:contracts` from the repository root. The suite compiles every
    schema with Ajv 2020-12, verifies that OpenAPI references the same canonical
-   schemas, and proves every valid and invalid fixture.
+   schemas, and proves every valid and invalid schema fixture.
+6. Run `pnpm test:service-conformance` for the executable wire matrix. It drives
+   `conformance/cases.json` through a strict loopback distributor and the shared
+   client boundary, including compatibility failures and no-replay behavior.
 
 ## Compatibility policy
 
 - `protocolVersion` selects a wire protocol; it is not a feature flag.
-- A V1 client supports only protocol version 1 and must reject configured or
-  returned versions it does not understand before sending content.
+- The client retains each configured endpoint as the pair
+  `{ url, protocolVersion }`: it sends the selected version in
+  `Exawatt-Service-Version` to that exact URL and requires the same header and
+  value on the response before decoding its body.
+- A V1 client supports only protocol version 1. It must reject an unsupported
+  configured version before sending content, and treat a missing, malformed,
+  or different response version as a non-retryable compatibility error.
 - Request objects are closed: unknown fields are invalid. Response objects are
   additive: a V1 client must ignore fields it does not understand.
+- JSON successes use `application/json`. Every non-success uses
+  `application/problem+json`, and its bounded problem `status` matches HTTP.
+  A client treats the wrong media type or a malformed success/problem envelope
+  as a non-retryable compatibility error rather than guessing at the body.
 - A future V2 service should retain its V1 codec for at least one client
   release. Clients never replay a mutating request merely to negotiate a
   version; a version mismatch degrades to the same local/absent state as an
   unconfigured capability.
+- During the V1 rollout, Exawatt's reference service may temporarily accept a
+  request with no version header as legacy V1. This is a server migration aid,
+  not client negotiation: current clients always send the header, and every
+  reference-service response declares the codec it used.
 - `429`, `502`, and `503` responses may be retried only where the application
   already treats the operation as idempotent. Respect `Retry-After`. Feedback
   and operator-stat publication use idempotency keys; other POSTs must not be
@@ -70,10 +86,9 @@ hosted route together. `electron/main/pty/context-summarizer.ts` now derives the
 key locally and `docs/engineering/outbound-data.md` section 4 is the account of
 what leaves a machine.
 
-The private hosted routes still predate this publication contract in their
-response envelope and headers; aligning those is a separate migration. These
-schemas define the compatibility target and deliberately do not import private
-route code.
+Exawatt's reference service is tested against these public envelopes and
+headers without importing its private implementation into the Apache-licensed
+contract package.
 
 ## Agent quick map
 

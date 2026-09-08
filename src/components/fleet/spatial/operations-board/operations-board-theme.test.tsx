@@ -17,8 +17,19 @@ vi.mock('@/components/hud/webgl/use-agent-field-glide', () => ({
 }));
 
 vi.mock('./operations-board-canvas', () => ({
-  OperationsBoardCanvas: ({ theme }: { theme: { themeId: string } }) => (
-    <div data-mocked-board-canvas data-mocked-board-theme={theme.themeId} />
+  OperationsBoardCanvas: ({
+    theme,
+    presentation,
+  }: {
+    theme: { themeId: string };
+    presentation: { projectEmphasis: string; agentCandidate: string };
+  }) => (
+    <div
+      data-mocked-board-canvas
+      data-mocked-board-theme={theme.themeId}
+      data-mocked-project-emphasis={presentation.projectEmphasis}
+      data-mocked-agent-candidate={presentation.agentCandidate}
+    />
   ),
 }));
 
@@ -131,6 +142,9 @@ describe('Operations Board appearance semantics', () => {
       view.container.querySelector('[aria-label="Board projection"]')
     ).toHaveClass('exa-material-chrome');
     expect(canvas).toHaveAttribute('data-mocked-board-theme', air.themeId);
+    expect(canvas).toHaveAttribute('data-mocked-project-emphasis', 'current');
+    expect(canvas).toHaveAttribute('data-mocked-agent-candidate', 'current');
+    expect(root).toHaveAttribute('data-board-project-packing', 'balanced');
   });
 
   it('updates theme paint in place without remounting scene or board truth', () => {

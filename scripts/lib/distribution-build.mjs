@@ -1,8 +1,17 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+
+import { decodePng, icnsImageSlices } from './app-icon.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -32,7 +41,123 @@ export function distributionArtifactPaths(root) {
     directory,
     contract: path.join(directory, 'distribution.json'),
     digest: path.join(directory, 'distribution.sha256'),
+    webIcon: path.join(directory, 'distribution-web-icon.png'),
+    webIconDigest: path.join(directory, 'distribution-web-icon.sha256'),
   };
+}
+
+export const DISTRIBUTION_WEB_ICON_URL = '/exawatt-distribution/icon.png';
+
+export function distributionWebIconPath(root) {
+  return distributionArtifactPaths(root).webIcon;
+}
+
+/**
+ * Project the contract-owned macOS artwork into the browser asset boundary.
+ *
+ * `brand.iconPath` is already the distributor's explicit, repository-relative
+ * asset source. Requiring a second magic `/icon.png` file made the desktop and
+ * browser identities disagree for every downstream distributor. Build
+ * preparation now extracts the largest PNG representation from that one ICNS
+ * source and seals it beside the prepared contract. Next materializes the
+ * bytes through one stable route without changing the source tree.
+ */
+export async function prepareDistributionWebIcon({ root, contract }) {
+  const { resolveDistributionIdentity } = distributionCore();
+  const identity = resolveDistributionIdentity(contract);
+  if (!identity.iconPath) {
+    throw new Error(
+      `Distribution ${identity.productName} has no icon source; brand.iconPath must name a repository-relative ICNS file.`
+    );
+  }
+
+  const rootReal = await realpath(root);
+  const declaredSource = path.resolve(root, identity.iconPath);
+  let source;
+  try {
+    source = await realpath(declaredSource);
+  } catch (cause) {
+    throw new Error(
+      `Distribution web icon source is missing: ${identity.iconPath}`,
+      { cause }
+    );
+  }
+  if (source !== rootReal && !source.startsWith(`${rootReal}${path.sep}`)) {
+    throw new Error(
+      `Distribution web icon source escapes the repository: ${identity.iconPath}`
+    );
+  }
+  const details = await stat(source);
+  if (!details.isFile()) {
+    throw new Error(
+      `Distribution web icon source is not a file: ${identity.iconPath}`
+    );
+  }
+
+  let slices;
+  try {
+    slices = icnsImageSlices(await readFile(source));
+  } catch (cause) {
+    throw new Error(
+      `Distribution web icon source is not a supported ICNS file: ${identity.iconPath}`,
+      { cause }
+    );
+  }
+  const largest = slices[0];
+  if (!largest) {
+    throw new Error(
+      `Distribution web icon source has no PNG representation: ${identity.iconPath}`
+    );
+  }
+
+  const paths = distributionArtifactPaths(root);
+  const output = paths.webIcon;
+  await mkdir(path.dirname(output), { recursive: true });
+  const nonce = `${process.pid}-${Date.now()}`;
+  const iconTemporary = `${output}.${nonce}.tmp`;
+  const digestTemporary = `${paths.webIconDigest}.${nonce}.tmp`;
+  const digest = distributionDigest(largest.png);
+  await Promise.all([
+    writeFile(iconTemporary, largest.png),
+    writeFile(digestTemporary, `${digest}\n`, 'utf8'),
+  ]);
+  await rename(iconTemporary, output);
+  await rename(digestTemporary, paths.webIconDigest);
+  return {
+    source: identity.iconPath,
+    output,
+    url: DISTRIBUTION_WEB_ICON_URL,
+    digest,
+    width: largest.image.width,
+    height: largest.image.height,
+  };
+}
+
+export async function readPreparedDistributionWebIcon(root) {
+  const paths = distributionArtifactPaths(root);
+  const [icon, expectedDigest] = await Promise.all([
+    readFile(paths.webIcon),
+    readFile(paths.webIconDigest, 'utf8'),
+  ]).catch(error => {
+    throw new Error(
+      'Prepared distribution web icon is missing; run `pnpm distribution:prepare` first.',
+      { cause: error }
+    );
+  });
+  const digest = distributionDigest(icon);
+  if (digest !== expectedDigest.trim()) {
+    throw new Error(
+      `Prepared distribution web icon digest mismatch: expected ${expectedDigest.trim()}, computed ${digest}`
+    );
+  }
+  try {
+    decodePng(icon);
+  } catch (cause) {
+    throw new Error('Prepared distribution web icon is not a supported PNG.', {
+      cause,
+    });
+  }
+  return icon;
 }
 
 /**
@@ -179,7 +304,11 @@ export async function readPreparedDistribution(root) {
   return { contract, canonical, digest };
 }
 
-export function nextDistributionEnvironment(prepared, ambient = process.env) {
+export function nextDistributionEnvironment(
+  prepared,
+  ambient = process.env,
+  webIcon = undefined
+) {
   const account = prepared.contract.account;
   const forwarded = { ...ambient };
   // These pre-contract inputs must not survive into Next at all. Empty values
@@ -188,6 +317,7 @@ export function nextDistributionEnvironment(prepared, ambient = process.env) {
   delete forwarded.NEXT_PUBLIC_POSTHOG_KEY;
   delete forwarded.NEXT_PUBLIC_POSTHOG_HOST;
   delete forwarded.NEXT_PUBLIC_ANALYTICS_DISABLED;
+  delete forwarded.EXAWATT_RESOLVED_WEB_ICON_BASE64;
   return {
     ...forwarded,
     EXAWATT_RESOLVED_DISTRIBUTION_JSON: prepared.canonical,
@@ -197,6 +327,9 @@ export function nextDistributionEnvironment(prepared, ambient = process.env) {
     // Temporary Supabase compatibility values are derived from the contract.
     NEXT_PUBLIC_SUPABASE_URL: account?.supabaseUrl ?? '',
     NEXT_PUBLIC_SUPABASE_ANON_KEY: account?.supabaseAnonKey ?? '',
+    ...(webIcon
+      ? { EXAWATT_RESOLVED_WEB_ICON_BASE64: webIcon.toString('base64') }
+      : {}),
   };
 }
 

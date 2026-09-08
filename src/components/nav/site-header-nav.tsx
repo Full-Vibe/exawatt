@@ -182,7 +182,7 @@ function HeaderHistoryControls() {
   return (
     <nav
       aria-label="Navigation history"
-      className="ml-1 inline-flex items-center gap-0.5"
+      className="ml-1 inline-flex shrink-0 items-center gap-0.5"
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
       <Button
@@ -271,11 +271,13 @@ export function SiteHeaderNav({
       }
     >
       {/* Left: Logo → Home, then the visible twin of ⌘[/⌘]. */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex min-w-0 items-center gap-0.5">
         {isHome ? (
           <span
             data-chrome-brand
-            className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-chrome-title! font-semibold"
+            aria-label={productName}
+            title={productName}
+            className="inline-flex h-8 min-w-0 items-center gap-2 rounded-md px-3 text-chrome-title! font-semibold"
           >
             {iconSrc ? (
               <Image
@@ -283,10 +285,16 @@ export function SiteHeaderNav({
                 alt=""
                 width={16}
                 height={16}
-                className="h-4 w-4"
+                className="h-4 w-4 shrink-0"
               />
             ) : null}
-            {productName}
+            <span
+              className={
+                inElectron && iconSrc ? 'hidden truncate md:block' : 'truncate'
+              }
+            >
+              {productName}
+            </span>
           </span>
         ) : (
           <Button
@@ -302,7 +310,9 @@ export function SiteHeaderNav({
             <Link
               href="/"
               data-chrome-brand
-              className="gap-2 text-chrome-title! font-semibold"
+              aria-label={productName}
+              title={productName}
+              className="min-w-0 gap-2 text-chrome-title! font-semibold"
             >
               {iconSrc ? (
                 <Image
@@ -310,10 +320,18 @@ export function SiteHeaderNav({
                   alt=""
                   width={16}
                   height={16}
-                  className="h-4 w-4"
+                  className="h-4 w-4 shrink-0"
                 />
               ) : null}
-              {productName}
+              <span
+                className={
+                  inElectron && iconSrc
+                    ? 'hidden truncate md:block'
+                    : 'truncate'
+                }
+              >
+                {productName}
+              </span>
             </Link>
           </Button>
         )}
@@ -326,7 +344,7 @@ export function SiteHeaderNav({
 
       {/* Right: Auth-dependent links */}
       <div
-        className="flex items-center gap-1"
+        className="flex shrink-0 items-center gap-1"
         style={
           inElectron
             ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties)
@@ -408,7 +426,12 @@ export function SiteHeaderNav({
         ) : (
           <>
             {!isArchitecture && (
-              <Button variant="ghost" size="sm" asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className={inElectron ? 'px-1.5 xl:px-3' : undefined}
+              >
                 <Link
                   href="/architecture"
                   aria-label="Architecture"
@@ -416,12 +439,23 @@ export function SiteHeaderNav({
                   className="text-chrome-title!"
                 >
                   <Network className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Architecture</span>
+                  <span
+                    className={
+                      inElectron ? 'hidden xl:inline' : 'hidden sm:inline'
+                    }
+                  >
+                    Architecture
+                  </span>
                 </Link>
               </Button>
             )}
             {!isLeaderboard && (
-              <Button variant="ghost" size="sm" asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className={inElectron ? 'px-1.5 xl:px-3' : undefined}
+              >
                 <Link
                   href="/leaderboard"
                   aria-label="Leaderboard"
@@ -429,7 +463,13 @@ export function SiteHeaderNav({
                   className="text-chrome-title!"
                 >
                   <Trophy className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Leaderboard</span>
+                  <span
+                    className={
+                      inElectron ? 'hidden xl:inline' : 'hidden sm:inline'
+                    }
+                  >
+                    Leaderboard
+                  </span>
                 </Link>
               </Button>
             )}

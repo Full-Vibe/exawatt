@@ -123,6 +123,145 @@ describe('Agent composer · sources and policy', () => {
     );
   });
 
+  it('checks for new models on request without moving the current setup or focus', async () => {
+    const refreshedCatalog: AgentModelCatalog = {
+      ...CODEX_MODEL_CATALOG,
+      effectiveModel: 'gpt-6-astra',
+      effectiveModelLabel: 'GPT-6-Astra',
+      effectiveModelSource: 'harness-recommended',
+      effectiveEffort: 'medium',
+      effectiveEffortLabel: 'Medium',
+      effectiveEffortSource: 'model-default',
+      models: [
+        {
+          id: 'gpt-6-astra',
+          label: 'GPT-6-Astra',
+          description: 'Most capable coding model.',
+          defaultEffort: 'medium',
+          efforts: CODEX_MODEL_CATALOG.models[0].efforts,
+        },
+        ...CODEX_MODEL_CATALOG.models,
+      ],
+      observedAt: 2,
+    };
+    let resolveRefresh!: (catalog: AgentModelCatalog) => void;
+    const pendingRefresh = new Promise<AgentModelCatalog>(resolve => {
+      resolveRefresh = resolve;
+    });
+    const listModels = vi.mocked(window.electron!.pty!.listAgentModels);
+    listModels.mockImplementation(async (harness, _cwd, refresh) => {
+      if (harness === 'codex' && refresh) return pendingRefresh;
+      return harness === 'codex'
+        ? CODEX_MODEL_CATALOG
+        : harness === 'opencode'
+          ? OPENCODE_MODEL_CATALOG
+          : harness === 'grok'
+            ? GROK_MODEL_CATALOG
+            : CLAUDE_MODEL_CATALOG;
+    });
+
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialSource="codex"
+        initialModel="gpt-5.6-terra"
+        initialEffort="high"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+
+    await openSetupDrawer();
+    await settled(() =>
+      expect(launcherAxis('Model')).toHaveAccessibleName('Model: GPT-5.6-Terra')
+    );
+    const setupOrder = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[data-setup-chip]')
+      ).map(setup => setup.dataset.setupId);
+    const orderBefore = setupOrder();
+    const refresh = screen.getByRole('button', {
+      name: 'Check for new models',
+    });
+    refresh.focus();
+    fireEvent.click(refresh);
+
+    expect(listModels).toHaveBeenCalledWith('codex', '/project', true);
+    expect(screen.getByRole('button', { name: 'Checking…' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Checking…' })).toHaveAttribute(
+      'aria-busy',
+      'true'
+    );
+
+    await act(async () => resolveRefresh(refreshedCatalog));
+    await settled(() =>
+      expect(screen.getByText('Models updated.')).toBeInTheDocument()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Check for new models' })
+    ).toHaveFocus();
+    expect(setupOrder()).toEqual(orderBefore);
+    expect(launcherAxis('Model')).toHaveAccessibleName('Model: GPT-5.6-Terra');
+    expect(launcherAxis('Thinking')).toHaveAccessibleName('Thinking: High');
+
+    fireEvent.click(launcherAxis('Model'));
+    expect(
+      screen.getByRole('option', { name: /GPT-6-Astra/i })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the last-known-good models when an explicit check fails', async () => {
+    const listModels = vi.mocked(window.electron!.pty!.listAgentModels);
+    listModels.mockImplementation(async (harness, _cwd, refresh) => {
+      if (harness === 'codex' && refresh) {
+        return {
+          ...CODEX_MODEL_CATALOG,
+          effectiveModel: null,
+          effectiveModelLabel: 'Source default',
+          effectiveModelSource: 'unavailable',
+          effectiveEffort: null,
+          effectiveEffortLabel: 'Unavailable',
+          effectiveEffortSource: 'unavailable',
+          models: [],
+          catalogMode: 'unavailable',
+        };
+      }
+      return harness === 'codex'
+        ? CODEX_MODEL_CATALOG
+        : harness === 'opencode'
+          ? OPENCODE_MODEL_CATALOG
+          : harness === 'grok'
+            ? GROK_MODEL_CATALOG
+            : CLAUDE_MODEL_CATALOG;
+    });
+
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialSource="codex"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+
+    await openSetupDrawer();
+    const refresh = screen.getByRole('button', {
+      name: 'Check for new models',
+    });
+    refresh.focus();
+    fireEvent.click(refresh);
+
+    await settled(() =>
+      expect(screen.getByText('Couldn’t check models.')).toBeInTheDocument()
+    );
+    expect(refresh).toHaveFocus();
+    expect(launcherAxis('Model')).toHaveAccessibleName('Model: GPT-5.6-Sol');
+    fireEvent.click(launcherAxis('Model'));
+    expect(
+      screen.getByRole('option', { name: /GPT-5\.6-Terra/i })
+    ).toBeInTheDocument();
+  });
+
   it('keeps an unknown Claude account default honest and routes selection to Claude Code', async () => {
     const sourceAction = vi.fn(async () => ({
       ok: true,

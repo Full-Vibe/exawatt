@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
+import { useState } from 'react';
 import {
   fireEvent,
   render as testingRender,
@@ -9,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
-import { ExposeOverlay } from './expose-overlay';
+import { ExposeOverlay, type TeamSelection } from './expose-overlay';
 import {
   mergeFleetAttention,
   NO_FLEET_ATTENTION,
@@ -705,6 +706,41 @@ describe('Sessions overview', () => {
     );
     await waitFor(() => expect(beta).toHaveFocus());
     expect(beta).toHaveAttribute('data-selected', 'true');
+  });
+
+  // BUG-114: the mirror effect (above) and the publish effect (below) both
+  // move `sel` from what a CONTROLLED `navigationSelection` echoes back —
+  // publish reads `sel` before the mirror's own `setSel` for this commit has
+  // landed, so it re-announces the value the mirror is in the middle of
+  // correcting, which round-trips back down as a "new" navigationSelection
+  // and gets corrected again, forever. Reproduced with the real trigger:
+  // `items` starts empty (Team mounts before the workspace's tabs load), so
+  // `sel`'s initializer can't find `activeTabId` and falls back to index 0;
+  // the mirror only catches up once `projects` arrives on a later render.
+  it('settles once on a late-arriving active tab instead of oscillating forever', async () => {
+    function Controlled({ projects: p }: { projects: SessionProject[] }) {
+      const [navigationSelection, setNavigationSelection] =
+        useState<TeamSelection | null>(null);
+      return (
+        <ExposeOverlay
+          projects={p}
+          summaries={{}}
+          attention={NO_FLEET_ATTENTION}
+          activeTabId="tab-c"
+          navigationSelection={navigationSelection}
+          onSelectionChange={setNavigationSelection}
+          onPick={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+    }
+
+    const view = render(<Controlled projects={[]} />);
+    view.rerender(<Controlled projects={projects} />);
+
+    const gamma = await screen.findByRole('button', { name: /^Gamma, One/ });
+    await waitFor(() => expect(gamma).toHaveFocus());
+    expect(gamma).toHaveAttribute('data-selected', 'true');
   });
 
   it('opens with Enter and returns with Escape without changing Session', async () => {

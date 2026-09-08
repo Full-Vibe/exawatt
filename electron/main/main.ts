@@ -85,7 +85,10 @@ import {
   type NativeAppearanceResolution,
 } from './appearance';
 import { AX_TILEABLE_WINDOW_SHAPE } from './window-shape';
-import { createDiagnosticsLog } from './diagnostics-log';
+import {
+  createDiagnosticsLog,
+  type DiagnosticRecorder,
+} from './diagnostics-log';
 import {
   MainThreadStallTrace,
   STALL_LOG_MAX_BYTES,
@@ -158,6 +161,10 @@ let claudePlanAccount: ClaudePlanAccountService | null = null;
 let runStateStore: RunStateStore | null = null;
 let authCoordinator: ElectronAuthCoordinator | null = null;
 let recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
+/** `logs/main.jsonl`. A no-op until `app.whenReady()` opens it, so an IPC
+ *  channel registered before then degrades to silently dropping the entry
+ *  rather than throwing. */
+let mainDiagnostics: DiagnosticRecorder = () => {};
 let ptySessions: PtySessionManager;
 let disposePty: () => Promise<void> = async () => {};
 let disposeRoadmapWatchers: () => void = () => {};
@@ -1038,6 +1045,25 @@ function registerAppIPC(): void {
   handleTrusted('app:get-diagnostics-report', (_event, signedIn?: boolean) =>
     collectDiagnosticsReport(Boolean(signedIn))
   );
+  // A route's error boundary caught a render exception the app otherwise
+  // recovers from silently — no crash dialog, no process death, nothing in
+  // `render-process-gone` for `app_crashed` to observe. Without this the only
+  // record was ever the operator's own screenshot; this makes the actual
+  // message and stack readable from `logs/main.jsonl` next time instead of
+  // requiring live reproduction. `redactDiagnosticValue` (inside
+  // `mainDiagnostics`) still clips and scrubs every field before it lands.
+  handleTrusted('app:report-render-error', (_event, payload?: unknown) => {
+    const report =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    mainDiagnostics('renderer.error-boundary', {
+      message: typeof report.message === 'string' ? report.message : null,
+      stack: typeof report.stack === 'string' ? report.stack : null,
+      digest: typeof report.digest === 'string' ? report.digest : null,
+      pathname: typeof report.pathname === 'string' ? report.pathname : null,
+    });
+  });
   handleTrusted(
     'app:save-diagnostics-report',
     async (_event, signedIn?: boolean) =>
@@ -1607,7 +1633,7 @@ function watchShellStartupArtifacts(
 }
 
 app.whenReady().then(() => {
-  const mainDiagnostics = createMainDiagnostics();
+  mainDiagnostics = createMainDiagnostics();
   // Standing main-thread instrumentation: the next beachball records itself.
   // Started before the window so a stall during startup is captured too.
   installMainThreadStallTrace(

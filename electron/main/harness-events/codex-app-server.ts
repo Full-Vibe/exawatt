@@ -19,6 +19,10 @@ const MAX_FRAME_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 4_000;
 const POLL_INTERVAL_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
+const MAX_ROOT_READS = 4;
+const MAX_CHILD_READS = 2;
+export const CODEX_OBSERVER_MAX_CONCURRENT_READS =
+  MAX_ROOT_READS * MAX_CHILD_READS;
 const DESCENDANT_PAGE_SIZE = 200;
 const MAX_DESCENDANT_PAGES = 20;
 const ACTIVITY_WINDOW = 256;
@@ -222,6 +226,19 @@ export function parseCodexSubagentActivity(
   return latest;
 }
 
+async function launchCodexAppServer(): Promise<ChildProcessWithoutNullStreams> {
+  const shell = await defaultShell();
+  const plan = planLoginShell(shell, {
+    command: `${codexInvocation()} app-server --stdio`,
+    directory: os.homedir(),
+  });
+  return spawn(shell, plan.args, {
+    cwd: plan.cwd,
+    env: { ...process.env, SHELL: shell },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+
 /** JSON-RPC client for the installed Codex app-server. */
 export class CodexAppServerClient implements CodexDelegationProtocol {
   private process: ChildProcessWithoutNullStreams | null = null;
@@ -231,27 +248,47 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
   private stderrTail = '';
   private connected = false;
 
+  private generation = 0;
+  private connecting: Promise<void> | null = null;
+
+  constructor(
+    private readonly launch: () => Promise<ChildProcessWithoutNullStreams> = launchCodexAppServer
+  ) {}
+
   async connect(): Promise<void> {
     if (this.connected && this.process) return;
-    const shell = await defaultShell();
-    const plan = planLoginShell(shell, {
-      command: `${codexInvocation()} app-server --stdio`,
-      directory: os.homedir(),
-    });
-    const child = spawn(shell, plan.args, {
-      cwd: plan.cwd,
-      env: { ...process.env, SHELL: shell },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    if (this.connecting) return this.connecting;
+    const connecting = this.open(++this.generation);
+    this.connecting = connecting;
+    try {
+      await connecting;
+    } finally {
+      if (this.connecting === connecting) this.connecting = null;
+    }
+  }
+
+  private async open(generation: number): Promise<void> {
+    const child = await this.launch();
+    if (this.generation !== generation) {
+      child.kill();
+      throw new Error('Codex app-server connection superseded');
+    }
     this.process = child;
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', chunk => this.acceptOutput(String(chunk)));
+    child.stdout.on('data', chunk => {
+      if (this.process === child) this.acceptOutput(String(chunk));
+    });
     child.stderr.setEncoding('utf8');
+    this.stderrTail = '';
     child.stderr.on('data', chunk => {
+      if (this.process !== child) return;
       this.stderrTail = `${this.stderrTail}${String(chunk)}`.slice(-4_096);
     });
-    child.on('error', error => this.fail(error));
+    child.on('error', error => {
+      if (this.process === child) this.fail(error);
+    });
     child.on('exit', (code, signal) => {
+      if (this.process !== child) return;
       this.fail(
         new Error(
           `Codex app-server exited (${code ?? signal ?? 'unknown'})${
@@ -279,15 +316,19 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       if (!version || !codexProtocolVersionSupported(version)) {
         throw protocolError('installed app-server is older than 0.147.0');
       }
+      if (this.process !== child)
+        throw new Error('Codex app-server connection superseded');
       this.notify('initialized', {});
       this.connected = true;
     } catch (error) {
-      this.close();
+      if (this.process === child) this.close();
       throw error;
     }
   }
 
   close(): void {
+    this.generation += 1;
+    this.connecting = null;
     const child = this.process;
     this.process = null;
     this.connected = false;
@@ -441,6 +482,7 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     const child = this.process;
     this.process = null;
     this.connected = false;
+    this.stdoutBuffer = '';
     if (child && !child.killed) child.kill();
     this.rejectPending(error);
   }
@@ -459,13 +501,12 @@ interface ObservedChild {
   agentType: string;
   description: string | null;
   startedAt: number;
-  updatedAt: number;
   live: boolean;
+  completed: boolean;
 }
 
 interface ObservedRoot {
   threadId: string;
-  children: Map<string, ObservedChild>;
 }
 
 export interface CodexDelegationObserverOptions {
@@ -487,6 +528,46 @@ function childDescription(thread: CodexChildThread): string | null {
 
 function childAgentType(thread: CodexChildThread): string {
   return thread.agentRole?.trim() || 'Codex';
+}
+
+/** Bounded workers settle every started read before the next poll may begin. */
+async function settleConcurrent<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  read: (value: T) => Promise<R>,
+  stopOnFailure = false
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(values.length);
+  let cursor = 0;
+  let failed = false;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      for (;;) {
+        if (failed && stopOnFailure) return;
+        const index = cursor++;
+        if (index >= values.length) return;
+        try {
+          results[index] = {
+            status: 'fulfilled',
+            value: await read(values[index]),
+          };
+        } catch (reason) {
+          failed = true;
+          results[index] = { status: 'rejected', reason };
+        }
+      }
+    })
+  );
+  return results;
+}
+
+function fulfilledReads<T>(results: PromiseSettledResult<T>[]): T[] {
+  const rejected = results.find(result => result?.status === 'rejected');
+  if (rejected?.status === 'rejected') throw rejected.reason;
+  return results.map(result => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
 }
 
 /**
@@ -540,7 +621,6 @@ export class CodexDelegationObserver {
     if (existing) this.withdraw(session.id);
     this.roots.set(session.id, {
       threadId: session.harnessSessionId,
-      children: new Map(),
     });
     if (this.autoPoll) this.schedule(0);
   }
@@ -561,38 +641,48 @@ export class CodexDelegationObserver {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.polling = true;
+    const client = this.client ?? this.clientFactory();
+    this.client = client;
+    const roots = [...this.roots.entries()];
+    let failed = false;
     try {
-      const client = this.client ?? this.clientFactory();
-      this.client = client;
       await client.connect();
-      const roots = [...this.roots.entries()];
-      const snapshots = await Promise.all(
-        roots.map(
-          async ([sessionId, root]) =>
-            [
-              sessionId,
-              root.threadId,
-              await this.snapshot(client, root),
-            ] as const
-        )
+      const snapshots = await settleConcurrent(
+        roots,
+        MAX_ROOT_READS,
+        ([, root]) => this.snapshot(client, root)
       );
-      for (const [sessionId, threadId, children] of snapshots) {
-        if (this.roots.get(sessionId)?.threadId === threadId) {
-          this.publish(sessionId, children);
+      if (this.client !== client) return;
+      for (let index = 0; index < roots.length; index += 1) {
+        const [sessionId, root] = roots[index];
+        // Identity can change while reads are in flight, including A → B → A.
+        // Object identity represents the observation generation, not its name.
+        if (this.roots.get(sessionId) !== root) continue;
+        const snapshot = snapshots[index];
+        if (snapshot.status === 'fulfilled') {
+          this.publish(sessionId, snapshot.value);
+        } else {
+          this.withdraw(sessionId);
+          failed = true;
         }
       }
-      this.retryMs = 1_000;
-      if (this.autoPoll) this.schedule(this.pollIntervalMs);
     } catch {
-      // Unsupported, unavailable, timed out, or malformed all mean ABSENT.
-      // The terminal remains wholly usable and the adapter retries in backoff.
-      this.withdrawAll();
-      this.client?.close();
-      this.client = null;
-      if (this.autoPoll) this.schedule(this.retryMs);
-      this.retryMs = Math.min(MAX_BACKOFF_MS, this.retryMs * 2);
+      if (this.client !== client) return;
+      failed = true;
+      for (const [sessionId, root] of roots) {
+        if (this.roots.get(sessionId) === root) this.withdraw(sessionId);
+      }
     } finally {
       this.polling = false;
+      if (this.client === client && failed) {
+        client.close();
+        this.client = null;
+      }
+      if (this.autoPoll)
+        this.schedule(failed ? this.retryMs : this.pollIntervalMs);
+      this.retryMs = failed
+        ? Math.min(MAX_BACKOFF_MS, this.retryMs * 2)
+        : 1_000;
     }
   }
 
@@ -602,33 +692,29 @@ export class CodexDelegationObserver {
   ): Promise<Map<string, ObservedChild>> {
     const descendants = await client.listDescendants(root.threadId);
     const children = new Map<string, ObservedChild>();
-    const unresolved = (
-      await Promise.all(
-        descendants.map(async thread => {
-          const previous = root.children.get(thread.id);
-          if (
-            previous &&
-            !previous.live &&
-            previous.updatedAt === thread.updatedAt
-          ) {
-            children.set(thread.id, previous);
-            return null;
-          }
+    const unresolved = fulfilledReads(
+      await settleConcurrent(
+        descendants,
+        MAX_CHILD_READS,
+        async thread => {
+          // updatedAt has source-defined precision. A completed child can resume
+          // within the same timestamp, so it cannot cache terminal lifecycle.
           const turn = await client.latestTurn(thread.id);
           const observed: ObservedChild = {
             id: thread.id,
             agentType: childAgentType(thread),
             description: childDescription(thread),
             startedAt: thread.createdAt * 1_000,
-            updatedAt: thread.updatedAt,
             live: turn?.status === 'inProgress',
+            completed: turn?.status === 'completed',
           };
           children.set(thread.id, observed);
           const ambiguous =
             turn === null ||
             (turn.status === 'interrupted' && turn.completedAt === null);
           return ambiguous ? { thread, observed } : null;
-        })
+        },
+        true
       )
     ).filter(
       (item): item is { thread: CodexChildThread; observed: ObservedChild } =>
@@ -644,17 +730,22 @@ export class CodexDelegationObserver {
       siblings.push(item);
       unresolvedByParent.set(item.thread.parentThreadId, siblings);
     }
-    await Promise.all(
-      [...unresolvedByParent].map(async ([parentThreadId, items]) => {
-        const activity = await client.latestSubagentActivity(
-          parentThreadId,
-          items.map(item => item.thread.id)
-        );
-        for (const item of items) {
-          const kind = activity.get(item.thread.id);
-          item.observed.live = kind === 'started' || kind === 'interacted';
-        }
-      })
+    fulfilledReads(
+      await settleConcurrent(
+        [...unresolvedByParent],
+        MAX_CHILD_READS,
+        async ([parentThreadId, items]) => {
+          const activity = await client.latestSubagentActivity(
+            parentThreadId,
+            items.map(item => item.thread.id)
+          );
+          for (const item of items) {
+            const kind = activity.get(item.thread.id);
+            item.observed.live = kind === 'started' || kind === 'interacted';
+          }
+        },
+        true
+      )
     );
     return children;
   }
@@ -666,48 +757,36 @@ export class CodexDelegationObserver {
     const root = this.roots.get(sessionId);
     const sink = this.sink;
     if (!root || !sink) return;
-    const beforeLive = new Map(
-      [...root.children].filter(([, child]) => child.live)
-    );
     const afterLive = [...nextChildren.values()]
       .filter(child => child.live)
       .sort(
         (left, right) =>
           left.startedAt - right.startedAt || left.id.localeCompare(right.id)
       );
-    const afterIds = new Set(afterLive.map(child => child.id));
-    for (const childId of beforeLive.keys()) {
-      if (!afterIds.has(childId)) {
-        sink.report(sessionId, { kind: 'child-end', childId });
-      }
-    }
-    for (const child of afterLive) {
-      if (!beforeLive.has(child.id)) {
-        sink.report(sessionId, {
-          kind: 'child-start',
-          childId: child.id,
-          agentType: child.agentType,
-          description: child.description,
-          at: child.startedAt,
-        });
-      }
-    }
-    root.children = nextChildren;
+    sink.reconcileReportedChildren(
+      sessionId,
+      afterLive.map(({ id, agentType, description, startedAt }) => ({
+        id,
+        agentType,
+        description,
+        startedAt,
+      })),
+      [...nextChildren.values()]
+        .filter(child => child.completed)
+        .map(child => child.id)
+    );
   }
 
   private withdraw(sessionId: string): void {
     this.sink?.clearReportedChildren(sessionId);
-    const root = this.roots.get(sessionId);
-    if (root) root.children = new Map();
-  }
-
-  private withdrawAll(): void {
-    for (const sessionId of this.roots.keys()) this.withdraw(sessionId);
   }
 
   private schedule(delay: number): void {
     if (this.roots.size === 0 || this.timer) return;
-    this.timer = setTimeout(() => void this.pollNow(), delay);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.pollNow();
+    }, delay);
     this.timer.unref?.();
   }
 }

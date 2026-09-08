@@ -313,3 +313,21 @@ roadmap, official product, compatibility version, or release channel.
 - **Public repo depending on private packages or CI.** Makes the advertised
   open client non-reproducible and turns private access into an undeclared
   contribution prerequisite.
+
+## 2026-09-07 amendment — Repair synchronization with a preserved public prefix
+
+**Public availability and complete historical metadata erasure have separate exits.**
+An ordinary deletion must never rewrite public history. When already-unpublished
+intermediate source revisions cannot be rendered, an explicitly reviewed recovery
+may append one certified current public snapshot to the existing public tip and
+record that exact source/public pair as the new replay epoch. Future revisions
+continue per-commit publication with deterministic preflight. No automatic
+snapshot fallback or force push is introduced.
+
+This supersedes the P7 assumption that every synchronization repair must wait
+for a single metadata-erasing reseed. Existing public pull-request refs can keep
+old metadata reachable even after a master rewrite; BUG-112 owns that separate
+cleanup. Catch-up preserves existing history and attribution, applies the new
+metadata policy to new commits, and does not claim old metadata was removed.
+Historical erasure remains separately reviewed work; this recovery selects no
+rewrite, purge, or repository-replacement method.

@@ -13,6 +13,7 @@ import {
   delegationBusy,
   delegationIsLive,
   EMPTY_LEDGER,
+  type DelegatedChild,
   type DelegationLedger,
   type HarnessEvent,
   type SessionDelegation,
@@ -32,6 +33,11 @@ interface ManagerLike {
 export interface DelegationReportSink {
   report(sessionId: string, event: HarnessEvent): void;
   clearReportedChildren(sessionId: string): void;
+  reconcileReportedChildren(
+    sessionId: string,
+    children: DelegatedChild[],
+    completedChildIds: readonly string[]
+  ): void;
 }
 
 /** Bounds the dropped-session memory; ids are per-launch UUIDs, never
@@ -134,20 +140,69 @@ export class DelegationMonitor extends EventEmitter {
   }
 
   /**
-   * Withdraw an unavailable adapter's observation without claiming that any
-   * child completed. Protocol loss must degrade to absent, never synthesize a
-   * ready-result attention event.
+   * Replace a source-authoritative census atomically. A snapshot can establish
+   * that a previously ended child resumed; delta-event tombstones cannot veto
+   * that newer observation. Missing children are withdrawn, not completed.
+   * Only explicitly completed IDs may offer a ready result to attention.
    */
-  clearReportedChildren(sessionId: string): void {
-    const before = this.state.get(sessionId);
-    if (!before || before.children.length === 0) return;
-    this.state.set(sessionId, { ...before, children: [] });
+  reconcileReportedChildren(
+    sessionId: string,
+    children: DelegatedChild[],
+    completedChildIds: readonly string[] = []
+  ): void {
+    if (this.dropped.has(sessionId)) return;
+    const before = this.state.get(sessionId) ?? EMPTY_LEDGER;
+    const unchanged =
+      before.children.length === children.length &&
+      before.children.every((child, index) => {
+        const next = children[index];
+        return (
+          child.id === next.id &&
+          child.agentType === next.agentType &&
+          child.description === next.description &&
+          child.startedAt === next.startedAt
+        );
+      });
+    if (unchanged) return;
+    const liveIds = new Set(children.map(child => child.id));
+    this.state.set(sessionId, {
+      ...before,
+      children,
+      endedChildIds: before.endedChildIds.filter(id => !liveIds.has(id)),
+    });
     const projected = this.projection(sessionId);
     this.emit(
       'delegation',
       sessionId,
       delegationIsLive(projected) ? projected : null
     );
+    // Publish lifecycle only after the entire census is current: replacing one
+    // completed child with another live child must not briefly announce done.
+    for (const child of children) {
+      if (!before.children.some(previous => previous.id === child.id)) {
+        this.emit('harness-event', sessionId, {
+          kind: 'child-start',
+          childId: child.id,
+          agentType: child.agentType,
+          description: child.description,
+          at: child.startedAt,
+        } satisfies HarnessEvent);
+      }
+    }
+    const completed = new Set(completedChildIds);
+    for (const child of before.children) {
+      if (!liveIds.has(child.id) && completed.has(child.id)) {
+        this.emit('harness-event', sessionId, {
+          kind: 'child-end',
+          childId: child.id,
+        } satisfies HarnessEvent);
+      }
+    }
+  }
+
+  /** Withdraw unavailable observations without synthesizing completion. */
+  clearReportedChildren(sessionId: string): void {
+    this.reconcileReportedChildren(sessionId, []);
   }
 
   /**

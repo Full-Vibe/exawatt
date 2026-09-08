@@ -36,7 +36,11 @@ import {
   classifyHandshakeFailure,
 } from './connected-source-failure';
 import type { ConnectedSourceStore } from './connected-source-store';
-import type { RemoteExec, resolveGatewayCredential } from './gateway-bootstrap';
+import type {
+  GatewayBootstrapFacts,
+  RemoteExec,
+  resolveGatewayCredential,
+} from './gateway-bootstrap';
 import {
   gatewayIdentityDrifted,
   gatewayIdentityOf,
@@ -181,6 +185,7 @@ export interface ConnectedGatewaySessionDeps {
     | 'writeDeviceCredential'
     | 'clearDeviceToken'
     | 'setGrantedAuthority'
+    | 'setDiscoveredGatewayPort'
   >;
   openTunnel: typeof openSshTunnel;
   resolveCredential: typeof resolveGatewayCredential;
@@ -240,7 +245,13 @@ export function tunnelTargetFor(
 export const RECONNECT_BASE_DELAY_MS = 1_000;
 export const RECONNECT_MAX_DELAY_MS = 30_000;
 export const DEFAULT_MAX_RECONNECT_ATTEMPTS = 6;
-/** No configuration may turn the ladder into an unbounded retry loop. */
+/** A quiet maintenance retry after the fast ladder, so a long outage heals. */
+export const LONG_OUTAGE_RETRY_DELAY_MS = 60_000;
+/** Freshness expires at 60s; a healthy source is observed twice inside that. */
+export const PERIODIC_RESNAPSHOT_INTERVAL_MS = 30_000;
+/** Presence bursts buy one authoritative read, never one read per frame. */
+export const RESNAPSHOT_COALESCE_DELAY_MS = 500;
+/** No configuration may turn the fast ladder into an unbounded hot loop. */
 const RECONNECT_ATTEMPT_CEILING = 32;
 
 const LOOPBACK_HOST = '127.0.0.1';
@@ -319,6 +330,17 @@ function countAutomations(payload: unknown): number {
   return 0;
 }
 
+/** Only outages heal by waiting. Credentials, config, and identity need a person. */
+function retryableConnectionFailure(failure: SourceFailureClass): boolean {
+  return failure === 'host-unreachable' || failure === 'gateway-down';
+}
+
+/** Read after a handshake: the client mutates this across an awaited call. */
+function issuedDeviceToken(client: ConnectedGatewayClient): string | null {
+  const value: unknown = client.deviceToken;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 /**
  * What a source's answers are entitled to claim about themselves.
  *
@@ -350,6 +372,7 @@ export class ConnectedGatewaySession {
   private readonly phaseListeners = new Set<
     (phase: ConnectedGatewayPhase) => void
   >();
+  private readonly snapshotListeners = new Set<() => void>();
 
   private tunnel: SshTunnel | null = null;
   private stopWatchingTunnel: (() => void) | null = null;
@@ -376,6 +399,10 @@ export class ConnectedGatewaySession {
    * already clears `token` on this same object for the same reason.
    */
   private clientConfig: OCClientConfig | null = null;
+  /** One fresh alias bootstrap carried from port discovery into pairing. */
+  private pendingBootstrapFacts: GatewayBootstrapFacts | null = null;
+  /** The port this launch observed, even before the immutable record is rebuilt. */
+  private resolvedAliasGatewayPort: number | null = null;
 
   /** Last authoritative snapshot. Retained across a drop, never merged into. */
   private lastSnapshot: AgentSourceTopologySnapshot | null = null;
@@ -398,6 +425,14 @@ export class ConnectedGatewaySession {
 
   private reconnectTimer: unknown = null;
   private reconnectAttempts = 0;
+  private periodicResnapshotTimer: unknown = null;
+  private coalescedResnapshotTimer: unknown = null;
+  private resnapshotInFlight: Promise<SnapshotResult> | null = null;
+  private resnapshotQueued = false;
+  /** A topology hint is invalidation only; the authoritative reads replace it. */
+  private readonly topologyInvalidated = (): void => {
+    this.queueCoalescedResnapshot();
+  };
   /** Set while this session is deliberately tearing a connection down. */
   private tearingDown = false;
   /**
@@ -467,6 +502,14 @@ export class ConnectedGatewaySession {
     };
   }
 
+  /** Every successful authoritative replacement, including quiet refreshes. */
+  onSnapshot(listener: () => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => {
+      this.snapshotListeners.delete(listener);
+    };
+  }
+
   /**
    * Open observation, from whatever state this session is in.
    *
@@ -486,10 +529,20 @@ export class ConnectedGatewaySession {
     await this.teardownConnection();
     const result = await this.establish();
     if (!result.ok) {
-      // An operator-initiated connect reports its failure rather than starting
-      // the retry ladder. The ladder exists for a connection that was working
-      // and was lost; a first attempt that fails is an answer, not an outage.
-      this.setPhase('failed');
+      if (
+        result.outcome === 'failed' &&
+        retryableConnectionFailure(result.failure)
+      ) {
+        // The caller still receives the first failure as its immediate answer,
+        // while the saved source remains visibly Reconnecting and heals when a
+        // server that was down during app launch returns.
+        this.retrying = true;
+        this.terminalFailure = result.failure;
+        this.setPhase('reconnecting');
+        this.scheduleReconnect();
+      } else {
+        this.setPhase('failed');
+      }
     }
     return result;
   }
@@ -550,12 +603,78 @@ export class ConnectedGatewaySession {
         message: 'No Gateway connection is open for this source.',
       };
     }
-    const result = await this.discover();
-    if (result.ok) {
-      await this.followConversations();
-      this.setPhase('connected');
+    return this.runResnapshot(true);
+  }
+
+  /** One shared refresh for manual, periodic, and event-invalidated reads. */
+  private async runResnapshot(announcePhase: boolean): Promise<SnapshotResult> {
+    if (this.resnapshotInFlight !== null) {
+      this.resnapshotQueued = true;
+      return this.resnapshotInFlight;
     }
+    const operation = this.performResnapshot(announcePhase);
+    this.resnapshotInFlight = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.resnapshotInFlight === operation) {
+        this.resnapshotInFlight = null;
+      }
+      if (this.resnapshotQueued) {
+        this.resnapshotQueued = false;
+        this.queueCoalescedResnapshot();
+      }
+    }
+  }
+
+  private async performResnapshot(
+    announcePhase: boolean
+  ): Promise<SnapshotResult> {
+    const result = await this.discover(announcePhase);
+    if (result.ok) {
+      if (announcePhase) this.setPhase('connected');
+      this.schedulePeriodicResnapshot();
+      return result;
+    }
+    if (result.outcome === 'failed') this.handleDrop(result.failure);
     return result;
+  }
+
+  /** Presence may burst; one delayed authoritative replacement absorbs it. */
+  private queueCoalescedResnapshot(): void {
+    if (this.detached || !this.transportUp || this.drift !== null) return;
+    if (this.resnapshotInFlight !== null) {
+      this.resnapshotQueued = true;
+      return;
+    }
+    if (this.coalescedResnapshotTimer !== null) return;
+    this.coalescedResnapshotTimer = this.deps.setTimer(() => {
+      this.coalescedResnapshotTimer = null;
+      void this.runResnapshot(false);
+    }, RESNAPSHOT_COALESCE_DELAY_MS);
+  }
+
+  private schedulePeriodicResnapshot(): void {
+    if (this.detached || !this.transportUp || this.drift !== null) return;
+    if (this.periodicResnapshotTimer !== null) {
+      this.deps.clearTimer(this.periodicResnapshotTimer);
+    }
+    this.periodicResnapshotTimer = this.deps.setTimer(() => {
+      this.periodicResnapshotTimer = null;
+      void this.runResnapshot(false);
+    }, PERIODIC_RESNAPSHOT_INTERVAL_MS);
+  }
+
+  private clearObservationTimers(): void {
+    if (this.periodicResnapshotTimer !== null) {
+      this.deps.clearTimer(this.periodicResnapshotTimer);
+      this.periodicResnapshotTimer = null;
+    }
+    if (this.coalescedResnapshotTimer !== null) {
+      this.deps.clearTimer(this.coalescedResnapshotTimer);
+      this.coalescedResnapshotTimer = null;
+    }
+    this.resnapshotQueued = false;
   }
 
   /**
@@ -639,11 +758,12 @@ export class ConnectedGatewaySession {
    * that is the answer, the source keeps working exactly as it was and the
    * result says what the operator has to do.
    *
-   * Nothing here re-pairs. The same client keeps the same device keypair and
-   * the same persisted device token, the shared secret is not read again, and
-   * the stored credential is never cleared: a scope request that quietly
-   * replaced Exawatt's device identity would leave a stranded device on the
-   * operator's server and lose the custody trail the whole model depends on.
+   * Nothing here changes device identity or approves the request. A live
+   * Gateway proved that a read-scoped token cannot mint its wider replacement
+   * even after the source operator approves the device. The explicit ask must
+   * therefore read the source's shared secret again, present the SAME keypair,
+   * and persist the newly issued scoped token. The secret remains memory-only
+   * and the completed handshake remains the only fact that can widen authority.
    */
   async requestWriteAuthority(): Promise<AuthorityRequestResult> {
     if (this.grantedAuthority === 'write') {
@@ -665,14 +785,65 @@ export class ConnectedGatewaySession {
       };
     }
 
+    const credential = await this.deps.resolveCredential(
+      this.record.transport,
+      {
+        exec: this.deps.remoteExec,
+      }
+    );
+    if (!credential.ok) {
+      return {
+        outcome: 'refused',
+        authority: this.grantedAuthority,
+        message: `Exawatt could not ask this source for write access. ${credential.message}`,
+      };
+    }
+
+    const keypair = config.deviceKeypair;
+    if (!keypair) {
+      return {
+        outcome: 'refused',
+        authority: this.grantedAuthority,
+        message:
+          'Exawatt cannot prove which paired device is asking for write access.',
+      };
+    }
+
     this.renegotiating = true;
     let restoreFailed = false;
+    const previousToken = client.deviceToken ?? null;
+    let sharedSecret: string | null = credential.facts.sharedToken;
     try {
+      // The source binds a device token to both keypair and scope. The shared
+      // secret authorises issuance; the unchanged keypair proves this is the
+      // already-visible Exawatt device, not a second device pairing itself.
+      client.deviceToken = null;
+      config.token = sharedSecret;
       const attempt = await this.renegotiate(client, config, 'write');
+      // The explicit handshake is over. No restore, stream subscription, or
+      // later reconnect may inherit the admin-capable bootstrap credential.
+      sharedSecret = null;
+      config.token = undefined;
       if (attempt.ok) {
         const granted = this.grantedFrom(client, 'write');
-        this.applyGrantedAuthority(granted);
-        if (granted === 'write') {
+        const issued = issuedDeviceToken(client);
+        if (granted === 'write' && issued !== null) {
+          const stored = this.deps.store.writeDeviceCredential(this.record.id, {
+            token: issued,
+            keypair,
+          });
+          if (!stored.ok) {
+            client.deviceToken = previousToken;
+            const restored = await this.renegotiate(client, config, 'read');
+            restoreFailed = !restored.ok;
+            return {
+              outcome: 'refused',
+              authority: 'read',
+              message:
+                'This source granted write access, but Exawatt could not keep the scoped device credential safely. Read-only observation continues.',
+            };
+          }
+          this.applyGrantedAuthority('write');
           return {
             outcome: 'granted',
             authority: 'write',
@@ -684,9 +855,12 @@ export class ConnectedGatewaySession {
          * than the one asked for. Recording the ask would be the exact lie
          * this whole field exists to prevent, so the narrower grant wins.
          */
+        client.deviceToken = previousToken;
+        const restored = await this.renegotiate(client, config, 'read');
+        restoreFailed = !restored.ok;
         return {
           outcome: 'refused',
-          authority: granted,
+          authority: 'read',
           message:
             'This source granted observation only, so Exawatt still holds read access.',
         };
@@ -694,11 +868,8 @@ export class ConnectedGatewaySession {
 
       // Refused. Put the connection back the way the operator had it: the
       // request failing must not cost them the view they already had.
-      const restored = await this.renegotiate(
-        client,
-        config,
-        this.grantedAuthority
-      );
+      client.deviceToken = previousToken;
+      const restored = await this.renegotiate(client, config, 'read');
       restoreFailed = !restored.ok;
       return {
         outcome: attempt.refusal,
@@ -711,6 +882,8 @@ export class ConnectedGatewaySession {
               : `This source refused write access. It said "${attempt.sentence}".`,
       };
     } finally {
+      sharedSecret = null;
+      config.token = undefined;
       this.renegotiating = false;
       if (restoreFailed) {
         // The refusal is answered above; the lost socket is an ordinary drop
@@ -851,6 +1024,7 @@ export class ConnectedGatewaySession {
      */
     await this.followConversations();
     this.setPhase('connected');
+    this.schedulePeriodicResnapshot();
     return discovered;
   }
 
@@ -877,8 +1051,47 @@ export class ConnectedGatewaySession {
     }
 
     this.setPhase('opening-tunnel');
-    const opened = await this.deps.openTunnel(tunnelTargetFor(transport));
+    let tunnelTransport = transport;
+    if (transport.kind === 'ssh-alias') {
+      const keypair = this.deps.store.readDeviceKeypair(this.record.id);
+      const token = this.deps.store.readDeviceToken(this.record.id);
+      const hasStoredCredential =
+        keypair !== null && typeof token === 'string' && token.length > 0;
+
+      if (!hasStoredCredential && this.resolvedAliasGatewayPort === null) {
+        /*
+         * An alias has nowhere for the operator to enter a Gateway port. Read
+         * the source's own declaration before constructing the forward, carry
+         * the same bootstrap result into pairing, and remember only the public
+         * port. This is still one bounded bootstrap and one ephemeral secret.
+         */
+        const bootstrap = await this.deps.resolveCredential(transport, {
+          exec: this.deps.remoteExec,
+        });
+        if (!bootstrap.ok) {
+          return {
+            ok: false,
+            failure: BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE[bootstrap.failure],
+            message: bootstrap.message,
+          };
+        }
+        this.pendingBootstrapFacts = bootstrap.facts;
+        this.resolvedAliasGatewayPort = bootstrap.facts.gatewayPort;
+        this.deps.store.setDiscoveredGatewayPort(
+          this.record.id,
+          bootstrap.facts.gatewayPort
+        );
+      }
+
+      tunnelTransport = {
+        ...transport,
+        remotePort: this.resolvedAliasGatewayPort ?? transport.remotePort,
+      };
+    }
+
+    const opened = await this.deps.openTunnel(tunnelTargetFor(tunnelTransport));
     if (!opened.ok) {
+      this.pendingBootstrapFacts = null;
       return {
         ok: false,
         failure: TUNNEL_FAILURE_TO_SOURCE_FAILURE[opened.failure.class],
@@ -947,21 +1160,29 @@ export class ConnectedGatewaySession {
      * over SSH for a server, and on this machine for the operator's own
      * Gateway, which has no alias because it has no hop.
      */
-    const result = await this.deps.resolveCredential(this.record.transport, {
-      exec: this.deps.remoteExec,
-    });
-    if (!result.ok) {
-      return {
-        ok: false,
-        failure: BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE[result.failure],
-        message: result.message,
-      };
+    const carried = this.pendingBootstrapFacts;
+    this.pendingBootstrapFacts = null;
+    let facts: GatewayBootstrapFacts;
+    if (carried !== null) {
+      facts = carried;
+    } else {
+      const result = await this.deps.resolveCredential(this.record.transport, {
+        exec: this.deps.remoteExec,
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          failure: BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE[result.failure],
+          message: result.message,
+        };
+      }
+      facts = result.facts;
     }
     return {
       ok: true,
       deviceToken: null,
       keypair: identity ?? (await generateDeviceKeypair()),
-      sharedSecret: result.facts.sharedToken,
+      sharedSecret: facts.sharedToken,
     };
   }
 
@@ -1176,11 +1397,11 @@ export class ConnectedGatewaySession {
    *
    * Scope is settled during the handshake, so changing it means cycling the
    * socket. The client instance is reused deliberately and this is the whole
-   * distinction between an upgrade and a re-pairing: it keeps the device
-   * keypair the Gateway knows this device by, and it keeps the persisted
-   * device token. The identity now travels on the config as well, so even a
-   * replacement client would be the same device; reusing this one keeps the
-   * open subscriptions and the pending state with it.
+   * distinction between an upgrade and a new device: it keeps the device
+   * keypair the Gateway knows. A narrowing presents the persisted token; an
+   * explicit widening presents the source-owned issuer secret long enough to
+   * receive a replacement scoped token. The identity travels on the config,
+   * so either route is still the same source-visible device.
    *
    * What the cycle does cost is the Gateway-side stream, which belongs to the
    * socket rather than to the device. It is asked for again here rather than
@@ -1264,8 +1485,8 @@ export class ConnectedGatewaySession {
    * configured Agent, plus `cron.list` and `status`. The result replaces the
    * cached topology outright.
    */
-  private async discover(): Promise<SnapshotResult> {
-    this.setPhase('discovering');
+  private async discover(announcePhase = true): Promise<SnapshotResult> {
+    if (announcePhase) this.setPhase('discovering');
     const observedAt = this.deps.now();
 
     let agentsList: unknown;
@@ -1348,6 +1569,8 @@ export class ConnectedGatewaySession {
        * projection, and nothing here guesses by display name.
        */
       this.drift = { previous: this.lastIdentity, observed: observedIdentity };
+      this.clearObservationTimers();
+      this.retrying = false;
       this.setPhase('failed');
       return {
         ok: false,
@@ -1369,6 +1592,13 @@ export class ConnectedGatewaySession {
     };
     this.lastObservedAt = observedAt;
     this.drift = null;
+    for (const listener of [...this.snapshotListeners]) {
+      try {
+        listener();
+      } catch {
+        // Observation is already committed; one consumer cannot undo it.
+      }
+    }
 
     return {
       ok: true,
@@ -1503,6 +1733,7 @@ export class ConnectedGatewaySession {
       this.detachSubscriptions();
     }
     this.subscribedClient = client;
+    client.onOCEvent('presence', this.topologyInvalidated);
     for (const subscription of [...this.subscriptions]) {
       client.onOCEvent(subscription.eventName, subscription.handler);
     }
@@ -1516,6 +1747,7 @@ export class ConnectedGatewaySession {
     const client = this.subscribedClient;
     this.subscribedClient = null;
     if (!client) return;
+    client.offOCEvent('presence', this.topologyInvalidated);
     for (const subscription of [...this.subscriptions]) {
       client.offOCEvent(subscription.eventName, subscription.handler);
     }
@@ -1532,6 +1764,7 @@ export class ConnectedGatewaySession {
     if (this.currentPhase === 'reconnecting') return;
 
     this.transportUp = false;
+    this.clearObservationTimers();
     this.retrying = true;
     this.terminalFailure = failure;
     this.setPhase('reconnecting');
@@ -1540,18 +1773,16 @@ export class ConnectedGatewaySession {
 
   private scheduleReconnect(): void {
     if (this.detached) return;
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      // Bounded: the ladder gives up rather than retrying forever. The cached
-      // snapshot stays, still last-known and still never "stopped".
-      this.retrying = false;
-      this.setPhase('failed');
-      return;
-    }
-    const delay = Math.min(
-      RECONNECT_MAX_DELAY_MS,
-      RECONNECT_BASE_DELAY_MS * 2 ** this.reconnectAttempts
-    );
-    this.reconnectAttempts += 1;
+    if (this.reconnectTimer !== null) return;
+    const exhaustedFastLadder =
+      this.reconnectAttempts >= this.maxReconnectAttempts;
+    const delay = exhaustedFastLadder
+      ? LONG_OUTAGE_RETRY_DELAY_MS
+      : Math.min(
+          RECONNECT_MAX_DELAY_MS,
+          RECONNECT_BASE_DELAY_MS * 2 ** this.reconnectAttempts
+        );
+    if (!exhaustedFastLadder) this.reconnectAttempts += 1;
     this.reconnectTimer = this.deps.setTimer(() => {
       this.reconnectTimer = null;
       void this.attemptReconnect();
@@ -1575,7 +1806,7 @@ export class ConnectedGatewaySession {
       this.retrying = false;
       return;
     }
-    if (result.failure === 'auth-rejected') {
+    if (!retryableConnectionFailure(result.failure)) {
       /*
        * A credential the source refused, an SSH login it rejected, or a
        * secret it no longer publishes. None of them is an outage, so none of
@@ -1610,6 +1841,7 @@ export class ConnectedGatewaySession {
   private async teardownConnection(): Promise<void> {
     this.tearingDown = true;
     try {
+      this.clearObservationTimers();
       this.stopWatching();
       this.detachSubscriptions();
 
@@ -1634,6 +1866,7 @@ export class ConnectedGatewaySession {
       }
 
       this.transportUp = false;
+      this.pendingBootstrapFacts = null;
     } finally {
       this.tearingDown = false;
     }

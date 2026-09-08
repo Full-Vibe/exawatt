@@ -35,6 +35,10 @@ async function manifest() {
   return readPathManifest(path.join(ROOT, OPEN_SOURCE_PATH_MANIFEST));
 }
 
+function isProjectedPublicManifest(declared) {
+  return Object.keys(declared.recipes).length === 0;
+}
+
 /** Renders every recipe from the working tree, exactly as a projection would. */
 async function renderWorkingTree() {
   const declared = await manifest();
@@ -50,6 +54,20 @@ async function renderWorkingTree() {
     }
   }
   return rendered;
+}
+
+/**
+ * The private source tree renders this path; the projected repository already
+ * carries those bytes and deliberately publishes no private recipe inputs.
+ */
+async function publicBytes(file) {
+  const declared = await manifest();
+  if (isProjectedPublicManifest(declared)) {
+    return readFile(path.join(ROOT, file));
+  }
+  const rendered = await renderWorkingTree();
+  assert.ok(rendered.has(file), `expected ${file} to be rendered publicly`);
+  return rendered.get(file);
 }
 
 test('an omit region disappears from the public variant', () => {
@@ -125,10 +143,7 @@ test('a JSON document declares its public variant in a reserved member', () => {
 test('a JSON public-variant directive fails closed', () => {
   const cases = [
     ['{}', /must declare its public variant/u],
-    [
-      '{"exawatt:public-variant":{"omit":{"/nope":"why"}}}',
-      /matches nothing/u,
-    ],
+    ['{"exawatt:public-variant":{"omit":{"/nope":"why"}}}', /matches nothing/u],
     [
       '{"a":1,"exawatt:public-variant":{"replace":{"/a":{"why":"w"}}}}',
       /needs a "value"/u,
@@ -177,21 +192,22 @@ test('malformed directives throw instead of guessing', () => {
   }
 });
 
-test('every GENERATED output either renders or records why it does not', async () => {
+test('every GENERATED output renders into the public repository', async () => {
   const declared = await manifest();
-  const undecided = [];
+  const unrendered = [];
   for (const [recipeId, recipe] of Object.entries(declared.recipes)) {
     for (const output of recipe.outputs) {
       if (rendersOutput(recipe.kind, output.path)) continue;
-      // Throws for a kind nobody has decided about, which is the point: a new
-      // recipe cannot be silently dropped from the public repository.
-      const reason = unrenderedReason(recipe.kind, output.path);
-      if (typeof reason !== 'string' || reason.length < 40) {
-        undecided.push(`${recipeId}:${output.path}`);
-      }
+      unrendered.push(
+        `${recipeId}:${output.path}: ${unrenderedReason(recipe.kind, output.path)}`
+      );
     }
   }
-  assert.deepEqual(undecided, []);
+  assert.deepEqual(
+    unrendered,
+    [],
+    'once the public repository exists, a path that cannot render must be classified PRIVATE or EXCLUDED rather than silently omitted'
+  );
 });
 
 test('a renderable output is declared as an input of its own recipe', async () => {
@@ -212,10 +228,29 @@ test('a renderable output is declared as an input of its own recipe', async () =
   );
 });
 
-test('rendering the working tree is deterministic', async () => {
+test('rendering the source tree is deterministic and the projected tree is final', async () => {
+  const declared = await manifest();
   const first = await renderWorkingTree();
   const second = await renderWorkingTree();
-  assert.ok(first.size > 0, 'expected at least one renderable output');
+  if (isProjectedPublicManifest(declared)) {
+    assert.equal(first.size, 0, 'a projected tree must not publish recipes');
+    const classify = createPathClassifier(declared);
+    const tracked = execFileSync('git', ['ls-files', '-z'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    })
+      .split('\0')
+      .filter(Boolean);
+    assert.ok(tracked.length > 1_000, 'expected a full projected tree');
+    assert.deepEqual(
+      tracked.filter(file => classify(file).classification !== 'PUBLIC'),
+      [],
+      'the final projected manifest must classify every delivered path PUBLIC'
+    );
+  } else {
+    assert.ok(first.size > 0, 'expected at least one renderable output');
+  }
   assert.deepEqual([...first.keys()].sort(), [...second.keys()].sort());
   for (const [file, bytes] of first) {
     assert.ok(bytes.equals(second.get(file)), file);
@@ -235,7 +270,12 @@ test('no rendered output reaches a PRIVATE path', async () => {
   const privatePaths = tracked.filter(
     file => classify(file).classification === 'PRIVATE'
   );
-  assert.ok(privatePaths.length > 0, 'expected PRIVATE paths to exist');
+  if (isProjectedPublicManifest(declared)) {
+    assert.deepEqual(privatePaths, []);
+    assert.deepEqual([...(await renderWorkingTree())], []);
+    return;
+  }
+  assert.ok(privatePaths.length > 0, 'expected PRIVATE paths in source tree');
 
   // The renderers' forbidden-reference list is only meaningful while those
   // paths really are private. This is what stops it rotting into dead terms.
@@ -316,8 +356,9 @@ test('a rendered source file still parses', async () => {
 });
 
 test('the community electron-builder template publishes no private feed', async () => {
-  const rendered = await renderWorkingTree();
-  const builder = parse(rendered.get('electron-builder.yml').toString('utf8'));
+  const builder = parse(
+    (await publicBytes('electron-builder.yml')).toString('utf8')
+  );
   assert.equal(builder.publish, undefined);
   // The rest of the packaging contract survives: the community variant is the
   // official template minus custody, not a different build.
@@ -326,8 +367,7 @@ test('the community electron-builder template publishes no private feed', async 
 });
 
 test('the public CI variant triggers on its own master and takes no secret', async () => {
-  const rendered = await renderWorkingTree();
-  const text = rendered.get('.github/workflows/ci.yml').toString('utf8');
+  const text = (await publicBytes('.github/workflows/ci.yml')).toString('utf8');
   const workflow = parse(text);
   // `on` is YAML 1.1's boolean true when unquoted, which is why this reads
   // both keys rather than trusting one.
@@ -339,8 +379,7 @@ test('the public CI variant triggers on its own master and takes no secret', asy
 });
 
 test('the public agent contract describes the contributor flow, not direct landing', async () => {
-  const rendered = await renderWorkingTree();
-  const agents = rendered.get('AGENTS.md').toString('utf8');
+  const agents = (await publicBytes('AGENTS.md')).toString('utf8');
   assert.match(agents, /open a pull request against `master`/u);
   assert.doesNotMatch(agents, /Do not open pull requests/u);
   // Release custody, the research-storage contract, and the marketing update
@@ -349,17 +388,16 @@ test('the public agent contract describes the contributor flow, not direct landi
   assert.doesNotMatch(agents, /docs\/research\/partner-conversations/u);
   assert.doesNotMatch(agents, /docs\/product\/marketing\.md/u);
   // The public test pins the public contract, in both directions.
-  const pins = rendered
-    .get('scripts/delivery-documentation.test.mjs')
-    .toString('utf8');
+  const pins = (
+    await publicBytes('scripts/delivery-documentation.test.mjs')
+  ).toString('utf8');
   assert.match(pins, /open a pull request against `master`/u);
   assert.doesNotMatch(pins, /Do not open pull requests/u);
 });
 
 test('the public package.json keeps every dependency and drops private scripts', async () => {
-  const rendered = await renderWorkingTree();
   const publicPackage = JSON.parse(
-    rendered.get('package.json').toString('utf8')
+    (await publicBytes('package.json')).toString('utf8')
   );
   const privatePackage = JSON.parse(
     await readFile(path.join(ROOT, 'package.json'), 'utf8')
@@ -374,7 +412,13 @@ test('the public package.json keeps every dependency and drops private scripts',
     privatePackage.devDependencies
   );
   assert.equal(publicPackage['exawatt:public-variant'], undefined);
-  for (const name of ['invite:issue', 'feedback:triage', 'electron:release']) {
+  for (const name of [
+    'invite:issue',
+    'feedback:triage',
+    'electron:release',
+    'security:github:check',
+    'test:github-security',
+  ]) {
     assert.equal(publicPackage.scripts[name], undefined, name);
   }
   assert.equal(publicPackage.scripts.dev, privatePackage.scripts.dev);
@@ -389,15 +433,16 @@ test('the public lockfile is the private one, and the premise that allows it hol
   // If a future change ever prunes a dependency from the public manifest, this
   // test fails and the recipe must become a real resolver rather than
   // publishing a lockfile that installs a tree nobody built.
-  const source = await readFile(
-    new URL('../package.json', import.meta.url)
-  );
-  const rendered = renderRecipeOutput({
-    recipeId: 'public-document-set',
-    kind: 'render-public-document-set',
-    path: 'package.json',
-    source,
-  });
+  const source = await readFile(new URL('../package.json', import.meta.url));
+  const declared = await manifest();
+  const rendered = isProjectedPublicManifest(declared)
+    ? source
+    : renderRecipeOutput({
+        recipeId: 'public-document-set',
+        kind: 'render-public-document-set',
+        path: 'package.json',
+        source,
+      });
   const before = JSON.parse(source.toString('utf8'));
   const after = JSON.parse(rendered.toString('utf8'));
 
@@ -447,7 +492,10 @@ test('the public path manifest keeps only public rules and names no private dire
     'company/',
     'supabase/',
   ]) {
-    assert.doesNotMatch(text, new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'));
+    assert.doesNotMatch(
+      text,
+      new RegExp(privatePath.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u')
+    );
   }
   // `docs/research/spatial-memory/README.md` is deliberately PUBLIC, so a
   // blanket ban on the directory name would be wrong: it must survive, or the
@@ -464,38 +512,40 @@ test('the rendered manifest is valid FOR the public tree, not just well formed',
   //   - an exact exception for a GENERATED path whose recipe does not render
   // Well-formedness is not the property that matters; agreement with the tree
   // is.
-  const { execFileSync } = await import('node:child_process');
-  const { readPathManifest, validateTrackedPathCoverage } = await import(
-    './lib/open-source-paths.mjs'
+  const { validatePathManifest, validateTrackedPathCoverage } =
+    await import('./lib/open-source-paths.mjs');
+  const { buildProjectionPlan } = await import('./lib/public-projection.mjs');
+  // This contract compares today's recipe with today's Gate A output set.
+  // History/epoch replay has separate repository fixtures; old unpublished
+  // rendering failures must not change the premise of this manifest check.
+  const plan = await buildProjectionPlan({
+    sourceRepo: ROOT,
+    sourceSha: 'HEAD',
+  });
+  const manifestPath = 'scripts/open-source-paths.manifest.json';
+  const source = execFileSync('git', ['show', `HEAD:${manifestPath}`], {
+    cwd: ROOT,
+  });
+  const output = plan.renderedOutputs.find(
+    entry => entry.path === manifestPath
   );
-  const { projectPublicHistory } = await import('./lib/public-projection.mjs');
-  const { mkdtemp, rm } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const nodePath = await import('node:path');
-
-  const destination = await mkdtemp(nodePath.join(tmpdir(), 'exa-manifest-'));
-  await rm(destination, { recursive: true, force: true });
-  try {
-    await projectPublicHistory({
-      sourceRepo: ROOT,
-      sourceSha: 'HEAD',
-      destination,
-    });
-    const manifest = await readPathManifest(
-      nodePath.join(destination, 'scripts/open-source-paths.manifest.json')
-    );
-    const files = execFileSync('git', ['-C', destination, 'ls-files'], {
-      encoding: 'utf8',
-    })
-      .trim()
-      .split('\n');
-    // Throws on an unclassified path, a stale rule, or a stale exception.
-    validateTrackedPathCoverage(
-      manifest,
-      files.map(file => ({ path: file }))
-    );
-    assert.ok(files.length > 1000, 'expected a full public tree');
-  } finally {
-    await rm(destination, { recursive: true, force: true });
-  }
+  const manifest = JSON.parse(
+    output
+      ? renderRecipeOutput({
+          recipeId: output.recipe,
+          kind: output.kind,
+          path: manifestPath,
+          source,
+        }).toString('utf8')
+      : source.toString('utf8')
+  );
+  validatePathManifest(manifest);
+  const files = [...plan.copiedOutputs, ...plan.renderedOutputs].map(
+    entry => entry.path
+  );
+  validateTrackedPathCoverage(
+    manifest,
+    files.map(file => ({ path: file }))
+  );
+  assert.ok(files.length > 1000, 'expected a full public tree');
 });

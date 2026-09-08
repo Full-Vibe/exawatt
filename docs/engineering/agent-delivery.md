@@ -354,7 +354,7 @@ integrated SHA. A landing's `installed=queued` line alone is insufficient.
 ENG-030's two-repository mechanism gives the landing one more step, and only
 when a Git remote named `public` exists. **No such remote means no projection,
 no output, and no state**: the landing is the landing it was before the step
-existed. That is the configuration today.
+existed. A configured public remote participates in publication.
 
 When one is configured, the step runs after the private `master` push and
 before the ticket closes, **inside the delivery lock** that already serializes
@@ -371,7 +371,7 @@ already succeeded and is the source of truth:
 | ----------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `published` | the public repository holds the projection of this exact private commit                | none; the report names what it did NOT receive (recipes with no renderer yet)              |
 | `pending`   | the pair is recorded and the push did not happen (network, outage, missing dependency) | none; the next landing's projection fast-forwards past both                                |
-| `refused`   | the projection does not descend from public `master`                                   | a manifest reclassified history; `pnpm open-source:reseed` is the only path that may force |
+| `refused`   | the projection does not descend from public `master`                                   | repair the deterministic projection; reviewed snapshot catch-up preserves existing history |
 
 The source lock is `public-source-lock.jsonl` under the delivery state root,
 not a tracked file: the projector runs after the private push, so a tracked
@@ -444,7 +444,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                                                                          |
 | A landing reports `flaked=<check>:<n>`                           | Nothing blocking. The named files failed in a large selection and passed alone, which is contention. Read the file names: if `summarizeDeliveryMetrics`' per-file tally shows the SAME file flaking across landings, that is a defect to chase, not machine load. |
 | A landing reports `public=pending`                               | Nothing. The private landing is integrated; the next landing's projection fast-forwards past both. Investigate only if it repeats, and read the reason in the source lock.                                                                                        |
-| A landing reports `public=refused`                               | The projection no longer descends from public `master`. Establish which manifest change reclassified history, then run `pnpm open-source:reseed` with that reason. Never force the public remote by hand.                                                         |
+| A landing reports `public=refused`                               | The projection no longer descends from public `master`. Diagnose classification/rendering first; use reviewed catch-up for a stale unrenderable backlog. Reserve reseed for separately reviewed historical erasure. Never force the public remote by hand.                                                         |
 
 Do not hand-edit `next-ticket.json`, ticket files, ownership epochs, terminal
 results, or request state during ordinary recovery. These are durable machine
@@ -494,3 +494,27 @@ verification, or a live owner's ticket.
   `scripts/public-delivery.test.mjs`, and `scripts/contribution-pull.test.mjs`:
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.
+  <!-- exawatt:public-omit-begin the company delivery queue owns public-repository maintenance -->
+  During reviewed public-repository maintenance, the shared checkout may carry a
+  clone-local delivery hold. Inspect it with
+  `pnpm open-source:maintenance -- status`; deliberate enable/clear operations
+  also require `EXAWATT_PUBLIC_MAINTENANCE_ALLOW=1`, an exact public master SHA,
+  and a written reason. A held landing reports `public=held`, advances only the
+  private remote, and appends the exact owed private SHA. The hold is not a
+  GitHub lock: it protects this delivery queue, not external writers or other
+  advertised public refs.
+  <!-- exawatt:public-omit-end -->
+
+## Reviewed public catch-up
+
+**Repair stale public source without rewriting its existing history.** Ordinary
+publication now preflights per-commit projected trees before private integration.
+A historical backlog that cannot render has one deliberate recovery command:
+`pnpm open-source:catchup -- --source <full-source-sha> --expected-public-sha <full-public-sha>`.
+The default persists a preview only. `--execute` requires the current integrated
+source, an exact matching maintenance hold, full public-candidate certification,
+and unchanged source/public tips at publication. It pushes the certified SHA
+without force, reads it back, records the pair, then clears the hold. Commit the
+returned private epoch payload through normal delivery and prove ordinary
+publication resumes. The command does not delete branches or pull refs and does
+not claim legacy metadata erasure. The ENG-030 project log owns current evidence.

@@ -19,6 +19,217 @@ import {
 describe('Agent composer · interactions and drafts', () => {
   installComposerTestHarness();
 
+  it('preserves typing while a clipboard image is being saved', async () => {
+    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    window.electron!.pty!.clipboardRead = vi.fn(
+      () =>
+        new Promise<{ kind: 'image'; path: string }>(resolve => {
+          resolveClipboard = resolve;
+        })
+    );
+    const onDraftChange = vi.fn();
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialTask="Review "
+        onLaunch={vi.fn(async () => true)}
+        onDraftChange={onDraftChange}
+      />
+    );
+    const task = screen.getByLabelText('Initial task for the new Agent');
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    fireEvent.change(task, { target: { value: 'Review this diagram ' } });
+    await act(async () =>
+      resolveClipboard({ kind: 'image', path: '/tmp/diagram.png' })
+    );
+    expect(task).toHaveValue('Review this diagram /tmp/diagram.png ');
+    expect(
+      onDraftChange.mock.calls
+        .filter(([patch]) => patch.draftTask !== undefined)
+        .at(-1)?.[0]
+    ).toEqual({
+      draftTask: 'Review this diagram /tmp/diagram.png ',
+    });
+  });
+
+  it('discards a clipboard completion belonging to a previous Project', async () => {
+    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    window.electron!.pty!.clipboardRead = vi.fn(
+      () =>
+        new Promise<{ kind: 'image'; path: string }>(resolve => {
+          resolveClipboard = resolve;
+        })
+    );
+    const onDraftChange = vi.fn();
+    const view = renderComposer(
+      <AgentComposer
+        projectDir="/first"
+        projectName="First"
+        initialTask="First draft "
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    fireEvent.keyDown(screen.getByLabelText('Initial task for the new Agent'), {
+      key: 'v',
+      ctrlKey: true,
+    });
+    view.rerender(
+      <AgentComposer
+        projectDir="/second"
+        projectName="Second"
+        initialTask="Second draft"
+        onLaunch={vi.fn(async () => true)}
+        onDraftChange={onDraftChange}
+      />
+    );
+    await act(async () =>
+      resolveClipboard({ kind: 'image', path: '/tmp/first.png' })
+    );
+    expect(screen.getByLabelText('Initial task for the new Agent')).toHaveValue(
+      'Second draft'
+    );
+    expect(
+      onDraftChange.mock.calls.some(([patch]) =>
+        patch.draftTask?.includes('/tmp/first.png')
+      )
+    ).toBe(false);
+  });
+
+  it('retains both attachments when clipboard reads complete in one React batch', async () => {
+    const reads: Array<(clip: { kind: 'image'; path: string }) => void> = [];
+    window.electron!.pty!.clipboardRead = vi.fn(
+      () =>
+        new Promise<{ kind: 'image'; path: string }>(resolve =>
+          reads.push(resolve)
+        )
+    );
+    const onDraftChange = vi.fn();
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={vi.fn(async () => true)}
+        onDraftChange={onDraftChange}
+      />
+    );
+    const task = screen.getByLabelText('Initial task for the new Agent');
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    await act(async () => {
+      reads[0]({ kind: 'image', path: '/tmp/first.png' });
+      reads[1]({ kind: 'image', path: '/tmp/second.png' });
+    });
+    expect(task).toHaveValue('/tmp/first.png /tmp/second.png ');
+    expect(
+      onDraftChange.mock.calls
+        .filter(([patch]) => patch.draftTask !== undefined)
+        .at(-1)?.[0]
+    ).toEqual({ draftTask: '/tmp/first.png /tmp/second.png ' });
+  });
+
+  it('waits for requested attachments before launching without preventing typing', async () => {
+    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    window.electron!.pty!.clipboardRead = vi.fn(
+      () =>
+        new Promise<{ kind: 'image'; path: string }>(resolve => {
+          resolveClipboard = resolve;
+        })
+    );
+    const onLaunch = vi.fn(async () => true);
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={onLaunch}
+      />
+    );
+    await composerReady();
+    const task = screen.getByLabelText('Initial task for the new Agent');
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+    fireEvent.change(task, { target: { value: 'Inspect ' } });
+    fireEvent.keyDown(task, { key: 'Enter' });
+    expect(onLaunch).not.toHaveBeenCalled();
+    await act(async () =>
+      resolveClipboard({ kind: 'image', path: '/tmp/diagram.png' })
+    );
+    fireEvent.keyDown(task, { key: 'Enter' });
+    await settled(() =>
+      expect(onLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({ initialPrompt: 'Inspect /tmp/diagram.png' })
+      )
+    );
+  });
+
+  it('recovers from clipboard failure without losing the draft', async () => {
+    window.electron!.pty!.clipboardRead = vi
+      .fn()
+      .mockRejectedValue(new Error('Clipboard unavailable'));
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialTask="Keep this draft"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    await composerReady();
+    const task = screen.getByLabelText('Initial task for the new Agent');
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    await settled(() =>
+      expect(screen.getByRole('button', { name: 'Start' })).not.toBeDisabled()
+    );
+    expect(task).toHaveValue('Keep this draft');
+    expect(
+      screen.getByText(/Could not read the clipboard/)
+    ).toBeInTheDocument();
+    window.electron!.pty!.clipboardRead = vi
+      .fn()
+      .mockResolvedValue({ kind: 'image', path: '/tmp/retry.png' });
+    (task as HTMLTextAreaElement).setSelectionRange(
+      'Keep this draft'.length,
+      'Keep this draft'.length
+    );
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    await settled(() =>
+      expect(task).toHaveValue('Keep this draft/tmp/retry.png ')
+    );
+    expect(
+      screen.queryByText(/Could not read the clipboard/)
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not restore focus after the operator moves away during a paste', async () => {
+    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    window.electron!.pty!.clipboardRead = vi.fn(
+      () =>
+        new Promise<{ kind: 'image'; path: string }>(resolve => {
+          resolveClipboard = resolve;
+        })
+    );
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    await composerReady();
+    const task = screen.getByLabelText('Initial task for the new Agent');
+    task.focus();
+    fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
+    const handle = setupDrawerHandle();
+    handle.focus();
+    await act(async () =>
+      resolveClipboard({ kind: 'image', path: '/tmp/diagram.png' })
+    );
+    await act(async () => {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    });
+    expect(handle).toHaveFocus();
+  });
+
   it('recovers the controls when a launch request rejects', async () => {
     let rejectLaunch: ((error: Error) => void) | undefined;
     const onLaunch = vi.fn(

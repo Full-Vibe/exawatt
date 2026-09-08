@@ -401,6 +401,16 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('app:get-diagnostics-report', signedIn),
     saveDiagnosticsReport: (signedIn: boolean) =>
       ipcRenderer.invoke('app:save-diagnostics-report', signedIn),
+    reportRenderError: (report: {
+      message: string;
+      stack?: string | null;
+      digest?: string | null;
+      pathname?: string | null;
+    }) =>
+      ipcRenderer
+        .invoke('app:report-render-error', report)
+        .then(() => undefined)
+        .catch(() => undefined),
     accentColor: () => ipcRenderer.invoke('app:accent-color'),
     appearance: () => ipcRenderer.invoke('app:appearance'),
     onAppearanceChanged: subscribe<{

@@ -5,6 +5,7 @@ import { resetResolvedDistributionForTest } from '@/lib/distribution/resolved';
 import {
   archiveProject,
   listProjects,
+  openManualProject,
   openRepositoryProject,
   renameProject,
   reorderProjects,
@@ -65,6 +66,29 @@ describe('Community Project registry', () => {
     await archiveProject(second.id);
     expect((await listProjects()).map(project => project.id)).toEqual([
       first.id,
+    ]);
+  });
+
+  it('persists a folder-optional manual Project by opaque identity', async () => {
+    const created = await openManualProject({
+      id: '1f8b19cc-312d-4d36-a2d9-2db7b2f41a66',
+      name: 'Remote operations',
+    });
+    expect(created).toMatchObject({
+      id: '1f8b19cc-312d-4d36-a2d9-2db7b2f41a66',
+      name: 'Remote operations',
+      kind: 'manual',
+      root_path: null,
+    });
+
+    await archiveProject(created.id);
+    const reopened = await openManualProject({
+      id: created.id,
+      name: 'Remote operations',
+    });
+    expect(reopened.archived_at).toBeNull();
+    expect((await listProjects()).map(project => project.id)).toEqual([
+      created.id,
     ]);
   });
 });

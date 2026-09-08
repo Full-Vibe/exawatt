@@ -81,6 +81,41 @@ describe('DelegationMonitor publication', () => {
     ]);
   });
 
+  it('atomically replaces a census without a transient completed result', () => {
+    const { monitor, send } = harness();
+    send({ kind: 'child-start', childId: 'old', agentType: 'Codex', at: 1 });
+    const busyAtCompletion: boolean[] = [];
+    monitor.on('harness-event', (_id, event: HarnessEvent) => {
+      if (event.kind === 'child-end')
+        busyAtCompletion.push(monitor.isBusy('pty-1'));
+    });
+    const children = [
+      { id: 'new', agentType: 'Codex', description: null, startedAt: 2 },
+    ];
+    monitor.reconcileReportedChildren('pty-1', children, ['old']);
+    expect(busyAtCompletion).toEqual([true]);
+    const projection = monitor.getLive('pty-1');
+    monitor.reconcileReportedChildren(
+      'pty-1',
+      children.map(child => ({ ...child })),
+      ['old']
+    );
+    expect(monitor.getLive('pty-1')).toBe(projection);
+  });
+
+  it('accepts a current census over delta tombstones but never revives a dropped Session', () => {
+    const { monitor, send } = harness();
+    send({ kind: 'child-end', childId: 'resumed' });
+    const children = [
+      { id: 'resumed', agentType: 'Codex', description: null, startedAt: 1 },
+    ];
+    monitor.reconcileReportedChildren('pty-1', children);
+    expect(monitor.isBusy('pty-1')).toBe(true);
+    monitor.drop('pty-1');
+    monitor.reconcileReportedChildren('pty-1', children);
+    expect(monitor.getLive('pty-1')).toBeNull();
+  });
+
   it('broadcasts nothing for a label-only change, and never the staging list', () => {
     const { monitor, published, send } = harness();
     send({ kind: 'turn-start' });

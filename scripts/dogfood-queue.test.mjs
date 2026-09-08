@@ -15,6 +15,16 @@ const repositoryRoot = path.dirname(
   path.dirname(fileURLToPath(import.meta.url))
 );
 
+async function isProjectedPublicTree() {
+  const disposition = JSON.parse(
+    await readFile(
+      path.join(repositoryRoot, 'scripts/open-source-paths.manifest.json'),
+      'utf8'
+    )
+  );
+  return Object.keys(disposition.recipes ?? {}).length === 0;
+}
+
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-dogfood-queue-'));
   await execFileAsync('git', ['init', '--initial-branch=master'], {
@@ -89,9 +99,57 @@ test('the installer is detached from the master delivery lock and accepts an imm
     path.join(repositoryRoot, 'scripts/install-dogfood.mjs'),
     'utf8'
   );
+  const projectedPublicTree = await isProjectedPublicTree();
   assert.doesNotMatch(source, /acquireDeliveryLock/);
   assert.match(source, /EXAWATT_DOGFOOD_SOURCE_SHA/);
   assert.match(source, /assertStillRequested/);
+  assert.match(
+    source,
+    /const \{ inputJson \} = await resolveDistributionInput\(\);/
+  );
+  assert.match(
+    source,
+    projectedPublicTree
+      ? /requireOfficialPackagedApp\(\{[\s\S]{0,160}inputJson,/
+      : /requireExawattOfficialPackagedApp\(\{[\s\S]{0,160}inputJson,/
+  );
+  assert.match(
+    source,
+    /const requireOfficial = process\.env\.EXAWATT_REQUIRE_OFFICIAL_DOGFOOD === '1';/
+  );
+  assert.match(
+    source,
+    /resolvePackagedApp\(\{ root, appPathOverride: undefined, inputJson \}\)/
+  );
+});
+
+test('the dogfood build creates the core runtime before resolving its distribution', async () => {
+  const source = await readFile(
+    path.join(repositoryRoot, 'scripts/build-dogfood.mjs'),
+    'utf8'
+  );
+  const runtimeBuild = source.search(
+    /await run\('pnpm', \[\s*'--filter',\s*'@exawatt\/core',\s*'types:build',?\s*\]\);/
+  );
+  const distributionResolution = source.indexOf(
+    'const packaged = await resolvePackagedApp('
+  );
+
+  assert.notEqual(runtimeBuild, -1, 'the fresh snapshot must build core');
+  assert.notEqual(
+    distributionResolution,
+    -1,
+    'the dogfood build must resolve its package contract'
+  );
+  assert.ok(
+    runtimeBuild < distributionResolution,
+    'distribution resolution must not require a runtime the build has not created'
+  );
+  assert.match(
+    source,
+    /const \{ inputJson \} = await resolveDistributionInput\(\);[\s\S]{0,160}resolvePackagedApp\(\{[\s\S]{0,160}inputJson,/,
+    'the build assertion and builder preparation must resolve the same profile-backed distribution input'
+  );
 });
 
 test('the private package requires official custody and the detached worker preserves its log', async () => {
@@ -110,6 +168,10 @@ test('the private package requires official custody and the detached worker pres
   assert.match(
     packageFile.scripts['electron:install-dogfood'],
     /EXAWATT_REQUIRE_OFFICIAL_DOGFOOD=1/
+  );
+  assert.match(
+    packageFile.scripts['electron:install-dogfood'],
+    /EXAWATT_DISTRIBUTION_PROFILE=official/
   );
   assert.match(
     packageFile.scripts['electron:install-dogfood'],

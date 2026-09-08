@@ -24,6 +24,7 @@ import {
 import {
   createSshRemoteExec,
   resolveGatewayCredential,
+  testLocalGatewaySource,
 } from './gateway-bootstrap';
 import { openSshTunnel } from './ssh-tunnel';
 import { readSshAliasCandidates } from './ssh-alias-candidates';
@@ -99,7 +100,13 @@ function sourceRuntime(): ConnectedSourceRuntime {
         knownIdentity: context.knownIdentity,
         store: sourceStore(),
         openTunnel: openSshTunnel,
-        resolveCredential: resolveGatewayCredential,
+        resolveCredential: (transport, dependencies) => {
+          const local = testLocalGatewaySource();
+          return resolveGatewayCredential(transport, {
+            ...dependencies,
+            ...(local === undefined ? {} : { local }),
+          });
+        },
         remoteExec: createSshRemoteExec(),
         createClient: (config: OCClientConfig) => new OCClient(config),
         now: Date.now,

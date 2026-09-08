@@ -102,6 +102,30 @@ function newLocalProject(ref: RepositoryProjectRef, nowIso: string): Project {
   };
 }
 
+/** A folder-optional Project created by an explicit operator grouping choice. */
+export interface ManualProjectRef {
+  /** Opaque Exawatt identity. Generated before cross-boundary Agent mapping. */
+  id: string;
+  name: string;
+}
+
+function newLocalManualProject(ref: ManualProjectRef, nowIso: string): Project {
+  return {
+    id: ref.id,
+    user_id: 'local',
+    name: ref.name,
+    color: null,
+    kind: 'manual',
+    root_path: null,
+    git_remote: null,
+    last_opened_at: nowIso,
+    archived_at: null,
+    sort_order: readLocalProjects().length,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
 function updateLocalProject(
   id: string,
   update: (project: Project, nowIso: string) => Project
@@ -229,6 +253,94 @@ export async function openRepositoryProject(
   const { data, error } = await supabase
     .from('projects')
     .insert(buildRepositoryInsert(userId, ref, nowIso))
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Project;
+}
+
+/**
+ * Persist a Project / Context Group that has no folder binding.
+ *
+ * The caller supplies the opaque id because Connect must map a source Agent to
+ * this exact durable record before its dialog closes. Repeating the same call
+ * is an idempotent reopen, which also makes a retry safe after the renderer
+ * loses an acknowledgement. A manual Project is not a synthetic path: local
+ * launch, Finder, and worktree verbs must gate on `root_path`.
+ */
+export async function openManualProject(
+  ref: ManualProjectRef
+): Promise<Project> {
+  const trimmed = ref.name.trim();
+  if (!ref.id.trim() || !trimmed) {
+    throw new Error('A manual Project needs an identity and name.');
+  }
+  const supabase = optionalProjectClient();
+  if (!supabase) {
+    const projects = readLocalProjects();
+    const nowIso = new Date().toISOString();
+    const existing = projects.find(project => project.id === ref.id);
+    if (existing) {
+      const reopened: Project = {
+        ...existing,
+        name: trimmed,
+        kind: 'manual',
+        root_path: null,
+        archived_at: null,
+        last_opened_at: nowIso,
+        updated_at: nowIso,
+      };
+      writeLocalProjects(
+        projects.map(project =>
+          project.id === existing.id ? reopened : project
+        )
+      );
+      return reopened;
+    }
+    const created = newLocalManualProject(
+      { id: ref.id, name: trimmed },
+      nowIso
+    );
+    writeLocalProjects([...projects, created]);
+    return created;
+  }
+
+  const userId = await requireUserId(supabase);
+  const nowIso = new Date().toISOString();
+  const existing = await supabase
+    .from('projects')
+    .select('*')
+    .eq('id', ref.id)
+    .maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  if (existing.data) {
+    const { data, error } = await supabase
+      .from('projects')
+      .update({
+        name: trimmed,
+        kind: 'manual',
+        root_path: null,
+        archived_at: null,
+        last_opened_at: nowIso,
+      })
+      .eq('id', ref.id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data as Project;
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      id: ref.id,
+      user_id: userId,
+      name: trimmed,
+      kind: 'manual',
+      root_path: null,
+      git_remote: null,
+      last_opened_at: nowIso,
+    } satisfies ProjectInsert)
     .select()
     .single();
   if (error) throw new Error(error.message);

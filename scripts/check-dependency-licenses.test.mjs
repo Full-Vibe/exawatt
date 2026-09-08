@@ -66,14 +66,8 @@ test('reviewed native attribution follows the installed libvips version', () => 
       license: 'LGPL-3.0-or-later',
     },
   ];
-  assert.match(
-    renderNotice(rows),
-    /@img\/sharp-libvips-<platform> 9\.8\.7/u
-  );
-  assert.throws(
-    () => renderNotice([]),
-    /no reviewed sharp-libvips row/u
-  );
+  assert.match(renderNotice(rows), /@img\/sharp-libvips-<platform> 9\.8\.7/u);
+  assert.throws(() => renderNotice([]), /no reviewed sharp-libvips row/u);
 });
 
 test('first-party package metadata declares AGPL and the public repository', async () => {
@@ -96,16 +90,15 @@ test('first-party package metadata declares AGPL and the public repository', asy
         manifest.scripts['electron:prepare-licenses'],
         'node node_modules/electron/install.js'
       );
-      for (const script of [
-        'electron:build',
-        'electron:build:dir',
-        'electron:release:app',
-      ]) {
-        assert.match(
-          manifest.scripts[script],
-          /pnpm electron:prepare-licenses/u,
-          script
-        );
+      const packageScripts = Object.entries(manifest.scripts).filter(
+        ([, command]) => /\belectron-builder(?:\s|$)/u.test(command)
+      );
+      assert.ok(
+        packageScripts.length >= 2,
+        'expected the macOS build scripts to invoke electron-builder'
+      );
+      for (const [script, command] of packageScripts) {
+        assert.match(command, /pnpm electron:prepare-licenses/u, script);
       }
     }
   }

@@ -46,6 +46,10 @@ import {
   spatialThemeFromResolvedAppearance,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
+import {
+  resolveOperationsBoardPresentation,
+  type OperationsBoardPresentation,
+} from './operations-board-presentation';
 
 function useCoarsePointer(): boolean {
   const [coarse, setCoarse] = useState(
@@ -121,35 +125,6 @@ class BoardErrorBoundary extends Component<
     }
     return this.props.children;
   }
-}
-
-function KeyHint({
-  keyName,
-  label,
-  theme,
-}: {
-  keyName: string;
-  label: string;
-  theme: SpatialThemeSnapshot;
-}) {
-  return (
-    <span
-      className="flex items-center gap-1.5 whitespace-nowrap text-chrome-micro"
-      style={{ color: theme.labelMuted }}
-    >
-      <kbd
-        className="exa-material-raised border px-1.5 py-0.5 font-mono text-chrome-nano"
-        style={{
-          ...spatialMaterialFrame(theme),
-          color: theme.selection,
-          boxShadow: 'none',
-        }}
-      >
-        {keyName}
-      </kbd>
-      <span className="uppercase tracking-[0.12em]">{label}</span>
-    </span>
-  );
 }
 
 /** How long a clamp indication stays up after the bound stops being pushed.
@@ -249,7 +224,7 @@ function BoardMiniMap({
       type="button"
       aria-label="Recenter board from minimap"
       onClick={onRecenter}
-      className="exa-material-chrome block h-11 w-16 border p-1.5 outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:h-24 sm:w-40 sm:p-2"
+      className="exa-material-chrome block h-16 w-24 border p-2 outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
       style={spatialMaterialFrame(theme)}
     >
       <svg
@@ -335,6 +310,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
   resolvedAppearance,
+  presentation: presentationCandidate,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -366,6 +342,12 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   /** Deterministic gallery/eval injection. Production omits this and consumes
    * the app-global AppearanceProvider snapshot. */
   resolvedAppearance?: ResolvedAppearance;
+  /**
+   * Bounded gallery seam. Production omits it and receives the shipped
+   * treatment; the standing board bench uses it to audition candidates on the
+   * exact renderer that would later ship them.
+   */
+  presentation?: Partial<OperationsBoardPresentation>;
 }) {
   const appearance = useAppearance();
   const resolved = resolvedAppearance ?? appearance.resolved;
@@ -376,6 +358,10 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   const appearanceVariables = useMemo(
     () => resolvedAppearanceCssVariables(resolved) as CSSProperties,
     [resolved]
+  );
+  const presentation = useMemo(
+    () => resolveOperationsBoardPresentation(presentationCandidate),
+    [presentationCandidate]
   );
   const controller = useRef<OperationsBoardHandle | null>(null);
   const coarsePointer = useCoarsePointer();
@@ -678,6 +664,9 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       data-board-pieces={layout.stats.visiblePieceCount}
       data-board-status-lights={visibleLightStates}
       data-board-multi-count={multiSelection?.size ?? 0}
+      data-board-project-packing={layout.projectPacking}
+      data-board-project-emphasis={presentation.projectEmphasis}
+      data-board-agent-candidate={presentation.agentCandidate}
       data-session-handoff={sessionTransitionAgentId ?? undefined}
       data-spatial-theme={theme.themeId}
       data-spatial-bloom={theme.bloom.enabled ? 'on' : 'off'}
@@ -772,6 +761,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
                 : null
             }
             preserveDrawingBuffer={preserveDrawingBuffer}
+            presentation={presentation}
             theme={theme}
           />
         </BoardErrorBoundary>
@@ -821,14 +811,11 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         }`}
       >
         {/* The board's ONE chrome region besides the selection panel
-            (S4/F6, FIX-009). The header strip owns the needs-you count
-            outright — a second copy of it floated bottom-left — and the key
-            hints sit LAST in this stack so they read with the controls they
-            describe instead of stranded a cluster's height above the edge.
-            `N` still walks the queue; the hint below is its affordance. */}
+            (S4/F6, FIX-009). Persistent shortcuts moved to the header's
+            keyboard help: the board itself keeps only direct manipulation. */}
         <div
           data-board-tool-cluster
-          className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col"
+          className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-row flex-wrap items-end justify-end gap-1.5"
         >
           {coarsePointer && onBandSelect && (
             <button
@@ -836,7 +823,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               data-board-touch-select
               aria-pressed={touchSelectionMode}
               onClick={() => setTouchSelectionMode(value => !value)}
-              className="exa-material-chrome min-h-11 border px-3 font-mono text-chrome-micro font-semibold outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
+              className="exa-material-chrome min-h-11 border px-3 text-chrome-label font-medium outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
               style={
                 touchSelectionMode
                   ? {
@@ -861,7 +848,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
                 type="button"
                 aria-pressed={projection === option}
                 onClick={() => onProjectionChange(option)}
-                className="min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                className="min-h-11 px-3 text-chrome-label font-medium outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
                 style={
                   projection === option
                     ? {
@@ -898,12 +885,23 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             </button>
             <button
               type="button"
-              aria-label="Recenter board"
-              onClick={() => controller.current?.recenter()}
-              className="grid h-11 min-w-11 place-items-center border-x px-1 font-mono text-chrome-micro uppercase tracking-[0.08em] outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring sm:px-2"
+              aria-label={
+                layout.altitude === 'fleet'
+                  ? 'Fit Fleet overview'
+                  : 'Return to Fleet overview'
+              }
+              onClick={() => {
+                if (layout.altitude === 'fleet') {
+                  controller.current?.recenter();
+                  return;
+                }
+                controller.current?.focusFleet();
+                onOverview();
+              }}
+              className="grid h-11 min-w-11 place-items-center border-x px-3 text-chrome-label font-medium outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring"
               style={{ borderColor: theme.unitMuted, color: theme.selection }}
             >
-              Center
+              Overview
             </button>
             <button
               type="button"
@@ -942,33 +940,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             >
               +
             </button>
-          </div>
-          <div
-            className="exa-material-chrome pointer-events-none hidden flex-wrap items-center justify-end gap-x-3 gap-y-1.5 border px-2.5 py-2 xl:flex"
-            style={spatialMaterialFrame(theme)}
-          >
-            {layout.altitude === 'fleet' && (
-              <KeyHint keyName="1–9" label="Project" theme={theme} />
-            )}
-            <KeyHint keyName="←↑↓→" label="select" theme={theme} />
-            <KeyHint
-              keyName={coarsePointer ? 'drag' : 'wheel WASD middle-drag'}
-              label="pan"
-              theme={theme}
-            />
-            <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
-            {onBandSelect && !coarsePointer && (
-              <KeyHint keyName="drag" label="select" theme={theme} />
-            )}
-            <KeyHint keyName="V" label="view" theme={theme} />
-            {attentionIds.length > 0 && (
-              <KeyHint keyName="N" label="attention" theme={theme} />
-            )}
-            <KeyHint
-              keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
-              label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
-              theme={theme}
-            />
           </div>
         </div>
       </div>

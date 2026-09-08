@@ -378,7 +378,10 @@ export interface ConnectedSourcesState {
 }
 
 export function useConnectedSources(): ConnectedSourcesState {
-  const [available] = useState(() => connectedSourcesBridge() !== null);
+  // Electron's preload exists only in the renderer. The first render must
+  // match the server shell; discover the bridge after hydration instead of
+  // inserting a connection rail into React's initial client tree.
+  const [available, setAvailable] = useState(false);
   const [sources, setSources] = useState<ConnectedSourceView[]>([]);
   const [observations, setObservations] = useState<
     Map<string, ConnectedSourceObservation>
@@ -388,20 +391,29 @@ export function useConnectedSources(): ConnectedSourcesState {
     null
   );
   const mounted = useRef(true);
+  // Bridge change ticks, reconnects, and the age refresh can overlap. Each
+  // read channel owns its order; a slower earlier response cannot replace a
+  // newer observation or connection list (nor publish an obsolete error).
+  const statusRequest = useRef(0);
+  const listRequest = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
+    setAvailable(connectedSourcesBridge() !== null);
     return () => {
       mounted.current = false;
+      statusRequest.current += 1;
+      listRequest.current += 1;
     };
   }, []);
 
   const readStatus = useCallback(async () => {
     const api = connectedSourcesBridge();
     if (!api) return;
+    const request = ++statusRequest.current;
     try {
       const rows = await api.status();
-      if (!mounted.current) return;
+      if (!mounted.current || request !== statusRequest.current) return;
       setObservations(new Map(rows.map(row => [row.sourceId, row])));
     } catch {
       // A failed status read is not evidence about the server. The last
@@ -412,12 +424,13 @@ export function useConnectedSources(): ConnectedSourcesState {
   const readList = useCallback(async () => {
     const api = connectedSourcesBridge();
     if (!api) return;
+    const request = ++listRequest.current;
     try {
       const rows = await api.list();
-      if (!mounted.current) return;
+      if (!mounted.current || request !== listRequest.current) return;
       setSources(rows);
     } catch {
-      if (!mounted.current) return;
+      if (!mounted.current || request !== listRequest.current) return;
       setMessage({
         ok: false,
         text: 'Exawatt could not read its connection records.',

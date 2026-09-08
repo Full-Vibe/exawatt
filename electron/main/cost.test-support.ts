@@ -17,7 +17,8 @@
  * `scripts/transcript-replay-probe.mjs` used to diagnose incident 0008 in the
  * first place; this is the same measurement, kept as a gate.
  */
-import { GCProfiler } from 'node:v8';
+import { GCProfiler, setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 
 export interface TransientAllocation<T> {
   value: T;
@@ -39,8 +40,31 @@ function reclaimed(profiler: GCProfiler): number {
   );
 }
 
+/**
+ * `GCProfiler` reports everything reclaimed while it is active, including
+ * garbage an earlier test left behind. Collect that older generation before
+ * starting the profiler so the result belongs to `work`, not to whichever
+ * file happened to share this Vitest worker first.
+ *
+ * Node does not expose `gc` by default. V8 supports enabling it at runtime;
+ * keep the function (and its VM context) alive for the process so creating the
+ * measurement boundary cannot itself become garbage inside the measurement.
+ */
+const collectBeforeMeasurement: () => void = (() => {
+  const exposed = (globalThis as { gc?: () => void }).gc;
+  if (exposed) return exposed;
+
+  setFlagsFromString('--expose_gc');
+  try {
+    return runInNewContext('gc') as () => void;
+  } finally {
+    setFlagsFromString('--no-expose_gc');
+  }
+})();
+
 /** Run `work` and report how many bytes of garbage it produced. */
 export function transientAllocation<T>(work: () => T): TransientAllocation<T> {
+  collectBeforeMeasurement();
   const profiler = new GCProfiler();
   profiler.start();
   const value = work();
@@ -51,6 +75,7 @@ export function transientAllocation<T>(work: () => T): TransientAllocation<T> {
 export async function transientAllocationAsync<T>(
   work: () => Promise<T>
 ): Promise<TransientAllocation<T>> {
+  collectBeforeMeasurement();
   const profiler = new GCProfiler();
   profiler.start();
   const value = await work();

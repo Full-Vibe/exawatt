@@ -7,12 +7,14 @@ Exawatt supports Live Mode and Demo Mode as first-class product modes.
 Live Mode connects to real Agent Sources:
 
 - local OpenClaw
-- hosted OpenClaw
+- customer-hosted OpenClaw
 - Codex
 - Claude Code
 - custom harnesses
 
-The first implementation target is local OpenClaw control.
+Current Live Mode includes local harnesses and configured customer-hosted
+OpenClaw sources. Exawatt-managed placement remains future work; no paid-cloud
+implementation is active.
 
 ## Demo Mode
 

@@ -6,6 +6,7 @@ import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { SiteHeaderNav } from './site-header-nav';
 import { resolveDistributionIdentity } from '@exawatt/core/distribution';
+import { resolveDistributionWebIcon } from '@/lib/distribution/web-brand';
 
 interface HeaderAuthState {
   isAuthenticated: boolean;
@@ -48,7 +49,7 @@ export function SiteHeader() {
   return (
     <SiteHeaderNav
       productName={identity.productName}
-      iconSrc={identity.iconPath ? '/icon.png' : null}
+      iconSrc={resolveDistributionWebIcon(distribution)}
       isAuthenticated={auth.isAuthenticated}
       userName={auth.userName}
       userEmail={auth.userEmail}

@@ -462,6 +462,8 @@ export interface ConnectedSourceCommandSurface {
     eventName: string,
     handler: (payload: unknown) => void
   ): () => void;
+  /** Every whole authoritative topology replacement, including quiet reads. */
+  onSnapshot?(handler: () => void): () => void;
 }
 
 /**
@@ -470,8 +472,9 @@ export interface ConnectedSourceCommandSurface {
  * tunnel, read an SSH configuration, or reach a network.
  *
  * Exactly, and no more. The session also exposes `resnapshot` and `authority`,
- * and this runtime uses neither: it repairs observation by connecting, and it
- * reads granted authority off the source record rather than off a live session,
+ * and this runtime calls neither directly: the session owns refresh and
+ * reconnect, then announces each completed replacement. The runtime reads
+ * granted authority off the source record rather than off a live session,
  * so a source Exawatt is not observing still answers what it may be asked to
  * do. Leaving them in the list would let a future edit reach around both of
  * those decisions without anyone having to argue for it.
@@ -545,6 +548,7 @@ interface SessionEntry {
   observedSnapshot: AgentSourceTopologySnapshot | null;
   offPhase: () => void;
   offEvents: () => void;
+  offSnapshot: () => void;
   closed: boolean;
   /**
    * Live updates forwarded per run this connection. Cleared whenever
@@ -1220,6 +1224,7 @@ export class ConnectedSourceRuntime {
       entry.closed = true;
       entry.offPhase();
       entry.offEvents();
+      entry.offSnapshot();
       entry.forwardedByRun.clear();
       await entry.session.disconnect();
     }
@@ -1247,6 +1252,7 @@ export class ConnectedSourceRuntime {
         entry.closed = true;
         entry.offPhase();
         entry.offEvents();
+        entry.offSnapshot();
         entry.forwardedByRun.clear();
         await entry.session.disconnect();
       })
@@ -1327,6 +1333,7 @@ export class ConnectedSourceRuntime {
       observedSnapshot: null,
       offPhase: () => {},
       offEvents: () => {},
+      offSnapshot: () => {},
       closed: false,
       forwardedByRun: new Map(),
       awaitingResnapshot: false,
@@ -1338,6 +1345,12 @@ export class ConnectedSourceRuntime {
       this.followPhase(entry, phase);
       this.emit(entry);
     });
+    entry.offSnapshot =
+      session.onSnapshot?.(() => {
+        this.noteAuthoritativeSnapshot(entry);
+        this.rememberBoundIdentity(entry);
+        this.emit(entry);
+      }) ?? (() => {});
     // Streaming is capability-declared. A session that exposes no event
     // stream forwards nothing, and the operator still sees the reply on the
     // next authoritative read.
@@ -1560,7 +1573,7 @@ export class ConnectedSourceRuntime {
     try {
       payload = await entry.session.write('chat.send', {
         sessionKey: contextId,
-        text,
+        message: text,
         idempotencyKey,
       });
     } catch (error) {

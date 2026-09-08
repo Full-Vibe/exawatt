@@ -41,7 +41,7 @@ extraResources:
 
 mac:
   category: public.app-category.developer-tools
-  icon: electron/resources/icon.icns
+  icon: electron/resources/icon-community.icns
   # TCC prompts are attributed to Exawatt when an agent's PTY touches a
   # protected folder (Desktop/Documents/Downloads/volumes). Purposeful usage
   # strings replace the generic OS copy so the prompt explains itself

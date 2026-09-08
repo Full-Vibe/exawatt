@@ -2366,6 +2366,107 @@ around it. That is a motion-ownership problem — the camera, the zone layer, an
 the piece field each damp on their own schedule — and it is the next thing to
 take, now that there is a bench to judge it in.
 
+### V3.8 A Fleet that fits before it scales (2026-08-20)
+
+**The operator's four-Project Project-altitude screenshot reproduced a standing
+Fleet defect, not a spacing nit:** the automatic four-column lattice put four
+Projects in one horizontal strip, the focused Project read as a subordinate
+breadcrumb under a dominant `Fleet` heading, names were set as micro chrome,
+and the bottom-right control stack plus permanent shortcut slab consumed the
+same field the Projects needed. Seeing the fleet required horizontal panning.
+The 2026-08-14 outside drive had already named the same failure — "why would I
+want it so I can't see two of my projects, or more than one at a time?" — but
+left packing open because a naive repair would violate stable addresses.
+
+**The layout answer is a balanced stable lattice, not dynamic circle packing.**
+The first four address slots are a 2x2 core. Later slots grow outward in
+rotationally balanced groups, so the ten-Project demo becomes one near-square
+field. The slot-to-coordinate function never reads the current Project count;
+with `previousLayout`, an arriving Project takes a free outward slot and no
+existing Project moves. This keeps V3.7's one-world mental-map contract. A free
+circle pack was researched and rejected for the automatic baseline: it fills
+space tightly, but its front-chain result depends on the input set/order and
+would make a new Project relayout the learned world. Project circles remain
+population-sized and the existing no-intersection invariant remains the floor.
+
+**The rest of the pass makes the altitude and the map say the same thing.** At
+Project and Agent altitude the current subject is the header's primary name;
+Fleet becomes its back breadcrumb and `Esc` says `Fleet overview`. Project
+labels move from micro/nano chrome to the existing reading rungs. The board's
+controls become one horizontal cluster, the minimap shrinks to 96x64 without
+losing its exact camera-footprint role, `Center` becomes the semantic
+`Overview`, and the always-visible shortcut slab retires into the header's
+always-visible keyboard help. Neighbour bodies/plates recede further while D40
+status lights remain truthful at full strength.
+
+**Evidence.** The common four-Project shape is pinned as 2x2; lattice growth
+pins old addresses; packing/camera/theme suites remain green. The full route
+spatial evaluator passes desktop, mobile, reduced motion, low power, and all
+four altitude-handoff cases. The desktop ten-Project capture fits every Project
+in one centred field and the renderer parks at zero idle frames. The shared
+marketing capture was regenerated from the same layout and its four idle
+regimes remain inside budget. This closes the packing half of the 2026-08-14
+evidence; the open starting-altitude and Top/Angle quality questions remain
+open and unchanged.
+
+### V3.9 Playable Fleet directions before production choice (2026-08-20)
+
+**The standing board bench now carries three Fleet directions through the real
+renderer; production has not silently picked one.** `/hud-gallery/board-study`
+adds URL-addressed `Stable lattice`, `Close pack`, and `Focus field` choices.
+All three use `OperationsBoardSurface`, the production canvas, the production
+camera, and the same pure layout selector. The gallery supplies a presentation
+policy; normal Fleet callers omit it and retain V3.8's balanced packing and
+current visual treatment until the operator chooses.
+
+The directions isolate two decisions that had been conflated. **Packing** is
+either V3.8's balanced stable lattice or a denser honeycomb projection of the
+same stable slot addresses. Honeycomb staggers alternate rows without reading
+the fleet count or changing slot ownership, so adding a Project still cannot
+move an existing Project. **Selected-Project emphasis** is either a precise
+outer ring, a small plate lift at the same world coordinate, or a focus field
+that preserves the selected Project's contrast while receding peer outlines.
+Clicking a Project on the bench changes only selected-Project state and the URL:
+it never changes altitude, focus, slot, or coordinates. This is the deliberate
+answer to the operator allowing the selected Project to change visually without
+giving selection permission to relayout the learned world.
+
+The candidate's disjointness matrix exposed one shared V3.8 defect while doing
+that work: a Project at the maximum population radius was 28 units wide, but
+the unscaled horizontal centre pitch was 25, while lattice scaling began only
+after radius 14. The world could therefore overlap two maximal neighbours in
+both the shipped balanced projection and the candidate. Scaling now begins at
+the radius that actually fits the horizontal pitch (12.5); the invariant is
+pinned for both policies at small, medium, and maximal fixture populations.
+
+Every direction also carries the requested **Agent candidate state** at Project
+altitude: pointer hover and keyboard focus draw one solid, padded cyan hex around
+the Agent; primary press contracts and thickens it; committed selection remains
+the existing dashed circular reticle. One semantic selection token feeds all
+three states, while shape and motion keep candidate, press, and committed
+selection distinguishable without inventing another status colour. The DOM hit
+target remains 44 by 44 CSS pixels, and reduced motion snaps the reticle.
+
+This treatment follows three external constraints rather than visual taste
+alone. [W3C's Focus Appearance
+guidance](https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance) names a
+solid two-pixel perimeter as the simple robust focus indicator and explicitly
+permits an outline that follows a non-rectangular component. [Apple's pointing
+device guidance](https://developer.apple.com/design/human-interface-guidelines/pointing-devices)
+advises padding hit regions and warns that hover scale can crowd tightly spaced
+neighbours; the detached ring therefore changes instead of moving or enlarging
+the Agent. [Material 3's state
+model](https://m3.material.io/foundations/interaction/states/overview) treats
+hover, focus, pressed, and selected as separate, consistently combinable
+states; the board preserves that distinction instead of making hover look
+selected.
+
+**Review contract.** The operator can play every combination from a stable URL,
+including hover, press, keyboard focus, and reduced motion. Acceptance requires
+an explicit packing/emphasis choice. Only then does its shared policy become the
+production default; the bench option is retired as a proposal while the real
+renderer bench remains standing.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

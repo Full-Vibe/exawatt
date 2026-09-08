@@ -12,11 +12,21 @@ import {
   ACCOUNT_FIRST_RUN_STORAGE_KEY,
 } from './account-first-run-card';
 
-const { pathname, session, accountAvailable } = vi.hoisted(() => ({
-  pathname: { current: '/workspace' },
-  session: { current: null as { user: { id: string } } | null },
-  accountAvailable: { current: true },
-}));
+const { pathname, session, accountAvailable, authObserver } = vi.hoisted(
+  () => ({
+    pathname: { current: '/workspace' },
+    session: { current: null as { user: { id: string } } | null },
+    accountAvailable: { current: true },
+    authObserver: {
+      listener: null as
+        | null
+        | ((event: string, session: { user: { id: string } } | null) => void),
+      read: null as null | Promise<{
+        data: { session: { user: { id: string } } | null };
+      }>,
+    },
+  })
+);
 
 vi.mock('next/navigation', () => ({
   usePathname: () => pathname.current,
@@ -27,10 +37,27 @@ vi.mock('@/lib/supabase/client', () => ({
     accountAvailable.current
       ? {
           auth: {
-            getSession: async () => ({ data: { session: session.current } }),
-            onAuthStateChange: () => ({
-              data: { subscription: { unsubscribe: vi.fn() } },
-            }),
+            getSession: () =>
+              authObserver.read ??
+              Promise.resolve({ data: { session: session.current } }),
+            onAuthStateChange: (
+              listener: NonNullable<typeof authObserver.listener>
+            ) => {
+              authObserver.listener = listener;
+              queueMicrotask(() => {
+                if (authObserver.listener === listener)
+                  listener('INITIAL_SESSION', session.current);
+              });
+              return {
+                data: {
+                  subscription: {
+                    unsubscribe: () => {
+                      authObserver.listener = null;
+                    },
+                  },
+                },
+              };
+            },
           },
         }
       : null,
@@ -50,6 +77,8 @@ beforeEach(() => {
   pathname.current = '/workspace';
   session.current = null;
   accountAvailable.current = true;
+  authObserver.listener = null;
+  authObserver.read = null;
   window.localStorage.clear();
 });
 
@@ -59,6 +88,38 @@ afterEach(() => {
 });
 
 describe('AccountFirstRunCard', () => {
+  it('does not permanently dismiss the invitation from an obsolete session read after sign-out', async () => {
+    let settle!: (value: {
+      data: { session: { user: { id: string } } };
+    }) => void;
+    authObserver.read = new Promise(resolve => {
+      settle = resolve;
+    });
+    await mount();
+    act(() => authObserver.listener?.('SIGNED_OUT', null));
+    expect(card()).not.toBeNull();
+
+    await act(async () => {
+      settle({ data: { session: { user: { id: 'previous-account' } } } });
+    });
+
+    expect(card()).not.toBeNull();
+    expect(
+      window.localStorage.getItem(ACCOUNT_FIRST_RUN_STORAGE_KEY)
+    ).toBeNull();
+  });
+
+  it('retires the invitation when the auth event stream signs in', async () => {
+    await mount();
+    act(() =>
+      authObserver.listener?.('SIGNED_IN', { user: { id: 'new-account' } })
+    );
+    expect(card()).toBeNull();
+    expect(
+      window.localStorage.getItem(ACCOUNT_FIRST_RUN_STORAGE_KEY)
+    ).not.toBeNull();
+  });
+
   it('names what an account enables, without blocking anything', async () => {
     await mount();
 

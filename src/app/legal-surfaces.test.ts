@@ -22,8 +22,7 @@ import { ANALYTICS_PROPERTY_DENYLIST } from '@/lib/analytics/redact';
  *
  *   - `OUTBOUND_CONTROLS` — the control names and what each one sends
  *   - `ANALYTICS_PROPERTY_DENYLIST` — what analytics cannot carry
- *   - `.github/workflows/release-macos.yml` — what the downloaded build is
- *     actually built with
+ *   - the distribution analytics boundary — what a downloaded build can send
  *   - the absence of any billing implementation
  *
  * When one of these fails, the fix is to reconcile the page to the code. Never
@@ -71,8 +70,6 @@ const TERMS_SOURCE = legalSurface('terms');
 const HAS_LEGAL_SURFACES = PRIVACY_SOURCE !== null && TERMS_SOURCE !== null;
 const PRIVACY = PRIVACY_SOURCE ?? '';
 const TERMS = TERMS_SOURCE ?? '';
-const RELEASE_WORKFLOW = read('.github/workflows/release-macos.yml');
-
 describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: outbound controls', () => {
   it('names every control the operator can actually see in Settings', () => {
     for (const control of Object.values(OUTBOUND_CONTROLS)) {
@@ -160,13 +157,11 @@ describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: what is collected', () => {
     // analytics key". It could not fail: `src/lib/analytics/config.ts` states
     // that ambient NEXT_PUBLIC_POSTHOG_* variables are deliberately invisible,
     // so the variable's absence from the workflow proved nothing. Meanwhile
-    // the workflow gained a job-level EXAWATT_DISTRIBUTION_CONFIG_JSON and
-    // refuses to run without it, and an official contract carries `analytics`
-    // — so the release the guard was protecting had become the release that
-    // falsifies the claim. The mechanism, not the old variable, is the anchor
-    // now; `src/lib/hosted-features/outbound-disclosure.test.ts` owns the
-    // full version of this assertion.
-    expect(RELEASE_WORKFLOW).toContain('EXAWATT_DISTRIBUTION_CONFIG_JSON');
+    // the official distribution contract carries `analytics` — so the release
+    // the guard was protecting had become the release that falsifies the
+    // claim. The mechanism, not the old variable, is the anchor now;
+    // `src/lib/hosted-features/outbound-disclosure.test.ts` owns the product
+    // assertion and private `release-custody.test.mjs` owns the workflow seam.
     expect(PRIVACY).not.toContain('built without an analytics key');
     expect(PRIVACY).toContain(
       'Analytics run only where the build carries an analytics endpoint'

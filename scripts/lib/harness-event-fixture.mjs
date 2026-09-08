@@ -177,7 +177,7 @@ setInterval(() => {}, 1 << 30);
 const fs = require('fs');
 const path = require('path');
 const cargv = process.argv.slice(2);
-${codexProbeJs()}
+${codexProbeJs({ appServer: codexProtocol })}
 const protocolEnabled = ${JSON.stringify(codexProtocol)};
 const protocolStatePath = ${JSON.stringify(codexState)};
 const sessionsRoot = ${JSON.stringify(codexSessions)};
@@ -234,7 +234,7 @@ if (cargv[0] === 'app-server') {
         reply(message.id, {
           data: child
             ? [{
-                status: child.live ? 'interrupted' : 'completed',
+                status: child.live ? 'interrupted' : (child.status || 'completed'),
                 completedAt: child.live ? null : child.updatedAt,
               }]
             : [],
@@ -299,6 +299,15 @@ process.stdin.on('data', chunk => {
       if (child) {
         child.live = false;
         child.updatedAt += 100;
+        fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+      }
+    } else if (line.startsWith('resume ') || line.startsWith('fail ')) {
+      const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
+      const child = state.children.find(item => item.id === line.split(' ')[1]);
+      if (child) {
+        child.live = line.startsWith('resume ');
+        child.status = child.live ? null : 'failed';
+        // Deliberately preserve updatedAt: source timestamps cannot gate lifecycle.
         fs.writeFileSync(protocolStatePath, JSON.stringify(state));
       }
     } else if (line === 'protocol-down' || line === 'protocol-up') {

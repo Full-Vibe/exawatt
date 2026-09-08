@@ -40,6 +40,32 @@ const OFFICIAL_SUMMARY_DISTRIBUTION = {
   },
 } satisfies DistributionContractV2;
 
+function serviceResponse(body: unknown, status = 200): Response {
+  if (status >= 400) {
+    return Response.json(
+      {
+        schemaVersion: 1,
+        type: 'https://exawatt.ai/problems/test-refusal',
+        title: 'Test service refusal',
+        status,
+        code: 'test_refusal',
+        retryable: status >= 500,
+      },
+      {
+        status,
+        headers: {
+          'content-type': 'application/problem+json',
+          'Exawatt-Service-Version': '1',
+        },
+      }
+    );
+  }
+  return Response.json(body, {
+    status,
+    headers: { 'Exawatt-Service-Version': '1' },
+  });
+}
+
 const roots: string[] = [];
 
 afterEach(async () => {
@@ -220,20 +246,18 @@ describe('RecentConversationCatalog', () => {
       harnesses: ['codex'],
       list: vi.fn(async () => [draft]),
     };
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            conversations: [
-              {
-                key: 'codex:provider-id',
-                title: 'Cortex Intake Refactor',
-                summary:
-                  'Refactor the patient intake flow and verify consent boundaries.',
-              },
-            ],
-          })
-        )
+    const fetchMock = vi.fn(async () =>
+      serviceResponse({
+        schemaVersion: 1,
+        conversations: [
+          {
+            key: 'codex:provider-id',
+            title: 'Cortex Intake Refactor',
+            summary:
+              'Refactor the patient intake flow and verify consent boundaries.',
+          },
+        ],
+      })
     );
     const catalog = new RecentConversationCatalog({
       distribution: OFFICIAL_SUMMARY_DISTRIBUTION,
@@ -248,6 +272,13 @@ describe('RecentConversationCatalog', () => {
       'https://example.test/summarize',
       expect.objectContaining({ method: 'POST' })
     );
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(
+      new Headers(requestInit?.headers).get('Exawatt-Service-Version')
+    ).toBe('1');
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      schemaVersion: 1,
+    });
     expect(rows[0]).toMatchObject({
       title: 'Cortex Intake Refactor',
       titleSource: 'generated',
@@ -316,20 +347,18 @@ describe('RecentConversationCatalog', () => {
       providerIdentity: 'provider-id',
       correlationKey: 'codex:long raw operator prompt',
     };
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            conversations: [
-              {
-                key: 'codex:provider-id',
-                title: 'Cortex Intake Refactor',
-                summary:
-                  'Refactor the patient intake flow and verify consent boundaries.',
-              },
-            ],
-          })
-        )
+    const fetchMock = vi.fn(async () =>
+      serviceResponse({
+        schemaVersion: 1,
+        conversations: [
+          {
+            key: 'codex:provider-id',
+            title: 'Cortex Intake Refactor',
+            summary:
+              'Refactor the patient intake flow and verify consent boundaries.',
+          },
+        ],
+      })
     );
     let hosted = true;
     const catalog = new RecentConversationCatalog({
@@ -382,8 +411,8 @@ describe('RecentConversationCatalog', () => {
       providerIdentity: 'provider-id',
       correlationKey: 'codex:long raw operator prompt',
     };
-    const fetchMock = vi.fn(
-      async () => new Response('overloaded', { status: 503 })
+    const fetchMock = vi.fn(async () =>
+      serviceResponse({ error: 'overloaded' }, 503)
     );
     let hosted = true;
     const catalog = new RecentConversationCatalog({
@@ -451,19 +480,17 @@ describe('RecentConversationCatalog', () => {
     const catalog = new RecentConversationCatalog({
       adapters: [{ list: vi.fn(async () => [draft]) }],
       cacheFile,
-      fetch: vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              conversations: [
-                {
-                  key: 'codex:provider-id',
-                  title: 'Verify E&M billing guidance',
-                  summary: "Based on my exploration, here's what I found",
-                },
-              ],
-            })
-          )
+      fetch: vi.fn(async () =>
+        serviceResponse({
+          schemaVersion: 1,
+          conversations: [
+            {
+              key: 'codex:provider-id',
+              title: 'Verify E&M billing guidance',
+              summary: "Based on my exploration, here's what I found",
+            },
+          ],
+        })
       ) as typeof fetch,
       summaryEndpoint: 'https://example.test/summarize',
     });
@@ -1060,5 +1087,205 @@ describe('parseGrokSessionSummary', () => {
     expect(
       parseGrokSessionSummary(JSON.stringify({}), 'short', '/work')
     ).toBeNull();
+  });
+});
+
+describe('operator conversation discovery (BUG-117)', () => {
+  const encode = (directory: string) =>
+    directory.replace(/[^a-zA-Z0-9_-]/g, '-');
+  async function claudeFixture() {
+    const root = await temporaryRoot('exawatt-claude-discovery-');
+    const cwd = await fs.promises.realpath(
+      await temporaryRoot('exawatt-claude-cwd-')
+    );
+    const write = async (directory: string, id: string, overrides = {}) => {
+      const history = path.join(root, encode(directory));
+      await fs.promises.mkdir(history, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(history, `${id}.jsonl`),
+        JSON.stringify({
+          type: 'user',
+          sessionId: id,
+          cwd: directory,
+          message: { role: 'user', content: `Task for ${id}` },
+          ...overrides,
+        })
+      );
+      return history;
+    };
+    return {
+      root,
+      cwd,
+      write,
+      adapter: new ClaudeConversationAdapter(root, async () => [cwd]),
+    };
+  }
+
+  it('merges unindexed Claude sessions without replacing indexed native titles', async () => {
+    const { cwd, write, adapter } = await claudeFixture();
+    const history = await write(cwd, 'known');
+    await fs.promises.writeFile(
+      path.join(history, 'sessions-index.json'),
+      JSON.stringify({
+        entries: [
+          {
+            sessionId: 'known',
+            projectPath: cwd,
+            summary: 'Native title',
+            firstPrompt: 'Original task',
+          },
+        ],
+      })
+    );
+    await write(cwd, 'new');
+    await write(cwd, 'indexed-child');
+    const indexFile = path.join(history, 'sessions-index.json');
+    const index = JSON.parse(await fs.promises.readFile(indexFile, 'utf8'));
+    index.entries.push({
+      sessionId: 'indexed-child',
+      projectPath: cwd,
+      isSidechain: true,
+    });
+    await fs.promises.writeFile(indexFile, JSON.stringify(index));
+    const rows = await adapter.list(cwd);
+    expect(new Set(rows.map(row => row.id))).toEqual(new Set(['known', 'new']));
+    expect(rows.find(row => row.id === 'known')).toMatchObject({
+      titleSource: 'native',
+      providerSessionId: 'known',
+    });
+  });
+
+  it('discovers nested and canonical Claude paths while rejecting encoded neighboring paths', async () => {
+    const { root, cwd, write } = await claudeFixture();
+    const nested = path.join(cwd, 'package');
+    const neighbor = `${cwd}-package`;
+    await fs.promises.mkdir(nested);
+    await fs.promises.mkdir(neighbor);
+    roots.push(neighbor);
+    // These two distinct directories have the SAME lossy Claude encoding.
+    await write(nested, 'inside');
+    await write(neighbor, 'outside');
+    const alias = path.join(
+      await temporaryRoot('exawatt-claude-alias-'),
+      'project'
+    );
+    await fs.promises.symlink(cwd, alias);
+    const rows = await new ClaudeConversationAdapter(root, async () => [
+      alias,
+    ]).list(alias);
+    expect(rows.map(row => row.id)).toEqual(['inside']);
+    expect(rows[0].cwd).toBe(nested);
+  });
+
+  it('isolates rotating files and excludes malformed files and sidechain sessions', async () => {
+    const { cwd, write, adapter } = await claudeFixture();
+    const history = await write(cwd, 'healthy');
+    await write(cwd, 'child', { isSidechain: true });
+    await write(cwd, 'rotated');
+    await fs.promises.writeFile(path.join(history, 'partial.jsonl'), '{');
+    const stat = fs.promises.stat.bind(fs.promises);
+    vi.spyOn(fs.promises, 'stat').mockImplementation(
+      (...args: Parameters<typeof fs.promises.stat>) => {
+        if (String(args[0]).endsWith('/rotated.jsonl'))
+          return Promise.reject(new Error('ENOENT'));
+        return stat(...args);
+      }
+    );
+    expect((await adapter.list(cwd)).map(row => row.id)).toEqual(['healthy']);
+  });
+
+  it('uses the configured Claude source home', async () => {
+    const config = await temporaryRoot('exawatt-claude-config-');
+    const { cwd, write, root } = await claudeFixture();
+    await write(cwd, 'configured-source');
+    await fs.promises.symlink(root, path.join(config, 'projects'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', config);
+    vi.stubEnv('EXAWATT_CLAUDE_PROJECTS_ROOT', undefined);
+    try {
+      const rows = await new ClaudeConversationAdapter(undefined, async () => [
+        cwd,
+      ]).list(cwd);
+      expect(rows.map(row => row.id)).toEqual(['configured-source']);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('filters Codex children before spending the operator result limit', async () => {
+    const cwd = await fs.promises.realpath(
+      await temporaryRoot('exawatt-codex-children-')
+    );
+    const databaseFile = path.join(cwd, 'state.sqlite');
+    const { DatabaseSync } =
+      require('node:sqlite') as typeof import('node:sqlite');
+    const database = new DatabaseSync(databaseFile);
+    database.exec(`CREATE TABLE threads (
+      id TEXT PRIMARY KEY, cwd TEXT, rollout_path TEXT, title TEXT, first_user_message TEXT,
+      preview TEXT, created_at_ms INTEGER, updated_at_ms INTEGER, recency_at_ms INTEGER,
+      archived INTEGER, source TEXT, thread_source TEXT
+    )`);
+    const insert = database.prepare(
+      'INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    const sources = [
+      'subagent',
+      JSON.stringify('subagent'),
+      JSON.stringify({
+        subagent: { thread_spawn: { parent_thread_id: 'parent' } },
+      }),
+    ];
+    for (let index = 0; index < 105; index++) {
+      insert.run(
+        `child-${index}`,
+        cwd,
+        'missing',
+        '',
+        '',
+        '',
+        1,
+        100,
+        100,
+        0,
+        index % 2 ? 'cli' : sources[index % sources.length],
+        index % 2 ? sources[index % sources.length] : null
+      );
+    }
+    const id = '11111111-1111-4111-8111-111111111111';
+    insert.run(id, cwd, 'missing', '', '', '', 1, 2, 2, 0, 'cli', 'user');
+    database.close();
+    const rows = await new RecentConversationCatalog({
+      adapters: [
+        new CodexConversationAdapter(cwd, databaseFile, async () => [cwd]),
+      ],
+    }).list(cwd);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id,
+      providerSessionId: id,
+      continuation: { kind: 'provider' },
+      titleSource: 'fallback',
+      needsSummary: false,
+    });
+    expect(rows[0].title.trim()).not.toBe('');
+    expect(rows[0].title).not.toBe(id);
+  });
+
+  it('does not offer legacy Codex child transcripts as independent resume targets', async () => {
+    const cwd = await temporaryRoot('exawatt-codex-legacy-children-');
+    const sessions = await temporaryRoot('exawatt-codex-legacy-');
+    for (const [id, source] of [
+      ['operator', 'cli'],
+      ['child', { subagent: 'review' }],
+    ] as const) {
+      await fs.promises.writeFile(
+        path.join(sessions, `${id}.jsonl`),
+        JSON.stringify({ type: 'session_meta', payload: { id, cwd, source } })
+      );
+    }
+    expect(
+      (await new CodexConversationAdapter(sessions, null).list(cwd)).map(
+        row => row.id
+      )
+    ).toEqual(['operator']);
   });
 });

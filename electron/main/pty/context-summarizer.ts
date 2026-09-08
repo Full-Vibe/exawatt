@@ -10,7 +10,12 @@ import {
 } from '../analytics-bridge';
 import {
   COMMUNITY_DISTRIBUTION,
+  createContextLabel,
+  createGoalVisual,
+  isCompatibleServiceProblemError,
+  isCompatibleServiceProtocolError,
   type DistributionContractV2,
+  type DistributionEndpointRefV1,
 } from '@exawatt/core/distribution';
 import { SessionScopedState } from './session-scoped-state';
 
@@ -156,12 +161,6 @@ function envInt(name: string, fallback: number): number {
   if (raw === undefined || raw === '') return fallback;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-class GoalVisualEndpointError extends Error {
-  constructor(readonly status: number) {
-    super(`goal visual endpoint returned ${status}`);
-  }
 }
 
 function fallbackIdentityKey(projectKey: string, label: string): string {
@@ -414,8 +413,8 @@ export class ContextSummarizer extends EventEmitter {
     this.disabled || process.env.EXAWATT_CONTEXT_LABELS === '0';
   private readonly recapCommand =
     process.env.EXAWATT_SUMMARIZER_CMD || 'claude -p --model haiku';
-  private readonly endpoint: string | null;
-  private readonly goalVisualEndpoint: string | null;
+  private readonly endpoint: DistributionEndpointRefV1 | null;
+  private readonly goalVisualEndpoint: DistributionEndpointRefV1 | null;
   private readonly recapAwayMs: number;
   private readonly recapMinChars: number;
   private readonly retryBaseMs: number;
@@ -428,8 +427,8 @@ export class ContextSummarizer extends EventEmitter {
   constructor(options: ContextSummarizerOptions = {}) {
     super();
     const distribution = options.distribution ?? COMMUNITY_DISTRIBUTION;
-    this.endpoint = distribution.enrichment.contextLabels?.url ?? null;
-    this.goalVisualEndpoint = distribution.enrichment.goalVisuals?.url ?? null;
+    this.endpoint = distribution.enrichment.contextLabels;
+    this.goalVisualEndpoint = distribution.enrichment.goalVisuals;
     this.recapAwayMs =
       options.recapAwayMs ?? envInt('EXAWATT_RECAP_AWAY_MS', 120_000);
     this.recapMinChars =
@@ -799,13 +798,29 @@ export class ContextSummarizer extends EventEmitter {
       // path needs no equivalent guard: its existing staleness check compares
       // against a version that release has already dropped.
       if (!this.labelVersions.has(durableId)) return;
+      // A response using no codec, or a codec other than the configured one,
+      // is not a transient network failure. Retrying it would be negotiation by
+      // replay and could loop forever while the distributor stays unchanged.
+      if (
+        isCompatibleServiceProtocolError(error) ||
+        (isCompatibleServiceProblemError(error) && !error.retryable)
+      ) {
+        this.diagnoseFn('context-label.request-failure', {
+          session: durableId,
+          failures: 1,
+          retryMs: null,
+          error: error.code,
+        });
+        return;
+      }
       this.labelPending.add(durableId);
       const failures = (this.labelFailures.get(durableId) ?? 0) + 1;
       this.labelFailures.set(durableId, failures);
-      const delay = Math.min(
-        RETRY_MAX_MS,
-        this.retryBaseMs * 2 ** (failures - 1)
-      );
+      const delay =
+        isCompatibleServiceProblemError(error) &&
+        error.retryAfterSeconds !== null
+          ? error.retryAfterSeconds * 1_000
+          : Math.min(RETRY_MAX_MS, this.retryBaseMs * 2 ** (failures - 1));
       this.diagnoseFn('context-label.request-failure', {
         session: durableId,
         failures,
@@ -843,28 +858,20 @@ export class ContextSummarizer extends EventEmitter {
     // OS1.5b). The `hostedLabelsAllowed` guards keep a feature the operator
     // switched off from ever reaching this method — and mid-flight, from
     // reporting — so a disabled feature never shows up as a failure.
-    let response: Response;
     try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(evidence),
+      return await createContextLabel(endpoint, token, evidence, {
         signal: AbortSignal.timeout(20_000),
       });
     } catch (error) {
-      if (this.hostedLabelsAllowed())
-        recordHostedCallTransportFailure('context_labels', error);
+      if (this.hostedLabelsAllowed()) {
+        if (isCompatibleServiceProblemError(error)) {
+          recordHostedCallHttpFailure('context_labels', error.status);
+        } else if (!isCompatibleServiceProtocolError(error)) {
+          recordHostedCallTransportFailure('context_labels', error);
+        }
+      }
       throw error;
     }
-    if (!response.ok) {
-      if (this.hostedLabelsAllowed())
-        recordHostedCallHttpFailure('context_labels', response.status);
-      throw new Error(`context endpoint returned ${response.status}`);
-    }
-    return (await response.json()) as HostedContextLabel;
   }
 
   private queueGoalVisual(durableId: string, label: string): void {
@@ -963,7 +970,7 @@ export class ContextSummarizer extends EventEmitter {
       if (this.goalVisuals.get(durableId)?.revision !== pending.revision)
         return;
       const rejected =
-        error instanceof GoalVisualEndpointError && error.status === 422;
+        isCompatibleServiceProblemError(error) && error.status === 422;
       const fallback: GoalVisual = {
         identityKey: pending.fallbackIdentityKey,
         revision: pending.revision,
@@ -978,19 +985,24 @@ export class ContextSummarizer extends EventEmitter {
         rejected,
         error: error instanceof Error ? error.message : String(error),
       });
-      const isClientError =
-        error instanceof GoalVisualEndpointError &&
-        error.status >= 400 &&
-        error.status < 500;
-      if (!isClientError && pending.attempt < GOAL_VISUAL_MAX_ATTEMPTS) {
+      const isProtocolError = isCompatibleServiceProtocolError(error);
+      const shouldRetry = isCompatibleServiceProblemError(error)
+        ? error.retryable
+        : !isProtocolError;
+      if (shouldRetry && pending.attempt < GOAL_VISUAL_MAX_ATTEMPTS) {
         this.goalVisualPending.set(durableId, {
           ...pending,
           attempt: pending.attempt + 1,
         });
+        const delay =
+          isCompatibleServiceProblemError(error) &&
+          error.retryAfterSeconds !== null
+            ? error.retryAfterSeconds * 1_000
+            : GOAL_VISUAL_RETRY_MS;
         const timer = setTimeout(() => {
           this.goalVisualRetryTimers.delete(durableId);
           void this.drainGoalVisual(durableId);
-        }, GOAL_VISUAL_RETRY_MS);
+        }, delay);
         timer.unref?.();
         this.goalVisualRetryTimers.set(durableId, timer);
       }
@@ -1012,28 +1024,20 @@ export class ContextSummarizer extends EventEmitter {
       return this.generateGoalVisualOverride(request, token);
     const endpoint = this.goalVisualEndpoint;
     if (!endpoint) throw new Error('goal visuals are not configured');
-    let response: Response;
     try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(request),
+      return await createGoalVisual(endpoint, token, request, {
         signal: AbortSignal.timeout(30_000),
       });
     } catch (error) {
-      if (this.hostedGoalVisualsAllowed())
-        recordHostedCallTransportFailure('goal_visuals', error);
+      if (this.hostedGoalVisualsAllowed()) {
+        if (isCompatibleServiceProblemError(error)) {
+          recordHostedCallHttpFailure('goal_visuals', error.status);
+        } else if (!isCompatibleServiceProtocolError(error)) {
+          recordHostedCallTransportFailure('goal_visuals', error);
+        }
+      }
       throw error;
     }
-    if (!response.ok) {
-      if (this.hostedGoalVisualsAllowed())
-        recordHostedCallHttpFailure('goal_visuals', response.status);
-      throw new GoalVisualEndpointError(response.status);
-    }
-    return (await response.json()) as HostedGoalVisual;
   }
 
   setFocus(id: string | null): void {

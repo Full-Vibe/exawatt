@@ -16,6 +16,14 @@ import {
 export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
 export type SpatialBoardProjection = 'top-down' | 'fixed-angle';
 /**
+ * Automatic Project-address policy. Both policies are stable: a Project's
+ * slot alone determines its centre, so arrivals never relayout learned
+ * addresses. `honeycomb` is an operator-review candidate exposed through the
+ * standing board bench; production continues to omit the option and therefore
+ * receives `balanced`.
+ */
+export type SpatialBoardProjectPacking = 'balanced' | 'honeycomb';
+/**
  * Board color lens (ENG-008): `status` is the default D40 protocol coloring;
  * `burn` recolors zones and population dots by normalized token share through
  * the consumption FLUX channel. Presentation-only — attention semantics
@@ -143,7 +151,10 @@ export interface SpatialBoardLayout {
   version: 2;
   altitude: SpatialBoardAltitude;
   focusedProjectId: string | null;
+  /** Project carrying the selection treatment without implying descent. */
+  selectedProjectId: string | null;
   selectedAgentId: string | null;
+  projectPacking: SpatialBoardProjectPacking;
   zones: SpatialBoardProjectZone[];
   pieces: SpatialBoardPiece[];
   /** Delegated children at their final packed positions. Placed with the
@@ -171,7 +182,11 @@ export interface SpatialBoardLayout {
 export interface SpatialBoardLayoutOptions {
   altitude?: SpatialBoardAltitude;
   focusedProjectId?: string | null;
+  /** Presentation selection, independent of semantic altitude. */
+  selectedProjectId?: string | null;
   selectedAgentId?: string | null;
+  /** Stable automatic address policy; omitted in production. */
+  projectPacking?: SpatialBoardProjectPacking;
   /** Presentation-only; coordinates never branch on projection. */
   projection?: SpatialBoardProjection;
   /** Compute from full FleetState, then hide without changing stable addresses. */
@@ -190,7 +205,6 @@ export interface SpatialBoardLayoutOptions {
 }
 
 const BOARD = {
-  columns: 4,
   /**
    * PROJECT LATTICE PITCH, and why X is now the SMALLER of the two (operator,
    * 2026-08-19: "move these project circles closer together, they're too far
@@ -222,6 +236,63 @@ const BOARD = {
   fleetPieceSize: 2.2,
   fleetHexPitch: 1.3,
 } as const;
+
+interface FleetLatticeAddress {
+  column: number;
+  row: number;
+}
+
+/**
+ * Stable, balanced Project addresses. The first four Projects form the core
+ * 2x2 block; later slots grow outward in opposing pairs. Unlike choosing a
+ * column count from the current Project total, this never moves an existing
+ * address when another Project arrives. It also avoids the old failure mode
+ * where four Projects became one long row that could only be read by panning.
+ *
+ * Half-step coordinates keep the lattice centred around its origin. Rings are
+ * generated from the centre outward so the default 24-Project budget remains
+ * compact without a second layout policy for larger fleets.
+ */
+function fleetLatticeAddress(slotIndex: number): FleetLatticeAddress {
+  const core: FleetLatticeAddress[] = [
+    { column: -0.5, row: -0.5 },
+    { column: 0.5, row: -0.5 },
+    { column: -0.5, row: 0.5 },
+    { column: 0.5, row: 0.5 },
+  ];
+  if (slotIndex < core.length) return core[slotIndex]!;
+
+  // A completed ring R contains 4(R + 1)^2 slots. Resolve the ring and the
+  // address directly so even an unaggregated Project-altitude corpus with
+  // hundreds of Projects does not rebuild every preceding ring per Project.
+  const ring = Math.ceil(Math.sqrt((slotIndex + 1) / 4) - 1);
+  const offset = slotIndex - 4 * ring * ring;
+  const edge = ring + 0.5;
+  const sideSlotCount = ring * 8;
+  if (offset < sideSlotCount) {
+    const coordinate = -ring + 0.5 + Math.floor(offset / 4);
+    switch (offset % 4) {
+      case 0:
+        return { column: -edge, row: coordinate };
+      case 1:
+        return { column: -coordinate, row: edge };
+      case 2:
+        return { column: edge, row: -coordinate };
+      default:
+        return { column: coordinate, row: -edge };
+    }
+  }
+  switch (offset - sideSlotCount) {
+    case 0:
+      return { column: -edge, row: -edge };
+    case 1:
+      return { column: edge, row: edge };
+    case 2:
+      return { column: edge, row: -edge };
+    default:
+      return { column: -edge, row: edge };
+  }
+}
 
 /**
  * Zone metrics the renderer's density-dot packer must agree with
@@ -567,14 +638,22 @@ function fleetZoneRect(
   slotIndex: number,
   agentCount: number,
   radius = fleetZoneRadius(agentCount),
-  scale = 1
+  scale = 1,
+  packing: SpatialBoardProjectPacking = 'balanced'
 ): SpatialBoardRect {
-  const column = slotIndex % BOARD.columns;
-  const row = Math.floor(slotIndex / BOARD.columns);
+  const { column, row } = fleetLatticeAddress(slotIndex);
+  // Honeycomb keeps the same stable slot order and only changes how a slot is
+  // projected. Alternate rows shift in opposing half-cell pairs, keeping the
+  // field optically centred while buying vertical density from a circle's
+  // diagonal clearance. No current Project count enters this calculation.
+  const rowOrdinal = Math.round(row + 0.5);
+  const honeycombOffset = Math.abs(rowOrdinal) % 2 === 0 ? -0.25 : 0.25;
   const centerX =
-    BOARD.fleetMaxRadius * scale + column * BOARD.fleetPitchX * scale;
+    (column + (packing === 'honeycomb' ? honeycombOffset : 0)) *
+    BOARD.fleetPitchX *
+    scale;
   const centerY =
-    BOARD.fleetMaxRadius * scale + row * BOARD.fleetPitchY * scale;
+    row * (packing === 'honeycomb' ? 24 : BOARD.fleetPitchY) * scale;
   return circleRect(centerX, centerY, radius);
 }
 
@@ -782,6 +861,8 @@ function projectZone(
   unitSize: number,
   fleetRadius: number,
   latticeScale: number,
+  projectPacking: SpatialBoardProjectPacking,
+  selectedProjectId: string | null,
   selectedAgentId: string | null,
   visibleAgentIds: ReadonlySet<string> | undefined,
   visibleProjectIds: ReadonlySet<string> | undefined,
@@ -794,9 +875,9 @@ function projectZone(
   );
   const counts = statusCounts(agents);
   const visibleIds = new Set(visible.map(agent => agent.id));
-  const selected = selectedAgentId
-    ? group.agentIds.includes(selectedAgentId)
-    : false;
+  const selected =
+    group.clusterId === selectedProjectId ||
+    (selectedAgentId ? group.agentIds.includes(selectedAgentId) : false);
   return {
     id: group.clusterId,
     slotIndex,
@@ -812,7 +893,8 @@ function projectZone(
       slotIndex,
       agents.length,
       fleetRadius,
-      latticeScale
+      latticeScale,
+      projectPacking
     ),
     visible:
       isAggregate ||
@@ -1064,6 +1146,7 @@ export function selectSpatialBoardLayout(
   options: SpatialBoardLayoutOptions = {}
 ): SpatialBoardLayout {
   const selectedAgentId = options.selectedAgentId ?? null;
+  const projectPacking = options.projectPacking ?? 'balanced';
   let altitude = options.altitude ?? 'fleet';
   let focusedProjectId = options.focusedProjectId ?? null;
   const allGroups = resolveContextGroups(state, {
@@ -1071,6 +1154,11 @@ export function selectSpatialBoardLayout(
   }).sort((a, b) => a.clusterId.localeCompare(b.clusterId));
   const sourceProjectCount = allGroups.length;
   const sourceAgentCount = Object.keys(state.agents).length;
+  const selectedProjectId = allGroups.some(
+    group => group.clusterId === options.selectedProjectId
+  )
+    ? options.selectedProjectId!
+    : null;
 
   if (altitude === 'agent') {
     const owner = selectedAgentId
@@ -1161,10 +1249,18 @@ export function selectSpatialBoardLayout(
     BOARD.fleetHexPitch,
     anyDelegating
   );
+  // The horizontal pitch is tighter than the nominal maximum diameter. Scale
+  // from the radius that actually fits between neighbouring centres, not from
+  // `fleetMaxRadius`; otherwise a maximal Project overlaps its horizontal
+  // neighbour in BOTH balanced and honeycomb projections.
+  const unscaledDisjointRadius = Math.min(
+    BOARD.fleetMaxRadius,
+    BOARD.fleetPitchX / 2
+  );
   const latticeScale = Math.max(
     1,
     ...[...fleetFootprints.values()].map(
-      footprint => footprint.radius / BOARD.fleetMaxRadius
+      footprint => footprint.radius / unscaledDisjointRadius
     )
   );
 
@@ -1188,7 +1284,8 @@ export function selectSpatialBoardLayout(
       slotIndex,
       group.agentIds.length,
       fleetFootprint.radius,
-      latticeScale
+      latticeScale,
+      projectPacking
     );
     return projectZone(
       group,
@@ -1199,6 +1296,8 @@ export function selectSpatialBoardLayout(
       fleetUnitSize,
       fleetFootprint.radius,
       latticeScale,
+      projectPacking,
+      selectedProjectId,
       selectedAgentId,
       options.visibleAgentIds,
       options.visibleProjectIds,
@@ -1280,7 +1379,9 @@ export function selectSpatialBoardLayout(
     version: 2,
     altitude,
     focusedProjectId: altitude === 'fleet' ? null : focusedProjectId,
+    selectedProjectId,
     selectedAgentId,
+    projectPacking,
     zones,
     pieces,
     delegationUnits,

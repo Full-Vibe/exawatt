@@ -16,6 +16,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentRef,
   type ReactNode,
   useSyncExternalStore,
 } from 'react';
@@ -127,6 +128,11 @@ import {
   easeOutCubic,
   nextDelegationExits,
 } from './delegation-roster';
+import type {
+  BoardAgentCandidate,
+  BoardProjectEmphasis,
+  OperationsBoardPresentation,
+} from './operations-board-presentation';
 
 export type { OperationsBoardViewport } from './operations-board-camera';
 
@@ -136,7 +142,7 @@ const BURN_RAMP_STEPS = 32;
 
 /** How far a non-focused Project's mass mixes toward the board (V3.7). Bodies
  *  and plates recede this much; status lights never do. */
-const FOCUS_RECESSION_MIX = 0.58;
+const FOCUS_RECESSION_MIX = 0.82;
 
 /** One color decision for every piece mark: status protocol by default, the
  *  FLUX ramp under the burn lens. Shape always keeps carrying status (D30
@@ -1187,19 +1193,25 @@ function BoardGrid({
  *  space once. */
 function ZoneEdges({
   zones,
+  projectEmphasis,
   theme,
 }: {
   zones: SpatialBoardProjectZone[];
+  projectEmphasis: BoardProjectEmphasis;
   theme: SpatialThemeSnapshot;
 }) {
   const { points, colors } = useMemo(() => {
     const points: Array<[number, number, number]> = [];
     const colors: THREE.Color[] = [];
+    const hasSelection = zones.some(zone => zone.selected);
     for (const zone of zones) {
+      const base = zone.selected
+        ? theme.selection
+        : spatialProjectIdentityColor(theme, zone.id);
       const accent = new THREE.Color(
-        zone.selected
-          ? theme.selection
-          : spatialProjectIdentityColor(theme, zone.id)
+        projectEmphasis === 'focus' && hasSelection && !zone.selected
+          ? mixHexColors(base, theme.canvas, 0.42)
+          : base
       );
       const center = rectCenter(zone.rect);
       const z = 0.35;
@@ -1223,7 +1235,7 @@ function ZoneEdges({
       }
     }
     return { points, colors };
-  }, [theme, zones]);
+  }, [projectEmphasis, theme, zones]);
   if (points.length === 0) return null;
   return (
     <Line
@@ -1240,6 +1252,78 @@ function ZoneEdges({
   );
 }
 
+/**
+ * Reviewable selected-Project emphasis. It is deliberately a sibling of the
+ * shipped edge draw rather than a replacement: Project identity remains on
+ * the zone edge, while selection gets the dedicated action/focus channel.
+ * One selected Project means one additional Line2 draw at most.
+ */
+function ProjectSelectionRing({
+  zone,
+  treatment,
+  reduced,
+  theme,
+}: {
+  zone: SpatialBoardProjectZone;
+  treatment: Exclude<BoardProjectEmphasis, 'current'>;
+  reduced: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const line = useRef<ComponentRef<typeof Line>>(null);
+  const points = useMemo(() => {
+    const result: Array<[number, number, number]> = [];
+    for (let index = 0; index <= 64; index += 1) {
+      const angle = (index / 64) * Math.PI * 2;
+      result.push([Math.cos(angle), Math.sin(angle), 0]);
+    }
+    return result;
+  }, []);
+  const center = rectCenter(zone.rect);
+  const radius = zone.radius * (treatment === 'lift' ? 1.045 : 1.03);
+  useFrame((state, delta) => {
+    const target = group.current;
+    const material = line.current?.material;
+    if (!target || !material) return;
+    const clamped = Math.min(delta, 0.05);
+    const nextScale = reduced
+      ? 1
+      : THREE.MathUtils.damp(target.scale.x, 1, 12, clamped);
+    const targetOpacity = treatment === 'focus' ? 0.72 : 0.88;
+    const nextOpacity = reduced
+      ? targetOpacity
+      : THREE.MathUtils.damp(material.opacity, targetOpacity, 12, clamped);
+    target.scale.setScalar(nextScale);
+    material.opacity = nextOpacity;
+    if (
+      Math.abs(nextScale - 1) > 0.001 ||
+      Math.abs(nextOpacity - targetOpacity) > 0.002
+    ) {
+      state.invalidate();
+    }
+  });
+  return (
+    <group
+      ref={group}
+      position={[center.x, center.y, 0.76]}
+      scale={reduced ? 1 : 1.08}
+    >
+      <Line
+        ref={line}
+        points={points}
+        color={theme.selection}
+        lineWidth={treatment === 'lift' ? 2.6 : 2.1}
+        toneMapped={false}
+        transparent
+        opacity={reduced ? (treatment === 'focus' ? 0.72 : 0.88) : 0}
+        depthWrite={false}
+        raycast={() => null}
+        scale={radius}
+      />
+    </group>
+  );
+}
+
 /** Mount-keyed entrance: zones fade up quickly; the parent keys this layer
  *  by semantic address so descent/ascent re-choreographs (never data ticks). */
 function ZoneLayer({
@@ -1251,6 +1335,7 @@ function ZoneLayer({
   onToggleZoneSelect,
   onHover,
   hoveredId,
+  projectEmphasis,
   theme,
 }: {
   zones: SpatialBoardProjectZone[];
@@ -1261,6 +1346,7 @@ function ZoneLayer({
   onToggleZoneSelect?: (zoneId: string) => void;
   onHover: (zoneId: string | null) => void;
   hoveredId: string | null;
+  projectEmphasis: BoardProjectEmphasis;
   theme: SpatialThemeSnapshot;
 }) {
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
@@ -1279,6 +1365,7 @@ function ZoneLayer({
     () => ({ a: new THREE.Color(), b: new THREE.Color() }),
     []
   );
+  const hasSelectedZone = zones.some(zone => zone.selected);
   const lastRecession = useRef(new Map<string, number>());
   const geometry = useMemo(() => {
     const next = new THREE.CylinderGeometry(0.5, 0.5, 1, 64);
@@ -1298,7 +1385,12 @@ function ZoneLayer({
     for (const zone of zones) {
       const plate = plateRefs.current.get(zone.id);
       if (!plate?.color) continue;
-      const amount = recession(zone.id, now);
+      const semanticAmount = recession(zone.id, now);
+      const studyAmount =
+        projectEmphasis === 'focus' && hasSelectedZone && !zone.selected
+          ? 0.32
+          : 0;
+      const amount = Math.max(semanticAmount, studyAmount);
       const previous = lastRecession.current.get(zone.id);
       if (previous !== undefined && Math.abs(previous - amount) < 0.002)
         continue;
@@ -1308,16 +1400,58 @@ function ZoneLayer({
           ? theme.zoneHover
           : spatialProjectZoneFill(theme, zone.id);
       recessionScratch.a.set(base);
-      recessionScratch.b.set(theme.zone);
+      recessionScratch.b.set(theme.canvas);
       plate.color.copy(
         recessionScratch.a.lerp(
           recessionScratch.b,
           amount * FOCUS_RECESSION_MIX
         )
       );
-      if (amount > 0.001 && amount < 0.999) receding = true;
+      if (semanticAmount > 0.001 && semanticAmount < 0.999) receding = true;
     }
-    if (receding) state.invalidate();
+    let lifting = false;
+    for (const zone of zones) {
+      const plate = plateRefs.current.get(zone.id);
+      if (!plate) continue;
+      const selectedLift = projectEmphasis === 'lift' && zone.selected;
+      const targetZ = selectedLift ? 0.18 : 0;
+      const targetScale = selectedLift ? 1.025 : 1;
+      if (reduced) {
+        plate.position.z = targetZ;
+        plate.scale.set(
+          zone.rect.width * targetScale,
+          zone.rect.height * targetScale,
+          0.62
+        );
+        continue;
+      }
+      plate.position.z = THREE.MathUtils.damp(
+        plate.position.z,
+        targetZ,
+        12,
+        Math.min(delta, 0.05)
+      );
+      plate.scale.x = THREE.MathUtils.damp(
+        plate.scale.x,
+        zone.rect.width * targetScale,
+        12,
+        Math.min(delta, 0.05)
+      );
+      plate.scale.y = THREE.MathUtils.damp(
+        plate.scale.y,
+        zone.rect.height * targetScale,
+        12,
+        Math.min(delta, 0.05)
+      );
+      if (
+        Math.abs(plate.position.z - targetZ) > 0.001 ||
+        Math.abs(plate.scale.x - zone.rect.width * targetScale) > 0.002 ||
+        Math.abs(plate.scale.y - zone.rect.height * targetScale) > 0.002
+      ) {
+        lifting = true;
+      }
+    }
+    if (receding || lifting) state.invalidate();
     if (entrance.current >= 1) {
       material.opacity = 1;
       return;
@@ -1382,7 +1516,23 @@ function ZoneLayer({
           );
         })}
       </Instances>
-      <ZoneEdges zones={zones} theme={theme} />
+      <ZoneEdges
+        zones={zones}
+        projectEmphasis={projectEmphasis}
+        theme={theme}
+      />
+      {projectEmphasis !== 'current' &&
+        zones
+          .filter(zone => zone.selected)
+          .map(zone => (
+            <ProjectSelectionRing
+              key={`project-selection:${zone.id}`}
+              zone={zone}
+              treatment={projectEmphasis}
+              reduced={reduced}
+              theme={theme}
+            />
+          ))}
     </>
   );
 }
@@ -1587,8 +1737,8 @@ function ProjectControls({
           <span
             className={
               compact
-                ? 'max-w-[7.5rem] truncate text-chrome-micro font-semibold tracking-[-0.01em]'
-                : 'max-w-[9.5rem] truncate text-chrome-meta font-semibold tracking-[-0.01em]'
+                ? 'max-w-[10rem] truncate text-chrome-title font-semibold tracking-[-0.01em]'
+                : 'max-w-[11rem] truncate text-sm font-semibold tracking-[-0.01em]'
             }
             style={{ color: theme.label }}
           >
@@ -1596,7 +1746,7 @@ function ProjectControls({
           </span>
           <span className="flex items-baseline gap-2">
             <span
-              className="font-mono text-chrome-nano tabular-nums"
+              className="font-mono text-chrome-meta tabular-nums"
               style={{ color: theme.labelMuted }}
             >
               {zone.agentCount}
@@ -1631,7 +1781,7 @@ function ProjectControls({
           className={
             compact
               ? 'hidden'
-              : 'mt-0.5 flex gap-2 font-mono text-chrome-nano tabular-nums'
+              : 'mt-1 flex gap-2 font-mono text-chrome-meta tabular-nums'
           }
           style={{ color: theme.labelMuted }}
         >
@@ -1667,8 +1817,8 @@ function ProjectControls({
       </>
     );
     const frameClass = compact
-      ? 'exa-material-chrome board-control-enter border px-1.5 py-0.5 text-left'
-      : 'exa-material-chrome board-control-enter w-44 border px-2.5 py-2 text-left';
+      ? 'exa-material-chrome board-control-enter border px-2 py-1.5 text-left'
+      : 'exa-material-chrome board-control-enter w-52 border px-3 py-2.5 text-left';
     const frameStyle = {
       borderColor: accent,
       color: theme.label,
@@ -2497,9 +2647,82 @@ function SelectionRing({
   );
 }
 
+/**
+ * Soft candidate feedback for the Agent the pointer or keyboard is about to
+ * choose. The committed selection keeps its circular dashed reticle; this is
+ * a solid, padded hex so feed-forward and selection cannot be confused. The
+ * reticle contracts on press, giving mouse/touch-down visible weight without
+ * moving the Agent's stable address.
+ */
+function AgentCandidateReticle({
+  piece,
+  pressed,
+  reduced,
+  theme,
+}: {
+  piece: SpatialBoardPiece;
+  pressed: boolean;
+  reduced: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const line = useRef<ComponentRef<typeof Line>>(null);
+  const points = useMemo(() => {
+    const result: Array<[number, number, number]> = [];
+    for (let index = 0; index <= 6; index += 1) {
+      const angle = -Math.PI / 2 + (index / 6) * Math.PI * 2;
+      result.push([Math.cos(angle) * 0.68, Math.sin(angle) * 0.68, 0]);
+    }
+    return result;
+  }, []);
+  const restingScale = piece.size * (pressed ? 0.75 : 1);
+  const restingOpacity = pressed ? 1 : 0.78;
+  useFrame((state, delta) => {
+    const target = group.current;
+    const material = line.current?.material;
+    if (!target || !material) return;
+    const clamped = Math.min(delta, 0.05);
+    const nextScale = reduced
+      ? restingScale
+      : THREE.MathUtils.damp(target.scale.x, restingScale, 14, clamped);
+    const nextOpacity = reduced
+      ? restingOpacity
+      : THREE.MathUtils.damp(material.opacity, restingOpacity, 14, clamped);
+    target.scale.setScalar(nextScale);
+    material.opacity = nextOpacity;
+    if (
+      Math.abs(nextScale - restingScale) > 0.001 ||
+      Math.abs(nextOpacity - restingOpacity) > 0.002
+    ) {
+      state.invalidate();
+    }
+  });
+  return (
+    <group
+      ref={group}
+      position={[piece.x, -piece.y, 0.82]}
+      scale={reduced ? restingScale : piece.size * 1.08}
+    >
+      <Line
+        ref={line}
+        points={points}
+        color={theme.selection}
+        lineWidth={pressed ? 3.2 : 2.1}
+        toneMapped={false}
+        transparent
+        opacity={reduced ? restingOpacity : 0}
+        depthWrite={false}
+        raycast={() => null}
+      />
+    </group>
+  );
+}
+
 function AgentPieceLayer({
   pieces,
   delegationUnits,
+  hoveredAgentId,
+  pressedAgentId,
   hoveredDelegationId,
   selectedDelegationUnitId,
   altitude,
@@ -2509,10 +2732,15 @@ function AgentPieceLayer({
   lens,
   onSelectAgent,
   onToggleAgentSelect,
+  onAgentHoverChange,
+  onAgentPressedChange,
+  candidateTreatment,
   theme,
 }: {
   pieces: SpatialBoardPiece[];
   delegationUnits: SpatialBoardDelegationUnit[];
+  hoveredAgentId: string | null;
+  pressedAgentId: string | null;
   /** Hovered delegated child, from its DOM control. */
   hoveredDelegationId: string | null;
   /** The delegated child arrow navigation currently sits on. */
@@ -2524,6 +2752,9 @@ function AgentPieceLayer({
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
+  onAgentHoverChange: (agentId: string | null) => void;
+  onAgentPressedChange: (agentId: string | null) => void;
+  candidateTreatment: BoardAgentCandidate;
   theme: SpatialThemeSnapshot;
 }) {
   // Aggregate pieces render as the instanced population dot field (V3.1),
@@ -2570,7 +2801,7 @@ function AgentPieceLayer({
     }
     return retiring.length ? [...solid, ...retiring] : solid;
   }, [retiringIds, solid]);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hoveredMeshId, setHoveredMeshId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
   // Focus recession (V3.7): a neighbour's bodies mix toward the board on the
@@ -2594,7 +2825,11 @@ function AgentPieceLayer({
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const invalidate = useThree(state => state.invalidate);
   const pieceGeometry = AGENT_HEX_GEOMETRY;
-  useCursor(hoveredId != null);
+  // Keep the shipped cursor path local to this layer. The review treatment
+  // additionally lifts candidate state to the canvas root so its WebGL and
+  // DOM hit paths converge, but production should not rerender the whole
+  // board merely because the pointer crossed an Agent.
+  useCursor(hoveredMeshId != null);
   // Settled delegated children ride the parents' own D40 draws, so a child's
   // Active light is literally the same light — and costs no extra draw call.
   const settledDelegation = useSettledDelegationUnits(delegationUnits, reduced);
@@ -2654,7 +2889,7 @@ function AgentPieceLayer({
           continue;
         lastBodyRecession.current.set(piece.id, amount);
         recessionScratch.a.set(theme.unit);
-        recessionScratch.b.set(theme.zone);
+        recessionScratch.b.set(theme.canvas);
         body.color.copy(
           recessionScratch.a.lerp(
             recessionScratch.b,
@@ -2696,6 +2931,10 @@ function AgentPieceLayer({
   // walked-to child wears the board's own selection ring rather than being
   // reachable but unmarked.
   const selected = statusSubjects.find(piece => piece.selected);
+  const candidateAgentId = pressedAgentId ?? hoveredAgentId;
+  const candidate = candidateAgentId
+    ? visible.find(piece => piece.agentId === candidateAgentId)
+    : undefined;
   return (
     <group>
       <Instances geometry={pieceGeometry} limit={256} range={rendered.length}>
@@ -2719,9 +2958,33 @@ function AgentPieceLayer({
               onPointerOver={event => {
                 if (!interactive) return;
                 event.stopPropagation();
-                setHoveredId(piece.id);
+                setHoveredMeshId(piece.id);
+                if (candidateTreatment === 'precision') {
+                  onAgentHoverChange(piece.agentId);
+                }
               }}
-              onPointerOut={() => setHoveredId(null)}
+              onPointerOut={() => {
+                setHoveredMeshId(null);
+                if (candidateTreatment === 'precision') {
+                  onAgentHoverChange(null);
+                }
+              }}
+              onPointerDown={event => {
+                if (
+                  !interactive ||
+                  !piece.agentId ||
+                  event.button !== 0 ||
+                  candidateTreatment !== 'precision'
+                )
+                  return;
+                event.stopPropagation();
+                onAgentPressedChange(piece.agentId);
+              }}
+              onPointerUp={() => {
+                if (candidateTreatment === 'precision') {
+                  onAgentPressedChange(null);
+                }
+              }}
               onClick={(event: ThreeEvent<MouseEvent>) => {
                 if (!piece.agentId || event.delta > 5) return;
                 // Shift-click toggles multi-selection at EVERY altitude
@@ -2759,6 +3022,15 @@ function AgentPieceLayer({
           key={selected.id}
           piece={selected}
           active={ambient}
+          reduced={reduced}
+          theme={theme}
+        />
+      )}
+      {candidateTreatment === 'precision' && candidate && (
+        <AgentCandidateReticle
+          key={`agent-candidate:${candidate.id}`}
+          piece={candidate}
+          pressed={pressedAgentId === candidate.agentId}
           reduced={reduced}
           theme={theme}
         />
@@ -3363,6 +3635,9 @@ function AgentControls({
   focusedProjectId,
   onSelectAgent,
   onToggleAgentSelect,
+  onHoverChange,
+  onPressedChange,
+  candidateTreatment,
   multiSelection,
   reduced,
   theme,
@@ -3372,6 +3647,9 @@ function AgentControls({
   focusedProjectId: string | null;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
+  onHoverChange: (agentId: string | null) => void;
+  onPressedChange: (agentId: string | null) => void;
+  candidateTreatment: BoardAgentCandidate;
   multiSelection?: ReadonlySet<string>;
   reduced: boolean;
   theme: SpatialThemeSnapshot;
@@ -3435,7 +3713,70 @@ function AgentControls({
                 onSelectAgent(piece.agentId!);
               }
             }}
-            className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
+            onPointerEnter={() => {
+              if (candidateTreatment === 'precision') {
+                onHoverChange(piece.agentId!);
+              }
+            }}
+            onPointerLeave={event => {
+              if (
+                candidateTreatment === 'precision' &&
+                document.activeElement !== event.currentTarget
+              ) {
+                onHoverChange(null);
+              }
+            }}
+            onPointerDown={event => {
+              if (event.button !== 0 || candidateTreatment !== 'precision')
+                return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onPressedChange(piece.agentId!);
+            }}
+            onPointerUp={event => {
+              if (candidateTreatment !== 'precision') return;
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+              onPressedChange(null);
+            }}
+            onPointerCancel={() => {
+              if (candidateTreatment === 'precision') onPressedChange(null);
+            }}
+            onLostPointerCapture={() => {
+              if (candidateTreatment === 'precision') onPressedChange(null);
+            }}
+            onFocus={() => {
+              if (candidateTreatment === 'precision') {
+                onHoverChange(piece.agentId!);
+              }
+            }}
+            onBlur={() => {
+              if (candidateTreatment === 'precision') {
+                onHoverChange(null);
+                onPressedChange(null);
+              }
+            }}
+            onKeyDown={event => {
+              if (
+                candidateTreatment === 'precision' &&
+                (event.key === 'Enter' || event.key === ' ')
+              ) {
+                onPressedChange(piece.agentId!);
+              }
+            }}
+            onKeyUp={event => {
+              if (
+                candidateTreatment === 'precision' &&
+                (event.key === 'Enter' || event.key === ' ')
+              ) {
+                onPressedChange(null);
+              }
+            }}
+            className={`board-control-enter group relative grid h-11 w-11 cursor-pointer place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px ${
+              candidateTreatment === 'precision'
+                ? ''
+                : 'focus-visible:ring-2 focus-visible:ring-ring'
+            }`}
           >
             {/* Reveal-only (operator, 2026-08-11): a persistent card per Agent
                 put three lines of prose on a board whose job is a glance, and
@@ -3603,6 +3944,7 @@ export function OperationsBoardCanvas({
   onSelectDelegationChild,
   selectedDelegationUnitId = null,
   preserveDrawingBuffer = false,
+  presentation,
   theme,
 }: {
   layout: SpatialBoardLayout;
@@ -3630,6 +3972,7 @@ export function OperationsBoardCanvas({
   /** The delegated child arrow navigation sits on, so it wears the ring. */
   selectedDelegationUnitId?: string | null;
   preserveDrawingBuffer?: boolean;
+  presentation: OperationsBoardPresentation;
   theme: SpatialThemeSnapshot;
 }) {
   const reduced = useReducedMotion();
@@ -3653,6 +3996,8 @@ export function OperationsBoardCanvas({
     return () => window.clearTimeout(timer);
   }, []);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const [pressedAgentId, setPressedAgentId] = useState<string | null>(null);
   const [hoveredDelegationId, setHoveredDelegationId] = useState<string | null>(
     null
   );
@@ -3758,11 +4103,14 @@ export function OperationsBoardCanvas({
             onToggleZoneSelect={onToggleZoneSelect}
             onHover={setHoveredZoneId}
             hoveredId={hoveredZoneId}
+            projectEmphasis={presentation.projectEmphasis}
             theme={theme}
           />
           <AgentPieceLayer
             pieces={layout.pieces}
             delegationUnits={delegationUnits}
+            hoveredAgentId={hoveredAgentId}
+            pressedAgentId={pressedAgentId}
             hoveredDelegationId={hoveredDelegationId}
             selectedDelegationUnitId={selectedDelegationUnitId}
             altitude={layout.altitude}
@@ -3772,6 +4120,9 @@ export function OperationsBoardCanvas({
             lens={lens}
             onSelectAgent={onSelectAgent}
             onToggleAgentSelect={onToggleAgentSelect}
+            onAgentHoverChange={setHoveredAgentId}
+            onAgentPressedChange={setPressedAgentId}
+            candidateTreatment={presentation.agentCandidate}
             theme={theme}
           />
           <PopulationDotLayer
@@ -3806,6 +4157,9 @@ export function OperationsBoardCanvas({
             focusedProjectId={layout.focusedProjectId}
             onSelectAgent={onSelectAgent}
             onToggleAgentSelect={onToggleAgentSelect}
+            onHoverChange={setHoveredAgentId}
+            onPressedChange={setPressedAgentId}
+            candidateTreatment={presentation.agentCandidate}
             multiSelection={multiSelection}
             reduced={reduced}
             theme={theme}

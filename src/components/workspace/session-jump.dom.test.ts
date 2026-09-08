@@ -15,6 +15,7 @@ import {
   LAUNCH_EVENT,
   OPEN_PROJECT_EVENT,
   OPEN_PROJECT_PICKER_EVENT,
+  REMOTE_AGENT_OPEN_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   SESSION_JUMP_EVENT,
   consumePendingAgentComposer,
@@ -22,12 +23,14 @@ import {
   consumePendingLaunch,
   consumePendingOpenProject,
   consumePendingProjectPicker,
+  consumePendingRemoteAgentOpen,
   consumePendingReopenLastClosed,
   consumePendingSessionJump,
   requestAgentComposer,
   requestLaunch,
   requestOpenProject,
   requestProjectPicker,
+  requestRemoteAgentOpen,
   requestReopenLastClosed,
   requestSessionJump,
 } from './session-jump';
@@ -39,6 +42,7 @@ function drainAllSlots() {
   consumePendingProjectPicker();
   consumePendingReopenLastClosed();
   consumePendingSessionJump();
+  consumePendingRemoteAgentOpen();
 }
 
 const LAUNCH_EVENTS = [
@@ -56,7 +60,11 @@ describe('session-jump launch verbs under tenant scope', () => {
   beforeEach(() => {
     drainAllSlots();
     seen.length = 0;
-    for (const event of [...LAUNCH_EVENTS, SESSION_JUMP_EVENT]) {
+    for (const event of [
+      ...LAUNCH_EVENTS,
+      SESSION_JUMP_EVENT,
+      REMOTE_AGENT_OPEN_EVENT,
+    ]) {
       const listener = () => seen.push(event);
       listeners.set(event, listener);
       window.addEventListener(event, listener);
@@ -162,5 +170,24 @@ describe('session-jump launch verbs under tenant scope', () => {
 
     expect(seen).toEqual([SESSION_JUMP_EVENT]);
     expect(consumePendingSessionJump()).toBe('vgs-dispatch-fanout-3');
+  });
+
+  it('carries a projected Agent identity without converting it to a Session', () => {
+    let detail: unknown;
+    window.addEventListener(
+      REMOTE_AGENT_OPEN_EVENT,
+      event => {
+        detail = (event as CustomEvent).detail;
+      },
+      { once: true }
+    );
+
+    requestRemoteAgentOpen('projected:source-1:agent-alpha');
+
+    expect(detail).toBe('projected:source-1:agent-alpha');
+    expect(consumePendingRemoteAgentOpen()).toBe(
+      'projected:source-1:agent-alpha'
+    );
+    expect(consumePendingSessionJump()).toBeNull();
   });
 });

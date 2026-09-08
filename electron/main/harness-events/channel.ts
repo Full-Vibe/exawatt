@@ -203,7 +203,14 @@ export class HarnessEventChannel extends EventEmitter {
         // A payload we cannot parse is one event lost, not a broken Session.
         return;
       }
-      const event = normalize(payload, this.now());
+      let event: HarnessEvent | null;
+      try {
+        event = normalize(payload, this.now());
+      } catch {
+        // Normalizers are internal, but their input is not. A malformed event
+        // must not turn a provider hook into an uncaught main-process error.
+        return;
+      }
       if (event) this.emit('event', sessionId, event);
     });
   }

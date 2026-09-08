@@ -2,6 +2,7 @@ export const MAX_FEEDBACK_MESSAGE_CHARS = 12_000;
 export const MAX_FEEDBACK_CONTEXT_BYTES = 32_000;
 export const MAX_FEEDBACK_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 export const MAX_FEEDBACK_REQUEST_BYTES = 7 * 1024 * 1024;
+export const PRODUCT_FEEDBACK_SCHEMA_VERSION = 1 as const;
 
 export type FeedbackKind = 'general' | 'bug' | 'idea' | 'context_label';
 
@@ -18,6 +19,17 @@ export interface ProductFeedbackRequest {
   attachment?: { dataUrl: string; name?: string | null } | null;
 }
 
+/** Exact V1 request envelope sent across the compatible-service boundary. */
+export interface ProductFeedbackServiceRequestV1 extends ProductFeedbackRequest {
+  schemaVersion: typeof PRODUCT_FEEDBACK_SCHEMA_VERSION;
+}
+
+export interface ProductFeedbackServiceResponseV1 {
+  id: string;
+  duplicate: boolean;
+  attachmentStored: boolean;
+}
+
 export interface ParsedFeedback extends Omit<
   ProductFeedbackRequest,
   'attachment'
@@ -28,6 +40,29 @@ export interface ParsedFeedback extends Omit<
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATA_URL = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/;
+
+export function parseProductFeedbackServiceResponse(
+  value: unknown
+): ProductFeedbackServiceResponseV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Feedback response is invalid');
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    input.schemaVersion !== PRODUCT_FEEDBACK_SCHEMA_VERSION ||
+    typeof input.id !== 'string' ||
+    !UUID.test(input.id) ||
+    typeof input.duplicate !== 'boolean' ||
+    typeof input.attachmentStored !== 'boolean'
+  ) {
+    throw new TypeError('Feedback response is invalid');
+  }
+  return {
+    id: input.id,
+    duplicate: input.duplicate,
+    attachmentStored: input.attachmentStored,
+  };
+}
 
 function optionalText(
   value: unknown,
@@ -56,6 +91,24 @@ export function parseFeedbackRequest(raw: string): ParsedFeedback {
   if (!value || typeof value !== 'object')
     throw new Error('Request is invalid');
   const input = value as Record<string, unknown>;
+  // `schemaVersion` remains optional here for installed headerless clients;
+  // the hosted V1 route requires it once the protocol header is explicit.
+  const allowedFields = new Set([
+    'schemaVersion',
+    'kind',
+    'sentiment',
+    'message',
+    'surface',
+    'appVersion',
+    'buildSha',
+    'platform',
+    'context',
+    'idempotencyKey',
+    'attachment',
+  ]);
+  if (Object.keys(input).some(field => !allowedFields.has(field))) {
+    throw new Error('Request contains unsupported fields');
+  }
   if (
     !['general', 'bug', 'idea', 'context_label'].includes(String(input.kind))
   ) {
@@ -108,9 +161,19 @@ export function parseFeedbackRequest(raw: string): ParsedFeedback {
     if (!input.attachment || typeof input.attachment !== 'object') {
       throw new Error('Feedback attachment is invalid');
     }
-    const dataUrl = (input.attachment as { dataUrl?: unknown }).dataUrl;
+    const attachmentInput = input.attachment as Record<string, unknown>;
+    const allowedAttachmentFields = new Set(['dataUrl', 'name']);
+    if (
+      Object.keys(attachmentInput).some(
+        field => !allowedAttachmentFields.has(field)
+      )
+    ) {
+      throw new Error('Feedback attachment contains unsupported fields');
+    }
+    const dataUrl = attachmentInput.dataUrl;
     if (typeof dataUrl !== 'string')
       throw new Error('Feedback attachment is invalid');
+    optionalText(attachmentInput.name, 'Feedback attachment name', 255);
     const match = DATA_URL.exec(dataUrl);
     if (!match) throw new Error('Feedback attachment type is invalid');
     const bytes = Uint8Array.from(Buffer.from(match[2], 'base64'));

@@ -15,7 +15,9 @@ import {
   resolvePublicRemote,
 } from './lib/public-delivery.mjs';
 import { projectPublicHistory } from './lib/public-projection.mjs';
-import { recordSourceLock } from './lib/public-source-lock.mjs';
+import { readSourceLock, recordSourceLock } from './lib/public-source-lock.mjs';
+import { runAudit as runPublicMetadataAudit } from './public-metadata-audit.mjs';
+import { scanRepositoryHistory } from './secret-scan.mjs';
 
 /**
  * The deliberate non-fast-forward path (ENG-030 WP6-D).
@@ -47,6 +49,7 @@ async function git(cwd, ...args) {
   const { stdout } = await execFileAsync('git', args, {
     cwd,
     maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
   });
   return stdout.trim();
 }
@@ -119,11 +122,109 @@ export function reseedPushArgs({ url, branch = PUBLIC_BRANCH, expected }) {
   ];
 }
 
+async function certifyPublishedRemote({
+  root,
+  parent,
+  remote,
+  expectedPublicSha,
+  metadataAudit,
+  secretScan,
+  log,
+}) {
+  const observed = (await git(root, 'ls-remote', remote.url, PUBLIC_BRANCH))
+    .split('\t')[0]
+    .trim();
+  if (observed !== expectedPublicSha) {
+    fail(
+      `published remote read-back is ${observed || '<empty>'}, not ` +
+        expectedPublicSha
+    );
+  }
+  const mirror = path.join(parent, 'published.git');
+  const worktree = path.join(parent, 'published');
+  await rm(mirror, { recursive: true, force: true });
+  await rm(worktree, { recursive: true, force: true });
+  await execFileAsync(
+    'git',
+    ['clone', '--quiet', '--mirror', '--no-local', remote.url, mirror],
+    { cwd: parent, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }
+  );
+  const mirrorMaster = await git(
+    mirror,
+    'rev-parse',
+    '--verify',
+    `refs/heads/${PUBLIC_BRANCH}^{commit}`
+  );
+  if (mirrorMaster !== expectedPublicSha) {
+    fail(
+      `mirror captured public ${mirrorMaster}, not expected ${expectedPublicSha}`
+    );
+  }
+  await execFileAsync(
+    'git',
+    [
+      `--git-dir=${mirror}`,
+      'worktree',
+      'add',
+      '--quiet',
+      '--detach',
+      worktree,
+      `refs/heads/${PUBLIC_BRANCH}`,
+    ],
+    { cwd: parent }
+  );
+  const audit = await metadataAudit({
+    repo: mirror,
+    refs: [],
+    format: 'json',
+    forbiddenVocabulary: null,
+    allowLegacyCommitter: false,
+  });
+  if (audit.reseedRequired || audit.tags !== 0) {
+    fail(
+      `published remote metadata postcondition found ${audit.findings.length} ` +
+        `finding(s) and ${audit.tags} tag(s)`
+    );
+  }
+  const secretScanCode = await secretScan({ root: worktree, log });
+  if (secretScanCode !== 0) {
+    fail(
+      `published remote complete-history gitleaks postcondition exited ${secretScanCode}`
+    );
+  }
+  const finalObserved = (
+    await git(root, 'ls-remote', remote.url, PUBLIC_BRANCH)
+  )
+    .split('\t')[0]
+    .trim();
+  if (finalObserved !== expectedPublicSha) {
+    fail(
+      `public remote moved to ${finalObserved || '<empty>'} during certification`
+    );
+  }
+  return audit;
+}
+
+function sourceLockEvidence(record) {
+  const { schemaVersion, at, status, ...evidence } = record;
+  void schemaVersion;
+  void at;
+  void status;
+  return evidence;
+}
+
 export async function reseedPublicRepository({
   root,
   reason,
   source = null,
   log = console.log,
+  metadataAudit = runPublicMetadataAudit,
+  secretScan = scanRepositoryHistory,
+  push = (cwd, args) =>
+    execFileAsync('git', args, {
+      cwd,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }),
 }) {
   const remote = await resolvePublicRemote(root);
   if (!remote) {
@@ -138,21 +239,178 @@ export async function reseedPublicRepository({
       `the public remote has no ${PUBLIC_BRANCH}; the first publication is an ordinary landing, not a reseed`
     );
   }
+  const unexpectedRefs = (await git(root, 'ls-remote', remote.url))
+    .split('\n')
+    .filter(Boolean)
+    .map(line => line.split(/\s/u)[1])
+    .filter(ref => ref !== 'HEAD' && ref !== `refs/heads/${PUBLIC_BRANCH}`);
+  if (unexpectedRefs.length > 0) {
+    fail(
+      `the public remote advertises ${unexpectedRefs.length} additional ref(s); ` +
+        'a master-only reseed would leave their old history reachable'
+    );
+  }
 
-  let sourceSha = source;
-  if (!sourceSha) {
-    await git(root, 'fetch', '--quiet', 'origin', 'master').catch(() => {});
-    sourceSha = 'origin/master';
+  if (!source) {
+    fail(
+      '--source is required and must name the freshly fetched origin/master'
+    );
+  }
+  await git(root, 'fetch', '--quiet', 'origin', 'master');
+  const originMaster = await git(
+    root,
+    'rev-parse',
+    '--verify',
+    'origin/master^{commit}'
+  );
+  const sourceSha = await git(
+    root,
+    'rev-parse',
+    '--verify',
+    `${source}^{commit}`
+  );
+  if (sourceSha !== originMaster) {
+    fail(
+      `--source resolves to ${sourceSha}, not freshly fetched origin/master ${originMaster}`
+    );
   }
 
   const parent = await mkdtemp(path.join(tmpdir(), 'exawatt-reseed-'));
   const lock = await acquireDeliveryLock(root);
   try {
+    await git(root, 'fetch', '--quiet', 'origin', 'master');
+    const lockedOriginMaster = await git(
+      root,
+      'rev-parse',
+      '--verify',
+      'origin/master^{commit}'
+    );
+    if (lockedOriginMaster !== sourceSha) {
+      fail(
+        `origin/master moved from selected ${sourceSha} to ${lockedOriginMaster} while acquiring the delivery lock`
+      );
+    }
+    const lockedPublicSha = (
+      await git(root, 'ls-remote', remote.url, PUBLIC_BRANCH)
+    )
+      .split('\t')[0]
+      .trim();
+    if (lockedPublicSha !== existingPublicSha) {
+      fail(
+        `public master moved from ${existingPublicSha} to ${lockedPublicSha} while acquiring the delivery lock`
+      );
+    }
+    const priorIntent = (await readSourceLock(root)).at(-1);
+    if (priorIntent?.status === 'reseed-intent') {
+      if (
+        priorIntent.privateSha !== sourceSha ||
+        priorIntent.reason !== reason ||
+        priorIntent.publicRepository !== remote.url
+      ) {
+        fail(
+          'an unresolved reseed intent does not match this source, reason, or public repository; refusing ambiguous recovery'
+        );
+      }
+      if (existingPublicSha === priorIntent.previousPublicSha) {
+        const retryProjection = await projectPublicHistory({
+          sourceRepo: root,
+          sourceSha,
+          destination: path.join(parent, 'retry-public'),
+          rebuildHistory: true,
+        });
+        if (retryProjection.publicSha !== priorIntent.publicSha) {
+          fail(
+            `reseed intent candidate was ${priorIntent.publicSha}, but regeneration produced ${retryProjection.publicSha}`
+          );
+        }
+        const retryAudit = await metadataAudit({
+          repo: retryProjection.destination,
+          refs: [],
+          format: 'json',
+          forbiddenVocabulary: null,
+          allowLegacyCommitter: false,
+        });
+        if (retryAudit.reseedRequired || retryAudit.tags !== 0) {
+          fail('regenerated reseed intent candidate failed metadata policy');
+        }
+        if (
+          (await secretScan({ root: retryProjection.destination, log })) !== 0
+        ) {
+          fail('regenerated reseed intent candidate failed gitleaks');
+        }
+        await push(
+          retryProjection.destination,
+          reseedPushArgs({
+            url: remote.url,
+            expected: priorIntent.previousPublicSha,
+          })
+        );
+      } else if (existingPublicSha !== priorIntent.publicSha) {
+        fail(
+          `unresolved reseed intent expected remote ${priorIntent.previousPublicSha} ` +
+            `or ${priorIntent.publicSha}, found ${existingPublicSha}`
+        );
+      }
+      await certifyPublishedRemote({
+        root,
+        parent,
+        remote,
+        expectedPublicSha: priorIntent.publicSha,
+        metadataAudit,
+        secretScan,
+        log,
+      });
+      const record = await recordSourceLock(root, {
+        status: 'reseeded',
+        ...sourceLockEvidence(priorIntent),
+      });
+      await appendDeliveryMetric(root, 'public_reseed_recovered', {
+        privateSha: record.privateSha,
+        publicSha: record.publicSha,
+        reason,
+      });
+      log(
+        `[open-source-reseed] recovered accepted reseed ${record.publicSha.slice(0, 12)}; postconditions passed and the epoch update remains owed`
+      );
+      return record;
+    }
     const projection = await projectPublicHistory({
       sourceRepo: root,
       sourceSha,
       destination: path.join(parent, 'public'),
+      rebuildHistory: true,
     });
+    if (
+      !projection.metadataAudit ||
+      projection.metadataAudit.reseedRequired ||
+      projection.metadataAudit.tags !== 0
+    ) {
+      fail(
+        'the reseed candidate lacks a clean whole-history metadata audit; refusing before any public ref is fetched or pushed'
+      );
+    }
+    const commandAudit = await metadataAudit({
+      repo: projection.destination,
+      refs: [],
+      format: 'json',
+      forbiddenVocabulary: null,
+      allowLegacyCommitter: false,
+    });
+    if (commandAudit.reseedRequired || commandAudit.tags !== 0) {
+      fail(
+        `the reseed metadata gate found ${commandAudit.findings.length} ` +
+          `finding(s) and ${commandAudit.tags} tag(s)`
+      );
+    }
+    const secretScanCode = await secretScan({
+      root: projection.destination,
+      log,
+    });
+    if (secretScanCode !== 0) {
+      fail(
+        `the pinned complete-history gitleaks gate exited ${secretScanCode}`
+      );
+    }
     await git(
       projection.destination,
       'fetch',
@@ -184,20 +442,15 @@ export async function reseedPublicRepository({
       '--count',
       `${projection.publicSha}..${existingPublicSha}`
     );
-    log(
-      `[open-source-reseed] RESEEDING ${remote.url} ${PUBLIC_BRANCH}: ` +
-        `${existingPublicSha.slice(0, 12)} is replaced by ` +
-        `${projection.publicSha.slice(0, 12)} (${projection.outputCount} paths, ` +
-        `${dropped} public commit(s) dropped). Reason: ${reason}`
-    );
-    await execFileAsync(
-      'git',
-      reseedPushArgs({ url: remote.url, expected: existingPublicSha }),
-      { cwd: projection.destination }
-    );
-
-    const record = await recordSourceLock(root, {
-      status: 'reseeded',
+    const epochUpdate = {
+      schemaVersion: 1,
+      sourceSha: projection.sourceSha,
+      publicSha: projection.publicSha,
+      metadataPolicyId: projection.metadataAudit.policyId,
+      projectionContractId: projection.projectionContractId,
+      reason: `Sanitized whole-history reseed: ${reason}`,
+    };
+    const reseedEvidence = {
       privateSha: projection.sourceSha,
       publicSha: projection.publicSha,
       previousPublicSha: existingPublicSha,
@@ -211,6 +464,53 @@ export async function reseedPublicRepository({
         output => output.path
       ),
       reason,
+      metadataPolicyId: projection.metadataAudit.policyId,
+      projectionContractId: projection.projectionContractId,
+      metadataCommitCount: projection.metadataAudit.commits,
+      metadataTagCount: projection.metadataAudit.tags,
+      completeHistoryGitleaks: 'passed',
+      epochUpdateOwed: true,
+      epochUpdate,
+    };
+    log(
+      `[open-source-reseed] RESEEDING ${remote.url} ${PUBLIC_BRANCH}: ` +
+        `${existingPublicSha.slice(0, 12)} is replaced by ` +
+        `${projection.publicSha.slice(0, 12)} (${projection.outputCount} paths, ` +
+        `${dropped} public commit(s) dropped). Reason: ${reason}`
+    );
+    const refsBeforePush = (await git(root, 'ls-remote', remote.url))
+      .split('\n')
+      .filter(Boolean);
+    if (refsBeforePush.length !== 2) {
+      fail(
+        'additional public refs appeared after preflight; refusing the push'
+      );
+    }
+    // Persist the exact lease/candidate before the destructive transition. If
+    // the process exits after the server accepts the push, recovery still
+    // knows both sides and ordinary delivery stays latched.
+    await recordSourceLock(root, {
+      status: 'reseed-intent',
+      ...reseedEvidence,
+    });
+    await push(
+      projection.destination,
+      reseedPushArgs({ url: remote.url, expected: existingPublicSha })
+    );
+
+    await certifyPublishedRemote({
+      root,
+      parent,
+      remote,
+      expectedPublicSha: projection.publicSha,
+      metadataAudit,
+      secretScan,
+      log,
+    });
+
+    const record = await recordSourceLock(root, {
+      status: 'reseeded',
+      ...reseedEvidence,
     });
     await appendDeliveryMetric(root, 'public_reseed', {
       privateSha: record.privateSha,
@@ -219,7 +519,8 @@ export async function reseedPublicRepository({
       reason,
     });
     log(
-      `[open-source-reseed] public ${PUBLIC_BRANCH} is now ${projection.publicSha.slice(0, 12)}; the pair is recorded in the source lock`
+      `[open-source-reseed] public ${PUBLIC_BRANCH} is now ${projection.publicSha.slice(0, 12)}; ` +
+        'the pair is recorded and the exact tracked epoch update is owed before ordinary delivery resumes'
     );
     return record;
   } finally {

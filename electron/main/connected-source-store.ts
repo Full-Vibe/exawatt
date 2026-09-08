@@ -82,11 +82,12 @@ export interface ConnectedSourceStoreDependencies {
 }
 
 /**
- * The server one transport points at, as a single stable string.
+ * The historical source-id input, as a single stable string.
  *
- * Only the fields that select a destination take part. An identity file is how
- * Exawatt reaches a server, never which server it is, so two records differing
- * only there name one installation and must not become two.
+ * The Gateway port remains here for persisted-id compatibility: every source
+ * configured before runtime port discovery included it. Server deduplication
+ * uses `serverTarget` below, where the mutable service port is correctly not
+ * identity. An identity file is likewise access material, not identity.
  *
  * Reads defensively rather than trusting the declared type: `add` is reachable
  * from the renderer, and this runs before `parseConnectedSourceRecord` has had
@@ -110,6 +111,25 @@ function transportTarget(transport: unknown): string | null {
             candidate.port,
             candidate.remotePort,
           ]
+        : candidate.kind === 'local-loopback'
+          ? ['local-loopback', candidate.port]
+          : null;
+  if (parts === null) return null;
+  if (parts.some(part => part === undefined || part === null)) return null;
+  return JSON.stringify(parts);
+}
+
+/** One server regardless of mutable Gateway port or key-file access path. */
+function serverTarget(transport: unknown): string | null {
+  if (!transport || typeof transport !== 'object' || Array.isArray(transport)) {
+    return null;
+  }
+  const candidate = transport as Record<string, unknown>;
+  const parts: readonly unknown[] | null =
+    candidate.kind === 'ssh-alias'
+      ? ['ssh-alias', candidate.alias]
+      : candidate.kind === 'ssh-manual'
+        ? ['ssh-manual', candidate.user, candidate.host, candidate.port]
         : candidate.kind === 'local-loopback'
           ? ['local-loopback', candidate.port]
           : null;
@@ -268,10 +288,11 @@ export class ConnectedSourceStore {
   add(input: AddConnectedSourceInput): AddConnectedSourceResult {
     const existing = this.list();
     const target = transportTarget(input?.transport);
+    const server = serverTarget(input?.transport);
     const already =
-      target === null
+      server === null
         ? undefined
-        : existing.find(record => transportTarget(record.transport) === target);
+        : existing.find(record => serverTarget(record.transport) === server);
     if (already) {
       const reused = parseConnectedSourceRecord({
         ...already,
@@ -317,6 +338,39 @@ export class ConnectedSourceStore {
     const parsed = parseConnectedSourceRecord({
       ...records[index],
       displayName,
+    });
+    if (!parsed.ok) return false;
+    records[index] = parsed.record;
+    this.persist(records);
+    return true;
+  }
+
+  /**
+   * Remember the Gateway port an SSH-alias source declared during bootstrap.
+   *
+   * The alias identifies the server; the Gateway port is mutable service
+   * configuration on that server. Updating it must therefore preserve the
+   * configured source id, its projection, and its device credential. The
+   * session performs this write only from a successfully parsed remote config,
+   * never from a failed tunnel or an untrusted renderer value.
+   */
+  setDiscoveredGatewayPort(id: string, gatewayPort: number): boolean {
+    if (
+      !Number.isInteger(gatewayPort) ||
+      gatewayPort < 1 ||
+      gatewayPort > 65_535
+    ) {
+      return false;
+    }
+    const records = this.list();
+    const index = records.findIndex(record => record.id === id);
+    if (index < 0) return false;
+    const record = records[index];
+    if (record.transport.kind !== 'ssh-alias') return false;
+    if (record.transport.remotePort === gatewayPort) return true;
+    const parsed = parseConnectedSourceRecord({
+      ...record,
+      transport: { ...record.transport, remotePort: gatewayPort },
     });
     if (!parsed.ok) return false;
     records[index] = parsed.record;

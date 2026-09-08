@@ -313,6 +313,18 @@ export function SpatialSelectionPanel({
                 {goal.context}
               </p>
             )}
+            {agent.presence && (
+              <p
+                className="font-mono text-chrome-meta text-muted-foreground"
+                data-agent-presence={agent.presence.connection}
+              >
+                {agent.presence.placementLabel}
+                {' · '}
+                {agent.presence.connectionLabel}
+                {' · '}
+                {agent.presence.source.displayName}
+              </p>
+            )}
           </div>
 
           <dl className="grid grid-cols-2 divide-x divide-border border-y border-border py-3 text-sm">
@@ -446,15 +458,18 @@ export function SpatialSelectionPanel({
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              data-open-agent-session={agent.id}
+              data-open-agent={agent.id}
+              data-open-agent-session={agent.presence ? undefined : agent.id}
               disabled={opening}
               onClick={onOpenSession}
             >
               {opening
                 ? 'Opening…'
-                : agent.sessionState === 'stopped'
-                  ? 'Open stopped session'
-                  : 'Open session'}
+                : agent.presence
+                  ? 'Open Agent'
+                  : agent.sessionState === 'stopped'
+                    ? 'Open stopped session'
+                    : 'Open session'}
             </Button>
             {agent.needsOperator && !isDemo && (
               <Button asChild variant="destructive">

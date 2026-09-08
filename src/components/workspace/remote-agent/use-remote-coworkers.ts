@@ -14,7 +14,7 @@
  * the view is not current.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   EMPTY_REMOTE_ROSTER,
   projectCoworkers,
@@ -34,24 +34,34 @@ export interface RemoteCoworkers {
   requestWriteAccess: (sourceId: string) => void;
   /** Repair observation. Never touches the remote Agent's work. */
   reconnect: (sourceId: string) => void;
+  /** Re-read and return the exact roster snapshot committed to React. */
+  refresh: () => Promise<RemoteRoster | null>;
 }
 
 export function useRemoteCoworkers(enabled = true): RemoteCoworkers {
   const [roster, setRoster] = useState<RemoteRoster>(EMPTY_REMOTE_ROSTER);
+  const readGeneration = useRef(0);
 
   const read = useCallback(async () => {
     const api = connectedSourcesApi();
-    if (!api) return;
+    if (!api) return null;
+    const generation = ++readGeneration.current;
     try {
       const [sources, agents, authorities] = await Promise.all([
         api.list(),
         api.agents(),
         api.commandAuthority(),
       ]);
-      setRoster({ sources, agents, authorities, loaded: true });
+      const next = { sources, agents, authorities, loaded: true } as const;
+      // Mount, change ticks, Reconnect, and Connect completion can overlap.
+      // A read started before a newer one cannot overwrite newer topology.
+      if (generation !== readGeneration.current) return null;
+      setRoster(next);
+      return next;
     } catch {
       // Keep the last-known roster. Losing the read says nothing about the
       // coworkers, and replacing what is on screen with emptiness would.
+      return null;
     }
   }, []);
 
@@ -98,5 +108,11 @@ export function useRemoteCoworkers(enabled = true): RemoteCoworkers {
 
   const coworkers = useMemo(() => projectCoworkers(roster), [roster]);
 
-  return { roster, coworkers, requestWriteAccess, reconnect };
+  return {
+    roster,
+    coworkers,
+    requestWriteAccess,
+    reconnect,
+    refresh: read,
+  };
 }

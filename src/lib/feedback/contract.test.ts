@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseFeedbackRequest } from './contract';
+import {
+  parseFeedbackRequest,
+  parseProductFeedbackServiceResponse,
+} from './contract';
 
 const base = {
   kind: 'bug',
@@ -64,5 +67,57 @@ describe('product-feedback contract', () => {
         JSON.stringify({ ...base, idempotencyKey: 'retry-me' })
       )
     ).toThrow('Idempotency key');
+  });
+
+  it('decodes the V1 service envelope and ignores additive response fields', () => {
+    expect(
+      parseProductFeedbackServiceResponse({
+        schemaVersion: 1,
+        id: '223e4567-e89b-42d3-a456-426614174000',
+        duplicate: false,
+        attachmentStored: true,
+        serviceTrace: 'ignored',
+      })
+    ).toEqual({
+      id: '223e4567-e89b-42d3-a456-426614174000',
+      duplicate: false,
+      attachmentStored: true,
+    });
+    expect(() =>
+      parseProductFeedbackServiceResponse({
+        schemaVersion: 2,
+        id: '223e4567-e89b-42d3-a456-426614174000',
+        duplicate: false,
+        attachmentStored: true,
+      })
+    ).toThrow('response is invalid');
+  });
+
+  it('rejects fields outside the published request and attachment shapes', () => {
+    expect(() =>
+      parseFeedbackRequest(JSON.stringify({ ...base, secret: 'no' }))
+    ).toThrow('unsupported fields');
+    expect(() =>
+      parseFeedbackRequest(
+        JSON.stringify({
+          ...base,
+          attachment: {
+            dataUrl: `data:image/png;base64,${Buffer.from('png').toString('base64')}`,
+            hidden: 'no',
+          },
+        })
+      )
+    ).toThrow('unsupported fields');
+    expect(() =>
+      parseFeedbackRequest(
+        JSON.stringify({
+          ...base,
+          attachment: {
+            dataUrl: `data:image/png;base64,${Buffer.from('png').toString('base64')}`,
+            name: 42,
+          },
+        })
+      )
+    ).toThrow('attachment name is invalid');
   });
 });

@@ -6,6 +6,7 @@ import {
   MoreHorizontal,
   Pin,
   PinOff,
+  RefreshCw,
   Save,
 } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
@@ -26,6 +27,7 @@ import {
   permissionModeFor,
   recommendAgentSource,
   recordAgentPermissionMode,
+  refreshAgentModelCatalog,
   rememberAgentPermissionMode,
   rememberAgentSource,
   runAgentSourceAction,
@@ -86,6 +88,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AgentLauncher } from './launcher/agent-launcher';
+import { useComposerClipboard } from './launcher/use-composer-clipboard';
 import { EngineGlyph } from './launcher/setup-chip';
 import {
   rowCapacityForWidth,
@@ -326,6 +329,10 @@ export function AgentComposer({
   const [catalogsBySource, setCatalogsBySource] = useState<
     Partial<Record<AgentSourceId, AgentModelCatalog>>
   >({});
+  const [modelRefreshState, setModelRefreshState] = useState<{
+    source: AgentSourceId;
+    status: 'checking' | 'updated' | 'failed';
+  } | null>(null);
   const [allConfigurationsOpen, setAllConfigurationsOpen] = useState(false);
   const [configurationMessage, setConfigurationMessage] = useState<
     string | null
@@ -337,6 +344,8 @@ export function AgentComposer({
   const permissionSaveQueue = useRef(Promise.resolve());
   const requestedSourceRef = useRef<AgentSourceId | null>(null);
   const modelLoadSeq = useRef(0);
+  const modelRefreshSeq = useRef(0);
+  const modelRefreshInFlightRef = useRef<AgentSourceId | null>(null);
   const initialModelPendingRef = useRef<{
     model: string | null;
     effort: string | null;
@@ -364,6 +373,15 @@ export function AgentComposer({
   );
   const recentRef = useRef<RecentConversationsHandle>(null);
   const branchErrorId = useId();
+  const clipboard = useComposerClipboard({
+    scope: projectDir,
+    task,
+    element: taskElement,
+    onInsert: nextTask => {
+      setTask(nextTask);
+      reportDraftIntent({ draftTask: nextTask });
+    },
+  });
   const preferencesReady = sourcePreferences !== null;
   const sourceRegistryReady = sourceRegistryStatus === 'live';
   const controlsDisabled = launching !== null;
@@ -377,6 +395,8 @@ export function AgentComposer({
   const effectiveSource = isAgentSourceId(source)
     ? source
     : (sourceOrder[0] ?? AGENT_SOURCE_ORDER[0]);
+  const effectiveSourceRef = useRef(effectiveSource);
+  effectiveSourceRef.current = effectiveSource;
   const sourceMeta =
     sourceSnapshots.find(source => source.harness === effectiveSource) ??
     fallbackAgentSourceRegistry('launch').sources.find(
@@ -557,6 +577,8 @@ export function AgentComposer({
     let cancelled = false;
     permissionSaveSeq.current += 1;
     modelLoadSeq.current += 1;
+    modelRefreshSeq.current += 1;
+    modelRefreshInFlightRef.current = null;
     requestedSourceRef.current = null;
     const savedSource = initialSourceRef.current;
     initialModelPendingRef.current =
@@ -590,6 +612,7 @@ export function AgentComposer({
     setSelectedTargetKind('agent');
     setConfigurationMessage(null);
     setCatalogsBySource({});
+    setModelRefreshState(null);
     setConfigurationPool(null);
     setFrozenTargets([SHELL_LAUNCH_TARGET]);
     launcherOrderFrozenRef.current = false;
@@ -738,6 +761,37 @@ export function AgentComposer({
     },
     [chooseSource]
   );
+
+  const refreshModels = useCallback(async () => {
+    if (modelRefreshInFlightRef.current === effectiveSource) return;
+    const requestedSource = effectiveSource;
+    const refreshSeq = modelRefreshSeq.current + 1;
+    modelRefreshSeq.current = refreshSeq;
+    modelRefreshInFlightRef.current = requestedSource;
+    setModelRefreshState({ source: requestedSource, status: 'checking' });
+    try {
+      const catalog = await refreshAgentModelCatalog(
+        requestedSource,
+        projectDir
+      );
+      if (modelRefreshSeq.current !== refreshSeq) return;
+      setCatalogsBySource(current => ({
+        ...current,
+        [requestedSource]: catalog,
+      }));
+      if (effectiveSourceRef.current === requestedSource) {
+        setModelCatalog(catalog);
+      }
+      setModelRefreshState({ source: requestedSource, status: 'updated' });
+    } catch {
+      if (modelRefreshSeq.current !== refreshSeq) return;
+      setModelRefreshState({ source: requestedSource, status: 'failed' });
+    } finally {
+      if (modelRefreshSeq.current === refreshSeq) {
+        modelRefreshInFlightRef.current = null;
+      }
+    }
+  }, [effectiveSource, projectDir]);
 
   useEffect(() => {
     if (!preferencesReady || !sourceRegistryReady || !sourceMeta.launchable) {
@@ -1008,38 +1062,6 @@ export function AgentComposer({
     }
   }, [roadmapItems, roadmapItemId]);
 
-  /** insert pasted content at the caret, keeping focus and selection */
-  const insertAtCursor = useCallback(
-    (value: string) => {
-      const el = taskElement();
-      const start = el?.selectionStart ?? task.length;
-      const end = el?.selectionEnd ?? task.length;
-      const nextTask = task.slice(0, start) + value + task.slice(end);
-      setTask(nextTask);
-      reportDraftIntent({ draftTask: nextTask });
-      requestAnimationFrame(() => {
-        const node = taskElement();
-        if (!node) return;
-        node.focus();
-        const caret = start + value.length;
-        node.setSelectionRange(caret, caret);
-      });
-    },
-    [reportDraftIntent, task, setTask, taskElement]
-  );
-
-  /** ⌘V/⌃V (D24): an image saves to a temp file and its path joins the
-   *  task — the same shape the coding harnesses accept in a prompt */
-  const pasteFromClipboard = useCallback(async () => {
-    const clip = await window.electron?.pty?.clipboardRead?.();
-    if (!clip) return;
-    if (clip.kind === 'image' && clip.path) {
-      insertAtCursor(`${clip.path} `);
-    } else if (clip.kind === 'text' && clip.text) {
-      insertAtCursor(clip.text);
-    }
-  }, [insertAtCursor]);
-
   const persistPermissionMode = useCallback(
     async (nextSource: AgentSourceId, nextMode: AgentPermissionMode) => {
       const saveSeq = permissionSaveSeq.current + 1;
@@ -1062,6 +1084,7 @@ export function AgentComposer({
   const launchAgent = async () => {
     if (
       controlsDisabled ||
+      clipboard.pending ||
       !sourcePreferences ||
       !launchReady ||
       (model === null &&
@@ -1113,7 +1136,7 @@ export function AgentComposer({
   };
 
   const openShell = async () => {
-    if (controlsDisabled) return;
+    if (controlsDisabled || clipboard.pending) return;
     setLaunching('shell');
     let ok = false;
     try {
@@ -1559,22 +1582,61 @@ export function AgentComposer({
     },
   ];
 
+  const activeModelRefresh =
+    modelRefreshState?.source === effectiveSource ? modelRefreshState : null;
+  const modelRefreshAction = (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        aria-busy={activeModelRefresh?.status === 'checking'}
+        onClick={() => void refreshModels()}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-chrome-micro text-hud-text-dim outline-none transition-colors hover:bg-hud-fill hover:text-hud-text focus-visible:ring-2 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+      >
+        <RefreshCw
+          aria-hidden="true"
+          className={
+            activeModelRefresh?.status === 'checking'
+              ? 'size-3 animate-spin motion-reduce:animate-none'
+              : 'size-3'
+          }
+        />
+        {activeModelRefresh?.status === 'checking'
+          ? 'Checking…'
+          : 'Check for new models'}
+      </button>
+      <span
+        role="status"
+        aria-live="polite"
+        className="font-mono text-chrome-micro text-hud-text-dim"
+      >
+        {activeModelRefresh?.status === 'updated'
+          ? 'Models updated.'
+          : activeModelRefresh?.status === 'failed'
+            ? 'Couldn’t check models.'
+            : ''}
+      </span>
+    </div>
+  );
+
   const selectedSetup = visibleLauncherSetups.find(
     setup => setup.id === selectedLauncherId
   );
   const modelRequired =
     selectedCatalog?.effectiveModelSource === 'unavailable' && model === null;
-  const launcherBlockedReason = !launcherSettled
-    ? null
-    : !sourceMeta.launchable
-      ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
-      : !branchReady
-        ? 'Enter a branch name before starting.'
-        : modelRequired
-          ? `Choose a model for ${sourceMeta.label} before starting.`
-          : selectedSetup && !selectedSetup.available
-            ? (selectedSetup.unavailableReason ?? 'This setup is unavailable.')
-            : null;
+  const launcherBlockedReason = clipboard.pending
+    ? 'Saving clipboard content…'
+    : !launcherSettled
+      ? null
+      : !sourceMeta.launchable
+        ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
+        : !branchReady
+          ? 'Enter a branch name before starting.'
+          : modelRequired
+            ? `Choose a model for ${sourceMeta.label} before starting.`
+            : selectedSetup && !selectedSetup.available
+              ? (selectedSetup.unavailableReason ??
+                'This setup is unavailable.')
+              : null;
 
   const controls = (
     <div
@@ -1589,7 +1651,7 @@ export function AgentComposer({
         );
         if (!hasImage) return;
         event.preventDefault();
-        void pasteFromClipboard();
+        void clipboard.paste();
       }}
       onKeyDownCapture={event => {
         onUserInteractionRef.current?.();
@@ -1602,7 +1664,7 @@ export function AgentComposer({
         ) {
           event.preventDefault();
           event.stopPropagation();
-          void pasteFromClipboard();
+          void clipboard.paste();
           return;
         }
         const taskNode = taskElement();
@@ -1642,6 +1704,7 @@ export function AgentComposer({
           state={launcherSettled ? 'ready' : 'settling'}
           axes={selectedLauncherId ? launcherAxes : []}
           detailFootnote="Changes apply to this Agent until you start it."
+          detailAction={modelRefreshAction}
           task={task}
           onTaskChange={nextTask => {
             setTask(nextTask);
@@ -1963,13 +2026,15 @@ export function AgentComposer({
           to print a second, older copy of the same keys — same chords, drifted
           words ("configuration" for what the launcher calls a setup) — so the
           highest-frequency path in the app carried two hint lines (BUG-017). */}
-      {configurationMessage && (
+      {(configurationMessage || clipboard.failed) && (
         <p
           role="status"
           className="px-0.5 pt-1 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
-          {configurationMessage}
+          {clipboard.failed
+            ? 'Could not read the clipboard. Try pasting again.'
+            : configurationMessage}
         </p>
       )}
       {sourceActionMessage && (

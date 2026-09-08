@@ -51,8 +51,7 @@ export function expectedTerminalCols(
   cellWidth: number
 ): number {
   if (!(cellWidth > 0)) return 0;
-  const usable =
-    paneWidth - TERMINAL_INSET.x * 2 - TERMINAL_SCROLLBAR_GUTTER;
+  const usable = paneWidth - TERMINAL_INSET.x * 2 - TERMINAL_SCROLLBAR_GUTTER;
   return Math.max(2, Math.floor(usable / cellWidth));
 }
 
@@ -82,6 +81,37 @@ export function createTerminalSizeSync(options: {
     fit();
     publishTerminalGeometry(pane, term.cols, term.rows);
     resize(term.cols, term.rows);
+  };
+}
+
+/**
+ * Container changes and renderer-metric changes are separate inputs. Moving
+ * between display scales can change xterm's rounded cell width while the
+ * container keeps exactly the same CSS size (BUG-092). Observe the public
+ * screen element too, after xterm has applied those metrics. The same sync
+ * still freezes hidden panes; their next reveal fits the latest metrics.
+ * A resulting fit may resize the screen once more, then the geometry settles.
+ * Coalesce onto a frame so fitting an observed screen cannot create a
+ * ResizeObserver delivery loop in the same layout pass.
+ */
+export function observeTerminalGeometry(options: {
+  measure: HTMLElement;
+  screen: Element | null;
+  sync: () => void;
+}): () => void {
+  let frame: number | null = null;
+  const observer = new ResizeObserver(() => {
+    if (frame !== null) return;
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      options.sync();
+    });
+  });
+  observer.observe(options.measure);
+  if (options.screen) observer.observe(options.screen);
+  return () => {
+    observer.disconnect();
+    if (frame !== null) cancelAnimationFrame(frame);
   };
 }
 

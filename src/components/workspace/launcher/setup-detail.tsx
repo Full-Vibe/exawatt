@@ -50,6 +50,8 @@ function axisMark(axis: DetailAxis): React.ReactNode {
 export interface SetupDetailFieldsProps {
   axes: readonly DetailAxis[];
   footnote?: string;
+  /** Compact secondary action beside the footnote, in normal Tab order. */
+  action?: React.ReactNode;
   /** Rendered opposite the footnote, where there was already empty space. */
   onDone?: () => void;
 }
@@ -57,6 +59,7 @@ export interface SetupDetailFieldsProps {
 export function SetupDetailFields({
   axes,
   footnote,
+  action,
   onDone,
 }: SetupDetailFieldsProps) {
   return (
@@ -88,11 +91,16 @@ export function SetupDetailFields({
           </label>
         ))}
       </div>
-      {footnote || onDone ? (
+      {footnote || action || onDone ? (
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <p className="min-w-0 font-mono text-chrome-micro leading-4 text-hud-text-dim">
-            {footnote}
-          </p>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {footnote ? (
+              <p className="min-w-0 font-mono text-chrome-micro leading-4 text-hud-text-dim">
+                {footnote}
+              </p>
+            ) : null}
+            {action}
+          </div>
           {onDone ? (
             <button
               type="button"

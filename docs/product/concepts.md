@@ -48,6 +48,21 @@ Project / Context Group exists to make context switching cheaper. It should summ
 A Project can be open with no Agent or Session running. Selecting a Project
 changes context; it does not implicitly create work.
 
+A Project has an opaque Exawatt-owned identity and a separately renameable
+label. A local folder is an optional binding, not that identity: a Project with
+no folder remains valid and openable, while Finder, local launch, worktree, and
+other folder-dependent actions remain unavailable until a folder is bound.
+The current registry stores at most one local folder binding; the product model
+does not preclude several repository or source-native workspace bindings later.
+Connect-created folderless Projects use the same durable registry and lifecycle
+as folder-bound Projects: the Project record is persisted before an Agent maps
+to its opaque id, and adding or changing a folder never changes that identity.
+
+Any number of Agents, including Agents from different sources, may map to the
+same Project. A Gateway or Agent Source is never silently promoted into a
+Project, and detaching a source or Agent projection does not delete the
+Project it was mapped to.
+
 An explicitly opened zero-Agent Project remains open. Closing its last Agent
 also leaves the Project open: the empty composer is useful Project state, not a
 countdown to deletion. Once that empty Project is inactive for a short tunable
@@ -331,8 +346,8 @@ Claude Code or Codex account session, stays with that source and is repaired
 through the source's own authentication flow; Exawatt observes only the
 minimum status and identity the source exposes. A remote Gateway or future
 custom source may require an Exawatt-managed connection credential. That
-credential is narrowly scoped, stored in the operating system keychain, and
-is not a general Secrets broker for Agents.
+credential is narrowly scoped, held in OS-protected encrypted storage behind
+Electron main, and is not a general Secrets broker for Agents.
 
 Secrets management is a buy-vs-build decision. The roadmap should include explicit research before choosing a vendor or building in-house.
 

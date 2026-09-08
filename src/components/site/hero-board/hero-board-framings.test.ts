@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { HERO_BOARD_CAPTURE } from './capture';
 import {
+  DELEGATION_OVERFLOW_SCALE,
   DELEGATION_ORBIT_GAIN,
   framingDistanceScale,
   heroBoardFramings,
   heroDelegationClearance,
   heroDelegationParents,
   heroDelegationPosition,
+  heroDelegationRenderGeometry,
   HERO_DEFAULT_LADDER,
+  MARK_GLYPH_RADIUS,
+  MARK_SCALE,
   type HeroAltitude,
 } from './hero-board-framings';
 import { BAND_ALTITUDE_DEPTH, pinnedAltitudeLadder } from '../bands/manifest';
@@ -162,11 +166,52 @@ describe('hero board framings', () => {
       const packed = Math.atan2(child.y - parent.y, child.x - parent.x);
       const shown = Math.atan2(drawn.y - parent.y, drawn.x - parent.x);
       expect(shown).toBeCloseTo(packed, 9);
-      expect(
-        Math.hypot(drawn.x - parent.x, drawn.y - parent.y)
-      ).toBeCloseTo(
+      expect(Math.hypot(drawn.x - parent.x, drawn.y - parent.y)).toBeCloseTo(
         Math.hypot(child.x - parent.x, child.y - parent.y) *
           DELEGATION_ORBIT_GAIN,
+        9
+      );
+    });
+  });
+
+  it('connects every lineage tether to its parent through the rotated shader quad', () => {
+    capture.delegations.forEach((child, index) => {
+      const owner = capture.units[child.parent]!;
+      const render = heroDelegationRenderGeometry(capture, index);
+      const run = Math.hypot(owner.x - render.slot.x, owner.y - render.slot.y);
+      const towardParent = {
+        x: (owner.x - render.slot.x) / run,
+        y: (owner.y - render.slot.y) / run,
+      };
+      const overflowScale = child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1;
+      const childRadius =
+        MARK_GLYPH_RADIUS * child.size * MARK_SCALE * overflowScale;
+      const parentRadius = MARK_GLYPH_RADIUS * owner.size * MARK_SCALE;
+
+      // The plane is rotated -90 degrees onto XZ, so UV +Y reconstructs as
+      // board -Y. This is the sign the live bug lost: both marks were placed
+      // correctly while every tether pointed to the mirror of its parent.
+      const fromUv = ({ x, y }: { x: number; y: number }) => ({
+        x: render.slot.x + x * render.quadWorldSize,
+        y: render.slot.y - y * render.quadWorldSize,
+      });
+      const childEnd = fromUv(render.childEdgeUv);
+      const parentEnd = fromUv(render.parentEdgeUv);
+
+      expect(childEnd.x).toBeCloseTo(
+        render.slot.x + towardParent.x * childRadius,
+        9
+      );
+      expect(childEnd.y).toBeCloseTo(
+        render.slot.y + towardParent.y * childRadius,
+        9
+      );
+      expect(parentEnd.x).toBeCloseTo(
+        owner.x - towardParent.x * parentRadius,
+        9
+      );
+      expect(parentEnd.y).toBeCloseTo(
+        owner.y - towardParent.y * parentRadius,
         9
       );
     });

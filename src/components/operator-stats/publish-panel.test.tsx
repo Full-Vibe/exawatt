@@ -706,7 +706,13 @@ describe('removing the public profile stays a distinct act', () => {
       autoPublish: true,
       published: true,
     });
-    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200 }));
+    const fetchSpy = vi.fn<typeof fetch>(
+      async () =>
+        new Response(null, {
+          status: 204,
+          headers: { 'Exawatt-Service-Version': '1' },
+        })
+    );
     vi.stubGlobal('fetch', fetchSpy);
 
     await mount();
@@ -718,6 +724,11 @@ describe('removing the public profile stays a distinct act', () => {
       OPERATOR_STATS_URL,
       expect.objectContaining({ method: 'DELETE' })
     );
+    expect(
+      new Headers(fetchSpy.mock.calls[0][1]?.headers).get(
+        'Exawatt-Service-Version'
+      )
+    ).toBe('1');
     expect(settingsBridge.recordOperatorProfileState).toHaveBeenCalledWith({
       profileEnabled: false,
     });

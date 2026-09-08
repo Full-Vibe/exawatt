@@ -47,7 +47,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { AgentModelCatalog } from './agent-models';
 
-export const CATALOG_FRESH_MS = 6 * 60 * 60_000;
+/**
+ * Cached catalogs render immediately, but demand a new source observation
+ * after five minutes. Model rollouts can change within a working session, so
+ * a multi-hour no-probe window leaves newly available models undiscoverable.
+ */
+export const CATALOG_FRESH_MS = 5 * 60_000;
 /** Past this, a cached catalog is too old to show at all and we wait. */
 export const CATALOG_MAX_AGE_MS = 14 * 24 * 60 * 60_000;
 /**
@@ -101,6 +106,27 @@ function validCatalog(value: unknown): value is AgentModelCatalog {
   if (!value || typeof value !== 'object') return false;
   const catalog = value as AgentModelCatalog;
   return typeof catalog.harness === 'string' && Array.isArray(catalog.models);
+}
+
+/** Observation metadata does not make two catalogs meaningfully different. */
+function semanticCatalog(catalog: AgentModelCatalog): unknown {
+  const {
+    observedAt: _observedAt,
+    servedFromCache: _servedFromCache,
+    catalogProvenance: _catalogProvenance,
+    ...semantic
+  } = catalog;
+  return semantic;
+}
+
+function sameSemanticCatalog(
+  left: AgentModelCatalog,
+  right: AgentModelCatalog
+): boolean {
+  return (
+    JSON.stringify(semanticCatalog(left)) ===
+    JSON.stringify(semanticCatalog(right))
+  );
 }
 
 function parseCacheFile(raw: unknown): CatalogCacheFile {
@@ -183,6 +209,7 @@ function directoryExists(cwd: string): boolean {
 export class AgentModelCatalogCache {
   private file: CatalogCacheFile | null = null;
   private writing: Promise<void> = Promise.resolve();
+  private readonly observationGenerations = new Map<string, number>();
 
   constructor(
     private readonly directory: () => string,
@@ -231,13 +258,46 @@ export class AgentModelCatalogCache {
     return { catalog: entry.catalog, fresh: age <= CATALOG_FRESH_MS };
   }
 
+  /**
+   * Token captured immediately before probing a source. If another context
+   * discovers a semantic change while that probe is running, its token becomes
+   * stale and the late result cannot recreate an invalidated sibling row.
+   */
+  captureObservationGeneration(harness: string): number {
+    return this.observationGenerations.get(harness) ?? 0;
+  }
+
   async write(
     key: string,
     cwd: string,
-    catalog: AgentModelCatalog
+    catalog: AgentModelCatalog,
+    observationGeneration?: number
   ): Promise<void> {
     if (catalog.catalogMode !== 'live-catalog') return;
     const file = await this.load();
+    const currentGeneration = this.captureObservationGeneration(
+      catalog.harness
+    );
+    if (
+      observationGeneration !== undefined &&
+      observationGeneration !== currentGeneration
+    ) {
+      return;
+    }
+    const previous = file.entries[key]?.catalog;
+    if (previous && !sameSemanticCatalog(previous, catalog)) {
+      // A real change observed in this exact Project is evidence that sibling
+      // snapshots for the same source may now be stale. Remove them so each
+      // Project re-probes its own context on demand. Never compare sibling
+      // catalogs with one another: Project-local policy may legitimately make
+      // them different, and cross-comparison would create invalidation ping-pong.
+      for (const [siblingKey, entry] of Object.entries(file.entries)) {
+        if (siblingKey !== key && entry.catalog.harness === catalog.harness) {
+          delete file.entries[siblingKey];
+        }
+      }
+      this.observationGenerations.set(catalog.harness, currentGeneration + 1);
+    }
     file.entries[key] = {
       cachedAt: this.now(),
       cwd: path.resolve(cwd),

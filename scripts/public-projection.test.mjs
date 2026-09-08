@@ -1,14 +1,23 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   assertFastForward,
   buildProjectionPlan,
+  parseFilterRepoCommitMap,
   projectPublicHistory,
+  projectPublicCatchup,
   resolveEntryBoundary,
 } from './lib/public-projection.mjs';
 import { renderRecipeOutput } from './lib/recipe-renderers.mjs';
@@ -17,6 +26,24 @@ import {
   findTextFindings,
   readForbiddenVocabulary,
 } from './public-content-scan.mjs';
+
+test('filter-repo many-to-one commit maps choose a deterministic source set', () => {
+  const filtered = 'f'.repeat(40);
+  const earlier = '1'.repeat(40);
+  const later = 'a'.repeat(40);
+  const dropped = 'd'.repeat(40);
+  const parsed = parseFilterRepoCommitMap(
+    [
+      'old                                      new',
+      `${later} ${filtered}`,
+      `${dropped} ${'0'.repeat(40)}`,
+      `${earlier} ${filtered}`,
+      '',
+    ].join('\n')
+  );
+  assert.deepEqual(parsed.get(filtered), [earlier, later]);
+  assert.equal(parsed.has('0'.repeat(40)), false);
+});
 
 /**
  * Every fixture is a local repository under a temp directory and the "public
@@ -280,11 +307,500 @@ test('an earlier source commit projects to an ancestor of the later projection',
       git(later.destination, ['rev-list', '--count', 'master']),
       '3'
     );
-    assert.deepEqual(
-      git(later.destination, ['log', '--format=%s', 'master'])
-        .split('\n')
-        .sort(),
-      ['add public file', 'edit public file', 'root']
+    const messages = git(later.destination, ['log', '--format=%s', 'master']);
+    assert.equal(
+      messages.split('\n').every(message => message.startsWith('public: ')),
+      true
+    );
+    assert.doesNotMatch(messages, /private only|add public file|root/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('the published prefix survives public add, edit, rename, delete, and revert', async () => {
+  const fixture = sourceFixture();
+  try {
+    const epochProjection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('epoch'),
+      epoch: null,
+    });
+    const epoch = {
+      schemaVersion: 1,
+      sourceSha: fixture.head,
+      publicSha: epochProjection.publicSha,
+      metadataPolicyId: epochProjection.metadataAudit.policyId,
+      projectionContractId: epochProjection.projectionContractId,
+      reason: 'fixture boundary before forward public file lifecycle changes',
+    };
+
+    const revisions = [];
+    write(fixture.source, 'src/lifecycle.ts', 'export const lifecycle = 1;\n');
+    git(fixture.source, ['add', '--', 'src/lifecycle.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'add lifecycle']);
+    revisions.push(git(fixture.source, ['rev-parse', 'HEAD']));
+
+    write(fixture.source, 'src/lifecycle.ts', 'export const lifecycle = 2;\n');
+    git(fixture.source, ['add', '--', 'src/lifecycle.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'edit lifecycle']);
+    revisions.push(git(fixture.source, ['rev-parse', 'HEAD']));
+
+    git(fixture.source, ['mv', 'src/lifecycle.ts', 'src/renamed.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'rename lifecycle']);
+    revisions.push(git(fixture.source, ['rev-parse', 'HEAD']));
+
+    git(fixture.source, ['rm', '--quiet', 'src/renamed.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'delete lifecycle']);
+    revisions.push(git(fixture.source, ['rev-parse', 'HEAD']));
+
+    git(fixture.source, ['revert', '--quiet', '--no-edit', 'HEAD']);
+    revisions.push(git(fixture.source, ['rev-parse', 'HEAD']));
+
+    let previous = epochProjection.destination;
+    for (const [index, sourceSha] of revisions.entries()) {
+      const projection = await projectPublicHistory({
+        sourceRepo: fixture.source,
+        sourceSha,
+        destination: fixture.at(`lifecycle-${index}`),
+        epoch,
+      });
+      git(projection.destination, [
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        previous,
+        'master:refs/remotes/previous/master',
+      ]);
+      assert.equal(
+        await assertFastForward({
+          repo: projection.destination,
+          candidateSha: projection.publicSha,
+          existingRef: 'refs/remotes/previous/master',
+        }),
+        true
+      );
+      previous = projection.destination;
+    }
+
+    const final = fixture.at(`lifecycle-${revisions.length - 1}`);
+    assert.equal(
+      git(final, ['show', 'master:src/renamed.ts']),
+      'export const lifecycle = 2;'
+    );
+    assert.equal(
+      git(final, ['rev-list', '--count', 'master', '--', 'src/lifecycle.ts']),
+      '3',
+      'the original path keeps its add, edit, and rename history'
+    );
+    assert.equal(
+      git(final, ['rev-list', '--count', 'master', '--', 'src/renamed.ts']),
+      '3',
+      'the renamed path keeps its rename, deletion, and restoration history'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('continuous projection refuses an unreviewed merge DAG', async () => {
+  const fixture = sourceFixture();
+  try {
+    const epochProjection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      epoch: null,
+    });
+    const epoch = {
+      schemaVersion: 1,
+      sourceSha: fixture.head,
+      publicSha: epochProjection.publicSha,
+      metadataPolicyId: epochProjection.metadataAudit.policyId,
+      projectionContractId: epochProjection.projectionContractId,
+      reason: 'fixture boundary before a merge enters private master',
+    };
+    git(fixture.source, ['checkout', '--quiet', '-b', 'feature']);
+    write(fixture.source, 'src/feature.ts', 'export const feature = 1;\n');
+    git(fixture.source, ['add', '--', 'src/feature.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'feature side']);
+    git(fixture.source, ['checkout', '--quiet', 'master']);
+    write(fixture.source, 'src/master.ts', 'export const master = 1;\n');
+    git(fixture.source, ['add', '--', 'src/master.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'master side']);
+    git(fixture.source, [
+      'merge',
+      '--quiet',
+      '--no-ff',
+      '-m',
+      'merge feature',
+      'feature',
+    ]);
+    await assert.rejects(
+      projectPublicHistory({
+        sourceRepo: fixture.source,
+        sourceSha: git(fixture.source, ['rev-parse', 'HEAD']),
+        epoch,
+      }),
+      /requires a linear private master/u
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('manifest reclassification is forward-only after the public epoch', async () => {
+  const fixture = sourceFixture();
+  try {
+    const epochProjection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('reclassification-epoch'),
+      epoch: null,
+    });
+    const epoch = {
+      schemaVersion: 1,
+      sourceSha: fixture.head,
+      publicSha: epochProjection.publicSha,
+      metadataPolicyId: epochProjection.metadataAudit.policyId,
+      projectionContractId: epochProjection.projectionContractId,
+      reason: 'fixture boundary before forward-only classification changes',
+    };
+    const manifest = structuredClone(MANIFEST);
+    manifest.exceptions = manifest.exceptions
+      .filter(exception => exception.path !== 'src/config.private.ts')
+      .concat({
+        path: 'src/a.ts',
+        classification: 'PRIVATE',
+        reason: 'fixture path becomes private from this commit forward',
+      });
+    write(
+      fixture.source,
+      MANIFEST_PATH,
+      JSON.stringify(manifest, null, 2) + '\n'
+    );
+    git(fixture.source, ['add', '--', MANIFEST_PATH]);
+    git(fixture.source, ['commit', '--quiet', '-m', 'reclassify paths']);
+    const sourceSha = git(fixture.source, ['rev-parse', 'HEAD']);
+
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha,
+      destination: fixture.at('reclassified'),
+      epoch,
+    });
+    git(projection.destination, [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      epochProjection.destination,
+      'master:refs/remotes/epoch/master',
+    ]);
+    assert.equal(
+      await assertFastForward({
+        repo: projection.destination,
+        candidateSha: projection.publicSha,
+        existingRef: 'refs/remotes/epoch/master',
+      }),
+      true
+    );
+    assert.equal(
+      git(projection.destination, [
+        'ls-tree',
+        '--name-only',
+        'master',
+        'src/a.ts',
+      ]),
+      '',
+      'PUBLIC to PRIVATE removes the tip copy'
+    );
+    assert.equal(
+      git(projection.destination, ['show', 'master:src/config.private.ts']),
+      'export const operator = "op";'
+    );
+    assert.equal(
+      git(projection.destination, [
+        'rev-list',
+        '--count',
+        'master',
+        '--',
+        'src/config.private.ts',
+      ]),
+      '1',
+      'PRIVATE history is not exposed when a path becomes PUBLIC'
+    );
+    assert.equal(
+      git(projection.destination, [
+        'rev-list',
+        '--count',
+        'master',
+        '--',
+        'src/a.ts',
+      ]),
+      '3',
+      'already-public history stays reachable after the tip removes the path'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('unreviewed source identity, trailers, and business prose cannot survive replay', async () => {
+  const fixture = sourceFixture();
+  try {
+    const epochProjection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('metadata-epoch'),
+      epoch: null,
+    });
+    const epoch = {
+      schemaVersion: 1,
+      sourceSha: fixture.head,
+      publicSha: epochProjection.publicSha,
+      metadataPolicyId: epochProjection.metadataAudit.policyId,
+      projectionContractId: epochProjection.projectionContractId,
+      reason: 'fixture boundary before adversarial source metadata is added',
+    };
+    write(fixture.source, 'src/b.ts', 'export const b = 222;\n');
+    git(fixture.source, ['add', '--', 'src/b.ts']);
+    git(
+      fixture.source,
+      [
+        'commit',
+        '--quiet',
+        '-m',
+        [
+          'Launch for ConfidentialPartner',
+          '',
+          'Co-authored-by: Private Person <private@customer.test>',
+        ].join('\n'),
+      ],
+      {
+        GIT_AUTHOR_NAME: 'Private Person',
+        GIT_AUTHOR_EMAIL: 'operator@private.test',
+        GIT_COMMITTER_NAME: 'Private Committer',
+        GIT_COMMITTER_EMAIL: 'committer@private.test',
+      }
+    );
+    const sourceSha = git(fixture.source, ['rev-parse', 'HEAD']);
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha,
+      destination: fixture.at('metadata-public'),
+      epoch,
+    });
+    const metadata = git(projection.destination, [
+      'log',
+      '-1',
+      '--format=%an%x00%ae%x00%cn%x00%ce%x00%B',
+    ]);
+    assert.match(
+      metadata,
+      /Exawatt Public Projector\u0000public-projection@exawatt\.invalid/u
+    );
+    assert.match(metadata, /public: update src/u);
+    assert.doesNotMatch(
+      metadata,
+      /Private Person|Private Committer|private\.test|customer\.test|ConfidentialPartner/u
+    );
+    assert.equal(
+      git(projection.destination, ['show', 'master:src/b.ts']),
+      'export const b = 222;'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a reseed sanitizes every surviving pre-epoch commit and excludes source tags', async () => {
+  const fixture = sourceFixture();
+  try {
+    const partnerEmail = ['partner', 'stealth-customer.com'].join('@');
+    const founderEmail = ['founder', 'stealth-customer.com'].join('@');
+    const operatorEmail = ['operator', 'private-company.com'].join('@');
+    const taggerEmail = ['tagger', 'private-company.com'].join('@');
+    write(fixture.source, 'src/pre-epoch.ts', 'export const preEpoch = 1;\n');
+    git(fixture.source, ['add', '--', 'src/pre-epoch.ts']);
+    git(
+      fixture.source,
+      [
+        'commit',
+        '--quiet',
+        '-m',
+        [
+          'ConfidentialPartner acquisition terms',
+          '',
+          `Co-authored-by: Private Partner <${partnerEmail}>`,
+        ].join('\n'),
+      ],
+      {
+        GIT_AUTHOR_NAME: 'Private Founder',
+        GIT_AUTHOR_EMAIL: founderEmail,
+        GIT_COMMITTER_NAME: 'Private Operator',
+        GIT_COMMITTER_EMAIL: operatorEmail,
+      }
+    );
+    const epochSourceSha = git(fixture.source, ['rev-parse', 'HEAD']);
+    git(
+      fixture.source,
+      [
+        'tag',
+        '-a',
+        'private-launch',
+        '-m',
+        `ConfidentialPartner launch with ${partnerEmail}`,
+      ],
+      {
+        GIT_COMMITTER_NAME: 'Private Tagger',
+        GIT_COMMITTER_EMAIL: taggerEmail,
+      }
+    );
+    const legacyEpoch = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: epochSourceSha,
+      epoch: null,
+    });
+
+    write(fixture.source, 'src/post-epoch.ts', 'export const postEpoch = 1;\n');
+    git(fixture.source, ['add', '--', 'src/post-epoch.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'post epoch']);
+    const sourceSha = git(fixture.source, ['rev-parse', 'HEAD']);
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha,
+      destination: fixture.at('sanitized-reseed'),
+      epoch: {
+        schemaVersion: 1,
+        sourceSha: epochSourceSha,
+        publicSha: legacyEpoch.publicSha,
+        metadataPolicyId: legacyEpoch.metadataAudit.policyId,
+        projectionContractId: legacyEpoch.projectionContractId,
+        reason: 'fixture boundary after private metadata entered history',
+      },
+      rebuildHistory: true,
+    });
+
+    assert.equal(projection.rebuiltHistory, true);
+    assert.equal(projection.metadataAudit.findings.length, 0);
+    assert.equal(projection.metadataAudit.tags, 0);
+    assert.equal(
+      git(projection.destination, [
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/tags',
+      ]),
+      ''
+    );
+    const reachableMetadata = git(projection.destination, [
+      'log',
+      '--format=%an%x00%ae%x00%cn%x00%ce%x00%B',
+      'master',
+    ]);
+    assert.doesNotMatch(
+      reachableMetadata,
+      /Private Founder|Private Operator|Private Partner|private-company\.com|stealth-customer\.com|ConfidentialPartner/u
+    );
+    assert.match(
+      reachableMetadata,
+      /Exawatt Public Projector\u0000public-projection@exawatt\.invalid/u
+    );
+    assert.equal(
+      git(projection.destination, ['show', 'master:src/pre-epoch.ts']),
+      'export const preEpoch = 1;'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a reseed pair bridges one private epoch update, then fresh projection appends', async () => {
+  const fixture = sourceFixture();
+  try {
+    const reseedSourceSha = fixture.head;
+    const rebuilt = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: reseedSourceSha,
+      destination: fixture.at('reseed-candidate'),
+      rebuildHistory: true,
+    });
+    const publicRemote = fixture.at('reseed-public.git');
+    git(fixture.parent, [
+      'init',
+      '--quiet',
+      '--bare',
+      '--initial-branch=master',
+      publicRemote,
+    ]);
+    git(rebuilt.destination, [
+      'push',
+      '--quiet',
+      publicRemote,
+      'master:master',
+    ]);
+
+    const epoch = {
+      schemaVersion: 1,
+      sourceSha: reseedSourceSha,
+      publicSha: rebuilt.publicSha,
+      metadataPolicyId: rebuilt.metadataAudit.policyId,
+      projectionContractId: rebuilt.projectionContractId,
+      reason: 'Sanitized whole-history reseed reviewed by the operator',
+    };
+    write(
+      fixture.source,
+      'company/reseed-epoch.json',
+      JSON.stringify(epoch, null, 2) + '\n'
+    );
+    git(fixture.source, ['add', '--', 'company/reseed-epoch.json']);
+    git(fixture.source, [
+      'commit',
+      '--quiet',
+      '-m',
+      'record sanitized public epoch',
+    ]);
+    const epochCommit = git(fixture.source, ['rev-parse', 'HEAD']);
+    const bridged = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: epochCommit,
+      destination: fixture.at('epoch-bridge'),
+      fastForwardFrom: { repository: publicRemote, ref: 'master' },
+      resumeFrom: {
+        privateSha: reseedSourceSha,
+        publicSha: rebuilt.publicSha,
+        metadataPolicyId: rebuilt.metadataAudit.policyId,
+        projectionContractId: rebuilt.projectionContractId,
+      },
+    });
+    assert.equal(bridged.publicSha, rebuilt.publicSha);
+    assert.equal(bridged.emittedCommits, 0);
+    assert.equal(bridged.existingPublicSha, rebuilt.publicSha);
+
+    write(fixture.source, 'src/after-reseed.ts', 'export const after = 1;\n');
+    git(fixture.source, ['add', '--', 'src/after-reseed.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'after reseed']);
+    const afterSourceSha = git(fixture.source, ['rev-parse', 'HEAD']);
+    const fresh = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: afterSourceSha,
+      destination: fixture.at('fresh-after-epoch'),
+      fastForwardFrom: { repository: publicRemote, ref: 'master' },
+      epoch,
+    });
+    assert.notEqual(fresh.publicSha, rebuilt.publicSha);
+    assert.equal(fresh.existingPublicSha, rebuilt.publicSha);
+    assert.equal(
+      git(fresh.destination, [
+        'merge-base',
+        '--is-ancestor',
+        rebuilt.publicSha,
+        fresh.publicSha,
+      ]),
+      ''
+    );
+    assert.equal(
+      git(fresh.destination, ['show', 'master:src/after-reseed.ts']),
+      'export const after = 1;'
     );
   } finally {
     fixture.cleanup();
@@ -764,16 +1280,16 @@ test('a path that renders, fails, then renders again enters after the last failu
     // published the root's variant, then had nothing to replace it with at
     // the failing revision, and the public repository would carry a stale
     // variant of a file the source had already changed.
-    assert.deepEqual(
+    assert.equal(
       git(projection.destination, [
         'log',
-        '--format=%s',
-        '--diff-filter=A',
+        '--format=%H',
         'master',
+        '--diff-filter=A',
         '--',
         WORKFLOW,
-      ]).split('\n'),
-      ['the secret is declared'],
+      ]).split('\n').length,
+      1,
       'the public file must enter after the last revision that cannot render'
     );
     assert.equal(
@@ -788,29 +1304,23 @@ test('a path that renders, fails, then renders again enters after the last failu
       '',
       'a public file must never vanish once it has appeared'
     );
-    assert.deepEqual(
-      git(projection.destination, [
-        'log',
-        '--format=%s',
-        'master',
-        '--',
-        WORKFLOW,
-      ]).split('\n'),
-      ['a later edit', 'the secret is declared'],
-      'every revision from the boundary on carries its own rendered bytes'
-    );
-
     // No stale variant: each public revision is the render of the source blob
     // at its own commit, not of an earlier one.
-    for (const [message, contents] of GAP_REVISIONS.slice(2)) {
-      const commit = git(projection.destination, [
-        'log',
-        '--format=%H',
-        '-1',
-        `--grep=^${message}$`,
-        '--extended-regexp',
-        'master',
-      ]);
+    const publicRevisions = git(projection.destination, [
+      'log',
+      '--reverse',
+      '--format=%H',
+      'master',
+      '--',
+      WORKFLOW,
+    ]).split('\n');
+    assert.equal(
+      publicRevisions.length,
+      2,
+      'every revision from the boundary on carries its own rendered bytes'
+    );
+    for (const [index, [, contents]] of GAP_REVISIONS.slice(2).entries()) {
+      const commit = publicRevisions[index];
       assert.equal(
         git(projection.destination, ['show', `${commit}:${WORKFLOW}`]),
         renderRecipeOutput({
@@ -917,15 +1427,15 @@ test('the boundary moves past content an unrenderable revision preceded', async 
     assert.equal(boundary.entryCommit, fixture.commits[3]);
     assert.equal(boundary.skippedRevisions, 3);
     assert.equal(boundary.renderableSkipped, 2);
-    assert.deepEqual(
+    assert.equal(
       git(projection.destination, [
-        'log',
-        '--format=%s',
+        'rev-list',
+        '--count',
         'master',
         '--',
         WORKFLOW,
-      ]).split('\n'),
-      ['a later edit'],
+      ]),
+      '1',
       'a reverted blob must not be both dropped and rendered'
     );
   } finally {
@@ -1002,4 +1512,342 @@ test('the entry boundary is the last contiguous run of rendering revisions', () 
     3,
     'the boundary moves past content an unrenderable revision preceded'
   );
+});
+
+function readyCatchupFixture(fixture) {
+  const manifest = structuredClone(MANIFEST);
+  manifest.exceptions = manifest.exceptions.filter(
+    row => row.path !== 'src/config.ts'
+  );
+  manifest.exceptions.push({
+    path: 'src/config.ts',
+    classification: 'PRIVATE',
+    reason: 'fixture unavailable output excluded',
+  });
+  manifest.exceptions.push({
+    path: 'scripts/public-projection.epoch.json',
+    classification: 'PRIVATE',
+    reason: 'private source mapping',
+  });
+  delete manifest.recipes['public-config'];
+  write(
+    fixture.source,
+    MANIFEST_PATH,
+    JSON.stringify(manifest, null, 2) + '\n'
+  );
+  write(fixture.source, 'scripts/public-projection.epoch.json', '{}\n');
+  git(fixture.source, [
+    'add',
+    '--',
+    MANIFEST_PATH,
+    'scripts/public-projection.epoch.json',
+  ]);
+  git(fixture.source, [
+    'commit',
+    '--quiet',
+    '-m',
+    'classify complete snapshot',
+  ]);
+  return git(fixture.source, ['rev-parse', 'HEAD']);
+}
+
+async function catchupFixture() {
+  const fixture = sourceFixture();
+  const seed = await projectPublicHistory({
+    sourceRepo: fixture.source,
+    sourceSha: fixture.head,
+    destination: fixture.at('old-public'),
+    epoch: null,
+  });
+  const sourceSha = readyCatchupFixture(fixture);
+  return {
+    fixture,
+    seed,
+    sourceSha,
+    fastForwardFrom: { repository: seed.destination, ref: 'master' },
+  };
+}
+
+test('snapshot catch-up preserves the public prefix and never carries private history or metadata', async () => {
+  const { fixture, seed, fastForwardFrom } = await catchupFixture();
+  try {
+    write(
+      fixture.source,
+      WORKFLOW,
+      workflow(80).replace(
+        '# exawatt:public-replace-end',
+        '# broken historical directive'
+      )
+    );
+    git(fixture.source, ['add', '--', WORKFLOW]);
+    git(fixture.source, [
+      'commit',
+      '--quiet',
+      '-m',
+      'private intermediate mistake',
+    ]);
+    write(fixture.source, WORKFLOW, workflow(90));
+    write(fixture.source, 'src/a.ts', 'export const a = 999;\n');
+    git(fixture.source, ['add', '--', WORKFLOW, 'src/a.ts']);
+    git(fixture.source, [
+      'commit',
+      '--quiet',
+      '-m',
+      'private contact nobody@example.test',
+    ]);
+    const sourceSha = git(fixture.source, ['rev-parse', 'HEAD']);
+    const options = {
+      sourceRepo: fixture.source,
+      sourceSha,
+      fastForwardFrom,
+      expectedPublicSha: seed.publicSha,
+    };
+    const first = await projectPublicCatchup({
+      ...options,
+      destination: fixture.at('catchup'),
+    });
+    const second = await projectPublicCatchup(options);
+    assert.equal(first.publicSha, second.publicSha);
+    assert.equal(first.planDigest, second.planDigest);
+    assert.equal(first.emittedCommits, 1);
+    const unchanged = await projectPublicCatchup({
+      ...options,
+      fastForwardFrom: { repository: first.destination, ref: 'master' },
+      expectedPublicSha: first.publicSha,
+    });
+    assert.equal(unchanged.publicSha, first.publicSha);
+    assert.equal(unchanged.emittedCommits, 0);
+    assert.equal(
+      git(first.destination, ['rev-parse', 'master^']),
+      seed.publicSha
+    );
+    assert.equal(
+      git(seed.destination, ['rev-parse', 'master']),
+      seed.publicSha,
+      'preparation must not push'
+    );
+    assert.equal(
+      git(first.destination, ['show', 'master:src/a.ts']),
+      'export const a = 999;'
+    );
+    assert.throws(() => git(first.destination, ['cat-file', '-e', sourceSha]));
+    assert.doesNotMatch(
+      git(first.destination, ['for-each-ref', '--format=%(refname)']),
+      /source-tip/u
+    );
+    assert.doesNotMatch(
+      git(first.destination, ['log', '-1', '--format=%B']),
+      /nobody@example|private contact/u
+    );
+    assert.doesNotMatch(
+      git(first.destination, ['ls-tree', '-r', '--name-only', 'master']),
+      /company\/secret|config.private/u
+    );
+    assert.equal(first.epochUpdate.mode, 'published-snapshot');
+    assert.equal(first.epochUpdate.sourceSha, sourceSha);
+    assert.equal(first.epochUpdate.publicSha, first.publicSha);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('snapshot catch-up rejects a stale tip or failed current rendering without creating a candidate', async () => {
+  const { fixture, seed, sourceSha, fastForwardFrom } = await catchupFixture();
+  try {
+    await assert.rejects(
+      projectPublicCatchup({
+        sourceRepo: fixture.source,
+        sourceSha,
+        fastForwardFrom,
+        expectedPublicSha: 'a'.repeat(40),
+        destination: fixture.at('stale'),
+      }),
+      /expected public/u
+    );
+    assert.equal(existsSync(fixture.at('stale')), false);
+    write(
+      fixture.source,
+      WORKFLOW,
+      workflow(60).replace(
+        '# exawatt:public-replace-end',
+        '# broken current directive'
+      )
+    );
+    git(fixture.source, ['add', '--', WORKFLOW]);
+    git(fixture.source, [
+      'commit',
+      '--quiet',
+      '-m',
+      'malformed current recipe',
+    ]);
+    await assert.rejects(
+      projectPublicCatchup({
+        sourceRepo: fixture.source,
+        sourceSha: git(fixture.source, ['rev-parse', 'HEAD']),
+        fastForwardFrom,
+        expectedPublicSha: seed.publicSha,
+        destination: fixture.at('broken'),
+      })
+    );
+    assert.equal(existsSync(fixture.at('broken')), false);
+    assert.equal(
+      git(seed.destination, ['rev-parse', 'master']),
+      seed.publicSha
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a committed snapshot epoch bootstraps fresh replay and epoch-only history emits no public commit', async () => {
+  const { fixture, seed, sourceSha, fastForwardFrom } = await catchupFixture();
+  try {
+    const snapshot = await projectPublicCatchup({
+      sourceRepo: fixture.source,
+      sourceSha,
+      fastForwardFrom,
+      expectedPublicSha: seed.publicSha,
+      destination: fixture.at('snapshot-public'),
+    });
+    write(
+      fixture.source,
+      'scripts/public-projection.epoch.json',
+      JSON.stringify(snapshot.epochUpdate, null, 2) + '\n'
+    );
+    git(fixture.source, ['add', '--', 'scripts/public-projection.epoch.json']);
+    git(fixture.source, [
+      'commit',
+      '--quiet',
+      '-m',
+      'record private snapshot anchor',
+    ]);
+    const epochSource = git(fixture.source, ['rev-parse', 'HEAD']);
+    const publicRemote = { repository: snapshot.destination, ref: 'master' };
+    const bridge = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: epochSource,
+      fastForwardFrom: publicRemote,
+      destination: fixture.at('bridge'),
+    });
+    assert.equal(bridge.publicSha, snapshot.publicSha);
+    assert.equal(bridge.emittedCommits, 0);
+    const worker = fileURLToPath(
+      new URL('./lib/exact-public-projection-worker.mjs', import.meta.url)
+    );
+    assert.throws(
+      () =>
+        execFileSync(
+          process.execPath,
+          [
+            worker,
+            fixture.source,
+            epochSource,
+            fixture.at('worker-missing-anchor'),
+          ],
+          { env: gitEnv(), encoding: 'utf8', stdio: 'pipe' }
+        ),
+      /requires --public-anchor/u
+    );
+    const workerResult = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          worker,
+          fixture.source,
+          epochSource,
+          fixture.at('worker-projection'),
+          snapshot.destination,
+        ],
+        { env: gitEnv(), encoding: 'utf8', stdio: 'pipe' }
+      )
+    );
+    assert.equal(workerResult.publicSha, snapshot.publicSha);
+    assert.equal(workerResult.emittedCommits, 0);
+
+    write(fixture.source, 'src/a.ts', 'export const a = 77;\n');
+    git(fixture.source, ['add', '--', 'src/a.ts']);
+    git(fixture.source, ['commit', '--quiet', '-m', 'ordinary source update']);
+    const nextSource = git(fixture.source, ['rev-parse', 'HEAD']);
+    const first = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: nextSource,
+      fastForwardFrom: publicRemote,
+      destination: fixture.at('ordinary'),
+    });
+    assert.equal(
+      git(first.destination, ['rev-parse', 'master^']),
+      snapshot.publicSha
+    );
+    // A fresh clone has no mutable source lock; the committed epoch and a
+    // public tip descended from that epoch suffice to reconstruct the same SHA.
+    git(fixture.parent, [
+      'clone',
+      '--quiet',
+      '--no-local',
+      fixture.source,
+      fixture.at('fresh-private'),
+    ]);
+    const fresh = await projectPublicHistory({
+      sourceRepo: fixture.at('fresh-private'),
+      sourceSha: nextSource,
+      fastForwardFrom: { repository: first.destination, ref: 'master' },
+      destination: fixture.at('fresh-projection'),
+    });
+    assert.equal(fresh.publicSha, first.publicSha);
+    assert.equal(fresh.emittedCommits, 1);
+    assert.throws(() => git(fresh.destination, ['cat-file', '-e', nextSource]));
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('snapshot epoch refuses a forged source mapping and a public epoch file', async () => {
+  const { fixture, seed, sourceSha, fastForwardFrom } = await catchupFixture();
+  try {
+    const snapshot = await projectPublicCatchup({
+      sourceRepo: fixture.source,
+      sourceSha,
+      fastForwardFrom,
+      expectedPublicSha: seed.publicSha,
+      destination: fixture.at('snapshot-public'),
+    });
+    const publicRemote = { repository: snapshot.destination, ref: 'master' };
+    await assert.rejects(
+      projectPublicHistory({
+        sourceRepo: fixture.source,
+        sourceSha,
+        fastForwardFrom: publicRemote,
+        epoch: { ...snapshot.epochUpdate, sourceSha: fixture.earlier },
+      }),
+      /unrendered outputs|does not match/u
+    );
+    const manifest = structuredClone(MANIFEST);
+    delete manifest.recipes['public-config'];
+    manifest.exceptions = manifest.exceptions.filter(
+      row => row.path !== 'src/config.ts'
+    );
+    write(
+      fixture.source,
+      MANIFEST_PATH,
+      JSON.stringify(manifest, null, 2) + '\n'
+    );
+    git(fixture.source, ['add', '--', MANIFEST_PATH]);
+    git(fixture.source, [
+      'commit',
+      '--quiet',
+      '-m',
+      'unsafe public epoch policy',
+    ]);
+    await assert.rejects(
+      projectPublicHistory({
+        sourceRepo: fixture.source,
+        sourceSha: git(fixture.source, ['rev-parse', 'HEAD']),
+        fastForwardFrom: publicRemote,
+        epoch: snapshot.epochUpdate,
+      }),
+      /epoch must remain private/u
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });

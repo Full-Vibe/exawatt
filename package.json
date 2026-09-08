@@ -17,10 +17,14 @@
     "company:compose": "node scripts/company-compose.mjs",
     "company:proof": "node scripts/company-proof.mjs",
     "test:contracts": "vitest run --config contracts/conformance/vitest.config.ts --maxWorkers=25%",
+    "test:service-conformance": "vitest run --config contracts/conformance/vitest.config.ts contracts/conformance/service-harness.test.ts --maxWorkers=1 && vitest run packages/core/src/distribution/service-protocol.test.ts packages/core/src/distribution/service-clients.test.ts --maxWorkers=1 && vitest run --config vitest.config.app-node.ts electron/main/pty/enrichment-distribution.test.ts electron/main/pty/context-summarizer.test.ts electron/main/pty/conversation-catalog.test.ts --maxWorkers=1 && vitest run --config vitest.config.app-dom.ts src/components/feedback/product-feedback-provider.test.tsx src/lib/operator-stats/auto-sync.dom.test.ts src/app/hud-gallery/goal-visuals/page.test.tsx --maxWorkers=1",
     "open-source:paths:check": "node scripts/open-source-paths.mjs check",
     "open-source:paths:plan": "node scripts/open-source-paths.mjs plan",
     "open-source:paths:project": "node scripts/open-source-paths.mjs project",
+    "open-source:metadata:audit": "node scripts/public-metadata-audit.mjs",
     "open-source:reseed": "node scripts/open-source-reseed.mjs",
+    "open-source:recertify": "node scripts/exact-public-recertification.mjs",
+    "test:exact-public": "node --test scripts/exact-public-recertification.test.mjs",
     "contribution:pull": "node scripts/contribution-pull.mjs",
     "security:audit:prod": "node scripts/production-dependency-audit.mjs",
     "security:secrets": "node scripts/secret-scan.mjs",
@@ -57,7 +61,8 @@
     "test:related": "NODE_COMPILE_CACHE=node_modules/.cache/node-compile-cache vitest related --run --maxWorkers=25% --passWithNoTests",
     "test:alone": "NODE_COMPILE_CACHE=node_modules/.cache/node-compile-cache vitest run --maxWorkers=1 --passWithNoTests",
     "test:coverage": "vitest --coverage",
-    "test:agent-delivery": "node --test scripts/dependency-hoisting.test.mjs scripts/install-freshness.test.mjs scripts/agent-land.test.mjs scripts/ci-batch.test.mjs scripts/delivery-documentation.test.mjs scripts/delivery-policy.test.mjs scripts/delivery-queue.test.mjs scripts/dogfood-queue.test.mjs scripts/agent-stop-check.test.mjs scripts/dogfood-delivery.test.mjs scripts/dogfood-install-identity.test.mjs scripts/macos-code-signing.test.mjs scripts/app-icon.test.mjs scripts/app-update-config.test.mjs scripts/electron-eval.test.mjs scripts/packed-app-assertions.test.mjs scripts/qa-browser.test.mjs scripts/worktree-env.test.mjs scripts/worktree-setup.test.mjs scripts/feedback-lanes.test.mjs scripts/public-content-scan.test.mjs scripts/open-source-paths.test.mjs scripts/public-projection.test.mjs scripts/public-delivery.test.mjs scripts/contribution-pull.test.mjs scripts/recipe-renderers.test.mjs scripts/production-dependency-audit.test.mjs scripts/check-dependency-licenses.test.mjs scripts/script-layout.test.mjs scripts/suite-environment.test.mjs scripts/github-workflows.test.mjs scripts/publication-check.test.mjs scripts/font-self-hosting.test.mjs scripts/distribution-build.test.mjs scripts/packaged-app.test.mjs scripts/company-overlay.test.mjs scripts/company-route-boundary.test.mjs",
+    "test:agent-delivery": "node --test scripts/dependency-hoisting.test.mjs scripts/install-freshness.test.mjs scripts/agent-land.test.mjs scripts/ci-batch.test.mjs scripts/delivery-documentation.test.mjs scripts/delivery-policy.test.mjs scripts/machine-slots.test.mjs scripts/delivery-queue.test.mjs scripts/dogfood-queue.test.mjs scripts/agent-stop-check.test.mjs scripts/dogfood-delivery.test.mjs scripts/dogfood-install-identity.test.mjs scripts/macos-code-signing.test.mjs scripts/app-icon.test.mjs scripts/app-update-config.test.mjs scripts/electron-eval.test.mjs scripts/packed-app-assertions.test.mjs scripts/qa-browser.test.mjs scripts/worktree-env.test.mjs scripts/worktree-setup.test.mjs scripts/worktree-roster.test.mjs scripts/dev-idle-watch.test.mjs scripts/dev-server-identity.test.mjs scripts/feedback-lanes.test.mjs scripts/public-content-scan.test.mjs scripts/open-source-paths.test.mjs scripts/public-metadata-policy.test.mjs scripts/public-projection.test.mjs scripts/public-source-lock.test.mjs scripts/public-delivery.test.mjs scripts/exact-public-recertification.test.mjs scripts/contribution-pull.test.mjs scripts/recipe-renderers.test.mjs scripts/production-dependency-audit.test.mjs scripts/check-dependency-licenses.test.mjs scripts/script-layout.test.mjs scripts/suite-environment.test.mjs scripts/github-workflows.test.mjs scripts/publication-check.test.mjs scripts/font-self-hosting.test.mjs scripts/distribution-build.test.mjs scripts/packaged-app.test.mjs scripts/company-overlay.test.mjs scripts/company-route-boundary.test.mjs scripts/public-catchup.test.mjs",
+    "test:public-metadata": "node --test scripts/public-metadata-policy.test.mjs",
     "test:worktree-setup": "node --test scripts/worktree-env.test.mjs scripts/worktree-setup.test.mjs",
     "test:scripts-layout": "node --test scripts/script-layout.test.mjs",
     "qa:browser:doctor": "node scripts/qa-browser-doctor.mjs",
@@ -80,6 +85,8 @@
     "eval:navigation:native": "node scripts/electron-native-navigation-eval.mjs",
     "eval:community:network": "env -u EXAWATT_DISTRIBUTION_CONFIG_JSON -u EXAWATT_DISTRIBUTION_PROFILE node scripts/community-network-observatory.mjs",
     "eval:electron:packaged": "node scripts/electron-packaged-smoke.mjs",
+    "eval:electron:connected-fleet": "node scripts/electron-connected-fleet-eval.mjs",
+    "eval:electron:connected-fleet:live": "EXAWATT_FLEET_PACKAGED_LIVE=1 node scripts/electron-connected-fleet-eval.mjs",
     "eval:electron:code-identity": "node scripts/electron-code-identity-eval.mjs",
     "eval:electron:update": "node scripts/electron-product-update-eval.mjs",
     "eval:electron:resume": "node scripts/electron-exact-resume-eval.mjs",
@@ -119,7 +126,7 @@
     "electron:build": "EXAWATT_COMPOSITION_PROFILE=official-desktop pnpm build && pnpm electron:prepare-renderer && pnpm electron:compile && electron-builder install-app-deps && pnpm electron:prepare-main:package && pnpm electron:prepare-licenses && pnpm electron:prepare-builder && electron-builder --mac --config .exawatt-build/electron-builder.base.json --config.npmRebuild=false --config.mac.identity=null --config.mac.notarize=false",
     "electron:build:dir": "EXAWATT_COMPOSITION_PROFILE=official-desktop pnpm build && pnpm electron:prepare-renderer && pnpm electron:compile && electron-builder install-app-deps && pnpm electron:prepare-main:package && pnpm electron:prepare-licenses && pnpm electron:prepare-builder && electron-builder --mac dir --arm64 --config .exawatt-build/electron-builder.base.json --config.npmRebuild=false --config.mac.identity=null --config.mac.notarize=false",
     "electron:build:dogfood": "node scripts/build-dogfood.mjs",
-    "electron:install-dogfood": "EXAWATT_REQUIRE_OFFICIAL_DOGFOOD=1 EXAWATT_DOGFOOD_ALLOWED_PREVIOUS_IDENTIFIER=com.exawatt.app node --env-file-if-exists=.env.local scripts/install-dogfood.mjs",
+    "electron:install-dogfood": "EXAWATT_DISTRIBUTION_PROFILE=official EXAWATT_REQUIRE_OFFICIAL_DOGFOOD=1 EXAWATT_DOGFOOD_ALLOWED_PREVIOUS_IDENTIFIER=com.exawatt.app node --env-file-if-exists=.env.local scripts/install-dogfood.mjs",
     "electron:rebuild": "electron-rebuild -f -w node-pty",
     "env:pull": "vercel env pull .env.local --environment=development --yes",
     "worktree:setup": "node scripts/worktree-setup.mjs",
@@ -129,10 +136,10 @@
     "eval:electron:tenancy": "node scripts/electron-workspace-tenancy-eval.mjs",
     "eval:electron:operator-stats": "node scripts/electron-operator-stats-eval.mjs",
     "eval:roadmap:rail": "node scripts/roadmap-rail-eval.mjs",
-    "electron:build:dogfood:official": "EXAWATT_DISTRIBUTION_PROFILE=official node scripts/build-dogfood.mjs"
+    "electron:build:dogfood:official": "EXAWATT_DISTRIBUTION_PROFILE=official node scripts/build-dogfood.mjs",
+    "open-source:catchup": "node scripts/public-catchup.mjs"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.40",
     "@exawatt/core": "workspace:*",
     "@exawatt/ui-model": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.23",
@@ -153,7 +160,6 @@
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
-    "ai": "^7.0.70",
     "camera-controls": "^3.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -199,12 +205,15 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "wait-on": "^8.0.3",
+    "ws": "^8.21.0",
     "yaml": "^2.9.0"
   },
   "pnpm": {
     "overrides": {
       "@babel/core": "7.29.6",
       "@supabase/realtime-js>ws": "8.21.0",
+      "browserslist@<4.28.7": "4.28.7",
+      "fflate@>=0.6.0 <0.6.11": "0.6.11",
       "electron-updater>js-yaml": "4.3.1"
     }
   }

@@ -605,30 +605,43 @@ export async function loadAgentSourcePreferences(): Promise<AgentSourcePreferenc
  */
 const MODEL_CATALOG_DEADLINE_MS = 25_000;
 
+async function requestAgentModelCatalog(
+  source: AgentSourceId,
+  projectDir: string,
+  refresh = false
+): Promise<AgentModelCatalog | null> {
+  const listModels = window.electron?.pty?.listAgentModels;
+  if (!listModels) return null;
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>(resolve => {
+    timeoutId = setTimeout(() => resolve(null), MODEL_CATALOG_DEADLINE_MS);
+  });
+  try {
+    return await Promise.race([
+      listModels(source, projectDir, refresh),
+      timeout,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
 export async function loadAgentModelCatalog(
   source: AgentSourceId,
   projectDir: string
 ): Promise<AgentModelCatalog> {
-  const listModels = window.electron?.pty?.listAgentModels;
-  if (listModels) {
-    try {
-      // A never-settling bridge call used to leave the effort control spinning
-      // on "Detecting…" for the rest of the session (ENG-016 D49). The UI's
-      // readiness must not depend on a promise it does not control: an
-      // unanswered catalog resolves to the honest "unavailable" shape below,
-      // which every control already knows how to render.
-      const timeout = new Promise<null>(resolve => {
-        setTimeout(() => resolve(null), MODEL_CATALOG_DEADLINE_MS);
-      });
-      const catalog = await Promise.race([
-        listModels(source, projectDir),
-        timeout,
-      ]);
-      if (catalog) return catalog;
-    } catch {
-      // The launch remains available when an older bridge or CLI cannot
-      // describe its catalog; the UI labels that uncertainty explicitly.
-    }
+  try {
+    // A never-settling bridge call used to leave the effort control spinning
+    // on "Detecting…" for the rest of the session (ENG-016 D49). The UI's
+    // readiness must not depend on a promise it does not control: an
+    // unanswered catalog resolves to the honest "unavailable" shape below,
+    // which every control already knows how to render.
+    const catalog = await requestAgentModelCatalog(source, projectDir);
+    if (catalog) return catalog;
+  } catch {
+    // The launch remains available when an older bridge or CLI cannot
+    // describe its catalog; the UI labels that uncertainty explicitly.
   }
   return {
     harness: source,
@@ -648,6 +661,25 @@ export async function loadAgentModelCatalog(
     observedAt: 0,
     selectionAction: source === 'claude' ? 'choose-in-source' : null,
   };
+}
+
+/**
+ * Operator-requested model refresh. Unlike background hydration, this keeps a
+ * failed or degraded probe out of the composer's last-known-good catalog.
+ */
+export async function refreshAgentModelCatalog(
+  source: AgentSourceId,
+  projectDir: string
+): Promise<AgentModelCatalog> {
+  const catalog = await requestAgentModelCatalog(source, projectDir, true);
+  if (
+    !catalog ||
+    catalog.harness !== source ||
+    catalog.catalogMode !== 'live-catalog'
+  ) {
+    throw new Error('Fresh model catalog unavailable');
+  }
+  return catalog;
 }
 
 export async function rememberAgentSource(

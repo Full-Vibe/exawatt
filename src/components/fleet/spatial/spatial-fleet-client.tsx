@@ -44,7 +44,10 @@ import {
 } from '@exawatt/ui-model';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
 import { useMinuteClock } from './use-minute-clock';
-import { requestSessionJump } from '@/components/workspace/session-jump';
+import {
+  requestRemoteAgentOpen,
+  requestSessionJump,
+} from '@/components/workspace/session-jump';
 import { rememberSpatialReturn } from '@/components/nav/spatial-return';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -602,6 +605,24 @@ export function SpatialFleetClient() {
       return;
     }
 
+    // A connected coworker has no local PTY. Carry its projected Agent id to
+    // the same Workspace Agent surface Team opens, preserving board return.
+    if (inspectedAgent.presence) {
+      rememberSpatialReturn(
+        `${window.location.pathname}${window.location.search}`
+      );
+      setSessionHandoffAgentId(inspectedAgent.id);
+      const reduced = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      await new Promise(resolve =>
+        window.setTimeout(resolve, reduced ? 40 : 240)
+      );
+      requestRemoteAgentOpen(inspectedAgent.id);
+      navigateCommandSurface('/workspace');
+      return;
+    }
+
     const detailHref = `/fleet/${encodeURIComponent(inspectedAgent.id)}`;
     const pty = window.electron?.pty;
     if (!pty) {
@@ -670,57 +691,68 @@ export function SpatialFleetClient() {
         </span>
         <div className="flex min-w-0 items-center gap-2">
           <Crosshair className="h-4 w-4 text-primary" />
-          <button
-            type="button"
-            onClick={() =>
-              navigate({ altitude: 'fleet', project: null, agent: null })
-            }
-            className="truncate text-left text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            Fleet
-          </button>
+          {scene.altitude === 'fleet' ? (
+            <span className="truncate text-left text-lg font-semibold tracking-tight text-foreground">
+              Fleet
+            </span>
+          ) : (
+            <nav
+              aria-label="Board altitude"
+              className="flex min-w-0 items-center gap-1.5"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({ altitude: 'fleet', project: null, agent: null })
+                }
+                className="text-chrome-label font-medium text-muted-foreground outline-none transition-colors hover:text-primary focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Fleet
+              </button>
+              <span className="text-muted-foreground">›</span>
+              {scene.altitude === 'agent' && focusedZoneLabel ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate({
+                        altitude: 'project',
+                        project: scene.focusedProjectId,
+                        agent: null,
+                      })
+                    }
+                    className="max-w-[24vw] truncate text-chrome-label font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {focusedZoneLabel}
+                  </button>
+                  <span className="text-muted-foreground">›</span>
+                  <span
+                    className="max-w-[32vw] truncate text-base font-semibold tracking-tight text-foreground"
+                    title={inspectedAgent?.name}
+                  >
+                    {inspectedAgent?.name}
+                  </span>
+                </>
+              ) : (
+                <span
+                  className="max-w-[42vw] truncate text-base font-semibold tracking-tight text-foreground"
+                  title={focusedZoneLabel ?? undefined}
+                >
+                  {focusedZoneLabel}
+                </span>
+              )}
+            </nav>
+          )}
           <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
             {isDemo ? 'Demo' : 'Live'}
           </span>
         </div>
-        {scene.altitude !== 'fleet' && focusedZoneLabel && (
-          <nav
-            aria-label="Zoom altitude"
-            className="flex min-w-0 items-center gap-1 text-xs"
-          >
-            <span className="text-muted-foreground">›</span>
-            <button
-              onClick={() =>
-                navigate({
-                  altitude: 'project',
-                  project: scene.focusedProjectId,
-                  agent: null,
-                })
-              }
-              className={`max-w-[40vw] truncate rounded px-2 py-1 transition ${
-                scene.altitude === 'project'
-                  ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {focusedZoneLabel}
-            </button>
-            {scene.altitude === 'agent' && inspectedAgent && (
-              <>
-                <span className="text-muted-foreground">›</span>
-                <span
-                  className="max-w-[24vw] truncate rounded px-2 py-1 text-primary"
-                  title={inspectedAgent.name}
-                >
-                  {inspectedAgent.name}
-                </span>
-              </>
-            )}
-          </nav>
-        )}
         {scene.altitude !== 'fleet' && (
           <span className="hidden text-chrome-meta text-muted-foreground sm:inline">
-            Esc to zoom out
+            <kbd className="mr-1 font-mono text-chrome-micro text-foreground">
+              Esc
+            </kbd>
+            Fleet overview
           </span>
         )}
 
@@ -783,7 +815,7 @@ export function SpatialFleetClient() {
           type="button"
           size="icon"
           variant="outline"
-          className="fleet-action-button grid h-11 w-11 place-items-center p-0 xl:hidden"
+          className="fleet-action-button grid h-11 w-11 place-items-center p-0"
           onClick={openHelpModal}
           aria-label="Keyboard shortcuts"
           aria-keyshortcuts={

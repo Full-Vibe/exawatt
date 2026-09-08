@@ -1,8 +1,8 @@
 [
   {
     "id": "community-all-null",
+    "kind": "distribution",
     "distributionFixture": "../distribution/v1/fixtures/community.json",
-    "environment": {},
     "action": "exercise-all-hosted-capabilities",
     "expected": {
       "networkRequests": 0,
@@ -12,6 +12,7 @@
   },
   {
     "id": "no-exawatt-fallback",
+    "kind": "distribution",
     "distributionFixture": null,
     "environment": {
       "NEXT_PUBLIC_EXAWATT_WEB_ORIGIN": "https://poison.example.invalid",
@@ -26,18 +27,8 @@
     }
   },
   {
-    "id": "custom-distributor-v1",
-    "distributionFixture": "../distribution/v1/fixtures/custom-distributor.json",
-    "action": "exercise-configured-v1-capabilities",
-    "expected": {
-      "requestHeader": { "Exawatt-Service-Version": "1" },
-      "acceptedResponseHeader": { "Exawatt-Service-Version": "1" },
-      "fallback": null,
-      "error": null
-    }
-  },
-  {
     "id": "configured-incompatible-version",
+    "kind": "distribution",
     "distributionFixture": "../distribution/v1/fixtures/invalid-protocol-version.json",
     "action": "resolve-distribution",
     "expected": {
@@ -47,26 +38,188 @@
     }
   },
   {
-    "id": "n-minus-one-additive-response",
-    "distributionFixture": "../distribution/v1/fixtures/custom-distributor.json",
-    "serviceFixture": "../services/v1/fixtures/context-labels/additive-response.json",
-    "responseHeader": { "Exawatt-Service-Version": "1" },
-    "action": "decode-v1-response-with-additive-field",
+    "id": "custom-distributor-v1-current",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "current",
     "expected": {
       "accepted": true,
+      "attemptsPerOperation": 1,
+      "error": null
+    }
+  },
+  {
+    "id": "n-minus-one-additive-response",
+    "kind": "wire",
+    "operations": "all-with-response-body",
+    "responseMode": "additive",
+    "expected": {
+      "accepted": true,
+      "attemptsPerOperation": 1,
       "ignoredFields": ["serviceTrace"],
       "error": null
     }
   },
   {
-    "id": "live-rollback-version-mismatch",
-    "distributionFixture": "../distribution/v1/fixtures/custom-distributor.json",
-    "responseHeader": { "Exawatt-Service-Version": "2" },
-    "action": "decode-mutating-v1-response",
+    "id": "missing-response-version",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "missing-version",
     "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "missing_response_version"
+    }
+  },
+  {
+    "id": "malformed-response-version",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "malformed-version",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "incompatible_response_version"
+    }
+  },
+  {
+    "id": "unknown-response-version",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "unknown-version",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "incompatible_response_version"
+    }
+  },
+  {
+    "id": "live-rollback-version-mismatch",
+    "kind": "wire",
+    "operations": "mutating",
+    "responseMode": "rollback",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
       "automaticReplay": false,
       "fallback": "local-or-absent",
       "error": "incompatible_response_version"
+    }
+  },
+  {
+    "id": "schema-version-mismatch",
+    "kind": "wire",
+    "operations": "all-with-response-body",
+    "responseMode": "schema-version-mismatch",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "invalid_response_body"
+    }
+  },
+  {
+    "id": "wrong-success-media",
+    "kind": "wire",
+    "operations": "all-with-response-body",
+    "responseMode": "wrong-success-media",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "invalid_response_body"
+    }
+  },
+  {
+    "id": "wrong-success-status",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "wrong-success-status",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "invalid_response_status"
+    }
+  },
+  {
+    "id": "malformed-json",
+    "kind": "wire",
+    "operations": "all-with-response-body",
+    "responseMode": "malformed-json",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "invalid_response_body"
+    }
+  },
+  {
+    "id": "malformed-success-envelope",
+    "kind": "wire",
+    "operations": "all-with-response-body",
+    "responseMode": "malformed-envelope",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "invalid_response_body"
+    }
+  },
+  {
+    "id": "problem-envelope-v1",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "problem",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "problemCode": "capacity_reached",
+      "retryable": true,
+      "retryAfterSeconds": 3600,
+      "automaticReplay": false,
+      "error": "service_problem"
+    }
+  },
+  {
+    "id": "malformed-problem-envelope",
+    "kind": "wire",
+    "operations": "all",
+    "responseMode": "malformed-problem",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "invalid_problem_body"
+    }
+  },
+  {
+    "id": "mutating-no-ambiguous-replay",
+    "kind": "wire",
+    "operations": "mutating",
+    "responseMode": "disconnect",
+    "expected": {
+      "accepted": false,
+      "attemptsPerOperation": 1,
+      "automaticReplay": false,
+      "error": "transport_error"
+    }
+  },
+  {
+    "id": "product-feedback-idempotent-repeat",
+    "kind": "wire",
+    "operations": "product-feedback",
+    "responseMode": "idempotent-repeat",
+    "invocations": 2,
+    "expected": {
+      "accepted": true,
+      "attemptsPerOperation": 2,
+      "automaticReplay": false,
+      "duplicateSequence": [false, true],
+      "error": null
     }
   }
 ]

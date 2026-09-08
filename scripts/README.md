@@ -1,3 +1,4 @@
+<!-- Generated for the public repository by the "public-document-set" recipe. -->
 # Repository scripts
 
 `package.json` is the stable command interface. Files in this directory are
@@ -62,22 +63,17 @@ human-facing package command:
 | `gitleaks.toml`                      | public-repository secret-scan workflow configuration      |
 | `macos-atomic-swap.c`                | native helper compiled by `lib/macos-atomic-swap.mjs`     |
 | `open-source-paths.manifest.json`    | fail-closed publication path classifier                   |
-| `prepare-release-metadata.mjs`       | macOS release workflow                                    |
 | `production-audit-baseline.json`     | production dependency audit input                         |
-| `publish-supabase-updates.mjs`       | macOS release workflow publisher                          |
-| `release-after-pack.cjs`             | release Electron Builder hook                             |
 | `sign-renderer-archive.cjs`          | dogfood Electron Builder hook                             |
 
 The following are deliberately direct-use research, capture, or historical
 diagnostic tools. They are not standing gates and should not be presented as
 such without first revalidating their fixture and owner:
 
-- `fathom-transcript.mjs`
 - `pace-opportunity-shot.mjs`
-- `palette-projects-eval.mjs`
-- `registry-e2e-eval.mjs`
 - `renderer-session-lifecycle-leak-probe.mjs`
 - `session-lifecycle-leak-probe.mjs`
+- `cold-composer-probe.mjs` — opt-in staged-renderer launch measurements; requires an explicit build SHA and an isolated fixture profile
 - `terminal-cost-probe.mjs`
 - `transcript-replay-probe.mjs`
 

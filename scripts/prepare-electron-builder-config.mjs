@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { parse } from 'yaml';
@@ -31,6 +31,26 @@ const config = electronBuilderDistributionConfig(
   prepared.contract,
   overlay
 );
+if (profile === 'release') {
+  const provenance = path.join(
+    root,
+    '.exawatt-build',
+    'release-provenance.json'
+  );
+  await access(provenance).catch(error => {
+    throw new Error(
+      'Official release provenance is missing; run `pnpm release:provenance:prepare` before preparing the release builder config.',
+      { cause: error }
+    );
+  });
+  config.extraResources = [
+    ...(config.extraResources ?? []),
+    {
+      from: provenance,
+      to: 'release-provenance.json',
+    },
+  ];
+}
 const output = path.join(
   root,
   '.exawatt-build',

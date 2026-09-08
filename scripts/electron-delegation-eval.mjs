@@ -274,6 +274,30 @@ try {
       );
       check('Codex child completion correlates by exact thread ID', true);
 
+      await sendCodex(`resume ${fixture.codex.childIds[0]}`);
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === codex.id)?.delegation?.children
+            .length === 2,
+        'completed Codex child to resume without a timestamp change'
+      );
+      check(
+        'same-timestamp child resumption reaches the shared projection',
+        true
+      );
+      await sendCodex(`fail ${fixture.codex.childIds[0]}`);
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === codex.id)?.delegation?.children
+            .length === 1,
+        'failed child to leave the live census'
+      );
+      check(
+        'failed child does not announce a successful result',
+        (await sessions()).find(s => s.id === codex.id)?.attention?.kind !==
+          'turn-end'
+      );
+
       await sendCodex('protocol-down');
       await until(
         async () =>

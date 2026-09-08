@@ -48,6 +48,7 @@ describe('resolved enrichment contract against a fake compatible service', () =>
     const requests: Array<{
       path: string;
       authorization: string | undefined;
+      serviceVersion: string | undefined;
       body: Record<string, unknown>;
     }> = [];
     const server = createServer(async (request, response) => {
@@ -57,12 +58,17 @@ describe('resolved enrichment contract against a fake compatible service', () =>
       requests.push({
         path: request.url ?? '',
         authorization: request.headers.authorization,
+        serviceVersion: request.headers['exawatt-service-version'],
         body,
       });
-      response.writeHead(200, { 'content-type': 'application/json' });
+      response.writeHead(200, {
+        'content-type': 'application/json',
+        'Exawatt-Service-Version': '1',
+      });
       if (request.url === '/v1/context-labels') {
         response.end(
           JSON.stringify({
+            schemaVersion: 1,
             label: 'Compatible service contract',
             relationship: 'new_context',
             confidence: 0.99,
@@ -73,7 +79,8 @@ describe('resolved enrichment contract against a fake compatible service', () =>
       if (request.url === '/v1/goal-visuals') {
         response.end(
           JSON.stringify({
-            identityKey: 'fake-compatible-visual',
+            schemaVersion: 1,
+            identityKey: body.identityKey,
             dataUrl: 'data:image/jpeg;base64,YWJj',
           })
         );
@@ -82,6 +89,7 @@ describe('resolved enrichment contract against a fake compatible service', () =>
       const conversations = body.conversations as Array<{ key: string }>;
       response.end(
         JSON.stringify({
+          schemaVersion: 1,
           conversations: [
             {
               key: conversations[0].key,
@@ -177,6 +185,12 @@ describe('resolved enrichment contract against a fake compatible service', () =>
           request => request.authorization === 'Bearer compatible-service-token'
         )
       ).toBe(true);
+      expect(requests.every(request => request.serviceVersion === '1')).toBe(
+        true
+      );
+      expect(requests.every(request => request.body.schemaVersion === 1)).toBe(
+        true
+      );
       summarizer.stop();
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));

@@ -97,13 +97,17 @@ trees: an entrypoint must be declared on exactly one side, and nothing under
 available to community builds for operator-configured Gateways. A configured
 Agent Source is an Electron-main capability: main reads the source-owned
 config, keeps the Gateway secret, device key/token, SSH tunnel, endpoint
-selection, and authenticated WebSocket, and the renderer receives view
-projections only. There is no renderer-reachable Gateway bridge and no command
-channel at all: `ConnectedGatewaySession`'s method allowlist and the source's
-own `operator.read` scope are the two locks that make H1 read-only, so
-`chat.send`, steering, abort, and cron mutation have no code path in the
-process. Browser builds have no equivalent credential route and remain in
-Demo Mode.
+selection, authenticated WebSocket, capability truth, and command authority.
+The renderer receives normalized projections plus one Agent-addressed
+conversation seam; it never receives Gateway credentials, arbitrary Gateway
+method access, or an admin capability. H2 places writes behind two locks: the
+Gateway's observed `operator.write` grant and `ConnectedGatewaySession`'s exact
+allowlist (`chat.send`, `chat.abort`, `sessions.steer`, and `tasks.cancel`). The
+renderer exposes authority request/relinquish, bounded primary-conversation
+history and follow, and Agent-addressed send. Pause/Resume, schedule or
+configuration mutation, Gateway administration, and VPS lifecycle have no
+path. Browser builds have no equivalent credential route and remain in Demo
+Mode.
 
 Renderer product-service callers consume only the corresponding versioned
 `services.*` endpoint. Product feedback and operator-stat publication check
@@ -266,8 +270,9 @@ Canonical product objects:
 
 - Workspace
 - Initiative
-- Project / Context Group (a resolvable grouping lens seeded by the source's
-  Project catalog and joined by Agents, not a structural parent of Agent)
+- Project / Context Group (a durable Exawatt-owned grouping record with an
+  opaque id, renameable label, and optional local-folder binding; Agents join
+  it by id, and it is not a structural parent of Agent)
 - Agent
 - Session
 - Decision
@@ -449,6 +454,11 @@ of that PTY Session. Electron version- and shape-probes the installed Codex
 app-server, correlates the Session's exact provider thread ID to source-owned
 descendant IDs, and translates reported lifecycle into the shared delegation
 model. Reconnect replaces the observation from a fresh descendant snapshot.
+The shared monitor applies each child census atomically, accepts source-proven
+resumption over delta-event tombstones, and emits completion only for explicit
+completed turns. Poll generations reject stale identity responses; one failed
+Session read cannot withdraw another Session's successful census. Process
+callbacks are scoped to their connection generation.
 An unavailable or incompatible protocol withdraws the observation to absent;
 files, worktrees, process trees, and terminal text are never delegation
 evidence.
@@ -526,16 +536,20 @@ The projection boundary is additive and versioned:
   -> projectionVersion
 ```
 
-ENG-010 C0 implements this as the exported `@exawatt/core` Agent projection
+ENG-010 C0 implemented this as the exported `@exawatt/core` Agent projection
 kernel in `packages/core/src/agent-projection.ts`. Its pure boundary accepts
 source-qualified topology snapshots plus an explicit projection plan and
 returns either a deterministic coworker projection with diagnostics or
 fail-closed structural errors. The plan and output carry the projection
 version; snapshots and individual mapping records do not. The kernel owns no
 transport, persistence, credential access, or UI policy. It accepts
-`observed`, `declared`, and `simulated` through one evidence-basis contract;
-Demo and Live adapters have not integrated it yet, so end-to-end Demo/Live
-parity remains later acceptance rather than a C0 claim.
+`observed`, `declared`, and `simulated` through one evidence-basis contract.
+C1-C5 integrated it with saved customer-hosted sources, authoritative
+reattachment, and Demo/Live lifecycle contracts. H2 added the source-granted
+conversation seam and one Agent/Team/Fleet navigation path. The final packaged
+gate proves authority-gated command and recovery through the real
+preload/IPC/runtime/UI; the exact installed official app proves the same
+identities and open paths against the operator's two live SSH-alias Gateways.
 
 The C0 topology snapshot retains native Agent and Session/context IDs, kinds,
 lineage, primary-conversation roles, timestamps, placement, Gateway identity,
@@ -555,9 +569,9 @@ uses the OpenClaw Gateway protocol rather than shell-scraping remote files. The
 connection record retains placement, credential owner, compatibility,
 capabilities, freshness, authoritative resnapshot strategy, and any
 source-declared durable replay position; secrets remain in source-owned SSH
-configuration or OS-keychain custody behind Electron main. Opening an Agent
-resolves its declared primary conversation rather than guessing from recent
-activity; OpenClaw maps that role to the configured Agent's exact `main`
+configuration or OS-protected encrypted storage behind Electron main. Opening
+an Agent resolves its declared primary conversation rather than guessing from
+recent activity; OpenClaw maps that role to the configured Agent's exact `main`
 Session.
 
 Connection state is orthogonal to Agent and Session work state. Quitting or
@@ -575,8 +589,10 @@ fake that contract with a prompt, cron mutation, Gateway stop, or VPS shutdown.
 
 Demo Mode enters below the same configured-source, projection, placement,
 primary-conversation, freshness, resnapshot, and optional replay boundary with
-simulated evidence. The first live slice is read-only by contract; write
-authority follows only after observation and reattachment are proven.
+simulated evidence. H1 shipped read-only attachment first. H2 subsequently
+added source-granted primary-conversation command authority; it did not add
+generic Pause, schedule/configuration mutation, Gateway control, or VPS
+lifecycle control.
 
 #### Launch Configuration runtime
 
@@ -625,9 +641,8 @@ observation remains a separate evidence channel and must not be used to infer
 the source's billing mode or unreported plan headroom.
 
 Remote Gateway and future custom-source credentials may be held as narrowly
-scoped OS-keychain connection
-material behind Electron main. That is an explicit seam, not ENG-009's general
-Secrets/Credentials broker.
+scoped, OS-protected encrypted connection material behind Electron main. That
+is an explicit seam, not ENG-009's general Secrets/Credentials broker.
 
 The same contracts leave a deliberate future seam for Exawatt to become a
 Harness or compose with policy engines, credential brokers, restricted
@@ -695,8 +710,9 @@ record seen — so a clock jump or a restored backup cannot empty a collection.
 
 - Workspace
 - Initiative
-- Project / Context Group (a resolvable grouping lens seeded by the source's
-  Project catalog and joined by Agents, not a structural parent of Agent)
+- Project / Context Group (a durable Exawatt-owned grouping record with an
+  opaque id, renameable label, and optional local-folder binding; Agents join
+  it by id, and it is not a structural parent of Agent)
 - Agent
 - Session
 - Event
@@ -719,11 +735,15 @@ Built:
 - Supabase auth/data
 - legacy Supabase demo task flow
 - `@exawatt/core` OpenClaw JSON-RPC client, Electron-main credential/capability broker, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
-- `@exawatt/core` source-qualified Agent projection kernel (ENG-010 C0): pure,
-  fail-closed topology validation, explicit Agent/Project mappings, a versioned
-  projection plan/output, source-declared primary-conversation selection, and
-  one `observed`/`declared`/`simulated` evidence-basis input contract; no
-  Demo/Live adapter integration, remote transport, or UI
+- connected customer-hosted OpenClaw (ENG-010 C0-C5, ENG-033 H2):
+  the source-qualified projection kernel, saved SSH-forwarded sources,
+  OS-protected scoped device credentials, continuous authoritative observation,
+  stable folder-optional Project mappings, primary-conversation history/send
+  behind source-granted authority, and one Agent/Team/Fleet navigation path.
+  The final packaged gate proves authority-gated send/reply and recovery; the
+  exact installed official app proves both live SSH-alias Gateways, three
+  source-qualified Agents, relaunch-stable identity/UI, and observation-only
+  authority without leaving a new device on either source
 - Workspace tenancy (ENG-027): Personal and Demo are `available` tenants behind the account-menu switcher; the Voltaic Grid Systems shared tenant is a non-activatable `preview` Workspace linking to `/organization`. **Demo** is the tenant identity and **Voltaic Grid Systems** is the separately modeled organization its fixtures portray. The Demo source runs the authored Voltaic fleet, pane content sources (transcripts / honest session records, never a PTY), demo ⌘K rows, Initiative projections, and the Voltaic consumption corpus through the production surfaces
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
@@ -776,12 +796,15 @@ Built:
   only an explicit close removes the open group. The first authored change
   promotes task, source, model, effort, worktree/branch, and roadmap link into one
   persisted draft-tab record
-- a source-agnostic Project catalog derived from durable workspace state. The
-  Electron workspace save broadcasts an authoritative change event through the
+- a source-agnostic Project catalog derived from durable workspace state. A
+  Project has an opaque identity, renameable label, and optional local-folder
+  binding; folderless Projects remain openable while path-dependent actions
+  remain absent. The Electron workspace save broadcasts an authoritative
+  change event through the
   preload boundary; FleetProvider refreshes the catalog and local Session
   inventory so Agent, Team, and Fleet render the same open Projects,
-  including zero-Agent/zero-Session Projects. Local Agents carry the stable
-  directory-backed Project identity and join the existing group when started.
+  including zero-Agent/zero-Session Projects. Local and customer-hosted Agents
+  join the same stable Project identity when started or mapped.
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
 - persistent command-altitude navigation between the Agent, Team, and Fleet
@@ -806,6 +829,17 @@ Built:
   bar makes the selected Project the one-click default and nests the distinct
   Agent/all-Projects scopes in one menu, so Project recovery does not restart
   unrelated work or create three competing controls
+- a pure retained-history projection in
+  `packages/core/src/conversation/retained-history.ts` (ENG-016 D71). Codex
+  full-turn records and already chain-selected Claude SDK message records
+  normalize into address-qualified stable records, typed inert text/tool blocks,
+  opaque page cursors and explicit partial/unknown history. Work and output are
+  bounded independently of source IO. It has no transport, filesystem, auth,
+  clock, markdown parser or execution side effects and is not yet wired to a
+  production reader. The existing Electron connected-conversation owner keeps
+  Gateway primary-conversation selection, live commands and its flat turn DTO;
+  this richer read projection shares its operator/agent vocabulary without
+  weakening that authority boundary or replacing AgentActivity status events.
 - a source-neutral recent-conversation catalog in Electron main. Replaceable
   Claude Code, Codex, and OpenCode provider adapters plus the Exawatt
   Project-Session adapter normalize exact
@@ -851,6 +885,12 @@ Built:
   succeeds, and the next run can recover any interrupted transaction. The
   running app is never restarted. See
   [`agent-delivery.md`](agent-delivery.md) and decision `0030`;
+- public-source publication preserves a committed published prefix and replays
+  later source trees through per-commit classification and metadata policy.
+  Deterministic rendering/ancestry preflight precedes integration; a reviewed
+  recovery can certify and append a current-tree snapshot without rewriting
+  public history. Its source/public epoch is verified against the public tree;
+  ordinary publication never silently falls back to snapshot recovery.
 - one owner for login-shell invocation
   (`electron/main/pty/login-shell.ts`). Running a harness, probing a source,
   reading a model catalog, or scanning resumes all execute the operator's own
@@ -941,8 +981,6 @@ Implemented:
 Partial:
 
 - source/harness abstraction beyond OpenClaw/mock
-- customer-hosted OpenClaw persistence, transport, reconnect/freshness, and UI
-  projection (ENG-010 C1-C3; the pure C0 projection kernel is built)
 - architecture overview as a living map
 - Fleet Operations Board extraction into a standalone package
 
@@ -956,9 +994,8 @@ Planned:
   across Agent Sources
 - managed Workspace policy ceilings and Exawatt-enforced action mediation
 - secrets/configuration strategy
-- customer-hosted OpenClaw attach and read-only observation (ENG-010)
-- command-capable connected Agents, Exawatt-managed placement, and later
-  explicit clone/move workflows (ENG-033)
+- Exawatt-managed placement and later explicit clone/move workflows (ENG-033);
+  no paid-cloud implementation is active
 - multi-source fleet aggregation
 - exact live Run lifecycle adapters beyond the conservative timestamped
   Consumption projection, and additional public identity providers beyond the

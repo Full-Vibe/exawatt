@@ -68,10 +68,10 @@ import {
 import type { HeroLens } from './hero-board-lens';
 import {
   boardCenter,
+  DELEGATION_QUAD,
   heroBoardFramings,
   HERO_DEFAULT_LADDER,
-  DELEGATION_OVERFLOW_SCALE,
-  heroDelegationPosition,
+  heroDelegationRenderGeometry,
   MARK_GLYPH_RADIUS,
   MARK_SCALE,
   NARROW_FRAME_PX,
@@ -130,19 +130,6 @@ const POP_ATTACK = 0.18;
 const MARK_QUAD_PAD = 2.6;
 /** Particles per burst. Six reads as a burst and stays one cheap loop. */
 const BURST_PARTICLES = 6;
-
-/**
- * The delegated-child quad, as a multiple of the child's own mark size
- * (ENG-031 W5).
- *
- * The lineage tether and the child mark are drawn in ONE quad and therefore in
- * one draw call. That is not a micro-optimisation: the board's whole claim is
- * that a readable operations picture costs three draw calls, and a separate
- * `LineSegments` for the tethers would have made it five. Measured against the
- * capture, every tether's parent-side endpoint already falls inside the
- * child's own mark footprint, so this multiple is headroom rather than a fit.
- */
-const DELEGATION_QUAD = 2.4;
 
 /** How long the constellations take to bloom out of their parents. Finite and
  *  damped, arriving at rest (ENG-023 D3c spawn transitions, guide rule 4b). */
@@ -1137,28 +1124,15 @@ function HeroDelegations({
       'aDelay'
     ) as THREE.InstancedBufferAttribute;
 
-    capture.delegations.forEach((child, index) => {
-      // An overflow lobe stands for several Agents, so it is drawn larger than
-      // one child. It is the exact census, never a decoration.
-      const quad =
-        child.size *
-        MARK_SCALE *
-        DELEGATION_QUAD *
-        (child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1);
-      // The DRAWN slot, one fifth further out than the packed one, so the
-      // lineage spoke has a run and two siblings do not merge (W13).
-      const slot = heroDelegationPosition(capture, index);
+    capture.delegations.forEach((_, index) => {
+      const render = heroDelegationRenderGeometry(capture, index);
+      const { slot } = render;
       scratch.position.set(slot.x - center.x, 0.035, slot.y - center.y);
-      scratch.scale.set(quad, 1, quad);
+      scratch.scale.set(render.quadWorldSize, 1, render.quadWorldSize);
       scratch.updateMatrix();
       mesh.current!.setMatrixAt(index, scratch.matrix);
 
-      const owner = capture.units[child.parent];
-      parent.setXY(
-        index,
-        (owner?.x ?? slot.x) - slot.x,
-        (owner?.y ?? slot.y) - slot.y
-      );
+      parent.setXY(index, render.parentOffset.x, render.parentOffset.y);
       // THE SPOKE RUNS BETWEEN THE MARKS THAT ARE PAINTED (W13). The capture's
       // own tether endpoints are the parent's and the child's LAYOUT edges,
       // which is a different pair of circles from the ones the shader draws:
@@ -1166,26 +1140,8 @@ function HeroDelegations({
       // stopped short of the child. Derived from the drawn radii instead, so
       // lineage is exactly the clear gap between the two bodies and cannot
       // drift if either mark's glyph radius changes.
-      const dx = slot.x - (owner?.x ?? slot.x);
-      const dy = slot.y - (owner?.y ?? slot.y);
-      const run = Math.hypot(dx, dy) || 1;
-      const ux = dx / run;
-      const uy = dy / run;
-      const parentEdge =
-        MARK_GLYPH_RADIUS * (owner?.size ?? child.size) * MARK_SCALE;
-      const childEdge =
-        MARK_GLYPH_RADIUS *
-        child.size *
-        MARK_SCALE *
-        (child.overflow > 0 ? DELEGATION_OVERFLOW_SCALE : 1);
-      // Endpoints in the quad's own normalized space, so the fragment shader
-      // draws lineage without knowing anything about the board.
-      tetherA.setXY(index, (-ux * childEdge) / quad, (-uy * childEdge) / quad);
-      tetherB.setXY(
-        index,
-        (-ux * (run - parentEdge)) / quad,
-        (-uy * (run - parentEdge)) / quad
-      );
+      tetherA.setXY(index, render.childEdgeUv.x, render.childEdgeUv.y);
+      tetherB.setXY(index, render.parentEdgeUv.x, render.parentEdgeUv.y);
       delay.setX(index, count > 1 ? index / (count - 1) : 0);
     });
 

@@ -770,6 +770,10 @@ export function AgentSourcesSettings({
     reconciliationWait.current?.finish();
     reconciliationWait.current = null;
     setActionState('idle');
+    // Leaving a setup action withdraws its optimistic Connecting state.
+    // The last source observation remains authoritative, even while the
+    // source-owned browser or terminal continues independently.
+    setRegistry(latestRegistry.current);
   }, []);
 
   useEffect(() => {
@@ -934,7 +938,8 @@ export function AgentSourcesSettings({
       selected.adapterId,
       'authenticate'
     );
-    if (!mounted.current) return;
+    if (!mounted.current || reconciliationGeneration.current !== generation)
+      return;
     setMessage({
       ok: result.ok,
       text: result.ok
@@ -957,13 +962,15 @@ export function AgentSourcesSettings({
   const openInstallGuide = useCallback(async () => {
     if (!selected) return;
     cancelReconciliation();
+    const generation = reconciliationGeneration.current;
     setActionState('opening-guide');
     setMessage(null);
     const result = await runAgentSourceAction(
       selected.adapterId,
       'install-guide'
     );
-    if (!mounted.current) return;
+    if (!mounted.current || reconciliationGeneration.current !== generation)
+      return;
     setMessage({ ok: result.ok, text: result.message });
     setActionState('idle');
   }, [cancelReconciliation, selected]);

@@ -72,10 +72,15 @@ describe('goal visual transport contract', () => {
   it('round-trips the bounded private data URL response', () => {
     const dataUrl = goalVisualDataUrl(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
     expect(
-      parseGoalVisualResponse({ identityKey: 'a'.repeat(64), dataUrl })
-    ).toEqual({ identityKey: 'a'.repeat(64), dataUrl });
+      parseGoalVisualResponse({
+        schemaVersion: 1,
+        identityKey: 'a'.repeat(64),
+        dataUrl,
+      })
+    ).toEqual({ schemaVersion: 1, identityKey: 'a'.repeat(64), dataUrl });
     expect(() =>
       parseGoalVisualResponse({
+        schemaVersion: 1,
         identityKey: 'not-a-hash',
         dataUrl,
       })

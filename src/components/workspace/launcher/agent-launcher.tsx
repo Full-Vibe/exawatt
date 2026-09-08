@@ -47,6 +47,7 @@ export interface AgentLauncherProps {
   /** Axes for the selected setup. Empty while nothing is selected. */
   axes: readonly DetailAxis[];
   detailFootnote?: string;
+  detailAction?: React.ReactNode;
   task: string;
   onTaskChange: (task: string) => void;
   onSelect: (id: string) => void;
@@ -67,6 +68,7 @@ export function AgentLauncher({
   state,
   axes,
   detailFootnote,
+  detailAction,
   task,
   onTaskChange,
   onSelect,
@@ -212,6 +214,7 @@ export function AgentLauncher({
           focusRequest={detailFocusRequest}
           axes={axes}
           footnote={detailFootnote}
+          action={detailAction}
           onDone={toggleDetail}
         />
       </div>

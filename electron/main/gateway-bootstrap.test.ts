@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   bootstrapGatewayCredentialOverSsh,
@@ -9,6 +12,7 @@ import {
   parseGatewayPort,
   parseOpenClawVersion,
   resolveGatewayCredential,
+  testLocalGatewaySource,
   type LocalGatewaySource,
   type RemoteExec,
   type RemoteExecResult,
@@ -999,6 +1003,53 @@ describe('bootstrapLocalGatewayCredential', () => {
     const result = await bootstrapLocalGatewayCredential(source);
     expect(result.ok === false && result.failure).toBe('unreadable-config');
     expect(result.ok === false && result.message).not.toContain(FAKE_KEY_PATH);
+  });
+});
+
+describe('testLocalGatewaySource', () => {
+  it('reads only the injected OpenClaw state while HOME remains untouched', async () => {
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'exawatt-local-source-')
+    );
+    try {
+      fs.writeFileSync(
+        path.join(root, 'openclaw.json'),
+        JSON.stringify({
+          gateway: {
+            port: 4242,
+            auth: { mode: 'token', token: LOCAL_TOKEN },
+          },
+        })
+      );
+      const source = testLocalGatewaySource({
+        EXAWATT_TEST: '1',
+        EXAWATT_TEST_OPENCLAW_STATE_DIR: root,
+        HOME: '/the-real-home-is-deliberately-not-this-fixture',
+      });
+
+      expect(source).toBeDefined();
+      const result = await bootstrapLocalGatewayCredential(source);
+      expect(result.ok && result.facts).toMatchObject({
+        gatewayPort: 4242,
+        sharedToken: LOCAL_TOKEN,
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('is inert outside an explicit test and refuses relative paths', () => {
+    expect(
+      testLocalGatewaySource({
+        EXAWATT_TEST_OPENCLAW_STATE_DIR: '/tmp/invented-openclaw',
+      })
+    ).toBeUndefined();
+    expect(
+      testLocalGatewaySource({
+        EXAWATT_TEST: '1',
+        EXAWATT_TEST_OPENCLAW_STATE_DIR: 'relative/openclaw',
+      })
+    ).toBeUndefined();
   });
 });
 

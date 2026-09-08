@@ -43,6 +43,8 @@ export interface WorkspaceCommandAvailability {
 
 export interface WorkspaceCommandAvailabilityInput {
   activeProjectName: string | null;
+  /** False for a valid folderless Project whose filesystem verbs are absent. */
+  hasLocalProjectRoot?: boolean;
   hasActiveTab: boolean;
   canToggleSplit: boolean;
   canClose: boolean;
@@ -72,6 +74,7 @@ const unavailable = (reason: string): CommandAvailability => ({
 
 export function deriveWorkspaceCommandAvailability({
   activeProjectName,
+  hasLocalProjectRoot = activeProjectName !== null,
   hasActiveTab,
   canToggleSplit,
   canClose,
@@ -101,7 +104,9 @@ export function deriveWorkspaceCommandAvailability({
     resumeScope,
     commands: {
       'launch-shell': hasProject
-        ? available()
+        ? hasLocalProjectRoot
+          ? available()
+          : unavailable('This Project has no local folder')
         : unavailable('Open a Project first'),
       'reopen-closed-tab':
         closedSessionCount > 0
@@ -151,15 +156,18 @@ export function deriveWorkspaceCommandAvailability({
         ? available()
         : unavailable('No Sessions need you'),
       'open-roadmap': hasProject
-        ? available()
+        ? hasLocalProjectRoot
+          ? available()
+          : unavailable('This Project has no local folder')
         : unavailable('Open a Project first'),
-      // Both address the Project itself rather than the Session inside it, so
-      // an empty Project still answers: its directory is real, and closing it
-      // is the only way to put it away. Reveal follows the selected Session's
-      // own working directory when there is one (the strip's per-tab entry
-      // reveals exactly that), and falls back to the Project root.
+      // Close addresses the Project itself, so a folderless Project still
+      // answers. Roadmap and Reveal address local files; they require a root.
+      // Reveal follows a selected local Session's cwd when there is one and
+      // otherwise falls back to the Project root.
       'reveal-path': hasProject
-        ? available()
+        ? hasLocalProjectRoot
+          ? available()
+          : unavailable('This Project has no local folder')
         : unavailable('Open a Project first'),
       'close-project': hasProject
         ? available()

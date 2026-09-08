@@ -15,6 +15,7 @@ import {
   readPackagedBuilderConfig,
   resolvePackagedApp,
 } from './lib/packaged-app.mjs';
+import { resolveDistributionInput } from './lib/distribution-build.mjs';
 
 const root = process.cwd();
 const execFileAsync = promisify(execFile);
@@ -26,10 +27,6 @@ async function git(...args) {
 
 const sourceSha =
   process.env.EXAWATT_BUILD_SOURCE_SHA ?? (await git('rev-parse', 'HEAD'));
-const packaged = await resolvePackagedApp({
-  root,
-  appPathOverride: undefined,
-});
 
 async function assertImmutableSource() {
   const currentSha = await git('rev-parse', 'HEAD');
@@ -71,6 +68,19 @@ console.log(
 );
 
 await assertImmutableSource();
+
+// The detached installer builds from a fresh immutable worktree. `pnpm
+// install` links workspace packages but does not create @exawatt/core's
+// dist-cjs runtime, while distribution resolution requires that runtime.
+// Bootstrap it before asking which package this checkout owes; keeping the
+// prerequisite here covers every caller, not only the package-script path.
+await run('pnpm', ['--filter', '@exawatt/core', 'types:build']);
+const { inputJson } = await resolveDistributionInput();
+const packaged = await resolvePackagedApp({
+  root,
+  appPathOverride: undefined,
+  inputJson,
+});
 
 // A desktop artifact is never a hosted composition: the company overlay's
 // hosted routes must not reach an installed application (ENG-030 WP3).

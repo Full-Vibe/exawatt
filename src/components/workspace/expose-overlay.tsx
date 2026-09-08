@@ -64,6 +64,7 @@ import { tokens as formatTokens } from '@/components/consumption/flux';
 import {
   isRemoteAgentTab,
   isSessionTab,
+  projectRootPath,
   tabCanResumeAsAgent,
   tabIsLive,
 } from './use-workspace-state';
@@ -523,6 +524,9 @@ export function ExposeOverlay({
 
   const selectedDir = items[sel]?.dir ?? activeProjectDir ?? null;
   const selectedProject = projects.find(p => p.dir === selectedDir) ?? null;
+  const selectedRootPath = selectedProject
+    ? projectRootPath(selectedProject)
+    : null;
   const roadmapSessions = useMemo(
     () =>
       projectRoadmapSessions(selectedProject?.tabs, attention, {
@@ -534,16 +538,15 @@ export function ExposeOverlay({
     [selectedProject, summaries, attention, activity, delegation, engaged]
   );
   const declaredLinks = useMemo(
-    () =>
-      projectDeclaredLinks(selectedProject?.tabs, selectedProject?.dir ?? ''),
-    [selectedProject]
+    () => projectDeclaredLinks(selectedProject?.tabs, selectedRootPath ?? ''),
+    [selectedProject, selectedRootPath]
   );
   const {
     view: roadmapView,
     write: writeRoadmap,
     undo: undoRoadmap,
   } = useProjectRoadmap(
-    railVisible ? selectedDir : null,
+    railVisible ? selectedRootPath : null,
     roadmapSessions,
     declaredLinks,
     roadmapRead
@@ -580,6 +583,10 @@ export function ExposeOverlay({
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const mirroredRef = useRef<string | null>(null);
+  /** What the publish effect below last told the parent. Read by the
+   *  navigationSelection effect to tell a genuine external command apart
+   *  from this component's own selection round-tripping back as a prop. */
+  const lastPublishedSelectionRef = useRef<TeamSelection | null>(null);
   useEffect(() => {
     const target = activeTabId ?? `project:${activeProjectDir ?? ''}`;
     if (mirroredRef.current === target) return;
@@ -603,6 +610,20 @@ export function ExposeOverlay({
   // must still move to the command's deterministic target (BUG-021).
   useLayoutEffect(() => {
     if (!navigationSelection) return;
+    // An echo of what THIS component published below, round-tripped back
+    // down as a prop. Adopting it anyway is what turned this pair of effects
+    // into a feedback loop (BUG-114): publish reads `sel` from the commit
+    // BEFORE this effect's own `setSel` lands, so it always re-announces the
+    // value this effect is in the middle of correcting — which this effect
+    // then "corrects" again next commit, forever. Only a target this
+    // component did NOT just say itself is an actual command to move to.
+    if (
+      lastPublishedSelectionRef.current &&
+      lastPublishedSelectionRef.current.dir === navigationSelection.dir &&
+      lastPublishedSelectionRef.current.tabId === navigationSelection.tabId
+    ) {
+      return;
+    }
     const next = itemsRef.current.findIndex(
       item =>
         item.dir === navigationSelection.dir &&
@@ -747,11 +768,11 @@ export function ExposeOverlay({
   // effect left a one-frame split where a fast tab-ring chord still read the
   // hidden Agent underlay after Team visibly moved to another tile (BUG-021).
   useLayoutEffect(() => {
-    onSelectionChange?.(
-      selectedDirForVerbs
-        ? { dir: selectedDirForVerbs, tabId: selectedTabId }
-        : null
-    );
+    const published = selectedDirForVerbs
+      ? { dir: selectedDirForVerbs, tabId: selectedTabId }
+      : null;
+    lastPublishedSelectionRef.current = published;
+    onSelectionChange?.(published);
   }, [onSelectionChange, selectedDirForVerbs, selectedTabId]);
   // Leaving Team hands the verbs back to the Agent altitude's active tab.
   useEffect(() => () => onSelectionChange?.(null), [onSelectionChange]);

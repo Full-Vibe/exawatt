@@ -26,6 +26,7 @@ export interface GoalVisualRequest {
 }
 
 export interface GoalVisualResponse {
+  schemaVersion: typeof GOAL_VISUAL_SCHEMA_VERSION;
   identityKey: string;
   dataUrl: string;
 }
@@ -90,6 +91,7 @@ export function parseGoalVisualResponse(value: unknown): GoalVisualResponse {
   }
   const response = value as Record<string, unknown>;
   if (
+    response.schemaVersion !== GOAL_VISUAL_SCHEMA_VERSION ||
     typeof response.identityKey !== 'string' ||
     !GOAL_VISUAL_IDENTITY_KEY_PATTERN.test(response.identityKey) ||
     typeof response.dataUrl !== 'string' ||
@@ -99,6 +101,7 @@ export function parseGoalVisualResponse(value: unknown): GoalVisualResponse {
     throw new Error('Goal visual response is invalid');
   }
   return {
+    schemaVersion: GOAL_VISUAL_SCHEMA_VERSION,
     identityKey: response.identityKey,
     dataUrl: response.dataUrl,
   };

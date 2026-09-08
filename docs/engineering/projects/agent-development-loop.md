@@ -301,6 +301,40 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-08-20, H16: the Fleet study's post-integration dogfood request exposed
+  that official local custody had been closed in prose but never in execution.
+  The detached worker failed before build because `electron:install-dogfood`
+  required an official artifact without declaring the `official` distribution
+  profile. The documented bootstrap could not repair it: Vercel's SENSITIVE
+  environment rows are deliberately non-readable after creation, so both
+  `env pull` and the decrypted-value API withhold the contract. This was not a
+  transient CLI failure and retrying `/dev/stdout` through a temporary file
+  only made the real `[SENSITIVE]` result visible.
+
+  The package command now declares the profile it requires, and the installer
+  resolves it through the shared distribution-input boundary before package
+  identity is selected; the first repaired worker caught that the installer's
+  remaining direct env read still bypassed the file. Local bootstrap comes
+  from the exact artifact already entrusted to the machine: the installed
+  app is fully verified against the dogfood Developer ID Team, the one embedded
+  canonical contract whose bytes equal `distribution.sha256` is selected, its
+  Exawatt identity/update capability is pinned, and the value is atomically
+  installed outside every worktree at mode 0600 without entering output. A
+  fixture app proves seal mismatch refusal; a black-box process test proves an
+  unsafe existing file is replaced with exact permissions. The live installer
+  then recovered the current official schema-v1 app successfully. Incident
+  `0017` and ENG-030 WP-C carry the corrected custody record.
+
+- 2026-08-20, H17: H16's first end-to-end worker passed official custody and
+  then failed in the immutable build snapshot before packaging: `pnpm install`
+  linked `@exawatt/core` without creating its `dist-cjs` runtime, while
+  `build-dogfood.mjs` tried to resolve the distribution contract before its
+  later `electron:compile` step built that runtime. The build entrypoint now
+  bootstraps core before distribution resolution, so manual, detached, and
+  future callers share the same fresh-checkout invariant. A regression pin
+  asserts the prerequisite precedes the resolver instead of merely asserting
+  that both commands exist.
+
 - 2026-08-18, BUG-090: the floor's named test failures were the machine's, not
   the author's, and it took six landing attempts and most of an evening to
   establish that once. `agent:land` selects `test:related` from the changed

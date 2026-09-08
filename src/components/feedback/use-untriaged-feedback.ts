@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import {
+  decodeCompatibleServiceJson,
+  fetchCompatibleService,
+} from '@exawatt/core/distribution';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { parseFeedbackTriageCapability } from '@/lib/feedback/capability-contract';
@@ -45,18 +49,22 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
           if (!cancelled) setCount(null);
           return;
         }
-        const response = await fetch(endpoint.url, {
+        const response = await fetchCompatibleService(endpoint, {
           method: 'GET',
           headers: {
             accept: 'application/json',
             authorization: `Bearer ${sessionData.session.access_token}`,
           },
         });
-        if (!response.ok) {
-          if (!cancelled) setCount(null);
-          return;
-        }
-        const capability = parseFeedbackTriageCapability(await response.json());
+        const capability = await decodeCompatibleServiceJson(
+          endpoint,
+          response,
+          value => {
+            const parsed = parseFeedbackTriageCapability(value);
+            if (!parsed) throw new TypeError('feedback capability is invalid');
+            return parsed;
+          }
+        );
         if (!cancelled) {
           setCount(
             capability?.canTriage ? (capability.untriagedCount ?? null) : null

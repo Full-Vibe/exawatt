@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Generate `electron/resources/icon.icns` from the committed brand master
- * (BUG-005).
+ * Generate a committed macOS icon from its committed brand master (BUG-005).
  *
  * The app icon used to be a hand-placed binary, and what it actually contained
  * was the web favicon: a bare transparent hexagon ring with no container,
@@ -22,8 +21,9 @@
  *   magick artwork.png -depth 8 -strip PNG32:electron/resources/icon-master.png
  *
  * Usage:
- *   node scripts/generate-app-icon.mjs           regenerate the .icns
- *   node scripts/generate-app-icon.mjs --check   verify the committed .icns
+ *   node scripts/generate-app-icon.mjs             regenerate the official icon
+ *   node scripts/generate-app-icon.mjs --community regenerate the community icon
+ *   node scripts/generate-app-icon.mjs --check     verify every distributed icon
  */
 
 import { execFile } from 'node:child_process';
@@ -38,8 +38,33 @@ import { assertIcnsMatchesMaster } from './lib/app-icon.mjs';
 
 const execFileAsync = promisify(execFile);
 
-export const MASTER_PATH = path.join('electron', 'resources', 'icon-master.png');
+export const MASTER_PATH = path.join(
+  'electron',
+  'resources',
+  'icon-master.png'
+);
 export const ICNS_PATH = path.join('electron', 'resources', 'icon.icns');
+export const COMMUNITY_MASTER_PATH = path.join('public', 'icon-community.png');
+export const COMMUNITY_ICNS_PATH = path.join(
+  'electron',
+  'resources',
+  'icon-community.icns'
+);
+
+const ICON_VARIANTS = Object.freeze({
+  official: Object.freeze({
+    id: 'official',
+    masterPath: MASTER_PATH,
+    icnsPath: ICNS_PATH,
+    required: false,
+  }),
+  community: Object.freeze({
+    id: 'community',
+    masterPath: COMMUNITY_MASTER_PATH,
+    icnsPath: COMMUNITY_ICNS_PATH,
+    required: true,
+  }),
+});
 
 /** The .iconset names macOS expects, and the pixel size each one is. */
 const SLICES = [
@@ -57,18 +82,45 @@ const SLICES = [
 
 const MAGICK = process.env.EXAWATT_MAGICK || '/opt/homebrew/bin/magick';
 
-export function checkCommittedIcon(root = process.cwd()) {
-  const master = path.join(root, MASTER_PATH);
-  const icns = path.join(root, ICNS_PATH);
+export function checkCommittedIcon(
+  root = process.cwd(),
+  variant = ICON_VARIANTS.official
+) {
+  const master = path.join(root, variant.masterPath);
+  const icns = path.join(root, variant.icnsPath);
   for (const file of [master, icns]) {
-    if (!existsSync(file)) throw new Error(`missing ${path.relative(root, file)}`);
+    if (!existsSync(file))
+      throw new Error(`missing ${path.relative(root, file)}`);
   }
-  return assertIcnsMatchesMaster(readFileSync(icns), readFileSync(master), ICNS_PATH);
+  return {
+    ...assertIcnsMatchesMaster(
+      readFileSync(icns),
+      readFileSync(master),
+      variant.icnsPath
+    ),
+    ...variant,
+  };
 }
 
-async function generate(root) {
-  const master = path.join(root, MASTER_PATH);
-  if (!existsSync(master)) throw new Error(`missing ${MASTER_PATH}`);
+/**
+ * Community custody is required in every tree. Official custody is required
+ * only when either half is present: the public projection deliberately omits
+ * both, while a half-present private pair is always a broken build input.
+ */
+export function checkCommittedIcons(root = process.cwd()) {
+  const checked = [];
+  for (const variant of Object.values(ICON_VARIANTS)) {
+    const masterExists = existsSync(path.join(root, variant.masterPath));
+    const icnsExists = existsSync(path.join(root, variant.icnsPath));
+    if (!variant.required && !masterExists && !icnsExists) continue;
+    checked.push(checkCommittedIcon(root, variant));
+  }
+  return checked;
+}
+
+async function generate(root, variant) {
+  const master = path.join(root, variant.masterPath);
+  if (!existsSync(master)) throw new Error(`missing ${variant.masterPath}`);
   if (!existsSync(MAGICK)) {
     throw new Error(
       `ImageMagick 7 not found at ${MAGICK}. Generation needs it (checking does ` +
@@ -101,13 +153,21 @@ async function generate(root) {
       ]);
     }
     const out = path.join(staging, 'icon.icns');
-    await execFileAsync('/usr/bin/iconutil', ['--convert', 'icns', '--output', out, iconset]);
+    await execFileAsync('/usr/bin/iconutil', [
+      '--convert',
+      'icns',
+      '--output',
+      out,
+      iconset,
+    ]);
     const icns = readFileSync(out);
     // Never write an .icns the guard would refuse: a generator that can emit a
     // non-conformant binary is the same hand-placed asset with extra steps.
-    assertIcnsMatchesMaster(icns, readFileSync(master), ICNS_PATH);
-    await writeFile(path.join(root, ICNS_PATH), icns);
-    console.log(`[app-icon] wrote ${ICNS_PATH} (${icns.length} bytes) from ${MASTER_PATH}`);
+    assertIcnsMatchesMaster(icns, readFileSync(master), variant.icnsPath);
+    await writeFile(path.join(root, variant.icnsPath), icns);
+    console.log(
+      `[app-icon] wrote ${variant.icnsPath} (${icns.length} bytes) from ${variant.masterPath}`
+    );
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
@@ -116,15 +176,24 @@ async function generate(root) {
 async function main() {
   const root = process.cwd();
   if (process.argv.includes('--check')) {
-    const { sizes } = checkCommittedIcon(root);
-    console.log(`[app-icon] ${ICNS_PATH} matches ${MASTER_PATH} (${sizes.join(', ')}pt)`);
+    for (const result of checkCommittedIcons(root)) {
+      console.log(
+        `[app-icon] ${result.icnsPath} matches ${result.masterPath} (${result.sizes.join(', ')}pt)`
+      );
+    }
     return;
   }
-  await generate(root);
+  await generate(
+    root,
+    process.argv.includes('--community')
+      ? ICON_VARIANTS.community
+      : ICON_VARIANTS.official
+  );
 }
 
 const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   main().catch(error => {
     console.error(`[app-icon] ${error.message}`);

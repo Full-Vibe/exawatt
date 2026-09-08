@@ -81,6 +81,29 @@ describe('Session context-label contract', () => {
     ).toThrow('Schema version');
   });
 
+  it('rejects fields outside the published request shape at every closed level', () => {
+    const request = {
+      schemaVersion: CONTEXT_LABEL_SCHEMA_VERSION,
+      sessionKey: 'session-1',
+      recentInstructions: [
+        { text: 'Improve context summaries', submittedAt: 123 },
+      ],
+    };
+    expect(() =>
+      parseContextLabelRequest(JSON.stringify({ ...request, secret: 'no' }))
+    ).toThrow('unsupported fields');
+    expect(() =>
+      parseContextLabelRequest(
+        JSON.stringify({
+          ...request,
+          recentInstructions: [
+            { ...request.recentInstructions[0], hidden: 'no' },
+          ],
+        })
+      )
+    ).toThrow('unsupported fields');
+  });
+
   it('anchors same-context output to the exact current label', () => {
     const result = parseContextLabelResponse(
       {

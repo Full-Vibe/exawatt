@@ -272,6 +272,7 @@ class FakeSession implements ConnectedSourceSession {
   private readonly phaseListeners = new Set<
     (phase: ConnectedGatewayPhase) => void
   >();
+  private readonly snapshotListeners = new Set<() => void>();
   private currentStatus: ConnectionStatus;
 
   constructor(script: SessionScript, knownIdentity: GatewayIdentity | null) {
@@ -318,6 +319,7 @@ class FakeSession implements ConnectedSourceSession {
       automationCount: this.script.automationCount ?? 0,
       observedAt: next.observedAt,
     };
+    for (const listener of this.snapshotListeners) listener();
     return {
       ok: true as const,
       outcome: 'connected' as const,
@@ -346,6 +348,11 @@ class FakeSession implements ConnectedSourceSession {
   onPhaseChange = vi.fn((listener: (phase: ConnectedGatewayPhase) => void) => {
     this.phaseListeners.add(listener);
     return () => this.phaseListeners.delete(listener);
+  });
+
+  onSnapshot = vi.fn((listener: () => void) => {
+    this.snapshotListeners.add(listener);
+    return () => this.snapshotListeners.delete(listener);
   });
 
   authority: SourceAuthority = 'read';
@@ -415,6 +422,24 @@ class FakeSession implements ConnectedSourceSession {
   emitPhase(phase: ConnectedGatewayPhase): void {
     this.phase = phase;
     for (const listener of this.phaseListeners) listener(phase);
+  }
+
+  emitSnapshot(next: AgentSourceTopologySnapshot): void {
+    this.snapshot = next;
+    this.identity = {
+      version: this.script.version ?? '',
+      nativeAgentIds: next.agents
+        .filter(agent => agent.discoveryState === 'configured')
+        .map(agent => agent.nativeAgentId)
+        .sort(),
+    };
+    this.facts = {
+      version: this.script.version ?? '',
+      configuredAgentCount: next.agents.length,
+      automationCount: this.script.automationCount ?? 0,
+      observedAt: next.observedAt,
+    };
+    for (const listener of this.snapshotListeners) listener();
   }
 }
 
@@ -1352,6 +1377,15 @@ describe('ConnectedSourceRuntime — quitting', () => {
     await runtime.dispose();
     const before = changes.length;
     sessions.get('alpha')?.emitPhase('reconnecting');
+    sessions
+      .get('alpha')
+      ?.emitSnapshot(
+        snapshot(
+          'alpha',
+          [{ nativeAgentId: 'new', displayName: 'new' }],
+          20_000
+        )
+      );
     expect(changes.length).toBe(before);
   });
 });
@@ -1424,6 +1458,36 @@ describe('ConnectedSourceRuntime — change notifications', () => {
 
     expect(runtime.status()[0].snapshotRevision).toBe(2);
     expect(runtime.agents()[0].workState).toBe('working');
+  });
+
+  it('publishes a quiet periodic replacement without requiring a phase change', async () => {
+    const { runtime, sessions } = harness({
+      alpha: {
+        snapshots: [
+          snapshot('alpha', [{ nativeAgentId: 'scout', displayName: 'scout' }]),
+        ],
+      },
+    });
+    const connected = await runtime.connect('alpha');
+    if (!connected.ok) throw new Error('fixture failed to connect');
+    await mapAll(runtime, 'alpha', connected.agents);
+    const session = sessions.get('alpha');
+    if (!session) throw new Error('fixture built no session');
+    const changes: number[] = [];
+    runtime.onChange(change => changes.push(change.snapshotRevision));
+
+    session.emitSnapshot(
+      snapshot(
+        'alpha',
+        [{ nativeAgentId: 'scout', displayName: 'scout', running: 'main' }],
+        20_000
+      )
+    );
+
+    expect(runtime.status()[0].snapshotRevision).toBe(2);
+    expect(runtime.agents()[0].workState).toBe('working');
+    expect(changes.at(-1)).toBe(2);
+    expect(session.phase).toBe('connected');
   });
 
   it('bumps once per authoritative snapshot, however many times it is noticed', async () => {
@@ -2191,7 +2255,7 @@ describe('ConnectedSourceRuntime — reading a primary conversation', () => {
 });
 
 describe('ConnectedSourceRuntime — sending to the primary conversation', () => {
-  it('reaches chat.send on the address the projection resolved', async () => {
+  it('forms the live chat.send protocol payload for the address the projection resolved', async () => {
     const { runtime, session, agentId } = await talkingTo(undefined, {
       sendResult: { runId: 'run-77', status: 'queued' },
     });
@@ -2208,9 +2272,9 @@ describe('ConnectedSourceRuntime — sending to the primary conversation', () =>
     });
     expect(session.writes).toHaveLength(1);
     expect(session.writes[0].method).toBe('chat.send');
-    expect(session.writes[0].params).toMatchObject({
+    expect(session.writes[0].params).toEqual({
       sessionKey: MAIN_KEY,
-      text: 'Any progress on the draft?',
+      message: 'Any progress on the draft?',
       idempotencyKey: result.idempotencyKey,
     });
   });
@@ -2230,7 +2294,7 @@ describe('ConnectedSourceRuntime — sending to the primary conversation', () =>
 
     expect(session.writes[0].params).toEqual({
       sessionKey: MAIN_KEY,
-      text: 'hello',
+      message: 'hello',
       idempotencyKey: 'key-1',
     });
   });

@@ -174,12 +174,11 @@ test('security workflows preserve their narrow event and permission boundaries',
   assert.match(gitleaks.source, /GITLEAKS_LINUX_X64_SHA256: [0-9a-f]{64}/u);
   assert.match(gitleaks.source, /sha256sum --check/u);
 
-  const release = sources['release-macos.yml'].workflow;
-  assert.deepEqual(Object.keys(triggers(release)), ['workflow_dispatch']);
-  assert.equal(release.permissions.contents, 'write');
-  assert.match(release.jobs.release['runs-on'], /macos-/u);
-  // A hung macOS job bills at roughly 10x Linux against a hard-stop budget.
-  assert.ok(release.jobs.release['timeout-minutes'] > 0);
+  // The official release workflow is private custody and intentionally absent
+  // from the public tree. Its trigger, permission, runner, timeout, and secret
+  // boundaries are asserted in release-custody.test.mjs beside the workflow it
+  // owns, rather than making this fork-safe public suite depend on a private
+  // file.
 });
 
 test('Dependabot covers pnpm dependencies and immutable workflow pins', async () => {

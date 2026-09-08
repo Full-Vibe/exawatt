@@ -5,6 +5,7 @@ import {
 } from './lib/company-composition.mjs';
 import {
   prepareDistribution,
+  prepareDistributionWebIcon,
   resolveDistributionInput,
 } from './lib/distribution-build.mjs';
 
@@ -17,9 +18,16 @@ const prepared = await prepareDistribution({
   root: process.cwd(),
   inputJson,
 });
+const webIcon = await prepareDistributionWebIcon({
+  root: process.cwd(),
+  contract: prepared.contract,
+});
 
 console.log(
   `[distribution] prepared schema v${prepared.contract.schemaVersion} ${prepared.digest.slice(0, 12)} (${prepared.contract.brand?.productName ?? 'Exawatt Community'}) via ${source}`
+);
+console.log(
+  `[distribution] projected ${webIcon.source} to ${webIcon.url} (${webIcon.width}x${webIcon.height})`
 );
 
 // Then compose the tree this build is about to consume (ENG-030 WP3). The

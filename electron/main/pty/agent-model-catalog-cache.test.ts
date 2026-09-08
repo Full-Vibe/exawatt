@@ -38,6 +38,14 @@ const catalog = (
   ...overrides,
 });
 
+const configuredModel = (id: string): AgentModelCatalog['models'][number] => ({
+  id,
+  label: id,
+  description: '',
+  defaultEffort: null,
+  efforts: [],
+});
+
 let directory: string;
 let now = 1_000_000;
 /** Directories the fake filesystem says still exist. */
@@ -127,6 +135,79 @@ describe('AgentModelCatalogCache', () => {
     await expect(
       cache.read(catalogCacheKey('claude', '/repo', '/bin/zsh'))
     ).resolves.toBeNull();
+  });
+
+  it('invalidates same-source sibling contexts after a semantic change', async () => {
+    const cache = makeCache();
+    const sibling = catalogCacheKey('claude', '/other', '/bin/fish');
+    const codexSibling = catalogCacheKey('codex', '/other', '/bin/fish');
+    await cache.write(KEY, '/repo', catalog());
+    await cache.write(sibling, '/other', catalog());
+    await cache.write(codexSibling, '/other', catalog({ harness: 'codex' }));
+
+    await cache.write(
+      KEY,
+      '/repo',
+      catalog({
+        models: [
+          ...catalog().models,
+          {
+            id: 'new-model',
+            label: 'New model',
+            description: '',
+            defaultEffort: null,
+            efforts: [],
+          },
+        ],
+      })
+    );
+
+    await expect(cache.read(KEY)).resolves.not.toBeNull();
+    await expect(cache.read(sibling)).resolves.toBeNull();
+    await expect(cache.read(codexSibling)).resolves.not.toBeNull();
+  });
+
+  it('rejects an older sibling observation after semantic invalidation', async () => {
+    const cache = makeCache();
+    const sibling = catalogCacheKey('claude', '/other', '/bin/fish');
+    await cache.write(KEY, '/repo', catalog());
+    await cache.write(sibling, '/other', catalog());
+    const oldGeneration = cache.captureObservationGeneration('claude');
+
+    await cache.write(
+      KEY,
+      '/repo',
+      catalog({ models: [...catalog().models, configuredModel('new-model')] }),
+      oldGeneration
+    );
+    await cache.write(
+      sibling,
+      '/other',
+      catalog({ models: [configuredModel('late-stale-model')] }),
+      oldGeneration
+    );
+
+    await expect(cache.read(sibling)).resolves.toBeNull();
+  });
+
+  it('does not cross-compare sibling catalogs when the current key is unchanged', async () => {
+    const cache = makeCache();
+    const sibling = catalogCacheKey('claude', '/other', '/bin/fish');
+    await cache.write(KEY, '/repo', catalog());
+    // Project-local policy may make this sibling legitimately different.
+    await cache.write(sibling, '/other', catalog({ models: [] }));
+
+    await cache.write(
+      KEY,
+      '/repo',
+      catalog({
+        observedAt: 2,
+        servedFromCache: true,
+        catalogProvenance: 'Same source · refreshed observation',
+      })
+    );
+
+    await expect(cache.read(sibling)).resolves.not.toBeNull();
   });
 
   it('normalizes the Project path so the same directory hits one entry', async () => {

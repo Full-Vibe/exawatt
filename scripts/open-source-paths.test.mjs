@@ -99,6 +99,33 @@ test('community worktree bootstrap implementation and tests are PUBLIC', async (
   }
 });
 
+test('compatible-service server helpers remain in the public projection', async () => {
+  const files = [
+    'packages/core/src/service-protocol.ts',
+    'packages/core/src/service-protocol.test.ts',
+  ];
+  const manifest = await readPathManifest(
+    path.join(root, 'scripts/open-source-paths.manifest.json')
+  );
+  const classify = createPathClassifier(manifest);
+  for (const file of files) {
+    assert.equal(classify(file).classification, 'PUBLIC', file);
+  }
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ['scripts/open-source-paths.mjs', 'project', '--source', 'HEAD'],
+    { cwd: root }
+  );
+  const projectedClassify = createPathClassifier(JSON.parse(stdout));
+  for (const file of files) {
+    await execFileAsync('git', ['cat-file', '-e', `HEAD:${file}`], {
+      cwd: root,
+    });
+    assert.equal(projectedClassify(file).classification, 'PUBLIC', file);
+  }
+});
+
 test('coverage fails closed while exact exceptions override directory rules', () => {
   const manifest = fixtureManifest();
   const classified = validateTrackedPathCoverage(manifest, fixtureEntries());

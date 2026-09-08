@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { Session, UserIdentity } from '@supabase/supabase-js';
+import { disableOperatorStatsProfile } from '@exawatt/core/distribution';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
@@ -309,11 +310,11 @@ export function PublishPanel() {
     setBusy(true);
     setError(null);
     setMessage(null);
-    const response = await fetch(operatorStatsEndpoint.url, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${session.access_token}` },
-    });
-    if (response.ok) {
+    try {
+      await disableOperatorStatsProfile(
+        operatorStatsEndpoint,
+        session.access_token
+      );
       setPublished(false);
       // Removal pauses publishing too — a scheduled sync must never
       // resurrect a profile the operator just took down. Re-enabling the
@@ -329,10 +330,11 @@ export function PublishPanel() {
       }
       setMessage('Public profile removed. Local history was not changed.');
       window.setTimeout(() => window.location.reload(), 700);
-    } else {
+    } catch {
       setError('Profile could not be removed.');
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   if (inDemoWorkspace) {
@@ -358,7 +360,9 @@ export function PublishPanel() {
       <aside className={styles.publishPanel} data-operator-stats="unavailable">
         <div>
           <h2>Operator publishing unavailable</h2>
-          <p>Not configured in this build · local usage stays on this device.</p>
+          <p>
+            Not configured in this build · local usage stays on this device.
+          </p>
         </div>
       </aside>
     );

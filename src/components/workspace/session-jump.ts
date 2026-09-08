@@ -41,6 +41,8 @@ export type AgentComposerRequest =
   | null;
 
 export const SESSION_JUMP_EVENT = 'exawatt:open-session';
+/** Open a projected coworker by Exawatt Agent identity, never by PTY/session. */
+export const REMOTE_AGENT_OPEN_EVENT = 'exawatt:open-remote-agent';
 export const LAUNCH_EVENT = 'exawatt:launch';
 /** Open a known Project by directory, resolving it without creating a PTY. */
 export const OPEN_PROJECT_EVENT = 'exawatt:open-project';
@@ -112,6 +114,7 @@ interface Pending<T> {
 }
 
 let pendingSession: Pending<string> | null = null;
+let pendingRemoteAgent: Pending<string> | null = null;
 let pendingLaunch: Pending<PtyHarness> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
 let pendingProjectPicker: Pending<true> | null = null;
@@ -171,6 +174,19 @@ export function requestSessionJump(sessionId: string): void {
   window.dispatchEvent(
     new CustomEvent(SESSION_JUMP_EVENT, { detail: sessionId })
   );
+}
+
+export function requestRemoteAgentOpen(agentId: string): void {
+  pendingRemoteAgent = { value: agentId, at: Date.now() };
+  window.dispatchEvent(
+    new CustomEvent(REMOTE_AGENT_OPEN_EVENT, { detail: agentId })
+  );
+}
+
+export function consumePendingRemoteAgentOpen(): string | null {
+  const pending = take(pendingRemoteAgent);
+  pendingRemoteAgent = null;
+  return pending;
 }
 
 export function requestLaunch(harness: PtyHarness): void {

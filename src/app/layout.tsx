@@ -16,6 +16,7 @@ import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-vis
 import { APPEARANCE_BOOTSTRAP_SCRIPT } from '@/lib/appearance/bootstrap-script';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { resolveDistributionIdentity } from '@exawatt/core/distribution';
+import { resolveDistributionWebIcon } from '@/lib/distribution/web-brand';
 
 const exo2 = localFont({
   src: './fonts/Exo2-Variable-Latin.woff2',
@@ -43,9 +44,8 @@ const geistSans = localFont({
   display: 'swap',
 });
 
-const distributionIdentity = resolveDistributionIdentity(
-  resolvedDistribution()
-);
+const distribution = resolvedDistribution();
+const distributionIdentity = resolveDistributionIdentity(distribution);
 
 export const metadata: Metadata = {
   // per-surface titles (ENG-016 D9): segment layouts set a plain title and
@@ -56,6 +56,9 @@ export const metadata: Metadata = {
     template: `%s — ${distributionIdentity.productName}`,
   },
   description: 'Power your AI agents',
+  icons: {
+    icon: resolveDistributionWebIcon(distribution),
+  },
 };
 
 export default function RootLayout({

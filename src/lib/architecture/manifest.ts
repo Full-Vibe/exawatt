@@ -61,8 +61,8 @@ export interface ArchitectureZoomLevel {
 export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
-    'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-08-16',
+    'Exawatt is a command interface for managing agent fleets across local, customer-hosted, and third-party harnesses.',
+  lastReviewed: '2026-09-07',
   layers: [
     {
       key: 'ui',
@@ -400,7 +400,7 @@ export const architectureManifest = {
           id: 'context-group',
           label: 'Project / Context Group',
           summary:
-            'A resolvable grouping lens over agents (by project, initiative, repository, signal, or similarity). Derived on demand, not a stored parent of Agent.',
+            'A durable Exawatt-owned grouping record with an opaque id, renameable label, and optional local-folder binding. Agents join it by id; it is not a stored parent of Agent.',
           layer: 'coordination',
           x: 360,
           y: 410,
@@ -612,7 +612,7 @@ export const architectureManifest = {
           id: 'fleet-provider',
           label: 'Fleet Provider',
           summary:
-            'React provider and hooks for UI-facing fleet state plus the source Project catalog, refreshed by authoritative workspace changes. The durable Project registry uses a source-neutral DTO: configured accounts retain hosted sync while Community persists to its distribution-isolated local namespace.',
+            'React provider and hooks for one UI-facing fleet of local Sessions and customer-hosted coworkers plus the source Project catalog, refreshed by authoritative workspace and connected-source changes. The durable Project registry uses opaque ids, renameable labels, optional local-folder bindings, and a source-neutral DTO.',
           layer: 'coordination',
           status: 'implemented',
           x: 342,
@@ -624,7 +624,7 @@ export const architectureManifest = {
           id: 'ui-model',
           label: 'UI Model',
           summary:
-            'Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes. The implemented @exawatt/core C0 kernel defines the source-qualified, versioned projection contract these views will consume; no production UI integration exists yet.',
+            'Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes. Production Agent, Team, and Fleet surfaces now resolve local and customer-hosted coworkers through the same source-qualified Agent and Project identities.',
           layer: 'coordination',
           status: 'active-build',
           x: 80,
@@ -636,7 +636,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One declaration contract plus Electron-main observations power Settings, launch, and delegation; remote attach remains planned. The implemented C0 core kernel projects preserved source topology through explicit source-qualified Agent/Project mappings, a versioned plan/output, and a source-declared primary conversation. Demo/Live adapter parity remains later acceptance. Codex delegation uses its version-probed read-side app-server protocol; reconnect replaces its cached view from an authoritative snapshot and protocol loss stays absent; replay positions stay optional capabilities.',
+            'One declaration contract plus Electron-main observations power Settings, launch, delegation, saved customer-hosted OpenClaw attachment, authoritative reconnect, coworker projection, and source-granted primary-conversation commands. Codex delegation uses its version-probed read-side app-server protocol, atomically reconciles child snapshots, isolates failed reads, and rejects stale connection observations; replay positions remain optional declared capabilities. A pure retained-history projection now normalizes bounded Codex/Claude records without IO or execution; production reading remains unwired.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -756,7 +756,7 @@ export const architectureManifest = {
           id: 'openclaw-client',
           label: 'OpenClaw Client',
           summary:
-            'Core OpenClaw JSON-RPC client, adapters, and fleet primitives behind an Electron-main credential broker: the renderer receives an opaque, owner-bound, method-allowlisted capability while Gateway secrets, device identity, endpoint choice, and authenticated sockets stay outside it. ENG-010 adds authenticated remote attach without shell-scraping source state.',
+            'Core OpenClaw JSON-RPC client, adapters, and fleet primitives behind an Electron-main credential broker: authenticated remote attach, continuous authoritative observation, and source-granted conversation commands run without shell-scraping source state. Gateway secrets, device identity, endpoint choice, and authenticated sockets stay outside the renderer.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 295,
@@ -790,11 +790,11 @@ export const architectureManifest = {
         },
         {
           id: 'hosted-runtime',
-          label: 'Connected + Managed Runtime',
+          label: 'Customer-Hosted Connection',
           summary:
-            'Customer-hosted observation and authoritative reconnect first, then command and Exawatt-managed placement behind the same source contract.',
+            'Saved customer-hosted OpenClaw sources behind Electron-main SSH, encrypted credential, authenticated Gateway, continuous reconnect, stable projection, and source-granted conversation boundaries. Packaged authority/recovery and official installed-app live-fleet evidence now prove the shared Agent/Team/Fleet path. No paid-cloud implementation is active.',
           layer: 'infrastructure',
-          status: 'designed',
+          status: 'implemented',
           x: 430,
           y: 785,
           width: 220,
@@ -887,7 +887,7 @@ export const architectureManifest = {
     'Agent, Team, and Fleet form one navigation continuum while keeping separate renderer boundaries.',
     'React owns discrete semantic state; Chromium compositing, the xterm renderer, and R3F own continuous pixels. Performance changes begin with an attributed gesture trace, preserve existing failure paths, and change the narrowest proven owner.',
     'Appearance is app-global and source-neutral: one validated snapshot feeds DOM, xterm, R3F, and Electron adapters while product-state color channels keep their meanings.',
-    'Open Project identity spans the Agent, Team, and Fleet altitudes even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
+    'Project identity is opaque, durable, renameable, and folder-optional across Agent, Team, and Fleet; Agents join by Project id, and folder-dependent actions remain absent until a local folder is bound.',
     'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
     'Session identity remains durable across Agent, Team, and Fleet but stays subordinate to the coworker-shaped Agent; PTYs add live runtime state without defining Agent existence.',
     'The primary roster projects source-native topology into coworker-shaped Agents: configured OpenClaw Agents remain one coworker above many contexts, while raw source identities stay preserved and re-projectable.',
@@ -908,6 +908,7 @@ export const architectureManifest = {
     'Public operator statistics are an opt-in aggregate projection over the shared local Consumption spine: Electron settings preserve the consent boundary across renderer origins, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
     'Session-continuity diagnostics are local, explainable projections over evidence; hosted systems may aggregate them but never replace their semantics with an opaque health score.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
+    'Public-source publication preserves its published prefix, classifies later commits independently, and requires exact-candidate certification for an explicit snapshot recovery; ordinary publication never rewrites public history.',
     'Distribution services are optional versioned capabilities resolved before build; community identity is isolated and service-neutral, while operator-configured Agent Source WebSockets remain an independent local/customer-owned transport.',
     'Coding is the first dogfood workload, not the Agent boundary; compatible non-coding sources use the same command and evidence contracts.',
     'Source entitlement and Consumption are separate: a compatible subscription-backed harness does not require Exawatt API billing, and unreported plan headroom stays unknown.',

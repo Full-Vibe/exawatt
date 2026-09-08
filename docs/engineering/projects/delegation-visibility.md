@@ -994,3 +994,13 @@ Constraints the design pass inherits (not scope, but boundaries):
 Sequencing: after the design pass, and behind the active daily-driver arc
 (ENG-015 / ENG-016 / ENG-021). Feeds ENG-004's delegation-topology mandate and
 ENG-008 Consumption; the source-capability boundary belongs to ENG-003.
+
+## D6 evidence — a descendant can disappear from Fleet (2026-08-20)
+
+Feedback `f472e9ce-8389-4678-b631-e8b12b7e0e63` and exact duplicate
+`706c28da-d242-459a-9d99-14bc00869323` report the same Codex failure: a
+second-level child exists in the app-server tree but is absent from Fleet. D5
+already observes descendants at any depth, so D6 is a projection/correlation
+repair: capture a depth-2 snapshot, keep immediate-parent lineage distinct from
+root Session board scope, render every descendant exactly once at every
+altitude, and survive reconnect/completion without flattening or inference.

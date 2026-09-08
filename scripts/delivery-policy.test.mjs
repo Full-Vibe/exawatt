@@ -31,6 +31,16 @@ import {
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
+async function isProjectedPublicTree() {
+  const disposition = JSON.parse(
+    await readFile(
+      path.join(root, 'scripts/open-source-paths.manifest.json'),
+      'utf8'
+    )
+  );
+  return Object.keys(disposition.recipes ?? {}).length === 0;
+}
+
 function ids(paths, extras = []) {
   return classifyDeliveryPolicy(paths, extras).map(check => check.id);
 }
@@ -110,6 +120,33 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
     'vitest-related',
     'electron:compile',
   ]);
+});
+
+test('every compatible-service wire owner receives executable conformance', () => {
+  for (const file of [
+    'contracts/conformance/cases.json',
+    'contracts/services/v1/schemas/problem.schema.json',
+    'packages/core/src/distribution/service-clients.ts',
+    'packages/core/src/distribution/service-protocol.ts',
+    'packages/core/src/service-protocol.ts',
+    'electron/main/pty/context-summarizer.ts',
+    'electron/main/pty/conversation-catalog.ts',
+    'src/components/feedback/product-feedback-provider.tsx',
+    'src/lib/operator-stats/auto-sync.ts',
+    'company/overlay/web/src/app/api/goal-visuals/route.ts',
+    'company/overlay/web/src/app/api/conversations/summarize/route.ts',
+    'company/overlay/web/src/app/api/conversations/summarize/service-conformance.test.ts',
+    'company/overlay/web/src/app/api/service-conformance.test.ts',
+  ]) {
+    assert.ok(
+      ids([file]).includes('test:service-conformance'),
+      `${file} owes the service conformance matrix`
+    );
+  }
+  assert.ok(
+    !ids(['src/lib/raw-tokens.ts']).includes('test:service-conformance'),
+    'unrelated application changes do not pay for the service matrix'
+  );
 });
 
 // BUG-042: a route that demanded the account service while Next prerendered
@@ -217,11 +254,12 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
   assert.equal(checks.at(-1).candidateOnly, undefined);
 });
 
-test('post-merge CI runs only from the coalesced batch ref and cancels an obsolete batch', async () => {
+test('post-merge CI follows this repository’s delivery topology and cancels obsolete work', async () => {
   const workflow = await readFile(
     path.join(root, '.github/workflows/ci.yml'),
     'utf8'
   );
+  const projectedPublicTree = await isProjectedPublicTree();
   assert.match(workflow, /concurrency:/);
   assert.match(
     workflow,
@@ -229,9 +267,19 @@ test('post-merge CI runs only from the coalesced batch ref and cancels an obsole
   );
   assert.match(workflow, /cancel-in-progress: true/);
   assert.match(workflow, /permissions:\s+contents: read/);
-  assert.match(workflow, /branches: \[ci-batches\/master\]/);
+  assert.match(
+    workflow,
+    projectedPublicTree
+      ? /branches: \[master\]/
+      : /branches: \[ci-batches\/master\]/
+  );
+  assert.doesNotMatch(
+    workflow,
+    projectedPublicTree
+      ? /branches: \[ci-batches\/master\]/
+      : /^\s*branches: \[master\]$/m
+  );
   assert.match(workflow, /workflow_dispatch:/);
-  assert.doesNotMatch(workflow, /push:\s+branches: \[master, main\]/);
   assert.match(
     workflow,
     /name: Check open-source path classification\s+run: pnpm open-source:paths:check/
@@ -292,13 +340,28 @@ test('the Team altitude owes its ordering gate', () => {
     missingSurfaceGates(['src/components/workspace/expose-overlay.tsx']).map(
       entry => entry.gate
     ),
-    ['eval:workspace:team']
+    ['eval:workspace:team', 'eval:electron:connected-fleet']
   );
   assert.deepEqual(
     missingSurfaceGates(['src/components/workspace/use-flip-tiles.ts']).map(
       entry => entry.gate
     ),
     ['eval:workspace:team']
+  );
+});
+
+test('the packaged customer-hosted fleet owns its end-to-end gate', () => {
+  assert.deepEqual(
+    missingSurfaceGates(['electron/main/connected-source-runtime.ts']).map(
+      entry => entry.gate
+    ),
+    ['eval:electron:connected-fleet']
+  );
+  assert.deepEqual(
+    missingSurfaceGates([
+      'src/components/workspace/remote-agent/remote-agent-surface.tsx',
+    ]).map(entry => entry.gate),
+    ['eval:electron:connected-fleet']
   );
 });
 
@@ -379,6 +442,21 @@ test('quarantine says nothing about an untouched surface', () => {
     quarantinedSurfaceGates(['docs/engineering/roadmap.md']),
     []
   );
+});
+
+test('source Settings changes require the repaired source gate', () => {
+  for (const file of [
+    'src/app/settings/agent-sources-settings.tsx',
+    'src/app/settings/connected-sources-section.tsx',
+    'src/components/workspace/agent-sources.ts',
+  ]) {
+    assert.ok(
+      missingSurfaceGates([file]).some(
+        entry => entry.gate === 'eval:electron:agent-sources'
+      )
+    );
+    assert.deepEqual(quarantinedSurfaceGates([file]), []);
+  }
 });
 
 test('the refusal names the gate, the files, and how to run it', () => {

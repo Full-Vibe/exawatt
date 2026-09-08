@@ -85,14 +85,28 @@ async function testsThatRunRepositoryScripts() {
 }
 
 test('a suite test that runs a repository script states the child environment', async () => {
-  const running = await testsThatRunRepositoryScripts();
+  const [files, running] = await Promise.all([
+    suiteTestFiles(),
+    testsThatRunRepositoryScripts(),
+  ]);
 
   // Without this the rule rots into a vacuous pass the moment the discovery
   // walk stops finding anything — the shape of BUG-010/011/014/043.
-  assert.ok(
-    running.length > 0,
-    'expected to find suite tests that spawn repository scripts; the discovery walk is broken'
-  );
+  assert.ok(files.length > 0, 'the suite-test discovery walk is broken');
+  if (running.length === 0) {
+    const disposition = JSON.parse(
+      await readFile(
+        path.join(root, 'scripts/open-source-paths.manifest.json'),
+        'utf8'
+      )
+    );
+    assert.deepEqual(
+      disposition.recipes,
+      {},
+      'only the projected public tree may omit every private script-spawning suite test'
+    );
+    return;
+  }
 
   for (const { relative, source } of running) {
     assert.doesNotMatch(

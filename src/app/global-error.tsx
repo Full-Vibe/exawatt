@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+
 // Last-resort boundary: replaces the root layout when even it fails to
 // render. Must own its own <html>/<body>. Styles are inline because
 // globals.css may not have loaded in this state.
@@ -10,6 +12,18 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error('[exawatt] global error boundary:', error);
+    void window.electron?.app
+      ?.reportRenderError?.({
+        message: error.message,
+        stack: error.stack ?? null,
+        digest: error.digest ?? null,
+        pathname: window.location.pathname,
+      })
+      .catch(() => {});
+  }, [error]);
+
   return (
     <html lang="en">
       <body
@@ -82,6 +96,28 @@ export default function GlobalError({
           >
             digest {error.digest}
           </p>
+        ) : null}
+        {error.message || error.stack ? (
+          <pre
+            style={{
+              fontSize: 10,
+              color: 'var(--exa-foundation-text-faint, #52525b)',
+              fontFamily: 'monospace',
+              maxWidth: 480,
+              maxHeight: 200,
+              overflow: 'auto',
+              textAlign: 'left',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              border: '1px solid var(--exa-foundation-border-strong, #3f3f46)',
+              borderRadius: 6,
+              padding: 8,
+              margin: 0,
+            }}
+          >
+            {error.message}
+            {error.stack ? `\n\n${error.stack}` : ''}
+          </pre>
         ) : null}
       </body>
     </html>

@@ -1,0 +1,241 @@
+{
+  "renderer": "staged-production",
+  "loadavg": [18.9482421875, 20.8896484375, 13.98779296875],
+  "cores": 12,
+  "fixture": {
+    "projects": 3,
+    "shells": 12,
+    "providerCatalogs": "fake Claude/Codex, no agent execution",
+    "providerHistory": "900 Claude JSONL + 900 Codex legacy JSONL across 3 Projects; no SQLite index",
+    "liveSessionCount": 12
+  },
+  "samples": [
+    {
+      "name": "cold-renderer-populated-1",
+      "frames": [
+        0.39999999403949005, 7.900000000000091, 8.799999999999955,
+        33.39999999999998, 8, 7.7000000000000455, 117.5, 8.399999999999977,
+        8.299999999999955, 8.400000000000091, 7.899999999999864,
+        8.700000000000045, 8.400000000000091, 8.200000000000045,
+        7.599999999999909, 9.200000000000045, 7.599999999999909,
+        8.799999999999955, 8.300000000000182, 8.599999999999909,
+        7.7000000000000455, 9, 7.7999999999999545, 8.799999999999955,
+        8.299999999999955, 7.7000000000000455, 9.100000000000136,
+        8.299999999999955, 7.599999999999909, 9.100000000000136,
+        7.399999999999864, 9.200000000000045, 8.200000000000045,
+        8.399999999999864, 8.400000000000091, 8.299999999999955,
+        7.7999999999999545, 8.900000000000091, 8.200000000000045,
+        8.399999999999864, 8.300000000000182, 8, 8.799999999999955, 7.5,
+        9.200000000000045, 8.199999999999818, 8.400000000000091,
+        8.099999999999909, 8.5, 8, 8.800000000000182, 8.199999999999818,
+        8.400000000000091, 8.099999999999909, 8.600000000000136,
+        8.299999999999955, 7.7999999999999545, 8.200000000000045,
+        8.099999999999909, 9.300000000000182, 7.5, 8.199999999999818,
+        9.200000000000045, 8.400000000000091, 7.599999999999909, 9,
+        8.299999999999955, 8.300000000000182, 7.899999999999864,
+        8.900000000000091, 8.200000000000045, 7.899999999999864,
+        8.900000000000091, 8.099999999999909, 8.299999999999955,
+        8.600000000000136, 8.200000000000045, 8, 8.799999999999955,
+        8.299999999999955, 7.5, 9.099999999999909, 7.900000000000091,
+        8.799999999999955, 8.299999999999955, 7.800000000000182, 9,
+        8.199999999999818, 7.5, 9.300000000000182, 8.199999999999818, 8,
+        8.800000000000182, 7.2999999999999545, 9.399999999999864,
+        8.200000000000045, 7.600000000000136, 9.199999999999818,
+        8.200000000000045, 8.299999999999955, 7.7000000000000455,
+        8.600000000000136, 8.799999999999955, 8.200000000000045,
+        8.399999999999864, 7.7999999999999545, 8.900000000000091,
+        7.400000000000091, 8.699999999999818, 8.900000000000091, 8,
+        8.700000000000045, 8.299999999999955, 8.299999999999955,
+        7.900000000000091, 8.799999999999955, 8.299999999999955,
+        7.7999999999999545, 8.200000000000045, 8.700000000000045,
+        8.700000000000045, 8.200000000000045, 7.7999999999999545,
+        8.399999999999864, 8.900000000000091, 7.900000000000091,
+        8.799999999999955, 8.200000000000045, 7.599999999999909,
+        9.200000000000045, 7.399999999999864, 9, 8.5, 8.400000000000091,
+        7.400000000000091, 9.299999999999727, 7.700000000000273,
+        8.900000000000091, 8.299999999999727, 8.400000000000091,
+        8.199999999999818, 8.5, 8.200000000000273, 7.900000000000091, 8,
+        8.799999999999727, 8.599999999999909, 8.400000000000091,
+        8.400000000000091, 8.300000000000182, 7.5, 9.199999999999818,
+        7.699999999999818, 9, 8.300000000000182, 8.300000000000182,
+        8.299999999999727, 8.400000000000091, 8.300000000000182,
+        8.299999999999727, 7.5, 8.400000000000091
+      ],
+      "initialFocus": "xterm-helper-textarea",
+      "initialTabCount": 4,
+      "started": 807.4000000059605,
+      "commandBoundary": "keydown",
+      "tabMs": 8.299999994039581,
+      "composerMs": 8.299999994039581,
+      "focusedMs": 17.099999994039536,
+      "preferencesMs": 17.099999994039536,
+      "recentRowsMs": 17.099999994039536,
+      "setupReadyMs": 1474.5999999940395,
+      "done": true,
+      "visibleRecentRows": 200,
+      "loadavg": [21.0341796875, 21.28955078125, 14.16943359375],
+      "inputAccepted": true
+    },
+    {
+      "name": "cold-renderer-populated-2",
+      "frames": [
+        5.300000011920929, 9.199999999999989, 33.19999999999999,
+        8.400000000000034
+      ],
+      "initialFocus": "xterm-helper-textarea",
+      "initialTabCount": 4,
+      "started": 411.19999998807907,
+      "commandBoundary": "keydown",
+      "tabMs": 14.500000011920918,
+      "composerMs": 14.500000011920918,
+      "preferencesMs": 14.500000011920918,
+      "recentRowsMs": 14.500000011920918,
+      "focusedMs": 47.700000011920906,
+      "setupReadyMs": 56.10000001192094,
+      "done": true,
+      "visibleRecentRows": 200,
+      "loadavg": [21.0341796875, 21.28955078125, 14.16943359375],
+      "inputAccepted": true
+    },
+    {
+      "name": "cold-renderer-populated-3",
+      "frames": [
+        6.699999976158097, 7.600000000000023, 8.5, 25.200000000000045,
+        8.600000000000023, 8.399999999999977
+      ],
+      "initialFocus": "xterm-helper-textarea",
+      "initialTabCount": 4,
+      "started": 586.1000000238419,
+      "commandBoundary": "keydown",
+      "tabMs": 14.29999997615812,
+      "composerMs": 14.29999997615812,
+      "focusedMs": 22.79999997615812,
+      "preferencesMs": 22.79999997615812,
+      "recentRowsMs": 22.79999997615812,
+      "setupReadyMs": 64.99999997615816,
+      "done": true,
+      "visibleRecentRows": 200,
+      "loadavg": [21.0341796875, 21.28955078125, 14.16943359375],
+      "inputAccepted": true
+    },
+    {
+      "name": "warm-populated-1",
+      "frames": [6.3999999880791165, 8.399999999999977, 33.19999999999993, 7.5],
+      "initialFocus": "xterm-helper-textarea",
+      "initialTabCount": 5,
+      "started": 961.3000000119209,
+      "commandBoundary": "keydown",
+      "tabMs": 14.799999988079094,
+      "composerMs": 14.799999988079094,
+      "preferencesMs": 14.799999988079094,
+      "recentRowsMs": 14.799999988079094,
+      "focusedMs": 47.999999988079026,
+      "setupReadyMs": 55.499999988079026,
+      "done": true,
+      "visibleRecentRows": 200,
+      "loadavg": [21.0341796875, 21.28955078125, 14.16943359375]
+    },
+    {
+      "name": "warm-populated-2",
+      "frames": [
+        6.4999999940396265, 8.699999999999818, 33.600000000000136,
+        8.299999999999955
+      ],
+      "initialFocus": "xterm-helper-textarea",
+      "initialTabCount": 6,
+      "started": 1068.9000000059605,
+      "commandBoundary": "keydown",
+      "tabMs": 15.199999994039445,
+      "composerMs": 15.199999994039445,
+      "preferencesMs": 15.199999994039445,
+      "recentRowsMs": 15.199999994039445,
+      "focusedMs": 48.79999999403958,
+      "setupReadyMs": 57.099999994039536,
+      "done": true,
+      "visibleRecentRows": 200,
+      "loadavg": [21.0341796875, 21.28955078125, 14.16943359375]
+    },
+    {
+      "name": "warm-populated-3",
+      "frames": [
+        -0.09999999999990905, 7.5, 9, 25.199999999999818, 8.300000000000182
+      ],
+      "initialFocus": "xterm-helper-textarea",
+      "initialTabCount": 6,
+      "started": 1209.5,
+      "commandBoundary": "keydown",
+      "tabMs": 7.400000000000091,
+      "composerMs": 7.400000000000091,
+      "focusedMs": 16.40000000000009,
+      "preferencesMs": 16.40000000000009,
+      "recentRowsMs": 16.40000000000009,
+      "setupReadyMs": 49.90000000000009,
+      "done": true,
+      "visibleRecentRows": 200,
+      "loadavg": [21.111328125, 21.30126953125, 14.21484375]
+    }
+  ],
+  "loadAtAppReady": [18.9482421875, 20.8896484375, 13.98779296875],
+  "requestFailures": [
+    {
+      "path": "/leaderboard",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "path": "/leaderboard",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "path": "/leaderboard",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "path": "/leaderboard",
+      "error": "net::ERR_ABORTED"
+    }
+  ],
+  "errors": [],
+  "runtime": {
+    "electron": "43.1.0",
+    "chromium": "150.0.7871.47"
+  },
+  "display": {
+    "width": 1400,
+    "height": 900,
+    "dpr": 2,
+    "visibility": "visible",
+    "reducedMotion": false
+  },
+  "stagedRendererGitSha": "11798861db4741697d75b321106fd629f2893285",
+  "stagedRendererProvenance": "pnpm build + pnpm electron:prepare-renderer completed before d8e3e0c5 clipboard follow-up; source/test code changes after staging are not included in this renderer",
+  "scopeLimits": [
+    "Main process and provider caches remained warm; reload clears renderer JS state, not disk/OS/CLI caches.",
+    "Host was contended (~21 load on 12 cores); no quiet-machine baseline or cause attribution.",
+    "Three cold-mount and three warm samples from one successful run; no population p95 inference.",
+    "Warm gestures followed terminal refocus before departing draft exit animation fully settled, so initial DOM tab count includes exiting tabs.",
+    "Focus timing observes enabled field + activeElement; actual typing verification ran after catalogs settled, not during pending catalogs.",
+    "First all-source setup readiness took 1474.6ms; the probe does not isolate which async dependency owned that wait.",
+    "Two previous startup/setup attempts collected zero samples, so results do not establish startup reliability.",
+    "Fixtures use tiny bounded JSONL records and fake Claude/Codex metadata; no real CLI turns, full history payloads, SQLite catalog, network failure injection, or installed app measurement."
+  ],
+  "currentCheckoutGitSha": "d8e3e0c5ffa9ff78e383012abf991f4c95176ad2",
+  "currentCheckoutRuntimeDiff": "",
+  "rendererArtifactFiles": [
+    {
+      "path": "dist-renderer/.next/BUILD_ID",
+      "modifiedAt": "2026-09-08T00:40:37.572092+00:00",
+      "sha256": "389e48ad81da00652c8bad3de2ca0ea9aa077ee8160f0aa4fdaac99230fb5327",
+      "buildId": "-Wy3in6Mm12Cqz_zIGuJ2"
+    },
+    {
+      "path": "dist-renderer/.next/build-manifest.json",
+      "modifiedAt": "2026-09-08T00:40:37.571598+00:00",
+      "sha256": "2e581e43e064b34a0d4f3c5d794f88346ad09cb1bb91daf83e06822f153c9627"
+    },
+    {
+      "path": "dist-renderer/server.js",
+      "modifiedAt": "2026-09-08T00:40:36.387387+00:00",
+      "sha256": "96faf5c9f640d594091dc9fbb4ff0f2d9b3b46b18000e780ab1570cc872b57fc"
+    }
+  ]
+}

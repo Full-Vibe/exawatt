@@ -3,15 +3,21 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import type { ConnectedSourceView } from '@exawatt/core';
 import { fallbackAgentSourceRegistry } from '@/components/workspace/agent-sources';
 import { AgentSourcesSettings } from './agent-sources-settings';
-import type { ConnectedSourceObservation } from './connected-sources-section';
+import {
+  useConnectedSources,
+  type ConnectedSourceObservation,
+} from './connected-sources-section';
 
 describe('Agent Source Settings', () => {
   afterEach(() => {
@@ -214,6 +220,70 @@ describe('Agent Source Settings', () => {
       screen.getByText('Claude Code installation guide opened.')
     ).toBeInTheDocument();
   });
+
+  it.each(['authenticate', 'install-guide'] as const)(
+    'ignores a late %s response after changing sources',
+    async action => {
+      const base = fallbackAgentSourceRegistry('all');
+      const registry = {
+        ...base,
+        sources: base.sources.map(source => ({
+          ...source,
+          state:
+            action === 'install-guide' && source.adapterId === 'claude'
+              ? ('not-installed' as const)
+              : source.state,
+          actions: {
+            ...source.actions,
+            authenticate:
+              action === 'authenticate' || source.adapterId !== 'claude',
+            installGuide: true,
+          },
+        })),
+      };
+      let finish!: (result: { ok: boolean; message: string }) => void;
+      const pending = new Promise<{ ok: boolean; message: string }>(resolve => {
+        finish = resolve;
+      });
+      const act = vi.fn(() => pending);
+      window.electron = {
+        agentSources: { list: vi.fn(async () => registry), act },
+      } as unknown as NonNullable<Window['electron']>;
+      render(<AgentSourcesSettings />);
+      const claude = registry.sources.find(
+        source => source.adapterId === 'claude'
+      )!;
+      const codex = registry.sources.find(
+        source => source.adapterId === 'codex'
+      )!;
+      const control = await screen.findByRole('button', {
+        name:
+          action === 'authenticate'
+            ? `Sign in with ${claude.label}`
+            : 'Open installation guide',
+      });
+      fireEvent.click(control);
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: `${codex.label}, ${codex.connectionName}, ${codex.stateLabel}`,
+        })
+      );
+      await reactAct(async () =>
+        finish({ ok: true, message: 'Response from previous source' })
+      );
+      expect(
+        screen.queryByText(/Response from previous source/)
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', {
+          name: `${claude.label}, ${claude.connectionName}, ${claude.stateLabel}`,
+        })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: `Sign in with ${codex.label}` })
+      ).toBeEnabled();
+    }
+  );
 });
 
 /**
@@ -233,6 +303,73 @@ describe('Connected sources in Agent Source Settings', () => {
 
   /** The most recent handler the bridge's `onChanged` was given, if any. */
   let changeTick: ((change: { sourceId: string }) => void) | null = null;
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: Error) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it('keeps the newest connection observation when refreshes finish out of order', async () => {
+    const initial = observation({ id: 'a' });
+    const latest = observation({
+      id: 'a',
+      connection: { state: 'unavailable' },
+    });
+    const bridge = mountBridge({
+      sources: [connection({ id: 'a' })],
+      statuses: [initial],
+    });
+    const { result } = renderHook(useConnectedSources);
+    await waitFor(() =>
+      expect(result.current.observations.get('a')).toBe(initial)
+    );
+    const older = deferred<ConnectedSourceObservation[]>();
+    bridge.status
+      .mockImplementationOnce(() => older.promise)
+      .mockResolvedValueOnce([latest]);
+
+    await reactAct(async () => {
+      changeTick?.({ sourceId: 'a' });
+      changeTick?.({ sourceId: 'a' });
+    });
+    expect(result.current.observations.get('a')).toBe(latest);
+    await reactAct(async () => older.resolve([initial]));
+    expect(result.current.observations.get('a')).toBe(latest);
+  });
+
+  it.each(['success', 'failure'] as const)(
+    'ignores an obsolete connection-list %s after a newer list arrives',
+    async outcome => {
+      const initial = [connection({ id: 'a' })];
+      const latest = [
+        ...initial,
+        connection({ id: 'b', displayName: 'New gateway' }),
+      ];
+      const bridge = mountBridge({ sources: initial });
+      const { result } = renderHook(useConnectedSources);
+      await waitFor(() => expect(result.current.sources).toEqual(initial));
+      const older = deferred<ConnectedSourceView[]>();
+      bridge.list
+        .mockImplementationOnce(() => older.promise)
+        .mockResolvedValueOnce(latest);
+      await reactAct(async () => {
+        changeTick?.({ sourceId: 'b' });
+        changeTick?.({ sourceId: 'b' });
+      });
+      expect(result.current.sources).toEqual(latest);
+      await reactAct(async () => {
+        if (outcome === 'success') older.resolve(initial);
+        else older.reject(new Error('Obsolete read failed'));
+      });
+      expect(result.current.sources).toEqual(latest);
+      expect(result.current.message).toBeNull();
+    }
+  );
 
   function connection(
     overrides: Partial<ConnectedSourceView> & { id: string }
@@ -349,6 +486,37 @@ describe('Connected sources in Agent Source Settings', () => {
     fireEvent.click(row);
     return await screen.findByText(name, { selector: 'h2' });
   }
+
+  it('hydrates the server shell before discovering desktop connections', async () => {
+    // Server rendering has no preload bridge; desktop hydration does. Keep
+    // the original registry DOM rather than recovering by rebuilding it.
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(<AgentSourcesSettings />);
+    document.body.append(container);
+    const registry = container.querySelector(
+      '[aria-label="Agent Source registry"]'
+    );
+    const bridge = mountBridge({ sources: [] });
+    const onRecoverableError = vi.fn();
+    const root = hydrateRoot(container, <AgentSourcesSettings />, {
+      onRecoverableError,
+    });
+    try {
+      await waitFor(() =>
+        expect(
+          container.querySelector('[data-connected-sources-rail]')
+        ).not.toBeNull()
+      );
+      expect(bridge.list).toHaveBeenCalled();
+      expect(onRecoverableError).not.toHaveBeenCalled();
+      expect(
+        container.querySelector('[aria-label="Agent Source registry"]')
+      ).toBe(registry);
+    } finally {
+      await reactAct(async () => root.unmount());
+      container.remove();
+    }
+  });
 
   it('gives each connection state its own treatment and vocabulary', async () => {
     mountBridge({

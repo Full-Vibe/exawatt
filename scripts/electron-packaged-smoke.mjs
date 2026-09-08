@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { _electron as electron } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -11,6 +12,7 @@ import {
   assertPackagedSource,
   resolvePackagedApp,
 } from './lib/packaged-app.mjs';
+import { icnsImageSlices } from './lib/app-icon.mjs';
 
 // The gate must be correct under EVERY distribution this repository can build,
 // not just the one that used to be the only one (BUG-043). The package name and
@@ -81,6 +83,17 @@ const executable = packaged.executablePath;
 const { productUpdatesEnabled } = packaged;
 assertPackagedContract(packaged.appPath, packaged.digest);
 assertPackagedSource(packaged.appPath, expectedSourceSha);
+const expectedWebIcon = icnsImageSlices(
+  readFileSync(resolve(packaged.identity.iconPath))
+)[0];
+if (!expectedWebIcon) {
+  throw new Error(
+    `Distribution icon ${packaged.identity.iconPath} has no browser representation`
+  );
+}
+const expectedWebIconDigest = createHash('sha256')
+  .update(expectedWebIcon.png)
+  .digest('hex');
 console.log(
   `[packaged-smoke] ${packaged.identity.productName} (${packaged.identity.appId}) ` +
     `distribution ${packaged.digest.slice(0, 12)}; product updates ` +
@@ -132,6 +145,80 @@ try {
   if (url.hostname !== '127.0.0.1' || url.pathname !== '/workspace') {
     throw new Error(
       `Expected packaged /workspace on loopback; got ${page.url()}`
+    );
+  }
+  // The community projection deliberately omits Next's conventional
+  // `src/app/icon.png`, because that file is the official Exawatt mark. The
+  // header used to infer `/icon.png` from electron-builder's `iconPath`, which
+  // made an otherwise healthy community package emit a 400 on every page. Read
+  // the URLs the packaged renderer actually chose and demand usable bytes from
+  // both browser metadata and visible chrome. This checks the distribution
+  // boundary rather than a filename: official and community packages may use
+  // different URLs, but neither may point at an absent asset.
+  const brandAssets = await page.evaluate(async expectedDigest => {
+    const candidates = [
+      ...document.querySelectorAll('link[rel~="icon"]'),
+      ...document.querySelectorAll('[data-chrome-brand] img'),
+    ];
+    const urls = [
+      ...new Set(
+        candidates
+          .map(element => {
+            const selected =
+              element instanceof HTMLImageElement
+                ? element.currentSrc || element.src
+                : element instanceof HTMLLinkElement
+                  ? element.href
+                  : '';
+            if (!selected) return '';
+            const selectedUrl = new URL(selected, window.location.href);
+            // `next/image` wraps the declared source in its optimization route.
+            // The distribution contract owns the source bytes, so unwrap that
+            // URL and verify the input rather than coupling this gate to a
+            // negotiated WebP/AVIF transformation.
+            if (selectedUrl.pathname === '/_next/image') {
+              const source = selectedUrl.searchParams.get('url');
+              return source ? new URL(source, window.location.href).href : '';
+            }
+            return selectedUrl.href;
+          })
+          .filter(Boolean)
+      ),
+    ];
+    return await Promise.all(
+      urls.map(async assetUrl => {
+        try {
+          const response = await fetch(assetUrl);
+          const bytes = await response.arrayBuffer();
+          const digest = [
+            ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+          ]
+            .map(byte => byte.toString(16).padStart(2, '0'))
+            .join('');
+          return {
+            url: assetUrl,
+            status: response.status,
+            digest,
+            expectedDigest,
+          };
+        } catch (error) {
+          return { url: assetUrl, status: 0, error: String(error) };
+        }
+      })
+    );
+  }, expectedWebIconDigest);
+  if (brandAssets.length === 0) {
+    throw new Error('Packaged renderer declared no distribution brand asset');
+  }
+  const brokenBrandAssets = brandAssets.filter(
+    asset =>
+      asset.status < 200 ||
+      asset.status >= 400 ||
+      asset.digest !== asset.expectedDigest
+  );
+  if (brokenBrandAssets.length > 0) {
+    throw new Error(
+      `Packaged distribution brand asset failed: ${JSON.stringify(brokenBrandAssets)}`
     );
   }
   const hasPty = await page.evaluate(() => !!window.electron?.pty);

@@ -1029,14 +1029,17 @@ const claudeCatalogInFlight = new Map<
 
 async function cachedClaudeModelOptions(
   cwd: string,
-  shell: string
+  shell: string,
+  refresh = false
 ): Promise<AgentModelOption[] | null> {
   const key = `${shell}\u0000${cwd}`;
-  const cached = claudeCatalogCache.get(key);
-  if (cached && cached.expires > Date.now()) return cached.models;
-  // One probe per Project at a time: the composer can ask again while the first
-  // CLI launch is still running, and a second spawn would only answer the same
-  // thing a second later.
+  if (!refresh) {
+    const cached = claudeCatalogCache.get(key);
+    if (cached && cached.expires > Date.now()) return cached.models;
+  }
+  // Force bypasses settled cache state, but an observation already in flight
+  // is the freshest possible answer. Join it rather than racing two probes and
+  // allowing the older request to overwrite the newer result.
   const inFlight = claudeCatalogInFlight.get(key);
   if (inFlight) return inFlight;
   const probe = readClaudeModelOptions(cwd, shell).finally(() => {
@@ -1058,7 +1061,8 @@ async function cachedClaudeModelOptions(
 async function listClaudeModels(
   cwd: string,
   shell: string,
-  environment: NodeJS.ProcessEnv
+  environment: NodeJS.ProcessEnv,
+  refresh = false
 ): Promise<AgentModelCatalog> {
   const configDir =
     environment.CLAUDE_CONFIG_DIR ||
@@ -1066,7 +1070,7 @@ async function listClaudeModels(
   // Lowest → highest personal/project precedence. Managed policy is still
   // enforced by Claude Code itself; this catalog never claims to replace it.
   const [reported, layers] = await Promise.all([
-    cachedClaudeModelOptions(cwd, shell),
+    cachedClaudeModelOptions(cwd, shell, refresh),
     Promise.all([
       readJson(path.join(configDir, 'settings.json')),
       readJson(path.join(cwd, '.claude', 'settings.json')),
@@ -1139,16 +1143,21 @@ export class OpencodeModelCatalogCache {
 
   async read(
     context: string,
-    probe: OpencodeCatalogProbe
+    probe: OpencodeCatalogProbe,
+    refresh = false
   ): Promise<AgentModelCatalog> {
-    const cached = this.entries.get(context);
-    if (cached && cached.expiresAt > this.now()) {
-      return {
-        ...cached.catalog,
-        catalogProvenance: `${cached.catalog.catalogProvenance} · cached observation`,
-      };
+    if (!refresh) {
+      const cached = this.entries.get(context);
+      if (cached && cached.expiresAt > this.now()) {
+        return {
+          ...cached.catalog,
+          catalogProvenance: `${cached.catalog.catalogProvenance} · cached observation`,
+        };
+      }
     }
 
+    // Force bypasses settled cache state, but an observation already in flight
+    // is the freshest possible answer and must stay single-flight.
     const running = this.inFlight.get(context);
     if (running) return running;
 
@@ -1219,12 +1228,15 @@ async function readOpencodeModelCatalog(
 async function listOpencodeModels(
   cwd: string,
   shell: string,
-  environment: NodeJS.ProcessEnv
+  environment: NodeJS.ProcessEnv,
+  refresh = false
 ): Promise<AgentModelCatalog> {
   const context = opencodeCatalogContext(cwd, shell, environment);
   return context
-    ? opencodeCatalogCache.read(context, () =>
-        readOpencodeModelCatalog(cwd, shell)
+    ? opencodeCatalogCache.read(
+        context,
+        () => readOpencodeModelCatalog(cwd, shell),
+        refresh
       )
     : readOpencodeModelCatalog(cwd, shell);
 }
@@ -1260,19 +1272,20 @@ export async function readGrokModelCatalog(
 async function probeAgentModels(
   harness: Exclude<PtyHarness, 'shell'>,
   cwd: string,
-  shell: string
+  shell: string,
+  refresh = false
 ): Promise<AgentModelCatalog> {
   const environment = await loginModelEnvironment(shell, cwd);
   if (harness === 'codex') {
     return listCodexModels(cwd, shell, environment);
   }
   if (harness === 'opencode') {
-    return listOpencodeModels(cwd, shell, environment);
+    return listOpencodeModels(cwd, shell, environment, refresh);
   }
   if (harness === 'grok') {
     return readGrokModelCatalog(cwd, shell);
   }
-  return listClaudeModels(cwd, shell, environment);
+  return listClaudeModels(cwd, shell, environment, refresh);
 }
 
 let catalogCache: AgentModelCatalogCache | null = null;
@@ -1284,7 +1297,46 @@ export function setAgentModelCatalogCache(
   catalogCache = cache;
 }
 
-const revalidating = new Set<string>();
+/** One source observation per exact Project context, across every demand path. */
+export class AgentModelObservationCoordinator {
+  private readonly inFlight = new Map<string, Promise<AgentModelCatalog>>();
+
+  observe(
+    key: string,
+    probe: () => Promise<AgentModelCatalog>
+  ): Promise<AgentModelCatalog> {
+    const running = this.inFlight.get(key);
+    if (running) return running;
+
+    const observation = probe().finally(() => {
+      if (this.inFlight.get(key) === observation) {
+        this.inFlight.delete(key);
+      }
+    });
+    this.inFlight.set(key, observation);
+    return observation;
+  }
+}
+
+const modelObservations = new AgentModelObservationCoordinator();
+
+function observeAgentModels(
+  harness: Exclude<PtyHarness, 'shell'>,
+  cwd: string,
+  shell: string,
+  cache: AgentModelCatalogCache | null,
+  key: string
+): Promise<AgentModelCatalog> {
+  return modelObservations.observe(key, async () => {
+    const generation = cache?.captureObservationGeneration(harness);
+    // Reaching this boundary means the outer cache demanded a real source
+    // observation. Bypass settled provider-local caches; their own single-
+    // flight guards still join an observation already underway.
+    const catalog = await probeAgentModels(harness, cwd, shell, true);
+    if (cache) await cache.write(key, cwd, catalog, generation);
+    return catalog;
+  });
+}
 
 /**
  * Read an engine's catalog, stale-while-revalidate (ENG-016 D49).
@@ -1301,24 +1353,18 @@ export async function listAgentModels(
   refresh = false
 ): Promise<AgentModelCatalog> {
   const cache = catalogCache;
-  if (!cache) return probeAgentModels(harness, cwd, shell);
-
   const key = catalogCacheKey(harness, cwd, shell);
-  if (!refresh) {
+  if (cache && !refresh) {
     const cached = await cache.read(key);
     if (cached) {
-      if (!cached.fresh && !revalidating.has(key)) {
-        revalidating.add(key);
-        void probeAgentModels(harness, cwd, shell)
-          .then(catalog => cache.write(key, cwd, catalog))
-          .catch(() => undefined)
-          .finally(() => revalidating.delete(key));
+      if (!cached.fresh) {
+        void observeAgentModels(harness, cwd, shell, cache, key).catch(
+          () => undefined
+        );
       }
       return { ...cached.catalog, servedFromCache: true };
     }
   }
 
-  const catalog = await probeAgentModels(harness, cwd, shell);
-  void cache.write(key, cwd, catalog).catch(() => undefined);
-  return catalog;
+  return observeAgentModels(harness, cwd, shell, cache, key);
 }

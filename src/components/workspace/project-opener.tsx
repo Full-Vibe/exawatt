@@ -37,6 +37,7 @@ export function ProjectOpener({
   workspaceProjects,
   onOpenProject,
   onImportProjects,
+  onOpenContextProject,
   onAgentSourceConnected,
   initialRoute = 'projects',
 }: {
@@ -45,6 +46,12 @@ export function ProjectOpener({
   workspaceProjects: WorkspaceProjectSummary[];
   onOpenProject: (dir: string) => Promise<boolean>;
   onImportProjects: (dirs: string[]) => Promise<boolean>;
+  /** Open a durable folderless Context Group without resolving a path. */
+  onOpenContextProject?: (project: {
+    id: string;
+    name: string;
+    color: string | null;
+  }) => void;
   /** ENG-010 C2: a saved source hands back its mapping and the Agent to open. */
   onAgentSourceConnected?: (result: ConnectSourceResult) => void;
   /**
@@ -120,7 +127,7 @@ export function ProjectOpener({
     const normalized = query.trim().toLocaleLowerCase();
     return normalized
       ? library.filter(project =>
-          `${project.name} ${project.dir}`
+          `${project.name} ${project.rootPath ?? ''}`
             .toLocaleLowerCase()
             .includes(normalized)
         )
@@ -128,10 +135,19 @@ export function ProjectOpener({
   }, [library, query]);
 
   // Where a discovered Agent can land: the same library this chooser lists,
-  // identified by directory, which is the identity a Project is opened by
-  // here. A Gateway is never silently turned into a Project.
+  // identified by durable Project id. Folder binding is separate and optional;
+  // a Gateway is never silently turned into a Project.
   const connectProjectOptions = useMemo(
-    () => library.map(project => ({ id: project.dir, name: project.name })),
+    () =>
+      library
+        // A recent folder with no registry row has no durable Project id yet.
+        // It remains openable, but Connect cannot turn its path into identity.
+        .filter(project => project.registryId !== null)
+        .map(project => ({
+          id: project.registryId!,
+          name: project.name,
+          rootPath: project.rootPath,
+        })),
     [library]
   );
 
@@ -201,7 +217,16 @@ export function ProjectOpener({
   }, [open, initialRoute]);
 
   const choose = async (project: ProjectLibraryEntry) => {
-    let dir = project.dir;
+    if (project.rootPath === null) {
+      onOpenContextProject?.({
+        id: project.projectId,
+        name: project.name,
+        color: project.color,
+      });
+      onOpenChange(false);
+      return;
+    }
+    let dir = project.rootPath;
     const exists = await window.electron?.dialog?.pathExists(dir);
     if (exists === false) {
       const pick = await pickDirectory('locate', `Locate ${project.name}`);
@@ -523,7 +548,7 @@ export function ProjectOpener({
                           className="mt-1 block truncate font-mono text-chrome-micro"
                           style={{ color: HUD.textDim }}
                         >
-                          {project.dir}
+                          {project.rootPath ?? 'No folder'}
                         </span>
                       </button>
                     ))}

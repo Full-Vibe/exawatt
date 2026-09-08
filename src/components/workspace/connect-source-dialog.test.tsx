@@ -30,6 +30,7 @@ import {
   CONNECT_STAGE_COPY,
   type DiscoveredAgent,
 } from './connect-source-model';
+import { listProjects } from '@/lib/projects/registry';
 
 const ALIASES: readonly SshHostAlias[] = [
   {
@@ -123,6 +124,10 @@ function makeBridge(
         observed: OBSERVED,
       })
     ),
+    mapAgents: vi.fn(async (_sourceId, mappings) => ({
+      ok: true as const,
+      mapped: Array.isArray(mappings) ? mappings.length : 0,
+    })),
     onSourceChanged: () => () => {},
     detach: vi.fn(async () => ({ ok: true })),
     ...overrides,
@@ -556,8 +561,9 @@ describe('Connect existing Agent: Project mapping', () => {
 
   it('groups several Agents into one existing Project when asked', async () => {
     const onConnected = vi.fn();
+    const bridge = makeBridge();
     renderDialog({
-      bridge: makeBridge(),
+      bridge,
       projects: [{ id: 'project-1', name: 'Growth' }],
       onConnected,
     });
@@ -571,10 +577,24 @@ describe('Connect existing Agent: Project mapping', () => {
     await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
     const result = onConnected.mock.calls[0]?.[0] as ConnectSourceResult;
     expect(result.sourceId).toBe('source-1');
-    expect(result.openAgentId).toBe('agent-alpha');
+    expect(result.openNativeAgentId).toBe('agent-alpha');
     expect(result.agents.map(agent => agent.project)).toEqual([
-      { kind: 'existing-project', projectId: 'project-1' },
-      { kind: 'existing-project', projectId: 'project-1' },
+      { id: 'project-1', name: 'Growth', rootPath: null },
+      { id: 'project-1', name: 'Growth', rootPath: null },
+    ]);
+    expect(bridge.mapAgents).toHaveBeenCalledWith('source-1', [
+      {
+        nativeAgentId: 'agent-alpha',
+        projectId: 'project-1',
+        projectLabel: 'Growth',
+        displayNameOverride: null,
+      },
+      {
+        nativeAgentId: 'agent-beta',
+        projectId: 'project-1',
+        projectLabel: 'Growth',
+        displayNameOverride: null,
+      },
     ]);
   });
 
@@ -635,6 +655,76 @@ describe('Connect existing Agent: Project mapping', () => {
     // The record is the operator's now. Closing releases an abandoned
     // attempt; it must never release a connection they just kept.
     expect(bridge.detach).not.toHaveBeenCalled();
+  });
+
+  it('keeps the mapping step open when main refuses the projection write', async () => {
+    const onConnected = vi.fn();
+    const bridge = makeBridge({
+      mapAgents: vi.fn(async () => ({
+        ok: false as const,
+        issues: ['Choose a Project that still exists.'],
+      })),
+    });
+    renderDialog({
+      bridge,
+      projects: [{ id: 'project-1', name: 'Growth' }],
+      onConnected,
+    });
+    await reachMapping();
+    for (const select of screen.getAllByLabelText('Project')) {
+      fireEvent.change(select, { target: { value: 'project-1' } });
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+
+    expect(
+      await screen.findByText('Choose a Project that still exists.')
+    ).toBeInTheDocument();
+    expect(document.querySelector('[data-connect-source]')).not.toBeNull();
+    expect(onConnected).not.toHaveBeenCalled();
+  });
+
+  it('reuses opaque Project identities when a mapping acknowledgement is retried', async () => {
+    const onConnected = vi.fn();
+    const mapAgents = vi
+      .fn<ConnectSourceBridge['mapAgents']>()
+      .mockResolvedValueOnce({ ok: false, issues: ['Try again.'] })
+      .mockResolvedValueOnce({ ok: true, mapped: 2 });
+    renderDialog({ bridge: makeBridge({ mapAgents }), onConnected });
+    await reachMapping();
+
+    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    await screen.findByText('Try again.');
+    const firstIds = mapAgents.mock.calls[0]![1].map(row => row.projectId);
+
+    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
+    const retriedIds = mapAgents.mock.calls[1]![1].map(row => row.projectId);
+
+    expect(retriedIds).toEqual(firstIds);
+  });
+
+  it('never archives a Project after an earlier mapping acknowledgement was lost', async () => {
+    const mapAgents = vi
+      .fn<ConnectSourceBridge['mapAgents']>()
+      .mockRejectedValueOnce(new Error('ack lost'))
+      .mockResolvedValueOnce({ ok: false, issues: ['Try later.'] });
+    renderDialog({ bridge: makeBridge({ mapAgents }) });
+    await reachMapping();
+
+    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    await screen.findByText(
+      'Exawatt could not save these Agent mappings. Try again.'
+    );
+    const uncertainIds = mapAgents.mock.calls[0]![1].map(row => row.projectId);
+
+    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    await screen.findByText('Try later.');
+
+    const durableIds = new Set(
+      (await listProjects()).map(project => project.id)
+    );
+    for (const id of uncertainIds) expect(durableIds).toContain(id);
   });
 
   it('steps back to the Agent choice with the selection intact', async () => {
@@ -735,6 +825,10 @@ describe('Connect existing Agent: the desktop bridge', () => {
             settle = resolve;
           })
       ),
+      mapAgents: vi.fn(async (_id: string, mappings: unknown[]) => ({
+        ok: true as const,
+        mapped: mappings.length,
+      })),
       onChanged: (handler: (change: ConnectSourceProgress) => void) => {
         handlers.add(handler);
         return () => {

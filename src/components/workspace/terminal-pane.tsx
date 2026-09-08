@@ -26,6 +26,7 @@ import type { EffectiveTerminalFont } from './terminal-font';
 import { createTerminalLinkProvider } from './terminal-link-provider';
 import {
   createTerminalSizeSync,
+  observeTerminalGeometry,
   publishTerminalGeometry,
   terminalInsetVariables,
 } from './terminal-geometry';
@@ -426,9 +427,13 @@ export function TerminalPane({
       cleanup.push(() => {
         if (operatorInputTimer) clearTimeout(operatorInputTimer);
       });
-      const ro = new ResizeObserver(syncSize);
-      ro.observe(el);
-      cleanup.push(() => ro.disconnect());
+      cleanup.push(
+        observeTerminalGeometry({
+          measure: el,
+          screen: term.element?.querySelector('.xterm-screen') ?? null,
+          sync: syncSize,
+        })
+      );
 
       // harness introspection (Playwright asserts on buffer contents)
       if (process.env.NODE_ENV !== 'production') {

@@ -2,7 +2,7 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import type { SourceTransport } from '@exawatt/core';
 import { readGatewayConfig, type OCGatewayConfig } from '@exawatt/core/server';
 import { stopChildProcess } from './child-process-lifecycle';
@@ -14,8 +14,8 @@ import {
 } from './ssh-tunnel';
 
 /**
- * ENG-010 C1: the one-time, bounded credential bootstrap for a source's own
- * loopback Gateway.
+ * ENG-010 C1: the bounded credential issuer for a source's own loopback
+ * Gateway.
  *
  * The Gateway a source runs listens on loopback and authenticates with a shared
  * token that lives in that machine's own OpenClaw configuration. Exawatt must
@@ -37,14 +37,15 @@ import {
  * The fleet contract is the OpenClaw Gateway WebSocket protocol, reached
  * through the SSH-forwarded tunnel in `ssh-tunnel.ts`. Remote shell scraping
  * must never become how Exawatt observes Agents: it has no events, no scopes,
- * no schema, and no revocation story. This module exists to obtain exactly one
- * credential exactly once so the Gateway pairing can happen, and nothing else
- * may be added to it. If a future milestone wants another remote fact, the
- * answer is a Gateway method, not another command here.
+ * no schema, and no revocation story. This module exists only to obtain the
+ * issuer credential for first pairing or an explicit operator-requested scope
+ * reissue. Ordinary launch and reconnect use the scoped device credential and
+ * never come here. If a future milestone wants another remote fact, the answer
+ * is a Gateway method, not another command here.
  *
  * The credential's custody is documented in the project brief: the shared
  * secret returned by a credential resolution is held in process memory for
- * one pairing and used once, to mint a scoped, per-device, revocable Gateway
+ * one handshake, to mint or reissue a scoped, per-device, revocable Gateway
  * token. That device token is what gets persisted. The shared secret is
  * admin-capable and must never be written to disk, to the keychain, to
  * diagnostics, or to a log line. See `GatewayBootstrapFacts.sharedToken`.
@@ -114,10 +115,10 @@ export interface GatewayBootstrapFacts {
   /**
    * Held in memory by the caller for one pairing, never persisted.
    *
-   * This is the source's admin-capable shared secret. The caller uses it once,
-   * to pair Exawatt's device identity for the scopes the current milestone
-   * needs, persists the scoped device token the Gateway returns, and drops
-   * this value. It must not be written to disk, to the OS keychain, to
+   * This is the source's admin-capable shared secret. The caller uses it for
+   * one device-token issuance handshake, persists the scoped device token the
+   * Gateway returns, and drops this value. It must not be written to disk, to
+   * the OS keychain, to
    * diagnostics, to analytics, or to any log line, and it must not cross into
    * renderer state.
    */
@@ -135,7 +136,7 @@ export type GatewayBootstrapResult =
   | { ok: true; facts: GatewayBootstrapFacts }
   | { ok: false; failure: GatewayBootstrapFailure; message: string };
 
-/** Matches `ssh-tunnel.ts`. One handshake budget for a one-time read. */
+/** Matches `ssh-tunnel.ts`. One handshake budget for one bounded read. */
 const CONNECT_TIMEOUT_SECONDS = 10;
 
 /** A version print or a small JSON read. Anything slower is a dead connection. */
@@ -928,6 +929,29 @@ export function defaultLocalGatewaySource(
       return readBoundedFile(join(stateDir, LOCAL_SECRETS_DIR_NAME, name));
     },
   };
+}
+
+/**
+ * A packaged-test-only local OpenClaw root.
+ *
+ * Electron's macOS credential encryption follows the real user login and
+ * keychain. Changing `HOME` to point a packaged fixture at an invented
+ * `.openclaw` directory disables that encryption and turns a harness setup
+ * shortcut into a false credential-custody failure. The eval may instead
+ * inject only OpenClaw's state directory while leaving the real HOME and OS
+ * keychain intact.
+ *
+ * Both gates are deliberate: production ignores the override unless the
+ * process explicitly identifies as a test, and a relative path is refused so
+ * the app's working directory can never choose which configuration is read.
+ */
+export function testLocalGatewaySource(
+  environment: NodeJS.ProcessEnv = process.env
+): LocalGatewaySource | undefined {
+  if (environment.EXAWATT_TEST !== '1') return undefined;
+  const stateDir = (environment.EXAWATT_TEST_OPENCLAW_STATE_DIR ?? '').trim();
+  if (stateDir.length === 0 || !isAbsolute(stateDir)) return undefined;
+  return defaultLocalGatewaySource(stateDir);
 }
 
 /**

@@ -88,6 +88,17 @@ One source instance may expose many Agents. A source instance is never
 automatically a Project. Initial attach suggests one renameable Project per
 imported Agent, while allowing an explicit existing-Project mapping.
 
+Project identity is Exawatt-owned and opaque. Its label is separately
+renameable, and a local folder is an optional binding rather than the identity
+or a prerequisite for opening it. Connect may create a `manual` Project with
+no folder and map one or several source-qualified Agents to that durable id.
+The Project record is persisted before the projection mapping is acknowledged
+or the Agent opens; label and `root_path` remain attributes, never join keys.
+Folder-dependent actions stay absent until a folder is bound. Detaching the
+Agent projection or source never deletes that Project. The current registry's
+single nullable `root_path` is the first storage mile, not a decision that a
+Project can only ever bind one repository or source-native workspace.
+
 ### 4. Lifecycle and connection are separate facts
 
 Closing or quitting Exawatt does not stop a remote Agent. Relaunch reopens the
@@ -121,6 +132,10 @@ The Hosted Agents progression is one surface and one adapter family:
 3. provision an Exawatt-managed OpenClaw behind the same contract;
 4. only then offer clone/move workflows with explicit state-transfer limits.
 
+Steps 3 and 4 are future design work. Accepting this topology does not
+authorize managed provisioning, billing, or any other paid-cloud
+implementation; none is active.
+
 “Push to cloud” remains an announced promise until Exawatt can name what moves
 and what remains source-local. It is not the label for attaching an existing
 remote Agent.
@@ -131,6 +146,7 @@ remote Agent.
 - No destructive source migration is part of attach.
 - Projection policy is versioned and additive.
 - Project and display-name mappings are editable.
+- Project identity survives folder rebinding and source detach.
 - Detach is non-destructive to the source.
 - Pause and reconnect remain distinct, capability-declared lifecycle verbs.
 - Read-only observation ships before write authority.

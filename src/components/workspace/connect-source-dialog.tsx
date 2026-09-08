@@ -51,6 +51,7 @@ import {
 import { OpenClawIcon } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
+import { archiveProject, openManualProject } from '@/lib/projects/registry';
 import {
   CONNECT_FAILURE_COPY,
   CONNECT_STAGES,
@@ -84,21 +85,30 @@ import {
 const OPENCLAW_COLOR = '#8BB9ED';
 
 export interface ConnectProjectOption {
+  /** Opaque durable Project identity, never inferred from the display name. */
   id: string;
   name: string;
+  /** Folder binding for local actions. Null means this Project is folderless. */
+  rootPath?: string | null;
+}
+
+export interface ConnectedProjectMapping {
+  id: string;
+  name: string;
+  rootPath: string | null;
 }
 
 export interface ConnectedAgentMapping {
   nativeAgentId: string;
   /** The name Exawatt shows. The source keeps its own. */
   displayName: string;
-  project: ProjectTarget;
+  project: ConnectedProjectMapping;
 }
 
 export interface ConnectSourceResult {
   sourceId: string;
-  /** The Agent to open once the roster has it. */
-  openAgentId: string | null;
+  /** Source-native identity to resolve to the projected Agent after saving. */
+  openNativeAgentId: string | null;
   agents: readonly ConnectedAgentMapping[];
 }
 
@@ -148,6 +158,18 @@ export interface ConnectSourceBridge {
   >;
   /** Bounded test plus read-only discovery. Answers once, at the end. */
   connect(sourceId: string): Promise<ConnectAttemptResult>;
+  /** Persists the whole Exawatt-side projection decision atomically in main. */
+  mapAgents(
+    sourceId: string,
+    mappings: readonly {
+      nativeAgentId: string;
+      projectId: string;
+      projectLabel: string;
+      displayNameOverride: string | null;
+    }[]
+  ): Promise<
+    { ok: true; mapped: number } | { ok: false; issues: readonly string[] }
+  >;
   /**
    * Main's per-source connection channel, where the bounded test's progress
    * actually lives.
@@ -184,6 +206,7 @@ function electronBridge(): ConnectSourceBridge | null {
     sshAliases: () => api.sshAliases(),
     add: input => api.add(input),
     connect: sourceId => api.connect(sourceId),
+    mapAgents: (sourceId, mappings) => api.mapAgents(sourceId, [...mappings]),
     // Older bridges predate the channel. A dialog with no progress still
     // connects; it just cannot tick, so this degrades rather than throwing.
     onSourceChanged: handler =>
@@ -214,6 +237,7 @@ export function ConnectSourceDialog({
     initialConnectFlowState
   );
   const [serverError, setServerError] = useState<string | null>(null);
+  const [mappingError, setMappingError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const aliasesRequested = useRef(false);
   /** The step's own content, so focus can follow a step change into it. */
@@ -221,6 +245,16 @@ export function ConnectSourceDialog({
   const retainedDraft = useRef<ManualServerDraft | null>(null);
   /** Bumped whenever a result in flight stops being the one on screen. */
   const attempt = useRef(0);
+  /**
+   * A retry reuses the same opaque identity. The source mapping write may
+   * have committed even when its acknowledgement was lost, so minting a new
+   * Project on every click would turn a transport retry into product state.
+   */
+  const manualProjectIds = useRef(new Map<string, string>());
+  /** Projects that may already be referenced by a mapping whose ack was lost. */
+  const uncertainProjectIds = useRef(new Set<string>());
+  /** Main accepted this source's whole projection plan; cleanup cannot detach it. */
+  const committedSourceId = useRef<string | null>(null);
 
   const resolvedBridge = useMemo(
     () => (bridge === undefined ? electronBridge() : bridge),
@@ -258,10 +292,17 @@ export function ConnectSourceDialog({
     attempt.current += 1;
     aliasesRequested.current = false;
     retainedDraft.current = outcome.retainedDraft;
-    if (outcome.releaseSourceId) {
+    if (
+      outcome.releaseSourceId &&
+      outcome.releaseSourceId !== committedSourceId.current
+    ) {
       void bridgeRef.current?.detach(outcome.releaseSourceId).catch(() => {});
     }
+    committedSourceId.current = null;
+    manualProjectIds.current.clear();
+    uncertainProjectIds.current.clear();
     setServerError(null);
+    setMappingError(null);
     setBusy(false);
     dispatch({ type: 'cancel' });
   }, [open, state]);
@@ -458,22 +499,112 @@ export function ConnectSourceDialog({
    * says "Connected." with a Done button on it is one keystroke standing
    * between them and the person they came to see.
    */
-  const finish = useCallback(() => {
-    if (step.kind !== 'map-projects') return;
+  const finish = useCallback(async () => {
+    if (step.kind !== 'map-projects' || busy) return;
     const outcome = saveConnectFlow(state, knownProjectIds);
-    dispatch({ type: 'save', knownProjectIds });
-    if (!outcome.ok) return;
-    onConnected?.({
-      sourceId: outcome.sourceId,
-      openAgentId: outcome.openAgentId,
-      agents: outcome.rows.map(row => ({
-        nativeAgentId: row.nativeAgentId,
-        displayName: resolvedDisplayName(row),
-        project: row.project,
-      })),
-    });
-    onOpenChange(false);
-  }, [knownProjectIds, onConnected, onOpenChange, state, step]);
+    // Validation writes its issues through the reducer; durable custody does
+    // not change until main confirms the projection-plan write below.
+    if (!outcome.ok) {
+      dispatch({ type: 'save', knownProjectIds });
+      return;
+    }
+    const api = bridgeRef.current;
+    if (!api) return;
+
+    setBusy(true);
+    setMappingError(null);
+    const createdProjectIds: string[] = [];
+    let mapAttempted = false;
+    try {
+      const agents: ConnectedAgentMapping[] = [];
+      const inputs: Parameters<ConnectSourceBridge['mapAgents']>[1][number][] =
+        [];
+      for (const row of outcome.rows) {
+        let project: ConnectedProjectMapping;
+        if (row.project.kind === 'existing-project') {
+          const projectId = row.project.projectId;
+          const known = projects.find(candidate => candidate.id === projectId);
+          if (!known) {
+            setMappingError('Choose a Project that still exists.');
+            return;
+          }
+          project = {
+            id: known.id,
+            name: known.name,
+            rootPath: known.rootPath ?? null,
+          };
+        } else {
+          const identityKey = `${outcome.sourceId}:${row.nativeAgentId}`;
+          const projectId =
+            manualProjectIds.current.get(identityKey) ?? crypto.randomUUID();
+          manualProjectIds.current.set(identityKey, projectId);
+          const created = await openManualProject({
+            id: projectId,
+            name: row.project.name,
+          });
+          createdProjectIds.push(created.id);
+          project = {
+            id: created.id,
+            name: created.name,
+            rootPath: created.root_path,
+          };
+        }
+        agents.push({
+          nativeAgentId: row.nativeAgentId,
+          displayName: resolvedDisplayName(row),
+          project,
+        });
+        inputs.push({
+          nativeAgentId: row.nativeAgentId,
+          projectId: project.id,
+          projectLabel: project.name,
+          displayNameOverride: row.nameOverride,
+        });
+      }
+
+      mapAttempted = true;
+      const saved = await api.mapAgents(outcome.sourceId, inputs);
+      if (!saved.ok) {
+        // A previous acknowledgement may have been lost. An explicit refusal
+        // now does not prove the earlier atomic write failed, so only Projects
+        // that have never crossed that ambiguous boundary are safe to archive.
+        await Promise.allSettled(
+          createdProjectIds
+            .filter(id => !uncertainProjectIds.current.has(id))
+            .map(archiveProject)
+        );
+        setMappingError(
+          saved.issues[0] ?? 'Exawatt could not save these Agent mappings.'
+        );
+        return;
+      }
+
+      // Custody changes only after main confirms the complete mapping write.
+      for (const id of createdProjectIds)
+        uncertainProjectIds.current.delete(id);
+      committedSourceId.current = outcome.sourceId;
+      dispatch({ type: 'save', knownProjectIds });
+      onConnected?.({
+        sourceId: outcome.sourceId,
+        openNativeAgentId: outcome.openAgentId,
+        agents,
+      });
+      onOpenChange(false);
+    } catch {
+      if (!mapAttempted) {
+        await Promise.allSettled(createdProjectIds.map(archiveProject));
+      } else {
+        for (const id of createdProjectIds) uncertainProjectIds.current.add(id);
+      }
+      // Once mapAgents has been invoked, losing its acknowledgement is not
+      // proof that main failed to commit, so durable Projects stay intact.
+      setMappingError(
+        'Exawatt could not save these Agent mappings. Try again.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, knownProjectIds, onConnected, onOpenChange, projects, state, step]);
 
   const manualIssues =
     step.kind === 'choose-server' && step.manual
@@ -559,14 +690,21 @@ export function ConnectSourceDialog({
           label: lead
             ? `Connect and open ${resolvedDisplayName(lead)}`
             : 'Connect',
-          run: finish,
+          disabled: busy,
+          run: () => void finish(),
         };
       }
     }
   })();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next && busy && step.kind === 'map-projects') return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent
         data-connect-source
         primaryAction={primaryAction}
@@ -659,14 +797,26 @@ export function ConnectSourceDialog({
           )}
 
           {step.kind === 'map-projects' && (
-            <ProjectMapper
-              rows={step.rows}
-              projects={projects}
-              issues={state.issues}
-              onEdit={(nativeAgentId, patch) =>
-                dispatch({ type: 'edit-mapping', nativeAgentId, patch })
-              }
-            />
+            <div className="grid gap-3">
+              {mappingError && (
+                <p
+                  role="alert"
+                  className="font-mono text-chrome-label"
+                  style={{ color: HUD.red }}
+                >
+                  {mappingError}
+                </p>
+              )}
+              <ProjectMapper
+                rows={step.rows}
+                projects={projects}
+                issues={state.issues}
+                onEdit={(nativeAgentId, patch) => {
+                  setMappingError(null);
+                  dispatch({ type: 'edit-mapping', nativeAgentId, patch });
+                }}
+              />
+            </div>
           )}
         </div>
 
@@ -678,6 +828,7 @@ export function ConnectSourceDialog({
             {canGoBack(state) && (
               <button
                 type="button"
+                disabled={busy && step.kind === 'map-projects'}
                 onClick={() => dispatch({ type: 'back' })}
                 className="inline-flex h-8 items-center gap-2 rounded px-2 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{ color: HUD.textDim }}
@@ -687,6 +838,7 @@ export function ConnectSourceDialog({
             )}
             <button
               type="button"
+              disabled={busy && step.kind === 'map-projects'}
               onClick={leave}
               className="inline-flex h-8 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: HUD.text, borderColor: HUD.strokeSoft }}

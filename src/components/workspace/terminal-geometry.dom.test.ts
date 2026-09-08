@@ -1,9 +1,18 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from 'vitest';
 import {
   TERMINAL_INSET,
   TERMINAL_SCROLLBAR_GUTTER,
   createTerminalSizeSync,
   expectedTerminalCols,
+  observeTerminalGeometry,
   publishTerminalGeometry,
   terminalInsetVariables,
 } from './terminal-geometry';
@@ -56,6 +65,97 @@ describe('terminal geometry contract', () => {
   it('never proposes fewer than two columns', () => {
     expect(expectedTerminalCols(10, 10)).toBe(2);
     expect(expectedTerminalCols(1000, 0)).toBe(0);
+  });
+});
+
+describe('renderer metric changes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('refits a fixed-size visible pane after display-scale metrics change, and freezes its hidden sibling', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    const paint = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback(0);
+    };
+    const observers: Array<{ targets: Set<Element>; notify: () => void }> = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        targets = new Set<Element>();
+        constructor(notify: () => void) {
+          observers.push({ targets: this.targets, notify });
+        }
+        observe(target: Element) {
+          this.targets.add(target);
+        }
+        disconnect() {
+          this.targets.clear();
+        }
+      }
+    );
+    const resized = (target: Element) => {
+      for (const observer of observers) {
+        if (observer.targets.has(target)) observer.notify();
+      }
+    };
+    let cellWidth = 8;
+    const panes = [false, true].map(hidden => {
+      const measure = sizedElement(800, 400);
+      const screen = document.createElement('div');
+      const term = { cols: 100, rows: 30 };
+      const resize = vi.fn();
+      const state = { hidden };
+      const sync = createTerminalSizeSync({
+        pane: document.createElement('div'),
+        measure,
+        term,
+        resize,
+        fit: () => {
+          term.cols = expectedTerminalCols(measure.offsetWidth, cellWidth);
+        },
+        frozen: () => state.hidden,
+      });
+      const disconnect = observeTerminalGeometry({ measure, screen, sync });
+      return { screen, term, resize, state, sync, disconnect };
+    });
+
+    // Only the renderer's cells change. The container emits no resize event.
+    cellWidth = 7;
+    for (const pane of panes) {
+      resized(pane.screen);
+      resized(pane.screen);
+    }
+    expect(frames.size).toBe(panes.length);
+    paint();
+    expect(panes[0].resize).toHaveBeenLastCalledWith(
+      expectedTerminalCols(800, cellWidth),
+      30
+    );
+    expect(panes[1].resize).not.toHaveBeenCalled();
+    expect(panes[1].term.cols).toBe(100);
+
+    // Revealing the other pane consumes current metrics, not its hidden box.
+    panes[1].state.hidden = false;
+    panes[1].sync();
+    expect(panes[1].resize).toHaveBeenLastCalledWith(
+      expectedTerminalCols(800, cellWidth),
+      30
+    );
+    for (const pane of panes) {
+      resized(pane.screen);
+      pane.disconnect();
+      pane.resize.mockClear();
+      resized(pane.screen);
+      paint();
+      expect(pane.resize).not.toHaveBeenCalled();
+    }
   });
 });
 

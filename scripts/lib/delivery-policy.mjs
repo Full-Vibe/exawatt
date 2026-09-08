@@ -205,6 +205,28 @@ export const SURFACE_GATES = [
       file === 'scripts/lib/packaged-app.mjs',
   },
   {
+    gate: 'eval:electron:connected-fleet',
+    why: 'customer-hosted Agents cross the packaged preload, IPC, Gateway runtime, durable mapping, and Agent/Team/Fleet composition as one surface',
+    match: file =>
+      file === 'packages/core/src/sources/connected-source.ts' ||
+      file === 'packages/core/src/oc/client.ts' ||
+      file === 'packages/core/src/oc/topology-adapter.ts' ||
+      file === 'electron/main/connected-sources-ipc.ts' ||
+      file === 'electron/main/connected-source-runtime.ts' ||
+      file === 'electron/main/connected-source-store.ts' ||
+      file === 'electron/main/connected-gateway.ts' ||
+      file === 'electron/main/preload.ts' ||
+      file === 'src/components/workspace/connect-source-dialog.tsx' ||
+      file === 'src/components/workspace/expose-overlay.tsx' ||
+      file === 'src/components/workspace/workspace-client.tsx' ||
+      file.startsWith('src/components/workspace/remote-agent/') ||
+      file === 'src/lib/fleet/fleet-provider.tsx' ||
+      file === 'src/components/fleet/spatial/spatial-fleet-client.tsx' ||
+      file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
+      file === 'scripts/electron-connected-fleet-eval.mjs' ||
+      file === 'scripts/lib/connected-gateway-fixture.mjs',
+  },
+  {
     gate: 'eval:workspace:launcher',
     why: 'the New Agent launcher has a deterministic state/interaction rig',
     // option-menu is the launcher's list renderer (decision `0033`, one menu
@@ -265,7 +287,12 @@ export const SURFACE_GATES = [
     // main's realpath of the working directory instead of to the Project group
     // holding the tab, and Grok classified a concrete model id as an account
     // default, which told the composer to omit the flag it was displaying.
+    // BUG-116 repaired the connected-source bridge's initial render: SSR and
+    // hydration share the shell, then an effect discovers desktop custody.
+    // Settings owns this gate too; a registry-only path map missed the cause.
     match: file =>
+      file === 'src/app/settings/agent-sources-settings.tsx' ||
+      file === 'src/app/settings/connected-sources-section.tsx' ||
       file === 'src/components/workspace/agent-sources.ts' ||
       file === 'electron/main/agent-sources-ipc.ts' ||
       file === 'electron/main/pty/agent-models.ts',
@@ -493,6 +520,45 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       id: 'qa:browser:doctor',
       command: 'pnpm',
       args: ['run', 'qa:browser:doctor'],
+    });
+  }
+
+  // ENG-030 OS4.5. The compatibility schemas used to be executable only as
+  // isolated JSON shapes: a client or hosted route could drop the version
+  // header, reject an additive response, or replay an ambiguous POST while the
+  // schema suite stayed green. Every owner of that wire boundary now owes the
+  // strict loopback matrix. The command is separate from `test:contracts` so a
+  // landing names the behavioral promise it broke.
+  if (
+    paths.some(
+      file =>
+        file.startsWith('contracts/conformance/') ||
+        file.startsWith('contracts/services/') ||
+        file === 'packages/core/src/distribution/service-clients.ts' ||
+        file === 'packages/core/src/distribution/service-protocol.ts' ||
+        file === 'packages/core/src/service-protocol.ts' ||
+        file === 'electron/main/pty/enrichment-distribution.ts' ||
+        file === 'electron/main/pty/context-summarizer.ts' ||
+        file === 'electron/main/pty/conversation-catalog.ts' ||
+        file === 'src/lib/feedback/contract.ts' ||
+        file === 'src/lib/goal-visuals/contract.ts' ||
+        file === 'src/lib/operator-stats/auto-sync.ts' ||
+        file === 'src/components/feedback/product-feedback-provider.tsx' ||
+        file === 'src/components/feedback/use-untriaged-feedback.ts' ||
+        file === 'src/components/hud/goal-visual-layout-study.tsx' ||
+        file === 'src/components/operator-stats/publish-panel.tsx' ||
+        file ===
+          'company/overlay/web/src/app/api/service-conformance.test.ts' ||
+        /^company\/overlay\/web\/src\/app\/api\/(?:context-labels|conversations\/summarize|goal-visuals|feedback|operator-stats)\/.*\.(?:test\.)?ts$/.test(
+          file
+        )
+    )
+  ) {
+    checks.push({
+      id: 'test:service-conformance',
+      command: 'pnpm',
+      args: ['run', 'test:service-conformance'],
+      rerun: VITEST_RERUN,
     });
   }
 

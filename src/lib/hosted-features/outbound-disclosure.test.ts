@@ -340,15 +340,15 @@ const SHIPPED_TREES = ['src', 'electron', 'packages/core/src'];
 
 /**
  * Every shipped module that can issue an HTTP request of its own, mapped to the
- * manifest section that discloses what it sends. `null` means the module only
- * PASSES a transport around and adds no destination of its own.
+ * manifest section(s) that disclose what it sends. `null` means the module
+ * only PASSES a transport around and adds no destination of its own.
  *
  * Modules that reach Supabase through `createOptionalClient` /
  * `accountServerClient` do not appear here and are not missing: they carry no
  * `fetch` of their own, and `community-closure.test.ts` already censuses every
  * site that can construct a remote client.
  */
-const OUTBOUND_CALL_SITES: Record<string, string | null> = {
+const OUTBOUND_CALL_SITES: Record<string, string | readonly string[] | null> = {
   'electron/main/auth-coordinator.ts': '## 5. Supabase',
   // Wraps whatever transport it is handed and records phase metadata locally.
   'electron/main/auth-diagnostics.ts': null,
@@ -356,15 +356,18 @@ const OUTBOUND_CALL_SITES: Record<string, string | null> = {
     '## 7. Locally spawned agent harnesses',
   // Injects `electron.net.fetch` into the modules above; opens no destination.
   'electron/main/main.ts': null,
-  'electron/main/pty/context-summarizer.ts': '## 2. Hosted context labels',
   'electron/main/pty/conversation-catalog.ts':
     '## 3. Hosted conversation summaries',
-  'src/components/feedback/product-feedback-provider.tsx': '## 5. Supabase',
-  'src/components/feedback/use-untriaged-feedback.ts': '## 5. Supabase',
-  'src/components/hud/goal-visual-layout-study.tsx': '## 4. Goal visuals',
-  'src/components/operator-stats/publish-panel.tsx': '## 5. Supabase',
+  // The compatible-service boundary constructs transport for five operation
+  // families; the callers retain their operation-specific disclosure and
+  // controls while this module owns the actual request.
+  'packages/core/src/distribution/service-protocol.ts': [
+    '## 2. Hosted context labels',
+    '## 3. Hosted conversation summaries',
+    '## 4. Goal visuals',
+    '## 5. Supabase',
+  ],
   'src/lib/desktop-release/desktop-build.ts': '## 6. App updates',
-  'src/lib/operator-stats/auto-sync.ts': '## 5. Supabase',
   'src/lib/operator-stats/public.ts': '## 5. Supabase',
   'src/lib/server/authenticated-supabase.ts': '## 5. Supabase',
   'src/proxy.ts': '## 5. Supabase',
@@ -419,13 +422,16 @@ describe('every outbound call site is declared and disclosed', () => {
   });
 
   it('points every declared call site at a section the manifest really has', () => {
-    for (const [file, section] of Object.entries(OUTBOUND_CALL_SITES)) {
-      if (section === null) continue;
-      expect(
-        MANIFEST,
-        `${file} claims to be disclosed under "${section}", which ` +
-          `${MANIFEST_PATH} does not contain`
-      ).toContain(section);
+    for (const [file, declared] of Object.entries(OUTBOUND_CALL_SITES)) {
+      if (declared === null) continue;
+      const sections = typeof declared === 'string' ? [declared] : declared;
+      for (const section of sections) {
+        expect(
+          MANIFEST,
+          `${file} claims to be disclosed under "${section}", which ` +
+            `${MANIFEST_PATH} does not contain`
+        ).toContain(section);
+      }
     }
   });
 
@@ -457,14 +463,13 @@ describe('the analytics claim is anchored to what decides it', () => {
     // release workflow never mentions NEXT_PUBLIC_POSTHOG_KEY. That guard was
     // inert: `src/lib/analytics/config.ts` states in as many words that
     // ambient NEXT_PUBLIC_POSTHOG_* variables are deliberately invisible, and
-    // the release workflow builds with EXAWATT_DISTRIBUTION_CONFIG_JSON, whose
-    // `analytics` member is what actually decides.
+    // the official release receives a distribution contract whose `analytics`
+    // member is what actually decides. Private `release-custody.test.mjs`
+    // separately owns that workflow seam; this public test owns the portable
+    // distribution behavior.
     expect(read('src/lib/analytics/config.ts')).toContain(
       'Ambient legacy\n * `NEXT_PUBLIC_POSTHOG_*` variables are deliberately invisible here.'
     );
-    const workflow = read('.github/workflows/release-macos.yml');
-    expect(workflow).toContain('EXAWATT_DISTRIBUTION_CONFIG_JSON');
-
     expect(
       resolveDistributionAnalyticsDecision(
         OFFICIAL,

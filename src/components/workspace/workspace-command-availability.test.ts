@@ -69,6 +69,29 @@ describe('workspace command availability', () => {
     expect(state.commands['jump-attention'].available).toBe(false);
   });
 
+  it('withholds filesystem commands from a folderless Project', () => {
+    const state = deriveWorkspaceCommandAvailability(
+      input({
+        activeProjectName: 'Remote operations',
+        hasLocalProjectRoot: false,
+        canClose: true,
+      })
+    );
+
+    for (const command of [
+      'launch-shell',
+      'open-roadmap',
+      'reveal-path',
+    ] as const) {
+      expect(state.commands[command]).toEqual({
+        available: false,
+        reason: 'This Project has no local folder',
+      });
+    }
+    expect(state.commands['rename-project'].available).toBe(true);
+    expect(state.commands['close-project'].available).toBe(true);
+  });
+
   it('enables tab and attention verbs only when they have a target', () => {
     const state = deriveWorkspaceCommandAvailability(
       input({

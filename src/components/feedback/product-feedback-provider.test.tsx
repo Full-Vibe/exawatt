@@ -60,9 +60,23 @@ function client(session = SESSION) {
   return {
     auth: {
       getSession: vi.fn(async () => ({ data: { session } })),
-      onAuthStateChange: vi.fn(() => ({
-        data: { subscription: { unsubscribe: vi.fn() } },
-      })),
+      onAuthStateChange: vi.fn(
+        (listener: (event: string, value: typeof SESSION | null) => void) => {
+          let active = true;
+          queueMicrotask(() => {
+            if (active) listener('INITIAL_SESSION', session);
+          });
+          return {
+            data: {
+              subscription: {
+                unsubscribe: () => {
+                  active = false;
+                },
+              },
+            },
+          };
+        }
+      ),
     },
   };
 }
@@ -103,6 +117,40 @@ afterEach(() => {
 });
 
 describe('ProductFeedbackProvider distribution boundary', () => {
+  it('does not reinstall an obsolete credential after the account signs out', async () => {
+    distributionState.current = distribution({
+      url: FEEDBACK_URL,
+      protocolVersion: 1,
+    });
+    let settle!: (value: { data: { session: typeof SESSION } }) => void;
+    const staleRead = new Promise<{ data: { session: typeof SESSION } }>(
+      resolve => {
+        settle = resolve;
+      }
+    );
+    clientState.current!.auth.getSession.mockReturnValue(staleRead);
+    const setContextAuth = vi.fn();
+    window.electron = {
+      pty: { setContextAuth },
+      feedback: { setAuthenticated: vi.fn() },
+    } as unknown as typeof window.electron;
+    render(
+      <ProductFeedbackProvider>
+        <Probe />
+      </ProductFeedbackProvider>
+    );
+    await act(async () => {});
+    const listener =
+      clientState.current!.auth.onAuthStateChange.mock.calls[0][0];
+    act(() => listener('SIGNED_OUT', null));
+    expect(feedback!.isAuthenticated).toBe(false);
+    await act(async () => {
+      settle({ data: { session: SESSION } });
+    });
+    expect(feedback!.isAuthenticated).toBe(false);
+    expect(setContextAuth).toHaveBeenLastCalledWith(null);
+  });
+
   it('stops before account auth or fetch and exposes honest absence', async () => {
     distributionState.current = distribution(null);
     const fetchSpy = vi.fn();
@@ -137,11 +185,16 @@ describe('ProductFeedbackProvider distribution boundary', () => {
       url: FEEDBACK_URL,
       protocolVersion: 1,
     });
-    const fetchSpy = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) => ({
-        ok: true,
-        status: 201,
-      })
+    const fetchSpy = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          schemaVersion: 1,
+          id: '223e4567-e89b-42d3-a456-426614174000',
+          duplicate: false,
+          attachmentStored: false,
+        },
+        { status: 201, headers: { 'Exawatt-Service-Version': '1' } }
+      )
     );
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -168,18 +221,16 @@ describe('ProductFeedbackProvider distribution boundary', () => {
     });
 
     expect(submitted).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledWith(
-      FEEDBACK_URL,
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          authorization: `Bearer ${SESSION.access_token}`,
-          'content-type': 'application/json',
-        }),
-      })
-    );
-    const body = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(FEEDBACK_URL);
+    expect(init).toMatchObject({ method: 'POST' });
+    const headers = new Headers(init?.headers);
+    expect(headers.get('authorization')).toBe(`Bearer ${SESSION.access_token}`);
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('Exawatt-Service-Version')).toBe('1');
+    const body = JSON.parse(init!.body as string);
     expect(body).toMatchObject({
+      schemaVersion: 1,
       kind: 'context_label',
       sentiment: -1,
       surface: 'workspace-tab-strip',

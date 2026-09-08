@@ -132,6 +132,18 @@ export function parseContextLabelRequest(raw: string): ContextLabelRequest {
   if (!value || typeof value !== 'object')
     throw new Error('Request is invalid');
   const input = value as Record<string, unknown>;
+  const allowedFields = new Set([
+    'schemaVersion',
+    'sessionKey',
+    'projectName',
+    'currentLabel',
+    'currentLabelSource',
+    'initialInstruction',
+    'recentInstructions',
+  ]);
+  if (Object.keys(input).some(field => !allowedFields.has(field))) {
+    throw new Error('Request contains unsupported fields');
+  }
   if (input.schemaVersion !== CONTEXT_LABEL_SCHEMA_VERSION) {
     throw new Error('Schema version is unsupported');
   }
@@ -175,6 +187,10 @@ export function parseContextLabelRequest(raw: string): ContextLabelRequest {
       throw new Error(`Instruction ${index + 1} is invalid`);
     }
     const item = entry as Record<string, unknown>;
+    const allowedInstructionFields = new Set(['text', 'submittedAt']);
+    if (Object.keys(item).some(field => !allowedInstructionFields.has(field))) {
+      throw new Error(`Instruction ${index + 1} contains unsupported fields`);
+    }
     const text = boundedString(
       item.text,
       `Instruction ${index + 1}`,

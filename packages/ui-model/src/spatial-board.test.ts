@@ -134,8 +134,8 @@ describe('selectSpatialBoardLayout', () => {
       expect(new Set(layout.zones.map(zone => zone.slotIndex)).size).toBe(
         projectCount
       );
-      expect(layout.bounds.width).toBeLessThanOrEqual(111);
-      expect(layout.bounds.height).toBeLessThanOrEqual(60);
+      expect(layout.bounds.width).toBeLessThanOrEqual(65);
+      expect(layout.bounds.height).toBeLessThanOrEqual(72);
       for (const zone of layout.zones) {
         expect(Number.isFinite(zone.rect.x)).toBe(true);
         expect(Number.isFinite(zone.rect.y)).toBe(true);
@@ -144,6 +144,114 @@ describe('selectSpatialBoardLayout', () => {
       }
     }
   );
+
+  it('packs the common four-Project fleet as a balanced 2x2 overview', () => {
+    const layout = selectSpatialBoardLayout(projectFleet(4));
+    const centers = layout.zones.map(zone => ({
+      x: zone.rect.x + zone.rect.width / 2,
+      y: zone.rect.y + zone.rect.height / 2,
+    }));
+
+    expect(new Set(centers.map(center => center.x))).toHaveLength(2);
+    expect(new Set(centers.map(center => center.y))).toHaveLength(2);
+    expect(layout.bounds.width / layout.bounds.height).toBeLessThan(1.25);
+  });
+
+  it('offers a stable honeycomb policy without changing slot ownership', () => {
+    const balanced = selectSpatialBoardLayout(projectFleet(10));
+    const honeycomb = selectSpatialBoardLayout(projectFleet(10), {
+      projectPacking: 'honeycomb',
+    });
+
+    expect(honeycomb.projectPacking).toBe('honeycomb');
+    expect(honeycomb.zones.map(zone => zone.slotIndex)).toEqual(
+      balanced.zones.map(zone => zone.slotIndex)
+    );
+    expect(honeycomb.zones.map(zone => zone.rect)).not.toEqual(
+      balanced.zones.map(zone => zone.rect)
+    );
+
+    const before = selectSpatialBoardLayout(projectFleet(6), {
+      projectPacking: 'honeycomb',
+    });
+    const after = selectSpatialBoardLayout(projectFleet(10), {
+      projectPacking: 'honeycomb',
+      previousLayout: before,
+    });
+    for (const previous of before.zones) {
+      expect(after.zones.find(zone => zone.id === previous.id)?.rect).toEqual(
+        previous.rect
+      );
+    }
+  });
+
+  it.each([1, 25, 200])(
+    'keeps automatic Project circles disjoint at %i Agents per Project',
+    agentsPerProject => {
+      for (const projectPacking of ['balanced', 'honeycomb'] as const) {
+        const layout = selectSpatialBoardLayout(
+          projectFleet(10, agentsPerProject),
+          { projectPacking }
+        );
+
+        for (let left = 0; left < layout.zones.length; left += 1) {
+          for (let right = left + 1; right < layout.zones.length; right += 1) {
+            const a = layout.zones[left]!;
+            const b = layout.zones[right]!;
+            const distance = Math.hypot(
+              a.rect.x + a.radius - b.rect.x - b.radius,
+              a.rect.y + a.radius - b.rect.y - b.radius
+            );
+            expect(
+              distance,
+              `${projectPacking}: ${a.id} overlaps ${b.id}`
+            ).toBeGreaterThanOrEqual(a.radius + b.radius);
+          }
+        }
+      }
+    }
+  );
+
+  it('selects a Project visually without moving or focusing it', () => {
+    const baseline = selectSpatialBoardLayout(projectFleet(4));
+    const selectedProjectId = baseline.zones[2]!.id;
+    const selected = selectSpatialBoardLayout(projectFleet(4), {
+      selectedProjectId,
+    });
+
+    expect(selected.altitude).toBe('fleet');
+    expect(selected.focusedProjectId).toBeNull();
+    expect(selected.selectedProjectId).toBe(selectedProjectId);
+    expect(
+      selected.zones.filter(zone => zone.selected).map(zone => zone.id)
+    ).toEqual([selectedProjectId]);
+    expect(selected.zones.map(zone => zone.rect)).toEqual(
+      baseline.zones.map(zone => zone.rect)
+    );
+  });
+
+  it('keeps existing Project addresses when the balanced lattice grows', () => {
+    const before = selectSpatialBoardLayout(projectFleet(4));
+    const after = selectSpatialBoardLayout(projectFleet(6), {
+      previousLayout: before,
+    });
+
+    for (const previous of before.zones) {
+      const current = after.zones.find(zone => zone.id === previous.id);
+      expect(current?.rect).toEqual(previous.rect);
+    }
+  });
+
+  it('keeps outward addresses unique beyond the default aggregation budget', () => {
+    const layout = selectSpatialBoardLayout(projectFleet(50), {
+      maxProjectZones: 50,
+    });
+    const centers = layout.zones.map(
+      zone => `${zone.rect.x + zone.radius}:${zone.rect.y + zone.radius}`
+    );
+
+    expect(new Set(centers)).toHaveLength(layout.zones.length);
+  });
 
   it('is invariant to FleetState insertion order and projection', () => {
     const agents = [
@@ -232,8 +340,12 @@ describe('selectSpatialBoardLayout', () => {
     };
     // Population growth may resize the circular boundary; its stable address
     // is the center/slot, not a frozen footprint.
-    expect(center('b', next)).toEqual(center('b', initial));
-    expect(center('c', next)).toEqual(center('c', initial));
+    for (const id of ['b', 'c']) {
+      const before = center(id, initial);
+      const after = center(id, next);
+      expect(after.x).toBeCloseTo(before.x, 8);
+      expect(after.y).toBeCloseTo(before.y, 8);
+    }
     expect(spatialBoardPieceForAgent(next, 'beta-2')).toMatchObject({
       x: spatialBoardPieceForAgent(initial, 'beta-2')?.x,
       y: spatialBoardPieceForAgent(initial, 'beta-2')?.y,

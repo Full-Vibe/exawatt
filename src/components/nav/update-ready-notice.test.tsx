@@ -89,6 +89,7 @@ function installApi(productUpdates = true) {
         throw new Error('unused');
       },
       saveDiagnosticsReport: async () => ({ ok: false, filePath: null }),
+      reportRenderError: async () => undefined,
       setWorkspaceCheckpointOwner: async () => undefined,
       completeCheckpoint: async () => undefined,
       onCheckpointRequest: () => () => undefined,

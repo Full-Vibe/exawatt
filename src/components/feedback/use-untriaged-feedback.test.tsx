@@ -29,6 +29,12 @@ vi.mock('@/lib/supabase/client', () => ({ createOptionalClient }));
 
 import { useUntriagedFeedbackCount } from './use-untriaged-feedback';
 
+function serviceResponse(body: unknown): Response {
+  return Response.json(body, {
+    headers: { 'Exawatt-Service-Version': '1' },
+  });
+}
+
 describe('useUntriagedFeedbackCount (ENG-025 F3.1 / WP1b)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,14 +47,11 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1 / WP1b)', () => {
       data: { session: { access_token: 'access-token' } },
     });
     fetchMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          schemaVersion: 1,
-          canTriage: true,
-          untriagedCount: 3,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } }
-      )
+      serviceResponse({
+        schemaVersion: 1,
+        canTriage: true,
+        untriagedCount: 3,
+      })
     );
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -56,20 +59,17 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1 / WP1b)', () => {
   it('renders the server-derived operator count without a browser allowlist', async () => {
     const { result } = renderHook(() => useUntriagedFeedbackCount());
     await waitFor(() => expect(result.current).toBe(3));
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://service.example.test/feedback',
-      expect.objectContaining({
-        method: 'GET',
-        headers: expect.objectContaining({
-          authorization: 'Bearer access-token',
-        }),
-      })
-    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://service.example.test/feedback');
+    expect(init).toMatchObject({ method: 'GET' });
+    const headers = new Headers(init.headers);
+    expect(headers.get('authorization')).toBe('Bearer access-token');
+    expect(headers.get('Exawatt-Service-Version')).toBe('1');
   });
 
   it('shows no triage vocabulary when the service denies capability', async () => {
     fetchMock.mockResolvedValue(
-      Response.json({
+      serviceResponse({
         schemaVersion: 1,
         canTriage: false,
         untriagedCount: null,
@@ -103,7 +103,7 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1 / WP1b)', () => {
   });
 
   it('reports unknown rather than a wrong zero for failures or invalid DTOs', async () => {
-    fetchMock.mockResolvedValue(Response.json({ canTriage: true }));
+    fetchMock.mockResolvedValue(serviceResponse({ canTriage: true }));
     const { result } = renderHook(() => useUntriagedFeedbackCount());
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(result.current).toBeNull();

@@ -1,9 +1,10 @@
 /**
  * Cloud preview model (ENG-026 N3, previewing ENG-033).
  *
- * The one-click "push an Agent to an Exawatt-hosted plan" story, told over a
- * real Voltaic fixture Agent so the before/after is a view over the same
- * source the Demo Workspace uses — never an invented session.
+ * The future managed-placement and transfer concept, shown with a real Voltaic
+ * fixture Agent so the preview uses the same source as the Demo Workspace. The
+ * fixture is a display example, not a promise that Session, Project, identity,
+ * or tab continuity already exists.
  */
 import {
   DEMO_BASE_AGENTS,
@@ -18,8 +19,9 @@ export interface CloudHero {
 }
 
 /**
- * The Agent the push story is told about: a live-capability, actively working
- * Claude Code Session — the kind whose laptop-lid problem Cloud solves.
+ * The Agent the future-placement concept is shown with: a live-capability,
+ * actively working Claude Code Session. Selection makes the preview concrete;
+ * it does not claim a running Session can move today.
  */
 export function demoCloudHero(): CloudHero {
   const agent =

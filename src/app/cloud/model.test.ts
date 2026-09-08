@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { demoCloudHero } from './model';
 
 describe('demoCloudHero (ENG-026 N3, previewing ENG-033)', () => {
-  it('tells the push story about a live, working, delegating Claude Code Session', () => {
+  it('shows the future-placement concept with a live, working, delegating Claude Code Session', () => {
     const { agent, project } = demoCloudHero();
     expect(agent.readiness).toBe('live');
     expect(agent.status).toBe('working');

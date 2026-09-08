@@ -61,6 +61,9 @@ function strip({
   feedbackEnabled = false,
   onRateContext,
   onCloseProject,
+  rootPath,
+  onNewAgent,
+  onRevealPath,
   cloneTargets,
   onCloneTab,
   exitingProjectDirs,
@@ -76,6 +79,9 @@ function strip({
   feedbackEnabled?: boolean;
   onRateContext?: ComponentProps<typeof TabStrip>['onRateContext'];
   onCloseProject?: (dir: string) => void;
+  rootPath?: string | null;
+  onNewAgent?: (dir: string) => void;
+  onRevealPath?: (path: string) => void;
   cloneTargets?: CloneSessionTarget[];
   onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
   exitingProjectDirs?: ReadonlySet<string>;
@@ -89,6 +95,7 @@ function strip({
     const projects: Project[] = [
       {
         dir: '/repo',
+        ...(rootPath !== undefined ? { rootPath } : {}),
         name: 'repo',
         color: '#19E6FF',
         activeTabId: nextTabs[0]?.id ?? null,
@@ -113,6 +120,8 @@ function strip({
           cloneTargets={cloneTargets}
           onCloneTab={onCloneTab}
           onCloseProject={onCloseProject}
+          onNewAgent={onNewAgent}
+          onRevealPath={onRevealPath}
           onSelectProject={vi.fn()}
           onSelectTab={onSelectTab}
           onCloseTab={onCloseTab}
@@ -399,6 +408,24 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.contextMenu(container.querySelector('[data-project]')!);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Close project' }));
     expect(onCloseProject).toHaveBeenCalledWith('/repo');
+  });
+
+  it('withholds local-path actions from a folderless Project', () => {
+    const onNewAgent = vi.fn();
+    const onRevealPath = vi.fn();
+    const { container } = strip({
+      tabs: [],
+      rootPath: null,
+      onNewAgent,
+      onRevealPath,
+    });
+
+    fireEvent.contextMenu(container.querySelector('[data-project]')!);
+    const menu = screen.getByRole('menu', { name: 'repo Project actions' });
+    expect(menu).not.toHaveTextContent('New agent');
+    expect(menu).not.toHaveTextContent('Reveal in Finder');
+    expect(onNewAgent).not.toHaveBeenCalled();
+    expect(onRevealPath).not.toHaveBeenCalled();
   });
 
   it('opens Project actions with Shift-F10 and restores focus on Escape', async () => {

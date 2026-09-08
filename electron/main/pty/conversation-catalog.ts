@@ -18,7 +18,11 @@ import {
 } from '@exawatt/core';
 import {
   COMMUNITY_DISTRIBUTION,
+  summarizeConversations,
+  isCompatibleServiceProblemError,
+  isCompatibleServiceProtocolError,
   type DistributionContractV2,
+  type DistributionEndpointRefV1,
 } from '@exawatt/core/distribution';
 import { planLoginShell, shellQuote } from './login-shell';
 
@@ -67,14 +71,6 @@ interface CachedSummary {
   title: string;
   description: string | null;
   storedAt: number;
-}
-
-interface SummaryResponse {
-  conversations?: Array<{
-    key?: unknown;
-    title?: unknown;
-    summary?: unknown;
-  }>;
 }
 
 const MAX_LEGACY_METADATA_FILES = 1_000;
@@ -267,10 +263,16 @@ function truncate(text: string, maxChars: number): string {
   return `${prefix.slice(0, word > maxChars / 2 ? word : prefix.length)}…`;
 }
 
-function fallbackTitle(turns: string[], id: string): string {
-  const first = turns[0];
-  if (!first) return id;
-  return truncate(first.replace(/^\[Image\]\s*/i, ''), MAX_TITLE_CHARS);
+function fallbackTitle(turns: string[], harness: ConversationHarness): string {
+  const first = turns[0]?.replace(/^\[Image\]\s*/i, '').trim();
+  if (first) return truncate(first, MAX_TITLE_CHARS);
+  const names: Record<ConversationHarness, string> = {
+    claude: 'Claude Code',
+    codex: 'Codex',
+    opencode: 'OpenCode',
+    grok: 'Grok Build',
+  };
+  return `${names[harness]} conversation`;
 }
 
 function summaryTurns(turns: string[]): string[] {
@@ -398,7 +400,11 @@ function normalizeDraftPresentation(
       : summaryInput[summaryInput.length - 1]
         ? truncate(summaryInput[summaryInput.length - 1], MAX_DESCRIPTION_CHARS)
         : null;
-  if (!looksLikeModelNarration(candidate.title)) {
+  if (
+    candidate.title.trim() &&
+    candidate.title !== candidate.id &&
+    !looksLikeModelNarration(candidate.title)
+  ) {
     return { ...candidate, description, summaryInput };
   }
   const titleSource = description
@@ -408,7 +414,7 @@ function normalizeDraftPresentation(
       : [];
   return {
     ...candidate,
-    title: fallbackTitle(titleSource, candidate.id),
+    title: fallbackTitle(titleSource, candidate.harness),
     description,
     titleSource: 'fallback',
     needsSummary: summaryInput.length > 0,
@@ -467,6 +473,7 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
                created_at_ms, updated_at_ms, recency_at_ms
           FROM threads
          WHERE archived = 0 AND (${predicates.join(' OR ')})
+           ${codexOperatorThreadPredicate(database)}
          ORDER BY recency_at_ms DESC
          LIMIT ?
       `);
@@ -505,7 +512,7 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
           cwd: launchDirectory,
           startedAt,
           updatedAt,
-          title: nativeTitle ?? fallbackTitle(turns, record.id),
+          title: nativeTitle ?? fallbackTitle(turns, 'codex'),
           description: turns[turns.length - 1]
             ? truncate(turns[turns.length - 1], MAX_DESCRIPTION_CHARS)
             : null,
@@ -542,7 +549,12 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
         const first = JSON.parse(await readFirstLine(file, stat.size));
         const meta = first?.type === 'session_meta' ? first.payload : null;
         const id = meta?.session_id ?? meta?.id;
-        if (!id || typeof meta?.cwd !== 'string') continue;
+        if (
+          !id ||
+          typeof meta?.cwd !== 'string' ||
+          isCodexSubagentSource(meta.source)
+        )
+          continue;
         const launchDirectory = await scope.launchDirectory(meta.cwd);
         if (!launchDirectory) continue;
         const lines = await readBoundedLines(file, stat.size);
@@ -571,7 +583,7 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
             ? startedAt
             : stat.birthtimeMs || stat.mtimeMs,
           updatedAt: stat.mtimeMs,
-          title: fallbackTitle(turns, id),
+          title: fallbackTitle(turns, 'codex'),
           description: turns[turns.length - 1]
             ? truncate(turns[turns.length - 1], MAX_DESCRIPTION_CHARS)
             : null,
@@ -594,6 +606,39 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
 
 function escapeSqlLike(value: string): string {
   return value.replace(/[\\%_]/g, character => `\\${character}`);
+}
+
+/** Provider-declared children are not operator resume targets. Apply this
+ * before LIMIT so a busy parent cannot crowd every real conversation out.
+ * Older indexes may not have either source column; retain their read path. */
+function codexOperatorThreadPredicate(
+  database: import('node:sqlite').DatabaseSync
+): string {
+  const columns = new Set(
+    (
+      database.prepare('PRAGMA table_info(threads)').all() as Array<{
+        name: string;
+      }>
+    ).map(column => column.name)
+  );
+  return ['source', 'thread_source']
+    .filter(column => columns.has(column))
+    .map(
+      column => `AND CASE WHEN json_valid(${column}) THEN
+      json_type(${column}, '$.subagent') IS NULL
+      AND COALESCE(json_extract(${column}, '$'), '') != 'subagent'
+      ELSE COALESCE(${column}, '') != 'subagent' END`
+    )
+    .join('\n');
+}
+
+function isCodexSubagentSource(source: unknown): boolean {
+  return (
+    source === 'subagent' ||
+    (!!source &&
+      typeof source === 'object' &&
+      Object.prototype.hasOwnProperty.call(source, 'subagent'))
+  );
 }
 
 function finiteTimestamp(value: unknown, fallback: number): number {
@@ -619,7 +664,10 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   constructor(
     private readonly projectsRoot = process.env.EXAWATT_CLAUDE_PROJECTS_ROOT ??
-      path.join(os.homedir(), '.claude', 'projects'),
+      path.join(
+        process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
+        'projects'
+      ),
     private readonly projectDirectories: (
       projectDir: string
     ) => Promise<string[]> = listProjectWorktrees
@@ -631,23 +679,61 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
       cwd,
       async () => workingDirectories
     );
-    const projectDirectories = [cwd, ...workingDirectories].map(directory => ({
-      launchDirectory: directory,
-      historyDirectory: path.join(
-        this.projectsRoot,
-        directory.replace(/[^a-zA-Z0-9_-]/g, '-')
-      ),
-    }));
-    const rows = await Promise.all(
-      [
-        ...new Map(
-          projectDirectories.map(item => [item.historyDirectory, item])
-        ).values(),
-      ].map(async ({ historyDirectory, launchDirectory }) => {
-        const indexed = await this.readIndex(historyDirectory, scope);
-        if (indexed.length > 0) return indexed;
-        return this.readTranscripts(historyDirectory, launchDirectory, scope);
+    const projectDirectories = [cwd, ...workingDirectories, ...scope.roots].map(
+      directory => ({
+        launchDirectory: directory,
+        historyDirectory: path.join(
+          this.projectsRoot,
+          directory.replace(/[^a-zA-Z0-9_-]/g, '-')
+        ),
       })
+    );
+    // Claude encodes each launch cwd as one directory. Include nested cwd
+    // candidates, then check their recorded cwd against scope: encoded names
+    // alone are lossy and cannot establish Project ownership.
+    const knownDirectories = new Map<string, string | null>(
+      projectDirectories.map(item => [
+        item.historyDirectory,
+        item.launchDirectory,
+      ])
+    );
+    try {
+      const prefixes = projectDirectories.map(
+        item => `${path.basename(item.historyDirectory)}-`
+      );
+      for (const entry of await fs.promises.readdir(this.projectsRoot, {
+        withFileTypes: true,
+      })) {
+        if (
+          entry.isDirectory() &&
+          prefixes.some(prefix => entry.name.startsWith(prefix))
+        ) {
+          const directory = path.join(this.projectsRoot, entry.name);
+          if (!knownDirectories.has(directory))
+            knownDirectories.set(directory, null);
+        }
+      }
+    } catch {
+      /* A not-yet-used source has no history directory. */
+    }
+    const rows = await Promise.all(
+      [...knownDirectories.entries()].map(
+        async ([historyDirectory, launchDirectory]) => {
+          const excludedIds = new Set<string>();
+          const indexed = await this.readIndex(
+            historyDirectory,
+            scope,
+            excludedIds
+          );
+          const transcripts = await this.readTranscripts(
+            historyDirectory,
+            launchDirectory,
+            scope,
+            new Set([...indexed.map(row => row.id), ...excludedIds])
+          );
+          return [...indexed, ...transcripts];
+        }
+      )
     );
     return rows
       .flat()
@@ -657,7 +743,8 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   private async readIndex(
     projectDirectory: string,
-    scope: ProjectDirectoryScope
+    scope: ProjectDirectoryScope,
+    excludedIds: Set<string>
   ): Promise<ConversationDraft[]> {
     let parsed: { entries?: ClaudeIndexEntry[] };
     try {
@@ -673,6 +760,9 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
     if (!Array.isArray(parsed.entries)) return [];
     const rows: ConversationDraft[] = [];
     for (const entry of parsed.entries) {
+      if (typeof entry.sessionId === 'string' && entry.isSidechain === true) {
+        excludedIds.add(entry.sessionId);
+      }
       if (
         typeof entry.sessionId !== 'string' ||
         typeof entry.projectPath !== 'string' ||
@@ -708,8 +798,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
           updatedAt
         ),
         updatedAt,
-        title:
-          nativeTitle ?? fallbackTitle(first ? [first] : [], entry.sessionId),
+        title: nativeTitle ?? fallbackTitle(first ? [first] : [], 'claude'),
         description: first ? truncate(first, MAX_DESCRIPTION_CHARS) : null,
         titleSource: nativeTitle ? 'native' : 'fallback',
         needsSummary: !nativeTitle && !!first,
@@ -726,11 +815,13 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   private async readTranscripts(
     projectDirectory: string,
-    sourceDirectory: string,
-    scope: ProjectDirectoryScope
+    sourceDirectory: string | null,
+    scope: ProjectDirectoryScope,
+    indexedIds: ReadonlySet<string>
   ): Promise<ConversationDraft[]> {
-    const launchDirectory = await scope.launchDirectory(sourceDirectory);
-    if (!launchDirectory) return [];
+    const defaultLaunchDirectory = sourceDirectory
+      ? await scope.launchDirectory(sourceDirectory)
+      : null;
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(projectDirectory, {
@@ -739,27 +830,43 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
     } catch {
       return [];
     }
-    const files = await Promise.all(
+    const settled = await Promise.allSettled(
       entries
-        .filter(entry => entry.isFile() && entry.name.endsWith('.jsonl'))
+        .filter(
+          entry =>
+            entry.isFile() &&
+            entry.name.endsWith('.jsonl') &&
+            !indexedIds.has(path.basename(entry.name, '.jsonl'))
+        )
         .map(async entry => {
           const file = path.join(projectDirectory, entry.name);
           return { file, stat: await fs.promises.stat(file) };
         })
     );
+    const files = settled.flatMap(result =>
+      result.status === 'fulfilled' ? [result.value] : []
+    );
     files.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
     const rows: ConversationDraft[] = [];
 
-    for (const { file, stat } of files.slice(0, MAX_PROJECT_RESULTS)) {
+    for (const { file, stat } of files.slice(0, MAX_LEGACY_METADATA_FILES)) {
+      if (rows.length >= MAX_PROJECT_RESULTS) break;
       try {
         const lines = await readBoundedLines(file, stat.size);
         const turns: string[] = [];
         let sessionId = path.basename(file, '.jsonl');
         let nativeTitle: string | null = null;
         let startedAt = stat.birthtimeMs || stat.mtimeMs;
+        let recordedDirectory: string | null = null;
+        let sidechain = false;
+        let validRecords = 0;
         for (const line of lines) {
           try {
             const record = JSON.parse(line);
+            if (!record || typeof record !== 'object') continue;
+            if (typeof record.sessionId === 'string') validRecords++;
+            if (record.isSidechain === true) sidechain = true;
+            if (typeof record.cwd === 'string') recordedDirectory = record.cwd;
             if (typeof record.sessionId === 'string') {
               sessionId = record.sessionId;
             }
@@ -784,13 +891,18 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
             // A partial line is expected at either bounded slice edge.
           }
         }
+        if (!validRecords || sidechain || indexedIds.has(sessionId)) continue;
+        const launchDirectory = recordedDirectory
+          ? await scope.launchDirectory(recordedDirectory)
+          : defaultLaunchDirectory;
+        if (!launchDirectory) continue;
         rows.push({
           id: sessionId,
           harness: 'claude',
           cwd: launchDirectory,
           startedAt,
           updatedAt: stat.mtimeMs,
-          title: nativeTitle ?? fallbackTitle(turns, sessionId),
+          title: nativeTitle ?? fallbackTitle(turns, 'claude'),
           description: turns[turns.length - 1]
             ? truncate(turns[turns.length - 1], MAX_DESCRIPTION_CHARS)
             : null,
@@ -1191,7 +1303,7 @@ export interface ConversationCatalogOptions {
   projectSessions?: () => ClosedSessionEntry[];
   cacheFile?: string;
   /** Direct test seam. Production callers provide the resolved distribution. */
-  summaryEndpoint?: string | null;
+  summaryEndpoint?: DistributionEndpointRefV1 | string | null;
   fetch?: typeof fetch;
   hostedSummariesEnabled?: () => boolean;
   now?: () => number;
@@ -1201,7 +1313,7 @@ export interface ConversationCatalogOptions {
 export class RecentConversationCatalog {
   private readonly adapters: ConversationCatalogAdapter[];
   private readonly cacheFile: string | null;
-  private readonly summaryEndpoint: string | null;
+  private readonly summaryEndpoint: DistributionEndpointRefV1 | null;
   private readonly fetchFn: typeof fetch;
   private readonly hostedSummariesEnabled: () => boolean;
   private readonly now: () => number;
@@ -1230,8 +1342,10 @@ export class RecentConversationCatalog {
     this.cacheFile = options.cacheFile ?? null;
     this.summaryEndpoint =
       options.summaryEndpoint !== undefined
-        ? options.summaryEndpoint
-        : (distribution.enrichment.conversationSummaries?.url ?? null);
+        ? typeof options.summaryEndpoint === 'string'
+          ? { url: options.summaryEndpoint, protocolVersion: 1 }
+          : options.summaryEndpoint
+        : distribution.enrichment.conversationSummaries;
     this.fetchFn = options.fetch ?? fetch;
     this.hostedSummariesEnabled =
       options.hostedSummariesEnabled ?? (() => true);
@@ -1311,37 +1425,34 @@ export class RecentConversationCatalog {
     // Failures below are genuine attempt-and-fail and are counted (ENG-030
     // OS1.5b): the disabled-in-Settings and missing-token cases already threw
     // above, before any request existed, so they can never be reported.
-    let response: Response;
+    let body;
     try {
-      response = await this.fetchFn(summaryEndpoint, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
+      body = await summarizeConversations(
+        summaryEndpoint,
+        accessToken,
+        {
+          schemaVersion: 1,
           conversations: pending.map(candidate => ({
             key: cacheKey(candidate),
             turns: candidate.summaryInput.map(redactHostedSummaryText),
           })),
-        }),
-        signal: AbortSignal.timeout(15_000),
-      });
+        },
+        {
+          signal: AbortSignal.timeout(15_000),
+          fetcher: this.fetchFn,
+        }
+      );
     } catch (error) {
-      recordHostedCallTransportFailure('conversation_summary', error);
+      if (isCompatibleServiceProblemError(error)) {
+        recordHostedCallHttpFailure('conversation_summary', error.status);
+      } else if (!isCompatibleServiceProtocolError(error)) {
+        recordHostedCallTransportFailure('conversation_summary', error);
+      }
       throw error;
     }
-    if (!response.ok) {
-      recordHostedCallHttpFailure('conversation_summary', response.status);
-      throw new Error(
-        `Conversation summaries unavailable (${response.status}).`
-      );
-    }
-    const body = (await response.json()) as SummaryResponse;
     const pendingByKey = new Map(pending.map(item => [cacheKey(item), item]));
     await this.mutateCache(cache => {
-      for (const item of body.conversations ?? []) {
-        if (typeof item.key !== 'string') continue;
+      for (const item of body.conversations) {
         const candidate = pendingByKey.get(item.key);
         const title = usableGeneratedTitle(item.title);
         const description = usableGeneratedDescription(item.summary);

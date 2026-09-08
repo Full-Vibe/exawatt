@@ -52,6 +52,7 @@ import { ReentryRecapLine } from './reentry-recap';
 import {
   isRemoteAgentTab,
   isSessionTab,
+  projectRootPath,
   useWorkspaceState,
   tabCanResumeAsAgent,
   tabIsLive,
@@ -77,8 +78,10 @@ import {
   REVEAL_ACTIVE_PATH_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
   OPEN_CONNECT_SOURCE_EVENT,
+  REMOTE_AGENT_OPEN_EVENT,
   OPEN_PROJECT_PICKER_EVENT,
   consumePendingConnectAgentSource,
+  consumePendingRemoteAgentOpen,
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
   hasPendingAgentComposer,
@@ -329,6 +332,7 @@ export function WorkspaceClient() {
     useProductFeedback();
   const {
     projects,
+    ready,
     activeProject,
     activeTab,
     pinnedTabId,
@@ -349,6 +353,8 @@ export function WorkspaceClient() {
     cloneSession,
     launchHere,
     openProject,
+    openContextProject,
+    openRemoteAgent,
     importProjects,
     closeProject,
     closeTab,
@@ -373,7 +379,6 @@ export function WorkspaceClient() {
     renameTab,
     renameProject,
     setProjectColor,
-    ready,
   } = useWorkspaceState({ getInitialSize });
   /**
    * The active tab, told apart by kind.
@@ -387,6 +392,9 @@ export function WorkspaceClient() {
     activeTab && isSessionTab(activeTab) ? activeTab : null;
   const activeRemoteTab =
     activeTab && isRemoteAgentTab(activeTab) ? activeTab : null;
+  const activeProjectRootPath = activeProject
+    ? projectRootPath(activeProject)
+    : null;
   /**
    * The connected roster (ENG-033 H2). One read for the workspace: Team's
    * tiles and every coworker pane resolve from the same snapshot, so the grid
@@ -395,12 +403,13 @@ export function WorkspaceClient() {
   const {
     roster: remoteRoster,
     coworkers,
+    refresh: refreshRemoteRoster,
     requestWriteAccess: requestSourceWriteAccess,
     reconnect: reconnectSource,
   } = useRemoteCoworkers(inElectron);
   const [cloneTargets, setCloneTargets] = useState<CloneSessionTarget[]>([]);
   useEffect(() => {
-    if (!activeProject?.dir) {
+    if (!activeProjectRootPath) {
       setCloneTargets([]);
       return;
     }
@@ -417,7 +426,10 @@ export function WorkspaceClient() {
             async source =>
               [
                 source.harness!,
-                await loadAgentModelCatalog(source.harness!, activeProject.dir),
+                await loadAgentModelCatalog(
+                  source.harness!,
+                  activeProjectRootPath
+                ),
               ] as const
           )
         ),
@@ -428,7 +440,7 @@ export function WorkspaceClient() {
           result.snapshot,
           // The composer's ranking, not the pool's insertion order: Clone to…
           // must offer the same setups in the same order as ⌘T.
-          rankLaunchTargets(pool, activeProject.dir),
+          rankLaunchTargets(pool, activeProjectRootPath),
           Object.fromEntries(catalogEntries)
         )
       );
@@ -436,7 +448,82 @@ export function WorkspaceClient() {
     return () => {
       current = false;
     };
-  }, [activeProject?.dir]);
+  }, [activeProjectRootPath]);
+
+  const coworkersRef = useRef(coworkers);
+  coworkersRef.current = coworkers;
+
+  const finishConnectedSource = useCallback(
+    async (result: { sourceId: string; openNativeAgentId: string | null }) => {
+      if (!result.openNativeAgentId) return;
+      const refreshed = await refreshRemoteRoster();
+      const agent = refreshed?.agents.find(
+        candidate =>
+          candidate.source.id === result.sourceId &&
+          candidate.nativeAgentId === result.openNativeAgentId
+      );
+      if (!agent) return;
+      await openRemoteAgent({
+        agentId: agent.id,
+        nativeAgentId: agent.nativeAgentId,
+        sourceId: agent.source.id,
+        displayName: agent.displayName,
+        projectId: agent.projectId,
+        projectLabel: agent.projectLabel,
+      });
+    },
+    [openRemoteAgent, refreshRemoteRoster]
+  );
+
+  useEffect(() => {
+    // A route handoff may arrive while persisted layout is still restoring.
+    // Leave the pending slot untouched until restoration can no longer erase
+    // the tab this effect opens.
+    if (!ready) return;
+    let mounted = true;
+    const openById = async (agentId: string) => {
+      const known = coworkersRef.current.find(
+        candidate => candidate.agentId === agentId
+      );
+      if (known) {
+        await openRemoteAgent({
+          agentId: known.agentId,
+          nativeAgentId: known.nativeAgentId,
+          sourceId: known.sourceId,
+          displayName: known.name,
+          projectId: known.projectId,
+          projectLabel: known.projectLabel,
+        });
+        return;
+      }
+      const refreshed = await refreshRemoteRoster();
+      if (!mounted) return;
+      const agent = refreshed?.agents.find(
+        candidate => candidate.id === agentId
+      );
+      if (!agent) return;
+      await openRemoteAgent({
+        agentId: agent.id,
+        nativeAgentId: agent.nativeAgentId,
+        sourceId: agent.source.id,
+        displayName: agent.displayName,
+        projectId: agent.projectId,
+        projectLabel: agent.projectLabel,
+      });
+    };
+    const handle = (event: Event) => {
+      const agentId = (event as CustomEvent<string>).detail;
+      consumePendingRemoteAgentOpen();
+      if (typeof agentId === 'string') void openById(agentId);
+    };
+    window.addEventListener(REMOTE_AGENT_OPEN_EVENT, handle);
+    const pending = consumePendingRemoteAgentOpen();
+    if (pending) void openById(pending);
+    return () => {
+      mounted = false;
+      window.removeEventListener(REMOTE_AGENT_OPEN_EVENT, handle);
+    };
+  }, [openRemoteAgent, ready, refreshRemoteRoster]);
 
   useEffect(() => {
     const activeCloneable =
@@ -555,7 +642,7 @@ export function WorkspaceClient() {
   useEffect(() => {
     if (!inElectron) return;
     const ensureProject = (event: Event) => {
-      if (!activeProject) {
+      if (!activeProject || projectRootPath(activeProject) === null) {
         setProjectOpenerOpen(true);
         return;
       }
@@ -763,11 +850,15 @@ export function WorkspaceClient() {
     [activeProject, activity, ptyAttention, delegation, engaged, summaries]
   );
   const declaredLinks = useMemo(
-    () => projectDeclaredLinks(activeProject?.tabs, activeProject?.dir ?? ''),
+    () =>
+      projectDeclaredLinks(
+        activeProject?.tabs,
+        activeProject ? (projectRootPath(activeProject) ?? '') : ''
+      ),
     [activeProject]
   );
   const { view: roadmapView } = useProjectRoadmap(
-    activeProject?.dir ?? null,
+    activeProjectRootPath,
     roadmapSessions,
     declaredLinks
   );
@@ -802,10 +893,20 @@ export function WorkspaceClient() {
   // standing in reported clean and ⌘J skipped it.
   const roadmapAttentionProjects = useMemo(
     () =>
-      projects.map(project => ({
-        dir: project.dir,
-        sessions: projectRoadmapAttentionSessions(project.tabs, summaries),
-      })),
+      projects.flatMap(project => {
+        const rootPath = projectRootPath(project);
+        return rootPath
+          ? [
+              {
+                dir: rootPath,
+                sessions: projectRoadmapAttentionSessions(
+                  project.tabs,
+                  summaries
+                ),
+              },
+            ]
+          : [];
+      }),
     [projects, summaries]
   );
   const roadmapAttention = useFleetRoadmapAttention(roadmapAttentionProjects);
@@ -1060,6 +1161,26 @@ export function WorkspaceClient() {
     );
   }, [updateOverview]);
 
+  const openCoworker = useCallback(
+    async (agentId: string) => {
+      const agent = coworkersRef.current.find(
+        candidate => candidate.agentId === agentId
+      );
+      if (!agent) return;
+      const claim = operatorPosition.claimHere();
+      await openRemoteAgent({
+        agentId: agent.agentId,
+        nativeAgentId: agent.nativeAgentId,
+        sourceId: agent.sourceId,
+        displayName: agent.name,
+        projectId: agent.projectId,
+        projectLabel: agent.projectLabel,
+      });
+      if (claim.stillCurrent()) closeOverview();
+    },
+    [closeOverview, openRemoteAgent]
+  );
+
   // Both roadmap launchers below drop the operator out of Team when they
   // land, and both land after preferences, the source registry, and a cold
   // provider spawn — long enough for him to have gone somewhere else. The
@@ -1257,7 +1378,9 @@ export function WorkspaceClient() {
   const revealActivePath = useCallback((): boolean => {
     // A coworker's working directory is on another machine; Finder has
     // nothing to open, so the verb falls back to the Project it sits in.
-    const target = activeSessionTab?.cwd ?? activeProject?.dir;
+    const target =
+      activeSessionTab?.cwd ??
+      (activeProject ? projectRootPath(activeProject) : null);
     if (!target) return false;
     revealPath(target);
     return true;
@@ -1288,6 +1411,7 @@ export function WorkspaceClient() {
     );
     return deriveWorkspaceCommandAvailability({
       activeProjectName: activeProject?.name ?? null,
+      hasLocalProjectRoot: activeProjectRootPath !== null,
       hasActiveTab: activeTab !== null,
       canToggleSplit:
         pinnedTabId !== null ||
@@ -1354,12 +1478,16 @@ export function WorkspaceClient() {
   // ⌘T (D24): a new tab, instantly — draft in the active Project, or the
   // Project chooser when nothing is open
   const newDraftTab = useCallback(() => {
+    if (!activeProject || projectRootPath(activeProject) === null) {
+      setProjectOpenerOpen(true);
+      return false;
+    }
     if (!createDraftTab()) {
       setProjectOpenerOpen(true);
       return false;
     }
     return true;
-  }, [createDraftTab]);
+  }, [activeProject, createDraftTab]);
 
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
@@ -1605,7 +1733,10 @@ export function WorkspaceClient() {
   const stage = resolveStageLayout({
     entries: allTabs,
     activeTabId: activeTab?.id ?? null,
-    emptyProjectStage: !!activeProject && activeProject.tabs.length === 0,
+    emptyProjectStage:
+      !!activeProject &&
+      activeProjectRootPath !== null &&
+      activeProject.tabs.length === 0,
     pinnedTabId,
     companionTabId: companionRef.current,
   });
@@ -1631,7 +1762,9 @@ export function WorkspaceClient() {
   // hold its height across the moment a draft intent materialises the tab —
   // the 37px drop BUG-041 measured and left. A draft's cwd IS the Project's
   // dir, so the row's text does not change across that hand-off either.
-  const contextPath = activeSessionTab?.cwd ?? composerSlot?.dir ?? null;
+  const contextPath =
+    activeSessionTab?.cwd ??
+    (composerSlot && composerProject ? projectRootPath(composerProject) : null);
   /**
    * What the context row says when a coworker is active. It has no directory
    * on this machine, so the row states where the work actually runs: the
@@ -1715,7 +1848,9 @@ export function WorkspaceClient() {
               dormantProjectDirs={dormantProjectDirs}
             />
           </div>
-          {activeProject && activeProject.tabs.length > 0 ? (
+          {activeProject &&
+          activeProjectRootPath !== null &&
+          activeProject.tabs.length > 0 ? (
             <Button
               type="button"
               variant="outline"
@@ -2186,6 +2321,7 @@ export function WorkspaceClient() {
           activity={activity}
           engaged={engaged}
           delegation={delegation}
+          remoteCoworkers={coworkers}
           activeTabId={activeTab?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           navigationSelection={teamSelection}
@@ -2196,6 +2332,7 @@ export function WorkspaceClient() {
             selectTab(dir, tabId);
             closeOverview();
           }}
+          onOpenRemoteAgent={openCoworker}
           onSelectionChange={publishTeamSelection}
           onResumeTab={(dir, tabId) => {
             // Resume in place and STAY at Team: the operator asked to reach
@@ -2218,6 +2355,8 @@ export function WorkspaceClient() {
         workspaceProjects={projects}
         onOpenProject={openProject}
         onImportProjects={importProjects}
+        onOpenContextProject={openContextProject}
+        onAgentSourceConnected={result => void finishConnectedSource(result)}
       />
       {closeConfirm && (
         <CloseConfirm

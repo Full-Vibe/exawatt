@@ -1,18 +1,31 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
   prepareDistribution,
+  prepareDistributionWebIcon,
   readPreparedDistribution,
+  readPreparedDistributionWebIcon,
   nextDistributionEnvironment,
   electronBuilderDistributionConfig,
+  DISTRIBUTION_WEB_ICON_URL,
+  distributionWebIconPath,
 } from './lib/distribution-build.mjs';
+import { icnsImageSlices } from './lib/app-icon.mjs';
 
 const officialFixture = new URL(
   './distribution.official.example.json',
+  import.meta.url
+);
+const customDistributorFixture = new URL(
+  '../contracts/distribution/v2/fixtures/custom-distributor.json',
+  import.meta.url
+);
+const communityIcns = new URL(
+  '../electron/resources/icon-community.icns',
   import.meta.url
 );
 
@@ -38,6 +51,61 @@ test('a valid official overlay is canonicalized before Next', async () => {
   assert.deepEqual(prepared.contract.ownAccount, {
     claudePlanUsage: 'stable-signed',
   });
+});
+
+test('a downstream distributor browser mark is projected from its contract-owned ICNS', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
+  const source = path.join(root, 'assets', 'community-icon.icns');
+  await mkdir(path.dirname(source), { recursive: true });
+  await cp(communityIcns, source);
+  const prepared = await prepareDistribution({
+    root,
+    inputJson: await readFile(customDistributorFixture, 'utf8'),
+  });
+
+  const projected = await prepareDistributionWebIcon({
+    root,
+    contract: prepared.contract,
+  });
+  const expected = icnsImageSlices(await readFile(source))[0];
+
+  assert.equal(projected.source, 'assets/community-icon.icns');
+  assert.equal(projected.url, DISTRIBUTION_WEB_ICON_URL);
+  assert.equal(projected.width, expected.image.width);
+  assert.equal(projected.height, expected.image.height);
+  assert.deepEqual(await readFile(distributionWebIconPath(root)), expected.png);
+  assert.deepEqual(await readPreparedDistributionWebIcon(root), expected.png);
+});
+
+test('a branded build refuses an absent browser mark source instead of borrowing Exawatt artwork', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
+  const prepared = await prepareDistribution({
+    root,
+    inputJson: await readFile(customDistributorFixture, 'utf8'),
+  });
+
+  await assert.rejects(
+    prepareDistributionWebIcon({ root, contract: prepared.contract }),
+    /web icon source is missing: assets\/community-icon\.icns/
+  );
+});
+
+test('a prepared browser mark whose bytes drift is refused by its digest', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
+  const source = path.join(root, 'assets', 'community-icon.icns');
+  await mkdir(path.dirname(source), { recursive: true });
+  await cp(communityIcns, source);
+  const prepared = await prepareDistribution({
+    root,
+    inputJson: await readFile(customDistributorFixture, 'utf8'),
+  });
+  await prepareDistributionWebIcon({ root, contract: prepared.contract });
+  await writeFile(distributionWebIconPath(root), 'tampered', 'utf8');
+
+  await assert.rejects(
+    readPreparedDistributionWebIcon(root),
+    /web icon digest mismatch/
+  );
 });
 
 // BUG-060. Every stored copy of the official contract is a schema-1 document
@@ -78,19 +146,26 @@ test('a present invalid config fails instead of falling back', async () => {
 test('poisoned legacy env cannot enable a community capability', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
   const prepared = await prepareDistribution({ root, inputJson: undefined });
-  const env = nextDistributionEnvironment(prepared, {
-    NEXT_PUBLIC_SUPABASE_URL: 'https://production.supabase.co',
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'production-key',
-    NEXT_PUBLIC_POSTHOG_KEY: 'production-analytics',
-    NEXT_PUBLIC_POSTHOG_HOST: 'https://www.exawatt.ai/ingest',
-    NEXT_PUBLIC_ANALYTICS_DISABLED: 'false',
-  });
+  const icon = Buffer.from('prepared-web-icon');
+  const env = nextDistributionEnvironment(
+    prepared,
+    {
+      NEXT_PUBLIC_SUPABASE_URL: 'https://production.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'production-key',
+      NEXT_PUBLIC_POSTHOG_KEY: 'production-analytics',
+      NEXT_PUBLIC_POSTHOG_HOST: 'https://www.exawatt.ai/ingest',
+      NEXT_PUBLIC_ANALYTICS_DISABLED: 'false',
+      EXAWATT_RESOLVED_WEB_ICON_BASE64: 'ambient-icon',
+    },
+    icon
+  );
   assert.equal(env.NEXT_PUBLIC_SUPABASE_URL, '');
   assert.equal(env.NEXT_PUBLIC_SUPABASE_ANON_KEY, '');
   assert.equal('NEXT_PUBLIC_POSTHOG_KEY' in env, false);
   assert.equal('NEXT_PUBLIC_POSTHOG_HOST' in env, false);
   assert.equal('NEXT_PUBLIC_ANALYTICS_DISABLED' in env, false);
   assert.equal(env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON, prepared.canonical);
+  assert.equal(env.EXAWATT_RESOLVED_WEB_ICON_BASE64, icon.toString('base64'));
 });
 
 test('tampering with the prepared artifact fails its digest check', async () => {

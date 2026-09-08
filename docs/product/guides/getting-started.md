@@ -2,7 +2,10 @@
 
 Exawatt is a command center for agents.
 
-The first version focuses on making local agent control clearer, more beautiful, and easier to trust. Future versions will command hosted and multi-source fleets.
+The desktop app controls local agents and connects customer-hosted OpenClaw
+coworkers through the same fleet surfaces, including source-granted
+primary-conversation send. Exawatt-managed placement remains future design
+work; no paid-cloud implementation is active.
 
 ## Projects and Agents
 
@@ -51,24 +54,31 @@ Settings checks again while the flow completes; a missing CLI links to its
 installation guide. Registry failures remain visibly stale or unavailable and
 cannot enable Agent launch.
 
-### Coming next: connect existing OpenClaw Agents
+### Connect existing OpenClaw Agents
 
-The first hosted-agent milestone connects to Agents already running on your
-infrastructure. **⌘N → Connect existing Agent…** will add an OpenClaw source,
-test a saved SSH alias or supported Gateway endpoint, discover configured
-Agents, and let you map each one to a renameable Project. Connecting observes
+The existing-fleet path connects to Agents already running on your
+infrastructure. **⌘N → Connect existing Agent…** adds an OpenClaw source,
+tests a saved SSH alias or supported Gateway endpoint, discovers configured
+Agents, and lets you map each one to a renameable Project. Connecting observes
 existing work; it does not provision a server, start an Agent, or edit the
 remote installation.
+
+That Project may be an existing folder-bound Project or a new folderless
+Context Group. Folderless Projects open normally, but local launch, Finder, and
+worktree actions remain unavailable because there is no local path to act on.
 
 One configured OpenClaw Agent appears as one coworker. Its main conversation,
 channels, scheduled runs, and helper contexts remain beneath it instead of
 becoming duplicate Agent cards. Agent name and responsibility lead; **Remote**
 and **OpenClaw** remain clear secondary identity.
 
-The first slice is read-only. Closing Exawatt leaves remote work running, and
-relaunch reconnects to the same Agent and catches up. Commanding the main
-conversation follows as the next milestone, using the same Agent, Team, and
-Fleet surfaces rather than a separate cloud roster.
+Closing Exawatt leaves remote work running, and relaunch reconnects to the same
+Agent and catches up. When the source grants write authority, the Agent surface
+can send to and follow its exact main conversation by Agent identity.
+Observation and command authority remain separate facts, using the same Agent,
+Team, and Fleet surfaces rather than a separate cloud roster. The current UI
+does not expose remote Pause, schedule/configuration mutation, Gateway
+administration, or VPS lifecycle control.
 
 That reconnect path is deliberately different from local pause-and-resume.
 Pausing a local Agent preserves its exact resumable Session while its process
@@ -183,7 +193,8 @@ state and persistence contract.
 
 Exawatt has two first-class modes:
 
-- **Live Mode:** connect to real Agent Sources such as local OpenClaw.
+- **Live Mode:** connect to real Agent Sources such as local harnesses and
+  customer-hosted OpenClaw.
 - **Demo Mode:** run realistic scenarios without live agents.
 
 Both modes should exercise the same interface concepts.
