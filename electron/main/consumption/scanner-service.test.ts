@@ -222,6 +222,7 @@ function makeService(
     stateDir,
     claudeRoot,
     codexRoot,
+    grokRoot: path.join(root, 'grok-sessions'),
     watch: false,
     initialDelayMs: 0,
     debounceMs: 5,
@@ -574,8 +575,10 @@ describe('privacy', () => {
  *
  * The corpus fixture spans 2026-07-01 to 2026-08-10, so a default-horizon
  * service sees the Codex half as current and the Claude half as history. That
- * split is the assertion: what falls outside the horizon never enters state,
- * and therefore never enters the log that compaction rewrites from state.
+ * split is the assertion: state and hydration retain the same horizon even
+ * when concurrent adapters deliver older samples before newer ones. The
+ * append-only log can carry samples admitted before the horizon advanced;
+ * compaction eventually rewrites it from the retained state.
  */
 describe('sample retention', () => {
   it('admits only what the horizon covers, and says how much it dropped', async () => {
@@ -594,33 +597,71 @@ describe('sample retention', () => {
     expect(snapshot.samples.length).toBeGreaterThan(0);
   });
 
-  it('the persisted log carries only what state retained', async () => {
-    const bounded = makeService({
-      sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
-    });
-    await bounded.snapshot();
-    await bounded.settle();
-    await bounded.dispose();
+  it.each(['claude-code', 'codex'] as const)(
+    'restart preserves retention when %s arrives first',
+    async firstSource => {
+      const real = new NodeConsumptionFileSystem();
+      let releaseLaterSource!: () => void;
+      const laterSourceReady = new Promise<void>(resolve => {
+        releaseLaterSource = resolve;
+      });
+      const laterRoot = firstSource === 'codex' ? claudeRoot : codexRoot;
+      const fileSystem: ConsumptionFileSystem = {
+        async listFiles(dir) {
+          if (dir === laterRoot) await laterSourceReady;
+          return real.listFiles(dir);
+        },
+        readFrom: (file, fromByte, maxBytes) =>
+          real.readFrom(file, fromByte, maxBytes),
+      };
+      const bounded = makeService({
+        sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
+        fileSystem,
+      });
+      await bounded.snapshot();
+      try {
+        await vi.waitFor(async () => {
+          const partial = await bounded.snapshot();
+          expect(
+            partial.samples.some(sample => sample.source === firstSource)
+          ).toBe(true);
+        });
+      } finally {
+        releaseLaterSource();
+      }
+      await bounded.settle();
+      const retained = await bounded.snapshot();
+      expect(retained.samples.length).toBeGreaterThan(0);
+      expect(retained.samples.every(sample => sample.source === 'codex')).toBe(
+        true
+      );
+      await bounded.dispose();
 
-    const log = await fs.promises.readFile(
-      path.join(stateDir, 'log-v1.jsonl'),
-      'utf8'
-    );
-    const samples = log
-      .split('\n')
-      .filter(Boolean)
-      .map(line => JSON.parse(line))
-      .filter(envelope => envelope.k === 'sample');
-    expect(samples.length).toBeGreaterThan(0);
-    expect(samples.every(envelope => envelope.v.source === 'codex')).toBe(true);
+      const log = await fs.promises.readFile(
+        path.join(stateDir, 'log-v1.jsonl'),
+        'utf8'
+      );
+      const samples = log
+        .split('\n')
+        .filter(Boolean)
+        .map(line => JSON.parse(line))
+        .filter(envelope => envelope.k === 'sample');
+      expect(samples.length).toBeGreaterThan(0);
+      // The append-only log records admission-time state. Older samples that
+      // arrive after Codex are rejected; those admitted before it remain in the
+      // log until compaction, although they have left the retained window.
+      expect(new Set(samples.map(envelope => envelope.v.source))).toEqual(
+        new Set(firstSource === 'codex' ? ['codex'] : ['claude-code', 'codex'])
+      );
 
-    // And a restart agrees: nothing outside the horizon comes back.
-    const restarted = makeService({
-      sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
-    });
-    const after = await restarted.snapshot();
-    expect(after.samples.every(sample => sample.source === 'codex')).toBe(true);
-  });
+      // And a restart agrees: nothing outside the horizon comes back.
+      const restarted = makeService({
+        sampleHorizonMs: CONSUMPTION_SAMPLE_HORIZON_MS,
+      });
+      const after = await restarted.snapshot();
+      expect(after.samples).toEqual(retained.samples);
+    }
+  );
 
   it('a widened horizon is the same service seeing more', async () => {
     const wide = makeService({
