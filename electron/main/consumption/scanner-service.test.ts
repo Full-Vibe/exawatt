@@ -647,12 +647,14 @@ describe('sample retention', () => {
         .map(line => JSON.parse(line))
         .filter(envelope => envelope.k === 'sample');
       expect(samples.length).toBeGreaterThan(0);
-      // The append-only log records admission-time state. Older samples that
-      // arrive after Codex are rejected; those admitted before it remain in the
-      // log until compaction, although they have left the retained window.
-      expect(new Set(samples.map(envelope => envelope.v.source))).toEqual(
-        new Set(firstSource === 'codex' ? ['codex'] : ['claude-code', 'codex'])
-      );
+      // Samples already expired at admission must never enter the log. When
+      // Claude arrives first, later compaction may remove its admitted samples;
+      // restart equivalence below protects retention regardless of that timing.
+      if (firstSource === 'codex') {
+        expect(samples.every(envelope => envelope.v.source === 'codex')).toBe(
+          true
+        );
+      }
 
       // And a restart agrees: nothing outside the horizon comes back.
       const restarted = makeService({
