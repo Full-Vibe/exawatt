@@ -318,6 +318,8 @@ export function nextDistributionEnvironment(
   delete forwarded.NEXT_PUBLIC_POSTHOG_HOST;
   delete forwarded.NEXT_PUBLIC_ANALYTICS_DISABLED;
   delete forwarded.EXAWATT_RESOLVED_WEB_ICON_BASE64;
+  delete forwarded.EXAWATT_RESOLVED_WEB_ICON_PATH;
+  delete forwarded.EXAWATT_RESOLVED_WEB_ICON_SHA256;
   return {
     ...forwarded,
     EXAWATT_RESOLVED_DISTRIBUTION_JSON: prepared.canonical,
@@ -328,7 +330,12 @@ export function nextDistributionEnvironment(
     NEXT_PUBLIC_SUPABASE_URL: account?.supabaseUrl ?? '',
     NEXT_PUBLIC_SUPABASE_ANON_KEY: account?.supabaseAnonKey ?? '',
     ...(webIcon
-      ? { EXAWATT_RESOLVED_WEB_ICON_BASE64: webIcon.toString('base64') }
+      ? {
+          // Asset bytes exceed Linux's per-environment-string exec limit.
+          // Keep custody of the validated file through its exact digest.
+          EXAWATT_RESOLVED_WEB_ICON_PATH: webIcon.path,
+          EXAWATT_RESOLVED_WEB_ICON_SHA256: webIcon.digest,
+        }
       : {}),
   };
 }

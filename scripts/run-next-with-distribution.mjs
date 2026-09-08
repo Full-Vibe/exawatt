@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
 import {
+  distributionDigest,
+  distributionWebIconPath,
   nextDistributionEnvironment,
   readPreparedDistribution,
   readPreparedDistributionWebIcon,
@@ -27,7 +29,10 @@ const require = createRequire(import.meta.url);
 const nextBin = require.resolve('next/dist/bin/next');
 const child = spawn(process.execPath, [nextBin, command, ...args], {
   cwd: root,
-  env: nextDistributionEnvironment(prepared, process.env, webIcon),
+  env: nextDistributionEnvironment(prepared, process.env, {
+    path: distributionWebIconPath(root),
+    digest: distributionDigest(webIcon),
+  }),
   stdio: 'inherit',
   // Own process group so the whole `next dev` → `next-server` tree can be
   // signalled as a unit; `detached` here does not orphan it, the supervisor

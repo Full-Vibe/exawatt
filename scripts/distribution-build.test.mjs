@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -146,7 +147,10 @@ test('a present invalid config fails instead of falling back', async () => {
 test('poisoned legacy env cannot enable a community capability', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
   const prepared = await prepareDistribution({ root, inputJson: undefined });
-  const icon = Buffer.from('prepared-web-icon');
+  const icon = {
+    path: distributionWebIconPath(root),
+    digest: createHash('sha256').update('prepared-web-icon').digest('hex'),
+  };
   const env = nextDistributionEnvironment(
     prepared,
     {
@@ -156,6 +160,8 @@ test('poisoned legacy env cannot enable a community capability', async () => {
       NEXT_PUBLIC_POSTHOG_HOST: 'https://www.exawatt.ai/ingest',
       NEXT_PUBLIC_ANALYTICS_DISABLED: 'false',
       EXAWATT_RESOLVED_WEB_ICON_BASE64: 'ambient-icon',
+      EXAWATT_RESOLVED_WEB_ICON_PATH: '/ambient/icon.png',
+      EXAWATT_RESOLVED_WEB_ICON_SHA256: 'ambient-digest',
     },
     icon
   );
@@ -165,7 +171,57 @@ test('poisoned legacy env cannot enable a community capability', async () => {
   assert.equal('NEXT_PUBLIC_POSTHOG_HOST' in env, false);
   assert.equal('NEXT_PUBLIC_ANALYTICS_DISABLED' in env, false);
   assert.equal(env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON, prepared.canonical);
-  assert.equal(env.EXAWATT_RESOLVED_WEB_ICON_BASE64, icon.toString('base64'));
+  assert.equal('EXAWATT_RESOLVED_WEB_ICON_BASE64' in env, false);
+  assert.equal(env.EXAWATT_RESOLVED_WEB_ICON_PATH, icon.path);
+  assert.equal(env.EXAWATT_RESOLVED_WEB_ICON_SHA256, icon.digest);
+  const withoutIcon = nextDistributionEnvironment(prepared, env);
+  assert.equal('EXAWATT_RESOLVED_WEB_ICON_PATH' in withoutIcon, false);
+  assert.equal('EXAWATT_RESOLVED_WEB_ICON_SHA256' in withoutIcon, false);
+});
+
+test('distribution icon transport stays independent of asset size at the process boundary', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const prepared = await prepareDistribution({ root, inputJson: undefined });
+  const iconPath = distributionWebIconPath(root);
+  // Even the community PNG already exceeded Linux's 32-page string limit
+  // when base64 was forwarded to Next (BUG-123). Asset bytes belong in a file.
+  for (const icon of [
+    Buffer.from('small'),
+    icnsImageSlices(await readFile(communityIcns))[0].png,
+  ]) {
+    const digest = createHash('sha256').update(icon).digest('hex');
+    const env = nextDistributionEnvironment(
+      prepared,
+      {},
+      { path: iconPath, digest }
+    );
+    const iconEntries = Object.entries(env).filter(([name]) =>
+      name.startsWith('EXAWATT_RESOLVED_WEB_ICON_')
+    );
+    assert.deepEqual(Object.fromEntries(iconEntries), {
+      EXAWATT_RESOLVED_WEB_ICON_PATH: iconPath,
+      EXAWATT_RESOLVED_WEB_ICON_SHA256: digest,
+    });
+    await writeFile(iconPath, icon);
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import { readFileSync } from 'node:fs';
+      import { createHash } from 'node:crypto';
+      const bytes = readFileSync(process.env.EXAWATT_RESOLVED_WEB_ICON_PATH);
+      process.stdout.write(createHash('sha256').update(bytes).digest('hex'));
+    `,
+      ],
+      { env, encoding: 'utf8' }
+    );
+    assert.ifError(child.error);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.stdout, digest);
+  }
 });
 
 test('tampering with the prepared artifact fails its digest check', async () => {
@@ -243,9 +299,8 @@ test('operator custody is opt-in, fails loudly, and never downgrades', async t =
   const { mkdtemp, writeFile, chmod, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const nodePath = await import('node:path');
-  const { resolveDistributionInput, readOfficialCustody } = await import(
-    './lib/distribution-build.mjs'
-  );
+  const { resolveDistributionInput, readOfficialCustody } =
+    await import('./lib/distribution-build.mjs');
 
   const dir = await mkdtemp(nodePath.join(tmpdir(), 'exa-custody-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -293,7 +348,9 @@ test('operator custody is opt-in, fails loudly, and never downgrades', async t =
     source: 'community-default',
   });
   assert.deepEqual(
-    await resolveDistributionInput({ EXAWATT_DISTRIBUTION_PROFILE: 'community' }),
+    await resolveDistributionInput({
+      EXAWATT_DISTRIBUTION_PROFILE: 'community',
+    }),
     { inputJson: undefined, source: 'community-default' }
   );
 
@@ -302,7 +359,10 @@ test('operator custody is opt-in, fails loudly, and never downgrades', async t =
 
   // Group-readable custody refuses rather than proceeding.
   await chmod(custody, 0o644);
-  await assert.rejects(() => readOfficialCustody(custody), /group\/world readable/);
+  await assert.rejects(
+    () => readOfficialCustody(custody),
+    /group\/world readable/
+  );
   await chmod(custody, 0o600);
 
   // Missing custody names the path instead of downgrading to community.
