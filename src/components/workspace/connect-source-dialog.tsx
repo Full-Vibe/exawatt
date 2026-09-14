@@ -708,7 +708,7 @@ export function ConnectSourceDialog({
       <DialogContent
         data-connect-source
         primaryAction={primaryAction}
-        className="max-h-[min(760px,calc(100vh-3rem))] w-[min(720px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border p-0 outline-none"
+        className="flex max-h-[min(760px,calc(100vh-3rem))] w-[min(720px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden rounded-md border p-0 outline-none"
         style={{ background: HUD.bg.deep, borderColor: HUD.strokeSoft }}
       >
         <DialogHeader
@@ -885,6 +885,7 @@ function SourceChooser({
   return (
     <button
       type="button"
+      data-connect-adapter="openclaw"
       onClick={onChoose}
       className="flex w-full min-w-0 items-center gap-3 rounded-md border p-3 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
       style={{
@@ -1028,6 +1029,7 @@ function ServerChooser({
                 <button
                   key={alias.alias}
                   type="button"
+                  data-connect-server={alias.alias}
                   disabled={busy}
                   onClick={() => onChooseAlias(alias)}
                   className="flex min-h-9 min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"

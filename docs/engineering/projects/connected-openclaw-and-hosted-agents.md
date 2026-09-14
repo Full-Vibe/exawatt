@@ -1140,3 +1140,35 @@ Exawatt did not widen scope. The gate removed the exact device IDs it created.
 Independent readback then found one older pre-existing CLI device and zero
 Exawatt UI read devices on each source. C5 and ENG-010 are complete. ENG-033
 H3/H4 remain future design work; no paid-cloud implementation is active.
+
+### 2026-09-14 — the first real connect from the installed app found the list clipped
+
+Twenty-five days after C5, the operator opened ⌘N → Connect existing Agent in
+the installed app for the first time, and neither Hetzner alias was in the
+list. Every layer between the file and the dialog was checked and every layer
+was right: the parser returns twelve aliases, the bundle inside the installed
+app returns twelve when its own enumerator is run outside Electron, and the
+dialog renders every alias it receives. The defect was the dialog's own box.
+The base dialog is a CSS grid; Connect caps its height and hides overflow but
+never made itself a flex column, so the body's shrink-and-scroll classes meant
+nothing, the list grew to its full height, and the container clipped it at a
+row boundary. Ten rows fit exactly, so the list looked complete (BUG-132).
+
+Two things worth keeping. C4's visual review, fifty screenshots deep, could not
+have seen this: the reviewer's SSH config was short, and a list that fits is
+indistinguishable from a list that scrolls. A layout defect that depends on
+the operator's data needs a fixture longer than any reviewer's, which the
+agent-sources eval now carries: sixteen aliases in a fake home, Connect opened
+from Settings, and a check that the overflowing element is one the operator
+can scroll. That last clause is the load-bearing one. On the old layout the
+last row can still be brought inside the dialog programmatically, because an
+`overflow: hidden` box scrolls for `scrollIntoView` even though it will not
+scroll for a wheel; "the last row is inside the dialog" passed on the broken
+build, and only "the overflowing element is `overflow-y: auto`" failed it.
+The negative run was made before the fix was trusted.
+
+The second: this is the first record of the feature being used from the
+installed app at all. The two Gateways the milestones were proved against
+have not been connected since C5 cleaned up after itself, and the main log
+carries no connected-source event between 2026-08-17 and today. What ENG-010
+shipped is proven; what it has not yet had is a day of ordinary use.

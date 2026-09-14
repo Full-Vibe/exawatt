@@ -293,6 +293,9 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/app/settings/agent-sources-settings.tsx' ||
       file === 'src/app/settings/connected-sources-section.tsx' ||
+      // BUG-132: the Connect dialog's server list scrolls; this eval proves it
+      // against a long fake SSH config, which the packaged fleet gate cannot.
+      file === 'src/components/workspace/connect-source-dialog.tsx' ||
       file === 'src/components/workspace/agent-sources.ts' ||
       file === 'electron/main/agent-sources-ipc.ts' ||
       file === 'electron/main/pty/agent-models.ts',

@@ -61,10 +61,27 @@ for (const directory of [
   projectDir,
   output,
   join(fakeHome, '.openclaw'),
+  join(fakeHome, '.ssh'),
   grokSessionsDir,
 ]) {
   mkdirSync(directory, { recursive: true });
 }
+/**
+ * More SSH aliases than the Connect dialog can show at once (BUG-132). The
+ * dialog caps its height; the list must scroll inside it rather than be
+ * clipped. Names resolve nowhere and nothing here is ever contacted: the eval
+ * reads the list and closes the dialog.
+ */
+const CONNECT_ALIAS_COUNT = 16;
+writeFileSync(
+  join(fakeHome, '.ssh', 'config'),
+  Array.from(
+    { length: CONNECT_ALIAS_COUNT },
+    (_, index) =>
+      `Host eval-host-${String(index + 1).padStart(2, '0')}\n` +
+      `  HostName eval-host-${index + 1}.invalid\n  User operator\n`
+  ).join('\n')
+);
 writeFileSync(join(projectDir, 'package.json'), '{}');
 writeFileSync(
   join(fakeHome, '.openclaw', 'openclaw.json'),
@@ -294,6 +311,64 @@ try {
       // remain briefly attached but hidden. Wait for the newest Settings root.
       await page.locator('[data-settings-shell]').last().waitFor();
 
+      // BUG-132: a long server list must scroll inside the Connect dialog.
+      // The dialog caps its own height; with the base dialog laid out as a
+      // grid, the list body could not shrink, grew to its content, and the
+      // container clipped it at a row boundary — the operator's two real
+      // servers were the rows below the fold, with no scrollbar and no hint.
+      // The contract is mechanism, not markup: the element that overflows is
+      // one the operator can scroll, and its last row lands inside the dialog.
+      await page
+        .locator('[data-connected-sources-empty] button', {
+          hasText: 'Connect existing Agent',
+        })
+        .click();
+      const connectDialog = page.locator('[data-connect-source]');
+      await connectDialog.waitFor();
+      await connectDialog.locator('[data-connect-adapter="openclaw"]').click();
+      const serverRows = connectDialog.locator('[data-connect-server]');
+      await serverRows.first().waitFor();
+      await serverRows.last().scrollIntoViewIfNeeded();
+      const serverList = await page.evaluate(() => {
+        const dialog = document.querySelector('[data-connect-source]');
+        const rows = [...dialog.querySelectorAll('[data-connect-server]')];
+        const last = rows[rows.length - 1];
+        let scroller = null;
+        for (
+          let el = last.parentElement;
+          el && el !== dialog.parentElement;
+          el = el.parentElement
+        ) {
+          if (el.scrollHeight > el.clientHeight + 1) {
+            scroller = el;
+            break;
+          }
+        }
+        const overflowY = scroller
+          ? getComputedStyle(scroller).overflowY
+          : null;
+        const d = dialog.getBoundingClientRect();
+        const r = last.getBoundingClientRect();
+        return {
+          rows: rows.length,
+          overflowY,
+          lastInsideDialog: r.top >= d.top && r.bottom <= d.bottom + 1,
+        };
+      });
+      check(
+        'a long server list scrolls inside the Connect dialog and its last row is reachable (BUG-132)',
+        serverList.rows === CONNECT_ALIAS_COUNT &&
+          (serverList.overflowY === 'auto' ||
+            serverList.overflowY === 'scroll') &&
+          serverList.lastInsideDialog,
+        JSON.stringify(serverList)
+      );
+      await page.screenshot({
+        path: join(output, 'connect-server-list-end.png'),
+      });
+      await page.keyboard.press('Escape');
+      await connectDialog.waitFor({ state: 'detached' });
+
       const registry = await page.evaluate(() =>
         window.electron?.agentSources?.list('all')
       );
@@ -343,7 +418,9 @@ try {
         opencodeReady,
         opencodeReady ? '' : JSON.stringify(opencode)
       );
-      const grok = registry?.sources.find(source => source.adapterId === 'grok');
+      const grok = registry?.sources.find(
+        source => source.adapterId === 'grok'
+      );
       const grokReady =
         grok?.state === 'ready' &&
         grok?.facts.identity.value === 'grok.com' &&
@@ -357,8 +434,7 @@ try {
       check(
         'Grok Build declares no delegation channel it cannot deliver',
         grok?.capabilities.delegationObservation.includes('cannot inject') ===
-          true &&
-          grok?.capabilities.effortSelection === 'source-owned',
+          true && grok?.capabilities.effortSelection === 'source-owned',
         JSON.stringify(grok?.capabilities)
       );
       check(
