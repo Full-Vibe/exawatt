@@ -231,7 +231,7 @@ Every user-visible string is written for a production user of a top-tier product
 
 Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not recorded", "unreported", assurance facet labels. They state facts in short form; they do not editorialize about them.
 
-**Machine-authored operator text is in scope too** (partner conversation `2026-08-04-dan-rosenberg`, operator-accepted 2026-08-04). Prose the product generates rather than an author writing it — context labels, recaps, roadmap item copy, summaries an Agent renders into a surface — obeys the same Voice rules plus one more: **the first line carries the conclusion.** A generated block leads with what it is or what happened, in a phrase, before any supporting detail; supporting detail may follow, but never first. Length is not evidence of rigor. The failure this rule names is specific and was observed cold by a first-time viewer of the Team and Roadmap altitudes: dense, unranked, generated text where "there's a lot of good info here, but I don't even know where to look." That is a hierarchy defect, not a density preference — the fix is ranking the content, not deleting it. `AGENTS.md` carries the same contract for text agents write outside the product.
+**Machine-authored operator text is in scope too** (partner conversation, 2026-08-04, operator-accepted 2026-08-04). Prose the product generates rather than an author writing it — context labels, recaps, roadmap item copy, summaries an Agent renders into a surface — obeys the same Voice rules plus one more: **the first line carries the conclusion.** A generated block leads with what it is or what happened, in a phrase, before any supporting detail; supporting detail may follow, but never first. Length is not evidence of rigor. The failure this rule names is specific and was observed cold by a first-time viewer of the Team and Roadmap altitudes: dense, unranked, generated text where "there's a lot of good info here, but I don't even know where to look." That is a hierarchy defect, not a density preference — the fix is ranking the content, not deleting it. `AGENTS.md` carries the same contract for text agents write outside the product.
 
 ---
 
@@ -569,7 +569,7 @@ snapshot, never an intermediate layout storm.
   complete model text, quiet recommendation marks, and ArrowDown's focus handoff.
 
 - 2026-08-04 — Voice extended to machine-authored operator text (partner
-  conversation `2026-08-04-dan-rosenberg`, operator-accepted): generated prose
+  conversation, 2026-08-04, operator-accepted): generated prose
   — context labels, recaps, roadmap copy, Agent-rendered summaries — now owes a
   conclusion-first opening line and the same production register as authored
   strings. Added because a professional creative director reading the Team and

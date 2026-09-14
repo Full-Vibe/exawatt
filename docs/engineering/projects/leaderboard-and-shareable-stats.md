@@ -435,7 +435,7 @@ unit/API/Electron/browser checks, land, deploy, and install the dogfood app.
 
 Exit criteria:
 
-- `0jake0` (or the GitHub-linked operator handle) is visibly #1 on a real
+- the operator's GitHub-linked handle is visibly #1 on a real
   public leaderboard containing exactly one enabled profile
 - the public profile shows a real current activity graph and records derived
   after opt-in, never fixture data
@@ -524,9 +524,9 @@ Exit criteria:
   refresh is exactly the unverified-value failure decision `0029` forbids,
   arriving through staleness rather than through a wrong number.
 
-- 2026-08-04 (partner conversation `2026-08-04-dan-rosenberg`, operator-accepted
+- 2026-08-04 (partner conversation, 2026-08-04, operator-accepted
   the same day — roadmap amendment recorded): **the public arena must lead with
-  output, not input.** Dan Rosenberg is a creative director and positioned the
+  output, not input.** The partner, a creative director, positioned the
   objection explicitly as a marketing one: "I am probably the most
   marketing-minded regular person that you're going to talk to about this, who's
   going to tell you people don't think that way. The token thing is probably

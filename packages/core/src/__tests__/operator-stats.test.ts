@@ -202,11 +202,11 @@ describe('publish payload privacy boundary', () => {
     timezone: 'America/Los_Angeles',
     identity: {
       provider: 'github',
-      providerHandle: '0jake0',
-      handle: '0jake0',
+      providerHandle: 'operator-fixture',
+      handle: 'operator-fixture',
       displayName: 'Jake',
       avatarUrl: 'https://avatars.githubusercontent.com/u/1',
-      links: ['https://github.com/0jake0'],
+      links: ['https://github.com/operator-fixture'],
     },
     days: [],
     runs: [

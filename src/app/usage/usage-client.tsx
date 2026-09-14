@@ -7,8 +7,7 @@
  * the nav label.
  *
  * One page structured as the operator's five questions, in order
- * (2026-08-03 show-and-tell review; transcript in
- * `docs/research/partner-conversations/`):
+ * (2026-08-03 show-and-tell review; the transcript is private research):
  *
  *   1. Headroom — how much is left? (the glance zone: one display numeral,
  *      the reset, the pace verdict as words; every other window subordinate)

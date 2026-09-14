@@ -732,12 +732,12 @@ no packet privately extends the contract to solve a local color.
 
 ## Findings log
 
-- 2026-08-04 (partner conversation `2026-08-04-kevin-ridsdale`, FIX-004,
+- 2026-08-04 (partner conversation, 2026-08-04, FIX-004,
   queued): **CRT theme preset.** Operator committed in-call ("this transcript
-  will be canon — let's make a CRT theme") after Kevin noted the product's
+  will be canon — let's make a CRT theme") after the partner noted the product's
   palette lineage traces to CRT terminals. A fourth first-party preset through
   the landed T0–T5 pipeline: phosphor-dark color and typography via the same
-  data-only schema, decision `0026` gates unchanged. Kevin's explicit
+  data-only schema, decision `0026` gates unchanged. The partner's explicit
   constraint, adopted as the design boundary: no pixel-shader distortion,
   scanline, or color-fringing effects — "that stuff is played out." Convenient
   corollary: the theme contract already forbids arbitrary shaders/CSS, so the

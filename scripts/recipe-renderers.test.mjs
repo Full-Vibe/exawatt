@@ -27,6 +27,7 @@ import {
   findImageMetadataFindings,
   findTextFindings,
   readForbiddenVocabulary,
+  readPartnerConversationTerms,
 } from './public-content-scan.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -314,11 +315,16 @@ test('every rendered output passes the checks the content gate applies', async (
   const forbiddenVocabulary = await readForbiddenVocabulary(
     process.env.EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE
   );
+  // A GENERATED source may cite private research; its rendered bytes may not
+  // (BUG-126), so the partner-citation rule runs here on the output.
+  const partnerConversationTerms = await readPartnerConversationTerms(ROOT);
   const findings = [];
   for (const [file, bytes] of await renderWorkingTree()) {
     findings.push(...findImageMetadataFindings(bytes, file));
     findings.push(
-      ...findTextFindings(bytes.toString('utf8'), file, forbiddenVocabulary)
+      ...findTextFindings(bytes.toString('utf8'), file, forbiddenVocabulary, {
+        partnerConversationTerms,
+      })
     );
   }
   assert.deepEqual(findings, []);

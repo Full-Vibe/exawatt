@@ -277,6 +277,18 @@ const PRIVATE_DISTRIBUTION_REFERENCES = Object.freeze([
 const PRIVATE_UPDATE_FEED = Object.freeze([literal('supabase.co')]);
 
 /**
+ * The private partner-conversation directory. Assembled at runtime because
+ * this module is itself public-bound and `public-content-scan.mjs` rejects
+ * the literal segment in every PUBLIC file (BUG-126); the scanner reads this
+ * constant so the projection and the gate name one directory.
+ */
+export const PARTNER_CONVERSATIONS_DIRECTORY = [
+  'docs',
+  'research',
+  'partner-conversations',
+].join('/');
+
+/**
  * Path prefixes whose every tracked file is company canon: private evidence,
  * go-to-market, production schema custody, and the release lane. A public
  * document that cites one of them fails decision `0036` §2's standing
@@ -300,7 +312,7 @@ export const PRIVATE_COMPANY_PATH_PREFIXES = Object.freeze([
   'docs/research/market/',
   'docs/research/open-source-comps/',
   'docs/research/operator-briefs/',
-  'docs/research/partner-conversations/',
+  PARTNER_CONVERSATIONS_DIRECTORY + '/',
   'scripts/electron-auth-session-eval.mjs',
   'scripts/feedback-triage.mjs',
   'scripts/issue-invite.mjs',

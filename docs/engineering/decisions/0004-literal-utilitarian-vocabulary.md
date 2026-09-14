@@ -6,7 +6,7 @@ Date: 2026-07-01
 
 ## Context
 
-Gastown (Steve Yegge) demonstrates that an abstract, opinionated metaphor vocabulary (Mad Max roles, heavy-industry nouns) can work for orchestrating hundreds to thousands of agents, and the 2026-06-24 Kevin Ridsdale conversation raised whether Exawatt should adopt similarly abstract analogies for its product nouns — the argument being that at fleet scale, literal nouns like "project" start to feel odd for a pocket of a thousand workers against one goal.
+Gastown (Steve Yegge) demonstrates that an abstract, opinionated metaphor vocabulary (Mad Max roles, heavy-industry nouns) can work for orchestrating hundreds to thousands of agents, and a 2026-06-24 partner conversation raised whether Exawatt should adopt similarly abstract analogies for its product nouns — the argument being that at fleet scale, literal nouns like "project" start to feel odd for a pocket of a thousand workers against one goal.
 
 Current canon (`docs/product/concepts.md`) uses literal terms: Workspace, Initiative, Project / Context Group, Agent, Session, and so on.
 

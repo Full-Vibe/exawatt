@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import {
+  derivePartnerConversationTerms,
   findImageMetadataFindings,
   findTextFindings,
+  readPartnerConversationTerms,
   scanChangedFiles,
 } from './public-content-scan.mjs';
 import { createPathClassifier } from './lib/open-source-paths.mjs';
@@ -298,4 +300,174 @@ test('private vocabulary is optional, private, and redacted from findings', asyn
     JSON.stringify(withPrivatePolicy.findings),
     /hidden launch/i
   );
+});
+
+// BUG-126 fixtures. Every name here is invented, and the private directory is
+// assembled from segments so this test file never carries the literal path
+// the rule rejects.
+const PARTNER_DIRECTORY_SEGMENTS = [
+  'docs',
+  'research',
+  'partner-conversations',
+];
+
+test('partner-conversation terms derive from file slugs and confirmed titles', () => {
+  const terms = derivePartnerConversationTerms([
+    {
+      fileName: '2026-01-02-zed-quillfeather.md',
+      title: '# Zed Quillfeather / Operator Partner Conversation',
+    },
+    {
+      fileName: '2026-01-09-zed-quillfeather-design-scoping.md',
+      title: '# Zed Quillfeather / Operator design scoping',
+    },
+    {
+      fileName: '2026-01-10-multi-agent-show-and-tell.md',
+      title: '# Multi-Agent Show and Tell',
+    },
+    { fileName: '2026-01-11-solo.md', title: '# Solo Partner Conversation' },
+    { fileName: 'notes.txt', title: '# ignored' },
+  ]);
+  assert.deepEqual(terms, [
+    `${PARTNER_DIRECTORY_SEGMENTS.join('/')}/`,
+    'zed-quillfeather',
+    'zed quillfeather',
+    'zed-quillfeather-design-scoping',
+    'multi-agent-show-and-tell',
+    'solo',
+  ]);
+  // A group session's hyphenated first token is never promoted to a name.
+  assert.ok(!terms.includes('multi agent'));
+  assert.ok(!terms.includes('multi-agent'));
+});
+
+test('partner-conversation citations are rejected in PUBLIC files only, anonymously', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-partner-terms-'));
+  t.after(() =>
+    import('node:fs/promises').then(fs => fs.rm(root, { recursive: true }))
+  );
+  const directory = path.join(root, ...PARTNER_DIRECTORY_SEGMENTS);
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, '2026-01-02-zed-quillfeather.md'),
+    '# Zed Quillfeather / Operator Partner Conversation\n\nDate: 2026-01-02\n'
+  );
+  await writeFile(
+    path.join(directory, '2026-01-10-multi-agent-show-and-tell.md'),
+    '# Multi-Agent Show and Tell\n\nDate: 2026-01-10\n'
+  );
+  const segment = `${PARTNER_DIRECTORY_SEGMENTS.join('/')}/`;
+  await writeFile(
+    path.join(root, 'by-path.md'),
+    `Evidence: \`${segment}2026-01-02-zed-quillfeather.md\`.\n`
+  );
+  await writeFile(
+    path.join(root, 'by-slug.md'),
+    'Evidence (partner conversation `2026-01-02-zed-quillfeather`).\n'
+  );
+  await writeFile(
+    path.join(root, 'by-name.md'),
+    'The partner, Zed\n  Quillfeather, is a creative director.\n'
+  );
+  await writeFile(
+    path.join(root, 'by-group-slug.md'),
+    'See `2026-01-10-multi-agent-show-and-tell` for the session.\n'
+  );
+  await writeFile(
+    path.join(root, 'clean.md'),
+    [
+      'Evidence: a partner conversation, 2026-01-02, operator-accepted.',
+      'The multi-agent show and tell covered zed.quillfeather@example.com.',
+      'A quillfeather is not a name; zedquillfeather is one token.',
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(root, 'generated.md'),
+    'Zed Quillfeather said so.\n'
+  );
+  await writeFile(path.join(root, 'private.md'), 'Zed Quillfeather said so.\n');
+
+  const classifyPath = createPathClassifier({
+    schemaVersion: 1,
+    rules: [
+      {
+        id: 'public',
+        classification: 'PUBLIC',
+        include: ['*.md'],
+        exclude: ['generated.md', 'private.md'],
+      },
+      {
+        id: 'private',
+        classification: 'PRIVATE',
+        include: ['private.md', `${PARTNER_DIRECTORY_SEGMENTS.join('/')}/**`],
+        exclude: [],
+      },
+    ],
+    exceptions: [
+      {
+        path: 'generated.md',
+        classification: 'GENERATED',
+        recipe: 'generated',
+        reason: 'rendered elsewhere',
+      },
+    ],
+    recipes: {
+      generated: {
+        kind: 'fixture',
+        inputs: ['generated.md'],
+        outputs: [{ path: 'generated.md', mode: '100644' }],
+      },
+    },
+  });
+
+  const result = await scanChangedFiles(
+    root,
+    [
+      'by-path.md',
+      'by-slug.md',
+      'by-name.md',
+      'by-group-slug.md',
+      'clean.md',
+      'generated.md',
+      'private.md',
+      path.join(
+        ...PARTNER_DIRECTORY_SEGMENTS,
+        '2026-01-02-zed-quillfeather.md'
+      ),
+    ],
+    { classifyPath }
+  );
+  assert.deepEqual(
+    result.findings.map(entry => [entry.file, entry.rule, entry.line]),
+    [
+      ['by-group-slug.md', 'private-partner-citation', 1],
+      ['by-name.md', 'private-partner-citation', 1],
+      ['by-path.md', 'private-partner-citation', 1],
+      ['by-slug.md', 'private-partner-citation', 1],
+    ]
+  );
+  assert.equal(result.skippedFiles, 2);
+  assert.doesNotMatch(JSON.stringify(result.findings), /quillfeather/iu);
+  assert.doesNotMatch(JSON.stringify(result.findings), /show-and-tell/iu);
+
+  // Without a classifier every scanned file is treated as public-bound.
+  const unclassified = await scanChangedFiles(root, ['generated.md']);
+  assert.deepEqual(
+    unclassified.findings.map(entry => entry.rule),
+    ['private-partner-citation']
+  );
+});
+
+test('the partner-conversation rule is a no-op without the private directory', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-partner-absent-'));
+  t.after(() =>
+    import('node:fs/promises').then(fs => fs.rm(root, { recursive: true }))
+  );
+  assert.deepEqual(await readPartnerConversationTerms(root), []);
+  await writeFile(
+    path.join(root, 'copy.md'),
+    'partner conversation `2026-01-02-zed-quillfeather` with Zed Quillfeather\n'
+  );
+  const result = await scanChangedFiles(root, ['copy.md']);
+  assert.deepEqual(result.findings, []);
 });

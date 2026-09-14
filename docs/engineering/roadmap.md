@@ -1800,7 +1800,7 @@ Boundaries and open questions for the design pass:
 - whether closed and recoverable Sessions are searchable, and for how long; the 14-day Recently-closed ledger is the obvious boundary
 - where results land: one ranked list inside the existing `⌘K` (which decision D48 just re-ranked and should not be destabilized), a distinct mode, or a Fleet-altitude filter that selects units on the board
 - whether semantic ranking is local or hosted, and what happens offline — ENG-021's rule that a good last-known answer beats a blank applies here too
-- the routing question Dan's framing implies (address the finding to the owning Agent, or spawn one) belongs to ENG-013, not here; this item ends at retrieval
+- the routing question the partner's framing implies (address the finding to the owning Agent, or spawn one) belongs to ENG-013, not here; this item ends at retrieval
 
 ## Later
 

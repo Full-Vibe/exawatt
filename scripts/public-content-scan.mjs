@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { lstat, readFile, readlink } from 'node:fs/promises';
+import { lstat, readFile, readdir, readlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +9,7 @@ import {
   createPathClassifier,
   readPathManifest,
 } from './lib/open-source-paths.mjs';
+import { PARTNER_CONVERSATIONS_DIRECTORY } from './lib/recipe-renderers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -117,11 +118,85 @@ export function isApprovedHomeFixture(segment) {
   );
 }
 
+const PARTNER_FILE_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}-/u;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&');
+}
+
+/**
+ * BUG-126. A partner conversation is private evidence: the file, its slug,
+ * and the person it names must never reach a PUBLIC file, while the
+ * anonymous form ("a partner conversation, 2026-08-04") stays allowed. The
+ * terms are derived, never written down: every `<date>-<slug>.md` in the
+ * private directory contributes its slug (`dan-doe-design-scoping`), and when
+ * the file's own title carries the slug's first two tokens as a spaced name,
+ * that name in both `first last` and `first-last` form. A file whose title
+ * does not (a group session, a company) contributes only its slug, so a
+ * generic first token such as `multi-agent` never becomes a name.
+ *
+ * `entries` is `[{ fileName, title }]`; the result is lowercase and unique.
+ */
+export function derivePartnerConversationTerms(entries) {
+  const terms = new Set([`${PARTNER_CONVERSATIONS_DIRECTORY}/`]);
+  for (const { fileName, title = '' } of entries) {
+    if (!fileName.endsWith('.md')) continue;
+    const slug = fileName
+      .slice(0, -'.md'.length)
+      .replace(PARTNER_FILE_DATE_PREFIX, '')
+      .toLocaleLowerCase('en-US');
+    if (!slug) continue;
+    terms.add(slug);
+    const tokens = slug.split('-').filter(Boolean);
+    if (tokens.length < 2) continue;
+    const spaced = `${tokens[0]} ${tokens[1]}`;
+    const titleWords = title.toLocaleLowerCase('en-US').replace(/\s+/gu, ' ');
+    if (!titleWords.includes(spaced)) continue;
+    terms.add(spaced);
+    terms.add(`${tokens[0]}-${tokens[1]}`);
+  }
+  return [...terms];
+}
+
+/**
+ * Reads the private directory when it exists; a public clone has none, so
+ * the rule is a no-op there. Only the first Markdown heading is read, which
+ * is where the storage contract in `AGENTS.md` puts the partner's name.
+ */
+export async function readPartnerConversationTerms(root) {
+  const directory = path.join(
+    root,
+    ...PARTNER_CONVERSATIONS_DIRECTORY.split('/')
+  );
+  let fileNames;
+  try {
+    fileNames = await readdir(directory);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  const entries = [];
+  for (const fileName of fileNames.sort()) {
+    if (!fileName.endsWith('.md')) continue;
+    const source = await readFile(path.join(directory, fileName), 'utf8');
+    const title =
+      source.split(/\r?\n/u).find(line => line.startsWith('# ')) ?? '';
+    entries.push({ fileName, title });
+  }
+  return derivePartnerConversationTerms(entries);
+}
+
+function partnerTermPattern(term) {
+  // A spaced name may wrap across a Markdown line; a slug or path is exact.
+  const body = term.split(' ').map(escapeRegExp).join('\\s+');
+  return new RegExp(`(?<![a-z0-9])${body}(?![a-z0-9])`, 'iu');
+}
+
 export function findTextFindings(
   source,
   relativePath,
   forbiddenVocabulary = [],
-  { allowThirdPartyEmailMetadata = false } = {}
+  { allowThirdPartyEmailMetadata = false, partnerConversationTerms = [] } = {}
 ) {
   const file = normalizedPath(relativePath);
   const findings = [];
@@ -174,6 +249,22 @@ export function findTextFindings(
         'private forbidden vocabulary matched; replace it with public-safe copy',
         source,
         offset
+      )
+    );
+  }
+
+  for (const term of partnerConversationTerms) {
+    const match = partnerTermPattern(term).exec(source);
+    if (!match) continue;
+    // The term is never printed: the finding would otherwise carry the name.
+    findings.push(
+      finding(
+        file,
+        'private-partner-citation',
+        'cites a private partner conversation by path, file slug, or name; ' +
+          'cite it anonymously by date',
+        source,
+        match.index
       )
     );
   }
@@ -396,6 +487,11 @@ export async function scanChangedFiles(
   const vocabularyAbsolute = forbiddenVocabularyPath
     ? path.resolve(forbiddenVocabularyPath)
     : null;
+  // GENERATED sources may cite private research; their public bytes come
+  // from the renderer, which refuses the same references on its output and
+  // is scanned with these terms by `recipe-renderers.test.mjs`.
+  const partnerConversationTerms = await readPartnerConversationTerms(root);
+  const partnerDirectoryPrefix = `${PARTNER_CONVERSATIONS_DIRECTORY}/`;
   const findings = [];
   let checkedFiles = 0;
   let skippedFiles = 0;
@@ -403,6 +499,10 @@ export async function scanChangedFiles(
   for (const candidate of [...new Set(changedPaths)].sort()) {
     const resolved = resolveCandidate(root, candidate);
     if (resolved.absolute === vocabularyAbsolute) continue;
+    if (resolved.relative.startsWith(partnerDirectoryPrefix)) {
+      skippedFiles += 1;
+      continue;
+    }
     let details;
     try {
       details = await lstat(resolved.absolute);
@@ -432,6 +532,10 @@ export async function scanChangedFiles(
     const textOptions = {
       allowThirdPartyEmailMetadata:
         pathPolicy?.contentPolicy?.allowThirdPartyEmailMetadata === true,
+      partnerConversationTerms:
+        pathPolicy === null || pathPolicy.classification === 'PUBLIC'
+          ? partnerConversationTerms
+          : [],
     };
     if (details.isSymbolicLink()) {
       checkedFiles += 1;
@@ -482,6 +586,8 @@ async function main() {
         '',
         'Optionally set EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE to a',
         'newline-delimited private file. The scanner never prints its terms.',
+        'PUBLIC files may not cite a private partner conversation by path,',
+        'file slug, or name; the terms derive from the private directory.',
         '',
       ].join('\n')
     );

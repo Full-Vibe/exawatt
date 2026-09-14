@@ -327,7 +327,7 @@ describe('workspace persistence v5 (ENG-018)', () => {
               durableSessionId: 'session-leaked',
               harness: 'codex',
               title:
-                "I'm going to give you a call transcript with Dr. Matt Rosenberg, along…",
+                "I'm going to give you a call transcript with Dr. Ada Quillon, along…",
               cwd: '/project',
               sessionId: 'pty-leaked',
               harnessSessionId: 'provider-leaked',

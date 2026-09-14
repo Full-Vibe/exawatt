@@ -25,6 +25,7 @@ import {
   findImageMetadataFindings,
   findTextFindings,
   readForbiddenVocabulary,
+  readPartnerConversationTerms,
 } from './public-content-scan.mjs';
 
 test('filter-repo many-to-one commit maps choose a deterministic source set', () => {
@@ -1169,6 +1170,9 @@ test('every rendered output passes the checks the content gate applies', async (
     const forbiddenVocabulary = await readForbiddenVocabulary(
       process.env.EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE
     );
+    const partnerConversationTerms = await readPartnerConversationTerms(
+      fixture.source
+    );
 
     const findings = [];
     for (const output of projection.renderedOutputs) {
@@ -1182,7 +1186,8 @@ test('every rendered output passes the checks the content gate applies', async (
         ...findTextFindings(
           bytes.toString('utf8'),
           output.path,
-          forbiddenVocabulary
+          forbiddenVocabulary,
+          { partnerConversationTerms }
         )
       );
     }

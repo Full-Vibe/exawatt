@@ -179,8 +179,8 @@ Gold-corpus candidate on the same terms as prior rows: the instruction
 sequence must be reconstructed from the durable Session before an executable
 case is added.
 
-Corroborating external evidence (partner conversation
-`2026-08-04-kevin-ridsdale`): Kevin independently hits the same failure class
+Corroborating external evidence (partner conversation,
+2026-08-04): the partner independently hits the same failure class
 in his commit-message-writing skill — summaries drift to describe the last
 small tweak instead of the encompassing intent ("implement giant feature and
 add unit test" territory). Both parties read it as an ergonomic-writing gap in
