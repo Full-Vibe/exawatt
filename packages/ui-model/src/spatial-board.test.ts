@@ -1251,3 +1251,111 @@ describe('a work state nobody reported, on the board', () => {
     expect(resting?.status).toBe('idle');
   });
 });
+
+/**
+ * Structural sharing. Canvas layers memoize on object identity, so the
+ * selector's contract is: a returned object is the previous one exactly when
+ * it is value-identical. A live tick that changes nothing must hand back the
+ * previous layout itself; a change in one Project must not manufacture new
+ * objects for its neighbours.
+ */
+describe('layout structural sharing', () => {
+  const child = (id: string) => ({
+    id,
+    agentType: 'Explore',
+    description: null,
+    startedAt: 1,
+  });
+
+  function twoProjects(betaFirstStatus: ExawattAgent['status'] = 'idle') {
+    return fleet([
+      { ...agent('a1', 'Alpha', 'working'), delegation: { children: [child('c1'), child('c2')] } },
+      agent('a2', 'Alpha', 'idle'),
+      agent('b1', 'Beta', betaFirstStatus),
+      agent('b2', 'Beta', 'working'),
+    ]);
+  }
+
+  it('returns the previous layout object itself when nothing changed', () => {
+    const state = twoProjects();
+    const first = selectSpatialBoardLayout(state);
+    const second = selectSpatialBoardLayout(state, { previousLayout: first });
+    expect(second).toBe(first);
+  });
+
+  it('shares identity through a re-created but value-identical fleet state', () => {
+    const first = selectSpatialBoardLayout(twoProjects());
+    const second = selectSpatialBoardLayout(twoProjects(), {
+      previousLayout: first,
+    });
+    expect(second).toBe(first);
+  });
+
+  it('keeps identity across chained ticks', () => {
+    const state = twoProjects();
+    let layout = selectSpatialBoardLayout(state);
+    const original = layout;
+    for (let tick = 0; tick < 3; tick += 1) {
+      layout = selectSpatialBoardLayout(state, { previousLayout: layout });
+    }
+    expect(layout).toBe(original);
+  });
+
+  it('renews only the changed Project; neighbours and their pieces keep identity', () => {
+    const before = selectSpatialBoardLayout(twoProjects('idle'));
+    const after = selectSpatialBoardLayout(twoProjects('blocked'), {
+      previousLayout: before,
+    });
+
+    expect(after).not.toBe(before);
+
+    const beforeAlpha = before.zones.find(zone => zone.id === 'project:Alpha')!;
+    const afterAlpha = after.zones.find(zone => zone.id === 'project:Alpha')!;
+    const afterBeta = after.zones.find(zone => zone.id === 'project:Beta')!;
+    const beforeBeta = before.zones.find(zone => zone.id === 'project:Beta')!;
+
+    // The untouched Project is the previous object; the changed one is not.
+    expect(afterAlpha).toBe(beforeAlpha);
+    expect(afterBeta).not.toBe(beforeBeta);
+    // The changed zone still shares its unchanged sub-objects.
+    expect(afterBeta.rect).toBe(beforeBeta.rect);
+    expect(afterBeta.agentIds).toBe(beforeBeta.agentIds);
+
+    const alphaPieces = after.pieces.filter(
+      piece => piece.projectId === 'project:Alpha'
+    );
+    expect(alphaPieces.length).toBeGreaterThan(0);
+    for (const piece of alphaPieces) {
+      expect(piece).toBe(before.pieces.find(item => item.id === piece.id));
+    }
+    const changed = after.pieces.find(piece => piece.agentId === 'b1')!;
+    expect(changed).not.toBe(before.pieces.find(p => p.agentId === 'b1')!);
+
+    // Alpha's delegation constellation survives untouched.
+    expect(after.delegationUnits.length).toBeGreaterThan(0);
+    for (const unit of after.delegationUnits) {
+      expect(unit).toBe(
+        before.delegationUnits.find(item => item.id === unit.id)
+      );
+    }
+
+    // Geometry did not move, so bounds and minimap keep identity too.
+    expect(after.bounds).toBe(before.bounds);
+    expect(after.cameraBounds).toBe(before.cameraBounds);
+    expect(after.minimap).toBe(before.minimap);
+    expect(after.stats).toBe(before.stats);
+  });
+
+  it('does not disturb slot stability while sharing', () => {
+    const before = selectSpatialBoardLayout(projectFleet(6));
+    const grown = fleet([
+      ...Object.values(projectFleet(6).agents),
+      agent('new-1', 'Project 990'),
+    ]);
+    const after = selectSpatialBoardLayout(grown, { previousLayout: before });
+    for (const zone of before.zones) {
+      const successor = after.zones.find(item => item.id === zone.id);
+      expect(successor?.slotIndex).toBe(zone.slotIndex);
+    }
+  });
+});

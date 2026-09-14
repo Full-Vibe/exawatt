@@ -1375,7 +1375,7 @@ export function selectSpatialBoardLayout(
     piece => piece.labelVisibility === 'always'
   ).length;
 
-  return {
+  return shareSpatialBoardLayout(options.previousLayout ?? null, {
     version: 2,
     altitude,
     focusedProjectId: altitude === 'fleet' ? null : focusedProjectId,
@@ -1403,7 +1403,356 @@ export function selectSpatialBoardLayout(
       ),
       visibleLabelCount,
     },
+  });
+}
+
+/**
+ * Structural sharing (the perf pass V3.7 recorded). The selector recomputes
+ * the world on every fleet tick, but the canvas layers memoize on object
+ * identity: a zone or piece that comes back `===` is a subtree the renderer
+ * can skip. Identity is therefore a CONTRACT here — a returned object is the
+ * previous one exactly when it is value-identical — and a tick that changes
+ * nothing the board reads hands back the previous layout object itself.
+ *
+ * The sweep is one field-wise pass over plain data. Piece and zone budgets
+ * cap what the selector emits, so the cost stays flat as the source fleet
+ * grows. The comparators enumerate their fields through exhaustive key maps:
+ * adding a field to a layout type without classifying it here stops the
+ * module compiling, because a comparator that silently ignored a field would
+ * hand consumers a stale object under the identity contract.
+ */
+function shareSpatialBoardLayout(
+  previous: SpatialBoardLayout | null,
+  next: SpatialBoardLayout
+): SpatialBoardLayout {
+  if (!previous) return next;
+
+  const previousZones = new Map(previous.zones.map(zone => [zone.id, zone]));
+  const zones = shareArray(
+    previous.zones,
+    next.zones.map(zone => shareZone(previousZones.get(zone.id), zone))
+  );
+
+  const previousPieces = new Map(
+    previous.pieces.map(piece => [piece.id, piece])
+  );
+  const pieces = shareArray(
+    previous.pieces,
+    next.pieces.map(piece => sharePiece(previousPieces.get(piece.id), piece))
+  );
+
+  const previousUnits = new Map(
+    previous.delegationUnits.map(unit => [unit.id, unit])
+  );
+  const delegationUnits = shareArray(
+    previous.delegationUnits,
+    next.delegationUnits.map(unit =>
+      shareDelegationUnit(previousUnits.get(unit.id), unit)
+    )
+  );
+
+  const bounds = sameRect(previous.bounds, next.bounds)
+    ? previous.bounds
+    : next.bounds;
+  const cameraBounds = sameRect(previous.cameraBounds, next.cameraBounds)
+    ? previous.cameraBounds
+    : next.cameraBounds;
+  const minimap =
+    sameRect(previous.minimap.bounds, next.minimap.bounds) &&
+    sameStringArray(
+      previous.minimap.visibleZoneIds,
+      next.minimap.visibleZoneIds
+    )
+      ? previous.minimap
+      : next.minimap;
+  const stats = sameStats(previous.stats, next.stats)
+    ? previous.stats
+    : next.stats;
+
+  if (
+    zones === previous.zones &&
+    pieces === previous.pieces &&
+    delegationUnits === previous.delegationUnits &&
+    bounds === previous.bounds &&
+    cameraBounds === previous.cameraBounds &&
+    minimap === previous.minimap &&
+    stats === previous.stats &&
+    sameLayoutScalars(previous, next)
+  ) {
+    return previous;
+  }
+
+  return {
+    ...next,
+    zones,
+    pieces,
+    delegationUnits,
+    bounds,
+    cameraBounds,
+    minimap,
+    stats,
   };
+}
+
+/** Element-wise `===`; returns the previous array when nothing moved. */
+function shareArray<T>(previous: T[], next: T[]): T[] {
+  if (previous.length !== next.length) return next;
+  for (let index = 0; index < next.length; index += 1) {
+    if (next[index] !== previous[index]) return next;
+  }
+  return previous;
+}
+
+/**
+ * Field-wise comparator over an exhaustive key map. `[K in keyof T]-?: true`
+ * demands every key of `T` (optional ones included), so the compiler is the
+ * drift guard described on `shareSpatialBoardLayout`.
+ */
+function scalarComparator<T extends object>(coverage: {
+  [K in keyof T]-?: true;
+}): (a: T, b: T) => boolean {
+  const keys = Object.keys(coverage) as (keyof T)[];
+  return (a, b) => {
+    for (const key of keys) {
+      if (a[key] !== b[key]) return false;
+    }
+    return true;
+  };
+}
+
+const sameRect = scalarComparator<SpatialBoardRect>({
+  x: true,
+  y: true,
+  width: true,
+  height: true,
+});
+
+const sameStatusCounts = scalarComparator<SpatialBoardStatusCounts>({
+  working: true,
+  blocked: true,
+  reviewing: true,
+  idle: true,
+  complete: true,
+  error: true,
+  unreported: true,
+});
+
+const sameBurnFields = scalarComparator<SpatialBoardZoneBurn>({
+  normalizedTokens: true,
+  share: true,
+  intensity: true,
+});
+
+const sameStats = scalarComparator<SpatialBoardLayout['stats']>({
+  sourceProjectCount: true,
+  emittedProjectCount: true,
+  sourceAgentCount: true,
+  emittedPieceCount: true,
+  visiblePieceCount: true,
+  aggregatedAgentCount: true,
+  visibleLabelCount: true,
+});
+
+const sameLayoutScalars = scalarComparator<
+  Omit<
+    SpatialBoardLayout,
+    | 'zones'
+    | 'pieces'
+    | 'delegationUnits'
+    | 'bounds'
+    | 'cameraBounds'
+    | 'minimap'
+    | 'stats'
+  >
+>({
+  version: true,
+  altitude: true,
+  focusedProjectId: true,
+  selectedProjectId: true,
+  selectedAgentId: true,
+  projectPacking: true,
+});
+
+const sameZoneScalars = scalarComparator<
+  Omit<
+    SpatialBoardProjectZone,
+    'agentIds' | 'rect' | 'minimapRect' | 'statusCounts' | 'burn'
+  >
+>({
+  id: true,
+  slotIndex: true,
+  label: true,
+  radius: true,
+  slotPitch: true,
+  unitSize: true,
+  visible: true,
+  selected: true,
+  isAggregate: true,
+  aggregatedProjectCount: true,
+  agentCount: true,
+  visibleAgentCount: true,
+  activeCount: true,
+  blockedCount: true,
+  attentionPressure: true,
+  costRate: true,
+  dominantStatus: true,
+});
+
+const samePieceScalars = scalarComparator<
+  Omit<SpatialBoardPiece, 'delegation'>
+>({
+  id: true,
+  slotIndex: true,
+  kind: true,
+  projectId: true,
+  agentId: true,
+  label: true,
+  summary: true,
+  activity: true,
+  status: true,
+  sessionState: true,
+  count: true,
+  x: true,
+  y: true,
+  size: true,
+  visible: true,
+  selected: true,
+  needsAttention: true,
+  labelVisibility: true,
+  burnIntensity: true,
+});
+
+const sameDelegationUnitScalars = scalarComparator<
+  Omit<SpatialBoardDelegationUnit, 'tether'>
+>({
+  id: true,
+  parentPieceId: true,
+  parentAgentId: true,
+  parentX: true,
+  parentY: true,
+  parentActive: true,
+  projectId: true,
+  kind: true,
+  childId: true,
+  agentType: true,
+  description: true,
+  startedAt: true,
+  overflowCount: true,
+  x: true,
+  y: true,
+  size: true,
+});
+
+const sameTether = scalarComparator<SpatialBoardDelegationUnit['tether']>({
+  x1: true,
+  y1: true,
+  x2: true,
+  y2: true,
+});
+
+const sameDelegatedChild = scalarComparator<SpatialBoardDelegatedChild>({
+  id: true,
+  agentType: true,
+  description: true,
+  startedAt: true,
+});
+
+function sameDelegatedChildren(
+  a: SpatialBoardDelegatedChild[],
+  b: SpatialBoardDelegatedChild[]
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (!sameDelegatedChild(a[index]!, b[index]!)) return false;
+  }
+  return true;
+}
+
+function sameStringArray(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+}
+
+function sameBurn(
+  a: SpatialBoardZoneBurn | null,
+  b: SpatialBoardZoneBurn | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return sameBurnFields(a, b);
+}
+
+function shareZone(
+  previous: SpatialBoardProjectZone | undefined,
+  next: SpatialBoardProjectZone
+): SpatialBoardProjectZone {
+  if (!previous) return next;
+  const agentIds = sameStringArray(previous.agentIds, next.agentIds)
+    ? previous.agentIds
+    : next.agentIds;
+  const rect = sameRect(previous.rect, next.rect) ? previous.rect : next.rect;
+  const minimapRect = sameRect(previous.minimapRect, next.minimapRect)
+    ? previous.minimapRect
+    : next.minimapRect;
+  const statusCounts = sameStatusCounts(
+    previous.statusCounts,
+    next.statusCounts
+  )
+    ? previous.statusCounts
+    : next.statusCounts;
+  const burn = sameBurn(previous.burn, next.burn) ? previous.burn : next.burn;
+  if (
+    agentIds === previous.agentIds &&
+    rect === previous.rect &&
+    minimapRect === previous.minimapRect &&
+    statusCounts === previous.statusCounts &&
+    burn === previous.burn &&
+    sameZoneScalars(previous, next)
+  ) {
+    return previous;
+  }
+  // A changed zone still shares its unchanged sub-objects, so a consumer
+  // keyed on `zone.rect` or `zone.agentIds` survives a count-only tick.
+  return { ...next, agentIds, rect, minimapRect, statusCounts, burn };
+}
+
+function sharePiece(
+  previous: SpatialBoardPiece | undefined,
+  next: SpatialBoardPiece
+): SpatialBoardPiece {
+  if (!previous) return next;
+  const delegation =
+    previous.delegation &&
+    next.delegation &&
+    previous.delegation.count === next.delegation.count &&
+    sameDelegatedChildren(
+      previous.delegation.children,
+      next.delegation.children
+    )
+      ? previous.delegation
+      : next.delegation;
+  if (delegation === previous.delegation && samePieceScalars(previous, next)) {
+    return previous;
+  }
+  return delegation === next.delegation ? next : { ...next, delegation };
+}
+
+function shareDelegationUnit(
+  previous: SpatialBoardDelegationUnit | undefined,
+  next: SpatialBoardDelegationUnit
+): SpatialBoardDelegationUnit {
+  if (!previous) return next;
+  const tether = sameTether(previous.tether, next.tether)
+    ? previous.tether
+    : next.tether;
+  if (tether === previous.tether && sameDelegationUnitScalars(previous, next)) {
+    return previous;
+  }
+  return tether === next.tether ? next : { ...next, tether };
 }
 
 export type SpatialSelectionDirection = 'up' | 'down' | 'left' | 'right';
