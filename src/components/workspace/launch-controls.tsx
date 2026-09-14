@@ -22,7 +22,6 @@ import {
   isAgentPermissionMode,
   launchSourceSnapshots,
   loadAgentModelCatalog,
-  loadAgentSourceRegistry,
   loadAgentSourcePreferences,
   permissionModeFor,
   recommendAgentSource,
@@ -38,10 +37,10 @@ import type { LaunchOptions, WorkspaceDraftPatch } from './use-workspace-state';
 import type {
   AgentModelCatalog,
   AgentPermissionMode,
-  AgentSourceRegistryLoadStatus,
-  AgentSourceRegistrySnapshot,
   RecentConversation,
 } from '@/types/electron';
+import { useLatestRequest } from '@/hooks/use-latest-request';
+import { useAgentSourceRegistry } from './use-agent-source-registry';
 import {
   consumePendingAgentComposerRequest,
   FOCUS_AGENT_COMPOSER_EVENT,
@@ -91,57 +90,20 @@ import { AgentLauncher } from './launcher/agent-launcher';
 import { useComposerClipboard } from './launcher/use-composer-clipboard';
 import { EngineGlyph } from './launcher/setup-chip';
 import {
+  displayEffortLabel,
+  draftLauncherSetup,
+  launcherModelPresentation,
+  launcherReadiness,
+  launcherStatusLine,
+  launcherVendor,
   rowCapacityForWidth,
   type LauncherSetup,
-  type LauncherVendor,
+  type LauncherStatusLine,
 } from './launcher/launcher-model';
 import type { DetailAxis, DetailAxisOption } from './launcher/setup-detail';
 
 function effortChoiceKey(source: AgentSourceId, model: string): string {
   return `${source}:${model}`;
-}
-
-function displayEffortLabel(value: string): string {
-  if (value === 'xhigh') return 'Extra high';
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function launcherModelPresentation(
-  label: string,
-  modelId: string
-): { model: string; variant: string | null } {
-  const hasLongContext =
-    modelId.toLowerCase().endsWith('[1m]') ||
-    /(?:\s*[·(]\s*)1m(?:\s+context)?\)?\s*$/i.test(label);
-  if (!hasLongContext) return { model: label, variant: null };
-  return {
-    model: label
-      .replace(/\s*·\s*1m(?:\s+context)?\s*$/i, '')
-      .replace(/\s*\(1m(?:\s+context)?\)\s*$/i, '')
-      .trim(),
-    variant: '1M context',
-  };
-}
-
-function launcherVendor(
-  source: AgentSourceId,
-  modelId: string
-): LauncherVendor | null {
-  if (source !== 'opencode') return null;
-  const provider = modelId.slice(0, modelId.indexOf('/')).toLowerCase();
-  if (!provider) return null;
-  if (provider === 'ollama') return { label: 'Ollama', kind: 'local' };
-  const labels: Record<string, string> = {
-    openrouter: 'OpenRouter',
-    anthropic: 'Anthropic',
-    google: 'Google',
-    openai: 'OpenAI',
-  };
-  return {
-    label:
-      labels[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1),
-    kind: 'hosted',
-  };
 }
 
 function providerGroup(modelId: string): string | undefined {
@@ -284,13 +246,10 @@ export function AgentComposer({
     onDraftIntentRef.current?.({ ...patch, draftTouched: true });
   }, []);
   const [source, setSource] = useState<AgentSourceId>('claude');
-  const [sourceRegistry, setSourceRegistry] =
-    useState<AgentSourceRegistrySnapshot>(() =>
-      fallbackAgentSourceRegistry('launch')
-    );
-  const [sourceRegistryStatus, setSourceRegistryStatus] = useState<
-    AgentSourceRegistryLoadStatus | 'loading'
-  >('loading');
+  // The registry paints from this machine's memory first and revalidates
+  // behind the row (BUG-062); the hook owns both reads and newest-wins.
+  const registryRead = useAgentSourceRegistry('launch');
+  const sourceRegistry = registryRead.registry;
   const [sourceActionMessage, setSourceActionMessage] = useState<{
     ok: boolean;
     text: string;
@@ -339,12 +298,22 @@ export function AgentComposer({
   >(null);
   // D24: the composer IS the pane of a draft tab (or an empty Project) —
   // always open; ⌘T creates/selects the draft tab that hosts it.
-  const branchEditSeq = useRef(0);
-  const permissionSaveSeq = useRef(0);
+  //
+  // Four channels of "only the newest may commit", one primitive
+  // (BUG-118/119/120/121 were this defect four times). A Project change
+  // invalidates every channel; each channel's own newer request supersedes
+  // its older one.
+  const projectVisit = useLatestRequest();
+  const branchEdits = useLatestRequest();
+  const permissionSaves = useLatestRequest();
+  const modelLoads = useLatestRequest();
+  const modelRefreshes = useLatestRequest();
+  const catalogPrimes = useLatestRequest();
+  // Each source is primed once per Project visit; a landed catalog must not
+  // re-begin the pass and abandon the primes still in flight beside it.
+  const primedSourcesRef = useRef(new Set<AgentSourceId>());
   const permissionSaveQueue = useRef(Promise.resolve());
   const requestedSourceRef = useRef<AgentSourceId | null>(null);
-  const modelLoadSeq = useRef(0);
-  const modelRefreshSeq = useRef(0);
   const modelRefreshInFlightRef = useRef<AgentSourceId | null>(null);
   const initialModelPendingRef = useRef<{
     model: string | null;
@@ -383,13 +352,24 @@ export function AgentComposer({
     },
   });
   const preferencesReady = sourcePreferences !== null;
-  const sourceRegistryReady = sourceRegistryStatus === 'live';
   const controlsDisabled = launching !== null;
   const branchReady = !worktree || branch.trim().length > 0;
-  // Source policy is the only asynchronous launch prerequisite. Model
-  // discovery enriches the override picker, but every harness already has a
-  // trustworthy default of its own; a slow or unavailable catalog must not
-  // eat the operator's Enter key or strand the Start control.
+  // The readiness chain is a pure state machine (`launcher-model.ts`): the
+  // row is ready once the saved policy and a PAINTED registry (memory or
+  // live) exist. Model discovery enriches the picker, but every harness
+  // already has a trustworthy default of its own; a slow or unavailable
+  // catalog must not eat the operator's Enter key or strand Start.
+  const registryPainted = registryRead.painted !== 'none';
+  const readiness = launcherReadiness({
+    preferencesReady,
+    poolReady: configurationPool !== null,
+    registry: {
+      snapshot: sourceRegistry,
+      checking: registryRead.status === 'checking',
+      painted: registryRead.painted,
+    },
+    now: Date.now(),
+  });
   const sourceSnapshots = launchSourceSnapshots(sourceRegistry);
   const sourceOrder = sourceSnapshots.map(source => source.harness);
   const effectiveSource = isAgentSourceId(source)
@@ -402,11 +382,13 @@ export function AgentComposer({
     fallbackAgentSourceRegistry('launch').sources.find(
       source => source.harness === effectiveSource
     )!;
+  const selectedFact =
+    readiness.facts.find(fact => fact.harness === effectiveSource) ?? null;
+  // Start needs only THIS source's fact. A source nobody finished probing is
+  // launchable: the attempt is the better probe (BUG-063).
+  const selectedSourceAvailable = selectedFact?.available ?? true;
   const launchReady =
-    preferencesReady &&
-    sourceRegistryReady &&
-    sourceMeta.launchable &&
-    branchReady;
+    preferencesReady && selectedSourceAvailable && branchReady;
   const modelOptions = modelCatalog
     ? model && !modelCatalog.models.some(option => option.id === model)
       ? [
@@ -574,10 +556,12 @@ export function AgentComposer({
   );
 
   useEffect(() => {
-    let cancelled = false;
-    permissionSaveSeq.current += 1;
-    modelLoadSeq.current += 1;
-    modelRefreshSeq.current += 1;
+    const visit = projectVisit.begin();
+    permissionSaves.invalidate();
+    modelLoads.invalidate();
+    modelRefreshes.invalidate();
+    catalogPrimes.invalidate();
+    primedSourcesRef.current = new Set();
     modelRefreshInFlightRef.current = null;
     requestedSourceRef.current = null;
     const savedSource = initialSourceRef.current;
@@ -606,7 +590,6 @@ export function AgentComposer({
     setEffort(initialEffortRef.current ?? null);
     setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     setUsedSafePreferenceFallback(false);
-    setSourceRegistryStatus('loading');
     setSourceActionMessage(null);
     setPermissionSaveState('idle');
     setSelectedTargetKind('agent');
@@ -618,21 +601,21 @@ export function AgentComposer({
     launcherOrderFrozenRef.current = false;
     void loadLaunchConfigurationPool()
       .then(pool => {
-        if (cancelled) return;
+        if (!visit.current) return;
         setConfigurationPool(pool);
         // Freeze ordering for this composer entry. Success updates persistence,
         // but nothing jumps under the operator's keyboard or pointer.
         setFrozenTargets(rankLaunchTargets(pool, projectDir));
       })
       .catch(() => {
-        if (cancelled) return;
+        if (!visit.current) return;
         setConfigurationPool(emptyLaunchConfigurationPool());
         setConfigurationMessage(
           'Saved launch configurations are unavailable for this visit.'
         );
       });
     void loadAgentSourcePreferences().then(result => {
-      if (cancelled) return;
+      if (!visit.current) return;
       const { preferences, usedSafeFallback } = result;
       const recommendedSource = recommendAgentSource(preferences, projectDir);
       const selectedSource = requestedSourceRef.current ?? recommendedSource;
@@ -649,14 +632,6 @@ export function AgentComposer({
       );
       requestedSourceRef.current = null;
     });
-    void loadAgentSourceRegistry('launch').then(result => {
-      if (cancelled) return;
-      setSourceRegistry(result.snapshot);
-      setSourceRegistryStatus(result.status);
-      if (result.error) {
-        setSourceActionMessage({ ok: false, text: result.error.message });
-      }
-    });
     // a (re)mount or Project change is not an operator edit: restore the
     // tab's saved draft directly instead of reporting a blank up (D28)
     setTaskState(initialTaskRef.current ?? '');
@@ -664,9 +639,25 @@ export function AgentComposer({
     setBranch(initialBranchRef.current ?? defaultBranch());
     setRoadmapItemId(initialRoadmapItemIdRef.current ?? '');
     return () => {
-      cancelled = true;
+      projectVisit.invalidate();
+      catalogPrimes.invalidate();
     };
-  }, [projectDir]);
+  }, [
+    catalogPrimes,
+    modelLoads,
+    modelRefreshes,
+    permissionSaves,
+    projectDir,
+    projectVisit,
+  ]);
+
+  // A live read that failed says so once, in the same box a recheck answers
+  // in. The registry itself stays whatever this machine last observed.
+  const registryError = registryRead.error;
+  useEffect(() => {
+    if (!registryError || registryRead.status === 'checking') return;
+    setSourceActionMessage({ ok: false, text: registryError.message });
+  }, [registryError, registryRead.status]);
 
   // the requested source must survive the preferences effect's reset —
   // declared after it so a strict-mode remount replays them in order
@@ -765,8 +756,7 @@ export function AgentComposer({
   const refreshModels = useCallback(async () => {
     if (modelRefreshInFlightRef.current === effectiveSource) return;
     const requestedSource = effectiveSource;
-    const refreshSeq = modelRefreshSeq.current + 1;
-    modelRefreshSeq.current = refreshSeq;
+    const refresh = modelRefreshes.begin();
     modelRefreshInFlightRef.current = requestedSource;
     setModelRefreshState({ source: requestedSource, status: 'checking' });
     try {
@@ -774,7 +764,7 @@ export function AgentComposer({
         requestedSource,
         projectDir
       );
-      if (modelRefreshSeq.current !== refreshSeq) return;
+      if (!refresh.current) return;
       setCatalogsBySource(current => ({
         ...current,
         [requestedSource]: catalog,
@@ -784,31 +774,21 @@ export function AgentComposer({
       }
       setModelRefreshState({ source: requestedSource, status: 'updated' });
     } catch {
-      if (modelRefreshSeq.current !== refreshSeq) return;
+      if (!refresh.current) return;
       setModelRefreshState({ source: requestedSource, status: 'failed' });
     } finally {
-      if (modelRefreshSeq.current === refreshSeq) {
-        modelRefreshInFlightRef.current = null;
-      }
+      if (refresh.current) modelRefreshInFlightRef.current = null;
     }
-  }, [effectiveSource, projectDir]);
+  }, [effectiveSource, modelRefreshes, projectDir]);
 
   useEffect(() => {
-    if (!preferencesReady || !sourceRegistryReady || !sourceMeta.launchable) {
+    if (!preferencesReady || !registryPainted || !selectedSourceAvailable) {
       return;
     }
-    let cancelled = false;
-    const loadSeq = modelLoadSeq.current + 1;
-    modelLoadSeq.current = loadSeq;
+    const load = modelLoads.begin();
     setModelCatalog(null);
     void loadAgentModelCatalog(effectiveSource, projectDir).then(catalog => {
-      if (
-        cancelled ||
-        modelLoadSeq.current !== loadSeq ||
-        catalog.harness !== effectiveSource
-      ) {
-        return;
-      }
+      if (!load.current || catalog.harness !== effectiveSource) return;
       const pendingInitialModel = initialModelPendingRef.current;
       const pendingMatchesSource =
         pendingInitialModel &&
@@ -860,92 +840,67 @@ export function AgentComposer({
         draftEffort: selectedEffort,
       });
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => modelLoads.invalidate();
   }, [
     effectiveSource,
+    modelLoads,
     preferencesReady,
     projectDir,
-    sourceMeta.launchable,
-    sourceRegistryReady,
+    registryPainted,
+    selectedSourceAvailable,
   ]);
 
-  // Prime each launchable source's exact default identity in parallel. This
+  // Prime each available source's exact default identity in parallel. This
   // makes Option-arrow cycling a whole-configuration gesture without making
-  // the first Enter wait for every provider catalog.
+  // the first Enter wait for every provider catalog. A catalog that lands
+  // after the row froze fills its engine's draft chip in place.
+  const availableSourceKey = readiness.facts
+    .filter(fact => fact.available)
+    .map(fact => fact.harness)
+    .join('\n');
   useEffect(() => {
-    if (!preferencesReady || !sourceRegistryReady) return;
-    let cancelled = false;
-    const sources = launchSourceSnapshots(sourceRegistry)
-      .filter(snapshot => snapshot.launchable)
-      .map(snapshot => snapshot.harness);
-    for (const sourceId of sources) {
-      if (catalogsBySource[sourceId]) continue;
+    if (!preferencesReady || !registryPainted || availableSourceKey === '') {
+      return;
+    }
+    const prime = catalogPrimes.current();
+    for (const sourceId of availableSourceKey.split('\n')) {
+      if (!isAgentSourceId(sourceId) || primedSourcesRef.current.has(sourceId)) {
+        continue;
+      }
+      primedSourcesRef.current.add(sourceId);
       void loadAgentModelCatalog(sourceId, projectDir).then(catalog => {
-        if (cancelled || catalog.harness !== sourceId) return;
+        if (!prime.current || catalog.harness !== sourceId) return;
         setCatalogsBySource(current =>
           current[sourceId] ? current : { ...current, [sourceId]: catalog }
         );
       });
     }
-    return () => {
-      cancelled = true;
-    };
   }, [
-    catalogsBySource,
+    availableSourceKey,
+    catalogPrimes,
     preferencesReady,
     projectDir,
-    sourceRegistry,
-    sourceRegistryReady,
+    registryPainted,
   ]);
 
-  // D49: hold inert cards until every launchable engine has either reported a
-  // catalog or honestly degraded. Rank once at that boundary; subsequent
-  // launches update persistence for the next composer without moving the row
-  // under the current pointer or keyboard focus.
+  // D49: rank ONCE, the moment the row can paint from real facts, and never
+  // again while this composer is open. That moment is the readiness chain's
+  // `ready` phase: saved policy, pool and a painted registry. Engines the
+  // pool has not taught the row about paint as draft chips (finding 13) and
+  // fill in as their catalogs land, so nothing waits for every provider and
+  // nothing moves under the pointer or keyboard focus.
   useEffect(() => {
     if (
       launcherOrderFrozenRef.current ||
       !configurationPool ||
-      !preferencesReady ||
-      !sourceRegistryReady
+      readiness.phase !== 'ready'
     ) {
       return;
-    }
-    const launchable = launchSourceSnapshots(sourceRegistry).filter(
-      snapshot => snapshot.launchable
-    );
-    if (launchable.some(snapshot => !catalogsBySource[snapshot.harness])) {
-      return;
-    }
-    const seeds: AgentLaunchConfiguration[] = [];
-    for (const snapshot of launchable) {
-      const catalog = catalogsBySource[snapshot.harness];
-      if (!catalog?.effectiveModel) continue;
-      const option = catalog.models.find(
-        candidate => candidate.id === catalog.effectiveModel
-      );
-      seeds.push(
-        createAgentLaunchConfiguration(
-          {
-            sourceId: snapshot.id,
-            modelId: catalog.effectiveModel,
-            effort: catalog.effectiveEffort,
-            labels: {
-              source: snapshot.label,
-              model: option?.label ?? catalog.effectiveModelLabel,
-              effort: catalog.effectiveEffortLabel,
-            },
-          },
-          0
-        )
-      );
     }
     const ranked = recommendLaunchSetups({
       pool: configurationPool,
       project: projectDir,
-      seeds,
+      seeds: [],
       availability: target =>
         target.kind === 'shell'
           ? { available: true }
@@ -957,15 +912,7 @@ export function AgentComposer({
       ...ranked.ordered.map(row => row.target),
       SHELL_LAUNCH_TARGET,
     ]);
-  }, [
-    catalogsBySource,
-    configurationPool,
-    preferencesReady,
-    projectDir,
-    sourceRegistry,
-    sourceRegistryReady,
-    targetAvailability,
-  ]);
+  }, [configurationPool, projectDir, readiness.phase, targetAvailability]);
 
   useEffect(() => {
     const element = launcherMeasureRef.current;
@@ -981,22 +928,16 @@ export function AgentComposer({
     return () => observer.disconnect();
   }, []);
 
+  const recheckRegistry = registryRead.recheck;
   const recheckSources = useCallback(async () => {
-    setSourceRegistryStatus('loading');
     setSourceActionMessage(null);
-    const result = await loadAgentSourceRegistry(
-      'launch',
-      true,
-      sourceRegistry
-    );
-    setSourceRegistry(result.snapshot);
-    setSourceRegistryStatus(result.status);
+    const result = await recheckRegistry(true);
     setSourceActionMessage(
       result.error
         ? { ok: false, text: result.error.message }
         : { ok: true, text: 'Agent Source status verified.' }
     );
-  }, [sourceRegistry]);
+  }, [recheckRegistry]);
 
   // ⌘T must land in the goal field every time (D21): focus after mount —
   // the draft pane mounts fresh on every summon
@@ -1064,8 +1005,7 @@ export function AgentComposer({
 
   const persistPermissionMode = useCallback(
     async (nextSource: AgentSourceId, nextMode: AgentPermissionMode) => {
-      const saveSeq = permissionSaveSeq.current + 1;
-      permissionSaveSeq.current = saveSeq;
+      const ticket = permissionSaves.begin();
       setPermissionSaveState('saving');
       const save = permissionSaveQueue.current.then(() =>
         rememberAgentPermissionMode(projectDir, nextSource, nextMode)
@@ -1075,10 +1015,10 @@ export function AgentComposer({
         () => undefined
       );
       const saved = await save;
-      if (permissionSaveSeq.current !== saveSeq) return;
+      if (!ticket.current) return;
       setPermissionSaveState(saved ? 'saved' : 'failed');
     },
-    [projectDir]
+    [permissionSaves, projectDir]
   );
 
   const launchAgent = async () => {
@@ -1095,7 +1035,9 @@ export function AgentComposer({
     }
     const launchedConfiguration = currentConfigurationInput;
     setLaunching('agent');
-    const branchSeqAtLaunch = branchEditSeq.current;
+    // The branch resets to a fresh default after launch unless the operator
+    // edited it meanwhile: an edit supersedes this ticket.
+    const branchUntouched = branchEdits.begin();
     let ok = false;
     try {
       ok = await onLaunch({
@@ -1130,7 +1072,7 @@ export function AgentComposer({
         );
     }
     setTask('');
-    if (worktree && branchEditSeq.current === branchSeqAtLaunch) {
+    if (worktree && branchUntouched.current) {
       setBranch(defaultBranch());
     }
   };
@@ -1242,17 +1184,8 @@ export function AgentComposer({
     return ok;
   };
 
-  const launchableSnapshots = sourceSnapshots.filter(
-    snapshot => snapshot.launchable
-  );
   const launcherSettled =
-    launcherOrderFrozenRef.current &&
-    configurationPool !== null &&
-    preferencesReady &&
-    sourceRegistryReady &&
-    launchableSnapshots.every(snapshot =>
-      Boolean(catalogsBySource[snapshot.harness])
-    );
+    launcherOrderFrozenRef.current && readiness.phase === 'ready';
   const projectUsage = configurationPool?.projects[projectDir]?.usage ?? {};
 
   const targetToLauncherSetup = (
@@ -1306,41 +1239,39 @@ export function AgentComposer({
     .map(targetToLauncherSetup)
     .filter((setup): setup is LauncherSetup => setup !== null);
 
-  // A launchable engine without a source-owned default is not absent. It is a
-  // real selectable state that opens Model and blocks Start until the operator
-  // supplies the missing fact (D49 finding 13; decision 0027).
-  for (const snapshot of launchableSnapshots) {
-    const catalog = catalogsBySource[snapshot.harness];
-    if (catalog?.effectiveModel) continue;
-    launcherSetups.push({
-      id: `draft:${snapshot.harness}`,
-      role: 'coding',
-      name: null,
-      engine: {
-        harness: snapshot.harness,
-        label: snapshot.label,
-        color: snapshot.color,
-      },
-      model:
-        catalog?.effectiveModelSource === 'account-default'
-          ? catalog.effectiveModelLabel
-          : null,
-      modelVariant: null,
-      vendor: null,
-      thinking: null,
-      reason: 'default',
-      launchCount: 0,
-      pinned: false,
-      available: true,
-    });
+  // Every available engine the pool has not taught the row about paints as
+  // one draft chip, once a real registry (memory or live) is painted.
+  const representedEngines = new Set(
+    launcherSetups.map(setup => setup.engine.harness)
+  );
+  for (const fact of registryPainted ? readiness.facts : []) {
+    if (!fact.available || representedEngines.has(fact.harness)) continue;
+    const adjusting =
+      selectedTargetKind === 'agent' && fact.harness === effectiveSource && model
+        ? { model, modelLabel, effort, effortLabel }
+        : null;
+    launcherSetups.push(
+      draftLauncherSetup({
+        engine: {
+          harness: fact.harness,
+          label: fact.snapshot.label,
+          color: fact.snapshot.color,
+        },
+        catalog: catalogsBySource[fact.harness],
+        adjusting,
+      })
+    );
   }
 
-  // A palette request or restored draft may name a valid exact configuration
-  // outside the frozen recommendation row. Keep that operator-authored choice
-  // visible without re-sorting the rest of the row.
+  // The selected chip: the exact configuration when the row holds it,
+  // otherwise the engine's draft chip (which is showing that configuration).
+  // Only a configuration for an engine with no chip at all is prepended, so
+  // a palette request or restored draft stays visible without re-sorting.
+  const draftChipId = `draft:${effectiveSource}`;
   if (
     currentConfigurationInput &&
-    !launcherSetups.some(setup => setup.id === currentConfigurationId)
+    !launcherSetups.some(setup => setup.id === currentConfigurationId) &&
+    !launcherSetups.some(setup => setup.id === draftChipId)
   ) {
     const currentTarget = createAgentLaunchConfiguration(
       currentConfigurationInput,
@@ -1350,8 +1281,16 @@ export function AgentComposer({
     if (setup) launcherSetups.unshift(setup);
   }
 
+  // Start needs the saved policy and a painted registry, not the pool: a row
+  // still settling on its ranking must not eat the operator's Enter key.
   const selectedLauncherId =
-    selectedTargetKind === 'agent' ? currentConfigurationId : null;
+    selectedTargetKind !== 'agent' || !preferencesReady || !registryPainted
+      ? null
+      : launcherSetups.some(setup => setup.id === currentConfigurationId)
+        ? currentConfigurationId
+        : launcherSetups.some(setup => setup.id === draftChipId)
+          ? draftChipId
+          : currentConfigurationId;
   const capacity = rowCapacityForWidth(launcherWidth);
   let visibleLauncherSetups = launcherSetups.slice(0, capacity);
   const selectedOutsideRow = launcherSetups.find(
@@ -1371,12 +1310,16 @@ export function AgentComposer({
     if (id.startsWith('draft:')) {
       const nextSource = id.slice('draft:'.length);
       if (isAgentSourceId(nextSource)) {
-        reportDraftIntent({
+        // A whole-configuration gesture: the engine's known default comes
+        // with it, so ⌥↑↓ never lands on a chip that is still resolving.
+        const catalog = catalogsBySource[nextSource];
+        const patch = {
           draftSource: nextSource,
-          draftModel: null,
-          draftEffort: null,
-        });
-        applyAgentSelection(nextSource, null, null);
+          draftModel: catalog?.effectiveModel ?? null,
+          draftEffort: catalog?.effectiveEffort ?? null,
+        };
+        reportDraftIntent(patch);
+        applyAgentSelection(nextSource, patch.draftModel, patch.draftEffort);
       }
       return;
     }
@@ -1400,25 +1343,33 @@ export function AgentComposer({
   const selectedModelOption = selectedCatalog?.models.find(
     option => option.id === model
   );
-  const engineAxisOptions: DetailAxisOption[] = sourceSnapshots.map(
-    snapshot => ({
-      id: snapshot.harness,
+  const engineAxisOptions: DetailAxisOption[] = readiness.facts.map(fact => {
+    const snapshot = fact.snapshot;
+    const verdict = fact.verdict;
+    return {
+      id: fact.harness,
       label: snapshot.label,
-      description: snapshot.launchable ? snapshot.stateLabel : snapshot.summary,
-      disabled: !snapshot.launchable,
-      disabledReason: !snapshot.launchable ? snapshot.stateLabel : undefined,
+      description:
+        verdict.kind === 'blocked' || verdict.kind === 'notice'
+          ? verdict.reason
+          : fact.freshness === 'checking'
+            ? 'Checking'
+            : snapshot.stateLabel,
+      disabled: !fact.available,
+      disabledReason:
+        verdict.kind === 'blocked' ? verdict.reason : undefined,
       mark: (
         <EngineGlyph
           engine={{
-            harness: snapshot.harness,
+            harness: fact.harness,
             label: snapshot.label,
             color: snapshot.color,
           }}
           size={12}
         />
       ),
-    })
-  );
+    };
+  });
   const modelAxisOptions: DetailAxisOption[] = (
     selectedCatalog?.models ?? []
   ).map(option => ({
@@ -1623,20 +1574,37 @@ export function AgentComposer({
   );
   const modelRequired =
     selectedCatalog?.effectiveModelSource === 'unavailable' && model === null;
-  const launcherBlockedReason = clipboard.pending
-    ? 'Saving clipboard content…'
-    : !launcherSettled
-      ? null
-      : !sourceMeta.launchable
-        ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
+  // The one status line under the row, from the readiness chain: a blocking
+  // fact names the fact (never a state label), a sign-in fact informs without
+  // blocking, and memory being rechecked says so quietly.
+  const sourceStatus = launcherStatusLine(selectedFact, readiness);
+  const launcherStatus: LauncherStatusLine = clipboard.pending
+    ? { kind: 'blocked', text: 'Saving clipboard content…' }
+    : !preferencesReady || !registryPainted
+      ? { kind: 'none', text: '' }
+      : sourceStatus.kind === 'blocked'
+        ? sourceStatus
         : !branchReady
-          ? 'Enter a branch name before starting.'
+          ? { kind: 'blocked', text: 'Enter a branch name before starting.' }
           : modelRequired
-            ? `Choose a model for ${sourceMeta.label} before starting.`
+            ? {
+                kind: 'blocked',
+                text: `Choose a model for ${sourceMeta.label} before starting.`,
+              }
             : selectedSetup && !selectedSetup.available
-              ? (selectedSetup.unavailableReason ??
-                'This setup is unavailable.')
-              : null;
+              ? {
+                  kind: 'blocked',
+                  text:
+                    selectedSetup.unavailableReason ??
+                    'This setup is unavailable.',
+                }
+              : sourceStatus;
+  const launcherBlockedReason =
+    launcherStatus.kind === 'blocked' ? launcherStatus.text : null;
+  const launcherNotice =
+    launcherStatus.kind === 'notice' || launcherStatus.kind === 'checking'
+      ? launcherStatus
+      : null;
 
   const controls = (
     <div
@@ -1702,7 +1670,7 @@ export function AgentComposer({
           setups={visibleLauncherSetups}
           selectedId={selectedLauncherId}
           state={launcherSettled ? 'ready' : 'settling'}
-          axes={selectedLauncherId ? launcherAxes : []}
+          axes={selectedTargetKind === 'agent' ? launcherAxes : []}
           detailFootnote="Changes apply to this Agent until you start it."
           detailAction={modelRefreshAction}
           task={task}
@@ -1715,6 +1683,7 @@ export function AgentComposer({
           onStart={() => void launchAgent()}
           launching={launching === 'agent'}
           blockedReason={launcherBlockedReason}
+          notice={launcherNotice}
           placeholderCount={Math.max(2, capacity)}
         />
       </div>
@@ -1990,7 +1959,7 @@ export function AgentComposer({
               <input
                 value={branch}
                 onChange={event => {
-                  branchEditSeq.current += 1;
+                  branchEdits.invalidate();
                   const nextBranch = event.target.value;
                   setBranch(nextBranch);
                   onDraftChangeRef.current?.({ draftBranch: nextBranch });
@@ -2052,14 +2021,14 @@ export function AgentComposer({
           }}
         >
           <span>{sourceActionMessage.text}</span>
-          {!sourceRegistryReady && (
+          {registryRead.status !== 'live' && (
             <button
               type="button"
-              disabled={sourceRegistryStatus === 'loading'}
+              disabled={registryRead.status === 'checking'}
               onClick={() => void recheckSources()}
               className="shrink-0 rounded px-2 py-1 font-medium outline-none transition-colors hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
             >
-              {sourceRegistryStatus === 'loading' ? 'Checking…' : 'Recheck'}
+              {registryRead.status === 'checking' ? 'Checking…' : 'Recheck'}
             </button>
           )}
         </div>

@@ -482,12 +482,16 @@ export async function openLaunchCatalog(page) {
 /**
  * Wait for the launcher to stop settling.
  *
- * Its controls stay DISABLED until the Agent Source registry answers for every
- * installed harness. On a cold launch — or a machine running two dozen agent
- * worktrees — that enumeration outlasts a page's default timeout, and the
- * failure surfaces as an opaque "element is not enabled" rather than "the
- * registry is still loading". One explicit, generously bounded wait, in the
- * one place every launcher driver goes through.
+ * Its controls stay DISABLED until the saved policy and a painted Agent
+ * Source registry exist. Since the readiness fact model (2026-09-13) a
+ * painted registry is this machine's memory when it has one, so a warm
+ * profile settles in milliseconds; a throwaway eval profile has no memory
+ * and still waits for the live probe of every installed harness. On a cold
+ * launch — or a machine running two dozen agent worktrees — that enumeration
+ * outlasts a page's default timeout, and the failure surfaces as an opaque
+ * "element is not enabled" rather than "the registry is still loading". One
+ * explicit, generously bounded wait, in the one place every launcher driver
+ * goes through.
  */
 export async function waitForLauncherToSettle(page) {
   await page

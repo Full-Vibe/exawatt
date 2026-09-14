@@ -405,6 +405,26 @@ snapshot, never an intermediate layout storm.
   `eval:workspace:paused` (8 states), `eval:workspace:team`,
   `eval:workspace:split` 10/10, and the before/after captures described in
   ENG-015's findings log (S6.4).
+- 2026-09-13 — **Readiness freshness vocabulary and the reserved status line**
+  (decision `0040`; BUG-062, BUG-082). A fact about an Agent Source now
+  renders `checking`, `known`, `stale` and `unobserved` as four different
+  things, never one word: Settings paints `Checking` (dim tone, the spinning
+  glyph the Connecting state already owns) for a source whose first probe of
+  this process is running with nothing remembered, and never the no-bridge
+  "open the desktop app" copy inside the desktop app; a remembered fact keeps
+  its own state and its honest age. The New Agent launcher's line under the
+  row is a RESERVED box (`data-launcher-status`, `min-h-4`, chrome-micro mono)
+  with three registers: a blocking fact in `hud-amber/85`, a non-blocking
+  fact (`Claude Code: not signed in · checked 2h ago`) in `hud-amber/60`, and
+  the quiet checking affordance (`Checking engines…`) in `hud-text-dim/70`.
+  It was a conditional paragraph before, so a reason appearing under the row
+  moved the hint line and the recents below it; the rule from BUG-049's
+  dialogs section (a reserved control keeps its box) now covers status lines.
+  A chip whose engine's catalog is still being read shims its model line
+  (`modelPending`) instead of saying "Choose a model". No new colour or size
+  rung. Evidence: `/hud-gallery/agent-launcher` "Painted from memory" and
+  "Not signed in" scenarios, and the BUG-062 probe screenshots in the
+  milestone log.
 - 2026-08-19 — **Unreported** added to Status iconography (ENG-010). A
   deliberate improvement, not an adherence: the system had one unlit lamp
   doing two opposite jobs. `STATUS_LIGHT_META.off` was labelled **Idle** and

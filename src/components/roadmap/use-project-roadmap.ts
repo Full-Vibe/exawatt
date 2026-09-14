@@ -9,7 +9,8 @@
  * roadmap file-change broadcast. The watch behind that broadcast belongs to
  * `useFleetRoadmapAttention`, which watches every open Project.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   inferSessionLinks,
   parseRoadmap,
@@ -82,9 +83,10 @@ export function useProjectRoadmap(
     Record<string, RoadmapSessionEvidence>
   >({});
   const [recentChanges, setRecentChanges] = useState<RoadmapRecentChange[]>([]);
-  // survives re-renders; bumped to invalidate in-flight reads on refresh
-  const generation = useRef(0);
-  const activityGeneration = useRef(0);
+  // Two channels: a refresh of the document must not be overwritten by an
+  // older document read, and likewise for the activity trail.
+  const documentReads = useLatestRequest();
+  const activityReads = useLatestRequest();
 
   const load = useCallback(() => {
     const api = window.electron?.roadmap;
@@ -94,10 +96,10 @@ export function useProjectRoadmap(
       setRead({ status: 'loading' });
       return;
     }
-    const gen = ++generation.current;
+    const ticket = documentReads.begin();
     void Promise.resolve(readVia(projectDir))
       .then(result => {
-        if (gen !== generation.current) return;
+        if (!ticket.current) return;
         if (result.status === 'ok') {
           const doc = parseRoadmap(result.text, {
             projectDir,
@@ -115,17 +117,17 @@ export function useProjectRoadmap(
         }
       })
       .catch(reason => {
-        if (gen !== generation.current) return;
+        if (!ticket.current) return;
         setRead({
           status: 'error',
           error: reason instanceof Error ? reason.message : String(reason),
         });
       });
-  }, [projectDir, readSource]);
+  }, [documentReads, projectDir, readSource]);
 
   const loadActivity = useCallback(() => {
     const api = window.electron?.roadmap;
-    const gen = ++activityGeneration.current;
+    const ticket = activityReads.begin();
     if (readSource || !projectDir || !api?.activity) {
       setRecentChanges([]);
       return;
@@ -133,12 +135,12 @@ export function useProjectRoadmap(
     void api
       .activity(projectDir)
       .then(changes => {
-        if (gen === activityGeneration.current) setRecentChanges(changes);
+        if (ticket.current) setRecentChanges(changes);
       })
       .catch(() => {
-        if (gen === activityGeneration.current) setRecentChanges([]);
+        if (ticket.current) setRecentChanges([]);
       });
-  }, [projectDir, readSource]);
+  }, [activityReads, projectDir, readSource]);
 
   useEffect(() => {
     // show the shimmer only across project switches, not focus refreshes

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   agentSourceLaunchReadiness,
+  registryCacheWindowMs,
   probeOutcome,
   localSourceState,
   openClawSourceState,
@@ -18,6 +19,7 @@ import {
 } from './agent-source-registry';
 import { configureLoginShellScratchDir } from './login-shell';
 import type {
+  AgentSourceObservation,
   AgentSourceProbeName,
   AgentSourceRegistrySnapshot,
   AgentSourceState,
@@ -27,7 +29,9 @@ import type {
 function claudeSnapshot(source: {
   state: AgentSourceState;
   stateLabel: string;
+  launchable?: boolean;
   unobservedProbes?: readonly AgentSourceProbeName[];
+  observation?: AgentSourceObservation;
 }): AgentSourceRegistrySnapshot {
   return {
     sources: [
@@ -36,6 +40,7 @@ function claudeSnapshot(source: {
         label: 'Claude Code',
         launchable: false,
         unobservedProbes: [],
+        observation: { origin: 'live' },
         ...source,
       },
     ],
@@ -360,23 +365,73 @@ describe('Agent Source registry truth', () => {
 
   it('turns source observations into actionable main-process launch errors', () => {
     const snapshot = claudeSnapshot({
-      state: 'action-required',
-      stateLabel: 'Action required',
+      state: 'not-installed',
+      stateLabel: 'Not installed',
     });
     const blocked = agentSourceLaunchReadiness(snapshot, 'claude');
     expect(blocked).toMatchObject({ known: true, blocked: true });
     expect(blocked.known && blocked.blocked && blocked.message).toContain(
-      'requires sign-in'
+      'is not installed'
     );
     expect(
       agentSourceLaunchReadiness(
         {
           ...snapshot,
-          sources: [{ ...snapshot.sources[0], launchable: true }],
+          sources: [
+            {
+              ...snapshot.sources[0],
+              launchable: true,
+              state: 'ready',
+              stateLabel: 'Ready',
+            },
+          ],
         },
         'claude'
       )
     ).toEqual({ known: true, blocked: false });
+  });
+
+  // Incident 0018: `claude auth status` answered `loggedIn:false`, Exawatt
+  // vetoed the launch, and one ordinary Claude request refreshed the
+  // credential. Sign-in is the source's own to refresh, so an answered
+  // sign-in negative informs and never refuses; the source runs its sign-in
+  // in the pane. Not-installed and incompatible still refuse: running the
+  // source cannot repair either.
+  it('lets a source that reports no sign-in launch and speak for itself', () => {
+    expect(
+      agentSourceLaunchReadiness(
+        claudeSnapshot({
+          state: 'action-required',
+          stateLabel: 'Action required',
+          launchable: true,
+        }),
+        'claude'
+      )
+    ).toEqual({ known: true, blocked: false });
+    expect(
+      agentSourceLaunchReadiness(
+        claudeSnapshot({ state: 'incompatible', stateLabel: 'Incompatible' }),
+        'claude'
+      )
+    ).toMatchObject({ known: true, blocked: true });
+  });
+
+  // A memory painted while this process revalidates it is a fact with an
+  // age, not a present verdict: it never refuses, whatever it remembers.
+  it('never refuses on a remembered negative', () => {
+    const readiness = agentSourceLaunchReadiness(
+      claudeSnapshot({
+        state: 'not-installed',
+        stateLabel: 'Not installed',
+        observation: {
+          origin: 'remembered',
+          revalidation: { attemptedAt: 5, unobservedProbes: ['version'] },
+        },
+      }),
+      'claude'
+    );
+    expect(readiness).toEqual({ known: false, unobserved: ['version'] });
+    expect('message' in readiness).toBe(false);
   });
 
   // BUG-063, fifth in the BUG-001 / 008 / 009 / 026 family. The operator saw
@@ -452,6 +507,49 @@ describe('Agent Source registry truth', () => {
   });
 });
 
+describe('registry cache window (readiness fact model)', () => {
+  const registry = (
+    state: AgentSourceState,
+    observation: AgentSourceObservation = { origin: 'live' }
+  ) =>
+    ({
+      sources: [
+        {
+          harness: 'claude',
+          label: 'Claude Code',
+          state,
+          stateLabel: state,
+          launchable: state === 'ready',
+          unobservedProbes: [],
+          observation,
+        },
+        {
+          harness: 'grok',
+          label: 'Grok Build',
+          state: 'not-installed',
+          stateLabel: 'Not installed',
+          launchable: false,
+          unobservedProbes: [],
+          observation: { origin: 'live' },
+        },
+      ],
+    }) as unknown as AgentSourceRegistrySnapshot;
+
+  it('serves a settled registry (ready or not installed) for the fact-fresh window', () => {
+    expect(registryCacheWindowMs(registry('ready'))).toBe(5 * 60_000);
+  });
+
+  it('keeps the short window for anything a re-probe could change', () => {
+    expect(registryCacheWindowMs(registry('action-required'))).toBe(5_000);
+    expect(registryCacheWindowMs(registry('degraded'))).toBe(5_000);
+    expect(
+      registryCacheWindowMs(
+        registry('ready', { origin: 'remembered', revalidation: null })
+      )
+    ).toBe(5_000);
+  });
+});
+
 describe('Grok Build source truth (ENG-003 S4)', () => {
   it('reads the installed version and pins the verified contract floor', () => {
     // Real output from the installed binary on 2026-08-13.
@@ -480,16 +578,17 @@ describe('Grok Build source truth (ENG-003 S4)', () => {
           adapterId: 'grok',
           harness: 'grok',
           label: 'Grok Build',
-          state: 'action-required',
-          stateLabel: 'Action required',
+          state: 'incompatible',
+          stateLabel: 'Incompatible',
           launchable: false,
           unobservedProbes: [],
+          observation: { origin: 'live' },
         },
       ],
     } as unknown as AgentSourceRegistrySnapshot;
     const readiness = agentSourceLaunchReadiness(snapshot, 'grok');
     const message = readiness.known && readiness.blocked && readiness.message;
     expect(message).toContain('Grok Build');
-    expect(message).toContain('requires sign-in');
+    expect(message).toContain('older than the version Exawatt supports');
   });
 });

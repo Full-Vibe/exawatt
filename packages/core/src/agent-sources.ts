@@ -27,7 +27,15 @@ export type AgentSourceCatalogId = (typeof AGENT_SOURCE_CATALOG_IDS)[number];
 
 export type AgentSourceState =
   | 'ready'
+  /** Renderer-only: a sign-in the operator opened is being reconciled. */
   | 'connecting'
+  /**
+   * Renderer-only: the first probe of this process is running and nothing
+   * has been remembered to paint meanwhile. Distinct from `unknown`, which
+   * is what a probe that RAN and did not answer leaves behind (BUG-082:
+   * "not yet checked" wore the words of "checked and failed").
+   */
+  | 'checking'
   | 'action-required'
   | 'degraded'
   | 'unavailable'
@@ -119,14 +127,47 @@ export type AgentSourceProbeName =
   | 'launch environment'
   | 'gateway';
 
+/**
+ * Where a snapshot's facts came from (readiness fact model, BUG-062/BUG-082).
+ *
+ * - `live`: every fact was produced by a probe in THIS process.
+ * - `remembered`: the last complete observation persisted on this machine,
+ *   painted while this process revalidates it. `observedAt` is the ORIGINAL
+ *   observation time, so the age is honest. `revalidation` is null until
+ *   this process has tried; afterwards it names when it tried and which
+ *   probes did not answer, which is why the memory is still on screen.
+ * - `declared`: nothing on this machine has observed the source at all; the
+ *   snapshot is the adapter's declaration (the web fallback with no bridge).
+ *
+ * The main-process launch gate refuses only a `live` negative: a remembered
+ * negative is a fact with an age, not a present verdict (incident `0018`).
+ */
+export type AgentSourceObservation =
+  | { origin: 'live' }
+  | {
+      origin: 'remembered';
+      revalidation: null | {
+        attemptedAt: number;
+        unobservedProbes: readonly AgentSourceProbeName[];
+      };
+    }
+  | { origin: 'declared' };
+
 export interface AgentSourceSnapshot extends AgentSourceDeclaration {
   id: string;
   configured: boolean;
+  /**
+   * Exawatt would spawn this source: its CLI is present and its version
+   * answered. Sign-in is NOT part of this (incident `0018`): a source that
+   * reports no account still launches, and runs its own sign-in in the pane.
+   */
   launchable: boolean;
   state: AgentSourceState;
   stateLabel: string;
   summary: string;
   observedAt: number;
+  /** Required on purpose, exactly like `unobservedProbes` below. */
+  observation: AgentSourceObservation;
   /**
    * Coverage, declared by the producer (BUG-063). Every probe listed here was
    * asked and never answered, so the `state` beside it is how far Exawatt got,
@@ -185,6 +226,142 @@ export type AgentSourceLaunchReadiness =
   | { known: true; blocked: false }
   | { known: true; blocked: true; message: string }
   | { known: false; unobserved: readonly AgentSourceProbeName[] };
+
+/**
+ * How current a painted fact is. Four different things, never one word
+ * (BUG-062 / BUG-082: "not yet checked" used to wear the words of "checked
+ * and failed").
+ *
+ * - `checking`: a probe is in flight and nothing fresh is painted yet.
+ * - `known`: observed within the fresh window.
+ * - `stale`: a complete observation older than the fresh window, either
+ *   remembered from an earlier process or a live one that has aged.
+ * - `unobserved`: nothing complete has ever been observed and no probe is
+ *   running; a launch attempt is the better probe (BUG-063).
+ */
+export type AgentSourceFactFreshness =
+  | 'checking'
+  | 'known'
+  | 'stale'
+  | 'unobserved';
+
+/**
+ * A fact is current for five minutes, the same window the model catalog
+ * cache uses to decide when to revalidate in the background (BUG-115).
+ */
+export const AGENT_SOURCE_FACT_FRESH_MS = 5 * 60_000;
+
+/** A snapshot that makes a claim: complete coverage and a stated state. */
+export function agentSourceObservationComplete(
+  snapshot: AgentSourceSnapshot
+): boolean {
+  return (
+    snapshot.observation.origin !== 'declared' &&
+    snapshot.unobservedProbes.length === 0 &&
+    snapshot.state !== 'unknown'
+  );
+}
+
+export function agentSourceFactFreshness(input: {
+  snapshot: AgentSourceSnapshot | null | undefined;
+  /** A probe for this source is in flight right now. */
+  checking: boolean;
+  now: number;
+}): AgentSourceFactFreshness {
+  const { snapshot, checking, now } = input;
+  if (!snapshot || !agentSourceObservationComplete(snapshot)) {
+    return checking ? 'checking' : 'unobserved';
+  }
+  const age = now - snapshot.observedAt;
+  if (age >= 0 && age <= AGENT_SOURCE_FACT_FRESH_MS) return 'known';
+  return checking ? 'checking' : 'stale';
+}
+
+/**
+ * What a snapshot SAYS about launching, independent of how old it is or
+ * where it came from. Pure over the snapshot so the main gate, the composer
+ * and Settings cannot disagree about which fact blocks.
+ *
+ * - `blocked` names a fact the source cannot repair by running: no CLI, a
+ *   version Exawatt does not support, or checks that failed.
+ * - `notice` is the sign-in fact (incident `0018`): the source reports no
+ *   account, and running it is how it refreshes or asks. It never blocks.
+ * - `unproven`: coverage incomplete or state unknown; the attempt is the
+ *   probe (BUG-063).
+ */
+export type AgentSourceLaunchVerdict =
+  | { kind: 'clear' }
+  | { kind: 'notice'; fact: 'sign-in-required'; reason: string }
+  | {
+      kind: 'blocked';
+      fact: 'not-installed' | 'incompatible' | 'failed-checks';
+      reason: string;
+    }
+  | { kind: 'unproven'; unobserved: readonly AgentSourceProbeName[] };
+
+export function agentSourceLaunchVerdict(
+  source: AgentSourceSnapshot | null | undefined
+): AgentSourceLaunchVerdict {
+  if (!source) return { kind: 'unproven', unobserved: ['installation'] };
+  if (source.observation.origin === 'declared') {
+    return { kind: 'unproven', unobserved: source.unobservedProbes };
+  }
+  // Coverage before state, exactly as the gate has done since BUG-063.
+  if (source.unobservedProbes.length > 0 && !source.launchable) {
+    return { kind: 'unproven', unobserved: source.unobservedProbes };
+  }
+  const label = source.label;
+  switch (source.state) {
+    case 'ready':
+      return { kind: 'clear' };
+    case 'action-required':
+      return {
+        kind: 'notice',
+        fact: 'sign-in-required',
+        reason: `${label}: not signed in`,
+      };
+    case 'not-installed':
+      return {
+        kind: 'blocked',
+        fact: 'not-installed',
+        reason: `${label} is not installed.`,
+      };
+    case 'incompatible':
+      return {
+        kind: 'blocked',
+        fact: 'incompatible',
+        reason: `${label} is older than the version Exawatt supports.`,
+      };
+    case 'degraded':
+    case 'unavailable':
+      return {
+        kind: 'blocked',
+        fact: 'failed-checks',
+        reason: `${label} is installed, but its checks did not pass.`,
+      };
+    case 'connecting':
+    case 'checking':
+    case 'unknown':
+      return { kind: 'unproven', unobserved: source.unobservedProbes };
+  }
+}
+
+/** Sentence-case age for a painted fact: "12s ago", "2h ago", "3d ago". */
+export function agentSourceFactAge(ageMs: number): string {
+  const seconds = Math.max(0, Math.round(ageMs / 1_000));
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/** The snapshot states Exawatt will spawn (see `AgentSourceSnapshot.launchable`). */
+export function launchableAgentSourceState(state: AgentSourceState): boolean {
+  return state === 'ready' || state === 'action-required';
+}
 
 export type AgentSourceAction =
   | 'authenticate'

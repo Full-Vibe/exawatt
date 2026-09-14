@@ -178,6 +178,7 @@ function fallbackLocalSource(id: AgentSourceId): AgentSourceSnapshot {
     summary:
       'Local source status is available through the Electron desktop bridge.',
     observedAt: fallbackObservedAt,
+    observation: { origin: 'declared' },
     // Nothing was probed at all here: without the bridge there is no login
     // shell to ask. Declaring that keeps a fallback snapshot from reading as
     // an observed verdict (BUG-063).
@@ -224,6 +225,7 @@ function fallbackDemoSource(): AgentSourceSnapshot {
     summary:
       'Demo Mode exercises the same source-facing concepts without a live harness.',
     observedAt: fallbackObservedAt,
+    observation: { origin: 'declared' },
     unobservedProbes: [],
     facts: {
       installation: fact,
@@ -259,6 +261,7 @@ function fallbackOpenClawSource(): AgentSourceSnapshot {
     // operator hosts, so the web fallback no longer asserts either one.
     summary: 'Gateway status is available in the desktop app.',
     observedAt: fallbackObservedAt,
+    observation: { origin: 'declared' },
     unobservedProbes: ['installation', 'gateway'],
     facts: {
       installation: fact,
@@ -296,6 +299,59 @@ export function fallbackAgentSourceRegistry(
     comingSoon: scope === 'all' ? [...FUTURE_AGENT_SOURCE_CATALOG] : [],
     observedAt: fallbackObservedAt,
   };
+}
+
+/**
+ * Sources whose first probe of this process is still running and nothing has
+ * been remembered to paint meanwhile: `checking`, as a state of its own,
+ * never the no-bridge fallback's "open the desktop app" (BUG-082).
+ */
+export function checkingAgentSourceRegistry(
+  scope: 'all' | 'launch' = 'all'
+): AgentSourceRegistrySnapshot {
+  const fallback = fallbackAgentSourceRegistry(scope);
+  return {
+    ...fallback,
+    sources: fallback.sources.map(source => {
+      if (source.adapterId === 'demo') return source;
+      const fact = fallbackFact('Checking', `${source.label} is being checked.`);
+      return {
+        ...source,
+        state: 'checking',
+        stateLabel: 'Checking',
+        summary: `Checking ${source.label}…`,
+        facts: {
+          installation: fact,
+          reachability: fact,
+          authentication: fact,
+          identity: fact,
+          compatibility: fact,
+          modelDiscovery: fact,
+        },
+      };
+    }),
+  };
+}
+
+/**
+ * What this machine last observed, with no probe (BUG-062). Null when the
+ * bridge is absent or nothing has been remembered yet. A failed read also
+ * returns null: the surface paints the checking placeholder either way, and
+ * the live read that follows is the one that carries an error.
+ */
+export async function readRememberedAgentSourceRegistry(
+  scope: 'all' | 'launch' = 'all'
+): Promise<AgentSourceRegistrySnapshot | null> {
+  const remembered =
+    typeof window !== 'undefined'
+      ? window.electron?.agentSources?.remembered
+      : null;
+  if (!remembered) return null;
+  try {
+    return await remembered(scope);
+  } catch {
+    return null;
+  }
 }
 
 export async function loadAgentSourceRegistry(

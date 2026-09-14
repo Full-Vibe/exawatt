@@ -19,6 +19,7 @@
 import type { AgentModelCatalog, AgentSourceSnapshot } from '@/types/electron';
 import type { AgentSourceId } from './agent-sources';
 import {
+  agentSourceLaunchVerdict,
   createAgentLaunchConfiguration,
   type AgentLaunchConfiguration,
   type LaunchTarget,
@@ -129,15 +130,20 @@ export function launchTargetAvailability(
       reason: `Agent Source ${target.labels.source ?? target.sourceId} is not installed.`,
     };
   }
-  if (!snapshot.launchable) {
-    return {
-      available: false,
-      reason: `${snapshot.label}: ${snapshot.stateLabel}`,
-    };
+  // Only a fact the source cannot repair by running refuses (readiness fact
+  // model, 2026-09-13): the reason names that fact, never a state label. An
+  // unproven source and a sign-in negative both launch, and the source
+  // speaks for itself in the pane.
+  const verdict = agentSourceLaunchVerdict(snapshot);
+  if (verdict.kind === 'blocked') {
+    return { available: false, reason: verdict.reason };
   }
   const catalog = catalogs[snapshot.harness];
   if (!catalog) {
-    return { available: false, reason: 'Checking model availability…' };
+    // The catalog is still being read. A pool target is itself evidence that
+    // this exact model launched here before, so it stays available rather
+    // than dimming every remembered setup for the length of a probe.
+    return { available: true };
   }
   const exactModelAvailable =
     target.modelId === catalog.effectiveModel ||

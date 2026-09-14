@@ -23,6 +23,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseRoadmap } from '@exawatt/core';
 import {
+  useLatestRequest,
+  type RequestTicket,
+} from '@/hooks/use-latest-request';
+import {
   deriveFleetRoadmapBlocked,
   pinRoadmapBlockedSince,
   type RoadmapAttentionProject,
@@ -63,12 +67,13 @@ export function useFleetRoadmapAttention(
     () => (dirsKey === '' ? [] : dirsKey.split('\n')),
     [dirsKey]
   );
-  // Generation guard per load pass: a read that resolves after its Project
-  // closed (or after a newer read started) must not resurrect stale state.
-  const generation = useRef(0);
+  // One pass per set of open Projects: a read that resolves after its
+  // Project closed (or after a newer pass started) must not resurrect stale
+  // state. Follow-up reads (file change, focus) belong to the current pass.
+  const passes = useLatestRequest();
 
-  const load = useRef<(dir: string, gen: number) => void>(() => {});
-  load.current = (dir: string, gen: number) => {
+  const load = useRef<(dir: string, pass: RequestTicket) => void>(() => {});
+  load.current = (dir: string, pass: RequestTicket) => {
     const api = window.electron?.roadmap;
     if (!api) {
       setReads(prev => (prev[dir] === ABSENT ? prev : { ...prev, [dir]: ABSENT }));
@@ -77,7 +82,7 @@ export function useFleetRoadmapAttention(
     void api
       .read(dir)
       .then(result => {
-        if (gen !== generation.current) return;
+        if (!pass.current) return;
         setReads(prev => {
           const cached = prev[dir];
           if (result.status !== 'ok') {
@@ -101,7 +106,7 @@ export function useFleetRoadmapAttention(
         });
       })
       .catch(() => {
-        if (gen !== generation.current) return;
+        if (!pass.current) return;
         setReads(prev =>
           prev[dir]?.read.status === 'absent' ? prev : { ...prev, [dir]: ABSENT }
         );
@@ -110,7 +115,7 @@ export function useFleetRoadmapAttention(
 
   // Project set changed: read the new ones, forget the closed ones.
   useEffect(() => {
-    const gen = ++generation.current;
+    const pass = passes.begin();
     const open = new Set(dirs);
     setReads(prev => {
       const next: Record<string, CachedRead> = {};
@@ -122,8 +127,8 @@ export function useFleetRoadmapAttention(
       for (const dir of Object.keys(prev)) if (!open.has(dir)) changed = true;
       return changed ? next : prev;
     });
-    for (const dir of dirs) load.current(dir, gen);
-  }, [dirs]);
+    for (const dir of dirs) load.current(dir, pass);
+  }, [dirs, passes]);
 
   // One owner watches every open Project's roadmap; `use-project-roadmap`
   // only listens. Two owners would fight over main's per-directory watcher:
@@ -140,19 +145,19 @@ export function useFleetRoadmapAttention(
   useEffect(() => {
     const api = window.electron?.roadmap;
     const off = api?.onFileChanged?.(({ projectDir }) => {
-      if (dirs.includes(projectDir)) load.current(projectDir, generation.current);
+      if (dirs.includes(projectDir)) load.current(projectDir, passes.current());
     });
     return () => off?.();
-  }, [dirs]);
+  }, [dirs, passes]);
 
   // The same fallback the lens uses when a watcher could not be installed.
   useEffect(() => {
     const onFocus = () => {
-      for (const dir of dirs) load.current(dir, generation.current);
+      for (const dir of dirs) load.current(dir, passes.current());
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [dirs]);
+  }, [dirs, passes]);
 
   const fleet = useMemo(
     () =>

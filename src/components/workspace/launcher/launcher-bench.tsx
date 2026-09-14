@@ -88,6 +88,7 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
           onStart={() => {}}
           launching={scenario.launching}
           blockedReason={scenario.blockedReason ?? null}
+          notice={scenario.notice ?? null}
           defaultDetailOpen={scenario.detailOpen}
           placeholderCount={3}
         />

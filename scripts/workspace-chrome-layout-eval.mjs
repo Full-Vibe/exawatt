@@ -190,7 +190,11 @@ const launchSourceRegistry = {
     state: 'ready',
     stateLabel: 'Ready',
     summary: `${label} fixture`,
-    observedAt: 1,
+    observedAt: Date.now(),
+    // The real boundary declares both (BUG-063, decision 0040); a double
+    // that omits them is more capable than reality and crashes the composer.
+    observation: { origin: 'live' },
+    unobservedProbes: [],
     capabilities: {
       interactiveLaunch: true,
       initialTask: true,

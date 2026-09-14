@@ -206,7 +206,7 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
         {/* The anchor. The model is what the operator chooses between, so it is
             the only line carrying weight. */}
         <span className="mt-1 flex h-5 w-full min-w-0 items-baseline">
-          {pending ? (
+          {pending || (setup.model === null && setup.modelPending) ? (
             <Shimmer className="h-3.5 w-4/5" />
           ) : (
             <span

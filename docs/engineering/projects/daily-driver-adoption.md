@@ -6967,6 +6967,15 @@ that the composer blocks on every source. No timing-driven runtime refactor
 was justified by this run. D55's stop-on-passing-evidence rule still applies;
 BUG-062 remains open for its original conditions or new contradictory evidence.
 
+2026-09-13 addendum: the contradictory evidence arrived. This probe never let
+the registry's five-second in-process cache expire between ⌘T presses, which
+is exactly the condition the operator hits between Sessions; the one 1,474 ms
+sample above was that cache expiring once. With the cache expired on every
+press, `scripts/composer-registry-cold-probe.mjs` measured 4.3 to 5.1 s of
+placeholder cards per ⌘T. BUG-062 is closed by the readiness fact model
+(decision `0040`); the narrative is in
+[module-topology](module-topology.md#2026-09-13--m0-first-seam-the-agent-source-readiness-fact-model).
+
 Reproduce from a clean, bootstrapped checkout, recording the renderer SHA at
 build time and using a free port. Run the opt-in probe after the staged server
 is ready; the normal Electron helper owns isolated profile cleanup and the

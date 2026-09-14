@@ -3,20 +3,25 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type {
-  AgentHarness,
-  AgentSourceActionResult,
-  AgentSourceAdapterId,
-  AgentSourceCapabilities,
-  AgentSourceFact,
-  AgentSourceFactState,
-  AgentSourceLaunchReadiness,
-  AgentSourceProbeName,
-  AgentSourceProvenance,
-  AgentSourceRegistrySnapshot,
-  AgentSourceSnapshot,
-  AgentSourceState,
+import {
+  AGENT_SOURCE_FACT_FRESH_MS,
+  agentSourceLaunchVerdict,
+  launchableAgentSourceState,
+  type AgentHarness,
+  type AgentSourceActionResult,
+  type AgentSourceAdapterId,
+  type AgentSourceCapabilities,
+  type AgentSourceFact,
+  type AgentSourceFactState,
+  type AgentSourceLaunchReadiness,
+  type AgentSourceObservation,
+  type AgentSourceProbeName,
+  type AgentSourceProvenance,
+  type AgentSourceRegistrySnapshot,
+  type AgentSourceSnapshot,
+  type AgentSourceState,
 } from '@exawatt/core';
+import type { AgentSourceObservationStore } from './agent-source-observation-store';
 import { harnessDescriptor } from './harness-registry';
 import { planLoginShell, shellQuote } from './login-shell';
 import {
@@ -32,6 +37,9 @@ import {
 import { delegationObservations } from '../harness-events/delegation-observation';
 
 const execFileAsync = promisify(execFile);
+
+/** Every snapshot this module produces is observed by THIS process. */
+const LIVE_OBSERVATION: AgentSourceObservation = { origin: 'live' };
 
 interface CommandResult {
   /**
@@ -76,6 +84,19 @@ async function loginShellCommand(
   directory: string | null = null
 ): Promise<CommandResult> {
   const plan = planLoginShell(shell, { command, directory });
+  // Test-only telemetry: the one chokepoint every registry probe passes
+  // through, so a probe can count login shells per gesture instead of
+  // guessing (BUG-062's second number).
+  if (process.env.EXAWATT_TEST === '1' && process.env.EXAWATT_TEST_LOGIN_SHELL_LOG) {
+    try {
+      fs.appendFileSync(
+        process.env.EXAWATT_TEST_LOGIN_SHELL_LOG,
+        `${Date.now()}\t${command}\n`
+      );
+    } catch {
+      // Telemetry never changes the probe.
+    }
+  }
   try {
     const result = await execFileAsync(shell, plan.args, {
       cwd: plan.cwd,
@@ -192,6 +213,8 @@ function stateLabel(state: AgentSourceState): string {
       return 'Ready';
     case 'connecting':
       return 'Connecting';
+    case 'checking':
+      return 'Checking';
     case 'action-required':
       return 'Action required';
     case 'degraded':
@@ -349,6 +372,7 @@ function unobservedSourceSnapshot(input: {
       'authentication',
       'model catalog',
     ],
+    observation: LIVE_OBSERVATION,
     facts: {
       installation: unknownFact(
         'The PATH lookup did not return before its deadline.'
@@ -412,6 +436,7 @@ async function inspectLocalHarness(
       summary: `${source.label} is supported here, but its CLI is not installed.`,
       observedAt,
       unobservedProbes: [],
+      observation: LIVE_OBSERVATION,
       facts: {
         installation: fact(
           'not-installed',
@@ -515,7 +540,9 @@ async function inspectLocalHarness(
     ...declaration,
     id: `${harness}-local`,
     configured: true,
-    launchable: executablePath !== null && authenticated,
+    // Sign-in does not gate the spawn (incident `0018`): the source refreshes
+    // or asks for its own account in the pane, which no Exawatt sentence can.
+    launchable: launchableAgentSourceState(state),
     state,
     stateLabel: stateLabel(state),
     summary:
@@ -528,6 +555,7 @@ async function inspectLocalHarness(
             : `${source.label} is installed, but its checks did not pass.`,
     observedAt,
     unobservedProbes,
+    observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
         'ready',
@@ -671,6 +699,7 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
       summary: 'OpenCode is supported here, but its CLI is not installed.',
       observedAt,
       unobservedProbes: [],
+      observation: LIVE_OBSERVATION,
       facts: {
         installation: fact(
           'not-installed',
@@ -773,7 +802,7 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
     ...declaration,
     id: 'opencode-local',
     configured: true,
-    launchable: state === 'ready',
+    launchable: launchableAgentSourceState(state),
     state,
     stateLabel: stateLabel(state),
     summary:
@@ -786,6 +815,7 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
             : 'OpenCode is installed, but its checks did not pass.',
     observedAt,
     unobservedProbes,
+    observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
         'ready',
@@ -936,6 +966,7 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
       summary: 'Grok Build is supported here, but its CLI is not installed.',
       observedAt,
       unobservedProbes: [],
+      observation: LIVE_OBSERVATION,
       facts: {
         installation: fact(
           'not-installed',
@@ -1021,7 +1052,7 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
     ...declaration,
     id: 'grok-local',
     configured: true,
-    launchable: state === 'ready',
+    launchable: launchableAgentSourceState(state),
     state,
     stateLabel: stateLabel(state),
     summary:
@@ -1036,6 +1067,7 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
               : 'Grok Build is installed, but its checks did not pass.',
     observedAt,
     unobservedProbes,
+    observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
         'ready',
@@ -1347,6 +1379,7 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
               : 'OpenClaw needs a local gateway configuration before Exawatt can connect.',
     observedAt,
     unobservedProbes: statusResult.answered ? [] : ['gateway'],
+    observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
         executable ? 'ready' : 'not-installed',
@@ -1433,6 +1466,7 @@ function demoSource(): AgentSourceSnapshot {
       'Demo Mode exercises the same source-facing fleet concepts without a live harness. Every fact is explicitly simulated.',
     observedAt,
     unobservedProbes: [],
+    observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
         'simulated',
@@ -1514,6 +1548,33 @@ async function discoverAgentSources(
 }
 
 const REGISTRY_CACHE_MS = 5_000;
+
+/**
+ * How long a cached registry is served without a re-probe.
+ *
+ * Five seconds coalesces a ribbon full of draft composers (the original
+ * rule). A registry whose every launchable source is a complete, live and
+ * SETTLED fact has nothing a re-probe would improve for a while, so it is
+ * served for the same window the model-catalog cache uses before
+ * revalidating (BUG-115): a steady-state ⌘T then spawns no login shell at
+ * all. Settled means `ready` or `not-installed`, the two outcomes that
+ * change on the order of days. Anything else (a memory, an unanswered
+ * probe, a signed-out, degraded or incompatible source) keeps the short
+ * window, because those are the facts a re-probe can change. A Settings
+ * Recheck bypasses the cache regardless.
+ */
+export function registryCacheWindowMs(
+  snapshot: AgentSourceRegistrySnapshot
+): number {
+  const settled = snapshot.sources.every(
+    source =>
+      source.harness === null ||
+      (source.observation.origin === 'live' &&
+        source.unobservedProbes.length === 0 &&
+        (source.state === 'ready' || source.state === 'not-installed'))
+  );
+  return settled ? AGENT_SOURCE_FACT_FRESH_MS : REGISTRY_CACHE_MS;
+}
 const registryCache = new Map<
   'all' | 'launch',
   { snapshot: AgentSourceRegistrySnapshot; cachedAt: number }
@@ -1549,6 +1610,105 @@ function launchRegistryView(
   };
 }
 
+let observationStore: AgentSourceObservationStore | null = null;
+
+/** Installed once by the IPC layer; the registry works without one. */
+export function setAgentSourceObservationStore(
+  store: AgentSourceObservationStore | null
+): void {
+  observationStore = store;
+}
+
+function rememberedView(
+  snapshot: AgentSourceSnapshot,
+  revalidation: Extract<
+    AgentSourceObservation,
+    { origin: 'remembered' }
+  >['revalidation']
+): AgentSourceSnapshot {
+  return {
+    ...snapshot,
+    observation: { origin: 'remembered', revalidation },
+  };
+}
+
+/**
+ * Fold the memory into a live discovery: every complete observation is
+ * remembered, and every INCOMPLETE one is replaced by the last complete
+ * observation of that source when there is one, marked remembered and dated
+ * by its own `observedAt`. A probe that timed out therefore leaves the
+ * last-known-good in place, aged, instead of publishing `unknown` over it.
+ */
+async function withRememberedObservations(
+  shell: string,
+  snapshot: AgentSourceRegistrySnapshot
+): Promise<AgentSourceRegistrySnapshot> {
+  const store = observationStore;
+  if (!store) return snapshot;
+  const remembered = await store.read(shell);
+  const attemptedAt = snapshot.observedAt;
+  const sources = snapshot.sources.map(source => {
+    if (
+      source.unobservedProbes.length === 0 &&
+      source.state !== 'unknown'
+    ) {
+      void store.remember(shell, source);
+      return source;
+    }
+    const memory = remembered.get(source.adapterId);
+    if (!memory) return source;
+    return rememberedView(memory, {
+      attemptedAt,
+      unobservedProbes: source.unobservedProbes,
+    });
+  });
+  return { ...snapshot, sources };
+}
+
+/**
+ * What this machine last observed about every source in `scope`, with no
+ * probe and no login shell: the composer paints from this at once and
+ * revalidates behind it. The live cache wins when this process already has a
+ * snapshot; otherwise the persisted memory, marked remembered. Null when
+ * nothing has ever been remembered.
+ */
+export async function rememberedAgentSources(
+  shell: string,
+  scope: 'all' | 'launch' = 'all'
+): Promise<AgentSourceRegistrySnapshot | null> {
+  const cached = registryCache.get(scope);
+  if (cached) return cached.snapshot;
+  const store = observationStore;
+  if (!store) return null;
+  const remembered = await store.read(shell);
+  const adapters: readonly AgentSourceAdapterId[] =
+    scope === 'launch'
+      ? ['claude', 'codex', 'opencode', 'grok']
+      : ['claude', 'codex', 'opencode', 'grok', 'openclaw'];
+  const sources = adapters
+    .map(adapterId => remembered.get(adapterId))
+    .filter((source): source is AgentSourceSnapshot => source !== undefined)
+    .map(source => rememberedView(source, null));
+  if (sources.length === 0) return null;
+  if (scope === 'all') sources.push(demoSource());
+  return {
+    sources,
+    available: sources.map(source => ({
+      adapterId: source.adapterId,
+      label: source.label,
+      description: source.description,
+      availability:
+        source.state === 'not-installed'
+          ? 'not-installed'
+          : source.configured
+            ? 'configured'
+            : 'configure',
+    })),
+    comingSoon: scope === 'all' ? [...FUTURE_AGENT_SOURCE_CATALOG] : [],
+    observedAt: Math.max(...sources.map(source => source.observedAt)),
+  };
+}
+
 /** Short-lived, coalesced observations keep a ribbon full of draft composers
  * from repeatedly spawning status CLIs. Explicit Settings rechecks bypass the
  * cache, preserving operator control and accurate freshness. */
@@ -1558,19 +1718,25 @@ async function inspectAgentSourceDeclarations(
   refresh = false
 ): Promise<AgentSourceRegistrySnapshot> {
   const cached = registryCache.get(scope);
-  if (!refresh && cached && Date.now() - cached.cachedAt < REGISTRY_CACHE_MS) {
+  if (
+    !refresh &&
+    cached &&
+    Date.now() - cached.cachedAt < registryCacheWindowMs(cached.snapshot)
+  ) {
     return cached.snapshot;
   }
   const existing = registryInFlight.get(scope);
   if (!refresh && existing) return existing;
-  const discovery = discoverAgentSources(shell, scope).then(snapshot => {
-    const cachedAt = Date.now();
-    cacheRegistry(scope, snapshot, cachedAt);
-    if (scope === 'all') {
-      cacheRegistry('launch', launchRegistryView(snapshot), cachedAt);
-    }
-    return snapshot;
-  });
+  const discovery = discoverAgentSources(shell, scope)
+    .then(discovered => withRememberedObservations(shell, discovered))
+    .then(snapshot => {
+      const cachedAt = Date.now();
+      cacheRegistry(scope, snapshot, cachedAt);
+      if (scope === 'all') {
+        cacheRegistry('launch', launchRegistryView(snapshot), cachedAt);
+      }
+      return snapshot;
+    });
   registryInFlight.set(scope, discovery);
   try {
     return await discovery;
@@ -1603,6 +1769,13 @@ export async function inspectAgentSources(
  *
  * A missing source is the same case one level up: absence from the snapshot
  * means it was never looked at, not that it is broken.
+ *
+ * Two facts never refuse (readiness fact model, 2026-09-13). A REMEMBERED
+ * negative is a fact with an age: this process asked and got no answer, so
+ * the memory is painted but is not a present verdict. And a sign-in negative
+ * is the source's own to refresh (incident `0018`: an answered
+ * `loggedIn:false` was wrong, and one ordinary Claude request repaired it);
+ * the launch proceeds and the source runs its own sign-in in the pane.
  */
 export function agentSourceLaunchReadiness(
   snapshot: AgentSourceRegistrySnapshot,
@@ -1612,43 +1785,31 @@ export function agentSourceLaunchReadiness(
     candidate => candidate.harness === harness
   );
   if (!source) return { known: false, unobserved: ['installation'] };
-  if (source.launchable) return { known: true, blocked: false };
-  // Coverage is checked BEFORE state, exactly as merged attention coverage is
-  // checked before a marker: a state computed over an incomplete observation
-  // is not a claim about the world.
-  if (source.unobservedProbes.length > 0) {
-    return { known: false, unobserved: source.unobservedProbes };
-  }
-  if (source.state === 'unknown') {
-    return { known: false, unobserved: [] };
-  }
-  const label = source.label;
-  if (source.state === 'not-installed') {
+  if (source.observation.origin === 'remembered') {
     return {
-      known: true,
-      blocked: true,
-      message: `${label} is not installed. Open Settings → Agent Sources for the installation guide.`,
+      known: false,
+      unobserved: source.observation.revalidation?.unobservedProbes ?? [],
     };
   }
-  if (source.state === 'action-required') {
-    return {
-      known: true,
-      blocked: true,
-      message: `${label} requires sign-in. Open Settings → Agent Sources to authenticate and recheck.`,
-    };
+  const verdict = agentSourceLaunchVerdict(source);
+  switch (verdict.kind) {
+    case 'clear':
+    case 'notice':
+      return { known: true, blocked: false };
+    case 'unproven':
+      return { known: false, unobserved: verdict.unobserved };
+    case 'blocked':
+      return {
+        known: true,
+        blocked: true,
+        message:
+          verdict.fact === 'not-installed'
+            ? `${verdict.reason} Open Settings → Agent Sources for the installation guide.`
+            : verdict.fact === 'incompatible'
+              ? `${verdict.reason} Update it, then recheck in Settings → Agent Sources.`
+              : `${verdict.reason} Open Settings → Agent Sources to recheck.`,
+      };
   }
-  if (source.state === 'incompatible') {
-    return {
-      known: true,
-      blocked: true,
-      message: `${label} is older than the version Exawatt supports. Update it, then recheck in Settings → Agent Sources.`,
-    };
-  }
-  return {
-    known: true,
-    blocked: true,
-    message: `${label} is installed, but its checks did not pass. Open Settings → Agent Sources to recheck.`,
-  };
 }
 
 export function sourceOwnedActionCommand(

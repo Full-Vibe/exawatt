@@ -110,6 +110,12 @@ export interface ElectronAgentSourcesApi {
     scope?: 'all' | 'launch',
     refresh?: boolean
   ) => Promise<AgentSourceRegistrySnapshot>;
+  /** What this machine last observed, with no probe; null when nothing yet.
+   *  Optional only so a bridge double need not model it (an absent read is
+   *  "nothing remembered", and the live read carries any error). */
+  remembered?: (
+    scope?: 'all' | 'launch'
+  ) => Promise<AgentSourceRegistrySnapshot | null>;
   act: (
     adapterId: AgentSourceAdapterId,
     action: AgentSourceAction

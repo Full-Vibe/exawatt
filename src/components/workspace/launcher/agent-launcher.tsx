@@ -56,6 +56,13 @@ export interface AgentLauncherProps {
   launching?: boolean;
   /** Blocks Start with a stated reason; never silently disabled. */
   blockedReason?: string | null;
+  /**
+   * A fact that does NOT block: the engine reports no sign-in and will ask
+   * in the pane, or the row is painted from memory while engines are being
+   * rechecked. Shares the reserved status line with `blockedReason`, which
+   * wins when both are present.
+   */
+  notice?: { kind: 'notice' | 'checking'; text: string } | null;
   placeholderCount?: number;
   /** Bench escape hatch: open the detail panel for a screenshot. */
   defaultDetailOpen?: boolean;
@@ -76,6 +83,7 @@ export function AgentLauncher({
   onStart,
   launching = false,
   blockedReason,
+  notice = null,
   placeholderCount,
   defaultDetailOpen = false,
   className,
@@ -219,14 +227,29 @@ export function AgentLauncher({
         />
       </div>
 
-      {blockedReason ? (
-        <p
-          role="status"
-          className="font-mono text-chrome-micro leading-4 text-hud-amber/85"
-        >
-          {blockedReason}
-        </p>
-      ) : null}
+      {/* The status line is RESERVED, never revealed: a reason that appears
+          under the row would move the hint line and the recents below it
+          (design system: a hint or reason reveal never shifts layout). It is
+          one box with three registers: a blocking fact in the attention
+          tone, a non-blocking fact dimmer, and the quiet checking affordance
+          while the row is painted from memory (BUG-062 / BUG-082). */}
+      <p
+        role="status"
+        data-launcher-status
+        data-launcher-status-kind={
+          blockedReason ? 'blocked' : (notice?.kind ?? 'none')
+        }
+        className={cn(
+          'min-h-4 truncate font-mono text-chrome-micro leading-4',
+          blockedReason
+            ? 'text-hud-amber/85'
+            : notice?.kind === 'notice'
+              ? 'text-hud-amber/60'
+              : 'text-hud-text-dim/70'
+        )}
+      >
+        {blockedReason ?? notice?.text ?? ''}
+      </p>
 
       {/* The composer's ONE keyboard hint (BUG-017). The surrounding
           `launch-controls.tsx` printed a second copy of the same chords under
@@ -243,7 +266,7 @@ export function AgentLauncher({
       </p>
 
       <span className="sr-only" aria-live="polite">
-        {state === 'settling'
+        {state === 'settling' || notice?.kind === 'checking'
           ? 'Checking which engines are available.'
           : selected
             ? `Selected ${setupAccessibleLabel(selected)}.${

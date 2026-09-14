@@ -25,6 +25,7 @@ import {
 } from 'react';
 import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
+import { agentSourceLaunchVerdict } from '@exawatt/core';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -2242,18 +2243,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         loadAgentSourceRegistry('launch', true),
         loadAgentModelCatalog(target.source, project.dir),
       ]);
-      // A clone is refused only on an OBSERVED negative. A source whose probe
-      // never answered is not "not available" (BUG-063); the clone proceeds
-      // and the harness reports for itself.
+      // A clone is refused only on an OBSERVED negative the source cannot
+      // repair by running (BUG-063; readiness fact model). A source whose
+      // probe never answered, or that reports no sign-in, is not "not
+      // available": the clone proceeds and the harness reports for itself.
       const targetSnapshot = launchSourceSnapshots(registryLoad.snapshot).find(
         source =>
           source.id === target.sourceId && source.harness === target.source
       );
       const targetReady =
-        targetSnapshot?.launchable === true ||
-        (targetSnapshot !== undefined &&
-          (targetSnapshot.unobservedProbes.length > 0 ||
-            targetSnapshot.state === 'unknown'));
+        targetSnapshot !== undefined &&
+        agentSourceLaunchVerdict(targetSnapshot).kind !== 'blocked';
       const modelReady =
         target.modelId === modelCatalog.effectiveModel ||
         modelCatalog.models.some(model => model.id === target.modelId);

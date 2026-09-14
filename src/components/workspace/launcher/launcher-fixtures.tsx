@@ -163,6 +163,8 @@ export interface BenchScenario {
   detailOpen: boolean;
   task: string;
   blockedReason?: string;
+  /** A non-blocking fact on the reserved status line (readiness fact model). */
+  notice?: { kind: 'notice' | 'checking'; text: string };
   launching?: boolean;
   width: number;
 }
@@ -316,6 +318,30 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     detailOpen: false,
     task: 'Rework the ribbon',
     blockedReason: 'Sonnet 4.6 is not available from Claude Code right now.',
+    width: 768,
+  },
+  {
+    id: 'remembered',
+    title: 'Painted from memory',
+    note: 'The row is what this machine last observed, live at once; engines are being rechecked behind it. The status line is reserved, so the affordance never moves the hints below.',
+    state: 'ready',
+    setups: buildSetups(TRAINED_HISTORY),
+    selectedIndex: 0,
+    detailOpen: false,
+    task: '',
+    notice: { kind: 'checking', text: 'Checking engines…' },
+    width: 768,
+  },
+  {
+    id: 'signed-out',
+    title: 'Not signed in',
+    note: 'The engine reports no account. That fact informs and never blocks (incident 0018): Start stays live and the engine runs its own sign-in in the pane.',
+    state: 'ready',
+    setups: buildSetups(TRAINED_HISTORY),
+    selectedIndex: 0,
+    detailOpen: false,
+    task: '',
+    notice: { kind: 'notice', text: 'Claude Code: not signed in · checked 2h ago' },
     width: 768,
   },
   {

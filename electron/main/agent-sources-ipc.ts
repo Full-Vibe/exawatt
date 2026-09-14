@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { broadcastToWindows } from './window-broadcast';
 import { delegationObservations } from './harness-events/delegation-observation';
 import type { AgentSourceAction, AgentSourceAdapterId } from '@exawatt/core';
@@ -6,10 +6,29 @@ import { handleTrusted } from './ipc-security';
 import {
   inspectAgentSources,
   launchSourceOwnedAction,
+  rememberedAgentSources,
+  setAgentSourceObservationStore,
 } from './pty/agent-source-registry';
+import { AgentSourceObservationStore } from './pty/agent-source-observation-store';
 import { defaultShell } from './pty/session-manager';
 import type { AgentHarness } from './pty/harness-types';
 import { agentSourceDeclaration } from './pty/generated-agent-source-declarations';
+
+// The last complete observation of every source outlives the process, so a
+// ⌘T after a restart (or five seconds after the last one) paints from memory
+// and revalidates behind it (BUG-062). Installed at module load for the same
+// reason the model-catalog cache is: main.ts overrides userData before
+// importing any IPC module.
+setAgentSourceObservationStore(
+  new AgentSourceObservationStore(() => app.getPath('userData'))
+);
+
+function validScope(scope: unknown): 'all' | 'launch' {
+  if (scope !== 'all' && scope !== 'launch') {
+    throw new Error('Invalid Agent Source scope');
+  }
+  return scope;
+}
 
 /**
  * Renderer-safe Agent Source control plane (ENG-003 S1).
@@ -29,14 +48,19 @@ export function registerAgentSourcesIPC(): void {
   handleTrusted(
     'agent-sources:list',
     async (_event, scope: 'all' | 'launch' = 'all', refresh = false) => {
-      if (scope !== 'all' && scope !== 'launch') {
-        throw new Error('Invalid Agent Source scope');
-      }
       if (typeof refresh !== 'boolean') {
         throw new Error('Invalid Agent Source refresh request');
       }
-      return inspectAgentSources(await defaultShell(), scope, refresh);
+      return inspectAgentSources(await defaultShell(), validScope(scope), refresh);
     }
+  );
+
+  // No probe, no login shell: what this machine last observed, for the
+  // surface to paint immediately while `agent-sources:list` revalidates.
+  handleTrusted(
+    'agent-sources:remembered',
+    async (_event, scope: 'all' | 'launch' = 'all') =>
+      rememberedAgentSources(await defaultShell(), validScope(scope))
   );
 
   handleTrusted(

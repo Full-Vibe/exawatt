@@ -7,9 +7,11 @@
 // what the product actually asks:
 //
 //   - a fixture that never exits on `--version` leaves the Agent Source
-//     registry's probe hanging, so the source never becomes launchable, Start
-//     stays disabled, and nothing on screen names why. It also leaks one
-//     process per run (observed accumulating and degrading later runs).
+//     registry's probe hanging. Since the readiness fact model (2026-09-13)
+//     that reads as `unobserved`, the row paints from memory or as unchecked
+//     and Start stays live, so the eval no longer stalls on it; but the probe
+//     still burns its whole deadline and leaks one process per run (observed
+//     accumulating and degrading later runs).
 //   - a fixture Codex answering `codex debug models` with silence publishes NO
 //     model. Since D49 an engine without a model may not start at all — the
 //     product refusing correctly, which read as an eval defect for two months
@@ -26,9 +28,11 @@
 export const FIXTURE_CLAUDE_VERSION = '9.9.9-fixture (Claude Code)';
 export const FIXTURE_CODEX_VERSION = 'codex-cli 9.9.9-fixture';
 
-/** The SHAPE `parseClaudeAuthStatus` actually parses. Source truth fails
- *  closed, so an unparseable answer reads as "not signed in", the source goes
- *  degraded, and Start stays disabled forever with nothing naming the cause. */
+/** The SHAPE `parseClaudeAuthStatus` actually parses. An unparseable answer
+ *  reads as an unanswered authentication probe (`unknown`); a parseable
+ *  `loggedIn:false` reads as a sign-in notice that informs but never blocks
+ *  (incident 0018). Either way the fixture should answer the real shape so
+ *  the eval exercises a `ready` source. */
 export const FIXTURE_CLAUDE_AUTH_JSON = JSON.stringify({
   loggedIn: true,
   email: 'fixture@example.com',

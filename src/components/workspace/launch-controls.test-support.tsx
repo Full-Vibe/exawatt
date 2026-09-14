@@ -149,6 +149,8 @@ export function readyAgentSourceRegistry() {
       state: 'ready' as const,
       stateLabel: 'Ready',
       observedAt: 1,
+      observation: { origin: 'live' as const },
+      unobservedProbes: [],
       actions: {
         ...source.actions,
         recheck: true,
@@ -328,6 +330,7 @@ export function installComposerTestHarness() {
       },
       agentSources: {
         list: vi.fn(async () => readyAgentSourceRegistry()),
+        remembered: vi.fn(async () => null),
         act: vi.fn(async () => ({
           ok: true,
           message: 'Source action opened.',

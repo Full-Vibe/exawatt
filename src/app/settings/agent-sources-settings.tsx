@@ -22,6 +22,8 @@ import {
   type ReactNode,
 } from 'react';
 import { ComingSoonMarker } from '@/components/readiness';
+import { useLatestRequest } from '@/hooks/use-latest-request';
+import { useAgentSourceRegistry } from '@/components/workspace/use-agent-source-registry';
 import {
   Tooltip,
   TooltipContent,
@@ -35,11 +37,7 @@ import {
   OpenClawIcon,
 } from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
-import {
-  fallbackAgentSourceRegistry,
-  loadAgentSourceRegistry,
-  runAgentSourceAction,
-} from '@/components/workspace/agent-sources';
+import { runAgentSourceAction } from '@/components/workspace/agent-sources';
 import {
   ConnectedSourceDetail,
   ConnectedSourcesRail,
@@ -49,7 +47,6 @@ import type {
   AgentSourceAdapterId,
   AgentSourceCatalogEntry,
   AgentSourceFact,
-  AgentSourceRegistryLoadStatus,
   AgentSourceSnapshot,
   AgentSourceState,
 } from '@/types/electron';
@@ -110,7 +107,7 @@ function StateGlyph({ state }: { state: AgentSourceState }) {
       </span>
     );
   }
-  if (state === 'connecting') {
+  if (state === 'connecting' || state === 'checking') {
     return (
       <LoaderCircle
         aria-hidden
@@ -744,14 +741,33 @@ export function AgentSourcesSettings({
   const [selectedConnectionId, setSelectedConnectionId] = useState<
     string | null
   >(null);
-  const [registry, setRegistry] = useState(() =>
-    fallbackAgentSourceRegistry('all')
-  );
-  const [registryStatus, setRegistryStatus] = useState<
-    AgentSourceRegistryLoadStatus | 'loading'
-  >('loading');
+  // The registry paints from this machine's memory first, then live; while
+  // the first probe runs with nothing remembered every source reads
+  // `Checking`, as a state of its own (BUG-082). Newest-wins is the hook's.
+  const registryRead = useAgentSourceRegistry('all');
+  // A sign-in the operator just opened shows as Connecting on its source
+  // until the reconciliation loop sees it ready or gives up. That is
+  // Settings' own transient, layered over the fact, never written into it.
+  const [connectingId, setConnectingId] = useState<string | null>(null);
+  const registry = useMemo(() => {
+    if (!connectingId) return registryRead.registry;
+    return {
+      ...registryRead.registry,
+      sources: registryRead.registry.sources.map(source =>
+        source.id === connectingId
+          ? {
+              ...source,
+              state: 'connecting' as const,
+              stateLabel: 'Connecting',
+              summary: `${source.label} sign-in is open. Exawatt will recheck the source-owned session.`,
+            }
+          : source
+      ),
+    };
+  }, [connectingId, registryRead.registry]);
+  const registryStatus = registryRead.status;
   const [selectedId, setSelectedId] = useState(
-    () => registry.sources[0]?.id ?? ''
+    () => registryRead.registry.sources[0]?.id ?? ''
   );
   const [adding, setAdding] = useState(false);
   const [actionState, setActionState] = useState<
@@ -761,85 +777,64 @@ export function AgentSourcesSettings({
     null
   );
   const [now, setNow] = useState(() => Date.now());
-  const mounted = useRef(true);
-  const latestRegistry = useRef(registry);
-  const latestRegistryStatus = useRef<
-    AgentSourceRegistryLoadStatus | 'loading'
-  >('loading');
-  const reconciliationGeneration = useRef(0);
+  // One channel for every setup action (sign-in, install guide) and the
+  // reconciliation loop behind sign-in: changing sources, cancelling, or
+  // unmounting supersedes whichever is in flight (BUG-119).
+  const setupActions = useLatestRequest();
   const reconciliationWait = useRef<{
     timer: number;
     finish: () => void;
   } | null>(null);
-  const busy = actionState !== 'idle';
+  const busy = actionState !== 'idle' || registryStatus === 'checking';
 
   const cancelReconciliation = useCallback(() => {
-    reconciliationGeneration.current += 1;
+    setupActions.invalidate();
     reconciliationWait.current?.finish();
     reconciliationWait.current = null;
     setActionState('idle');
-    // Leaving a setup action withdraws its optimistic Connecting state.
-    // The last source observation remains authoritative, even while the
-    // source-owned browser or terminal continues independently.
-    setRegistry(latestRegistry.current);
-  }, []);
+    // Leaving a setup action withdraws its Connecting state. The last source
+    // observation remains authoritative, even while the source-owned browser
+    // or terminal continues independently.
+    setConnectingId(null);
+  }, [setupActions]);
 
   useEffect(() => {
-    mounted.current = true;
     const clock = window.setInterval(() => setNow(Date.now()), 30_000);
     const wakeOnFocus = () => reconciliationWait.current?.finish();
     window.addEventListener('focus', wakeOnFocus);
     return () => {
-      mounted.current = false;
       window.clearInterval(clock);
       window.removeEventListener('focus', wakeOnFocus);
-      reconciliationGeneration.current += 1;
       reconciliationWait.current?.finish();
     };
   }, []);
 
-  const applyRegistry = useCallback(
-    (next: Awaited<ReturnType<typeof loadAgentSourceRegistry>>) => {
-      latestRegistry.current = next.snapshot;
-      latestRegistryStatus.current = next.status;
-      setRegistry(next.snapshot);
-      setRegistryStatus(next.status);
-      setSelectedId(current =>
-        next.snapshot.sources.some(source => source.id === current)
-          ? current
-          : (next.snapshot.sources[0]?.id ?? '')
-      );
-    },
-    []
-  );
-
-  const refresh = useCallback(
-    async (force = true, announce = true) => {
-      setActionState('checking');
-      if (announce) setMessage(null);
-      const next = await loadAgentSourceRegistry(
-        'all',
-        force,
-        latestRegistryStatus.current === 'live' ||
-          latestRegistryStatus.current === 'stale'
-          ? latestRegistry.current
-          : undefined
-      );
-      if (!mounted.current) return;
-      applyRegistry(next);
-      setActionState('idle');
-      if (next.error) {
-        setMessage({ ok: false, text: next.error.message });
-      } else if (announce) {
-        setMessage({ ok: true, text: 'Agent Source status verified.' });
-      }
-    },
-    [applyRegistry]
-  );
-
+  // A source that disappears from the registry takes its detail with it.
   useEffect(() => {
-    void refresh(false, false);
-  }, [refresh]);
+    setSelectedId(current =>
+      registryRead.registry.sources.some(source => source.id === current)
+        ? current
+        : (registryRead.registry.sources[0]?.id ?? '')
+    );
+  }, [registryRead.registry]);
+
+  // The live read failed: say so once, in the box a Recheck answers in.
+  const registryError = registryRead.error;
+  useEffect(() => {
+    if (!registryError || registryStatus === 'checking') return;
+    setMessage({ ok: false, text: registryError.message });
+  }, [registryError, registryStatus]);
+
+  const recheckRegistry = registryRead.recheck;
+  const refresh = useCallback(async () => {
+    setActionState('checking');
+    setMessage(null);
+    const next = await recheckRegistry(true);
+    setActionState('idle');
+    if (!next.error) {
+      setMessage({ ok: true, text: 'Agent Source status verified.' });
+    }
+  }, [recheckRegistry]);
 
   useEffect(
     () =>
@@ -897,32 +892,21 @@ export function AgentSourcesSettings({
   }, []);
 
   const reconcileAuthentication = useCallback(
-    async (sourceId: string, generation: number) => {
+    async (sourceId: string, ticket: { readonly current: boolean }) => {
       setActionState('reconciling');
       for (const delay of SOURCE_AUTH_RECHECK_DELAYS_MS) {
         await waitForReconciliation(delay);
-        if (
-          !mounted.current ||
-          reconciliationGeneration.current !== generation
-        ) {
-          return;
-        }
-        const next = await loadAgentSourceRegistry(
-          'all',
-          true,
-          latestRegistry.current
-        );
-        if (
-          !mounted.current ||
-          reconciliationGeneration.current !== generation
-        ) {
-          return;
-        }
-        applyRegistry(next);
+        if (!ticket.current) return;
+        const next = await recheckRegistry(true);
+        if (!ticket.current) return;
         const source = next.snapshot.sources.find(
           candidate => candidate.id === sourceId
         );
-        if (next.status === 'live' && source?.launchable) {
+        // Signed in means the source SAYS so: `ready`, not merely spawnable
+        // (a source that reports no account is launchable too, and would
+        // end this loop on the first tick with nothing repaired).
+        if (next.status === 'live' && source?.state === 'ready') {
+          setConnectingId(null);
           setMessage({
             ok: true,
             text: `${source.label} is signed in and ready to launch.`,
@@ -931,7 +915,8 @@ export function AgentSourcesSettings({
           return;
         }
       }
-      if (mounted.current && reconciliationGeneration.current === generation) {
+      if (ticket.current) {
+        setConnectingId(null);
         setMessage({
           ok: false,
           text: 'Sign-in is still open. Finish there, then use Recheck.',
@@ -939,34 +924,21 @@ export function AgentSourcesSettings({
         setActionState('idle');
       }
     },
-    [applyRegistry, waitForReconciliation]
+    [recheckRegistry, waitForReconciliation]
   );
 
   const authenticate = useCallback(async () => {
     if (!selected?.harness) return;
     cancelReconciliation();
-    const generation = reconciliationGeneration.current;
+    const ticket = setupActions.begin();
     setActionState('opening-auth');
     setMessage(null);
-    setRegistry(current => ({
-      ...current,
-      sources: current.sources.map(source =>
-        source.id === selected.id
-          ? {
-              ...source,
-              state: 'connecting',
-              stateLabel: 'Connecting',
-              summary: `${source.label} sign-in is open. Exawatt will recheck the source-owned session.`,
-            }
-          : source
-      ),
-    }));
+    setConnectingId(selected.id);
     const result = await runAgentSourceAction(
       selected.adapterId,
       'authenticate'
     );
-    if (!mounted.current || reconciliationGeneration.current !== generation)
-      return;
+    if (!ticket.current) return;
     setMessage({
       ok: result.ok,
       text: result.ok
@@ -974,33 +946,27 @@ export function AgentSourcesSettings({
         : result.message,
     });
     if (result.ok) {
-      void reconcileAuthentication(selected.id, generation);
+      void reconcileAuthentication(selected.id, ticket);
     } else {
-      setRegistry(current => ({
-        ...current,
-        sources: current.sources.map(source =>
-          source.id === selected.id ? selected : source
-        ),
-      }));
+      setConnectingId(null);
       setActionState('idle');
     }
-  }, [cancelReconciliation, reconcileAuthentication, selected]);
+  }, [cancelReconciliation, reconcileAuthentication, selected, setupActions]);
 
   const openInstallGuide = useCallback(async () => {
     if (!selected) return;
     cancelReconciliation();
-    const generation = reconciliationGeneration.current;
+    const ticket = setupActions.begin();
     setActionState('opening-guide');
     setMessage(null);
     const result = await runAgentSourceAction(
       selected.adapterId,
       'install-guide'
     );
-    if (!mounted.current || reconciliationGeneration.current !== generation)
-      return;
+    if (!ticket.current) return;
     setMessage({ ok: result.ok, text: result.message });
     setActionState('idle');
-  }, [cancelReconciliation, selected]);
+  }, [cancelReconciliation, selected, setupActions]);
 
   const selectAdapter = useCallback(
     (adapterId: AgentSourceAdapterId) => {

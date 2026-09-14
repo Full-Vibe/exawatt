@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('electron', {
     onDelegation: subscribe<unknown>('agent-sources:delegation'),
     list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
       ipcRenderer.invoke('agent-sources:list', scope, refresh),
+    remembered: (scope: 'all' | 'launch' = 'all') =>
+      ipcRenderer.invoke('agent-sources:remembered', scope),
     act: (
       adapterId: 'claude' | 'codex' | 'opencode' | 'grok' | 'openclaw' | 'demo',
       action: 'authenticate' | 'choose-model' | 'install-guide'

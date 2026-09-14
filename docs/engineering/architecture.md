@@ -521,7 +521,15 @@ renderer. Runtime observations remain main-process evidence. This prevents UI
 defaults, source probes, and launch code from becoming competing registries.
 Source-specific CLI/config/protocol inspection stays behind a renderer-safe IPC
 surface; Settings and the Agent composer consume the same normalized
-snapshots. The separate OpenClaw live transport uses an opaque, owner-bound
+snapshots, through one renderer reader (`useAgentSourceRegistry`) that paints
+this machine's persisted last-known-good first and revalidates behind the
+surface. Every snapshot declares its `observation` (`live`, `remembered`,
+`declared`) beside its probe coverage, and one shared verdict
+(`agentSourceLaunchVerdict`) names the fact that blocks a launch: only a live
+negative the source cannot repair by running refuses (not installed,
+incompatible, failed checks); a remembered negative and a sign-in negative
+inform and never veto (decision `0040`). Surfaces render `checking`,
+`known`, `stale` and `unobserved` as different things, by age. The separate OpenClaw live transport uses an opaque, owner-bound
 Electron-main capability rather than returning config or credentials to the
 renderer. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local records. Local
 OpenClaw reachability is established only by a successful gateway protocol
@@ -739,6 +747,7 @@ the rule and the three defects that produced it.
 | `goal-visuals/`                 | content-addressed side store, keyed by `GoalVisual.identityKey` | 64 entries / 48 MB                                                                                                                                                                                                                                                                                                                                        | the workspace save path, which is the only place that knows the referenced set                               |
 | `consumption-scan/log-v1.jsonl` | append log compacted from live state                            | samples: 14 days behind the newest sample (an anchor no further than a day past wall time), widened to cover an active Operator-profile publication anchor and to the 400-day ceiling while that anchor is still unknown, re-read live at hydrate and after every pass (BUG-141); observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write; `retention-policy.ts` owns the horizon |
 | `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                                                                                                                                                                  | `AgentModelCatalogCache.write`, plus one sweep on load                                                       |
+| `agent-source-observations.json` | one row per Agent Source adapter: the last COMPLETE observation, keyed by adapter id | at most one row per declared adapter, none older than 30 days behind the newest row, all read through the same login shell as the newest write; an incomplete or simulated observation is never written | `AgentSourceObservationStore.remember`, plus one sweep on load |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written

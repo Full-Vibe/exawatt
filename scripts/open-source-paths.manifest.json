@@ -146,6 +146,7 @@
       "include": [
         "scripts/agent-land.mjs",
         "scripts/agent-launcher-bench-shot.mjs",
+        "scripts/agent-source-registry-probe.mjs",
         "scripts/agent-stop-check.mjs",
         "scripts/app-update-config.cjs",
         "scripts/check-asset-provenance.mjs",
@@ -153,6 +154,7 @@
         "scripts/check-production-theme-literals.mjs",
         "scripts/ci-batch-worker.mjs",
         "scripts/cold-composer-probe.mjs",
+        "scripts/composer-registry-cold-probe.mjs",
         "scripts/community-network-observatory.mjs",
         "scripts/company-compose.mjs",
         "scripts/company-proof.mjs",
