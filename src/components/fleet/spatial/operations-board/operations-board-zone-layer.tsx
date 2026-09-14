@@ -12,6 +12,7 @@ import {
   useFrame,
 } from '@react-three/fiber';
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -39,6 +40,10 @@ import type {
   BoardProjectEmphasis,
 } from './operations-board-presentation';
 import { FOCUS_RECESSION_MIX } from './operations-board-materials';
+import {
+  useBoardHoverSlice,
+  type BoardHoverStore,
+} from './operations-board-hover';
 
 function gridGeometry(
   bounds: SpatialBoardRect,
@@ -97,7 +102,7 @@ function gridGeometry(
   return geometry;
 }
 
-export function BoardGrid({
+export const BoardGrid = memo(function BoardGrid({
   bounds,
   theme,
 }: {
@@ -129,7 +134,7 @@ export function BoardGrid({
       </lineSegments>
     </>
   );
-}
+});
 
 /** All circular Project edges in ONE Line2 draw: per-vertex accent colors carry each
  *  Project's hue, while selection replaces identity with the theme's
@@ -270,15 +275,14 @@ function ProjectSelectionRing({
 
 /** Mount-keyed entrance: zones fade up quickly; the parent keys this layer
  *  by semantic address so descent/ascent re-choreographs (never data ticks). */
-export function ZoneLayer({
+export const ZoneLayer = memo(function ZoneLayer({
   zones,
   altitude,
   focusedProjectId,
   reduced,
   onDrillProject,
   onToggleZoneSelect,
-  onHover,
-  hoveredId,
+  hover,
   projectEmphasis,
   theme,
 }: {
@@ -288,11 +292,11 @@ export function ZoneLayer({
   reduced: boolean;
   onDrillProject: (projectId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
-  onHover: (zoneId: string | null) => void;
-  hoveredId: string | null;
+  hover: BoardHoverStore;
   projectEmphasis: BoardProjectEmphasis;
   theme: SpatialThemeSnapshot;
 }) {
+  const hoveredId = useBoardHoverSlice(hover, state => state.zoneId);
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
   const plateRefs = useRef(
@@ -439,11 +443,11 @@ export function ZoneLayer({
                 if (!interactive) return;
                 event.stopPropagation();
                 lastRecession.current.delete(zone.id);
-                onHover(zone.id);
+                hover.setZone(zone.id);
               }}
               onPointerOut={() => {
                 lastRecession.current.delete(zone.id);
-                onHover(null);
+                hover.setZone(null);
               }}
               onClick={(event: ThreeEvent<MouseEvent>) => {
                 if (!interactive || event.delta > 5) return;
@@ -479,4 +483,4 @@ export function ZoneLayer({
           ))}
     </>
   );
-}
+});

@@ -13,6 +13,7 @@ import {
   useFrame,
 } from '@react-three/fiber';
 import {
+  memo,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -61,6 +62,10 @@ import {
   DelegationUnitLayer,
   useSettledDelegationUnits,
 } from './operations-board-delegation-layer';
+import {
+  useBoardHoverSlice,
+  type BoardHoverStore,
+} from './operations-board-hover';
 
 /**
  * Batched spatial sibling of the DOM StatusLight. Project identity stays on
@@ -515,12 +520,10 @@ function AgentCandidateReticle({
   );
 }
 
-export function AgentPieceLayer({
+export const AgentPieceLayer = memo(function AgentPieceLayer({
   pieces,
   delegationUnits,
-  hoveredAgentId,
-  pressedAgentId,
-  hoveredDelegationId,
+  hover,
   selectedDelegationUnitId,
   altitude,
   focusedProjectId,
@@ -529,17 +532,12 @@ export function AgentPieceLayer({
   lens,
   onSelectAgent,
   onToggleAgentSelect,
-  onAgentHoverChange,
-  onAgentPressedChange,
   candidateTreatment,
   theme,
 }: {
   pieces: SpatialBoardPiece[];
   delegationUnits: SpatialBoardDelegationUnit[];
-  hoveredAgentId: string | null;
-  pressedAgentId: string | null;
-  /** Hovered delegated child, from its DOM control. */
-  hoveredDelegationId: string | null;
+  hover: BoardHoverStore;
   /** The delegated child arrow navigation currently sits on. */
   selectedDelegationUnitId: string | null;
   altitude: SpatialBoardLayout['altitude'];
@@ -549,17 +547,24 @@ export function AgentPieceLayer({
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
-  onAgentHoverChange: (agentId: string | null) => void;
-  onAgentPressedChange: (agentId: string | null) => void;
   candidateTreatment: BoardAgentCandidate;
   theme: SpatialThemeSnapshot;
 }) {
+  const hoveredAgentId = useBoardHoverSlice(hover, state => state.agentId);
+  const pressedAgentId = useBoardHoverSlice(
+    hover,
+    state => state.pressedAgentId
+  );
   // Aggregate pieces render as the instanced population dot field (V3.1),
   // never as per-piece bodies or DOM count labels.
-  const visible = pieces.filter(
-    piece => piece.visible && piece.kind === 'agent'
+  const visible = useMemo(
+    () => pieces.filter(piece => piece.visible && piece.kind === 'agent'),
+    [pieces]
   );
-  const solid = visible.filter(piece => piece.sessionState !== 'stopped');
+  const solid = useMemo(
+    () => visible.filter(piece => piece.sessionState !== 'stopped'),
+    [visible]
+  );
   // Pieces that appear or disappear while the layer is mounted -- a Project
   // revealing its Agents at scale, or hiding them again -- scale in and out
   // on the board's transition policy instead of popping (V3.7). Departing
@@ -756,13 +761,13 @@ export function AgentPieceLayer({
                 event.stopPropagation();
                 setHoveredMeshId(piece.id);
                 if (candidateTreatment === 'precision') {
-                  onAgentHoverChange(piece.agentId);
+                  hover.setAgent(piece.agentId);
                 }
               }}
               onPointerOut={() => {
                 setHoveredMeshId(null);
                 if (candidateTreatment === 'precision') {
-                  onAgentHoverChange(null);
+                  hover.setAgent(null);
                 }
               }}
               onPointerDown={event => {
@@ -774,11 +779,11 @@ export function AgentPieceLayer({
                 )
                   return;
                 event.stopPropagation();
-                onAgentPressedChange(piece.agentId);
+                hover.setPressed(piece.agentId);
               }}
               onPointerUp={() => {
                 if (candidateTreatment === 'precision') {
-                  onAgentPressedChange(null);
+                  hover.setPressed(null);
                 }
               }}
               onClick={(event: ThreeEvent<MouseEvent>) => {
@@ -809,7 +814,7 @@ export function AgentPieceLayer({
       <DelegationUnitLayer
         units={delegationUnits}
         reduced={reduced}
-        hoveredId={hoveredDelegationId}
+        hover={hover}
         theme={theme}
       />
       <StoppedAgentOutlines pieces={visible} lens={lens} theme={theme} />
@@ -833,7 +838,7 @@ export function AgentPieceLayer({
       )}
     </group>
   );
-}
+});
 
 /** One dashed Line2 draw for every stopped Session-backed Agent. The DOM
  * controls remain the interaction/a11y owner; this layer is visual state. */
@@ -899,7 +904,7 @@ function StoppedAgentOutlines({
  * `SelectionRing`) applied at group scale. ONE segmented Line2 draw for the
  * whole set; static, so the demand loop still parks.
  */
-export function MultiSelectionLayer({
+export const MultiSelectionLayer = memo(function MultiSelectionLayer({
   layout,
   selection,
   theme,
@@ -989,4 +994,4 @@ export function MultiSelectionLayer({
       raycast={() => null}
     />
   );
-}
+});

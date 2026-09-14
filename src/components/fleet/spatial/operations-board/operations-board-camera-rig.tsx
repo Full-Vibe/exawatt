@@ -12,6 +12,7 @@ import {
   useThree,
 } from '@react-three/fiber';
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -93,7 +94,7 @@ const FLIGHT_LAMBDA = 5.5;
 const FOLLOW_LAMBDA = 7.5;
 const NUDGE_LAMBDA = 13;
 
-export function BoardCameraRig({
+export const BoardCameraRig = memo(function BoardCameraRig({
   layout,
   projection,
   reduced,
@@ -965,4 +966,4 @@ export function BoardCameraRig({
   });
 
   return null;
-}
+});

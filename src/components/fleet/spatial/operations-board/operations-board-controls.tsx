@@ -13,6 +13,7 @@ import {
   useThree,
 } from '@react-three/fiber';
 import {
+  memo,
   useLayoutEffect,
   useRef,
   type ReactNode,
@@ -194,7 +195,7 @@ function burnShareCopy(share: number): string {
   return pct < 1 ? '<1%' : `${pct}%`;
 }
 
-export function ProjectControls({
+export const ProjectControls = memo(function ProjectControls({
   zones,
   altitude,
   focusedProjectId,
@@ -367,9 +368,9 @@ export function ProjectControls({
       </DampedHtmlAnchor>
     );
   });
-}
+});
 
-export function AgentControls({
+export const AgentControls = memo(function AgentControls({
   pieces,
   altitude,
   focusedProjectId,
@@ -553,7 +554,7 @@ export function AgentControls({
         </DampedHtmlAnchor>
       );
     });
-}
+});
 
 /**
  * DOM equivalents for delegated child units (D3c). WebGL stays out of the
@@ -562,7 +563,7 @@ export function AgentControls({
  * Activating opens the PARENT Session: D3c does not pretend a child is
  * independently commandable, and never joins "Direct N Agents".
  */
-export function DelegationControls({
+export const DelegationControls = memo(function DelegationControls({
   units,
   pieces,
   altitude,
@@ -653,4 +654,4 @@ export function DelegationControls({
         </DampedHtmlAnchor>
       );
     });
-}
+});

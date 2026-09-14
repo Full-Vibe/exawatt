@@ -371,6 +371,12 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     () => setFollowSelection(false),
     []
   );
+  /** Background click clears the single selection; stable so the canvas
+   *  layers' memo boundaries hold across surface re-renders. */
+  const clearAgentSelection = useCallback(
+    () => onSelectAgent(null),
+    [onSelectAgent]
+  );
   const viewportRect = useRef<SVGRectElement | null>(null);
   const bandOverlay = useRef<HTMLDivElement | null>(null);
   // Clamp feedback state is semantic (which bound is engaged), not positional,
@@ -645,7 +651,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     layout,
-    lens,
     onDrillProject,
     onMoveAgentSelection,
     onSelectDelegationChild,
@@ -748,8 +753,8 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             controllerRef={controller}
             onViewportChange={updateViewport}
             onDrillProject={onDrillProject}
-            onSelectAgent={agentId => onSelectAgent(agentId)}
-            onBackground={() => onSelectAgent(null)}
+            onSelectAgent={onSelectAgent}
+            onBackground={clearAgentSelection}
             multiSelection={multiSelection}
             onToggleAgentSelect={onToggleAgentSelect}
             onToggleZoneSelect={onToggleZoneSelect}

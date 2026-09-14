@@ -11,6 +11,7 @@ import {
   useThree,
 } from '@react-three/fiber';
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -231,7 +232,7 @@ function PopulationStatusMarks({
  * controls remain the interaction and exact-count owners. Static at rest so
  * the demand loop still parks.
  */
-export function PopulationDotLayer({
+export const PopulationDotLayer = memo(function PopulationDotLayer({
   zones,
   pieces,
   altitude,
@@ -468,4 +469,4 @@ export function PopulationDotLayer({
       />
     </>
   );
-}
+});

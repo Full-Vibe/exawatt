@@ -13,6 +13,7 @@ import {
   useThree,
 } from '@react-three/fiber';
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -40,6 +41,10 @@ import {
   nextDelegationExits,
 } from './delegation-roster';
 import { AGENT_HEX_GEOMETRY, noopRaycast } from './operations-board-materials';
+import {
+  useBoardHoverSlice,
+  type BoardHoverStore,
+} from './operations-board-hover';
 
 /**
  * Delegated children as board units (ENG-004 V3.4 / ENG-023 D3c). D3b drew one
@@ -187,18 +192,19 @@ export function useSettledDelegationUnits(
   );
 }
 
-export function DelegationUnitLayer({
+export const DelegationUnitLayer = memo(function DelegationUnitLayer({
   units,
   reduced,
-  hoveredId,
+  hover,
   theme,
 }: {
   units: SpatialBoardDelegationUnit[];
   reduced: boolean;
   /** Pointer/keyboard focus from the DOM control that sits over this unit. */
-  hoveredId: string | null;
+  hover: BoardHoverStore;
   theme: SpatialThemeSnapshot;
 }) {
+  const hoveredId = useBoardHoverSlice(hover, state => state.delegationId);
   const invalidate = useThree(state => state.invalidate);
   const exits = useDelegationExits(units, reduced);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
@@ -383,4 +389,4 @@ export function DelegationUnitLayer({
           single state for several Agents. */}
     </group>
   );
-}
+});

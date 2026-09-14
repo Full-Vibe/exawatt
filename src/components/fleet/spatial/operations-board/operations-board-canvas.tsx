@@ -57,6 +57,7 @@ import {
   MultiSelectionLayer,
 } from './operations-board-agent-layer';
 import { PopulationDotLayer } from './operations-board-population-layer';
+import { createBoardHoverStore } from './operations-board-hover';
 import {
   AgentControls,
   DelegationControls,
@@ -149,15 +150,15 @@ export function OperationsBoardCanvas({
     );
     return () => window.clearTimeout(timer);
   }, []);
-  const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
-  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
-  const [pressedAgentId, setPressedAgentId] = useState<string | null>(null);
-  const [hoveredDelegationId, setHoveredDelegationId] = useState<string | null>(
-    null
-  );
+  // Hover is a store, not root state: a pointer crossing a piece must not
+  // re-render every layer under the canvas. See `operations-board-hover.ts`.
+  const [hover] = useState(() => createBoardHoverStore());
   /** Band-drag end timestamp — the trailing click must not clear/ascend. */
   const suppressMissRef = useRef(0);
-  const visibleZones = layout.zones.filter(zone => zone.visible);
+  const visibleZones = useMemo(
+    () => layout.zones.filter(zone => zone.visible),
+    [layout.zones]
+  );
   // Delegation composition (V3.4): pure slot/overflow/lineage policy, resolved
   // once per layout. Aggregated tiers emit none by construction.
   const delegationUnits = useMemo(
@@ -255,17 +256,14 @@ export function OperationsBoardCanvas({
             reduced={reduced}
             onDrillProject={onDrillProject}
             onToggleZoneSelect={onToggleZoneSelect}
-            onHover={setHoveredZoneId}
-            hoveredId={hoveredZoneId}
+            hover={hover}
             projectEmphasis={presentation.projectEmphasis}
             theme={theme}
           />
           <AgentPieceLayer
             pieces={layout.pieces}
             delegationUnits={delegationUnits}
-            hoveredAgentId={hoveredAgentId}
-            pressedAgentId={pressedAgentId}
-            hoveredDelegationId={hoveredDelegationId}
+            hover={hover}
             selectedDelegationUnitId={selectedDelegationUnitId}
             altitude={layout.altitude}
             focusedProjectId={layout.focusedProjectId}
@@ -274,8 +272,6 @@ export function OperationsBoardCanvas({
             lens={lens}
             onSelectAgent={onSelectAgent}
             onToggleAgentSelect={onToggleAgentSelect}
-            onAgentHoverChange={setHoveredAgentId}
-            onAgentPressedChange={setPressedAgentId}
             candidateTreatment={presentation.agentCandidate}
             theme={theme}
           />
@@ -311,8 +307,8 @@ export function OperationsBoardCanvas({
             focusedProjectId={layout.focusedProjectId}
             onSelectAgent={onSelectAgent}
             onToggleAgentSelect={onToggleAgentSelect}
-            onHoverChange={setHoveredAgentId}
-            onPressedChange={setPressedAgentId}
+            onHoverChange={hover.setAgent}
+            onPressedChange={hover.setPressed}
             candidateTreatment={presentation.agentCandidate}
             multiSelection={multiSelection}
             reduced={reduced}
@@ -325,7 +321,7 @@ export function OperationsBoardCanvas({
             focusedProjectId={layout.focusedProjectId}
             onSelectAgent={onSelectAgent}
             onSelectDelegationChild={onSelectDelegationChild}
-            onHoverChange={setHoveredDelegationId}
+            onHoverChange={hover.setDelegation}
             reduced={reduced}
             theme={theme}
           />
