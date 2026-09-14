@@ -2467,6 +2467,137 @@ an explicit packing/emphasis choice. Only then does its shared policy become the
 production default; the bench option is retired as a proposal while the real
 renderer bench remains standing.
 
+### V4.0 Fleet excellence pass (2026-09-13 to 2026-09-14)
+
+**Brief (operator, verbatim in spirit):** the Fleet view should feel slick,
+robust, and performant, with keyboard navigation and animation transitions
+that read as a true RTS; the code should be modular, well-architected, and
+futureproof for a globe, 3D parallax, or other view lenses, angles, and
+styles, all easy to add and highly testable on the React Three Fiber stack.
+
+**Evidence base.** Two adversarial reviews at master `23a6b2f8` (architecture
+and code quality; keyboard, motion, and state-feedback inventory) and a
+baseline run of every spatial eval. The reviews agreed: the pure model and the
+policy modules were healthy; the debt sat in a 4,187-line canvas file with
+zero memo boundaries below its root and hover in root state, in a layout
+selector that rebuilt every object on every tick, in an 873-line camera rig,
+and in a flat-plane assumption inlined at two dozen call sites. The inventory
+found the help modal misdocumenting the bindings, the hotkey guard missing
+`<select>`, no in-world teaching of the 1 to 9 hotkeys, a minimap that could
+only recenter, empty-fleet copy that assumed filters, and a loading fallback
+that flashed the page ground. The baseline evals found two defects on master:
+the 1k fixture's hotkey first motion at 79 to 137ms against the 60ms gate, and
+a blank canvas at 10k Agents in the fixed-angle projection.
+
+**What landed.**
+
+- *Layout identity.* `selectSpatialBoardLayout` returns through a structural
+  sharing sweep: zones, pieces, delegation units, bounds, minimap, and stats
+  keep the previous object when value-equal; a tick that changes nothing
+  returns the previous layout itself. Comparators are exhaustive key maps, so
+  an unclassified new field fails compilation. Consumers must treat layout
+  objects as immutable.
+- *Nine modules by pure motion.* The canvas file became env, materials,
+  camera rig, zone layer, agent layer, delegation layer, population layer,
+  controls, and a 340-line root that keeps composition and the same three
+  exports. Only the surface imported it; the theme test's mock is untouched.
+- *Hover as a store; memo everywhere.* `operations-board-hover.ts` holds
+  zone, Agent, press, and delegation candidates; producers write, each layer
+  subscribes to the slice it draws. Every layer and the rig are memo
+  boundaries; the surface no longer hands the canvas fresh closures. Measured
+  on the Voltaic client: hotkey first camera motion 6 to 19ms.
+- *One layout→world seam.* `boardWorldY` / `boardWorldPoint` /
+  `boardWorldPosition` in the camera module replace every inline `-piece.y`;
+  a future lens overrides this mapping and the pose/projection pair.
+- *Ease-out flights.* The shared ease answers on the input's frame and arrives
+  at rest, resolving the V3.7 bench question in favour of game-camera
+  convention. It surfaced a latent emergence defect (a late turnaround jumped
+  to the arrival origin), now fixed: turnaround arrivals rise from where they
+  are.
+- *Keyboard truth.* `board-keymap.ts` is the one description of the board's
+  keys and the help modal derives from it under a test that scans the surface
+  handler; the guard learns `<select>` (and the client's Escape does too).
+  Q/E stay undocumented because the rig drops the orbit term today.
+- *Discoverability.* Project chips wear their drill digit over the same
+  visible-zones order the surface maps 1 to 9 onto (aggregates and the tenth
+  Project excluded); the minimap flies to a clicked point via
+  `panToBoardPoint` while keyboard activation still recenters; a `nano` label
+  tier (digit, count, attention) below 122px projected zone width, with its
+  own hysteresis band, stops 390px viewports burying zones under name cards.
+- *Copy and entry.* A genuinely empty fleet is told Agents take their places
+  as they launch, not to clear filters; the loading fallback paints the
+  board's ground.
+
+**Found by the closing review and fixed before landing.** The ease-out
+change made everything that JOINS the shared clock at the route commit pop:
+the recession re-based its `from` at the commit but sampled the clock's
+absolute ease, and with an ease-out ease(0.2) is already 0.49, so every
+non-focused Project jumped half its recession in one frame the motion eval
+could not see (it lands on a moving frame). `boardTransitionEaseFrom`
+renormalizes a joiner's remaining travel from its join point; the recession
+and the field carry both use it, a leg that begins on an idle clock resolves
+its join on its first frame, and a clock restart re-bases every leg from what
+was drawn. The nano label tier as first tuned (122px) would have stripped
+Project names from ordinary laptop windows, where a desktop fleet fit
+projects ~107 to 112px; the bound is 92px with recovery at 112px. Two inline
+flips the seam sweep missed (`restoreViewport`, `panToBoardPoint`) now route
+through `boardWorldY`. A delegated child's hover lift requests its own frame,
+so it starts even with ambient motion parked.
+
+**Deliberately not done, and why.** The client still resolves the semantic
+address three ways (`route`, `boardLayout`, `scene`) and keeps the legacy
+`selectSpatialProjectZones` call for Agent ownership; a naive swap to the
+board's zones would misattribute Agents inside an aggregate zone, and no live
+defect was confirmed, so it is recorded here as the next coherence item. The
+camera rig is still one component of five concerns; its verb extraction is
+the natural companion to the first real lens. Mobile chip declutter beyond
+the nano tier (screen-space collision) stays an open design question. The
+V3.9 packing/emphasis choice is the operator's; it shipped back as a
+screenshot comparison with a recommendation (close pack plus focus field).
+
+**The two baseline defects, closed.** *1k hotkey first motion (79 to 137ms
+against the 60ms gate).* `semanticBoardCameraTarget` clamped zoom to a ratio
+of the current pose (3.6x; 4.2x on compact viewports). On a V3.8-scale board
+(26 Projects at 1k) a Fleet to Project fit is about 6x, so the keydown kick
+flew to a capped, wrong target (zoom exactly 3.6x the rest zoom, x unmoved),
+the route commit re-solved from that pose to the true fit, failed the V3.7
+`alreadyFlying` join, and restarted the flight about 90ms in with a fresh
+clock. Voltaic passed only because ten-Project fits stay inside the ratio.
+Proven with probes in the handler, the verb, and the flight step (two
+`beginFlight` arms per keystroke, the second at +62ms with a different
+target), and by the eval moving from deterministic failure to 18 to 29ms once
+the clamp was removed. The fix deletes the ratio and its three constants; a
+semantic move lands on the named subject's fit, the tiny-rect teleport guard
+stays the minimum padded fit, and the camera tests now pin idempotence (the
+kick and the commit resolve to the same pose, so the commit joins). What
+remains on the 1k fixture is not fixed: with the clamp gone the diagnostic
+runs saw each hotkey case pass at 18 to 53ms in about half their runs, while
+every post-fix sweep on the landing box failed all four at 82 to 139ms. The
+residual is the dev-mode React commit of the 1k
+board tree (a ~77ms task, mostly `jsxDEV` element creation and the per-Agent
+`Html` portals mounting at Project altitude) racing the first 60ms; the
+production `jsx` runtime is far cheaper, and the structural cure is one DOM
+layer for the Agent controls instead of one portal per Agent. Recorded, not
+done; the motion eval keeps failing the 1k timing gate until it is, on
+purpose. *10k Agents, fixed-angle, "canvas appears blank".*
+An eval false positive: the scale eval sampled nine fixed points, and at its
+own parked end pose every one landed in the background gutter between Project
+circles while the frame was full of world (a forced render and `toDataURL` in
+the same task produced a 478KB PNG of it). The gate now forces a render and
+reads in the same task, on a 9x9 grid. The product was never blank.
+
+*Observed once, not reproduced.* The very first r3f spatial eval after the
+worktree bootstrap failed its `desktop` case on a single console 404. Four
+later runs and a deliberate cold restart with the compile cache wiped, loading
+both `/fleet/spatial` and the fixture route with a response logger, produced
+no failed request and no console error. Recorded as an observation, not a
+cause.
+
+**Gates.** All 4,375 tests (373 files), the r3f spatial eval (8/8, now
+including the label-tier contract at desktop and phone width), the pointer
+eval, the scale eval (9/9), and the motion eval's Voltaic cases; the 1k timing
+gate fails as recorded above.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

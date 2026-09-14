@@ -156,6 +156,31 @@ contrast-corrected against the resolved ground.
    (a keydown is a discrete event and would otherwise flush synchronously
    before the browser paints), and make the commit JOIN a flight already in
    progress rather than restart it.
+4g. **Pointer state is a store, and every layer is a memo boundary.** Hover and
+   press are the 4e class of defect one level down: as root `useState` they
+   re-rendered every layer and rebuilt every instance list on each pointer
+   crossing. The board keeps them in `operations-board-hover.ts`; producers
+   write, each layer subscribes to exactly the slice it draws. Memo boundaries
+   only hold if inputs keep identity, so `selectSpatialBoardLayout` returns the
+   previous zone/piece objects when value-equal (structural sharing), derived
+   arrays inside a layer are `useMemo`d, and a parent never hands a layer a
+   fresh closure. Consequence: layout objects are immutable to consumers — a
+   layer that wrote into a piece would corrupt the previous frame too.
+4h. **One place maps a layout point to a world point.** `ui-model` lays out
+   y-down; three.js draws y-up. The flip lives in `boardWorldY` /
+   `boardWorldPoint` / `boardWorldPosition` in the camera module and nowhere
+   else (`boardRectCenter` routes through them; per-frame loops take the scalar
+   form so they allocate nothing). Never write `-piece.y` in a layer. A future
+   view lens — a globe, a parallax stage — is this mapping plus
+   `applyBoardCameraTarget` / `clientPointToBoard`, not a sweep of the layers.
+4i. **Semantic transitions ease OUT.** The shared clock's ease answers on the
+   input's frame and arrives at rest. An ease-in-out left ~30ms of
+   sub-perceptual motion after a keypress, which reads as latency; response on
+   the input's frame reads as causality. Arrival keeps zero velocity so the
+   board settles rather than stops. Anything that inverts the ease numerically
+   (emergence turnarounds) must stay monotone-safe, and a turnaround below the
+   arrival origin resumes from where it is rather than projecting onto the
+   curve.
 4c. **Interpolate multiplicative quantities in log space.** Camera zoom and
    uniform scale are ratios, not distances: 1 → 2 and 2 → 4 are the same visual
    change. Mixing them linearly front-loads zooming in and back-loads zooming
