@@ -8,6 +8,7 @@ import {
   boardFieldPoseAt,
   boardFieldPoseMoved,
   boardTransitionEase,
+  boardTransitionEaseFrom,
   boardTransitionProgress,
   carryBoardFieldPose,
   createBoardTransitionClock,
@@ -99,6 +100,25 @@ describe('board transition ease', () => {
       expect(slope).toBeLessThanOrEqual(previousSlope + 1e-9);
       previousSlope = slope;
     }
+  });
+
+  it('lets a joiner start from itself instead of popping down the curve', () => {
+    // The route commit joins a flight the camera started ~0.2 earlier.
+    expect(boardTransitionEaseFrom(0.2, 0.2)).toBe(0);
+    expect(boardTransitionEaseFrom(0.2, 1)).toBe(1);
+    let previous = 0;
+    for (let t = 0.2; t <= 1; t += 0.05) {
+      const value = boardTransitionEaseFrom(0.2, t);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
+    // A journey that started with the clock is the plain ease.
+    expect(boardTransitionEaseFrom(0, 0.4)).toBeCloseTo(
+      boardTransitionEase(0.4),
+      12
+    );
+    // Joining an already-finished clock is already there.
+    expect(boardTransitionEaseFrom(1, 1)).toBe(1);
   });
 
   it('clamps rather than overshooting out-of-range progress', () => {

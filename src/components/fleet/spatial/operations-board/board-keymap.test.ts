@@ -49,6 +49,9 @@ describe('board keymap contract', () => {
     }
   });
 
+  // The modal's families are a projection of the keymap, so this can only
+  // fail if someone re-hardcodes the array (which is exactly how the
+  // arrows-pan fiction got in). It is a re-hardcoding guard, not a proof.
   it('is exactly what the help modal renders for the board', () => {
     expect(
       BOARD_KEY_FAMILIES.map(family => ({
@@ -91,6 +94,10 @@ describe('board keymap contract', () => {
     for (const match of surfaceSource.matchAll(
       /event\.key(?:\.toLowerCase\(\))? === '(.+?)'/g
     )) {
+      compared.add(match[1]!.toLowerCase());
+    }
+    // A future `event.code === 'KeyX'` branch is a binding too.
+    for (const match of surfaceSource.matchAll(/event\.code === 'Key(\w)'/g)) {
       compared.add(match[1]!.toLowerCase());
     }
     const documented = documentedSingleKeys(

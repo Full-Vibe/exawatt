@@ -55,6 +55,7 @@ import {
   boardClampEdgesKey,
   boardViewportFromCamera,
   boardWorldPoint,
+  boardWorldY,
   clampBoardCameraTargetInPlace,
   clientPointToBoard,
   createBoardClampEdges,
@@ -761,7 +762,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       },
       restoreViewport(viewport) {
         target.current.x = viewport.centerX;
-        target.current.y = -viewport.centerY;
+        target.current.y = boardWorldY(viewport.centerY);
         target.current.zoom = Math.max(
           0.001,
           Math.min(size.width / viewport.width, size.height / viewport.height)
@@ -788,6 +789,10 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         invalidate();
       },
       focusFleet() {
+        // `layout.bounds` is exactly what the model returns as the fleet
+        // address's cameraBounds, at every altitude; the kick and the route
+        // commit must resolve to one pose or the commit restarts the flight.
+        // (`layout.cameraBounds` here would be the CURRENT altitude's rect.)
         const next = semanticBoardCameraTarget(target.current, layout.bounds, {
           width: size.width,
           height: size.height,
@@ -854,7 +859,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       },
       panToBoardPoint(x, y) {
         target.current.x = x;
-        target.current.y = -y;
+        target.current.y = boardWorldY(y);
         constrainTarget();
         cameraChanged();
       },

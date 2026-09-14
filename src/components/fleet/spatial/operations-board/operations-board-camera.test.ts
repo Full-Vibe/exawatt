@@ -79,16 +79,22 @@ describe('operations board camera policy', () => {
     expect(followed.y).toBe(0);
   });
 
-  it('bounds semantic zoom and preserves off-center composition', () => {
-    // A tiny rect would fit at a huge zoom; the move is bounded to the policy
-    // ratio of where the camera is now, so one keystroke never teleports.
-    const next = semanticBoardCameraTarget(
-      target,
-      { x: 55, y: 20, width: 4, height: 4 },
-      size
-    );
-    expect(next.zoom).toBeCloseTo(
-      target.zoom * BOARD_CAMERA_POLICY.semanticZoomRatio
+  it('lands a semantic move on the fit pose regardless of distance', () => {
+    // The hotkey kick and the route commit both call this with the same rect;
+    // they must resolve to the SAME pose or the commit restarts the flight
+    // (V3.7 join). A ±ratio bound here once made deep Fleet -> Project moves
+    // double-step on V3.8-scale boards. The teleport guard for tiny rects is
+    // the minimum padded fit, pinned below, not a ratio of the current pose.
+    const rect = { x: 55, y: 20, width: 4, height: 4 };
+    const next = semanticBoardCameraTarget(target, rect, size);
+    expect(next.zoom).toBeCloseTo(fitBoardZoom(rect, size), 6);
+    const again = semanticBoardCameraTarget(next, rect, size);
+    expect(again.zoom).toBeCloseTo(next.zoom, 9);
+    expect(again.x).toBeCloseTo(next.x, 9);
+    expect(again.y).toBeCloseTo(next.y, 9);
+    // Minimum padded fit bounds the zoom a tiny subject can command.
+    expect(next.zoom).toBeLessThanOrEqual(
+      size.width / BOARD_CAMERA_POLICY.fitMinimumWidth
     );
     expect(next.x).toBeGreaterThan(0);
     expect(next.x).toBeLessThan(57);
@@ -107,21 +113,13 @@ describe('operations board camera policy', () => {
     expect(next.zoom).toBeGreaterThan(fleet.zoom * 2.5);
   });
 
-  it('allows more semantic zoom on compact viewports for touch targets', () => {
-    // A compact viewport may zoom further per move than a desktop one, so
-    // 44px direct-touch Agent targets separate. Here the rect's fit is within
-    // that allowance, so the move lands on the fit; on desktop with the same
-    // starting zoom the ceiling would be lower.
+  it('reaches the fit on compact viewports so touch targets separate', () => {
+    // 44px direct-touch Agent targets separate because the move lands on the
+    // subject's fit on every viewport; compact screens are not special-cased.
     const compact = { width: 600, height: 700 };
     const rect = { x: 0, y: 0, width: 4, height: 4 };
     const next = semanticBoardCameraTarget(target, rect, compact);
     expect(next.zoom).toBeCloseTo(fitBoardZoom(rect, compact), 6);
-    expect(next.zoom).toBeLessThanOrEqual(
-      target.zoom * BOARD_CAMERA_POLICY.compactViewportSemanticZoomRatio
-    );
-    expect(BOARD_CAMERA_POLICY.compactViewportSemanticZoomRatio).toBeGreaterThan(
-      BOARD_CAMERA_POLICY.semanticZoomRatio
-    );
   });
 });
 

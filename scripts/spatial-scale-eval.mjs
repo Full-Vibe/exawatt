@@ -328,35 +328,41 @@ async function run() {
         );
       }
 
-      // Non-blank gate: 9-point variance on the drawing buffer.
+      // Non-blank gate: pixel variance on a 9x9 grid, read in the SAME task
+      // as a render we force ourselves. Two lessons are encoded here. The
+      // buffer of a demand-rendered canvas without preserveDrawingBuffer is
+      // undefined between frames, so the gate renders first and reads in the
+      // same task, where the pixels are guaranteed real. And a sparse 3x3
+      // sample is not a blank test: at fleet-10000-angle's parked end pose
+      // every one of the nine old points landed in the background gutter
+      // between Project circles while the frame was full of world
+      // (deterministically — the motion script always parks on that pose).
       const blank = await page.evaluate(() => {
-        const canvas = document.querySelector('canvas');
-        const gl2 = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const gl = window.__EVAL_GL__;
+        const scene = window.__EVAL_SCENE__;
+        const camera = window.__EVAL_CAM__;
+        const src = gl?.domElement;
+        if (!gl || !scene || !camera || !src) return { unreadable: true };
+        gl.render(scene, camera);
+        const gl2 =
+          src.getContext('webgl2') || src.getContext('webgl');
         if (!gl2) return { unreadable: true };
         const { drawingBufferWidth: w, drawingBufferHeight: h } = gl2;
         const px = new Uint8Array(4);
         const seen = new Set();
-        for (const [fx, fy] of [
-          [0.1, 0.1],
-          [0.5, 0.1],
-          [0.9, 0.1],
-          [0.1, 0.5],
-          [0.5, 0.5],
-          [0.9, 0.5],
-          [0.1, 0.9],
-          [0.5, 0.9],
-          [0.9, 0.9],
-        ]) {
-          gl2.readPixels(
-            Math.floor(w * fx),
-            Math.floor(h * fy),
-            1,
-            1,
-            gl2.RGBA,
-            gl2.UNSIGNED_BYTE,
-            px
-          );
-          seen.add(px.join(','));
+        for (let ix = 0; ix < 9; ix += 1) {
+          for (let iy = 0; iy < 9; iy += 1) {
+            gl2.readPixels(
+              Math.floor(w * (0.05 + (ix * 0.9) / 8)),
+              Math.floor(h * (0.05 + (iy * 0.9) / 8)),
+              1,
+              1,
+              gl2.RGBA,
+              gl2.UNSIGNED_BYTE,
+              px
+            );
+            seen.add(px.join(','));
+          }
         }
         return { unreadable: false, distinct: seen.size };
       });

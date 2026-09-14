@@ -206,6 +206,9 @@ export const DelegationUnitLayer = memo(function DelegationUnitLayer({
 }) {
   const hoveredId = useBoardHoverSlice(hover, state => state.delegationId);
   const invalidate = useThree(state => state.invalidate);
+  // The lift is read inside useFrame; with ambient motion parked nothing
+  // else would request the frame that starts it.
+  useEffect(() => invalidate(), [hoveredId, invalidate]);
   const exits = useDelegationExits(units, reduced);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
   const tetherRefs = useRef(new Map<string, THREE.Object3D>());

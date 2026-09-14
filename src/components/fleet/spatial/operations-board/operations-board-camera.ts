@@ -31,14 +31,6 @@ export const BOARD_CAMERA_POLICY = {
   fitPaddingY: 8,
   fitMinimumWidth: 18,
   fitMinimumHeight: 14,
-  // How far one semantic move may zoom relative to where the camera is now.
-  // Under one geometry (V3.7) the room a focused Project needs comes from the
-  // camera alone -- units no longer grow when focused -- so a Fleet -> Project
-  // move must be allowed to reach the Project's actual fit. 1.45 was tuned
-  // when the unit did 1.69x of the work; that factor moved here.
-  semanticZoomRatio: 3.6,
-  compactViewportSemanticZoomRatio: 4.2,
-  compactViewportMaximumWidth: 600,
   safeInsetX: 0.18,
   safeInsetY: 0.2,
   fixedAngleZoomScale: 0.92,
@@ -199,28 +191,25 @@ export function softFollowBoardRect(
 }
 
 /**
- * Altitude changes are bounded semantic zooms, not refits. The focused subject
- * keeps its current screen composition unless it would cross the safe zone.
+ * A semantic move lands ON the named subject's fit. Under one geometry (V3.7)
+ * the camera alone supplies the room a focused Project needs, and the hotkey
+ * kick and the route commit must resolve to the SAME pose or the commit
+ * restarts the flight (`alreadyFlying` fails) and response degrades to the
+ * commit's latency — the exact V3.7 bug class, reintroduced by any bound that
+ * can stop short of the fit. A ±ratio clamp used to live here; on a V3.8-scale
+ * board (26 Projects) Fleet → Project fit is ~6x while the clamp allowed 3.6x,
+ * so every 1k-fixture hotkey double-stepped and re-eased ~90ms in. The
+ * teleport guard for tiny rects is `fitMinimumWidth/Height` padding inside
+ * `fitBoardZoom`, not a ratio of the current pose. Composition is preserved by
+ * the soft-follow: the subject keeps its screen position unless it would cross
+ * the safe zone.
  */
 export function semanticBoardCameraTarget(
   current: BoardCameraTarget,
   focusRect: SpatialBoardRect,
   size: BoardViewportSize
 ): BoardCameraTarget {
-  const fitZoom = fitBoardZoom(focusRect, size);
-  // Compact viewports need enough semantic zoom for 44px direct-touch Agent
-  // targets to separate. This is still a bounded move in the same world: the
-  // camera keeps the focused Project's screen composition and the minimap
-  // continues to show every neighboring Project.
-  const ratio =
-    size.width <= BOARD_CAMERA_POLICY.compactViewportMaximumWidth
-      ? BOARD_CAMERA_POLICY.compactViewportSemanticZoomRatio
-      : BOARD_CAMERA_POLICY.semanticZoomRatio;
-  const zoom = THREE.MathUtils.clamp(
-    fitZoom,
-    current.zoom / ratio,
-    current.zoom * ratio
-  );
+  const zoom = fitBoardZoom(focusRect, size);
   return softFollowBoardRect({ ...current, zoom }, focusRect, size);
 }
 

@@ -21,12 +21,14 @@ export const ZONE_LABEL_TIER_POLICY = {
   /** Projected zone width (px) below which labels go compact. */
   compactBelowPx: 250,
   /** Projected zone width (px) above which nano labels return to compact. */
-  compactAbovePx: 150,
+  compactAbovePx: 112,
   /** Projected zone width (px) below which labels go nano: hotkey, count, and
-   *  attention only. This is the 390px-viewport case, where zones project
-   *  narrower than a compact card and world-anchored chips buried each other
-   *  and the board they label. */
-  nanoBelowPx: 122,
+   *  attention only. This is the 390px-viewport case (zones project ~70px),
+   *  where world-anchored chips buried each other and the board they label.
+   *  The bound sits under what a desktop fleet fit projects on ordinary
+   *  laptop windows (~107px at 1366x768, ~112px at 1280x800): names must
+   *  survive there. */
+  nanoBelowPx: 92,
 } as const;
 
 /** Pure: the next tier given the current one and the projected width. */

@@ -116,6 +116,28 @@ export function boardTransitionEase(t: number): number {
 }
 
 /**
+ * Eased travel REMAINING for a journey that joined the clock partway through.
+ *
+ * The camera starts the clock on the keystroke's frame; the route commit
+ * lands ~70-100ms later, and everything that re-bases at the commit (the
+ * recession's `from`, the field's carry) then samples the clock. Sampling
+ * the clock's absolute ease from a join point is a pop: with an ease-out,
+ * ease(0.2) is already 0.49, so a joiner would cover half its journey on its
+ * first frame. This renormalizes so the joiner reads 0 at the join and 1 at
+ * the end, and equals `boardTransitionEase` for a joiner that started at 0.
+ */
+export function boardTransitionEaseFrom(
+  joinProgress: number,
+  progress: number
+): number {
+  const joined = boardTransitionEase(joinProgress);
+  if (joined >= 1) return 1;
+  const eased = boardTransitionEase(progress);
+  const remaining = (eased - joined) / (1 - joined);
+  return remaining <= 0 ? 0 : remaining >= 1 ? 1 : remaining;
+}
+
+/**
  * Interpolate a camera zoom in log space.
  *
  * Zoom is multiplicative: 1 -> 2 and 2 -> 4 are the same visual change, so
@@ -242,12 +264,15 @@ export function carryBoardFieldPose(
   };
 }
 
-/** Sample the field pose partway home, easing from `carry` toward identity. */
+/** Sample the field pose partway home, easing from `carry` toward identity.
+ *  `joinProgress` is where on the clock the carry was taken, so a carry read
+ *  mid-transition starts from itself rather than popping down the curve. */
 export function boardFieldPoseAt(
   carry: BoardFieldPose,
-  progress: number
+  progress: number,
+  joinProgress = 0
 ): BoardFieldPose {
-  const eased = boardTransitionEase(progress);
+  const eased = boardTransitionEaseFrom(joinProgress, progress);
   return {
     x: carry.x + (0 - carry.x) * eased,
     y: carry.y + (0 - carry.y) * eased,

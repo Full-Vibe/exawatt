@@ -54,15 +54,17 @@ describe('zone label tier', () => {
   it('drops to nano when zones project narrower than a compact card', () => {
     // The 390px-viewport case: world-anchored chips must shed the name
     // before they bury each other and the board.
-    expect(nextZoneLabelTier('compact', 121)).toBe('nano');
-    expect(nextZoneLabelTier('full', 100)).toBe('nano');
+    expect(nextZoneLabelTier('compact', 91)).toBe('nano');
+    expect(nextZoneLabelTier('full', 70)).toBe('nano');
+    // A desktop fleet fit on a small laptop window keeps its names.
+    expect(nextZoneLabelTier('compact', 107)).toBe('compact');
   });
 
   it('holds nano through the hysteresis band and recovers above it', () => {
-    expect(nextZoneLabelTier('nano', 130)).toBe('nano');
-    expect(nextZoneLabelTier('nano', 150)).toBe('nano');
-    expect(nextZoneLabelTier('nano', 151)).toBe('compact');
+    expect(nextZoneLabelTier('nano', 100)).toBe('nano');
+    expect(nextZoneLabelTier('nano', 112)).toBe('nano');
+    expect(nextZoneLabelTier('nano', 113)).toBe('compact');
     // A recovered compact tier does not fall straight back at the same width.
-    expect(nextZoneLabelTier('compact', 151)).toBe('compact');
+    expect(nextZoneLabelTier('compact', 113)).toBe('compact');
   });
 });

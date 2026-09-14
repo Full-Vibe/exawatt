@@ -17,7 +17,7 @@ import {
   beginBoardTransition,
   cancelBoardTransition,
   boardFieldPoseAt,
-  boardTransitionEase,
+  boardTransitionEaseFrom,
   boardFieldPoseMoved,
   boardTransitionProgress,
   carryBoardFieldPose,
@@ -90,6 +90,8 @@ export function BoardField({
   const clock = useBoardTransitionClock();
   const invalidate = useThree(state => state.invalidate);
   const carry = useRef<BoardFieldPose>(BOARD_FIELD_IDENTITY);
+  /** Clock progress when `carry` was taken; the pose eases from there. */
+  const carryJoin = useRef(0);
   // The semantic address: altitude AND focus. Either changing is one
   // semantic move, and the field is the single owner that starts its clock.
   const address = `${altitude}:${focusedProjectId ?? ''}`;
@@ -138,6 +140,8 @@ export function BoardField({
     if (!isBoardTransitionActive(clock.current, performance.now())) {
       beginBoardTransition(clock.current, performance.now());
     }
+    carryJoin.current = boardTransitionProgress(clock.current, performance.now());
+    seenStart.current = clock.current.startedAt;
     invalidate();
   }, [address, clock, invalidate, pieces, reduced]);
 
@@ -172,10 +176,11 @@ export function BoardField({
           y: node.position.y,
           scale: node.scale.x,
         };
+        carryJoin.current = 0;
       }
     }
     const progress = boardTransitionProgress(clock.current, now);
-    const pose = boardFieldPoseAt(carry.current, progress);
+    const pose = boardFieldPoseAt(carry.current, progress, carryJoin.current);
     node.position.set(pose.x, pose.y, 0);
     node.scale.set(pose.scale, pose.scale, 1);
     if (progress < 1) {
@@ -220,7 +225,16 @@ export function useBoardFocusRecession(
   const clock = useBoardTransitionClock();
   // from/to per zone; `from` is re-read at the moment the target changes so a
   // change mid-fade continues from what is on screen.
-  const state = useRef(new Map<string, { from: number; to: number }>());
+  // `join` is the clock progress at which the current from->to leg began, so
+  // a leg that starts at the route commit (~0.2 into a flight the camera
+  // started on the keystroke) eases from `from` instead of popping down the
+  // curve; `last` is what was drawn, for re-basing when the clock restarts.
+  const state = useRef(
+    new Map<
+      string,
+      { from: number; to: number; join: number | null; last: number }
+    >()
+  );
   const seenStart = useRef<number | null>(null);
   const targetFor = (zoneId: string) =>
     altitude !== 'fleet' && focusedProjectId !== null && zoneId !== focusedProjectId
@@ -231,9 +245,23 @@ export function useBoardFocusRecession(
       const entry = state.current.get(zoneId);
       if (!entry) return 0;
       if (reduced || !clock) return entry.to;
+      // The camera can restart the shared clock under a leg in progress; the
+      // leg then continues from what is on screen against the new clock.
+      if (clock.current.startedAt !== seenStart.current) {
+        seenStart.current = clock.current.startedAt;
+        for (const other of state.current.values()) {
+          other.from = other.last;
+          other.join = 0;
+        }
+      }
       const progress = boardTransitionProgress(clock.current, nowMs);
-      const eased = boardTransitionEase(progress);
-      return entry.from + (entry.to - entry.from) * eased;
+      // A leg that began while the clock was idle (a click-drill: the field,
+      // a parent, starts the clock after this hook's effect ran) joins on its
+      // first frame rather than reading progress 1 and snapping.
+      if (entry.join === null) entry.join = progress;
+      const eased = boardTransitionEaseFrom(entry.join, progress);
+      entry.last = entry.from + (entry.to - entry.from) * eased;
+      return entry.last;
     };
   }, [clock, reduced]);
   useLayoutEffect(() => {
@@ -243,12 +271,16 @@ export function useBoardFocusRecession(
       const to = targetFor(zoneId);
       const entry = map.get(zoneId);
       if (!entry) {
-        map.set(zoneId, { from: to, to });
+        map.set(zoneId, { from: to, to, join: 0, last: to });
         continue;
       }
       if (entry.to === to) continue;
       entry.from = sample(zoneId, now);
       entry.to = to;
+      entry.join =
+        clock && isBoardTransitionActive(clock.current, now)
+          ? boardTransitionProgress(clock.current, now)
+          : null;
     }
     for (const zoneId of [...map.keys()]) {
       if (!zoneIds.includes(zoneId)) map.delete(zoneId);

@@ -314,6 +314,20 @@ async function checkVoltaicFleet(page) {
   await projects.first().waitFor({ state: 'visible', timeout: 10_000 });
   const projectCount = await projects.count();
   check(projectCount > 0, 'Voltaic fleet rendered no Projects');
+  // Label tier contract (V4.0): the nano tier (digit, count, attention; no
+  // name) exists for phone-width viewports where zones project ~70px. A
+  // desktop fleet fit must keep its Project names -- the first nano bound
+  // (122px) would have stripped them on ordinary laptop windows.
+  const nanoChips = await page
+    .locator('[data-board-zone-tier="nano"]')
+    .count();
+  const phoneWidth = (page.viewportSize()?.width ?? 0) < 600;
+  check(
+    phoneWidth ? nanoChips > 0 : nanoChips === 0,
+    phoneWidth
+      ? 'Phone-width fleet kept full name cards on every zone (nano tier absent)'
+      : `Desktop fleet fit dropped ${nanoChips} zone label(s) to nano (names lost)`
+  );
   const agentNavigator = page.getByLabel('Select Agent on board');
   check(
     (await agentNavigator.locator('option').count()) > 1,
