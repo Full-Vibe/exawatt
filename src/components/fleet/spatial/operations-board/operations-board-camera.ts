@@ -44,11 +44,39 @@ export const BOARD_CAMERA_POLICY = {
   fixedAngleZoomScale: 0.92,
 } as const;
 
+/**
+ * The layout -> world mapping, in one place.
+ *
+ * `ui-model` lays the board out on a y-down plane; three.js draws y-up. Every
+ * layer, the field, and the rig used to flip the sign inline (`-piece.y`) at
+ * two dozen sites, which is what made the flat board an assumption rather
+ * than a policy. These three functions are now the only code that knows how
+ * a layout coordinate becomes a world coordinate. A future view lens (a
+ * globe, a parallax stage, a different up-axis) is this mapping plus the pose
+ * and projection pair below (`applyBoardCameraTarget`, `clientPointToBoard`),
+ * not a sweep of the layers.
+ */
+export function boardWorldY(layoutY: number): number {
+  return -layoutY;
+}
+
+export function boardWorldPoint(point: BoardPoint): BoardPoint {
+  return { x: point.x, y: boardWorldY(point.y) };
+}
+
+/** Tuple form for R3F `position` props, with the layer's own z. */
+export function boardWorldPosition(
+  point: BoardPoint,
+  z: number
+): [number, number, number] {
+  return [point.x, boardWorldY(point.y), z];
+}
+
 export function boardRectCenter(rect: SpatialBoardRect): BoardPoint {
-  return {
+  return boardWorldPoint({
     x: rect.x + rect.width / 2,
-    y: -(rect.y + rect.height / 2),
-  };
+    y: rect.y + rect.height / 2,
+  });
 }
 
 export function effectiveBoardCameraZoom(target: BoardCameraTarget): number {

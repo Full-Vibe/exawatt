@@ -226,7 +226,9 @@ function BoardMiniMap({
   return (
     <button
       type="button"
-      aria-label="Go to a board location from the minimap"
+      // Keyboard activation recenters (a key press carries no board point), so
+      // that is the honest accessible name; pointer clicks jump instead.
+      aria-label="Recenter board from minimap"
       onClick={event => {
         // Keyboard activation carries no useful point; recenter instead. The
         // minimap's viewBox is the board's fixed Fleet footprint, so the CTM

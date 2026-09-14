@@ -45,6 +45,8 @@ import {
 } from '../spatial-theme';
 import {
   boardRectCenter as rectCenter,
+  boardWorldPoint,
+  boardWorldPosition,
 } from './operations-board-camera';
 import {
   delegationStatusPieces,
@@ -145,7 +147,7 @@ function StatusMarkLayer({
 
   const instance = (piece: SpatialBoardPiece) => ({
     ref: collectMark(piece.id),
-    position: [piece.x, -piece.y, 0.94] as [number, number, number],
+    position: boardWorldPosition(piece, 0.94),
     scale: [piece.size, piece.size, 1] as [number, number, number],
     color: pieceLensColor(piece, lens, theme),
   });
@@ -165,7 +167,7 @@ function StatusMarkLayer({
               {...instance(piece)}
               color={theme.markBacking}
               key={`status-backing:${piece.id}`}
-              position={[piece.x, -piece.y, 0.91]}
+              position={boardWorldPosition(piece, 0.91)}
               raycast={() => null}
             />
           ))}
@@ -328,7 +330,7 @@ function StatusMarkLayer({
               {...instance(piece)}
               color={theme.canvas}
               key={`status-check:${piece.id}`}
-              position={[piece.x, -piece.y, 0.97]}
+              position={boardWorldPosition(piece, 0.97)}
               raycast={() => null}
             />
           ))}
@@ -353,7 +355,7 @@ function StatusMarkLayer({
               {...instance(piece)}
               color={theme.canvas}
               key={`status-dot:${piece.id}`}
-              position={[piece.x, -piece.y, 0.97]}
+              position={boardWorldPosition(piece, 0.97)}
               raycast={() => null}
             />
           ))}
@@ -378,7 +380,7 @@ function StatusMarkLayer({
               {...instance(piece)}
               color={theme.canvas}
               key={`status-cross:${piece.id}`}
-              position={[piece.x, -piece.y, 0.97]}
+              position={boardWorldPosition(piece, 0.97)}
               raycast={() => null}
             />
           ))}
@@ -431,7 +433,7 @@ function SelectionRing({
     if (animating) state.invalidate();
   });
   return (
-    <group ref={group} position={[piece.x, -piece.y, 0.78]}>
+    <group ref={group} position={boardWorldPosition(piece, 0.78)}>
       <Line
         points={points}
         color={theme.selection}
@@ -502,7 +504,7 @@ function AgentCandidateReticle({
   return (
     <group
       ref={group}
-      position={[piece.x, -piece.y, 0.82]}
+      position={boardWorldPosition(piece, 0.82)}
       scale={reduced ? restingScale : piece.size * 1.08}
     >
       <Line
@@ -753,7 +755,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
                 if (instance) bodyRefs.current.set(piece.id, instance);
                 else bodyRefs.current.delete(piece.id);
               }}
-              position={[piece.x, -piece.y, 0.65]}
+              position={boardWorldPosition(piece, 0.65)}
               scale={[piece.size, piece.size, 1]}
               color={theme.unit}
               onPointerOver={event => {
@@ -857,19 +859,20 @@ function StoppedAgentOutlines({
     for (const piece of pieces) {
       if (piece.kind !== 'agent' || piece.sessionState !== 'stopped') continue;
       const radius = piece.size * 0.52;
+      const center = boardWorldPoint(piece);
       const color = new THREE.Color(pieceLensColor(piece, lens, theme));
       for (let edge = 0; edge < 8; edge += 1) {
         const from = (edge / 8) * Math.PI * 2 + Math.PI / 8;
         const to = ((edge + 1) / 8) * Math.PI * 2 + Math.PI / 8;
         points.push(
           [
-            piece.x + Math.cos(from) * radius,
-            -piece.y + Math.sin(from) * radius,
+            center.x + Math.cos(from) * radius,
+            center.y + Math.sin(from) * radius,
             0.72,
           ],
           [
-            piece.x + Math.cos(to) * radius,
-            -piece.y + Math.sin(to) * radius,
+            center.x + Math.cos(to) * radius,
+            center.y + Math.sin(to) * radius,
             0.72,
           ]
         );
@@ -927,18 +930,19 @@ export const MultiSelectionLayer = memo(function MultiSelectionLayer({
         continue;
       }
       const radius = piece.size * 0.66;
+      const center = boardWorldPoint(piece);
       for (let segment = 0; segment < RING_SEGMENTS; segment += 1) {
         const from = (segment / RING_SEGMENTS) * Math.PI * 2;
         const to = ((segment + 1) / RING_SEGMENTS) * Math.PI * 2;
         result.push(
           [
-            piece.x + Math.cos(from) * radius,
-            -piece.y + Math.sin(from) * radius,
+            center.x + Math.cos(from) * radius,
+            center.y + Math.sin(from) * radius,
             0.78,
           ],
           [
-            piece.x + Math.cos(to) * radius,
-            -piece.y + Math.sin(to) * radius,
+            center.x + Math.cos(to) * radius,
+            center.y + Math.sin(to) * radius,
             0.78,
           ]
         );

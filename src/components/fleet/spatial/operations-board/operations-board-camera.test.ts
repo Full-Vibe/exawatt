@@ -6,14 +6,18 @@ import {
   applyBoardCameraTarget,
   boardCameraLimits,
   boardClampEdgesKey,
+  boardRectCenter,
   boardViewportFromCamera,
+  boardWorldPoint,
+  boardWorldPosition,
+  boardWorldY,
   clampBoardCameraTargetInPlace,
   clientPointToBoard,
   createBoardClampEdges,
   createBoardProjectionScratch,
+  fitBoardZoom,
   fittedBoardCameraTarget,
   relaxBoardCameraTargetInPlace,
-  fitBoardZoom,
   semanticBoardCameraTarget,
   softFollowBoardPoint,
   softFollowBoardRect,
@@ -261,5 +265,19 @@ describe('board camera limits and clamp feedback (F3)', () => {
     clampBoardCameraTargetInPlace(value, limits, true, createBoardClampEdges());
     expect(Number.isFinite(value.x)).toBe(true);
     expect(Number.isFinite(value.y)).toBe(true);
+  });
+});
+
+describe('layout to world mapping', () => {
+  it('flips the layout y-down plane to the world y-up plane in one place', () => {
+    expect(boardWorldY(4)).toBe(-4);
+    expect(boardWorldPoint({ x: 3, y: 4 })).toEqual({ x: 3, y: -4 });
+    expect(boardWorldPosition({ x: 3, y: 4 }, 0.5)).toEqual([3, -4, 0.5]);
+  });
+
+  it('centers a rect through the same mapping', () => {
+    expect(boardRectCenter({ x: 0, y: 0, width: 10, height: 6 })).toEqual(
+      boardWorldPoint({ x: 5, y: 3 })
+    );
   });
 });

@@ -47,10 +47,14 @@ import {
   type HandoffPoseDetail,
 } from '@/components/nav/altitude-handoff';
 import {
+  type BoardCameraTarget,
+  type BoardClampEdges,
+  type OperationsBoardViewport,
   applyBoardCameraTarget,
   boardCameraLimits,
   boardClampEdgesKey,
   boardViewportFromCamera,
+  boardWorldPoint,
   clampBoardCameraTargetInPlace,
   clientPointToBoard,
   createBoardClampEdges,
@@ -61,9 +65,6 @@ import {
   relaxBoardCameraTargetInPlace,
   semanticBoardCameraTarget,
   softFollowBoardPoint,
-  type BoardCameraTarget,
-  type BoardClampEdges,
-  type OperationsBoardViewport,
 } from './operations-board-camera';
 import { boardPointerAction, pinchZoomTarget } from './operations-board-input';
 import {
@@ -814,7 +815,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         }
         const next = softFollowBoardPoint(
           target.current,
-          { x: piece.x, y: -piece.y },
+          boardWorldPoint(piece),
           { width: size.width, height: size.height }
         );
         target.current.x = next.x;
@@ -831,7 +832,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         // refit would make Agent altitude feel like a disconnected map.
         const next = softFollowBoardPoint(
           target.current,
-          { x: piece.x, y: -piece.y },
+          boardWorldPoint(piece),
           { width: size.width, height: size.height }
         );
         target.current.x = next.x;

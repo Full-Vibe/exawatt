@@ -38,6 +38,7 @@ import {
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
 import { BURN_RAMP_STEPS, noopRaycast } from './operations-board-materials';
+import { boardWorldY } from './operations-board-camera';
 
 /**
  * Quad size for a population status mark, as a multiple of the unit it marks.
@@ -170,7 +171,7 @@ function PopulationStatusMarks({
     const stateByStatus = [3, 4, 1, 1, 0, 2] as const;
     mesh.current.count = field.count;
     for (let index = 0; index < field.count; index += 1) {
-      scratch.position.set(field.x[index]!, -field.y[index]!, 0.92);
+      scratch.position.set(field.x[index]!, boardWorldY(field.y[index]!), 0.92);
       scratch.scale.setScalar(field.size[index]! * POPULATION_MARK_SCALE);
       scratch.updateMatrix();
       mesh.current.setMatrixAt(index, scratch.matrix);
@@ -345,7 +346,7 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
     for (let index = 0; index < field.count; index++) {
       scratch.position.set(
         morph.current?.fromX[index] ?? field.x[index]!,
-        -(morph.current?.fromY[index] ?? field.y[index]!),
+        boardWorldY(morph.current?.fromY[index] ?? field.y[index]!),
         0.7
       );
       scratch.scale.setScalar(

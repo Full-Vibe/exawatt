@@ -27,6 +27,7 @@ import {
   type BoardFieldPose,
   type BoardTransitionClock,
 } from './operations-board-transition';
+import { boardWorldPoint } from './operations-board-camera';
 
 /**
  * The board's single transition clock.
@@ -101,7 +102,7 @@ export function BoardField({
   useLayoutEffect(() => {
     // World y is up; layout y is down.
     const next = new Map(
-      pieces.map(piece => [piece.id, { x: piece.x, y: -piece.y }])
+      pieces.map(piece => [piece.id, boardWorldPoint(piece)])
     );
     const node = group.current;
     const addressChanged = previousAddress.current !== address;
@@ -120,7 +121,7 @@ export function BoardField({
     };
     const fitted = carryBoardFieldPose(
       previous,
-      pieces.map(piece => ({ id: piece.id, x: piece.x, y: -piece.y })),
+      pieces.map(piece => ({ id: piece.id, ...boardWorldPoint(piece) })),
       actual
     );
     // Under one geometry (V3.7) the fit is identity on every semantic move:

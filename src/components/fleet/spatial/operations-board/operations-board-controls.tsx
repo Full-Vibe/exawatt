@@ -48,6 +48,7 @@ import {
   spatialProjectIdentityColor,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
+import { boardWorldPosition } from './operations-board-camera';
 import { delegationElapsedLabel } from '../spatial-agent-copy';
 import { useMinuteClock } from '../use-minute-clock';
 import type {
@@ -235,11 +236,10 @@ export const ProjectControls = memo(function ProjectControls({
       if (event.shiftKey && onToggleZoneSelect) onToggleZoneSelect(zone.id);
       else onDrillProject(zone.id);
     };
-    const position: [number, number, number] = [
-      zone.rect.x + zone.radius * 0.28,
-      -(zone.rect.y + 1.25),
-      0.8,
-    ];
+    const position = boardWorldPosition(
+      { x: zone.rect.x + zone.radius * 0.28, y: zone.rect.y + 1.25 },
+      0.8
+    );
     const accent = spatialProjectIdentityColor(theme, zone.id);
     // Compact is a CLASS, not a different tree. The label used to swap its
     // whole DOM subtree between a compact and a full rendering when the zoom
@@ -361,7 +361,9 @@ export const ProjectControls = memo(function ProjectControls({
       ? 'exa-material-chrome board-control-enter border px-1.5 py-1 text-left'
       : compact
         ? 'exa-material-chrome board-control-enter border px-2 py-1.5 text-left'
-        : 'exa-material-chrome board-control-enter w-52 border px-3 py-2.5 text-left';
+        : // w-56, not w-52: the hotkey keycap shares the title row, and the
+          // full card must still seat a twenty-character Project name.
+          'exa-material-chrome board-control-enter w-56 border px-3 py-2.5 text-left';
     const frameStyle = {
       borderColor: accent,
       color: theme.label,
@@ -454,7 +456,7 @@ export const AgentControls = memo(function AgentControls({
       return (
         <DampedHtmlAnchor
           key={`control:${piece.id}`}
-          position={[piece.x, -piece.y, 1.2]}
+          position={boardWorldPosition(piece, 1.2)}
           reduced={reduced}
           center
         >
@@ -644,7 +646,7 @@ export const DelegationControls = memo(function DelegationControls({
       return (
         <DampedHtmlAnchor
           key={`delegation-control:${unit.id}`}
-          position={[unit.x, -unit.y, 1.1]}
+          position={boardWorldPosition(unit, 1.1)}
           reduced={reduced}
           center
         >
