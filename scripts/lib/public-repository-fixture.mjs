@@ -106,6 +106,8 @@ const FLOOR_SCRIPTS = {
   'open-source:paths:check': 'node -e "process.exit(0)"',
   'content:scan': 'node -e "process.exit(0)"',
   'type-check': 'node -e "process.exit(0)"',
+  lint: 'node -e "process.exit(0)"',
+  'exports:check': 'node -e "process.exit(0)"',
   'test:agent-delivery': 'node -e "process.exit(0)"',
   'test:related': 'node -e "process.exit(0)"',
 };

@@ -19,7 +19,7 @@ operating contract:
 | Prefix                                     | Purpose                                                   |
 | ------------------------------------------ | --------------------------------------------------------- |
 | `agent:*`, `worktree:*`                    | isolated agent setup and queued delivery                  |
-| `test:*`, `type-check`, `lint`             | repository verification                                   |
+| `test:*`, `type-check`, `lint`, `exports:*` | repository verification                                  |
 | `qa:*`                                     | browser-environment diagnosis and smoke checks            |
 | `eval:*`                                   | bounded product or architecture evaluators                |
 | `electron:*`                               | Electron development, compilation, packaging, and dogfood |

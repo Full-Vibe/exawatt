@@ -293,7 +293,7 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/app/settings/agent-sources-settings.tsx' ||
       file === 'src/app/settings/connected-sources-section.tsx' ||
-      // BUG-132: the Connect dialog's server list scrolls; this eval proves it
+      // BUG-135: the Connect dialog's server list scrolls; this eval proves it
       // against a long fake SSH config, which the packaged fleet gate cannot.
       file === 'src/components/workspace/connect-source-dialog.tsx' ||
       file === 'src/components/workspace/agent-sources.ts' ||
@@ -405,6 +405,13 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       command: 'pnpm',
       args: ['run', 'content:scan', '--', ...paths],
     },
+    // BUG-136: the BUG-057 rule (assert the invariant, not the duration) is an
+    // ESLint rule, and lint ran only in CI's batched run. A landing could
+    // reintroduce a wall-clock assertion and hear about it hours later, from
+    // a run that names a batch of landings rather than the one that did it.
+    // Lint is cheap and whole-repo, so it is unconditional here, the same
+    // way the delivery-script pins are unconditional in CI.
+    { id: 'lint', command: 'pnpm', args: ['run', 'lint'] },
     { id: 'type-check', command: 'pnpm', args: ['run', 'type-check'] },
     {
       id: 'test:agent-delivery',
@@ -415,6 +422,17 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
 
   const related = paths.filter(file => /\.(?:[cm]?[jt]sx?)$/.test(file));
   if (related.length > 0) {
+    // BUG-137: the 2026-08-17 sweep left 465 exports with no consumer outside
+    // their module; a recount on 2026-09-13 found 524. A repo-wide
+    // privatisation pass is a semantic edit git cannot see across a dozen
+    // worktrees, so the number is held where it is instead: a NEW export in a
+    // changed file must have a consumer, or the landing refuses. Existing
+    // consumer-less exports are not counted.
+    checks.push({
+      id: 'exports:check',
+      command: 'pnpm',
+      args: ['run', 'exports:check', '--', ...related],
+    });
     checks.push({
       id: 'vitest-related',
       command: 'pnpm',

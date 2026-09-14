@@ -75,7 +75,6 @@ import {
 import type {
   ConnectedSourceStatusView,
   ElectronConnectedSourcesApi,
-  ObservedSourceCapability,
   ObservedSourceFact,
 } from '@/types/electron';
 
@@ -94,7 +93,6 @@ import type {
 export type ConnectedSourceObservation = ConnectedSourceStatusView;
 
 export type ObservedFact = ObservedSourceFact;
-export type ObservedCapability = ObservedSourceCapability;
 
 /**
  * `window.electron.connectedSources`, or null outside the desktop app. Every

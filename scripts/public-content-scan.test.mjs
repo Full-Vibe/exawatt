@@ -471,3 +471,44 @@ test('the partner-conversation rule is a no-op without the private directory', a
   const result = await scanChangedFiles(root, ['copy.md']);
   assert.deepEqual(result.findings, []);
 });
+// Incident `0022`. The whole-tree gate hands this scanner 1,558 paths. On a
+// command line that is one 67 KB log line, longer than `gh run view --log`
+// can read, and the CLI dropped it and everything after it. The list travels
+// on stdin now, and these pin the channel end to end through the real CLI.
+test('the CLI reads a NUL-delimited path list from stdin', async () => {
+  const { readStdinPaths } = await import('./public-content-scan.mjs');
+  async function* chunks() {
+    yield Buffer.from('a.ts\0dir/b c.md\0');
+    yield Buffer.from('c.ts');
+  }
+  assert.deepEqual(await readStdinPaths(chunks()), ['a.ts', 'dir/b c.md', 'c.ts']);
+
+  const run = await runScannerCli(['--', '--stdin0'], 'LICENSE\0eslint.config.mjs\0');
+  assert.equal(run.code, 0, run.stderr);
+  assert.match(run.stdout, /checked 2 public-bound file\(s\)/u);
+});
+
+test('every non-zero exit of the CLI says why before it exits', async () => {
+  const run = await runScannerCli(['../outside-the-repository.md']);
+  assert.equal(run.code, 1);
+  assert.match(run.stderr, /^\[public-content\] changed path must be a file inside the repository/u);
+});
+
+async function runScannerCli(args, input = '') {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const script = fileURLToPath(new URL('./public-content-scan.mjs', import.meta.url));
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script, ...args], {
+      cwd: path.dirname(path.dirname(script)),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => (stdout += chunk));
+    child.stderr.on('data', chunk => (stderr += chunk));
+    child.once('error', reject);
+    child.once('close', code => resolve({ code, stdout, stderr }));
+    child.stdin.end(input);
+  });
+}

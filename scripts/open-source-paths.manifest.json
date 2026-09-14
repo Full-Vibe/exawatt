@@ -162,6 +162,7 @@
         "scripts/electron-dev.mjs",
         "scripts/electron-packaged-smoke.mjs",
         "scripts/exact-public-recertification.mjs",
+        "scripts/export-consumers-check.mjs",
         "scripts/generate-agent-source-declarations.mjs",
         "scripts/generate-app-icon.mjs",
         "scripts/generate-themes.mjs",

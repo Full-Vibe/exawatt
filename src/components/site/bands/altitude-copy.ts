@@ -215,8 +215,3 @@ export function panelWords(panel: AltitudePanelCopy): number {
 export function pinnedRunWords(): number {
   return ALTITUDE_PANELS.reduce((total, panel) => total + panelWords(panel), 0);
 }
-
-/** Everything a reader reads in the panel layer, for a lint pass. */
-export function panelProse(): string {
-  return ALTITUDE_PANELS.flatMap(panel => panel.copy).join(' ');
-}

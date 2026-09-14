@@ -62,12 +62,22 @@ const flush = async (): Promise<void> => {
 };
 
 /**
- * Long enough for real WebCrypto to answer. The mocked auth module resolves
- * in a microtask, but a test that puts the real device-id derivation back
- * needs the digest to actually finish before the connect frame exists.
+ * Waits for the connect frame the real WebCrypto derivation produces. The
+ * mocked auth module answers in a microtask, but the test that puts the real
+ * device-id derivation back must wait for the digest to actually finish. That
+ * is an effect, not a number of turns: one `setTimeout(0)` was enough on an
+ * idle machine and not on a loaded landing floor or a two-worker CI runner,
+ * where this test failed with the frame simply not sent yet (BUG-057's rule:
+ * wait for the effect, never for a duration).
  */
-const settle = async (): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 0));
+const untilSent = async (socket: MockWebSocket): Promise<void> => {
+  for (
+    let turn = 0;
+    turn < 1_000 && socket.sentMessages.length === 0;
+    turn += 1
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
 };
 
 const beginConnect = async (
@@ -400,7 +410,7 @@ describe('OCClient', () => {
         event: 'connect.challenge',
         payload: { nonce: 'nonce-1', ts: 1111 },
       });
-      await settle();
+      await untilSent(socket);
       await completeHandshake(socket, { sendChallenge: false });
       await connectPromise;
 

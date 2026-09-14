@@ -301,6 +301,19 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-13, H18: an audit of the checks every other change is judged by
+  found five defects of one shape: the check reads as coverage and is not.
+  The batch CI red since 2026-09-11 read as a content scanner that died
+  silently; the scanner had passed and the production audit had failed,
+  hidden because the gate echoed 1,558 paths as one 67 KB log line that
+  `gh run view --log` cannot read past (BUG-135, incident `0022`). The
+  delivery-script pins never ran in CI and the BUG-057 lint rule never ran on
+  landing (BUG-136). Consumer-less exports had grown 13% since the August
+  sweep with nothing refusing the next one (BUG-137, `pnpm exports:check`).
+  Four dependencies had no importer. Two incident records shared one number.
+  Every repair is a check, not a rule to remember: the roadmap entries name
+  the test that pins each.
+
 - 2026-08-20, H16: the Fleet study's post-integration dogfood request exposed
   that official local custody had been closed in prose but never in execution.
   The detached worker failed before build because `electron:install-dogfood`

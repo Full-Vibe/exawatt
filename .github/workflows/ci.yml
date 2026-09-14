@@ -93,6 +93,24 @@ jobs:
       - name: Run tests
         run: pnpm test:ci
 
+      # The delivery-script pins — release packaging, the app icon, packaged-app
+      # and renderer-archive assertions, the suite environment, the delivery
+      # policy itself — ran only on the landing floor. A change that reaches
+      # this ref without a landing (a Dependabot bump, a direct push) could
+      # break a release guard and CI stayed green (BUG-136). They are
+      # `node --test` with no build behind them, so they run here unconditionally,
+      # the same way lint is unconditional on the landing floor.
+      # The projection pins (public-projection, public-delivery,
+      # contribution-pull) drive git-filter-repo, which the runner image does
+      # not carry; developer machines install it with Homebrew. Without it 46
+      # of the pins failed at their first projection on the first Linux run
+      # instead of asserting anything (BUG-136).
+      - name: Install git-filter-repo
+        run: pipx install git-filter-repo==2.47.0
+
+      - name: Run delivery-script tests
+        run: pnpm test:agent-delivery
+
       # Gate B and the rest of the publication gates over the WHOLE tracked
       # tree. The landing floor scans only changed paths, so this is the only
       # run that reads a file nobody touched.

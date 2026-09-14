@@ -64,14 +64,6 @@ const HeroBoardScene = dynamic(
 
 export const HERO_BOARD_POSTER = '/images/hero-board-poster.jpg';
 
-/** The desktop breakpoint, kept as the one place the site's `md:` boundary is
- *  named in JavaScript. It no longer decides live-versus-poster; it decides
- *  LAYOUT, which is the only thing a width should decide.
- *
- *  `useNarrowViewport` retired in W6b: the phone layout is CSS now, so nothing
- *  waits for a client render to know which shape it is in. */
-export const HERO_BOARD_LIVE_MIN_WIDTH = 768;
-
 export type HeroBoardMode = 'live' | 'poster';
 
 export interface HeroBoardProps {

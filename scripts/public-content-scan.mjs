@@ -577,12 +577,38 @@ function formatFinding(entry) {
   return `${location} [${entry.rule}] ${entry.message}`;
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+const STDIN_FLAG = '--stdin0';
+
+/**
+ * A path list arrives on stdin, NUL-delimited, when the caller passes
+ * `--stdin0`. NUL is the one byte a path cannot contain and is what
+ * `git ls-files -z` already emits.
+ *
+ * The whole-tree publication gate hands this scanner every tracked path —
+ * 1,558 of them, 67 KB — and pnpm echoes the exact command line it runs. That
+ * one 67 KB line is longer than the 64 KiB token `gh run view --log` can read,
+ * so the CLI dropped it AND every line after it, silently: CI read as a
+ * scanner that died mid-step when the scanner had passed and a later gate had
+ * failed (incident `0022`). A list that long belongs on stdin, where nothing
+ * echoes it.
+ */
+export async function readStdinPaths(stream = process.stdin) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8').split('\0').filter(Boolean);
+}
+
+async function main(report) {
+  const args = process.argv.slice(2).filter(argument => argument !== '--');
   if (args.includes('--help')) {
-    process.stdout.write(
+    report(
+      process.stdout,
       [
         'Usage: pnpm content:scan -- <changed-path>...',
+        '       git ls-files -z | pnpm content:scan -- --stdin0',
+        '',
+        '--stdin0 reads a NUL-delimited path list from stdin, so a whole-tree',
+        'run never puts thousands of paths on a command line a log echoes.',
         '',
         'Optionally set EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE to a',
         'newline-delimited private file. The scanner never prints its terms.',
@@ -594,16 +620,24 @@ async function main() {
     return;
   }
 
+  const paths = args.includes(STDIN_FLAG)
+    ? [
+        ...args.filter(argument => argument !== STDIN_FLAG),
+        ...(await readStdinPaths()),
+      ]
+    : args;
+
   const manifest = await readPathManifest(
     path.join(ROOT, OPEN_SOURCE_PATH_MANIFEST)
   );
-  const result = await scanChangedFiles(ROOT, args, {
+  const result = await scanChangedFiles(ROOT, paths, {
     forbiddenVocabularyPath:
       process.env.EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE,
     classifyPath: createPathClassifier(manifest),
   });
   if (result.findings.length > 0) {
-    process.stderr.write(
+    report(
+      process.stderr,
       [
         `[public-content] blocked ${result.findings.length} finding(s):`,
         ...result.findings.map(formatFinding),
@@ -613,7 +647,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write(
+  report(
+    process.stdout,
     '[public-content] checked ' +
       result.checkedFiles +
       ' public-bound file(s); skipped ' +
@@ -623,8 +658,24 @@ async function main() {
 }
 
 if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
-  main().catch(error => {
-    process.stderr.write(`[public-content] ${error.message}\n`);
+  // Every exit path above reports before it exits. This guard is the proof of
+  // that, not a second reporter: a non-zero exit that printed nothing is the
+  // shape incident `0022` was mistaken for, and if a future path reaches it
+  // the gate must say so rather than read as a scanner that vanished.
+  let reported = false;
+  const report = (stream, text) => {
+    reported = true;
+    stream.write(text);
+  };
+  process.on('exit', code => {
+    if (code !== 0 && !reported) {
+      process.stderr.write(
+        `[public-content] exiting ${code} without a report; that is a scanner defect, not a clean tree\n`
+      );
+    }
+  });
+  main(report).catch(error => {
+    report(process.stderr, `[public-content] ${error.message}\n`);
     process.exitCode = 1;
   });
 }

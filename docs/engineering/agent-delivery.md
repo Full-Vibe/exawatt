@@ -178,8 +178,8 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm type-check`, and `pnpm test:agent-delivery` |
-| Changed JavaScript or TypeScript                                                        | related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing        |
+| Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm lint`, `pnpm type-check`, and `pnpm test:agent-delivery` |
+| Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted), then the related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing |
 | `electron/**`, `packages/core/**`, Electron builder config, or Electron/dogfood scripts | `pnpm electron:compile`                                                                                       |
 | Playwright or stable-browser boundary                                                   | `pnpm qa:browser:doctor`                                                                                      |
 | Fleet spatial or R3F evaluation code                                                    | `pnpm eval:r3f`                                                                                               |
@@ -315,6 +315,16 @@ same-ref concurrency still cancels an obsolete batch if a later eligible batch
 overtakes it. A branch ref is used instead of a GitHub API token so the worker
 needs only the Git push authority `agent:land` already proves.
 
+The batch runs lint, type-check, the Electron compile, the Vitest suite, the
+delivery-script pins (`pnpm test:agent-delivery`, BUG-136), the whole-tree
+publication gates, and the community build. **Read a red batch from the job
+API, not from `gh run view --log`.** The CLI stops rendering a job log at the
+first line longer than 64 KiB and drops everything after it without saying
+so; a step whose log ends at a `> node …` echo with no error line is that
+reader, not the process (incident `0022`).
+`gh api repos/<owner>/<repo>/actions/jobs/<job-id>` names the failed step and
+its duration, and `…/jobs/<job-id>/logs` is the complete log.
+
 The request is removed only after the batch ref is current. A failed push emits
 `ci_batch_failed` and leaves the request recoverable; the next normal landing
 starts another worker. The guarded `--direct` recovery path intentionally
@@ -440,6 +450,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Shared `master` is dirty or stale                                | Leave it alone. Remote integration is authoritative and already succeeded; clean/sync the shared checkout only when its owner can do so safely.                                                                                                                   |
 | Attempt-ref cleanup warns after integration                      | First prove the attempt SHA is reachable from `origin/master`, then delete that exact remote `agent-attempts/*` ref. Never use a broad branch pattern.                                                                                                            |
 | CI batch request remains after a failure                         | Inspect `ci_batch_failed`; a later normal landing restarts the detached worker. For urgent evidence, manually dispatch `CI` at `master`. Do not delete request or cadence state to manufacture a green signal.                                                    |
+| Commits reach `master` without a ticket (a direct push from the shared checkout) | Do not revert. Record what the bypass skipped and let the next landing's whole-tree checks run over it. BUG-131 is the observed case (2026-09-13): two docs-only call-capture commits were pushed straight to `master`, wrote public-variant directives the projector rejects, and stalled publication for two days before a queued landing's renderer tests said so. Nothing client-side refuses such a push: `agent:land` is a convention the shared checkout does not enforce, and a pre-push hook installed by `worktree:setup` would catch the accident but not the intent. Only a server-side rule on `master` refuses it, and that is an operator decision. |
 | Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                                                                        |
 | A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                                                                          |
 | A landing reports `flaked=<check>:<n>`                           | Nothing blocking. The named files failed in a large selection and passed alone, which is contention. Read the file names: if `summarizeDeliveryMetrics`' per-file tally shows the SAME file flaking across landings, that is a defect to chase, not machine load. |

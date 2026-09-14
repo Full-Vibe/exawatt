@@ -49,16 +49,19 @@ test('the cheap changed-file floor cannot be weakened by the caller', () => {
   assert.deepEqual(ids(['docs/product/concepts.md']), [
     'open-source:paths:check',
     'content:scan',
+    'lint',
     'type-check',
     'test:agent-delivery',
   ]);
-  assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['lint']), [
+  assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['test:fonts']), [
     'open-source:paths:check',
     'content:scan',
+    'lint',
     'type-check',
     'test:agent-delivery',
+    'exports:check',
     'vitest-related',
-    'lint',
+    'test:fonts',
   ]);
 
   const duplicateContentScan = classifyDeliveryPolicy(
@@ -99,8 +102,10 @@ test('provider composition changes receive related consumer tests', () => {
     [
       'open-source:paths:check',
       'content:scan',
+      'lint',
       'type-check',
       'test:agent-delivery',
+      'exports:check',
       'vitest-related',
     ]
   );
@@ -115,8 +120,10 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
   assert.deepEqual(ids(['scripts/install-dogfood.mjs']), [
     'open-source:paths:check',
     'content:scan',
+    'lint',
     'type-check',
     'test:agent-delivery',
+    'exports:check',
     'vitest-related',
     'electron:compile',
   ]);
@@ -156,8 +163,10 @@ test('routable and distribution-seam changes receive the community build', () =>
   assert.deepEqual(ids(['src/app/admin/invites/page.tsx']), [
     'open-source:paths:check',
     'content:scan',
+    'lint',
     'type-check',
     'test:agent-delivery',
+    'exports:check',
     'vitest-related',
     'verify:community-build',
     'verify:community-runtime',
@@ -165,8 +174,10 @@ test('routable and distribution-seam changes receive the community build', () =>
   assert.deepEqual(ids(['scripts/lib/distribution-build.mjs']), [
     'open-source:paths:check',
     'content:scan',
+    'lint',
     'type-check',
     'test:agent-delivery',
+    'exports:check',
     'vitest-related',
     'verify:community-build',
   ]);
@@ -225,6 +236,7 @@ test('roadmap corpus changes receive the canonical parser contract', () => {
   assert.deepEqual(ids(['docs/engineering/roadmap.md']), [
     'open-source:paths:check',
     'content:scan',
+    'lint',
     'type-check',
     'test:agent-delivery',
     'roadmap-contract',
@@ -243,8 +255,10 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
     [
       'open-source:paths:check',
       'content:scan',
+      'lint',
       'type-check',
       'test:agent-delivery',
+      'exports:check',
       'vitest-related',
       'electron:compile',
       'qa:browser:doctor',
@@ -485,7 +499,7 @@ test('the vitest checks declare the isolated rerun; the others do not', () => {
     check => check.id === 'roadmap-contract'
   );
   assert.deepEqual(roadmap.rerun, { kind: 'vitest', script: 'test:alone' });
-  for (const id of ['type-check', 'content:scan', 'test:agent-delivery']) {
+  for (const id of ['type-check', 'content:scan', 'lint', 'exports:check', 'test:agent-delivery']) {
     assert.equal(
       classifyDeliveryPolicy(['src/lib/raw-tokens.ts']).find(
         check => check.id === id
@@ -872,4 +886,57 @@ test('a passing check and a non-vitest failure behave exactly as before', async 
       new RegExp(`run type-check exited 1`)
     );
   });
+});
+
+// BUG-136. The two guard classes were each blind on one side: every
+// `scripts/*.test.mjs` pin ran only through `test:agent-delivery` on landing,
+// never in CI, so a Dependabot bump could break a release guard with CI
+// green; the BUG-057 lint rule ran only in CI, so a landing could reintroduce
+// a wall-clock assertion and learn of it at the next batch. Both run on both
+// sides now, unconditionally, and this is the pin on both halves.
+test('lint and the delivery-script pins run on every landing and in every CI batch', async () => {
+  for (const paths of [
+    [],
+    ['docs/product/concepts.md'],
+    ['README.md'],
+    ['pnpm-lock.yaml'],
+    ['src/lib/x.ts', 'electron/main/y.ts'],
+  ]) {
+    const checks = ids(paths);
+    assert.ok(checks.includes('lint'), `lint owed by ${JSON.stringify(paths)}`);
+    assert.ok(
+      checks.includes('test:agent-delivery'),
+      `test:agent-delivery owed by ${JSON.stringify(paths)}`
+    );
+  }
+  const lint = classifyDeliveryPolicy([]).find(check => check.id === 'lint');
+  assert.deepEqual(lint, { id: 'lint', command: 'pnpm', args: ['run', 'lint'] });
+
+  const workflow = await readFile(
+    path.join(root, '.github/workflows/ci.yml'),
+    'utf8'
+  );
+  assert.match(workflow, /name: Run linter\s+run: pnpm lint/);
+  assert.match(
+    workflow,
+    /name: Run delivery-script tests\s+run: pnpm test:agent-delivery/
+  );
+});
+
+// BUG-137. A new export with no consumer is refused at the door; the existing
+// 524 are not re-litigated. The check owes exactly the changed source files.
+test('changed source files owe the consumer-less export check', () => {
+  const checks = classifyDeliveryPolicy(['src/b.ts', 'docs/a.md', 'scripts/c.mjs']);
+  const exportsCheck = checks.find(check => check.id === 'exports:check');
+  assert.deepEqual(exportsCheck, {
+    id: 'exports:check',
+    command: 'pnpm',
+    args: ['run', 'exports:check', '--', 'scripts/c.mjs', 'src/b.ts'],
+  });
+  assert.ok(
+    checks.findIndex(check => check.id === 'exports:check') <
+      checks.findIndex(check => check.id === 'vitest-related'),
+    'the cheap check runs before the related suite'
+  );
+  assert.ok(!ids(['docs/a.md']).includes('exports:check'));
 });

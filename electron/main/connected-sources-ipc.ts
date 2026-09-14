@@ -141,20 +141,6 @@ function sourceRuntime(): ConnectedSourceRuntime {
   return created;
 }
 
-/** Exposed for tests. */
-export function setConnectedSourceStoreForTesting(
-  replacement: ConnectedSourceStore | null
-): void {
-  store = replacement;
-}
-
-/** Exposed for tests. */
-export function setConnectedSourceRuntimeForTesting(
-  replacement: ConnectedSourceRuntime | null
-): void {
-  runtime = replacement;
-}
-
 function assertString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`Invalid ${label}`);
