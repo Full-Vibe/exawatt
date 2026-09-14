@@ -50,4 +50,19 @@ describe('zone label tier', () => {
     store.setMinZoneWidth(40); // 400px -> full
     expect(store.get()).toBe('full');
   });
+
+  it('drops to nano when zones project narrower than a compact card', () => {
+    // The 390px-viewport case: world-anchored chips must shed the name
+    // before they bury each other and the board.
+    expect(nextZoneLabelTier('compact', 121)).toBe('nano');
+    expect(nextZoneLabelTier('full', 100)).toBe('nano');
+  });
+
+  it('holds nano through the hysteresis band and recovers above it', () => {
+    expect(nextZoneLabelTier('nano', 130)).toBe('nano');
+    expect(nextZoneLabelTier('nano', 150)).toBe('nano');
+    expect(nextZoneLabelTier('nano', 151)).toBe('compact');
+    // A recovered compact tier does not fall straight back at the same width.
+    expect(nextZoneLabelTier('compact', 151)).toBe('compact');
+  });
 });

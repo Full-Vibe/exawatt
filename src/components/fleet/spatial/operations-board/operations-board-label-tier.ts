@@ -13,13 +13,20 @@
  * stops a label flickering when the camera rests near the boundary; the gap
  * is ~15% of the threshold, in the range LOD systems use for the same reason.
  */
-export type ZoneLabelTier = 'full' | 'compact';
+export type ZoneLabelTier = 'full' | 'compact' | 'nano';
 
 export const ZONE_LABEL_TIER_POLICY = {
   /** Projected zone width (px) above which labels go full. */
   fullAbovePx: 290,
   /** Projected zone width (px) below which labels go compact. */
   compactBelowPx: 250,
+  /** Projected zone width (px) above which nano labels return to compact. */
+  compactAbovePx: 150,
+  /** Projected zone width (px) below which labels go nano: hotkey, count, and
+   *  attention only. This is the 390px-viewport case, where zones project
+   *  narrower than a compact card and world-anchored chips buried each other
+   *  and the board they label. */
+  nanoBelowPx: 122,
 } as const;
 
 /** Pure: the next tier given the current one and the projected width. */
@@ -27,6 +34,9 @@ export function nextZoneLabelTier(
   current: ZoneLabelTier,
   projectedPx: number
 ): ZoneLabelTier {
+  if (projectedPx < ZONE_LABEL_TIER_POLICY.nanoBelowPx) return 'nano';
+  if (current === 'nano' && projectedPx <= ZONE_LABEL_TIER_POLICY.compactAbovePx)
+    return 'nano';
   if (current === 'full') {
     return projectedPx < ZONE_LABEL_TIER_POLICY.compactBelowPx
       ? 'compact'

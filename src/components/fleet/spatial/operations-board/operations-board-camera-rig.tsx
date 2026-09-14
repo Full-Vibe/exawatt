@@ -84,6 +84,9 @@ export interface OperationsBoardHandle {
   enterSession(agentId: string): void;
   zoom(steps: number): void;
   pan(dx: number, dy: number): void;
+  /** Center the camera on a board point (layout space) at the current zoom —
+   *  the minimap's jump verb. */
+  panToBoardPoint(x: number, y: number): void;
   nudge(dx: number, dy: number, dollySteps: number, orbitRadians: number): void;
 }
 
@@ -845,6 +848,12 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       pan(dx, dy) {
         target.current.x += dx * span();
         target.current.y -= dy * span();
+        constrainTarget();
+        cameraChanged();
+      },
+      panToBoardPoint(x, y) {
+        target.current.x = x;
+        target.current.y = -y;
         constrainTarget();
         cameraChanged();
       },

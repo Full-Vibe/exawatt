@@ -209,25 +209,46 @@ function BoardMiniMap({
   layout,
   viewportRef,
   onRecenter,
+  onJump,
   theme,
 }: {
   layout: SpatialBoardLayout;
   viewportRef: { current: SVGRectElement | null };
   onRecenter: () => void;
+  /** Fly the camera to a board point (layout space) — minimap click-to-jump. */
+  onJump: (x: number, y: number) => void;
   theme: SpatialThemeSnapshot;
 }) {
   const bounds = layout.minimap.bounds;
   const width = Math.max(bounds.width, 1);
   const height = Math.max(bounds.height, 1);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   return (
     <button
       type="button"
-      aria-label="Recenter board from minimap"
-      onClick={onRecenter}
+      aria-label="Go to a board location from the minimap"
+      onClick={event => {
+        // Keyboard activation carries no useful point; recenter instead. The
+        // minimap's viewBox is the board's fixed Fleet footprint, so the CTM
+        // inverse takes a click straight to layout coordinates (V3.7: one
+        // world, so those hold at every altitude).
+        const svg = svgRef.current;
+        const matrix = svg?.getScreenCTM();
+        if (event.detail === 0 || !svg || !matrix) {
+          onRecenter();
+          return;
+        }
+        const point = new DOMPoint(
+          event.clientX,
+          event.clientY
+        ).matrixTransform(matrix.inverse());
+        onJump(point.x, point.y);
+      }}
       className="exa-material-chrome block h-16 w-24 border p-2 outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
       style={spatialMaterialFrame(theme)}
     >
       <svg
+        ref={svgRef}
         viewBox={`${bounds.x} ${bounds.y} ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
         className="h-full w-full"
@@ -904,6 +925,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             layout={layout}
             viewportRef={viewportRect}
             onRecenter={() => controller.current?.recenter()}
+            onJump={(x, y) => controller.current?.panToBoardPoint(x, y)}
             theme={theme}
           />
 

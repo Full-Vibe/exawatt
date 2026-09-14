@@ -221,7 +221,13 @@ export const ProjectControls = memo(function ProjectControls({
     labelTierStore.get,
     labelTierStore.get
   );
-  return zones.map(zone => {
+  return zones.map((zone, index) => {
+    // The digit that drills this Project (the surface maps 1-9 over this same
+    // visible-zones order, skipping aggregates), worn on the chip the way an
+    // RTS unit wears its control-group number. This is the binding's one
+    // in-world teaching surface; the help modal documents the rest.
+    const hotkey =
+      index < 9 && !zone.isAggregate ? String(index + 1) : null;
     // The zone control is the focusable DOM equivalent of the zone plate, so
     // it carries both verbs: activate opens, shift-activate (pointer or
     // keyboard — synthesized clicks keep modifier state) toggles selection.
@@ -243,7 +249,9 @@ export const ProjectControls = memo(function ProjectControls({
     // that shows or hides its detail rows costs an attribute write per zone
     // and never interrupts a frame. Detail rows also read as a reveal, which
     // is what altitude is supposed to feel like.
+    const nano = labelTier === 'nano';
     const compact =
+      nano ||
       labelTier === 'compact' ||
       (altitude !== 'fleet' && zone.id !== focusedProjectId);
     const burnShare =
@@ -251,15 +259,31 @@ export const ProjectControls = memo(function ProjectControls({
     const content = (
       <>
         <span className="flex items-baseline justify-between gap-2">
-          <span
-            className={
-              compact
-                ? 'max-w-[10rem] truncate text-chrome-title font-semibold tracking-[-0.01em]'
-                : 'max-w-[11rem] truncate text-sm font-semibold tracking-[-0.01em]'
-            }
-            style={{ color: theme.label }}
-          >
-            {zone.label}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            {hotkey && (
+              <kbd
+                aria-hidden="true"
+                className="rounded border px-1 font-mono text-chrome-nano tabular-nums"
+                style={{
+                  color: theme.labelMuted,
+                  borderColor: spatialColorWithAlpha(theme.labelMuted, 0.35),
+                }}
+              >
+                {hotkey}
+              </kbd>
+            )}
+            <span
+              className={
+                nano
+                  ? 'hidden'
+                  : compact
+                    ? 'max-w-[10rem] truncate text-chrome-title font-semibold tracking-[-0.01em]'
+                    : 'max-w-[11rem] truncate text-sm font-semibold tracking-[-0.01em]'
+              }
+              style={{ color: theme.label }}
+            >
+              {zone.label}
+            </span>
           </span>
           <span className="flex items-baseline gap-2">
             <span
@@ -333,9 +357,11 @@ export const ProjectControls = memo(function ProjectControls({
         </span>
       </>
     );
-    const frameClass = compact
-      ? 'exa-material-chrome board-control-enter border px-2 py-1.5 text-left'
-      : 'exa-material-chrome board-control-enter w-52 border px-3 py-2.5 text-left';
+    const frameClass = nano
+      ? 'exa-material-chrome board-control-enter border px-1.5 py-1 text-left'
+      : compact
+        ? 'exa-material-chrome board-control-enter border px-2 py-1.5 text-left'
+        : 'exa-material-chrome board-control-enter w-52 border px-3 py-2.5 text-left';
     const frameStyle = {
       borderColor: accent,
       color: theme.label,
@@ -347,7 +373,7 @@ export const ProjectControls = memo(function ProjectControls({
           <button
             type="button"
             data-board-zone={zone.id}
-            data-board-zone-tier={compact ? 'compact' : 'full'}
+            data-board-zone-tier={nano ? 'nano' : compact ? 'compact' : 'full'}
             aria-current={zone.selected ? 'true' : undefined}
             aria-label={`Open Project ${zone.label}`}
             onClick={activateZone}
@@ -358,7 +384,7 @@ export const ProjectControls = memo(function ProjectControls({
           </button>
         ) : (
           <div
-            data-board-zone-tier={compact ? 'compact' : 'full'}
+            data-board-zone-tier={nano ? 'nano' : compact ? 'compact' : 'full'}
             style={frameStyle}
             className={frameClass}
           >
