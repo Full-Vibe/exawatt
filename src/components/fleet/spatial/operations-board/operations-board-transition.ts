@@ -98,14 +98,21 @@ export function settleBoardTransition(
 }
 
 /**
- * Ease with zero velocity at both ends, so a transition neither starts nor
- * stops with a snap. This is the property damping cannot offer.
+ * Ease-out: the transition answers on its first frame and arrives at rest.
+ *
+ * This replaced an ease-in-out whose first ~30ms of motion were
+ * sub-perceptual — after a hotkey the camera was moving but did not LOOK
+ * like it was, which read as latency (the V3.7 bench question; RTS cameras
+ * cut or ease out for exactly this reason). Motion that starts the moment
+ * the operator acts reads as causality, not as a jerk: the start velocity
+ * here is 3x the average over the full duration — gentle in absolute terms —
+ * where damping's start velocity is lambda times the whole remaining
+ * distance. Arrival still has zero velocity, which is the half of the old
+ * property worth keeping: the board must settle, never stop.
  */
 export function boardTransitionEase(t: number): number {
   const clamped = t <= 0 ? 0 : t >= 1 ? 1 : t;
-  return clamped < 0.5
-    ? 4 * clamped * clamped * clamped
-    : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
+  return 1 - Math.pow(1 - clamped, 3);
 }
 
 /**

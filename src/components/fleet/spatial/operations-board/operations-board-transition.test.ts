@@ -78,27 +78,27 @@ describe('board transition clock', () => {
 });
 
 describe('board transition ease', () => {
-  it('leaves and arrives at rest, which damping cannot do', () => {
-    // Velocity at the endpoints is what reads as a jerk. Sample the slope just
-    // inside each end and require it to be far below the mid-flight slope.
+  it('answers on the first frame and arrives at rest', () => {
+    // Ease-out: the response to an input must be visible immediately (start
+    // slope well above average) while arrival still has zero velocity so the
+    // board settles instead of stopping. The average slope over [0,1] is 1.
     const step = 1e-4;
     const startSlope = (boardTransitionEase(step) - boardTransitionEase(0)) / step;
     const endSlope = (boardTransitionEase(1) - boardTransitionEase(1 - step)) / step;
-    const midSlope =
-      (boardTransitionEase(0.5 + step) - boardTransitionEase(0.5 - step)) /
-      (2 * step);
-    expect(startSlope).toBeLessThan(midSlope * 0.01);
-    expect(endSlope).toBeLessThan(midSlope * 0.01);
+    expect(startSlope).toBeGreaterThan(2);
+    expect(endSlope).toBeLessThan(0.01);
   });
 
-  it('is pinned at both ends and symmetric about the middle', () => {
+  it('is pinned at both ends and only decelerates', () => {
     expect(boardTransitionEase(0)).toBe(0);
     expect(boardTransitionEase(1)).toBe(1);
-    expect(boardTransitionEase(0.5)).toBeCloseTo(0.5, 6);
-    expect(boardTransitionEase(0.25) + boardTransitionEase(0.75)).toBeCloseTo(
-      1,
-      6
-    );
+    // Deceleration everywhere: each successive slope sample is no steeper.
+    let previousSlope = Number.POSITIVE_INFINITY;
+    for (let t = 0; t < 1; t += 0.05) {
+      const slope = (boardTransitionEase(t + 0.05) - boardTransitionEase(t)) / 0.05;
+      expect(slope).toBeLessThanOrEqual(previousSlope + 1e-9);
+      previousSlope = slope;
+    }
   });
 
   it('clamps rather than overshooting out-of-range progress', () => {

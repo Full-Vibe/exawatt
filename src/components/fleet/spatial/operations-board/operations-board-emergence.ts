@@ -24,6 +24,8 @@ export const EMERGENCE_ARRIVAL_FROM = 0.35;
 interface EmergenceRecord {
   kind: 'arriving' | 'retiring';
   startedAt: number;
+  /** Arrival origin when a turnaround resumes from below the standard one. */
+  from?: number;
 }
 
 export interface EmergenceTracker {
@@ -62,10 +64,18 @@ export function createEmergenceTracker(
         if (record?.kind === 'retiring') {
           // A retiring piece asked back turns around from where it is.
           const scale = 1 - boardTransitionEase(progress(record, nowMs));
-          records.set(id, {
-            kind: 'arriving',
-            startedAt: nowMs - inverseArrival(scale) * durationMs,
-          });
+          records.set(
+            id,
+            scale >= EMERGENCE_ARRIVAL_FROM
+              ? {
+                  kind: 'arriving',
+                  startedAt: nowMs - inverseArrival(scale) * durationMs,
+                }
+              : // Below the standard arrival origin the curve cannot represent
+                // this size, and projecting onto it would jump the piece up to
+                // the origin. Rise from exactly where it is instead.
+                { kind: 'arriving', startedAt: nowMs, from: scale }
+          );
           continue;
         }
         records.set(id, { kind: 'arriving', startedAt: nowMs });
@@ -85,9 +95,9 @@ export function createEmergenceTracker(
       const record = records.get(id);
       if (!record) return 1;
       const eased = boardTransitionEase(progress(record, nowMs));
-      return record.kind === 'arriving'
-        ? EMERGENCE_ARRIVAL_FROM + (1 - EMERGENCE_ARRIVAL_FROM) * eased
-        : 1 - eased;
+      if (record.kind !== 'arriving') return 1 - eased;
+      const from = record.from ?? EMERGENCE_ARRIVAL_FROM;
+      return from + (1 - from) * eased;
     },
     retiring(nowMs) {
       const out: string[] = [];
@@ -139,6 +149,8 @@ function inverseRetire(scale: number): number {
 
 /** Numeric inverse of the transition ease (monotone on [0,1]). */
 function inverseEase(eased: number): number {
+  if (eased <= 0) return 0;
+  if (eased >= 1) return 1;
   let low = 0;
   let high = 1;
   for (let i = 0; i < 24; i += 1) {
