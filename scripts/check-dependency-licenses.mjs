@@ -38,7 +38,7 @@ export const ALLOWED_LICENSE_EXPRESSIONS = new Set([
 ]);
 
 const REVIEWED_EXCEPTIONS = new Map([
-  ['caniuse-lite@1.0.30001757', 'CC-BY-4.0'],
+  ['caniuse-lite@1.0.30001810', 'CC-BY-4.0'],
   ['dompurify@3.4.13', '(MPL-2.0 OR Apache-2.0)'],
   ['posthog-js@1.413.2', '(Apache-2.0 AND MIT)'],
   ['postprocessing@6.39.1', 'Zlib'],
@@ -65,7 +65,7 @@ const PINNED_FILES = new Map([
     'f953f6aa9d68951fa418c421a212ddaceebfb12bacbf24b65e86fa4116d7bff5',
   ],
   [
-    'LICENSES/third-party/caniuse-lite-1.0.30001757-CC-BY-4.0.txt',
+    'LICENSES/third-party/caniuse-lite-1.0.30001810-CC-BY-4.0.txt',
     '7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661',
   ],
   [
@@ -333,7 +333,7 @@ export function renderNotice(rows, lockfileHash = '<lockfile-sha256>') {
     '  `LICENSES/third-party/posthog-js-1.413.2.txt`.',
     '- **DOMPurify 3.4.13** — declared `MPL-2.0 OR Apache-2.0`; Exawatt elects',
     '  the Apache-2.0 arm.',
-    '- **caniuse-lite 1.0.30001757** — Can I Use support data maintained by Ben',
+    '- **caniuse-lite 1.0.30001810** — Can I Use support data maintained by Ben',
     '  Briggs and the Browserslist contributors, licensed CC-BY-4.0. Source:',
     '  <https://github.com/browserslist/caniuse-lite>.',
     '- **postprocessing 6.39.1** — Zlib, Copyright 2015 Raoul van Rüschen.',

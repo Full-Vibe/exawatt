@@ -2,7 +2,35 @@
 # 0021 Distribute the desktop app through an unlisted invite-gated page
 
 Date: 2026-07-24
-Status: superseded in part — the gate is retired (2026-08-14); the trust surface continues
+Status: superseded in part — the invite gate is retired (2026-08-14); an account may stand before the download (2026-09-13, not yet built); the trust surface continues
+
+## Amendment (2026-09-13): an account may stand in front of the public download
+
+Operator decision, answering a question batched after a design-partner session
+where the proposal came up: creating an account before `Download for Mac` is
+**accepted as a two-way door**, with one condition and one boundary, in his
+words — "yeah I think that's fine, as long as we're clear in the UI it's easy
+and a good thing for the user. Two-way door decision. I don't think it gates
+the site."
+
+What this changes from the 2026-08-14 amendment: "no code and no wall" becomes
+"no code; an account may be asked for first." What it does not change: the
+build stays public (there is no waitlist and no invite key — the account is a
+door anyone can open), `/download` stays a trust surface with its honest
+account of what the app does on the user's machine, and the named invite link
+keeps working as attribution. The condition is part of the decision, not
+advice: the UI has to make the account read as easy and as a benefit to the
+user (his own reasons on the call were usage tracking, a path to cloud
+features, and staying in touch), never as a wall. If it cannot be made to read
+that way, the door swings back.
+
+Sequencing: this does **not** gate publishing the design partner's website;
+the site ships with whichever download the product can honestly offer at the
+time. Nothing is built as of this amendment, and the web sign-up route under
+the community distribution contract currently renders "Accounts are not
+available", so this is account work before it is a website change. The
+"once we get traffic from some stream" timing he gave on the call is his
+plan for when it matters, not a trigger recorded here.
 
 ## Amendment (2026-08-14): the page is public now
 

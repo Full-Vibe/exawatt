@@ -954,6 +954,15 @@ all: "We're really focusing on the UI. Like this is the UI layer for millions
 of agents… the whole point is, it is to be differentiated based on the user
 interface."
 
+Third working session, 2026-09-11 (a partner conversation): the deck now
+carries cumulative hours per sync, and the website structure review is carried
+on ENG-031. The operator asked whether the product UI should look like the
+site's visual; the designer said it should, with the site allowed fancier
+effects; his own sequencing named the Fleet board (ENG-004) as the first
+product surface to adopt the style after the site ships, deliberately
+unshaped and inside the authority terms above; confirmed 2026-09-13 as a
+thought in passing, not a sequence.
+
 Scope:
 
 - a design system of record in the repo: tokens, type scale, spacing and density, color roles, motion vocabulary, status/iconography (D40's protocol is already canonical), component contracts, and the IA principles currently scattered across decisions
@@ -1379,8 +1388,11 @@ hosted-boundary, seed, and initial-governance packets are landed. The critical
 path is now continuous public-history/projection integrity, an exact public
 artifact with green CI and live security intake, then official public Release
 provenance. The Mac-friend cohort waits on those operational gates; contributor
-intake is trigger-deferred while no human contributor exists. See the Amendment
-chain and the project doc's dated execution log.
+intake is trigger-deferred while no human contributor exists. A 2026-09-13
+pre-launch review opened BUG-125 through BUG-131 and the plan-refresh
+questions recorded in the project doc; the milestone list below is unchanged
+until the operator answers them. See the Amendment chain and the project
+doc's dated execution log.
 
 Scope:
 
@@ -1996,6 +2008,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision `0021`'s 2026-08-14 "no code and no wall", and marketing's no-sign-up-promotion rule as applied to the download | operator, 2026-09-13 (question batch after the 2026-09-11 partner conversation) | An account may be required before the public download, as a two-way-door decision conditioned on the UI making it read as easy and good for the user; the build stays public, the trust surface and named invite link are untouched, it does not gate the website publish, and nothing is built yet. Full text: decision `0021`, 2026-09-13 amendment. |
 | ENG-016 D54's deliberately unshaped New Agent flow | Operator adoption planning, 2026-09-07 | Accepted start/resume/setup outcomes are now shaped in the [adoption brief](projects/daily-driver-adoption.md#2026-09-07--adoption-execution-brief); final setup layout and downstream connection scope still await review. D70 owns catalog/cold-start repair, D71 native reading, D72 packaged adoption evidence. |
 | ENG-016 D66/D67 scope and ENG-039 sequencing | Operator adoption planning, 2026-09-07 | Existing recovery/geometry owners gain scenario-driven execution detail and new network-change evidence. Necessary module seams may advance with these fixes; no separate recovery framework or broad verification rewrite is required. |
 | ENG-031 feature presentation language | Operator positioning amendment, 2026-09-07 | Feature concept presentation follows the revised positioning direction; product execution state and release evidence retain their existing contracts. |
