@@ -203,7 +203,7 @@
     "prettier": "^3.7.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wait-on": "^8.0.3",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
