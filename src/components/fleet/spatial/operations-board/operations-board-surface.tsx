@@ -558,6 +558,9 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     [attentionIds, layout.selectedAgentId, onSelectAgent]
   );
 
+  // The bindings this handler answers are described in `board-keymap.ts`,
+  // which also feeds the keyboard help modal; a key added here without a
+  // keymap entry fails that module's contract test.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -565,6 +568,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         target?.isContentEditable
       )
         return;
@@ -787,21 +791,48 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         />
       )}
 
+      {/* An empty board has two distinct truths: a fleet whose Agents are all
+          hidden by search or status filters, and a fleet with no Agents yet.
+          Filter advice on a first contact would blame controls the operator
+          never touched. */}
       {visibleZones.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center p-8">
           <div
             className="exa-material-overlay max-w-sm border p-4 text-center"
             style={spatialMaterialFrame(theme)}
           >
-            <p className="text-sm font-medium" style={{ color: theme.label }}>
-              No Agents match this view
-            </p>
-            <p
-              className="mt-1 text-xs leading-5"
-              style={{ color: theme.labelMuted }}
-            >
-              Clear the active search or status filters to restore the board.
-            </p>
+            {layout.zones.length === 0 ? (
+              <>
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: theme.label }}
+                >
+                  No Agents on the board yet
+                </p>
+                <p
+                  className="mt-1 text-xs leading-5"
+                  style={{ color: theme.labelMuted }}
+                >
+                  Agents take their places here as you launch them.
+                </p>
+              </>
+            ) : (
+              <>
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: theme.label }}
+                >
+                  No Agents match this view
+                </p>
+                <p
+                  className="mt-1 text-xs leading-5"
+                  style={{ color: theme.labelMuted }}
+                >
+                  Clear the active search or status filters to restore the
+                  board.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

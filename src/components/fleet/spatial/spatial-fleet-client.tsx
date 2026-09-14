@@ -66,6 +66,21 @@ import {
   spatialThemeFromResolvedAppearance,
 } from './spatial-theme';
 
+// While the board bundle loads, stand on the board's own ground: the page
+// background token here made entry flash page-color before the world painted.
+function BoardLoadingGround() {
+  const { resolved } = useAppearance();
+  const theme = spatialThemeFromResolvedAppearance(resolved);
+  return (
+    <div
+      className="flex h-full min-h-[360px] items-center justify-center text-sm"
+      style={{ background: theme.canvas, color: theme.labelMuted }}
+    >
+      Preparing operations board…
+    </div>
+  );
+}
+
 // The Spatial Operations Board is route-scoped. ssr:false keeps Three.js out of
 // the DOM fleet bundle and lets the Electron/web shells share the same model.
 const OperationsBoardSurface = dynamic(
@@ -75,11 +90,7 @@ const OperationsBoardSurface = dynamic(
     ),
   {
     ssr: false,
-    loading: () => (
-      <div className="flex h-full min-h-[360px] items-center justify-center bg-background text-sm text-muted-foreground">
-        Preparing operations board…
-      </div>
-    ),
+    loading: () => <BoardLoadingGround />,
   }
 );
 
@@ -488,13 +499,15 @@ export function SpatialFleetClient() {
   );
 
   // Escape releases the multi-selection first, then ascends one altitude —
-  // but not while typing (there it clears search).
+  // but not while typing (there it clears search) and not inside a select
+  // (there it closes the dropdown). Described in the board's `board-keymap.ts`.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         target?.isContentEditable
       ) {
         return;

@@ -3,6 +3,7 @@ import type {
   ModifierKey,
   ShortcutCategory,
 } from '@/types/shortcuts';
+import { BOARD_KEYMAP } from '@/components/fleet/spatial/operations-board/board-keymap';
 
 export type FixedFamilyAction =
   | { kind: 'cycle-tab'; delta: 1 | -1 }
@@ -275,51 +276,16 @@ export function getWorkspaceFixedFamily(id: string): FixedKeyFamily {
   return family;
 }
 
-/** Fleet board keys are display-only: the focused R3F surface owns behavior. */
-export const BOARD_KEY_FAMILIES = [
-  {
-    id: 'fixed-board-project-ordinals',
+/** Fleet board keys are display-only: the focused R3F surface owns behavior.
+ *  The entries derive from the board's own keymap so the modal describes the
+ *  bindings the board actually answers instead of a copy that can drift. */
+export const BOARD_KEY_FAMILIES: readonly DisplayKeyFamily[] =
+  BOARD_KEYMAP.map(entry => ({
+    id: entry.id,
+    label: entry.label,
+    keys: entry.keys,
     category: 'view',
-    label: 'Fleet: open Project 1–9',
-    keys: { key: '1…9' },
-  },
-  {
-    id: 'fixed-board-pan',
-    category: 'view',
-    label: 'Fleet: pan board',
-    keys: { key: '← ↑ ↓ →' },
-  },
-  {
-    id: 'fixed-board-zoom',
-    category: 'view',
-    label: 'Fleet: zoom board',
-    keys: { key: '+ / −' },
-  },
-  {
-    id: 'fixed-board-projection',
-    category: 'view',
-    label: 'Fleet: toggle projection',
-    keys: { key: 'V' },
-  },
-  {
-    id: 'fixed-board-overview',
-    category: 'view',
-    label: 'Fleet: recenter / overview',
-    keys: { key: '0' },
-  },
-  {
-    id: 'fixed-board-attention',
-    category: 'view',
-    label: 'Fleet: next / previous attention',
-    keys: { key: 'N / P' },
-  },
-  {
-    id: 'fixed-board-escape',
-    category: 'view',
-    label: 'Fleet: zoom out selection',
-    keys: { key: 'Escape' },
-  },
-] as const satisfies readonly DisplayKeyFamily[];
+  }));
 
 export const ALL_FIXED_FAMILIES: readonly DisplayKeyFamily[] = [
   ...WORKSPACE_KEY_FAMILIES,
