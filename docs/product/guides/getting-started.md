@@ -193,9 +193,10 @@ Their layout, exact agent conversation identity, and retained terminal history
 return on the next launch, but nothing resumes automatically. The recovery bar
 resumes the selected Project by default, leaving other Projects paused. Its
 scope menu can instead resume the selected Agent or every eligible Agent across
-all Projects. A stopped pane also offers **Resume This Agent**; a stopped shell
-offers **Start New Shell**. If an older Session is missing its exact provider
-identity, Exawatt labels it **Reconnect needed** instead of guessing.
+all Projects. A paused Agent also offers **Resume this Agent**; a closed shell
+offers **Start new shell**. If an older Session is missing its exact provider
+identity, it reads **conversation not recorded** and offers **Reconnect
+conversation** instead of guessing.
 
 Both recovery scopes are keyboard verbs too. **⌘⌥R** resumes the selected
 Agent; **⌘⌥⇧R** resumes the same scope the bar's one-click control would —

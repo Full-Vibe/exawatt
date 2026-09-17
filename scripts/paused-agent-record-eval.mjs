@@ -39,25 +39,42 @@ try {
   await page.waitForSelector('[data-paused-record-study]');
   await page.waitForTimeout(700);
 
-  // Gate 1 — every case explains its ending.
+  // Gate 1: every case states its ending, through the one lifecycle line
+  // every surface shares (ENG-015 S6.4). The attribute is the contract; the
+  // words are the vocabulary's to change.
   const cases = await page.evaluate(() =>
     Array.from(document.querySelectorAll('[data-paused-case]')).map(node => ({
       id: node.getAttribute('data-paused-case'),
       text: node.textContent ?? '',
+      line:
+        node
+          .querySelector('[data-session-lifecycle-line]')
+          ?.textContent?.trim() ?? '',
+      word:
+        node
+          .querySelector('[data-session-lifecycle-word]')
+          ?.textContent?.trim() ?? '',
+      recordWord:
+        node.querySelector('[data-paused-agent-word]')?.textContent ?? '',
     }))
   );
   if (cases.length < 5) {
     throw new Error(`record gate: expected the full state matrix, got ${cases.length}`);
   }
-  const silent = cases.filter(
-    item =>
-      !/Stopped cleanly|Exited with code|Interrupted|Shell closed|resume attempt/.test(
-        item.text
-      )
+  const silent = cases.filter(item => !item.line || !item.word);
+  const disagreeing = cases.filter(
+    item => item.word && !item.recordWord.includes(item.word)
   );
+  if (disagreeing.length > 0) {
+    throw new Error(
+      `record gate: the bar and the record name the same state differently: ${disagreeing
+        .map(item => `${item.id} (${item.word} vs ${item.recordWord.trim()})`)
+        .join(', ')}`
+    );
+  }
   if (silent.length > 0) {
     throw new Error(
-      `record gate: these states do not say how the Agent ended: ${silent
+      `record gate: these states do not name the state and say how the Agent ended: ${silent
         .map(item => item.id)
         .join(', ')}`
     );

@@ -231,6 +231,10 @@ Every user-visible string is written for a production user of a top-tier product
 
 Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not recorded", "unreported", assurance facet labels. They state facts in short form; they do not editorialize about them.
 
+- **One lifecycle vocabulary** (ENG-015 S6.4, 2026-09-23). A Session's lifecycle word (Paused, Exited, Interrupted, Closed, Resume failed, Resuming, Draft), its one-line ending, its tone, and the verb that answers it come from `packages/ui-model/src/session-lifecycle.ts` and nowhere else. A surface that needs to say what state a Session's process is in reads that owner; it never keeps a private ladder of words. The line beside the word adds a fact (`Stopped cleanly · conversation kept`, `Exited with code 137 · conversation kept`) and never repeats the word. The status vocabularies (turn state, attention, status light) stay layered as `switcher-rows.ts` documents; this rung is about lifecycle only. `session-lifecycle-vocabulary.test.tsx` renders one Session through the tab strip, recovery bar, restore panel, paused record, and Team tile and pins the shared words.
+- **No em dashes in operator copy** (operator standing rule, 2026-08-13; recorded here 2026-09-23). Strings a user reads on a surface (labels, state lines, tooltips, accessible names, toasts) separate clauses with a middle dot, a comma, or a full stop, never an em dash. Code comments and engineering docs are out of scope.
+- **Dashed means designed-not-built, so a dashed stroke never decorates a fact-free slot on a live surface.** The Team card's dashed "Coding" Type chip was the counterexample: it rode every live card as a placeholder for a feature that does not exist (ENG-028) and read as one. A declared value renders as a plain fact chip; an undeclared slot renders nothing (ENG-015 S6.4).
+
 **Machine-authored operator text is in scope too** (partner conversation, 2026-08-04, operator-accepted 2026-08-04). Prose the product generates rather than an author writing it — context labels, recaps, roadmap item copy, summaries an Agent renders into a surface — obeys the same Voice rules plus one more: **the first line carries the conclusion.** A generated block leads with what it is or what happened, in a phrase, before any supporting detail; supporting detail may follow, but never first. Length is not evidence of rigor. The failure this rule names is specific and was observed cold by a first-time viewer of the Team and Roadmap altitudes: dense, unranked, generated text where "there's a lot of good info here, but I don't even know where to look." That is a hierarchy defect, not a density preference — the fix is ranking the content, not deleting it. `AGENTS.md` carries the same contract for text agents write outside the product.
 
 ---
@@ -375,6 +379,22 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-09-23 — ENG-015 S6.4: Voice gains the **one lifecycle vocabulary**,
+  **no em dashes in operator copy**, and **dashed never decorates a fact-free
+  slot** rungs. Deliberate improvements, not adherences. One paused Agent
+  spoke four vocabularies and two resume verbs at once (tab "Exited" or
+  "Stopped", recovery bar "paused", pane "Stopped · Resume This Agent",
+  record "PAUSED", Team tile a fifth lowercase word); five private
+  vocabularies are deleted and `@exawatt/ui-model` owns the words. Team
+  cards now state facts only: the dashed "Coding" chip is gone, a card with
+  no plan source shows no Next region instead of "No plan reported", and the
+  Team header's doc-voice hint ("arrows or J/K move · enter opens · esc
+  returns") is removed rather than replaced, because the Resume control
+  already reveals on selection and Enter needs no teaching. The paused
+  record's all-caps `CLAUDE CODE · PAUSED` eyebrow is sentence case. Evidence:
+  `eval:workspace:paused` (8 states), `eval:workspace:team`,
+  `eval:workspace:split` 10/10, and the before/after captures described in
+  ENG-015's findings log (S6.4).
 - 2026-08-19 — **Unreported** added to Status iconography (ENG-010). A
   deliberate improvement, not an adherence: the system had one unlit lamp
   doing two opposite jobs. `STATUS_LIGHT_META.off` was labelled **Idle** and

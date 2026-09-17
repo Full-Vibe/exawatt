@@ -1,5 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  agentsNoun,
+  pausedAgentsCopy,
+  resumingAgentsCopy,
+  SESSION_RESUME_SCOPE_LABEL,
+} from '@exawatt/ui-model';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import {
   ResumeRecoveryBar,
@@ -42,10 +48,12 @@ describe('ResumeRecoveryBar', () => {
     render(<ResumeRecoveryBar {...value} />);
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      '5 agents paused · 2 in Exawatt'
+      `${pausedAgentsCopy(5)} · 2 in Exawatt`
     );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Resume 2 agents in Exawatt' })
+      screen.getByRole('button', {
+        name: `Resume ${agentsNoun(2)} in Exawatt`,
+      })
     );
 
     expect(value.onResumeActiveProject).toHaveBeenCalledOnce();
@@ -62,15 +70,17 @@ describe('ResumeRecoveryBar', () => {
     );
 
     const agent = await screen.findByRole('menuitem', {
-      name: 'Resume this agent',
+      name: SESSION_RESUME_SCOPE_LABEL.agent,
     });
     expect(
       screen.getByRole('menuitem', {
-        name: 'Resume 2 agents in this project',
+        name: `Resume ${agentsNoun(2)} in this project`,
       })
     ).toBeTruthy();
     expect(
-      screen.getByRole('menuitem', { name: 'Resume all 5 agents' })
+      screen.getByRole('menuitem', {
+        name: `${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(5)}`,
+      })
     ).toBeTruthy();
 
     fireEvent.click(agent);
@@ -81,7 +91,9 @@ describe('ResumeRecoveryBar', () => {
       { button: 0, ctrlKey: false }
     );
     fireEvent.click(
-      await screen.findByRole('menuitem', { name: 'Resume all 5 agents' })
+      await screen.findByRole('menuitem', {
+        name: `${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(5)}`,
+      })
     );
     expect(value.onResumeAll).toHaveBeenCalledOnce();
   });
@@ -98,7 +110,9 @@ describe('ResumeRecoveryBar', () => {
       screen.queryByRole('button', { name: 'Choose resume scope' })
     ).toBeNull();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Resume all 3 agents' })
+      screen.getByRole('button', {
+        name: `${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(3)}`,
+      })
     );
     expect(value.onResumeAll).toHaveBeenCalledOnce();
   });
@@ -111,7 +125,7 @@ describe('ResumeRecoveryBar', () => {
     render(<ResumeRecoveryBar {...value} />);
 
     expect(
-      screen.getByRole('button', { name: 'Resume 2 agents in Exawatt' })
+      screen.getByRole('button', { name: `Resume ${agentsNoun(2)} in Exawatt` })
     ).toHaveTextContent('⌘⌥⇧R');
 
     fireEvent.pointerDown(
@@ -119,11 +133,13 @@ describe('ResumeRecoveryBar', () => {
       { button: 0, ctrlKey: false }
     );
     expect(
-      await screen.findByRole('menuitem', { name: 'Resume this agent' })
+      await screen.findByRole('menuitem', {
+        name: SESSION_RESUME_SCOPE_LABEL.agent,
+      })
     ).toHaveTextContent('⌘⌥R');
     expect(
       screen.getByRole('menuitem', {
-        name: 'Resume 2 agents in this project',
+        name: `Resume ${agentsNoun(2)} in this project`,
       })
     ).toHaveTextContent('⌘⌥⇧R');
   });
@@ -136,7 +152,7 @@ describe('ResumeRecoveryBar', () => {
     render(<ResumeRecoveryBar {...props()} />);
 
     expect(
-      screen.getByRole('button', { name: 'Resume 2 agents in Exawatt' })
+      screen.getByRole('button', { name: `Resume ${agentsNoun(2)} in Exawatt` })
     ).toHaveTextContent('⌘⌥⇧Y');
     shortcutRegistry.removeOverride('workspace-resume-scope');
   });
@@ -152,10 +168,10 @@ describe('ResumeRecoveryBar', () => {
     );
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Resuming 1 of 2 agents…'
+      resumingAgentsCopy(1, 2)
     );
     expect(
-      screen.getByRole('button', { name: 'Resume 2 agents in Exawatt' })
+      screen.getByRole('button', { name: `Resume ${agentsNoun(2)} in Exawatt` })
     ).toBeDisabled();
   });
 });

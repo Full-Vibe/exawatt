@@ -104,8 +104,8 @@ Raw terminal lines are inspection evidence, not Session meaning. Model/context
 meters, permission modes, prompts, branch state, command output, and transcript
 tails stay in Terminal; they must not be copied into Sessions cards. Until a
 source exposes structured activity or meaningful Events, Sessions presents
-only the current state it actually knows and says **No plan reported** when the
-plan channel is absent.
+only the current state it actually knows and shows no plan step when the plan
+channel is absent.
 
 ## Plans are mutable named steps
 

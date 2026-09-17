@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sessionLifecyclePresentation } from '@exawatt/ui-model';
 import {
   sessionCurrentStateCopy,
   sessionDisplayCopy,
@@ -120,8 +121,16 @@ describe('sessionCurrentStateCopy', () => {
         harness: 'codex',
         live: false,
         lifecycle: 'failed',
+        harnessSessionId: 'prov-1',
         glyphState: 'done',
       })
-    ).toBe('Agent process failed');
+    ).toBe(
+      sessionLifecyclePresentation({
+        lifecycle: 'failed',
+        exitCode: null,
+        harness: 'codex',
+        harnessSessionId: 'prov-1',
+      }).line
+    );
   });
 });

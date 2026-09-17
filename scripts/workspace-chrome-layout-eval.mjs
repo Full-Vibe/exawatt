@@ -630,7 +630,7 @@ try {
           tab: readFontSize('[data-tab-chrome]'),
           subtitle: readFontSize('[data-subtitle]'),
           path: readFontSize('[data-active-session-path]'),
-          lifecycle: readFontSize('[aria-label="Stopped"]'),
+          lifecycle: readFontSize('[data-tab-lifecycle-word]'),
           footer: readFontSize('[data-key-hints]'),
         },
       };
@@ -972,8 +972,8 @@ try {
   await page.waitForTimeout(320);
   const frozenShape = await frozen.evaluate(node => ({
     text: node.textContent ?? '',
-    badge: !!node.querySelector('[aria-label="Stopped"]'),
-    close: !!node.querySelector('button[title^="Close — kept"]'),
+    badge: !!node.querySelector('[data-tab-lifecycle-word]'),
+    close: !!node.querySelector('button[aria-label^="Close "]'),
   }));
   if (
     frozenShape.text.includes('billing migration') ||
@@ -981,7 +981,7 @@ try {
     !frozenShape.close
   ) {
     throw new Error(
-      `Stopped chip must be title-less with badge and close: ${JSON.stringify(frozenShape)}`
+      `Paused chip must be title-less with badge and close: ${JSON.stringify(frozenShape)}`
     );
   }
   await page.screenshot({
@@ -1453,12 +1453,11 @@ try {
   const sessionsType = await contextSessionTile.evaluate(element => {
     const title = element.querySelector('[data-session-goal-summary]');
     const current = element.querySelector('[data-session-current]');
+    // A card with no plan source renders no Next copy at all (ENG-015 S6.4:
+    // facts only, no "No plan reported" sentence), so the Next rung is read
+    // only when a plan is present.
     const next = element.querySelector('[data-session-next-copy]');
-    if (
-      !(title instanceof HTMLElement) ||
-      !(current instanceof HTMLElement) ||
-      !(next instanceof HTMLElement)
-    ) {
+    if (!(title instanceof HTMLElement) || !(current instanceof HTMLElement)) {
       throw new Error('Sessions type fixtures are missing');
     }
     const read = node => {
@@ -1469,12 +1468,16 @@ try {
         lineHeight: Number.parseFloat(style.lineHeight),
       };
     };
-    return { title: read(title), current: read(current), next: read(next) };
+    return {
+      title: read(title),
+      current: read(current),
+      next: next instanceof HTMLElement ? read(next) : null,
+    };
   });
   if (
     sessionsType.title.size < 16 ||
     sessionsType.current.size < 15 ||
-    sessionsType.next.size < 14 ||
+    (sessionsType.next !== null && sessionsType.next.size < 14) ||
     sessionsType.current.lineHeight < 24 ||
     /mono/i.test(sessionsType.current.family)
   ) {
@@ -1498,16 +1501,14 @@ try {
   const stoppedPane = page.locator('[data-session-restore="frozen-tab"]');
   await stoppedPane.waitFor();
   await stoppedPane
-    .getByRole('button', { name: 'Resume This Agent' })
+    .getByRole('button', { name: 'Resume this Agent', exact: true })
     .waitFor();
-  // A stopped Agent shows a RECORD, not a replayed terminal (BUG-013): it
-  // states how the Session ended and offers the transcript rather than
-  // pouring it onto the pane. The old assertion here waited for the retained
-  // terminal's read-only badge, which is the surface that was removed.
+  // A stopped Agent opened cold shows a RECORD, not a replayed terminal
+  // (BUG-013): the lifecycle bar states how the Session ended in the shared
+  // vocabulary and the record offers the transcript rather than pouring it
+  // onto the pane.
   await page.locator('[data-paused-agent-record]').waitFor();
-  await page
-    .getByText(/Stopped cleanly|Exited with code|Interrupted/)
-    .waitFor();
+  await stoppedPane.locator('[data-session-lifecycle-line]').waitFor();
   await page.locator('[data-show-transcript]').waitFor();
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'stopped-pane-read-only.png'),

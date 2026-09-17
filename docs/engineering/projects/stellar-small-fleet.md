@@ -648,6 +648,86 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-09-23 (S6.4, landed; closes BUG-046 under decision `0042`): **one
+  paused Agent spoke four vocabularies and two resume verbs at once, and the
+  cure was one owner, not four edits.**
+
+  - **What the operator saw.** On a workspace with one clean-paused Agent
+    (fixture: `lifecycle: stopped-clean`, `exitCode: 0`, identity recorded),
+    the tab chip read "Stopped", the recovery bar read "2 agents paused · 1
+    agent needs reconnection · Resume project", the pane read "Stopped ·
+    Saved terminal history is read-only until this Agent resumes. · Resume
+    This Agent", the record read "CLAUDE CODE · PAUSED · Stopped cleanly. The
+    conversation is kept and can be resumed.", and the Team tile printed a
+    fifth, lowercase "stopped" with "Process stopped; history is retained"
+    under Now. An interrupted Agent with no recorded identity was worse:
+    "Interrupted" on the tab, "Reconnect needed" on the pane, "PAUSED" on the
+    record, three words for one tab. Each surface had derived its own ladder
+    from `lifecycle`, `exitCode`, `harness` and `harnessSessionId`, and each
+    ladder was locally defensible.
+  - **The owner.** `packages/ui-model/src/session-lifecycle.ts` maps those
+    four facts to a word, a one-line ending, a tone, and a verb. The word
+    reads how the process ended, not which code path recorded it: `exited`
+    with code 0 and `stopped-clean` are both "Paused"; a nonzero code is
+    "Exited" with the code in the line; a shell is "Closed"; `interrupted`,
+    `failed` and `resuming` keep their own words. The line always adds a
+    fact beyond the word (`Stopped cleanly · conversation kept`, `Ended
+    without a clean shutdown · conversation not recorded`) and the module's
+    own test refuses a line that merely repeats the word. The verb is
+    `resume`, `reconnect`, or `new-shell` from the identity and the harness,
+    labelled once (`Resume this Agent`, `Reconnect conversation`, `Start new
+    shell`); the recovery bar's scoped verbs and its counts (`3 Agents
+    paused`, `1 Agent needs reconnection`, `Resuming 1 of 2 Agents…`) come
+    from the same file. Tone maps to colour in one renderer helper
+    (`session-lifecycle-tone.ts`), so an amber word is amber everywhere.
+  - **Deleted, not shimmed.** `TILE_STATE_LABEL` in `expose-overlay.tsx`,
+    the strip's `stoppedStatus` ternary and its two colour ladders, the
+    restore panel's status ladder and both explanatory sentences, the
+    record's `endedCopy`, and the four process sentences in
+    `sessionCurrentStateCopy`. The overlay's `fault` flag had been reading
+    the printed lowercase label (`stateLabel === 'failed'`); it now reads
+    the lifecycle, which is the fact.
+  - **The contract test.** `session-lifecycle-vocabulary.test.tsx` renders
+    one `exited`/code-0 Session through the tab strip, recovery bar, restore
+    panel, paused record and Team tile and asserts each prints the owner's
+    word, line and verb, deriving every expectation from the owner.
+    Mutation-verified: a private "Stopped" reintroduced in the strip fails
+    it; a deliberate rewording in the module moves product and test
+    together. The paused gate (`eval:workspace:paused`) now asserts the
+    contract rather than the copy: every case carries a non-empty
+    `[data-session-lifecycle-line]` and its bar's word appears in its
+    record's eyebrow; the gallery study renders the production stack (panel
+    over record) across eight states including reconnect-needed, resume
+    failed and a closed shell.
+  - **Pin versus record (BUG-046).** D26's pin contract and BUG-013's record
+    contract were about different moments, and nobody had said so. Decision
+    `0042`: the terminal a Session died in stays on screen under the
+    lifecycle bar; a Session opened after its death is a record.
+    `workspace-client` keeps the mounted `TerminalPane` (same key, same tree
+    position) when `sessionId` goes null and lays the bar over the pane's
+    top edge, so nothing is read and nothing is replayed at a wrong width;
+    the record still never loads the transcript on open. `eval:workspace:split`
+    went from 9/10 to 10/10 and is routed in `SURFACE_GATES`. Known cost: the
+    bar overlays the terminal's oldest visible rows because `terminal-pane`
+    positions itself and was out of scope; xterm keeps the viewport at the
+    bottom, so the final output is what stays visible.
+  - **Team cards state facts only.** The dashed "Coding" chip decorated every
+    live card as a placeholder for Agent Types (ENG-028), and dashed means
+    designed-not-built; it is gone, and a source-declared Type renders as a
+    plain fact chip. "No plan reported" is retired: a card with no plan
+    source and no consumption renders no footer, and the fixed tile
+    footprint keeps the grid's geometry. The header's "arrows or J/K move ·
+    enter opens · esc returns" is removed rather than replaced; the Resume
+    control already reveals on selection and Enter needs no teaching.
+    `team-grid-nav.ts` and `use-flip-tiles.ts` are untouched.
+  - **Evidence.** Before/after captures on the worktree server at 1400×820
+    over a five-tab fixture (paused, exited 137, interrupted with no
+    identity, live ×2, closed shell) plus the gallery; `eval:workspace:team`
+    green (10 tiles gliding, boundary crossing), `eval:workspace:paused`
+    green (8 states), `eval:workspace:split` 10/10, `eval:workspace:chrome`
+    and `eval:workspace:ribbon:bench` green; `pnpm type-check`, `pnpm lint`,
+    `pnpm test:run` green.
+
 - 2026-08-16 (S6.1.2 — `eval:workspace:team` is GREEN on master; the waiver
   was taken against a tree that predated the fix): **a gate reported red on
   "unmodified origin/master" was measured on a checkout ~18 minutes older

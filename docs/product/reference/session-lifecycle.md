@@ -9,13 +9,20 @@ disconnects Exawatt but does not stop source-owned execution.
 ## States
 
 - **Running** — the local process is active.
-- **Stopped** — Exawatt saved state and stopped the process during an explicit
-  quit or update.
+- **Paused** — the process stopped cleanly: an explicit quit, an update, a
+  Project pause, or a zero exit code. The conversation is kept.
 - **Interrupted** — the prior app run ended without completing its checkpoint.
-- **Exited** — the process ended on its own.
+- **Exited** — the process ended on its own with a nonzero exit code, which the
+  Session names.
+- **Closed** — a shell ended; its history is kept.
 - **Resuming** — Exawatt is starting a replacement process for the exact saved
   provider conversation.
-- **Failed** — that replacement process could not start.
+- **Resume failed** — that replacement process could not start.
+
+Every surface names these states with the same word and one line saying how
+the Session ended and what is kept, for example `Stopped cleanly · conversation
+kept`. The tab, the recovery bar, the pane and Team never disagree about a
+Session's state.
 
 These process states are separate from an Agent's turn state. A teal
 half-circle means the current turn is working; a green circled check means the
@@ -38,8 +45,8 @@ Relaunch restores Projects, tabs, status, and retained terminal history without
 starting work. The workspace recovery bar defaults to the selected Project and
 names its eligible-Agent count. Its scope menu can narrow recovery to the
 selected Agent or broaden it to all Projects. Every scope starts eligible agent
-Sessions sequentially and never starts shells. A stopped shell offers **Start
-New Shell** instead. An individual stopped Agent offers **Resume This Agent**.
+Sessions sequentially and never starts shells. A closed shell offers **Start new
+shell** instead. An individual paused Agent offers **Resume this Agent**.
 
 Recovery is reachable without the pointer. **⌘⌥R** resumes the selected Agent
 and **⌘⌥⇧R** resumes the bar's own default scope; both are rebindable, both
@@ -54,8 +61,11 @@ Sessions repair automatically only when the saved opening task has one unique
 provider match; otherwise the pane clearly asks the operator to reconnect a
 conversation.
 
-Retained terminal output is labeled **Saved terminal history · read-only** so a
-stopped Session cannot be mistaken for an interactive terminal.
+A Session that ends while its terminal is on screen keeps that terminal, with
+the Session's state, how it ended and its resume action shown above it, so a
+pinned Agent can be watched to the end. A Session opened after it ended shows
+its record instead: the task, how it ended and how much output was saved, with
+the transcript available on request.
 
 ## Pausing a Project
 

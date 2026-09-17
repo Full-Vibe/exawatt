@@ -1,5 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  SESSION_LIFECYCLE_VERB_LABEL,
+  sessionLifecyclePresentation,
+} from '@exawatt/ui-model';
 
 import { SessionRestorePanel } from './session-restore-panel';
 import type { SessionTab } from './use-workspace-state';
@@ -35,20 +39,26 @@ describe('SessionRestorePanel', () => {
     } as unknown as NonNullable<Window['electron']>;
   });
 
-  it('makes stopped history and the individual resume scope explicit', () => {
+  it('prints the shared lifecycle word and line, and the individual resume verb', () => {
+    const tab = stoppedTab();
+    const expected = sessionLifecyclePresentation(tab);
     const onResumeTab = vi.fn(async () => true);
-    render(
-      <SessionRestorePanel tab={stoppedTab()} onResumeTab={onResumeTab} />
-    );
+    render(<SessionRestorePanel tab={tab} onResumeTab={onResumeTab} />);
 
-    expect(screen.getByRole('status')).toHaveTextContent('Stopped');
-    expect(screen.getByText(/terminal history is read-only/i)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Resume This Agent' }));
+    expect(screen.getByRole('status')).toHaveTextContent(expected.word);
+    expect(
+      document.querySelector('[data-session-lifecycle-line]')
+    ).toHaveTextContent(expected.line ?? '');
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: SESSION_LIFECYCLE_VERB_LABEL.resume,
+      })
+    );
     expect(onResumeTab).toHaveBeenCalledWith('tab-one');
     expect(screen.queryByText(/Resume All/i)).toBeNull();
   });
 
-  it('labels unresolved identity honestly and presents richer candidates', async () => {
+  it('offers reconnection when the conversation identity was never recorded', async () => {
     listResumeCandidates.mockResolvedValue([
       {
         id: 'provider-one',
@@ -60,14 +70,20 @@ describe('SessionRestorePanel', () => {
       },
     ]);
     const onResumeTab = vi.fn(async () => true);
-    render(
-      <SessionRestorePanel tab={stoppedTab(null)} onResumeTab={onResumeTab} />
-    );
+    const tab = stoppedTab(null);
+    render(<SessionRestorePanel tab={tab} onResumeTab={onResumeTab} />);
 
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnect needed');
-    expect(screen.getByText(/was not recorded/i)).toBeVisible();
+    expect(sessionLifecyclePresentation(tab).verb).toBe('reconnect');
+    expect(
+      document.querySelector('[data-session-restore][data-identity-missing]')
+    ).not.toBeNull();
+    expect(
+      screen.queryByRole('button', { name: SESSION_LIFECYCLE_VERB_LABEL.resume })
+    ).toBeNull();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Reconnect Conversation' })
+      screen.getByRole('button', {
+        name: SESSION_LIFECYCLE_VERB_LABEL.reconnect,
+      })
     );
     expect(
       await screen.findByText('Add durable rate limits and verify production.')

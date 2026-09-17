@@ -19,6 +19,7 @@ export * from './consumption-burn';
 export * from './roadmap-lens';
 export * from './roadmap-strip';
 export * from './roadmap-attention';
+export * from './session-lifecycle';
 
 export interface FleetAgentView {
   id: string;

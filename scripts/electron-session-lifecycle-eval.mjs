@@ -349,13 +349,12 @@ try {
   const transcriptButton = page.locator('[data-show-transcript]');
   await transcriptButton.waitFor();
   await transcriptButton.click();
-  await page
-    .getByText('Saved history could not be read.', { exact: true })
-    .waitFor();
+  // The contract is the notice, not its wording (ENG-015 S6.4).
+  await page.locator('[data-paused-history-unreadable]').waitFor();
   await page.screenshot({ path: join(screenshots, 'restored-1400x900.png') });
   await page.setViewportSize({ width: 800, height: 600 });
   await page.screenshot({ path: join(screenshots, 'restored-800x600.png') });
-  await page.getByRole('button', { name: 'Start New Shell' }).click();
+  await page.getByRole('button', { name: 'Start new shell' }).click();
   await waitForSessions(page, 1);
   await ready.getByRole('button', { name: /Resume 4 agents in /i }).click();
   await waitForSessions(page, 5);

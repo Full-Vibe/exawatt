@@ -9,6 +9,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
+import {
+  SESSION_LIFECYCLE_VERB_LABEL,
+  sessionLifecyclePresentation,
+} from '@exawatt/ui-model';
 import { TabStrip } from './tab-strip';
 import {
   fleetAttention,
@@ -197,7 +201,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(screen.queryByText('Claude Code')).toBeNull();
     expect(screen.getByText('New agent')).not.toBeNull();
     expect(
-      screen.getByRole('button', { name: 'New agent — new' })
+      screen.getByRole('button', { name: 'New agent · new' })
     ).not.toBeNull();
   });
 
@@ -208,7 +212,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     expect(
       screen.getByRole('button', {
-        name: 'Ship code review fixes — result ready',
+        name: 'Ship code review fixes · result ready',
       })
     ).not.toBeNull();
   });
@@ -340,7 +344,15 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     // badge and close remain, identity lives in the tooltip and aria-label
     const stopped = container.querySelector('[data-tab-id="b"]');
     expect(stopped?.textContent).not.toContain('beta');
-    expect(stopped?.querySelector('[aria-label="Stopped"]')).not.toBeNull();
+    const word = sessionLifecyclePresentation(
+      tab({
+        id: 'b',
+        sessionId: null,
+        resumeState: 'ended-resumable',
+        lifecycle: 'stopped-clean',
+      })
+    ).word;
+    expect(stopped?.querySelector(`[aria-label="${word}"]`)).not.toBeNull();
   });
 
   it('a ⌘T draft is a real chip — fresh ring, no badge, discardable', () => {
@@ -360,7 +372,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(screen.getByLabelText('Close New agent')).not.toBeNull();
     expect(container.querySelector('[data-status="fresh"]')).not.toBeNull();
     // drafts carry no lifecycle badge and never condense
-    expect(screen.queryByLabelText('Stopped')).toBeNull();
+    expect(container.querySelector('[data-tab-lifecycle-word]')).toBeNull();
     expect(container.querySelector('[data-condensed]')).toBeNull();
   });
 
@@ -398,7 +410,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.contextMenu(deadTab);
     const menu = screen.getByRole('menu');
     expect(menu.textContent).toContain('Pin in split');
-    expect(menu?.textContent).toContain('Resume This Agent');
+    expect(menu.textContent).toContain(SESSION_LIFECYCLE_VERB_LABEL.resume);
     expect(menu?.textContent).toContain('Close');
   });
 
@@ -447,7 +459,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     strip({ tabs: [tab({ id: 'a' })], onCloseProject: vi.fn() });
     const projectTrigger = screen.getByRole('button', { name: 'repo' });
     const sessionTrigger = screen.getByRole('button', {
-      name: 'New agent — new',
+      name: 'New agent · new',
     });
 
     fireEvent.keyDown(projectTrigger, { key: 'F10', shiftKey: true });
@@ -467,7 +479,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
   it('hands focus to rename and closes a menu whose target disappears', async () => {
     const rendered = strip({ tabs: [tab({ id: 'a' })] });
     const trigger = screen.getByRole('button', {
-      name: 'New agent — new',
+      name: 'New agent · new',
     });
     fireEvent.keyDown(trigger, { key: 'ContextMenu' });
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
@@ -478,7 +490,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rename' }), {
       key: 'Escape',
     });
-    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent — new' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent · new' }), {
       key: 'ContextMenu',
     });
     expect(screen.getByRole('menu')).not.toBeNull();
@@ -489,7 +501,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
   it('opens Session actions with the Context Menu key', () => {
     strip({ tabs: [tab({ id: 'a' })] });
     const trigger = screen.getByRole('button', {
-      name: 'New agent — new',
+      name: 'New agent · new',
     });
 
     fireEvent.keyDown(trigger, { key: 'ContextMenu' });
@@ -530,7 +542,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
       onCloneTab,
     });
     fireEvent.keyDown(
-      screen.getByRole('button', { name: 'New agent — result ready' }),
+      screen.getByRole('button', { name: 'New agent · result ready' }),
       { key: 'ContextMenu' }
     );
     const clone = screen.getByRole('menuitem', { name: 'Clone to…' });
@@ -578,13 +590,13 @@ describe('TabStrip turn-state glyphs (D22)', () => {
       onCloneTab: vi.fn(),
     });
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent — new' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent · new' }), {
       key: 'ContextMenu',
     });
     expect(screen.queryByRole('menuitem', { name: 'Clone to…' })).toBeNull();
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Shell — quiet' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Shell · quiet' }), {
       key: 'ContextMenu',
     });
     expect(screen.queryByRole('menuitem', { name: 'Clone to…' })).toBeNull();
@@ -598,7 +610,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
       ],
     });
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent — new' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent · new' }), {
       key: 'ContextMenu',
     });
     const agentMenu = screen.getByRole('menu', {
@@ -613,7 +625,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(cloudRow).toHaveTextContent('Coming soon');
     fireEvent.keyDown(agentMenu, { key: 'Escape' });
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Shell — quiet' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Shell · quiet' }), {
       key: 'ContextMenu',
     });
     const shellMenu = screen.getByRole('menu', {
@@ -647,18 +659,18 @@ describe('TabStrip turn-state glyphs (D22)', () => {
   });
 
   it('dead tabs carry their lifecycle badge, not a turn-state glyph', () => {
-    const { container } = strip({
-      tabs: [
-        tab({
-          id: 'a',
-          sessionId: null,
-          resumeState: 'ended-resumable',
-          lifecycle: 'exited',
-        }),
-      ],
+    const dead = tab({
+      id: 'a',
+      sessionId: null,
+      resumeState: 'ended-resumable',
+      lifecycle: 'exited',
+      exitCode: 137,
     });
+    const { container } = strip({ tabs: [dead] });
     expect(container.querySelector('[data-status]')).toBeNull();
-    expect(screen.getByLabelText('Exited')).not.toBeNull();
+    expect(
+      screen.getByLabelText(sessionLifecyclePresentation(dead).word)
+    ).not.toBeNull();
   });
 });
 

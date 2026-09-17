@@ -3,18 +3,22 @@
 /**
  * Paused-Agent record rig (ENG-016 BUG-012/BUG-013).
  *
- * Renders the production `PausedAgentRecord` across the states a paused
- * Agent actually reaches, against a stubbed IPC so the page is deterministic
- * and needs no Electron. `eval:workspace:paused` drives this.
+ * Renders the production paused stack, the `SessionRestorePanel` over the
+ * `PausedAgentRecord` exactly as `workspace-client` mounts it, across the
+ * states a paused Agent actually reaches, against a stubbed IPC so the page
+ * is deterministic and needs no Electron. `eval:workspace:paused` drives
+ * this.
  *
  * The states matter more than the pixels here: the surface exists because
  * the operator saw "jumbled, unreadable text", so what has to be reviewable
- * is that every ending SAYS what happened.
+ * is that every ending SAYS what happened, in the one lifecycle vocabulary
+ * every surface shares (ENG-015 S6.4).
  */
 import {
   PausedAgentRecord,
   type PausedHistoryBridge,
 } from '@/components/workspace/paused-agent-record';
+import { SessionRestorePanel } from '@/components/workspace/session-restore-panel';
 import type { SessionTab } from '@/components/workspace/use-workspace-state';
 import {
   WORKSPACE_HUD as HUD,
@@ -91,6 +95,21 @@ const CASES: Array<{ id: string; caption: string; tab: SessionTab; summary?: str
       tab: tab({ lifecycle: 'interrupted' }),
     },
     {
+      id: 'resume-failed',
+      caption: 'The last resume failed. The verb stays offered',
+      tab: tab({ lifecycle: 'failed', resumeState: 'failed' }),
+    },
+    {
+      id: 'reconnect-needed',
+      caption: 'Conversation never recorded. Reconnect is the verb, not resume',
+      tab: tab({ harnessSessionId: null, resumeState: 'identity-missing' }),
+    },
+    {
+      id: 'shell-closed',
+      caption: 'A shell closed. History kept, a new shell is the verb',
+      tab: tab({ harness: 'shell', harnessSessionId: null, initialTask: null }),
+    },
+    {
       id: 'no-task',
       caption: 'No task recorded. Says so rather than showing an empty pane',
       tab: tab({ initialTask: null }),
@@ -114,9 +133,10 @@ export function PausedAgentRecordStudy() {
             {item.caption}
           </figcaption>
           <div
-            className="flex overflow-hidden rounded-lg border"
-            style={{ borderColor: withThemeAlpha(HUD.textDim, 0.16), height: 280 }}
+            className="flex flex-col overflow-hidden rounded-lg border"
+            style={{ borderColor: withThemeAlpha(HUD.textDim, 0.16), height: 300 }}
           >
+            <SessionRestorePanel tab={item.tab} onResumeTab={async () => true} />
             <PausedAgentRecord
               tab={item.tab}
               summary={item.summary}

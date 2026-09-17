@@ -8,7 +8,6 @@ import {
   pressureColorCss as pressureColor,
   tokens,
 } from '@/components/consumption/flux';
-import { AnnouncedChip } from '@/components/readiness';
 import { HarnessGlyph } from './harness-icons';
 import { SessionGoalSummary } from './session-goal-summary';
 import {
@@ -53,10 +52,10 @@ export interface SessionOverviewCardContentProps {
   delegation?: SessionDelegation | null;
   /**
    * ENG-028 T1: the Agent Type name, when the data source declares one (the
-   * Demo Workspace's authored desks). Live untyped Sessions leave it unset
-   * and the chip reads "Coding" — a true value, never the slot's own name
-   * (operator, 2026-08-03); the chip is `announced` either way. Shell
-   * sessions never render it — a plain shell is not a worker.
+   * Demo Workspace's authored desks). A declared Type is a fact and renders
+   * as one; a Session with no declared Type renders no chip at all. The
+   * dashed "Coding" placeholder every live card used to carry is gone: a
+   * dashed stroke means designed-not-built, and a card states facts only.
    */
   agentType?: string | null;
   /** Durable goal this Session advances. Omitted when a source does not
@@ -66,7 +65,10 @@ export interface SessionOverviewCardContentProps {
   lifecycleLabel?: string | null;
   current: string;
   meaningfulChange?: string | null;
-  next: string;
+  /** The plan step this Session advances. Null when no plan source reports
+   *  one; the card then shows no Next region rather than a sentence saying
+   *  there is none. */
+  next: string | null;
   nextProgress?: string | null;
   /** Consumption readout (ENG-008); absent when the source reports none. */
   consumption?: SessionConsumptionReadout | null;
@@ -126,21 +128,18 @@ export function SessionOverviewCardContent({
           >
             <HarnessGlyph harness={harness} size={13} />
           </span>
-          {/* ENG-028 T1: the Type slot — what kind of worker, not just which
-              engine — announced until Types exist. Constant chip footprint;
-              strictly additive to the header row. A chip shows a VALUE,
-              never its slot's name (operator, 2026-08-03): untyped live
-              Sessions read "Coding" — true of every Claude Code / Codex
-              Session today — while declaring sources name their Types. */}
-          {harness !== 'shell' && (
-            <AnnouncedChip
-              size="micro"
-              coming="Agent Types — what kind of worker this is, not just which engine runs it (ENG-028)"
-              className="shrink-0"
+          {/* ENG-028 T1: the Type slot, what kind of worker rather than which
+              engine, rendered only when a source declares one. A chip shows
+              a VALUE, never its slot's name (operator, 2026-08-03). */}
+          {harness !== 'shell' && agentType && (
+            <span
+              data-session-agent-type
+              className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-chrome-micro"
+              style={{ color: HUD.textDim, borderColor: HUD.strokeFaint }}
             >
               <Shapes aria-hidden className="h-2.5 w-2.5" />
-              {agentType ?? 'Coding'}
-            </AnnouncedChip>
+              {agentType}
+            </span>
           )}
           {initiative && (
             <span
@@ -249,36 +248,42 @@ export function SessionOverviewCardContent({
         </div>
       </div>
 
+      {/* The footer states facts only: a plan step when a plan source
+          reports one, consumption when a source reports it. Absent both, no
+          footer, and the fixed tile footprint keeps the card's height. */}
+      {(next || consumption) && (
       <div
         data-session-next
         className="mt-auto min-w-0 border-t pt-2.5"
         style={{ borderColor: HUD.divider }}
       >
-        <span
-          className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
-          style={{ color: HUD.textDim }}
-        >
-          Next
-        </span>
-        <span className="mt-1 flex min-w-0 items-baseline justify-between gap-3">
-          <span
-            data-session-next-copy
-            className="min-w-0 truncate font-sans text-sm leading-5"
-            style={{
-              color: next === 'No plan reported' ? HUD.textDim : HUD.text,
-            }}
-          >
-            {next}
-          </span>
-          {nextProgress && (
+        {next && (
+          <>
             <span
-              className="shrink-0 font-mono text-xs tabular-nums"
-              style={{ color: HUD.textMono }}
+              className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
+              style={{ color: HUD.textDim }}
             >
-              {nextProgress}
+              Next
             </span>
-          )}
-        </span>
+            <span className="mt-1 flex min-w-0 items-baseline justify-between gap-3">
+              <span
+                data-session-next-copy
+                className="min-w-0 truncate font-sans text-sm leading-5"
+                style={{ color: HUD.text }}
+              >
+                {next}
+              </span>
+              {nextProgress && (
+                <span
+                  className="shrink-0 font-mono text-xs tabular-nums"
+                  style={{ color: HUD.textMono }}
+                >
+                  {nextProgress}
+                </span>
+              )}
+            </span>
+          </>
+        )}
         {consumption && (
           <span
             data-session-consumption
@@ -309,6 +314,7 @@ export function SessionOverviewCardContent({
           </span>
         )}
       </div>
+      )}
     </>
   );
 }

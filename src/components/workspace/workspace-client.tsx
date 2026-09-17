@@ -18,6 +18,7 @@ import { WorkspaceStorageRecovery } from './workspace-storage-recovery';
 import { sessionDelegationBusy } from './session-status';
 import { LiveSessionModelControl } from './live-session-model-control';
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -26,7 +27,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { LAYOUT_CLASS, TerminalPane } from './terminal-pane';
+import { LAYOUT_CLASS, TerminalPane, type PaneLayout } from './terminal-pane';
 import {
   resolveComposerSlot,
   resolveStageLayout,
@@ -69,6 +70,16 @@ import { SessionRestorePanel } from './session-restore-panel';
 import { RemoteAgentPane, useRemoteCoworkers } from './remote-agent';
 import { ResumeRecoveryBar } from './resume-recovery-bar';
 import { PausedAgentRecord } from './paused-agent-record';
+import { sessionLifecyclePresentation } from '@exawatt/ui-model';
+
+/** Where the lifecycle bar sits over an ended Session's retained terminal:
+ *  the top edge of whichever pane region the terminal occupies. */
+const PANE_TOP_CLASS: Record<PaneLayout, string> = {
+  full: 'absolute inset-x-0 top-0',
+  left: 'absolute left-0 top-0 w-1/2',
+  right: 'absolute right-0 top-0 w-1/2',
+  hidden: 'hidden',
+};
 import {
   useWorkspaceShortcuts,
   type WorkspaceShortcutActions,
@@ -262,6 +273,14 @@ export function WorkspaceClient() {
 
   const panesRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
+  // The PTY incarnation each Session tab last showed on screen (BUG-046,
+  // decision 0042). A Session that ends while its terminal is mounted keeps
+  // that terminal, with the lifecycle bar over it, until the tab closes or
+  // resumes: the xterm already holds the bytes, so nothing is read, nothing
+  // is replayed at the wrong width, and the operator sees the Agent finish.
+  // A Session opened after its death (relaunch, restored layout) has no
+  // mounted terminal and shows the record instead.
+  const shownIncarnation = useRef(new Map<string, string>());
   // split view (S2): the last active NON-pinned tab — the driven/left side.
   // Lives up here unconditionally (rules of hooks); assigned below once the
   // active tab is known.
@@ -887,7 +906,7 @@ export function WorkspaceClient() {
           ].map(item => ({
             id: item.id,
             label: item.declaredId
-              ? `${item.declaredId} — ${item.title}`
+              ? `${item.declaredId} · ${item.title}`
               : item.title,
           }))
         : [],
@@ -1345,7 +1364,7 @@ export function WorkspaceClient() {
       if (outcome.kind === 'closed') {
         if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
         const what = outcome.entry.goal ?? outcome.entry.title;
-        setCloseToast(`Closed "${what}" — kept for 14 days · ⌘⇧T to reopen`);
+        setCloseToast(`Closed "${what}" · kept for 14 days · ⌘⇧T to reopen`);
         closeToastTimer.current = setTimeout(() => setCloseToast(null), 6000);
       }
     },
@@ -1766,6 +1785,13 @@ export function WorkspaceClient() {
   const allTabs = projects.flatMap(g =>
     g.tabs.map(t => ({ tab: t, dir: g.dir }))
   );
+  // a closed tab releases its terminal; nothing outlives the tab
+  if (shownIncarnation.current.size > 0) {
+    const open = new Set(allTabs.map(entry => entry.tab.id));
+    for (const id of shownIncarnation.current.keys()) {
+      if (!open.has(id)) shownIncarnation.current.delete(id);
+    }
+  }
 
   // split view (S2, reworked D26): the pinned tab renders RIGHT beside the
   // driven content LEFT. The pin follows the TAB — a pinned pane survives
@@ -2042,7 +2068,7 @@ export function WorkspaceClient() {
                 {activeSessionTab && activeItemChip && (
                   <button
                     type="button"
-                    title={`working on ${activeItemChip.item.title} — open in roadmap`}
+                    title={`working on ${activeItemChip.item.title} · open in roadmap`}
                     onClick={() => summonRoadmap(activeItemChip.item.id)}
                     className="shrink-0 rounded border px-1.5 py-px font-mono text-chrome-meta outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
@@ -2196,6 +2222,14 @@ export function WorkspaceClient() {
                   {font !== null &&
                     allTabs.map(({ tab, dir }) => {
                       const layout = stage.layoutFor(tab.id);
+                      if (isSessionTab(tab)) {
+                        if (tab.sessionId) {
+                          shownIncarnation.current.set(tab.id, tab.sessionId);
+                        } else if (tab.resumeState === 'resuming') {
+                          // the next incarnation replaces the old terminal
+                          shownIncarnation.current.delete(tab.id);
+                        }
+                      }
                       if (isRemoteAgentTab(tab)) {
                         // A coworker's pane is its conversation, never a
                         // terminal: there is no local process to attach to,
@@ -2231,17 +2265,44 @@ export function WorkspaceClient() {
                           </div>
                         );
                       }
-                      if (tab.sessionId) {
+                      const incarnation =
+                        tab.sessionId ??
+                        shownIncarnation.current.get(tab.id) ??
+                        null;
+                      if (incarnation) {
+                        // The terminal a Session died in stays on screen
+                        // (decision 0042): same key, same position, so React
+                        // keeps the xterm and its buffer across the exit.
+                        const ended = tab.sessionId === null;
                         return (
-                          <TerminalPane
-                            key={tab.sessionId}
-                            sessionId={tab.sessionId}
-                            cwd={tab.cwd}
-                            active={tab.id === activeTab?.id}
-                            layout={layout}
-                            font={font}
-                            onActivate={() => selectTab(dir, tab.id)}
-                          />
+                          <Fragment key={tab.id}>
+                            <TerminalPane
+                              key={incarnation}
+                              sessionId={incarnation}
+                              cwd={tab.cwd}
+                              active={tab.id === activeTab?.id}
+                              layout={layout}
+                              font={font}
+                              onActivate={() => selectTab(dir, tab.id)}
+                            />
+                            {ended && layout !== 'hidden' && (
+                              <div
+                                data-pane={layout}
+                                data-pane-ended={tab.id}
+                                className={`${PANE_TOP_CLASS[layout]} z-10`}
+                                onMouseDown={
+                                  tab.id !== activeTab?.id
+                                    ? () => selectTab(dir, tab.id)
+                                    : undefined
+                                }
+                              >
+                                <SessionRestorePanel
+                                  tab={tab}
+                                  onResumeTab={resumeTab}
+                                />
+                              </div>
+                            )}
+                          </Fragment>
                         );
                       }
                       if (layout === 'hidden') return null;
@@ -2273,8 +2334,7 @@ export function WorkspaceClient() {
                               className="absolute inset-0 flex items-center justify-center text-sm"
                               style={{ color: HUD.textDim }}
                             >
-                              Starting a new process for the saved
-                              conversation...
+                              {sessionLifecyclePresentation(tab).line}
                             </p>
                           ) : (
                             <div className="absolute inset-0 flex min-h-0 flex-col">

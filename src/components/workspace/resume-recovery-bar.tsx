@@ -1,6 +1,13 @@
 'use client';
 
 import { ChevronDownIcon, Cross2Icon, PlayIcon } from '@radix-ui/react-icons';
+import {
+  agentsNoun,
+  pausedAgentsCopy,
+  reconnectAgentsCopy,
+  resumingAgentsCopy,
+  SESSION_RESUME_SCOPE_LABEL,
+} from '@exawatt/ui-model';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,7 +32,7 @@ interface ResumeBatchProgress {
  * discoverable keyboard shortcut for resume this agent"). Rendered ALWAYS,
  * never on a hover or modifier reveal: the bar appears for a few seconds
  * after a relaunch, so a hint that has to be discovered to be discovered is
- * no hint at all — and reserving the space by construction is how a hint
+ * no hint at all, and reserving the space by construction is how a hint
  * satisfies "never shifts layout". The combo comes from the registry, so a
  * rebind in Settings changes what the bar advertises.
  */
@@ -56,10 +63,12 @@ export interface ResumeRecoveryBarProps {
   onDismiss: () => void;
 }
 
-function agents(count: number) {
-  return `${count} ${count === 1 ? 'agent' : 'agents'}`;
-}
-
+/**
+ * Relaunch recovery, once (ENG-016 D36/D47). The paused noun, the counts
+ * and every resume verb come from the shared lifecycle vocabulary
+ * (ENG-015 S6.4), so the bar says "paused" about the same Sessions the tab,
+ * the pane, and the record call paused.
+ */
 export function ResumeRecoveryBar({
   readyAgentCount,
   reconnectableAgentCount,
@@ -85,17 +94,17 @@ export function ResumeRecoveryBar({
 
   let status: string;
   if (progress) {
-    status = `Resuming ${progress.completed} of ${progress.total} agents…`;
+    status = resumingAgentsCopy(progress.completed, progress.total);
   } else if (readyAgentCount > 0) {
-    status = `${agents(readyAgentCount)} paused`;
+    status = pausedAgentsCopy(readyAgentCount);
     if (projectIsUsefulScope && readyAgentCount > activeProjectReadyCount) {
       status += ` · ${activeProjectReadyCount} in ${activeProjectName}`;
     }
     if (reconnectableAgentCount > 0) {
-      status += ` · ${agents(reconnectableAgentCount)} need${reconnectableAgentCount === 1 ? 's' : ''} reconnection`;
+      status += ` · ${reconnectAgentsCopy(reconnectableAgentCount)}`;
     }
   } else {
-    status = `${agents(reconnectableAgentCount)} need${reconnectableAgentCount === 1 ? 's' : ''} reconnection`;
+    status = reconnectAgentsCopy(reconnectableAgentCount);
   }
 
   return (
@@ -121,12 +130,12 @@ export function ResumeRecoveryBar({
               variant="outline"
               size="sm"
               disabled={disabled}
-              aria-label={`Resume ${agents(activeProjectReadyCount)} in ${activeProjectName}`}
+              aria-label={`Resume ${agentsNoun(activeProjectReadyCount)} in ${activeProjectName}`}
               onClick={onResumeActiveProject}
               className="h-7 rounded-r-none border-r-0 font-mono"
             >
               <PlayIcon className="h-3.5 w-3.5" />
-              {progress ? 'Resuming…' : 'Resume project'}
+              {progress ? 'Resuming…' : SESSION_RESUME_SCOPE_LABEL.project}
               {!progress && (
                 <>
                   <span className="text-chrome-micro opacity-60">
@@ -157,16 +166,16 @@ export function ResumeRecoveryBar({
                   </DropdownMenuLabel>
                   {/* Counts move inline and the trailing slot becomes the
                       chord column, the way every other menu in the app
-                      reads. Only the scopes that HAVE a chord show one —
+                      reads. Only the scopes that HAVE a chord show one:
                       All projects is reachable by chord only when it is the
                       bar's own default scope, and a hint that lies is worse
                       than none. */}
                   {agentIsDistinctScope && (
                     <DropdownMenuItem
-                      aria-label="Resume this agent"
+                      aria-label={SESSION_RESUME_SCOPE_LABEL.agent}
                       onSelect={onResumeActiveTab}
                     >
-                      This agent
+                      This Agent
                       <span className="ml-1 opacity-60">1</span>
                       <DropdownMenuShortcut>
                         <ChordHint shortcutId="workspace-resume-agent" />
@@ -174,7 +183,7 @@ export function ResumeRecoveryBar({
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
-                    aria-label={`Resume ${agents(activeProjectReadyCount)} in this project`}
+                    aria-label={`Resume ${agentsNoun(activeProjectReadyCount)} in this project`}
                     onSelect={onResumeActiveProject}
                   >
                     This project
@@ -189,7 +198,7 @@ export function ResumeRecoveryBar({
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        aria-label={`Resume all ${agents(readyAgentCount)}`}
+                        aria-label={`${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(readyAgentCount)}`}
                         onSelect={onResumeAll}
                       >
                         All projects
@@ -209,12 +218,12 @@ export function ResumeRecoveryBar({
             variant="outline"
             size="sm"
             disabled={disabled}
-            aria-label={`Resume all ${agents(readyAgentCount)}`}
+            aria-label={`${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(readyAgentCount)}`}
             onClick={onResumeAll}
             className="h-7 shrink-0 font-mono"
           >
             <PlayIcon className="h-3.5 w-3.5" />
-            {progress ? 'Resuming…' : 'Resume all'}
+            {progress ? 'Resuming…' : SESSION_RESUME_SCOPE_LABEL.all}
             {!progress && (
               <>
                 <span className="text-chrome-micro opacity-60">

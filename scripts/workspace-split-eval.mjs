@@ -5,8 +5,8 @@
  *   - switching to an EMPTY Project keeps the pinned pane up beside the
  *     empty-Project composer (the reported disappearing-pane bug),
  *   - a ⌘T draft page drives the left side beside the pin,
- *   - the pinned pane SURVIVES its session's exit (retained scrollback +
- *     restore bar stay watched),
+ *   - the pinned pane SURVIVES its session's exit: the terminal it died in
+ *     stays on screen under the lifecycle bar (BUG-046, decision 0042),
  *   - ⌘D on a dead pin unpins (never silently re-pins something else),
  *   - a stopped tab is still pinnable.
  * Requires the dev server (`pnpm dev`, EXA_BASE overrides the port) and a
@@ -129,7 +129,7 @@ await withElectronApp(
         1
     );
     check(
-      'retained scrollback renders in the dead pinned pane',
+      'the terminal the pinned Session died in stays on screen',
       (await page.locator('[data-pane="right"] .xterm').count()) === 1
     );
     check(

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sessionLifecyclePresentation } from '@exawatt/ui-model';
 import {
-  endedCopy,
   formatHistorySize,
   formatWhen,
   PausedAgentRecord,
@@ -64,15 +64,6 @@ describe('paused-Agent record copy', () => {
     expect(formatWhen(now - 72 * 3_600_000, now)).toBe('3 days ago');
   });
 
-  it('says how it ended, never just that it stopped', () => {
-    expect(endedCopy(tab())).toMatch(/Stopped cleanly/);
-    expect(endedCopy(tab({ lifecycle: 'interrupted' }))).toMatch(
-      /^Interrupted\. /
-    );
-    expect(endedCopy(tab({ lifecycle: 'failed' }))).toMatch(/resume attempt/);
-    expect(endedCopy(tab({ exitCode: 137 }))).toMatch(/code 137/);
-    expect(endedCopy(tab({ harness: 'shell' }))).toMatch(/Shell closed/);
-  });
 });
 
 describe('PausedAgentRecord', () => {
@@ -87,6 +78,10 @@ describe('PausedAgentRecord', () => {
     );
     expect(api.retainedTranscript).not.toHaveBeenCalled();
     expect(screen.getByText('Ship the launcher redraw')).toBeVisible();
+    // the record names the state with the word every other surface prints
+    expect(
+      document.querySelector('[data-paused-agent-word]')?.textContent
+    ).toContain(sessionLifecyclePresentation(tab()).word);
     await waitFor(() =>
       expect(screen.getByText(/1\.4 MB saved/)).toBeVisible()
     );
@@ -155,9 +150,7 @@ describe('PausedAgentRecord', () => {
     );
     fireEvent.click(await screen.findByText('Show transcript'));
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
-        /could not be read/
-      )
+      expect(screen.getByRole('status')).toHaveTextContent(/unreadable/)
     );
   });
 
@@ -165,8 +158,6 @@ describe('PausedAgentRecord', () => {
     render(
       <PausedAgentRecord tab={tab({ initialTask: null })} bridge={bridge()} />
     );
-    expect(
-      await screen.findByText('No task was recorded for this Agent.')
-    ).toBeVisible();
+    expect(await screen.findByText('No task recorded')).toBeVisible();
   });
 });

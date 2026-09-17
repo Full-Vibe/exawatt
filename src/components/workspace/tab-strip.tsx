@@ -23,7 +23,13 @@ import {
   type CSSProperties,
 } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  SESSION_LIFECYCLE_VERB_LABEL,
+  SESSION_PROJECT_VERB_LABEL,
+  sessionLifecyclePresentation,
+} from '@exawatt/ui-model';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
+import { lifecycleToneColor } from './session-lifecycle-tone';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import type { SessionDelegation } from '@/types/electron';
@@ -1193,7 +1199,7 @@ export function TabStrip({
                   ? [
                       {
                         id: 'pause-project',
-                        label: 'Pause Agents',
+                        label: SESSION_PROJECT_VERB_LABEL.pause,
                         focusAfterSelect: 'none' as const,
                         onSelect: () => onPauseProject(project.dir),
                       },
@@ -1203,7 +1209,7 @@ export function TabStrip({
                   ? [
                       {
                         id: 'resume-project',
-                        label: 'Resume Agents',
+                        label: SESSION_PROJECT_VERB_LABEL.resume,
                         onSelect: () => onResumeProject(project.dir),
                       },
                     ]
@@ -1365,7 +1371,7 @@ export function TabStrip({
                     }}
                     title={`${rootPath ?? project.name}${groupActive ? (compactProjects.has(project.dir) ? '\nShow Agent titles' : '\nShow Agent icons') : ''}${
                       folded
-                        ? `\n${project.tabs.length} Sessions — select to open`
+                        ? `\n${project.tabs.length} Sessions · select to open`
                         : ''
                     }${
                       sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
@@ -1552,15 +1558,16 @@ export function TabStrip({
                   primaryKind: 'title' as const,
                 };
             const ordinal = ordinalByTabId.get(tab.id);
-            const stoppedStatus = !session
-              ? null
-              : session.lifecycle === 'interrupted'
-                ? 'Interrupted'
-                : session.lifecycle === 'failed'
-                  ? 'Failed'
-                  : session.lifecycle === 'exited'
-                    ? 'Exited'
-                    : 'Stopped';
+            // One lifecycle vocabulary (ENG-015 S6.4): the word, its tone
+            // and the verb come from the shared owner that the pane, the
+            // recovery bar, the record and the Team tile all read.
+            const lifecycle = session
+              ? sessionLifecyclePresentation(session)
+              : null;
+            const stoppedStatus = lifecycle?.word ?? null;
+            const lifecycleColor = lifecycle
+              ? lifecycleToneColor(lifecycle.tone)
+              : HUD.textDim;
             const tabMenuItems: StripMenuItem[] = remote
               ? [
                   ...(tabIsPinnable(tab) && onTogglePinTab
@@ -1598,14 +1605,13 @@ export function TabStrip({
                   : [
                       ...(dead &&
                       onResumeTab &&
-                      (session.harnessSessionId || session.harness === 'shell')
+                      lifecycle &&
+                      (lifecycle.verb === 'resume' ||
+                        lifecycle.verb === 'new-shell')
                         ? [
                             {
                               id: 'resume',
-                              label:
-                                session.harness === 'shell'
-                                  ? 'Start New Shell'
-                                  : 'Resume This Agent',
+                              label: SESSION_LIFECYCLE_VERB_LABEL[lifecycle.verb],
                               onSelect: () => onResumeTab(tab.id),
                             },
                           ]
@@ -1819,12 +1825,12 @@ export function TabStrip({
                   }}
                   aria-label={
                     remote
-                      ? `${display.primary} — connected coworker`
+                      ? `${display.primary} · connected coworker`
                       : `${display.primary}${
-                          display.context ? ` — ${display.context}` : ''
-                        } — ${
+                          display.context ? ` · ${display.context}` : ''
+                        } · ${
                           dead
-                            ? (stoppedStatus ?? 'stopped').toLowerCase()
+                            ? (stoppedStatus ?? 'paused')
                             : needsYou
                               ? 'needs your attention'
                               : glyphState
@@ -1850,13 +1856,13 @@ export function TabStrip({
                             ? `\n${SESSION_GLYPH_COPY[glyphState]}`
                             : ''
                         }${
-                          dead && session
-                            ? `\n${session.resumeState.replace('-', ' ')}`
+                          dead && lifecycle
+                            ? `\n${lifecycle.line ?? lifecycle.word}`
                             : ''
                         }${ordinal ? `\n⌘${ordinal} selects` : ''}\n${
                           isDraft
                             ? '⏎ starts · ⌘W discards'
-                            : '⌘W or middle-click closes — kept in Recently closed'
+                            : '⌘W or middle-click closes · kept in Recently closed'
                         }\ndouble-click to rename`
                   }
                   // `text-left` is load-bearing, not decoration: the chrome is
@@ -1950,14 +1956,7 @@ export function TabStrip({
                     <span
                       aria-hidden
                       className="text-[9px] leading-none"
-                      style={{
-                        color:
-                          session.lifecycle === 'interrupted'
-                            ? HUD.amber
-                            : session.lifecycle === 'failed'
-                              ? HUD.red
-                              : HUD.textDim,
-                      }}
+                      style={{ color: lifecycleColor }}
                     >
                       ○
                     </span>
@@ -1969,15 +1968,9 @@ export function TabStrip({
                     stoppedStatus && (
                       <span
                         aria-label={stoppedStatus}
+                        data-tab-lifecycle-word
                         className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
-                        style={{
-                          color:
-                            session.lifecycle === 'interrupted'
-                              ? HUD.amber
-                              : session.lifecycle === 'failed'
-                                ? HUD.red
-                                : HUD.textDim,
-                        }}
+                        style={{ color: lifecycleColor }}
                       >
                         {stoppedStatus}
                       </span>
@@ -2043,7 +2036,7 @@ export function TabStrip({
                     title={
                       isDraft
                         ? 'Discard (⌘W)'
-                        : 'Close — kept in Recently closed for 14 days (⌘W)'
+                        : 'Close · kept in Recently closed for 14 days (⌘W)'
                     }
                     className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-hud-fill-hi hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
                       floatingClose

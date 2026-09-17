@@ -249,7 +249,9 @@ Resolution:
   production Sessions overview with readable sans body tiers;
 - retire raw xterm/scrollback previews from Sessions. Cards show only known
   turn/lifecycle/attention truth and declared or inferred roadmap plan state;
-  when no plan source exists they say **No plan reported**;
+  when no plan source exists they show no plan step (amended 2026-09-23 by
+  ENG-015 S6.4: the card states facts only, so an absent plan renders no Next
+  region rather than a sentence about the absence);
 - keep provider identity and compact state metadata in glyph/mono roles while
   all operational sentences and goals use the readable sans roles.
 

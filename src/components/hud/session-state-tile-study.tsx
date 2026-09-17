@@ -278,7 +278,7 @@ function SessionTile({
         initiative={tile.initiative}
         current={tile.activity}
         meaningfulChange={tile.meaningfulChange}
-        next={tile.planStep ?? 'No plan reported'}
+        next={tile.planStep ?? null}
         nextProgress={
           tile.planIndex && tile.planTotal
             ? `Step ${tile.planIndex} of ${tile.planTotal}`

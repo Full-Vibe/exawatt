@@ -109,6 +109,18 @@ export const SURFACE_GATES = [
       ),
   },
   {
+    gate: 'eval:workspace:split',
+    // BUG-046: the split had a script and no gate, so the change that lost
+    // the dead pinned pane's terminal never had to run it. The pane's
+    // contract is decision 0042: the terminal a Session died in stays on
+    // screen under the lifecycle bar, and the record is for cold opens.
+    why: 'a pinned pane must survive its Session ending still showing what the operator pinned it to watch (D26, decision 0042)',
+    match: file =>
+      /^src\/components\/workspace\/(?:workspace-client|split-layout|terminal-pane|session-restore-panel)\.tsx?$/.test(
+        file
+      ),
+  },
+  {
     gate: 'eval:navigation',
     why: 'the command-altitude continuum owns cross-surface navigation',
     match: file =>

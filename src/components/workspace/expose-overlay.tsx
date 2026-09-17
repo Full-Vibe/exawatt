@@ -19,6 +19,7 @@ import {
 } from 'react';
 import Link from 'next/link';
 import { Play } from 'lucide-react';
+import { sessionLifecyclePresentation } from '@exawatt/ui-model';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { READINESS_NEUTRAL } from '@/components/readiness';
 import {
@@ -102,11 +103,14 @@ interface Tile {
   title: string;
   titleKind: 'default' | 'operator';
   lifecycle: string;
+  exitCode: number | null;
+  harnessSessionId: string | null;
   projectName: string;
   color: string;
   /** running/resumed process behind the tab */
   live: boolean;
-  /** short state word for non-live tabs ("stopped", "interrupted", …) */
+  /** the shared lifecycle word for a tab with no process behind it (ENG-015
+   *  S6.4); null while live, when the turn state speaks instead */
   stateLabel: string | null;
   /** stopped AND carrying the identity to resume exactly (FIX-010) */
   canResume: boolean;
@@ -148,18 +152,6 @@ function selectionKey(item: SelectionItem): string {
   if (isCoworkerItem(item)) return `agent:${item.agentId}`;
   return item.tabId ?? `project:${item.dir}`;
 }
-
-/** ENG-018 lifecycle → tile state word (overview shows EVERY tab, live or
- *  not — a stopped agent is still a session the operator owns) */
-const TILE_STATE_LABEL: Record<string, string> = {
-  // a ⌘T draft (D24) — no runtime yet, deliberately not 'stopped'
-  draft: 'draft',
-  'stopped-clean': 'stopped',
-  interrupted: 'interrupted',
-  exited: 'exited',
-  resuming: 'resuming…',
-  failed: 'failed',
-};
 
 // Team is a comparison altitude: four tiles should fit beside the resting
 // roadmap rail on a common 1512px laptop viewport without shrinking type.
@@ -332,13 +324,15 @@ export function ExposeOverlay({
             title: t.title,
             titleKind: t.titleKind,
             lifecycle: t.lifecycle,
+            exitCode: t.exitCode,
+            harnessSessionId: t.harnessSessionId,
             projectName: g.name,
             color: g.color,
             live,
-            stateLabel: live
-              ? null
-              : (TILE_STATE_LABEL[t.lifecycle] ??
-                (t.exitCode !== null ? 'exited' : 'stopped')),
+            // The overview shows EVERY tab, live or not: a paused Agent is
+            // still a Session the operator owns, and it wears the same word
+            // the tab and the pane print for it.
+            stateLabel: live ? null : sessionLifecyclePresentation(t).word,
             canResume: tabCanResumeAsAgent(t),
           };
         })
@@ -921,7 +915,9 @@ export function ExposeOverlay({
     const attentionSignal = tile.sessionId
       ? attention[tile.sessionId]
       : undefined;
-    const fault = tile.stateLabel === 'failed';
+    // A failed resume is a lifecycle fact, not a word: read the lifecycle,
+    // never the printed label.
+    const fault = tile.lifecycle === 'failed';
     // Durable Session context survives process replacement. The display
     // projection is total: rejected/missing labels become "New agent", never
     // an icon-only card.
@@ -958,6 +954,8 @@ export function ExposeOverlay({
       harness: tile.harness,
       live: tile.live,
       lifecycle: tile.lifecycle,
+      exitCode: tile.exitCode,
+      harnessSessionId: tile.harnessSessionId,
       glyphState,
       attention: attentionSignal,
     });
@@ -1073,7 +1071,7 @@ export function ExposeOverlay({
               fault={fault}
               lifecycleLabel={tile.stateLabel}
               current={current}
-              next={roadmap?.label ?? 'No plan reported'}
+              next={roadmap?.label ?? null}
               nextProgress={roadmap?.fraction ?? null}
               consumption={consumption}
             />
@@ -1129,7 +1127,6 @@ export function ExposeOverlay({
             >
               Team
             </h2>
-            <span>arrows or J/K move · enter opens · esc returns</span>
             {/* Sort (S6.3, FIX-008): the operator's vocabulary — two named
                 sorts, Started (the stored default: Chrome's model, oldest
                 first, a new Agent appends) and Activity (most recent

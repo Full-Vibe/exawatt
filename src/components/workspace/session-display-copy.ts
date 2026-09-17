@@ -1,3 +1,7 @@
+import {
+  isSessionLifecyclePhase,
+  sessionLifecyclePresentation,
+} from '@exawatt/ui-model';
 import type { PtyHarness } from '@/types/electron';
 import {
   attentionNeedsOperator,
@@ -77,16 +81,34 @@ export function sessionDisplayCopy(
   };
 }
 
-/** Truthful, source-agnostic current-state copy for a comparison card. */
+/**
+ * Truthful, source-agnostic current-state copy for a comparison card. A
+ * Session with no process behind it reads its line from the shared
+ * lifecycle vocabulary (ENG-015 S6.4), the same line the pane prints.
+ */
 export function sessionCurrentStateCopy(input: {
   harness: PtyHarness;
   live: boolean;
   lifecycle: string;
+  exitCode?: number | null;
+  harnessSessionId?: string | null;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
 }): string {
-  if (input.lifecycle === 'failed') return 'Agent process failed';
-  if (input.lifecycle === 'resuming') return 'Agent is resuming';
+  const lifecycle = isSessionLifecyclePhase(input.lifecycle)
+    ? sessionLifecyclePresentation({
+        lifecycle: input.lifecycle,
+        exitCode: input.exitCode ?? null,
+        harness: input.harness,
+        harnessSessionId: input.harnessSessionId ?? null,
+      })
+    : null;
+  if (
+    lifecycle?.line &&
+    (input.lifecycle === 'failed' || input.lifecycle === 'resuming')
+  ) {
+    return lifecycle.line;
+  }
   if (attentionNeedsOperator(input.attention)) {
     return input.attention?.kind === 'roadmap-blocked'
       ? 'Roadmap work is blocked'
@@ -94,11 +116,7 @@ export function sessionCurrentStateCopy(input: {
   }
   if (!input.live) {
     if (input.lifecycle === 'draft') return 'Ready to start';
-    if (input.lifecycle === 'interrupted') return 'Process was interrupted';
-    if (input.lifecycle === 'exited') {
-      return 'Process exited; history is retained';
-    }
-    return 'Process stopped; history is retained';
+    return lifecycle?.line ?? 'Stopped · history kept';
   }
   if (input.glyphState === 'working') {
     return input.harness === 'shell' ? 'Shell is active' : 'Agent is working';

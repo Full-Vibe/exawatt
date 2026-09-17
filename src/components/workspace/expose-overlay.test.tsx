@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
+import { sessionLifecyclePresentation } from '@exawatt/ui-model';
 import { ExposeOverlay, type TeamSelection } from './expose-overlay';
 import {
   mergeFleetAttention,
@@ -222,10 +223,13 @@ describe('Sessions overview', () => {
         onClose={vi.fn()}
       />
     );
+    // the lifecycle word is the shared vocabulary's, the same one the tab
+    // strip and the pane print for this Session (ENG-015 S6.4)
+    const word = sessionLifecyclePresentation(projects[0].tabs[2]).word;
     const gamma = screen.getByRole('button', {
-      name: 'Gamma, One, Idle, stopped',
+      name: `Gamma, One, Idle, ${word}`,
     });
-    expect(gamma.querySelector('[data-expose-state="stopped"]')).not.toBeNull();
+    expect(gamma.querySelector(`[data-expose-state="${word}"]`)).not.toBeNull();
     fireEvent.click(gamma);
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
   });
@@ -886,10 +890,9 @@ describe('Sessions overview', () => {
       'text-reading',
       'leading-6'
     );
-    expect(screen.getByText('No plan reported')).toHaveClass(
-      'font-sans',
-      'text-sm'
-    );
+    // no plan source reports a step, so the card states nothing rather
+    // than a sentence about the absence
+    expect(tile.querySelector('[data-session-next-copy]')).toBeNull();
     expect(tile).toHaveClass('p-2.5');
     expect(tile).toHaveStyle({ width: '272px', height: '252px' });
   });
@@ -929,10 +932,13 @@ describe('Sessions overview', () => {
         onClose={vi.fn()}
       />
     );
+    const word = sessionLifecyclePresentation(
+      draftProject.tabs[0] as SessionTab
+    ).word;
     const tile = screen.getByRole('button', {
-      name: 'New agent, Two, Idle, draft',
+      name: `New agent, Two, Idle, ${word}`,
     });
-    expect(tile.querySelector('[data-expose-state="draft"]')).not.toBeNull();
+    expect(tile.querySelector(`[data-expose-state="${word}"]`)).not.toBeNull();
   });
 
   describe('the state word beside the mark (ENG-033 H2)', () => {
