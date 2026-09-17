@@ -31,6 +31,34 @@ export interface DelegatedChild {
 }
 
 /**
+ * One child as a source's CENSUS names it (ENG-023 D7). A census is the
+ * source's own account of what is running right now — Codex's descendant
+ * snapshot, Claude Code's `background_tasks` on every `Stop` and
+ * `SubagentStop` — and it may name a child this ledger never saw start.
+ * `startedAt` is null when the source does not say; the ledger keeps the time
+ * it already holds, or adopts the census time for a child it meets here.
+ */
+export interface CensusChild {
+  id: string;
+  agentType: string | null;
+  description: string | null;
+  startedAt: number | null;
+}
+
+/**
+ * A source-authoritative census: the WHOLE live set, never a delta (ENG-023
+ * D5/D7). Applying one replaces the children atomically. A child the ledger
+ * holds that the census omits is withdrawn, not completed; only a child the
+ * source itself lists as completed may offer a result to attention.
+ */
+export interface ReportedChildCensus {
+  live: CensusChild[];
+  completed: string[];
+  /** when the census was taken; the start time adopted for a child met here */
+  at: number;
+}
+
+/**
  * A spawn label observed before its child's `SubagentStart` (ENG-023 D3a).
  * `SubagentStart` does not carry the spawning `tool_use_id`, so labels stage
  * here until a child-start adopts one by agent-type match, oldest first.
@@ -118,7 +146,10 @@ export interface DelegationLedger extends SessionDelegation {
 
 export type HarnessEvent =
   | { kind: 'turn-start' }
-  | { kind: 'turn-end' }
+  /** A boundary may carry the source's census of what is still running
+   *  (Claude Code's `background_tasks`, ENG-023 D7); it is applied after the
+   *  boundary itself, so the record a subscriber reads is already current. */
+  | { kind: 'turn-end'; census?: ReportedChildCensus }
   | { kind: 'blocked'; reason: SessionBlockedReason }
   /** Releases only a gate of this reason; omit to release whatever is open. */
   | { kind: 'unblocked'; reason?: SessionBlockedReason }
@@ -138,7 +169,10 @@ export type HarnessEvent =
       description?: string | null;
       at: number;
     }
-  | { kind: 'child-end'; childId: string };
+  | { kind: 'child-end'; childId: string; census?: ReportedChildCensus }
+  /** A census on its own — a protocol snapshot (Codex, D5) or the withdrawal
+   *  inference applies when a census loses coverage (D7). */
+  | { kind: 'census'; census: ReportedChildCensus };
 
 export const EMPTY_DELEGATION: SessionDelegation = {
   ownTurn: 'available',
@@ -182,6 +216,60 @@ export function delegationBusy(
   return !!delegation && delegation.children.length > 0;
 }
 
+function sameChild(a: DelegatedChild, b: DelegatedChild): boolean {
+  return (
+    a.id === b.id &&
+    a.agentType === b.agentType &&
+    a.description === b.description &&
+    a.startedAt === b.startedAt
+  );
+}
+
+/**
+ * Replace the live set with what the source says is running (ENG-023 D5/D7).
+ *
+ * Authoritative in both directions. A child the census names that this ledger
+ * never saw start is admitted — a lost `SubagentStart` must not hide a child
+ * the harness itself lists — and a tombstone cannot veto it, because a
+ * snapshot is newer evidence than the delta that tombstoned it. A child the
+ * ledger holds that the census omits is withdrawn: nothing here says it
+ * completed, so nothing here may raise a result for it. What the ledger
+ * already knows about a surviving child (its label, its start time) is kept
+ * where the census is silent, so elapsed time never resets on a re-census.
+ *
+ * Returns the same reference when the live set is already exactly this, so a
+ * repeated census costs no broadcast.
+ */
+export function reconcileCensus(
+  state: DelegationLedger,
+  census: ReportedChildCensus
+): DelegationLedger {
+  const seen = new Set<string>();
+  const live: DelegatedChild[] = [];
+  for (const entry of census.live) {
+    if (seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    const known = state.children.find(child => child.id === entry.id);
+    live.push({
+      id: entry.id,
+      agentType: entry.agentType ?? known?.agentType ?? null,
+      description: entry.description ?? known?.description ?? null,
+      startedAt: entry.startedAt ?? known?.startedAt ?? census.at,
+    });
+  }
+  const unchanged =
+    live.length === state.children.length &&
+    live.every((child, index) => sameChild(child, state.children[index]));
+  const endedChildIds = state.endedChildIds.filter(id => !seen.has(id));
+  if (unchanged && endedChildIds.length === state.endedChildIds.length)
+    return state;
+  return {
+    ...state,
+    children: unchanged ? state.children : live,
+    endedChildIds,
+  };
+}
+
 /**
  * Apply one normalized harness event.
  *
@@ -193,6 +281,71 @@ export function delegationBusy(
 export function applyHarnessEvent(
   state: DelegationLedger,
   event: HarnessEvent
+): DelegationLedger {
+  switch (event.kind) {
+    case 'census':
+      return reconcileCensus(state, event.census);
+    // A boundary that carries a census applies the boundary first, then the
+    // census, so a subscriber reading the record after this event sees the
+    // turn closed AND the children the source still vouches for — never a
+    // turn-end withheld against children the same payload said were gone.
+    case 'turn-end':
+      return event.census
+        ? reconcileCensus(closeTurn(state), event.census)
+        : closeTurn(state);
+    case 'child-end':
+      return event.census
+        ? reconcileCensus(endChild(state, event.childId), event.census)
+        : endChild(state, event.childId);
+    default:
+      return applyDelta(state, event);
+  }
+}
+
+function closeTurn(state: DelegationLedger): DelegationLedger {
+  if (
+    state.ownTurn === 'available' &&
+    !state.blockedOn &&
+    state.pending.length === 0 &&
+    state.adoptedLabelIds.length === 0
+  )
+    return state;
+  return {
+    ...state,
+    ownTurn: 'available',
+    blockedOn: null,
+    pending: [],
+    adoptedLabelIds: [],
+  };
+}
+
+function endChild(state: DelegationLedger, childId: string): DelegationLedger {
+  // Tombstone FIRST, known child or not: a stop can outrun its start on
+  // the wire, and the memory is what keeps the late start from
+  // resurrecting the child. The `children` array reference is preserved
+  // when only the tombstone changes, so nothing is broadcast for it.
+  const alreadyEnded = state.endedChildIds.includes(childId);
+  const remaining = state.children.filter(child => child.id !== childId);
+  if (remaining.length === state.children.length) {
+    return alreadyEnded
+      ? state
+      : {
+          ...state,
+          endedChildIds: remember(state.endedChildIds, childId),
+        };
+  }
+  return {
+    ...state,
+    children: remaining,
+    endedChildIds: alreadyEnded
+      ? state.endedChildIds
+      : remember(state.endedChildIds, childId),
+  };
+}
+
+function applyDelta(
+  state: DelegationLedger,
+  event: Exclude<HarnessEvent, { kind: 'turn-end' | 'child-end' | 'census' }>
 ): DelegationLedger {
   switch (event.kind) {
     // A turn boundary in EITHER direction also closes any open operator gate.
@@ -223,22 +376,6 @@ export function applyHarnessEvent(
         pending: [],
         adoptedLabelIds: [],
         endedChildIds: [],
-      };
-
-    case 'turn-end':
-      if (
-        state.ownTurn === 'available' &&
-        !state.blockedOn &&
-        state.pending.length === 0 &&
-        state.adoptedLabelIds.length === 0
-      )
-        return state;
-      return {
-        ...state,
-        ownTurn: 'available',
-        blockedOn: null,
-        pending: [],
-        adoptedLabelIds: [],
       };
 
     // FIRST report of a gate wins until something releases it. Measured on a
@@ -331,32 +468,6 @@ export function applyHarnessEvent(
             startedAt: event.at,
           },
         ],
-      };
-    }
-
-    case 'child-end': {
-      // Tombstone FIRST, known child or not: a stop can outrun its start on
-      // the wire, and the memory is what keeps the late start from
-      // resurrecting the child. The `children` array reference is preserved
-      // when only the tombstone changes, so nothing is broadcast for it.
-      const alreadyEnded = state.endedChildIds.includes(event.childId);
-      const remaining = state.children.filter(
-        child => child.id !== event.childId
-      );
-      if (remaining.length === state.children.length) {
-        return alreadyEnded
-          ? state
-          : {
-              ...state,
-              endedChildIds: remember(state.endedChildIds, event.childId),
-            };
-      }
-      return {
-        ...state,
-        children: remaining,
-        endedChildIds: alreadyEnded
-          ? state.endedChildIds
-          : remember(state.endedChildIds, event.childId),
       };
     }
   }

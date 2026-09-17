@@ -117,3 +117,45 @@ inference can no longer mistake a muted Session for a silent one. The
 stale-report reclaim keeps working as designed, because it now measures real
 byte silence: an aborted turn — still the case it exists for — goes quiet for
 real and is reclaimed on schedule.
+
+## Amendment (2026-09-16, BUG-081)
+
+The 2026-08-04 amendment kept the reported-source arm (Claude today) fully
+latched on the reasoning that a source with its own reported-turn channel has
+hook-reported truth to corroborate a settle, so nothing on that arm needed to
+self-correct. That was right about the latch and wrong about one of the
+reported facts: a delegated child. `SubagentStart` put a child in the reported
+record and only `SubagentStop` or process exit could take it out, and the
+2026-08-02 D4 review had made children trusted indefinitely on the grounds
+that "a running child ends with an event the harness guarantees". Measured on
+Claude Code 2.1.270 (2026-09-13): an interrupted turn emits no boundary at all,
+`SubagentStop` fires for internal helper agents that never reported a start,
+and the loopback hook fails open after 2 s, so a stop that never arrives is an
+ordinary event. The reported fact then had no end and no expiry, and a tab
+that looked finished spun with two child dots for the life of the Session, the
+inverse of BUG-001 on the arm this decision had exempted.
+
+Nothing about the latch changes. What changes is that a reported fact on the
+reported-source arm now carries coverage and expires when it lapses (ENG-023
+D7). Coverage is the harness's own census, which every `Stop` and
+`SubagentStop` carries as `background_tasks` and which the adapter applies on
+every boundary, and, between boundaries, the parent PTY itself: a parent with
+a live child renders its task footer every second (87 B/s at the quietest
+second measured, mid-turn and idle at the prompt alike, through an interrupt)
+while an idle prompt with none is byte-silent. Silence past the existing
+stale bound (3 x quietMs) with no operator gate open therefore withdraws the
+reported children, never completes them, on the same instant a bare
+`generating` is reclaimed, and the parent's already-reported `Stop` then
+delivers the result it had withheld. The operator gate remains exempt: its
+release is guaranteed and turn boundaries backstop a lost one. The byte
+quiescence thresholds and the no-children reclaim are untouched, and the
+no-report arm's 2026-08-04 behavior is untouched.
+
+The tradeoff is the same one this decision has always weighed, and it is
+measured rather than assumed: the worse error is calling a working team
+finished, so the census expires only on evidence the harness has stopped
+rendering anything, never on elapsed time since the report. Should a future
+harness render a running team silently, the failure is bounded to the stale
+bound and self-corrects when a child's return reopens the turn, and the
+`delegation.census-expired` line in `logs/main.jsonl` names the children and
+the silence that expired them so the next report is a file read.

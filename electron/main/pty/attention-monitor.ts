@@ -66,6 +66,18 @@ export interface SessionAttention {
   since: number;
 }
 
+/** Why inference reclaimed a reported record (ENG-023 D4/D7): the evidence
+ *  `reported-turn-stale` carries so the reclaim can be logged with it. */
+export interface StaleReportEvidence {
+  /** real byte silence measured on the PTY */
+  quietMs: number;
+  /** the bound that silence crossed */
+  staleMs: number;
+  ownTurn: 'generating' | 'available';
+  /** reported children outstanding at the moment of reclaim */
+  children: number;
+}
+
 export interface AttentionMonitorOptions {
   sweepMs?: number;
   quietMs?: number;
@@ -297,31 +309,17 @@ export class AttentionMonitor extends EventEmitter {
     this.reportedTurn = read;
   }
 
-  /**
-   * Something the harness reported EXPLAINS this Session's silence, so
-   * quiescence must not read it as a finished turn.
-   *
-   * Deliberately narrower than "the harness says the turn is open". A reported
-   * `generating` is not on this list, because a turn can end without the
-   * harness ever saying so: measured on Claude Code 2.1.220, subscribing to
-   * every documented hook, an ABORTED turn emits no boundary at all — not
-   * `Stop`, not `StopFailure`, nothing. Treating `generating` as permanent
-   * proof of life would leave every aborted turn spinning forever.
-   *
-   * Running children and an open operator gate DO explain silence, and both
-   * have their own guaranteed end events, so they are trusted indefinitely.
-   */
-  private silenceIsExplained(id: string): boolean {
-    const report = this.reportedTurn(id);
-    if (!report) return false;
-    return !!report.blockedOn || report.children.length > 0;
-  }
-
-  /** The harness's own account says this turn is still open, for any reason. */
+  /** The harness's own account says this turn is still open, for any reason:
+   *  its own turn, an operator gate, or children it has not reported ending.
+   *  Open until `reclaimStaleReportedTurn` says the account lapsed. */
   private reportedTurnOpen(id: string): boolean {
     const report = this.reportedTurn(id);
     if (!report) return false;
-    return report.ownTurn === 'generating' || this.silenceIsExplained(id);
+    return (
+      report.ownTurn === 'generating' ||
+      !!report.blockedOn ||
+      report.children.length > 0
+    );
   }
 
   private delegatedBusy(id: string): boolean {
@@ -359,27 +357,53 @@ export class AttentionMonitor extends EventEmitter {
   }
 
   /**
-   * Hand a reported-open turn back to inference once it has gone silent with
-   * nothing to explain it (ENG-023 D4).
+   * Hand a reported record back to inference once it has gone silent with
+   * nothing left to vouch for it (ENG-023 D4, extended by D7).
    *
    * Reported truth outranks inference — but only while the report is still
-   * being kept. Claude Code 2.1.220 opens a turn with `UserPromptSubmit` and,
-   * if the operator aborts it, never closes it: measured against every
-   * documented hook, an aborted turn emits NO boundary. Without this the tab
-   * an operator interrupts spins "working" until their next prompt.
+   * being kept. Claude Code opens a turn with `UserPromptSubmit` and, if the
+   * operator aborts it, never closes it: measured against every documented
+   * hook on 2.1.220 and again on 2.1.270, an aborted turn emits NO boundary.
+   * Without this the tab an operator interrupts spins "working" until their
+   * next prompt.
+   *
+   * Reported CHILDREN were once exempt here — "a running child ends with an
+   * event the harness guarantees, so it explains silence indefinitely" — and
+   * that exemption is BUG-081: a `SubagentStop` the harness never sends (a
+   * child killed with its parent's turn), or one the loopback lost, held two
+   * dots and a spinner on a finished tab for the life of the Session. A
+   * reported child is a claim with coverage, not a latch. Its coverage is the
+   * harness's own census on every boundary it emits, and BETWEEN boundaries
+   * the PTY: a Claude Code parent with live children renders their progress
+   * continuously — measured on 2.1.270, never a silent second while a child
+   * runs (87–5218 B/s, mid-turn and idle at the prompt alike, through an
+   * interrupt) against 0 B/s at an idle prompt with none. Silence past the
+   * stale bound with children reported therefore means nothing is running,
+   * and the census expires on the same instant a bare turn is reclaimed:
+   * withdrawn, never completed.
+   *
+   * An open operator gate stays exempt: its release is guaranteed, turn
+   * boundaries backstop a lost one, and a question is silent for exactly as
+   * long as the operator takes.
    *
    * Emitting rather than mutating keeps the monitor pure Node and keeps the
    * delegation record owned by exactly one module: the correction lands as an
-   * ordinary `turn-end`, so every surface sees one fact change once.
+   * ordinary `turn-end` carrying an empty census, so every surface sees one
+   * fact change once.
    */
   private reclaimStaleReportedTurn(id: string, quietFor: number): boolean {
     if (quietFor < this.reportedTurnStaleMs) return false;
     const report = this.reportedTurn(id);
-    if (!report || report.ownTurn !== 'generating') return false;
-    // An explained silence is not a stale report: a gate and a running child
-    // both end with an event the harness guarantees.
-    if (this.silenceIsExplained(id)) return false;
-    this.emit('reported-turn-stale', id);
+    if (!report || report.blockedOn) return false;
+    if (report.ownTurn !== 'generating' && report.children.length === 0)
+      return false;
+    const evidence: StaleReportEvidence = {
+      quietMs: quietFor,
+      staleMs: this.reportedTurnStaleMs,
+      ownTurn: report.ownTurn,
+      children: report.children.length,
+    };
+    this.emit('reported-turn-stale', id, evidence);
     return true;
   }
 

@@ -16,8 +16,21 @@ import {
   type DelegatedChild,
   type DelegationLedger,
   type HarnessEvent,
+  type ReportedChildCensus,
   type SessionDelegation,
 } from './delegation-state';
+
+/** What inference withdrew when a reported record lost coverage (D7). */
+interface StaleReportReclaim {
+  /** the parent's reported turn at the moment of reclaim; null if unreported */
+  ownTurn: 'generating' | 'available' | null;
+  /** children withdrawn — never completed — because nothing vouched for them */
+  withdrawn: DelegatedChild[];
+}
+
+function censusOf(event: HarnessEvent): ReportedChildCensus | null {
+  return 'census' in event && event.census ? event.census : null;
+}
 
 interface ChannelLike {
   on(
@@ -88,13 +101,59 @@ export class DelegationMonitor extends EventEmitter {
       before.ownTurn !== after.ownTurn ||
       before.blockedOn !== after.blockedOn ||
       before.children !== after.children;
-    if (!visible) return;
-    const projected = this.projection(sessionId);
-    this.emit(
-      'delegation',
-      sessionId,
-      delegationIsLive(projected) ? projected : null
-    );
+    if (visible) {
+      const projected = this.projection(sessionId);
+      this.emit(
+        'delegation',
+        sessionId,
+        delegationIsLive(projected) ? projected : null
+      );
+    }
+    const census = censusOf(event);
+    if (census)
+      this.publishCensusLifecycle(sessionId, before, after, census, event);
+  }
+
+  /**
+   * The lifecycle a census implies, published only after the ENTIRE census is
+   * current: replacing one completed child with another live child must not
+   * briefly announce done. A child the census admitted starts; a child the
+   * census withdrew ends ONLY if the source itself listed it as completed —
+   * withdrawal is not completion, and never raises a result. The child a
+   * `child-end` boundary already reported is not reported twice.
+   */
+  private publishCensusLifecycle(
+    sessionId: string,
+    before: DelegationLedger,
+    after: DelegationLedger,
+    census: ReportedChildCensus,
+    event: HarnessEvent
+  ): void {
+    for (const child of after.children) {
+      if (!before.children.some(previous => previous.id === child.id)) {
+        this.emit('harness-event', sessionId, {
+          kind: 'child-start',
+          childId: child.id,
+          agentType: child.agentType,
+          description: child.description,
+          at: child.startedAt,
+        } satisfies HarnessEvent);
+      }
+    }
+    const completed = new Set(census.completed);
+    const reported = event.kind === 'child-end' ? event.childId : null;
+    for (const child of before.children) {
+      if (
+        child.id !== reported &&
+        completed.has(child.id) &&
+        !after.children.some(next => next.id === child.id)
+      ) {
+        this.emit('harness-event', sessionId, {
+          kind: 'child-end',
+          childId: child.id,
+        } satisfies HarnessEvent);
+      }
+    }
   }
 
   /** The ledger projected to the published shape — `pending` never leaves
@@ -140,69 +199,49 @@ export class DelegationMonitor extends EventEmitter {
   }
 
   /**
-   * Replace a source-authoritative census atomically. A snapshot can establish
-   * that a previously ended child resumed; delta-event tombstones cannot veto
-   * that newer observation. Missing children are withdrawn, not completed.
-   * Only explicitly completed IDs may offer a ready result to attention.
+   * Replace a source-authoritative census atomically (D5). A snapshot can
+   * establish that a previously ended child resumed; delta-event tombstones
+   * cannot veto that newer observation. Missing children are withdrawn, not
+   * completed. Only explicitly completed IDs may offer a ready result to
+   * attention. The same `census` event a Claude boundary carries (D7), so
+   * both sources share one reconciliation and one set of tests.
    */
   reconcileReportedChildren(
     sessionId: string,
     children: DelegatedChild[],
-    completedChildIds: readonly string[] = []
+    completedChildIds: readonly string[] = [],
+    at: number = Date.now()
   ): void {
-    if (this.dropped.has(sessionId)) return;
-    const before = this.state.get(sessionId) ?? EMPTY_LEDGER;
-    const unchanged =
-      before.children.length === children.length &&
-      before.children.every((child, index) => {
-        const next = children[index];
-        return (
-          child.id === next.id &&
-          child.agentType === next.agentType &&
-          child.description === next.description &&
-          child.startedAt === next.startedAt
-        );
-      });
-    if (unchanged) return;
-    const liveIds = new Set(children.map(child => child.id));
-    this.state.set(sessionId, {
-      ...before,
-      children,
-      endedChildIds: before.endedChildIds.filter(id => !liveIds.has(id)),
+    this.apply(sessionId, {
+      kind: 'census',
+      census: { live: children, completed: [...completedChildIds], at },
     });
-    const projected = this.projection(sessionId);
-    this.emit(
-      'delegation',
-      sessionId,
-      delegationIsLive(projected) ? projected : null
-    );
-    // Publish lifecycle only after the entire census is current: replacing one
-    // completed child with another live child must not briefly announce done.
-    for (const child of children) {
-      if (!before.children.some(previous => previous.id === child.id)) {
-        this.emit('harness-event', sessionId, {
-          kind: 'child-start',
-          childId: child.id,
-          agentType: child.agentType,
-          description: child.description,
-          at: child.startedAt,
-        } satisfies HarnessEvent);
-      }
-    }
-    const completed = new Set(completedChildIds);
-    for (const child of before.children) {
-      if (!liveIds.has(child.id) && completed.has(child.id)) {
-        this.emit('harness-event', sessionId, {
-          kind: 'child-end',
-          childId: child.id,
-        } satisfies HarnessEvent);
-      }
-    }
   }
 
   /** Withdraw unavailable observations without synthesizing completion. */
   clearReportedChildren(sessionId: string): void {
     this.reconcileReportedChildren(sessionId, []);
+  }
+
+  /**
+   * Inference reclaimed a reported record whose coverage lapsed (ENG-023 D7):
+   * silence past the stale bound with no gate open, which on a harness that
+   * renders its running team continuously means nothing is running. Closes
+   * the turn and withdraws — never completes — every reported child, as ONE
+   * visible change, so every surface sees the same fact at the same instant.
+   * Returns what was withdrawn so the caller can leave evidence of it.
+   */
+  reclaimStaleReport(sessionId: string, at: number): StaleReportReclaim {
+    const before = this.state.get(sessionId);
+    const reclaim: StaleReportReclaim = {
+      ownTurn: before?.ownTurn ?? null,
+      withdrawn: before?.children ?? [],
+    };
+    this.apply(sessionId, {
+      kind: 'turn-end',
+      census: { live: [], completed: [], at },
+    });
+    return reclaim;
   }
 
   /**

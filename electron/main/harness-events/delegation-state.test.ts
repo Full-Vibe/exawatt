@@ -5,6 +5,7 @@ import {
   delegationIsLive,
   EMPTY_DELEGATION,
   EMPTY_LEDGER,
+  reconcileCensus,
   type DelegationLedger,
 } from './delegation-state';
 
@@ -387,5 +388,119 @@ describe('what surfaces may see', () => {
     expect(delegationIsLive(EMPTY_DELEGATION)).toBe(false);
     expect(delegationIsLive(null)).toBe(false);
     expect(delegationIsLive(undefined)).toBe(false);
+  });
+});
+
+/**
+ * A census is the source's whole live set (ENG-023 D5/D7): Codex's snapshot
+ * and Claude Code's `background_tasks` both land here, so one reconciliation
+ * serves both and a rule proven for one holds for the other.
+ */
+describe('census reconciliation', () => {
+  const child = (id: string, startedAt: number | null = null) => ({
+    id,
+    agentType: 'Explore',
+    description: null,
+    startedAt,
+  });
+
+  it('admits a child it never saw start, at the census time', () => {
+    const state = reconcileCensus(EMPTY_LEDGER, {
+      live: [{ ...child('c9'), description: 'Map the tree' }],
+      completed: [],
+      at: 5_000,
+    });
+    expect(state.children).toEqual([
+      { id: 'c9', agentType: 'Explore', description: 'Map the tree', startedAt: 5_000 },
+    ]);
+  });
+
+  it('keeps what it already knows about a surviving child where the census is silent', () => {
+    // Elapsed time must not reset on a re-census, and a label adopted at
+    // spawn must not vanish because the census did not repeat it.
+    const before = reduce([
+      { kind: 'child-label', toolUseId: 't1', agentType: 'Explore', description: 'Audit CI', at: 1 },
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1_000 },
+    ]);
+    const after = reconcileCensus(before, {
+      live: [{ id: 'c1', agentType: null, description: null, startedAt: null }],
+      completed: [],
+      at: 9_000,
+    });
+    expect(after.children).toEqual([
+      { id: 'c1', agentType: 'Explore', description: 'Audit CI', startedAt: 1_000 },
+    ]);
+    expect(after).toBe(before);
+  });
+
+  it('withdraws a child the census omits without tombstoning it', () => {
+    // Withdrawal is not completion: the id may genuinely start again.
+    const before = reduce([
+      { kind: 'child-start', childId: 'c1', agentType: null, at: 1 },
+      { kind: 'child-start', childId: 'c2', agentType: null, at: 2 },
+    ]);
+    const after = reconcileCensus(before, { live: [child('c2', 2)], completed: [], at: 3 });
+    expect(after.children.map(c => c.id)).toEqual(['c2']);
+    expect(after.endedChildIds).toEqual([]);
+    const again = applyHarnessEvent(after, {
+      kind: 'child-start',
+      childId: 'c1',
+      agentType: null,
+      at: 4,
+    });
+    expect(again.children.map(c => c.id)).toEqual(['c2', 'c1']);
+  });
+
+  it('is newer evidence than a tombstone — a listed child is live', () => {
+    const before = reduce([{ kind: 'child-end', childId: 'resumed' }]);
+    const after = reconcileCensus(before, { live: [child('resumed', 1)], completed: [], at: 2 });
+    expect(after.children.map(c => c.id)).toEqual(['resumed']);
+    expect(after.endedChildIds).toEqual([]);
+  });
+
+  it('returns the same reference for a census that changes nothing', () => {
+    const before = reduce([
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1 },
+    ]);
+    expect(reconcileCensus(before, { live: [child('c1', 1)], completed: [], at: 9 })).toBe(before);
+    expect(reconcileCensus(EMPTY_LEDGER, { live: [], completed: [], at: 9 })).toBe(EMPTY_LEDGER);
+  });
+
+  it('ignores a duplicate id inside one census', () => {
+    const state = reconcileCensus(EMPTY_LEDGER, {
+      live: [child('c1', 1), child('c1', 2)],
+      completed: [],
+      at: 3,
+    });
+    expect(state.children).toHaveLength(1);
+  });
+
+  it('a boundary applies itself, then the census it carries', () => {
+    const before = reduce([
+      { kind: 'turn-start' },
+      { kind: 'child-start', childId: 'lost', agentType: null, at: 1 },
+    ]);
+    const after = applyHarnessEvent(before, {
+      kind: 'turn-end',
+      census: { live: [child('c9')], completed: [], at: 2 },
+    });
+    expect(after.ownTurn).toBe('available');
+    expect(after.children.map(c => c.id)).toEqual(['c9']);
+  });
+
+  it('a child-end with a census ends that child and reconciles the rest', () => {
+    const before = reduce([
+      { kind: 'child-start', childId: 'c1', agentType: null, at: 1 },
+      { kind: 'child-start', childId: 'c2', agentType: null, at: 2 },
+      { kind: 'child-start', childId: 'c3', agentType: null, at: 3 },
+    ]);
+    // c3's stop was lost; the harness's census on c1's stop no longer lists it
+    const after = applyHarnessEvent(before, {
+      kind: 'child-end',
+      childId: 'c1',
+      census: { live: [child('c2')], completed: [], at: 4 },
+    });
+    expect(after.children.map(c => c.id)).toEqual(['c2']);
+    expect(after.endedChildIds).toEqual(['c1']);
   });
 });

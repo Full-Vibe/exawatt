@@ -11,12 +11,15 @@ import {
   inspectOpencodeLaunchEnvironment,
 } from './pty/agent-source-registry';
 import { ContextSummarizer, type GoalVisual } from './pty/context-summarizer';
-import { createDiagnosticsLog } from './diagnostics-log';
+import {
+  createDiagnosticsLog,
+  type DiagnosticRecorder,
+} from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
 import { delegationMonitor } from './harness-events/delegation-monitor';
 import { codexDelegationObserver } from './harness-events/codex-app-server';
-import type { HarnessEvent } from './harness-events/delegation-state';
+import { wireReportedTurnTruth } from './harness-events/turn-truth';
 import {
   ClosedSessionLedger,
   type ClosedSessionEntry,
@@ -80,7 +83,9 @@ setAgentModelCatalogCache(
  */
 export function registerPtyIPC(
   distribution: DistributionContractV2,
-  previousRunInterrupted = false
+  previousRunInterrupted = false,
+  /** `logs/main.jsonl`; a no-op keeps every diagnostic from being load-bearing */
+  diagnostics: DiagnosticRecorder = () => {}
 ): void {
   const contextSummarizer = new ContextSummarizer({ distribution });
   activeContextSummarizer = contextSummarizer;
@@ -184,43 +189,16 @@ export function registerPtyIPC(
   // quiescence. A source without the capability simply never publishes.
   delegationMonitor.attach(harnessEventChannel, ptySessions);
   codexDelegationObserver.attach(ptySessions, delegationMonitor);
-  // One reported-truth source for every inference guard. The monitor
-  // subscribes to the record, not to a boolean, so a new reported fact
-  // (D4's operator gate) corrects inference without a second wire.
-  attentionMonitor.setReportedTurnSource(id => delegationMonitor.get(id));
-  delegationMonitor.on('harness-event', (id: string, event: HarnessEvent) => {
-    // A reported turn boundary is stronger evidence than inferred quiescence,
-    // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
-    // CHILD opens by returning its result: no keystroke precedes it, so
-    // nothing else would reopen the turn.
-    if (event.kind === 'turn-start') attentionMonitor.noteHarnessTurnStart(id);
-    if (event.kind === 'turn-end') attentionMonitor.noteHarnessTurnEnd(id);
-    // An Agent waiting on a question, a permission, or an elicitation is
-    // neither working nor finished (D4). Reported, because no amount of
-    // staring at the byte stream can tell a pause from a gate.
-    if (event.kind === 'blocked') attentionMonitor.noteHarnessBlocked(id);
-    if (event.kind === 'unblocked') attentionMonitor.noteHarnessUnblocked(id);
-    // The result of a DELEGATING Session arrives when its last child stops,
-    // not when its own turn ended — that boundary was deliberately withheld
-    // while the team was still working. Without this, a Session that fans out
-    // and finishes never enters the attention queue at all, which is exactly
-    // the Session most likely to be worth returning to. The delegation monitor
-    // subscribes first, so its state is already current here.
-    if (
-      event.kind === 'child-end' &&
-      !delegationMonitor.isBusy(id) &&
-      delegationMonitor.get(id)?.ownTurn === 'available'
-    ) {
-      attentionMonitor.noteHarnessTurnEnd(id);
-    }
-  });
-  // Inference reclaiming a report that will never be closed (D4). Claude Code
-  // opens a turn with `UserPromptSubmit` and emits NOTHING when the operator
-  // aborts it, so without this the interrupted tab spins "working" until the
-  // next prompt. Applied as an ordinary `turn-end` so the delegation record
-  // stays owned by one module and every surface changes once, together.
-  attentionMonitor.on('reported-turn-stale', (id: string) => {
-    delegationMonitor.apply(id, { kind: 'turn-end' });
+  // Reported truth and inferred truth correct each other through ONE wiring
+  // (D4/D7), shared with the turn-truth pipeline contract so what is tested is
+  // what ships. A census that expires by inference leaves evidence in
+  // `logs/main.jsonl` (BUG-081).
+  wireReportedTurnTruth({
+    attention: attentionMonitor,
+    delegation: delegationMonitor,
+    record: diagnostics,
+    harnessOf: id =>
+      ptySessions.list().find(session => session.id === id)?.harness ?? null,
   });
   delegationMonitor.on('delegation', (id: string, delegation: unknown) => {
     broadcast('pty:delegation', { id, delegation });

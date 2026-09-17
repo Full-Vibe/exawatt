@@ -1478,7 +1478,10 @@ async function bootstrapCommandSurface(): Promise<void> {
   runtime.connectedSourcesIpc.registerConnectedSourcesIPC();
   runtime.ptyIpc.registerPtyIPC(
     distribution.contract,
-    recovery.previousRunInterrupted
+    recovery.previousRunInterrupted,
+    // Late-bound on purpose: `mainDiagnostics` opens with `app.whenReady`, and
+    // a recorder captured by value here would be the boot-time no-op forever.
+    (event, fields) => mainDiagnostics(event, fields)
   );
   runtime.roadmapIpc.registerRoadmapIPC();
   runtime.projectIpc.registerProjectIPC();

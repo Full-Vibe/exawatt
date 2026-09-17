@@ -999,6 +999,234 @@ Sequencing: after the design pass, and behind the active daily-driver arc
 (ENG-015 / ENG-016 / ENG-021). Feeds ENG-004's delegation-topology mandate and
 ENG-008 Consumption; the source-capability boundary belongs to ENG-003.
 
+## D7 Census coverage and expiry — landed 2026-09-16 (BUG-081)
+
+**A reported child is a claim with coverage and an expiry, not a latch.** One
+`census` owner now serves Codex's D5 snapshot and Claude Code's own boundary
+census, and a census nothing vouches for expires instead of holding a tab's
+spinner until the process exits.
+
+### The report
+
+Product-feedback `5d35a563`, 2026-08-18: "this Claude Code Fable tab looks
+pretty finished; yet the tab shows as blue spinning with two subagent dots."
+The inverse of BUG-001 on the arm decision `0018` had exempted from
+self-correction.
+
+### Root cause, established before building
+
+Two independent read-only reviews of master, then a ledger probe over the
+compiled monitors wired exactly as `pty-ipc` wired them. BUG-008's two repairs
+were intact. The defect was the one exemption D4's review had written for
+children: `silenceIsExplained` and `reclaimStaleReportedTurn` refused to
+reclaim while `children.length > 0`, and the parent's `turn-end` deliberately
+kept `children`, so the only exits were `SubagentStop` or process exit. On
+master, `turn-start`, `child-start x2`, then silence:
+
+```
+scenario: abort (no Stop, no SubagentStop — an interrupted parent)
+      0ms  child-start c1, c2   children=2 ownTurn=generating live=true  -> active
+  12000ms  silence, +12s        children=2 ownTurn=generating live=true  -> active
+ 600000ms  silence, +600s       children=2 ownTurn=generating live=true  -> active
+scenario: lost-stop (parent Stop arrived, both SubagentStop lost)
+ 600000ms  silence, +600s       children=2 ownTurn=available live=true   -> active
+```
+
+A stale census after a resume is structurally impossible (per-launch UUIDs,
+ledger dropped on exit, post-drop stragglers ignored), which left the
+roadmap's second hypothesis: a `SubagentStop` that never arrives.
+
+### Measured on Claude Code 2.1.270 — 2026-09-13, the real harness
+
+A pty-driven probe launched the installed `claude` under Exawatt's exact
+injected settings (`claudeHookSettings` from the compiled adapter) and recorded
+every hook POST with a timestamp plus the PTY's bytes per second. Four runs.
+
+Natural completion, two `Explore` children counting files:
+
+```
+   6.11  UserPromptSubmit
+  11.06  PreToolUse[Agent]                      spawn label
+  12.15  SubagentStart  a912…  Explore
+  13.99  SubagentStart  a9fd…  Explore
+  17.01  Stop           background_tasks: [a912 running, a9fd running]
+  18.59  SubagentStop   a912…  background_tasks: [a912, a9fd]   (pre-removal)
+  18.65  SubagentStop   a385…  agent_type: ''   (an internal helper; never started)
+  19.65  UserPromptSubmit                        the child's result reopens the turn
+  20.31  SubagentStop   a9fd…  background_tasks: [a9fd]
+  21.52  Stop           background_tasks: []
+```
+
+Three facts fall out. Subagents run in the background by default now, so the
+parent's `Stop` precedes its children's stops (the D1 pattern, still).
+Every `Stop` and `SubagentStop` carries `background_tasks`: `{id, type,
+status, description, agent_type}` per running task, subagents and background
+shells alike, with a `SubagentStop`'s list taken before the stopping agent is
+removed. And `SubagentStop` fires for internal helper agents (prompt
+suggestions) that never reported a start; the reducer's tombstone absorbs
+those, as designed.
+
+Byte rates, idle at the prompt (30 s windows, one integer per second):
+
+```
+no tasks running          [0, 0, 44, 0, 0, 0, 0, 0, 0, 0, 0, …]       total 44
+two background children   [315, 209, 164, 211, 145, 203, 237, 87, 142,
+                           4368, 726, 4982, 1064, 711, 710, 876, …]  total 26316
+after everything, no tasks [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …]   total 0
+```
+
+A parent with a live child is never byte-silent — the task footer redraws
+every second, 87 B/s at the quietest second — and an idle prompt with none is
+0 B/s. That is the whole coverage argument, and it is measured, not assumed.
+
+The interrupt, ESC pressed 0.2 s after the second `SubagentStart` with the
+parent still generating:
+
+```
+  15.24  ESC                        -> "Interrupted · What should Claude do instead?"
+  35.24  20 s later: parentStop=0  realSubagentStop=0
+         bytes/s [331, 183, 239, 304, 239, 301, 123, 182, 181, 313, …]
+  86.58  SubagentStop  a042…        the children SURVIVED the interrupt
+  89.48  UserPromptSubmit            its result reopens the parent turn
+  94.40  Stop           background_tasks: [a160 running]
+  97.07  SubagentStop  a160…
+  98.53  UserPromptSubmit
+ 100.16  Stop           background_tasks: []
+```
+
+An aborted turn emits no boundary at all, confirming the 2.1.220 measurement.
+On this version the background children outlive the interrupt and keep the
+footer ticking, so the two dots are TRUE for another 70 s and the tab lands
+when they return; a version, an ESC path, or a `/tasks` kill that ends them
+without a `SubagentStop` leaves a census nothing vouches for, which is the
+case the expiry exists for. The loopback hook's 2 s fail-open timeout makes a
+lost stop an ordinary event on any version.
+
+### The contract
+
+- **One owner.** `reconcileCensus` in `delegation-state.ts` and the `census`
+  event the `DelegationMonitor` applies. Codex's D5 snapshot
+  (`reconcileReportedChildren`, BUG-093) now routes through it; a Claude
+  `turn-end` or `child-end` carries the census the same payload reported and
+  the reducer applies the boundary first, then the census, so a subscriber
+  reading the record on the boundary already sees the reconciled children.
+  A census admits a child the ledger never saw start (a lost
+  `SubagentStart`), keeps what the ledger knows about a surviving child where
+  the census is silent (elapsed never resets), overrides a tombstone (a
+  snapshot is newer evidence than the delta it tombstoned), and withdraws a
+  child the census omits without completing it. Only a child the source lists
+  as `completed` may raise a result.
+- **Coverage by the harness.** `claudeHookEvent` reads `background_tasks`
+  off every `Stop` and `SubagentStop` (subagents only, `running` live,
+  `completed` completed, anything else withdrawn; the `SubagentStop`'s own
+  `agent_id` excluded). A lost stop cannot outlive the parent's next
+  boundary; a lost start cannot hide.
+- **Coverage by the PTY.** Between boundaries the parent renders its running
+  team continuously. `reclaimStaleReportedTurn` now fires when silence
+  crosses the existing stale bound (`REPORTED_TURN_STALE_FACTOR` x `quietMs`,
+  12 s) with no operator gate open and either `ownTurn === 'generating'` or
+  children reported — the same instant, one condition, so the queue and the
+  light cannot disagree. The gate stays exempt.
+- **Expiry withdraws, never completes.** `DelegationMonitor.reclaimStaleReport`
+  applies one `turn-end` with an empty census: the turn closes and the
+  children are withdrawn as one publication, no `child-end` is emitted for
+  them, and the parent's already-reported `Stop` then delivers the result it
+  had withheld (`noteHarnessTurnEnd`); a parent still reported generating is
+  raised the ordinary way from its own burst.
+- **Evidence.** `wireReportedTurnTruth` writes `delegation.census-expired`
+  to `logs/main.jsonl` — session id, harness, child ids, agent types, the
+  parent's reported turn, `quietMs`, `staleMs` — through
+  `boundDiagnosticRecorder` (30/min, 500/run, one `.suppressed` and one
+  `.exhausted` line), so the next report is a file read.
+- **Unchanged on purpose.** Byte-quiescence thresholds, decision `0018`'s
+  latch, the no-children reclaim, the gate exemption, and the no-report arm.
+
+After the fix, the same ledger probe over the shipped wiring:
+
+```
+scenario: abort
+   5000ms  silence, +5s    children=2 ownTurn=generating live=true  -> active
+  12000ms  silence, +12s   children=0 ownTurn=available  live=false -> result, attention turn-end
+  [12000ms] delegation.census-expired {"childIds":["c1","c2"],"ownTurn":"generating","quietMs":12000,"staleMs":12000,…}
+scenario: lost-stop
+  12000ms  silence, +12s   children=0 ownTurn=available  live=false -> result, attention turn-end
+scenario: background (the PTY keeps speaking)
+ 120000ms  +120s           children=2 ownTurn=available  live=true  -> active
+ 120000ms  child-end c1, c2 (SubagentStop)   children=0 -> result, attention turn-end
+```
+
+### Where the wiring lives now
+
+The coupling between the two monitors moved out of `pty-ipc` into
+`electron/main/harness-events/turn-truth.ts` (`wireReportedTurnTruth`).
+`pty-ipc` runs it in the app with `main.jsonl` as the sink;
+`turn-truth-pipeline.test.ts` runs the same function over the same monitors
+and the real render derivation, so the contract under test is the contract
+that ships rather than a hand-mirrored copy — the drift the D4 review found
+when a liveness rule was written on both sides of the IPC. An ENG-039
+M1-shaped seam, taken as a bounded refactor demanded by the repair.
+
+### Verification
+
+- `turn-truth-pipeline.test.ts`, both directions, mutation-verified. Spinner
+  lands: "a child whose end the harness never reports cannot spin the tab
+  forever (BUG-081)". No premature green: "a child keeps the turn open for as
+  long as the harness keeps rendering it" (three minutes of 87-byte footer
+  ticks read `active` throughout; the child's own stop settles it). Restoring
+  indefinite trust of children fails the first and four others; freezing the
+  coverage clock while children are reported fails the second and four
+  others; the tree as landed passes all. Plus: the lost stop healed by the
+  next boundary with nothing logged, a census admitting a lost start, a
+  `SubagentStop` census that does not resurrect its own child, and the
+  measured 2.1.270 interrupt sequence end to end.
+- `attention-monitor.test.ts` census coverage: expiry with evidence at the
+  bound, same instant under a reported-open turn, ten minutes of rendering
+  never expires, a gate never expires, nothing reported has nothing to
+  expire.
+- `delegation-state.test.ts` census reconciliation and
+  `delegation-monitor.test.ts` census publication (one publication on
+  reclaim, boundary census applied before subscribers see the boundary, no
+  double `child-end`); `claude-hooks.test.ts` census parsing from the
+  measured payloads; `turn-truth.test.ts` for the evidence trail and the
+  recorder bounds.
+- The fixture harness (`scripts/lib/harness-event-fixture.mjs`) now carries
+  the measured census on `stop`/`done`, renders the measured footer every
+  second while a child is live, and grew `halt` (the interrupt: children die,
+  nothing posted) and `lose <id>` (a stop the loopback never received).
+  `eval:electron:delegation` drives the interrupt (dots clear, Session lands,
+  `main.jsonl` names b1/b2 and the silence), the covered child (11 s of
+  rendering, never expired, no result raised, settles on its own stop), and
+  the lost stop (retired by the next boundary's census with nothing logged) —
+  all green on the real app, alongside every prior D1/D3a/D5 check and
+  `eval:electron:turn-truth` unchanged.
+
+### Deliberately not built
+
+- Polling the child's transcript on disk for liveness. The harness reports
+  its own delegation and Exawatt does not go looking for it (D-A1); the
+  census on every boundary plus the PTY between boundaries is coverage the
+  harness itself provides.
+- Process-tree or CPU idleness as evidence. Forbidden for Codex by D5 and
+  no better here; the PTY already carries the harness's own rendering.
+- A longer, children-specific stale bound. The measured margin (a 1 Hz
+  footer against a 12 s bound) does not justify a second instant on which
+  the queue and the light could disagree; if a future harness renders a
+  running team silently, the failure is bounded to the stale bound,
+  self-corrects on the child's return, and is named in `main.jsonl`.
+- Widening any timeout. The expiry fires on evidence the harness stopped
+  rendering, never on elapsed time since the report.
+
+### Adjacent, not taken
+
+BUG-133 (an agent cannot say where Exawatt shows its subagents; Codex
+0.153.4 refuses `thread/items/list`) and BUG-134 (Fleet drops children past
+the aggregate budget and under filters), both filed 2026-09-15/16. Their
+owner should design against the `census` event as the shared owner: a
+narrower per-child Codex withdrawal is a census that omits the ambiguous
+child; "unobservable" is a coverage declaration the census does not carry
+and needs a new fact. `delegationIsLive` is unchanged (a zero-child record
+still publishes `null`) but moved within `delegation-state.ts`.
+
 ## D6 evidence — a descendant can disappear from Fleet (2026-08-20)
 
 Feedback `f472e9ce-8389-4678-b631-e8b12b7e0e63` and exact duplicate

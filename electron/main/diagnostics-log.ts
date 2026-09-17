@@ -30,6 +30,55 @@ function clip(value: unknown): unknown {
   return redactDiagnosticValue(value, 0, MAX_TEXT_LENGTH);
 }
 
+interface DiagnosticRecorderBounds {
+  perMinute: number;
+  perRun: number;
+  now?: () => number;
+}
+
+/**
+ * Cap a recorder the way the main-thread stall trace caps itself: at most
+ * `perMinute` records a minute and `perRun` for the life of the process, with
+ * one `<event>.suppressed` line when the minute cap bites and one
+ * `<event>.exhausted` line when the run cap does, then nothing. Standing
+ * instrumentation must never be able to turn a misbehaving fleet into a log
+ * that grows without bound.
+ */
+export function boundDiagnosticRecorder(
+  record: DiagnosticRecorder,
+  { perMinute, perRun, now = Date.now }: DiagnosticRecorderBounds
+): DiagnosticRecorder {
+  let windowStartedAt = 0;
+  let windowCount = 0;
+  let runCount = 0;
+  let suppressionNoted = false;
+  let exhausted = false;
+  return (event, fields = {}) => {
+    if (exhausted) return;
+    if (runCount >= perRun) {
+      exhausted = true;
+      record(`${event}.exhausted`, { perRun });
+      return;
+    }
+    const at = now();
+    if (at - windowStartedAt >= 60_000) {
+      windowStartedAt = at;
+      windowCount = 0;
+      suppressionNoted = false;
+    }
+    if (windowCount >= perMinute) {
+      if (!suppressionNoted) {
+        suppressionNoted = true;
+        record(`${event}.suppressed`, { perMinute });
+      }
+      return;
+    }
+    windowCount += 1;
+    runCount += 1;
+    record(event, fields);
+  };
+}
+
 export function createDiagnosticsLog(
   logPath: string,
   maxBytes = DEFAULT_MAX_BYTES

@@ -24,6 +24,15 @@ import { claudeProbeJs, codexProbeJs } from './harness-probe-fixture.mjs';
  *   batch                PostToolBatch — the granted-permission release
  *   say <text>           plain stdout, no hook — pure terminal bytes
  *   bell                 a BARE BEL, no hook — Claude Code's idle-prompt nudge
+ *   halt                 the interrupt that kills children WITHOUT any hook
+ *                        (measured: an aborted turn emits no boundary, ENG-023 D7)
+ *   lose <id>            a SubagentStop the loopback never receives
+ *
+ * Census and rendering follow what was measured on Claude Code 2.1.270
+ * (2026-09-13): every `Stop`/`SubagentStop` carries `background_tasks`, the
+ * harness's own list of running subagents (a `SubagentStop`'s list is taken
+ * before the stopping agent is removed), and while any child is live the TUI
+ * renders a task footer every second, so the parent PTY is never silent.
  */
 export function createHarnessFixture(prefix, { codexProtocol = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -110,6 +119,36 @@ async function post(body) {
 }
 let buffer = '';
 let labelSeq = 0;
+// The harness's own census of running subagents, as \`background_tasks\`
+// reports it. \`Stop\` lists it as-is; \`SubagentStop\` lists it BEFORE the
+// stopping agent is removed, exactly as measured on 2.1.270.
+const live = new Map();
+// The census description IS the spawn label the Agent tool was called with
+// (measured: identical strings on PreToolUse and background_tasks), so a
+// staged label rides its child into every census that names it.
+const pendingLabels = [];
+const census = () =>
+  [...live].map(([id, description]) => ({
+    id,
+    type: 'subagent',
+    status: 'running',
+    ...(description ? { description } : {}),
+    agent_type: 'Explore',
+  }));
+// The task footer: while any child is live, the real TUI redraws its
+// "N background agents" line every second (measured: never a silent second,
+// 87 B/s at the quietest). Silence with children reported is therefore the
+// evidence the census lost coverage, and this is what makes the fixture
+// honest about it in both directions.
+let footerStartedAt = 0;
+setInterval(() => {
+  if (live.size === 0) return;
+  const elapsed = Math.round((Date.now() - footerStartedAt) / 1000);
+  process.stdout.write(
+    '\\r\\x1b[2K\u2733 ' + live.size + ' background agent' + (live.size === 1 ? '' : 's') +
+      ' \u00b7 ' + elapsed + 's'
+  );
+}, 1000).unref();
 process.stdin.on('data', async chunk => {
   buffer += chunk.toString();
   let index;
@@ -119,8 +158,11 @@ process.stdin.on('data', async chunk => {
     const space = line.indexOf(' ');
     const command = space === -1 ? line : line.slice(0, space);
     const rest = space === -1 ? '' : line.slice(space + 1);
-    if (command === 'spawn')
+    if (command === 'spawn') {
+      if (live.size === 0) footerStartedAt = Date.now();
+      live.set(rest, pendingLabels.shift() ?? null);
       await post({ hook_event_name: 'SubagentStart', agent_id: rest, agent_type: 'Explore' });
+    }
     else if (command === 'label') {
       // The real payload shape from PreToolUse matched to Agent|Task: the
       // operator-legible description plus the private prompt, which must
@@ -128,6 +170,7 @@ process.stdin.on('data', async chunk => {
       const cut = rest.indexOf(' ');
       const type = cut === -1 ? rest : rest.slice(0, cut);
       const desc = cut === -1 ? '' : rest.slice(cut + 1);
+      pendingLabels.push(desc);
       labelSeq += 1;
       await post({
         hook_event_name: 'PreToolUse',
@@ -136,10 +179,19 @@ process.stdin.on('data', async chunk => {
         tool_input: { description: desc, subagent_type: type, prompt: 'PRIVATE_PROMPT_BODY' },
       });
     }
-    else if (command === 'done')
-      await post({ hook_event_name: 'SubagentStop', agent_id: rest, agent_type: 'Explore', last_assistant_message: 'PRIVATE_REPORT_BODY' });
+    else if (command === 'done') {
+      const background_tasks = census();
+      live.delete(rest);
+      await post({ hook_event_name: 'SubagentStop', agent_id: rest, agent_type: 'Explore', last_assistant_message: 'PRIVATE_REPORT_BODY', background_tasks });
+    }
     else if (command === 'turn') await post({ hook_event_name: 'UserPromptSubmit' });
-    else if (command === 'stop') await post({ hook_event_name: 'Stop' });
+    else if (command === 'stop') await post({ hook_event_name: 'Stop', background_tasks: census() });
+    // ESC on a real parent: the children die with the turn and NOTHING is
+    // posted — not Stop, not SubagentStop. The footer stops with them.
+    else if (command === 'halt') live.clear();
+    // A SubagentStop the loopback never received: the child is gone, the
+    // harness moves on, Exawatt heard nothing.
+    else if (command === 'lose') live.delete(rest);
     else if (command === 'ask')
       await post({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'toolu_ask' });
     else if (command === 'answer')

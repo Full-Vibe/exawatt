@@ -243,3 +243,109 @@ describe('claudeHookEvent', () => {
     expect(claudeHookEvent({ hook_event_name: 42 }, 1)).toBeNull();
   });
 });
+
+/**
+ * The census Claude Code attaches to its boundaries (ENG-023 D7). Shapes
+ * measured on 2.1.270, 2026-09-13: `background_tasks` on every `Stop` and
+ * `SubagentStop`, subagents and background shells alike, and a
+ * `SubagentStop`'s list still naming the child it reports ending.
+ */
+describe('claudeHookEvent census', () => {
+  const tasks = [
+    {
+      id: 'ad50fdae07f15e180',
+      type: 'subagent',
+      status: 'running',
+      description: 'Count .md files after sleep',
+      agent_type: 'Explore',
+    },
+    {
+      id: 'a1d18df24598be411',
+      type: 'subagent',
+      status: 'running',
+      description: 'Count .txt files after sleep',
+      agent_type: 'Explore',
+    },
+    {
+      id: 'b45hgpvbg',
+      type: 'shell',
+      status: 'running',
+      description: 'Wait 60 seconds in background',
+      command: 'sleep 60',
+    },
+    { id: 'done1', type: 'subagent', status: 'completed', agent_type: 'Explore' },
+    { id: 'dead1', type: 'subagent', status: 'failed', agent_type: 'Explore' },
+  ];
+
+  it('reads the running subagents off a Stop as the live census, shells excluded', () => {
+    expect(
+      claudeHookEvent({ hook_event_name: 'Stop', background_tasks: tasks }, 7)
+    ).toEqual({
+      kind: 'turn-end',
+      census: {
+        live: [
+          {
+            id: 'ad50fdae07f15e180',
+            agentType: 'Explore',
+            description: 'Count .md files after sleep',
+            startedAt: null,
+          },
+          {
+            id: 'a1d18df24598be411',
+            agentType: 'Explore',
+            description: 'Count .txt files after sleep',
+            startedAt: null,
+          },
+        ],
+        completed: ['done1'],
+        at: 7,
+      },
+    });
+  });
+
+  it('excludes from a SubagentStop census the child that payload reports ending', () => {
+    const event = claudeHookEvent(
+      {
+        hook_event_name: 'SubagentStop',
+        agent_id: 'ad50fdae07f15e180',
+        agent_type: 'Explore',
+        background_tasks: tasks,
+        last_assistant_message: 'PRIVATE_REPORT_BODY',
+      },
+      7
+    );
+    expect(event).toMatchObject({ kind: 'child-end', childId: 'ad50fdae07f15e180' });
+    expect(
+      event && 'census' in event ? event.census?.live.map(c => c.id) : null
+    ).toEqual(['a1d18df24598be411']);
+    expect(JSON.stringify(event)).not.toContain('PRIVATE_REPORT_BODY');
+  });
+
+  it('carries no census when the harness sent none', () => {
+    const event = claudeHookEvent({ hook_event_name: 'Stop' }, 1);
+    expect(event).toEqual({ kind: 'turn-end' });
+    expect(event && 'census' in event).toBe(false);
+    expect(
+      claudeHookEvent({ hook_event_name: 'Stop', background_tasks: 'nope' }, 1)
+    ).toEqual({ kind: 'turn-end' });
+  });
+
+  it('never invents a child from a malformed entry, and clips a census label', () => {
+    const event = claudeHookEvent(
+      {
+        hook_event_name: 'Stop',
+        background_tasks: [
+          null,
+          'string',
+          { type: 'subagent' },
+          { id: 'ok', type: 'subagent', description: 'x'.repeat(500) },
+          { id: 'ok', type: 'subagent' },
+        ],
+      },
+      1
+    );
+    const live = event && 'census' in event ? event.census?.live : undefined;
+    expect(live?.map(c => c.id)).toEqual(['ok']);
+    expect([...(live?.[0].description ?? '')].length).toBe(140);
+  });
+});

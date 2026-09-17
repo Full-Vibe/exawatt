@@ -15,7 +15,12 @@
  * MATCHED to `AskUserQuestion` alone, so the harness posts for the one tool
  * whose entire purpose is to stop and wait for a human — and for nothing else.
  */
-import type { HarnessEvent, SessionBlockedReason } from './delegation-state';
+import type {
+  CensusChild,
+  HarnessEvent,
+  ReportedChildCensus,
+  SessionBlockedReason,
+} from './delegation-state';
 
 /** Kept low on purpose: every hook runs INSIDE the harness turn, so this is
  *  the operator's latency, not ours. A dead listener fails open. */
@@ -130,6 +135,68 @@ function readString(
   return typeof value === 'string' && value ? value : null;
 }
 
+/** Truncate by code POINT, not UTF-16 unit: slicing mid-surrogate would put a
+ *  lone surrogate on the wire, rendering as `�…`. */
+function clipLabel(label: string): string {
+  const points = [...label];
+  return points.length > MAX_LABEL_LENGTH
+    ? `${points.slice(0, MAX_LABEL_LENGTH - 1).join('')}…`
+    : label;
+}
+
+/**
+ * The census Claude Code attaches to its own boundaries (ENG-023 D7).
+ *
+ * Measured on Claude Code 2.1.270: every `Stop` and every `SubagentStop`
+ * carries `background_tasks`, the harness's own account of what is running at
+ * that instant — subagents and background shells alike, each with `id`,
+ * `type`, `status`, `description` and, for subagents, `agent_type`. It is the
+ * same fact Codex's descendant snapshot gives: the source's WHOLE live set,
+ * not a delta, so a child whose `SubagentStop` was lost cannot outlive the
+ * next boundary, and a child whose `SubagentStart` was lost cannot hide.
+ *
+ * On `SubagentStop` the list is taken BEFORE the stopping agent is removed —
+ * it still names the child whose end the same payload reports — so that id is
+ * excluded here rather than resurrected by its own obituary. Only a status the
+ * harness spells `completed` may offer a result; anything else that is not
+ * `running` (failed, killed, interrupted) is withdrawn, never completed. A
+ * payload without the field — an older harness — carries no census at all,
+ * and the ledger's delta bookkeeping stands.
+ */
+function claudeCensus(
+  record: Record<string, unknown>,
+  at: number,
+  excludeId: string | null = null
+): ReportedChildCensus | null {
+  const tasks = record['background_tasks'];
+  if (!Array.isArray(tasks)) return null;
+  const live: CensusChild[] = [];
+  const completed: string[] = [];
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    if (!task || typeof task !== 'object') continue;
+    const entry = task as Record<string, unknown>;
+    if (readString(entry, 'type') !== 'subagent') continue;
+    const id = readString(entry, 'id');
+    if (!id || id === excludeId || seen.has(id)) continue;
+    seen.add(id);
+    const status = readString(entry, 'status');
+    if (status === 'completed') {
+      completed.push(id);
+      continue;
+    }
+    if (status !== null && status !== 'running') continue;
+    const description = readString(entry, 'description');
+    live.push({
+      id,
+      agentType: readString(entry, 'agent_type'),
+      description: description ? clipLabel(description) : null,
+      startedAt: null,
+    });
+  }
+  return { live, completed, at };
+}
+
 /**
  * Normalize one hook payload into the source-agnostic event vocabulary.
  *
@@ -155,8 +222,11 @@ export function claudeHookEvent(
   switch (name) {
     case 'UserPromptSubmit':
       return insideChild ? null : { kind: 'turn-start' };
-    case 'Stop':
-      return insideChild ? null : { kind: 'turn-end' };
+    case 'Stop': {
+      if (insideChild) return null;
+      const census = claudeCensus(record, at);
+      return census ? { kind: 'turn-end', census } : { kind: 'turn-end' };
+    }
 
     // Operator gates are NOT gated on `insideChild`, unlike turn boundaries.
     // A child's turn is not its parent's, but a child's question is: there is
@@ -175,17 +245,11 @@ export function claudeHookEvent(
         const inputRecord = input as Record<string, unknown>;
         const description = readString(inputRecord, 'description');
         if (!description) return null;
-        // Truncate by code POINT, not UTF-16 unit: slicing mid-surrogate
-        // would put a lone surrogate on the wire, rendering as `�…`.
-        const points = [...description];
         return {
           kind: 'child-label',
           toolUseId,
           agentType: readString(inputRecord, 'subagent_type'),
-          description:
-            points.length > MAX_LABEL_LENGTH
-              ? `${points.slice(0, MAX_LABEL_LENGTH - 1).join('')}…`
-              : description,
+          description: clipLabel(description),
           at,
         };
       }
@@ -228,7 +292,10 @@ export function claudeHookEvent(
     case 'SubagentStop': {
       const childId = readString(record, 'agent_id');
       if (!childId) return null;
-      return { kind: 'child-end', childId };
+      const census = claudeCensus(record, at, childId);
+      return census
+        ? { kind: 'child-end', childId, census }
+        : { kind: 'child-end', childId };
     }
     default:
       return null;

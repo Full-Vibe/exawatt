@@ -9,7 +9,7 @@
  * as a finished one. The fixture harness is shared with the turn-truth eval —
  * see `scripts/lib/harness-event-fixture.mjs` for why it is not a mock.
  */
-import { rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   startAgentFromLauncher,
@@ -209,6 +209,109 @@ try {
       );
       check('a child report body never reaches a surface', !leaked);
 
+      // --- the census is a claim with coverage, not a latch (D7, BUG-081) --
+      // Three scenarios measured on Claude Code 2.1.270 (2026-09-13). The
+      // quiescence window is 1200ms here, so the stale bound is 3.6s.
+      const expiries = () => {
+        const log = join(fixture.userData, 'logs', 'main.jsonl');
+        if (!existsSync(log)) return [];
+        return readFileSync(log, 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map(line => JSON.parse(line))
+          .filter(entry => entry.event === 'delegation.census-expired');
+      };
+
+      // (1) An interrupted parent: ESC kills the children and the harness
+      // posts nothing — not Stop, not SubagentStop. The operator's exact tab.
+      await send('turn');
+      await send('spawn b1');
+      await send('spawn b2');
+      await until(
+        async () => (await dots.getAttribute('data-delegation')) === '2',
+        'two children before the interrupt'
+      );
+      await send('halt');
+      await until(
+        async () => (await dots.count()) === 0,
+        'an interrupted census to expire',
+        15_000
+      );
+      check('children the harness never closed do not spin the tab forever', true);
+      await until(
+        async () => (await statusOf()) === 'done',
+        'the interrupted Session to land'
+      );
+      check('the interrupted Session lands as a result', true);
+      const interrupted = expiries().find(
+        entry =>
+          Array.isArray(entry.childIds) &&
+          entry.childIds.includes('b1') &&
+          entry.childIds.includes('b2')
+      );
+      check(
+        'main.jsonl names the expired children and the silence that expired them',
+        !!interrupted &&
+          interrupted.sessionId === claude.id &&
+          interrupted.harness === 'claude' &&
+          typeof interrupted.quietMs === 'number' &&
+          interrupted.quietMs >= interrupted.staleMs
+      );
+
+      // (2) The premature-green guard: a live child keeps the footer ticking,
+      // and no amount of that may read as a result.
+      await send('turn');
+      await send('spawn c1');
+      await send('stop');
+      await until(
+        async () => (await dots.getAttribute('data-delegation')) === '1',
+        'one covered child'
+      );
+      // three stale bounds of rendering, well past where silence would expire
+      await page.waitForTimeout(11_000);
+      const covered = (await sessions()).find(s => s.id === claude.id);
+      check(
+        'a child the harness keeps rendering is never expired',
+        (await dots.getAttribute('data-delegation')) === '1' &&
+          (await statusOf()) === 'working' &&
+          covered?.attention?.kind !== 'turn-end' &&
+          !expiries().some(entry => entry.childIds?.includes('c1'))
+      );
+      await send('done c1');
+      await until(
+        async () => (await statusOf()) === 'done',
+        'the covered child to settle its parent'
+      );
+      check('the covered child settles the Session when it ends', true);
+
+      // (3) A lost SubagentStop: the harness's next boundary carries a census
+      // that no longer names the child, so it heals without inference.
+      await send('turn');
+      await send('spawn d1');
+      await send('spawn d2');
+      await send('stop');
+      await until(
+        async () => (await dots.getAttribute('data-delegation')) === '2',
+        'two children before the loss'
+      );
+      await send('done d1');
+      await send('lose d2');
+      await send('turn');
+      await send('stop');
+      await until(
+        async () => (await dots.count()) === 0,
+        'the boundary census to retire the lost child'
+      );
+      check(
+        "a lost SubagentStop cannot outlive the parent's next boundary",
+        !expiries().some(entry => entry.childIds?.includes('d2'))
+      );
+      await until(
+        async () => (await statusOf()) === 'done',
+        'the healed Session to land'
+      );
+      check('the healed Session reads as a result', true);
+
       // --- Codex's owned protocol drives the same three altitudes --------
       await page.keyboard.press('Meta+KeyT');
       await page.locator('[data-agent-composer]').waitFor();
@@ -375,7 +478,7 @@ try {
       });
       completed = true;
     },
-    { maxMs: 180_000 }
+    { maxMs: 240_000 }
   );
 } finally {
   if (process.env.EXAWATT_KEEP_EVAL) {
@@ -390,4 +493,4 @@ if (!completed || failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log('PASS delegation visibility (ENG-023 D1 / D5)');
+console.log('PASS delegation visibility (ENG-023 D1 / D5 / D7)');

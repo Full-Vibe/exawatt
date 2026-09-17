@@ -569,6 +569,99 @@ describe('AttentionMonitor', () => {
       expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
     });
 
+    /**
+     * A reported child is a claim with coverage, not a latch (ENG-023 D7,
+     * BUG-081). Between the harness's own censuses, coverage is the PTY:
+     * measured on Claude Code 2.1.270, a parent with a live child is never
+     * byte-silent (87 B/s at the quietest second) and an idle prompt with
+     * none is 0 B/s. Silence past the stale bound therefore expires the
+     * census, on the same instant a bare turn is reclaimed.
+     */
+    describe('census coverage', () => {
+      const stale: Array<{ id: string; evidence: unknown }> = [];
+      const report = (state: {
+        ownTurn?: 'generating' | 'available';
+        children: number;
+        blockedOn?: string | null;
+      }) => ({
+        ownTurn: state.ownTurn ?? ('available' as const),
+        blockedOn: state.blockedOn ?? null,
+        children: Array.from({ length: state.children }, () => ({})),
+      });
+
+      beforeEach(() => {
+        stale.length = 0;
+        monitor.on('reported-turn-stale', (id: string, evidence: unknown) =>
+          stale.push({ id, evidence })
+        );
+      });
+
+      it('expires a silent census after the stale bound, with the evidence', () => {
+        monitor.setReportedTurnSource(() => report({ children: 2 }));
+        add('a', 'claude', clock - 60_000);
+        data('a', 'x'.repeat(500));
+        clock += 11_000;
+        monitor.sweepNow();
+        expect(stale).toEqual([]);
+        clock += 1_000;
+        monitor.sweepNow();
+        expect(stale).toEqual([
+          {
+            id: 'a',
+            evidence: {
+              quietMs: 12_000,
+              staleMs: 12_000,
+              ownTurn: 'available',
+              children: 2,
+            },
+          },
+        ]);
+      });
+
+      it('expires children under a reported-open turn on the same instant', () => {
+        monitor.setReportedTurnSource(() =>
+          report({ ownTurn: 'generating', children: 1 })
+        );
+        add('a', 'claude', clock - 60_000);
+        data('a', 'x'.repeat(500));
+        clock += 12_000;
+        monitor.sweepNow();
+        expect(stale.map(entry => entry.id)).toEqual(['a']);
+      });
+
+      it('keeps a census the harness keeps rendering, for as long as it does', () => {
+        monitor.setReportedTurnSource(() => report({ children: 1 }));
+        add('a', 'claude', clock - 60_000);
+        for (let second = 0; second < 600; second += 1) {
+          clock += 1000;
+          data('a', 'x'.repeat(87));
+          monitor.sweepNow();
+        }
+        expect(stale).toEqual([]);
+        expect(monitor.get('a')).toBeNull();
+      });
+
+      it('never expires a census behind an open gate', () => {
+        monitor.setReportedTurnSource(() =>
+          report({ children: 1, blockedOn: 'question' })
+        );
+        add('a', 'claude', clock - 60_000);
+        data('a', 'x'.repeat(500));
+        clock += 600_000;
+        monitor.sweepNow();
+        expect(stale).toEqual([]);
+      });
+
+      it('has nothing to expire when nothing is reported', () => {
+        monitor.setReportedTurnSource(() => report({ children: 0 }));
+        add('a', 'claude', clock - 60_000);
+        data('a', 'x'.repeat(500));
+        clock += 60_000;
+        monitor.sweepNow();
+        expect(stale).toEqual([]);
+      });
+    });
+
     it('defaults to reporting nothing delegated', () => {
       // A source with no delegation capability never calls the setter; the
       // monitor must behave exactly as it did before ENG-023.

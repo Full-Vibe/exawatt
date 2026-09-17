@@ -461,7 +461,15 @@ descendant IDs, and translates reported lifecycle into the shared delegation
 model. Reconnect replaces the observation from a fresh descendant snapshot.
 The shared monitor applies each child census atomically, accepts source-proven
 resumption over delta-event tombstones, and emits completion only for explicit
-completed turns. Poll generations reject stale identity responses; one failed
+completed turns. One `census` event owns that reconciliation for every adapter:
+Claude Code's `Stop` and `SubagentStop` carry the harness's own `background_tasks`
+census and the adapter applies it on every boundary, so a lost start or stop
+cannot outlive the next one. A reported child is a claim with coverage and an
+expiry, not a latch (ENG-023 D7): between boundaries the parent PTY's
+continuous task-footer rendering is the coverage, and silence past the stale
+bound with no operator gate open withdraws the census, never completes it, on
+the same instant a bare reported turn is reclaimed, leaving a
+`delegation.census-expired` line in `logs/main.jsonl`. Poll generations reject stale identity responses; one failed
 Session read cannot withdraw another Session's successful census. Child read
 failures also cannot withdraw independently verified siblings: ambiguous
 children share only their immediate parent's activity-read failure domain.
@@ -796,7 +804,9 @@ Built:
   Code contributes push hooks and Codex contributes a read-side app-server
   protocol snapshot. Both drive exact child identities through the shared
   Agent, Team, and Fleet view model; loss of a protocol observation is absent,
-  never an inferred empty team or a synthetic child completion
+  never an inferred empty team or a synthetic child completion; a reported
+  child expires when its coverage lapses (the harness census on every
+  boundary, the PTY between them) rather than latching until process exit
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a lightweight task + Launch
   Configuration ribbon + Start composer. Its selected configuration carries an

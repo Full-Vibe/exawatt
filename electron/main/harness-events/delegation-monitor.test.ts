@@ -191,3 +191,79 @@ describe('DelegationMonitor publication', () => {
     expect(published).toEqual([]);
   });
 });
+
+/**
+ * The census contract shared by every source (ENG-023 D5/D7): Codex's poll
+ * and Claude Code's boundary payloads enter the same reconcile, and inference
+ * withdraws through it too.
+ */
+describe('DelegationMonitor census', () => {
+  it('reclaims a stale report as ONE publication: turn closed, children withdrawn, nothing completed', () => {
+    const { monitor, published, send } = harness();
+    const lifecycle: HarnessEvent[] = [];
+    monitor.on('harness-event', (_id: string, event: HarnessEvent) =>
+      lifecycle.push(event)
+    );
+    send({ kind: 'turn-start' });
+    send({ kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1 });
+    send({ kind: 'child-start', childId: 'c2', agentType: null, at: 2 });
+    const broadcasts = published.length;
+    const reclaimed = monitor.reclaimStaleReport('pty-1', 9_000);
+    expect(reclaimed.ownTurn).toBe('generating');
+    expect(reclaimed.withdrawn.map(child => child.id)).toEqual(['c1', 'c2']);
+    expect(published.length).toBe(broadcasts + 1);
+    expect(published[published.length - 1]).toBeNull();
+    expect(monitor.get('pty-1')).toMatchObject({ ownTurn: 'available', children: [] });
+    expect(lifecycle.filter(event => event.kind === 'child-end')).toEqual([]);
+  });
+
+  it('reclaiming an unreported Session is inert', () => {
+    const { monitor, published } = harness();
+    expect(monitor.reclaimStaleReport('pty-1', 1)).toEqual({ ownTurn: null, withdrawn: [] });
+    expect(published).toEqual([]);
+  });
+
+  it('applies a boundary census before the boundary reaches subscribers', () => {
+    // A subscriber reacting to `turn-end` must read the census that same
+    // payload carried, or it would withhold a result against children the
+    // harness had just said were gone — and admit none it had just named.
+    const { monitor, send } = harness();
+    send({ kind: 'turn-start' });
+    send({ kind: 'child-start', childId: 'gone', agentType: null, at: 1 });
+    const seen: Array<{ kind: string; busy: boolean; children: string[] }> = [];
+    monitor.on('harness-event', (id: string, event: HarnessEvent) =>
+      seen.push({
+        kind: event.kind,
+        busy: monitor.isBusy(id),
+        children: monitor.get(id)?.children.map(child => child.id) ?? [],
+      })
+    );
+    send({
+      kind: 'turn-end',
+      census: {
+        live: [{ id: 'named', agentType: 'Explore', description: null, startedAt: null }],
+        completed: [],
+        at: 2,
+      },
+    });
+    expect(seen).toEqual([
+      { kind: 'child-start', busy: true, children: ['named'] },
+      { kind: 'turn-end', busy: true, children: ['named'] },
+    ]);
+  });
+
+  it('does not report the child a child-end boundary already reported twice', () => {
+    const { monitor, send } = harness();
+    send({ kind: 'child-start', childId: 'c1', agentType: null, at: 1 });
+    const ends: string[] = [];
+    monitor.on('harness-event', (_id: string, event: HarnessEvent) => {
+      if (event.kind === 'child-end') ends.push(event.childId);
+    });
+    send({
+      kind: 'child-end',
+      childId: 'c1',
+      census: { live: [], completed: ['c1'], at: 2 },
+    });
+    expect(ends).toEqual(['c1']);
+  });
+});
