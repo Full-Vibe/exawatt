@@ -122,6 +122,11 @@ The demo the front is aimed at carries three operator-named risks — it looks u
 
 Execution packets for 4–6 parallel agents, with the file-ownership collision map, are in **`projects/demo-arc-execution.md`**. That document holds no scope of its own; every packet points back at the item that owns it.
 
+**2026-09-16 launch-runway amendment.** ENG-030's remaining work is
+sequenced as packets R1 through R9 under its milestones; R1 (security tab to
+zero), R2 (BUG-125), R3 (BUG-129) and R4 (first official GitHub Release) are
+the open front and may run in parallel. Pick from there.
+
 ## Operating Model
 
 `roadmap.md` is the singular engineering roadmap. It should stay readable as the fleet grows by acting as the top-level sequence, status index, and conflict-resolution surface.
@@ -1389,10 +1394,10 @@ path is now continuous public-history/projection integrity, an exact public
 artifact with green CI and live security intake, then official public Release
 provenance. The Mac-friend cohort waits on those operational gates; contributor
 intake is trigger-deferred while no human contributor exists. A 2026-09-13
-pre-launch review opened BUG-125 through BUG-131 and the plan-refresh
-questions recorded in the project doc; the milestone list below is unchanged
-until the operator answers them. See the Amendment chain and the project
-doc's dated execution log.
+pre-launch review opened BUG-125 through BUG-131; the operator's answers are
+folded in (2026-09-13) and the remaining work is sequenced as the launch
+runway below (2026-09-16), ready for pickup in that order. See the Amendment
+chain and the project doc's dated execution log.
 
 Scope:
 
@@ -1443,6 +1448,69 @@ the exact public artifact, CI and security controls while OS4.4 and OS4.5 build
 in parallel. BUG-112 separately owns historical metadata disposition across
 all public refs; its recovery method requires a distinct review. OS6.1 follows
 the operational proof; OS6.2 waits for a real contributor signal.
+
+**Launch runway (sequenced 2026-09-16; pick up in this order, R1 through R4
+may run in parallel).** Each packet names its owner and its done-when; an
+agent picking one up works in its own worktree and lands through
+`pnpm agent:land`. The runway does not loosen any gate above.
+
+- **R1 Security tab to zero (OS5.5, agent; repository settings need the
+  operator's admin token, so the agent flips them with `gh api` and records
+  each change, or the operator flips them himself).** Enable native secret
+  scanning and push protection; add one ruleset requiring CI, the CLA check,
+  Secret Scan and CodeQL before merge to `master` with a bypass for the
+  projector identity only; close the six stale Dependabot pull requests (the
+  lockfile they targeted was refreshed at `f4d0122f`, BUG-127); fix the 13
+  polynomial-ReDoS alerts (BUG-128) and dismiss any true false positive with
+  a written reason. Done when the public Security tab and the pull-request
+  list are both empty and a fork PR still runs green without secrets.
+- **R2 Corrupt stores stop erasing state (BUG-125, agent).** Done when a
+  seeded-garbage `sources.json`, `workspace.json` or settings file is moved
+  aside and logged, the store refuses to overwrite it, and each store has the
+  regression.
+- **R3 Async failures reach the log (BUG-129, agent).** Done when
+  `unhandledRejection`, renderer `error`/`unhandledrejection`, and
+  `unresponsive` each produce a redacted `logs/main.jsonl` record in a test,
+  and `render-process-gone` reloads rather than observes.
+- **R4 First official GitHub Release (OS4.4, agent then operator).** Rebase
+  `agent/oss-release-workflow` (three commits, about six conflict sites) onto
+  master, land it, then the operator runs the private dispatch-only workflow
+  so v0.1.10 exists as an immutable public tag and Release with its
+  `ReleaseProvenanceV1` record. Done when the Release page shows the signed
+  DMG, notes and provenance, and the site's Changelog link resolves to it
+  (retires BUG-130).
+- **R5 Contributor on-ramp (OS6.0, agent).** Publish
+  `docs/engineering/guides/add-an-agent-source.md` (ordered touch list across
+  the registry, harness registry, models, session manager, conversation
+  catalog, preload unions and renderer switches, plus a copyable eval), seed
+  five to eight starter issues inside the day-one lanes, declare
+  `engines.node` and `.nvmrc` (CI runs 22), retire or reconcile `PROJECT.md`
+  against the README, cut internal process vocabulary from `CONTRIBUTING.md`,
+  set repository topics, homepage and a provenance-recorded social preview,
+  and make projector commit trailers neutral. Acceptance stays OS6.2
+  trigger-deferred. Done when a newcomer can find the recipe, a starter
+  issue, and the exact build commands without asking.
+- **R6 README answers the two guaranteed questions (OS6.0, agent).** One
+  paragraph on why the project exists and how it survives (the hosted layer
+  is the business; comparable open-source orchestrators that had no answer
+  are gone), and one paragraph on the AGPL question (an unmodified official
+  build carries no obligation for the user; the share-back applies to people
+  who modify and redistribute). Done when both paragraphs are in the public
+  README above the fold and read in production voice.
+- **R7 Friend cohort (OS6.1, operator recruits, agent prepares).** The agent
+  writes the one-page setup checklist and a blocker-capture template; the
+  operator sends it to three to five Mac developer friends. Done per the
+  OS6.1 exit criteria, with every blocker promoted to a doc fix or a BUG.
+- **R8 Discord wired in (OS6.0, operator creates, agent wires).** The
+  operator creates the server and posts the invite; the agent links it from
+  README, SUPPORT.md and the day-one welcome, which names what is
+  design-locked and where the lanes are. Done when the links are live in the
+  public tree.
+
+Not on the runway, by decision: relicensing, dropping the CLA, Windows or
+Linux packaging, and any change to the strong parts named in the 2026-09-13
+review (renderer boundary, distribution contract, public-side split
+enforcement, fork-safe CI).
 
 Project doc:
 
@@ -2008,6 +2076,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ENG-030's remaining milestones (OS5.5, OS4.4, OS6.0, OS6.1, OS6.2, OS6.3) | launch runway, 2026-09-16 | Sequenced as packets R1 through R9 under the ENG-030 milestones, each with owner and done-when; R1 to R4 run in parallel, R9 gates on R1, R4, R5, R6 and R8. No gate loosened. |
 | OS6.3's 2026-08-17 two-moment split | operator answers, 2026-09-13 | Moment one (repository visible, README carrying the window) happened on 2026-08-19. One launch moment remains, gated on OS4.4, OS5.5 live controls, and OS6.0. |
 | Marketing's "Community home: GitHub only at the moment" (2026-08-14) | operator, 2026-09-13 | Discord is the community home going forward; Issues keep defects, Discussions keep long-form threads; README, SUPPORT.md and the announcement link the server. OS6.0 owns creating it. |
 | OS6.0 presentation scope | operator answers, 2026-09-13 | Gains the Discord server, the Add-an-Agent-Source guide, five to eight seeded good-first-issue items, `engines.node`/`.nvmrc`, and neutral projector trailers. Contribution acceptance is unchanged: OS6.2 stays trigger-deferred. |
