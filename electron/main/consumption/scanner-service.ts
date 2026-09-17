@@ -31,6 +31,7 @@
  */
 import * as fsNode from 'fs';
 import {
+  CONSUMPTION_SAMPLE_HORIZON_MS,
   ClaudeConsumptionAdapter,
   CodexConsumptionAdapter,
   ConsumptionSampleWindow,
@@ -111,8 +112,14 @@ export interface ConsumptionScannerServiceOptions {
    * Sample retention behind the newest sample (BUG-032). Defaults to
    * `CONSUMPTION_SAMPLE_HORIZON_MS`; main widens it to cover an active
    * Operator-profile publication anchor, clamped by `ConsumptionSampleWindow`.
+   *
+   * A function is a LIVE read, consulted when state is hydrated and again at
+   * the end of every pass before the compaction decision — never a value
+   * captured at boot. The anchor that widens it is written by the renderer's
+   * first sync minutes after launch; a horizon snapshotted before that pruned
+   * the history the same sync then published (BUG-141).
    */
-  sampleHorizonMs?: number;
+  sampleHorizonMs?: number | (() => number);
   now?: () => number;
 }
 
@@ -150,7 +157,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private readonly appendEveryFiles: number;
   private readonly initialDelayMs: number;
   private readonly identities: () => ProviderIdentityRecord[];
-  private readonly sampleHorizonMs: number | undefined;
+  private readonly resolveSampleHorizonMs: () => number;
 
   /**
    * Bounded live sample state. This is the collection BUG-032 named: it is
@@ -188,12 +195,16 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private listeners = new Set<(event: ConsumptionUpdatedEvent) => void>();
 
   constructor(private readonly options: ConsumptionScannerServiceOptions) {
-    this.sampleHorizonMs = options.sampleHorizonMs;
+    const horizon = options.sampleHorizonMs;
+    this.resolveSampleHorizonMs =
+      typeof horizon === 'function'
+        ? horizon
+        : () => horizon ?? CONSUMPTION_SAMPLE_HORIZON_MS;
     this.samples = new ConsumptionSampleWindow({
-      horizonMs: options.sampleHorizonMs,
+      horizonMs: this.resolveSampleHorizonMs(),
     });
     this.store = new ConsumptionStateStore(options.stateDir, {
-      sampleHorizonMs: options.sampleHorizonMs,
+      sampleHorizonMs: this.resolveSampleHorizonMs,
     });
     this.fileSystem =
       options.fileSystem ?? new NodeConsumptionFileSystem({ maxFiles: 50_000 });
@@ -570,7 +581,15 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
       this.lastPassEndedMs = this.now();
       this.revision += 1;
       void this.store.writeMeta(this.meta());
-      if (!aborted && this.store.shouldCompact) {
+      // The horizon is re-resolved from its owner HERE, after the pass, so a
+      // publication anchor recorded since boot narrows a window that started
+      // at the ceiling. A narrowing that dropped samples has shrunk the
+      // retained set under the log, which is exactly the state compaction
+      // exists to reclaim — so it compacts regardless of the byte ratio.
+      const narrowedBy = this.samples.setHorizonMs(
+        this.resolveSampleHorizonMs()
+      );
+      if (!aborted && (narrowedBy > 0 || this.store.shouldCompact)) {
         void this.store.compact(
           this.samples.values(),
           this.watermarks,

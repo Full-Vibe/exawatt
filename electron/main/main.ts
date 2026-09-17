@@ -30,8 +30,8 @@ import {
 } from './diagnostics-report';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { registerConsumptionIPC } from './consumption-ipc';
-import { resolveSampleHorizonMs } from '@exawatt/core';
 import { ConsumptionScannerService } from './consumption/scanner-service';
+import { sampleRetentionPolicy } from './consumption/retention-policy';
 import {
   ClaudePlanAccountService,
   isClaudePlanRemoteReadAllowed,
@@ -1487,19 +1487,19 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerAppIPC();
   registerMenuIPC();
   registerSystemShortcutIPC();
-  const operatorProfile = loadSettings().operatorProfile;
   consumptionScanner = new ConsumptionScannerService({
     stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
     identities: () => ptySessions.listProviderIdentities(),
-    // BUG-032: samples are a bounded collection now. The floor is the default
-    // horizon; an ACTIVE Operator-profile publication widens it, because that
+    // BUG-032: samples are a bounded collection. The default horizon is 14
+    // days; an ACTIVE Operator-profile publication widens it, because that
     // sync rescans everything since its opt-in anchor and replaces the hosted
     // aggregate wholesale — pruning under it would truncate a published
-    // profile. `resolveSampleHorizonMs` clamps both ends.
-    sampleHorizonMs: resolveSampleHorizonMs(
-      operatorProfile?.autoPublish ? operatorProfile.startedAt : null,
-      Date.now()
-    ),
+    // profile. The read is LIVE, not a boot-time snapshot: the anchor is
+    // written by the renderer's first sync minutes from now, and a value
+    // captured here before that pruned the history that sync then published
+    // (BUG-141). `sampleRetentionPolicy` is the one owner both hydrate and
+    // compaction consult.
+    sampleHorizonMs: sampleRetentionPolicy(),
   });
   registerOperatorStatsIPC(consumptionScanner);
   // ENG-038: the credentialed Claude plan-account read — a SIBLING of the

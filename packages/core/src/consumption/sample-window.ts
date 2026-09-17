@@ -13,7 +13,12 @@
  * This is the missing state bound, expressed the same way the observation
  * horizon is: anchored at the NEWEST sample seen, never at wall time, so a
  * machine whose clock jumps, or a corpus restored from backup, cannot silently
- * empty the window.
+ * empty the window. The anchor trusts the data only as far as wall time plus
+ * `CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS` (BUG-141): one sample stamped by a
+ * bad clock two years ahead would otherwise become the anchor and evict the
+ * entire real corpus until wall time caught up. Clamping the anchor DOWN can
+ * only ever retain more, never less, so the backup and clock-jump cases above
+ * still hold.
  *
  * The horizon is a policy input rather than a constant because one consumer's
  * window is not fixed by this module. Rendered surfaces read a 7-day window
@@ -24,6 +29,14 @@
  * `CONSUMPTION_SAMPLE_MAX_HORIZON_MS`, which is the hosted contract's own
  * 400-day `days` cap — past that the payload is rejected anyway, so retaining
  * the samples behind it buys nothing.
+ *
+ * The anchor is a fact the renderer's first sync WRITES, minutes after boot
+ * (`operatorProfile.startedAt`, added 2026-08-16; a profile from before then
+ * publishes with no anchor at all until that sync recovers the hosted
+ * `joined_at`). So the horizon is not a number read once at boot: it is
+ * re-resolved from the same owner whenever it is consulted (`setHorizonMs`),
+ * and while a publication is active with its anchor still unknown the only
+ * safe answer is the ceiling (BUG-141).
  */
 import { mergeSamples } from './merge';
 import type { ConsumptionSample } from './types';
@@ -37,9 +50,28 @@ export const CONSUMPTION_SAMPLE_HORIZON_MS = 14 * 24 * 3_600_000;
  */
 export const CONSUMPTION_SAMPLE_MAX_HORIZON_MS = 400 * 24 * 3_600_000;
 
+/**
+ * How far ahead of wall time a sample may sit and still move the retention
+ * anchor. A harness clock a few minutes fast is ordinary; a day is not.
+ */
+export const CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS = 24 * 3_600_000;
+
 export interface ConsumptionSampleWindowOptions {
   /** Retention behind the newest sample. Default `CONSUMPTION_SAMPLE_HORIZON_MS`. */
   horizonMs?: number;
+  /** Wall clock, for the anchor's future-tolerance clamp. Default `Date.now`. */
+  now?: () => number;
+}
+
+/**
+ * The publication facts the retention horizon depends on: the shape of
+ * `ExawattSettings['operatorProfile']`, read live from the settings store.
+ */
+export interface ConsumptionRetentionAnchor {
+  /** Whether the Operator-profile publication is switched on. */
+  autoPublish: boolean;
+  /** The immutable first-consent boundary, once a sync has recorded it. */
+  startedAt?: string | null;
 }
 
 /**
@@ -51,7 +83,8 @@ export interface ConsumptionSampleWindowOptions {
  * fell outside the horizon.
  */
 export class ConsumptionSampleWindow {
-  private readonly horizonMs: number;
+  private horizonMs: number;
+  private readonly now: () => number;
   private readonly samples = new Map<string, ConsumptionSample>();
   private readonly instants = new Map<string, number>();
   private newestMs = Number.NEGATIVE_INFINITY;
@@ -66,12 +99,40 @@ export class ConsumptionSampleWindow {
     this.horizonMs = clampHorizon(
       options.horizonMs ?? CONSUMPTION_SAMPLE_HORIZON_MS
     );
+    this.now = options.now ?? Date.now;
     for (const sample of initial) this.add(sample);
   }
 
   /** The retention horizon actually in force, after clamping. */
   get retentionMs(): number {
     return this.horizonMs;
+  }
+
+  /**
+   * Re-resolve the horizon from its owner. Narrowing sweeps at once and
+   * returns how many samples that dropped, so a caller that persists this
+   * window knows the retained set shrank and can rewrite its log to match.
+   * Widening cannot recover what an earlier, narrower horizon refused; that
+   * is why a caller whose anchor is not yet known must start wide.
+   */
+  setHorizonMs(horizonMs: number): number {
+    const next = clampHorizon(horizonMs);
+    if (next === this.horizonMs) return 0;
+    const narrowed = next < this.horizonMs;
+    this.horizonMs = next;
+    return narrowed ? this.sweep() : 0;
+  }
+
+  /**
+   * The instant retention is measured from: the newest sample seen, but no
+   * further ahead of wall time than the tolerance allows.
+   */
+  get anchorMs(): number {
+    if (!Number.isFinite(this.newestMs)) return this.newestMs;
+    return Math.min(
+      this.newestMs,
+      this.now() + CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS
+    );
   }
 
   /** Samples dropped for age since this window was created. */
@@ -94,10 +155,10 @@ export class ConsumptionSampleWindow {
    */
   add(sample: ConsumptionSample): ConsumptionSample | null {
     const at = Date.parse(sample.at);
-    const instant = Number.isNaN(at) ? this.newestMs : at;
+    const instant = Number.isNaN(at) ? this.anchorMs : at;
     if (
       Number.isFinite(this.newestMs) &&
-      instant < this.newestMs - this.horizonMs
+      instant < this.anchorMs - this.horizonMs
     ) {
       this.evicted += 1;
       return null;
@@ -160,7 +221,7 @@ export class ConsumptionSampleWindow {
   sweep(): number {
     this.admissionsSinceSweep = 0;
     if (!Number.isFinite(this.newestMs)) return 0;
-    const cutoff = this.newestMs - this.horizonMs;
+    const cutoff = this.anchorMs - this.horizonMs;
     let dropped = 0;
     for (const [key, instant] of this.instants) {
       if (instant >= cutoff) continue;
@@ -184,16 +245,24 @@ function clampHorizon(horizonMs: number): number {
 }
 
 /**
- * The retention a running app should use: never below the default floor, never
+ * The retention a running app should use: never below the default, never
  * above the ceiling, and always wide enough to cover an active Operator-profile
  * publication anchor whose sync replaces the hosted aggregate wholesale.
+ *
+ * An ACTIVE publication whose anchor is not yet known resolves to the ceiling,
+ * not the default (BUG-141). The anchor is written by the renderer's first
+ * sync, which recovers the hosted `joined_at` minutes after boot; a profile
+ * from before `startedAt` existed (v0.1.10) therefore boots publishing with no
+ * anchor, and pruning to the default there is what truncated history that the
+ * same boot's sync then published over the hosted aggregate.
  */
 export function resolveSampleHorizonMs(
-  publicationStartedAt: string | null | undefined,
+  profile: ConsumptionRetentionAnchor | null | undefined,
   nowMs: number
 ): number {
-  if (!publicationStartedAt) return CONSUMPTION_SAMPLE_HORIZON_MS;
-  const started = Date.parse(publicationStartedAt);
-  if (Number.isNaN(started)) return CONSUMPTION_SAMPLE_HORIZON_MS;
+  if (!profile?.autoPublish) return CONSUMPTION_SAMPLE_HORIZON_MS;
+  if (!profile.startedAt) return CONSUMPTION_SAMPLE_MAX_HORIZON_MS;
+  const started = Date.parse(profile.startedAt);
+  if (Number.isNaN(started)) return CONSUMPTION_SAMPLE_MAX_HORIZON_MS;
   return clampHorizon(nowMs - started + CONSUMPTION_SAMPLE_HORIZON_MS);
 }

@@ -129,9 +129,13 @@ try {
   console.log(`  state on disk     ${fmtMB(stateBytes)} in ${stateDir}`);
 
   check('first scan completed', snapshot.scanState.firstScanComplete === true);
+  // The count is two weeks of the operator's activity, not a property of the
+  // scanner: BUG-032 bounded the default window at 14 days behind the newest
+  // sample, so a fixed threshold measured his calendar (8,664 on 2026-09-16
+  // against a 10,000 bar that predates the bound).
   check(
-    'corpus produced samples',
-    snapshot.samples.length > 10_000,
+    'corpus produced samples inside the default window',
+    snapshot.samples.length > 0,
     `${snapshot.samples.length}`
   );
   check(

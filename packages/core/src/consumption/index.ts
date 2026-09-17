@@ -112,12 +112,16 @@ export {
 } from './plan-window-history';
 export type { WindowObservationOptions } from './plan-window-history';
 export {
+  CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS,
   CONSUMPTION_SAMPLE_HORIZON_MS,
   CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
   ConsumptionSampleWindow,
   resolveSampleHorizonMs,
 } from './sample-window';
-export type { ConsumptionSampleWindowOptions } from './sample-window';
+export type {
+  ConsumptionRetentionAnchor,
+  ConsumptionSampleWindowOptions,
+} from './sample-window';
 export { scanConsumption } from './scan';
 export type { ConsumptionScan } from './scan';
 export {

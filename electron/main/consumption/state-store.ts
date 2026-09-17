@@ -101,8 +101,12 @@ export interface LoadedConsumptionState {
 }
 
 export interface ConsumptionStateStoreOptions {
-  /** Sample retention behind the newest sample. See `ConsumptionSampleWindow`. */
-  sampleHorizonMs?: number;
+  /**
+   * Sample retention behind the newest sample. See `ConsumptionSampleWindow`.
+   * A function is read at `load()` time, not at construction, because the
+   * publication anchor that widens it is written after boot (BUG-141).
+   */
+  sampleHorizonMs?: number | (() => number);
 }
 
 export interface ConsumptionAppendBatch {
@@ -253,10 +257,11 @@ export class ConsumptionStateStore {
    * meta all mean "scan from scratch", never a crash.
    */
   async load(): Promise<LoadedConsumptionState> {
+    const horizon = this.options.sampleHorizonMs;
     const out: LoadedConsumptionState = {
       meta: emptyConsumptionMeta(),
       samples: new ConsumptionSampleWindow({
-        horizonMs: this.options.sampleHorizonMs,
+        horizonMs: typeof horizon === 'function' ? horizon() : horizon,
       }),
       watermarks: {},
       observations: [],
