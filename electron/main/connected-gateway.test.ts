@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  OCGatewayError,
   describeConnectionStatus,
   type ConnectedSourceRecord,
   type OCClientConfig,
@@ -209,6 +210,24 @@ class FakeGateway {
     this.handshakeErrors.push(...messages);
   }
 
+  /** Handshakes that never reach this Gateway at all, consumed one per attempt. */
+  private silentHandshakes = 0;
+
+  /**
+   * Script the next handshakes to get no answer: the tunnel carries nothing
+   * back and the client's own deadline fires. Silence is not this Gateway's
+   * refusal, so it records no handshake and pins no scopes.
+   */
+  silenceHandshakes(count: number): void {
+    this.silentHandshakes += count;
+  }
+
+  takeSilence(): boolean {
+    if (this.silentHandshakes === 0) return false;
+    this.silentHandshakes -= 1;
+    return true;
+  }
+
   respond(method: string, params: unknown): unknown {
     this.received.push({ method, params });
     switch (method) {
@@ -321,6 +340,13 @@ class FakeGatewayClient {
 
   async connect(): Promise<void> {
     if (this.refuse) throw new Error('gateway refused the handshake');
+    if (this.gateway.takeSilence()) {
+      // Verbatim the real client's own deadline sentence. A plain Error, as
+      // the real client throws for a timeout: nothing answered, so nothing
+      // is marked as an answer.
+      this.status = 'error';
+      throw new Error('OC gateway connection timeout after 10000ms');
+    }
     const requested = [...(this.config.scopes ?? [])];
     this.presentedToken = this.deviceToken ?? this.config.token ?? null;
     this.gateway.presentedCredentials.push(this.presentedToken);
@@ -331,7 +357,9 @@ class FakeGatewayClient {
     );
     if (!paired.ok) {
       this.status = 'error';
-      throw new Error(paired.message);
+      // The Gateway answered: the real client rejects with the marked error
+      // for an RPC refusal, and this fake is built from that same surface.
+      throw new OCGatewayError(paired.message);
     }
     if (this.deviceToken === null && this.issueToken !== null) {
       this.deviceToken = this.issueToken;
@@ -1235,6 +1263,23 @@ describe('ConnectedGatewaySession — failure classification', () => {
   );
 
   it('maps a bootstrap failure to its source failure class', async () => {
+    const harness = createHarness({ bootstrapFailure: 'unreachable' });
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.outcome !== 'failed') return;
+    expect(result.failure).toBe(
+      BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE['unreachable']
+    );
+    expect(harness.session.phase).toBe('reconnecting');
+  });
+
+  it('does not put a missing OpenClaw on the reconnect ladder (BUG-146)', async () => {
+    // A binary the server's non-interactive shell cannot find, beside a
+    // configuration that could not be read, is a fact about the login. It
+    // used to be reported as `gateway-down` and retried on a timer forever:
+    // four SSH logins per attempt against a server that was answering.
     const harness = createHarness({ bootstrapFailure: 'openclaw-missing' });
 
     const result = await harness.session.connect();
@@ -1244,7 +1289,10 @@ describe('ConnectedGatewaySession — failure classification', () => {
     expect(result.failure).toBe(
       BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE['openclaw-missing']
     );
-    expect(harness.session.phase).toBe('reconnecting');
+    expect(harness.session.phase).toBe('failed');
+    expect(harness.session.status().state).toBe('unavailable');
+    expect(harness.timers.pending.size).toBe(0);
+    expect(harness.resolveCredential).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1396,6 +1444,12 @@ describe('ConnectedGatewaySession — losing the connection', () => {
     expect(harness.session.status().state).not.toBe('live');
     // Drift is not a transport fault, so the ladder stops rather than retrying.
     expect(harness.timers.pending.size).toBe(0);
+    // The report keeps the snapshot, not the connection: a failed session
+    // watches nothing, so the reconnect's tunnel and socket are closed rather
+    // than left holding a forward open on the operator's server (BUG-146).
+    expect(harness.tunnels).toHaveLength(2);
+    expect(harness.tunnels[1]!.closeCount()).toBe(1);
+    expect(harness.clients[1]!.disconnectCount).toBe(1);
   });
 
   it('does not call an ordinary roster change identity drift', async () => {
@@ -2122,6 +2176,36 @@ describe('ConnectedGatewaySession — granted authority', () => {
     await expect(harness.session.write('chat.send')).rejects.toThrow(
       /read access only/u
     );
+  });
+
+  it('keeps the write ask when the handshake gets no answer, and retries it (BUG-146)', async () => {
+    const harness = createHarness({
+      record: writeAuthorityRecord(),
+      storedTokens: { [SOURCE_ID]: DEVICE_TOKEN },
+    });
+    harness.gateway.approve([...H2_WRITE_SCOPES]);
+    // The first handshake times out on the way to a source that still
+    // approves write. Silence is a fact about the transport, not about
+    // authority, so it must neither narrow the ask nor persist a downgrade.
+    harness.gateway.silenceHandshakes(1);
+
+    const result = await harness.session.connect();
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.outcome === 'failed' && result.failure)
+      .toBe('gateway-down');
+    expect(harness.session.authority).toBe('write');
+    expect(harness.store.authorities).toEqual([]);
+    // Nothing reached the Gateway, so nothing was asked for at read scope.
+    expect(harness.gateway.handshakes).toEqual([]);
+    expect(harness.session.phase).toBe('reconnecting');
+
+    // The ladder retries with the same ask, and the source grants it.
+    expect(harness.timers.fireNext()).toBe(true);
+    await vi.waitFor(() => expect(harness.session.phase).toBe('connected'));
+    expect(harness.session.authority).toBe('write');
+    expect(harness.gateway.handshakes).toEqual([[...H2_WRITE_SCOPES]]);
+    expect(harness.store.authorities).toEqual([]);
   });
 
   it('believes the Gateway over the ask when the two disagree', async () => {

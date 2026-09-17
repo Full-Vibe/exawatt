@@ -1,4 +1,7 @@
-export { readGatewayConfig } from './oc/gateway-config';
+export {
+  parseGatewayConfigText,
+  readGatewayConfig,
+} from './oc/gateway-config';
 export type { OCGatewayConfig } from './oc/auth';
 export {
   NodeConsumptionFileSystem,

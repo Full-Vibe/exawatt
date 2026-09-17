@@ -96,6 +96,10 @@ import {
   installMainThreadStallTrace,
 } from './main-thread-stall-trace';
 import {
+  UnhandledRejectionTrace,
+  installUnhandledRejectionTrace,
+} from './unhandled-rejection-trace';
+import {
   configureLoginShellScratchDir,
   observedShellStartupArtifacts,
   prepareLoginShellScratchDir,
@@ -1646,6 +1650,12 @@ app.whenReady().then(() => {
   // Started before the window so a stall during startup is captured too.
   installMainThreadStallTrace(
     new MainThreadStallTrace({ record: mainDiagnostics })
+  );
+  // A rejection nobody awaited used to end as a console line the packaged
+  // app does not keep (BUG-129 main half, BUG-146). Bounded and rate-limited
+  // like the stall trace; it records, it never recovers.
+  installUnhandledRejectionTrace(
+    new UnhandledRejectionTrace({ record: mainDiagnostics })
   );
   watchShellStartupArtifacts(mainDiagnostics);
   // Registered BEFORE bootstrap so it survives bootstrap failing: this is the

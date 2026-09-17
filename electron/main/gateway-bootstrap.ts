@@ -4,7 +4,11 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type { SourceTransport } from '@exawatt/core';
-import { readGatewayConfig, type OCGatewayConfig } from '@exawatt/core/server';
+import {
+  parseGatewayConfigText,
+  readGatewayConfig,
+  type OCGatewayConfig,
+} from '@exawatt/core/server';
 import { stopChildProcess } from './child-process-lifecycle';
 import {
   buildDestinationArgs,
@@ -98,7 +102,11 @@ export type GatewayBootstrapFailure =
   | 'unreachable'
   /** The server answered and refused the login. */
   | 'auth-rejected'
-  /** The server was reached but OpenClaw is not installed or not on PATH. */
+  /**
+   * The server was reached, its configuration could not be read, and the
+   * non-interactive shell found no `openclaw` on PATH either. A fact about
+   * the login, not an outage: nothing here heals by waiting.
+   */
   | 'openclaw-missing'
   /** Reached and readable, but the source declares no usable shared token. */
   | 'token-unavailable'
@@ -331,13 +339,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+/**
+ * The configuration text, as OpenClaw's own loader would read it. That loader
+ * is JSON5, so a hand-edited file with a comment or a trailing comma is a
+ * configuration the Gateway runs with and this module must read it too; a
+ * strict `JSON.parse` here reported exactly such a file as unreadable
+ * (BUG-146). One grammar, owned by the core package, shared with the local
+ * read.
+ */
 function parseJsonObject(text: unknown): Record<string, unknown> | null {
-  if (typeof text !== 'string' || text.length === 0) return null;
-  try {
-    return asRecord(JSON.parse(text));
-  } catch {
-    return null;
-  }
+  return asRecord(parseGatewayConfigText(text));
 }
 
 function boundedToken(value: unknown): string | null {
@@ -469,6 +480,13 @@ export function parseOpenClawVersion(raw: string): string | null {
 }
 
 /**
+ * Glyphs a secret-reading CLI prints in place of the secret. A credential is
+ * never spelled with them, so one anywhere in the answer means the CLI is
+ * declining to disclose, not disclosing.
+ */
+const MASK_GLYPHS = /[*•●·]/u;
+
+/**
  * Accept the source CLI's answer only when it looks like a credential.
  *
  * `openclaw config get` is a general-purpose reader, so on an absent or
@@ -478,6 +496,13 @@ export function parseOpenClawVersion(raw: string): string | null {
  * error wording. A wrong accept here would be handed to the Gateway as a token
  * and fail the pairing with a confusing message, so this fails closed and lets
  * the config-file path answer instead.
+ *
+ * A masked value is the one placeholder that satisfied the shape test: `***`
+ * is one whitespace-free line. OpenClaw 2026.7.x masks the token on `config
+ * get`, and this reader accepted the mask as a credential and ranked it above
+ * the honest `token-unavailable` answer, so the operator was sent to pair with
+ * three asterisks and told the Gateway had mismatched tokens (BUG-146). Masked
+ * output is a refusal to disclose, and a refusal is not a token.
  */
 function parseCliToken(stdout: unknown): string | null {
   if (typeof stdout !== 'string') return null;
@@ -491,6 +516,7 @@ function parseCliToken(stdout: unknown): string | null {
   if (/\s/.test(value)) return null;
   if (value.startsWith('{') || value.startsWith('[')) return null;
   if (/^(undefined|null|nil|none|\(null\))$/i.test(value)) return null;
+  if (MASK_GLYPHS.test(value)) return null;
   return value;
 }
 
@@ -674,9 +700,10 @@ async function runRemote(
 /**
  * Ask a remote source, once, for the credential its own Gateway expects.
  *
- * Three bounded reads over the connection the operator already authorized:
- * the source's version, its CLI's answer for the Gateway token, and its
- * configuration file.
+ * Up to three bounded reads over the connection the operator already
+ * authorized, in this order: the source's configuration file, its version,
+ * and, only when the file holds no literal token and the CLI is on PATH, its
+ * CLI's answer for the Gateway token.
  *
  * Fails closed at every step. Nothing here retries, nothing here writes, and
  * the returned token is never logged.
@@ -712,42 +739,19 @@ export async function bootstrapGatewayCredentialOverSsh(
     return failed('invalid-target', SPECIFIC_MESSAGES.identity_file_unreadable);
   }
 
-  // 1. Version. Also the cheapest proof that the login works and OpenClaw is
-  //    there, so its failure classification stands in for the whole session.
-  const versionRun = await runRemote(exec, target, ['openclaw', '--version']);
-  if (!versionRun.ok) return failed(versionRun.failure);
-  let version: string | null = null;
-  if (versionRun.result.code === 0) {
-    version = parseOpenClawVersion(versionRun.result.stdout);
-  } else {
-    const transport = classifyTransport(versionRun.result);
-    if (transport) return failed(transport.failure, transport.message);
-    if (indicatesMissingCommand(versionRun.result.stderr)) {
-      return failed('openclaw-missing');
-    }
-    // The CLI ran and answered something other than a version. Not fatal: the
-    // config file can still carry both the token and the port.
-  }
-
-  // 2. The source's own CLI resolves the token even when the config file only
-  //    points at where it lives.
-  const cliRun = await runRemote(exec, target, [
-    'openclaw',
-    'config',
-    'get',
-    'gateway.auth.token',
-  ]);
-  if (!cliRun.ok) return failed(cliRun.failure);
-  let cliToken: string | null = null;
-  if (cliRun.result.code === 0) {
-    cliToken = parseCliToken(cliRun.result.stdout);
-  } else {
-    const transport = classifyTransport(cliRun.result);
-    if (transport) return failed(transport.failure, transport.message);
-  }
-
-  // 3. The config file. Read even when the CLI already answered, because it is
-  //    the only place the declared Gateway port appears.
+  // 1. The config file. First, because it is the trustworthy source and the
+  //    only place the declared Gateway port appears, and because it is the
+  //    cheapest proof that the login works: its transport classification
+  //    stands in for the whole session.
+  //
+  //    It is also deliberately NOT gated on the source's CLI. The earlier
+  //    order probed `openclaw --version` first and stopped on "command not
+  //    found", but that probe runs under the server's NON-INTERACTIVE shell,
+  //    whose PATH routinely lacks a Homebrew or npm OpenClaw that the login
+  //    shell finds. The file was readable the whole time, and the source sat
+  //    Reconnecting indefinitely over a Gateway that was up (BUG-146). Where
+  //    the binary is on PATH is a fact about PATH; the credential is in the
+  //    file.
   const configRun = await runRemote(exec, target, ['cat', REMOTE_CONFIG_PATH]);
   if (!configRun.ok) return failed(configRun.failure);
   let configText: string | null = null;
@@ -755,53 +759,77 @@ export async function bootstrapGatewayCredentialOverSsh(
   if (configRun.result.code === 0) {
     configText = configRun.result.stdout;
   } else {
-    configFailure = classifyTransport(configRun.result) ?? {
+    const transport = classifyTransport(configRun.result);
+    if (transport) return failed(transport.failure, transport.message);
+    configFailure = {
       failure: 'unreadable-config',
       message: FAILURE_MESSAGES['unreadable-config'],
     };
   }
 
+  // 2. Version. Evidence for the source-detail surface, and the one fact that
+  //    says whether the CLI is worth asking at all. Its answer never blocks a
+  //    credential the file already gave.
+  const versionRun = await runRemote(exec, target, ['openclaw', '--version']);
+  if (!versionRun.ok) return failed(versionRun.failure);
+  let version: string | null = null;
+  let binaryOnPath = true;
+  if (versionRun.result.code === 0) {
+    version = parseOpenClawVersion(versionRun.result.stdout);
+  } else {
+    const transport = classifyTransport(versionRun.result);
+    if (transport) return failed(transport.failure, transport.message);
+    if (indicatesMissingCommand(versionRun.result.stderr)) {
+      binaryOnPath = false;
+    }
+    // Otherwise the CLI ran and answered something other than a version. Not
+    // fatal: the config file can still carry both the token and the port.
+  }
+
   const gatewayPort =
     configText === null ? FALLBACK_GATEWAY_PORT : parseGatewayPort(configText);
 
-  if (configText !== null) {
-    // The config file wins when it declares a literal token.
-    //
-    // The CLI was tried first in the original draft, on the theory that the
-    // source should resolve its own indirection. A live run disproved it: on
-    // OpenClaw 2026.7.x `config get gateway.auth.token` answers with a short
-    // masked value, not the credential, and pairing failed with "gateway token
-    // mismatch" while a perfectly good token sat in the file. Secret-reading
-    // CLIs mask by default, so the file is the trustworthy source and the CLI
-    // is only worth trying when the file has nothing literal to give.
-    const fileToken = parseConfigToken(configText);
-    if (fileToken) {
-      return {
-        ok: true,
-        facts: {
-          version,
-          gatewayPort,
-          sharedToken: fileToken,
-          tokenSource: 'config-file',
-        },
-      };
+  // The config file wins when it declares a literal token.
+  //
+  // The CLI was tried first in the original draft, on the theory that the
+  // source should resolve its own indirection. A live run disproved it: on
+  // OpenClaw 2026.7.x `config get gateway.auth.token` answers with a short
+  // masked value, not the credential, and pairing failed with "gateway token
+  // mismatch" while a perfectly good token sat in the file. Secret-reading
+  // CLIs mask by default, so the file is the trustworthy source and the CLI
+  // is only worth trying when the file has nothing literal to give.
+  const fileToken = configText === null ? null : parseConfigToken(configText);
+  if (fileToken) {
+    return {
+      ok: true,
+      facts: {
+        version,
+        gatewayPort,
+        sharedToken: fileToken,
+        tokenSource: 'config-file',
+      },
+    };
+  }
+
+  // 3. The source's own CLI resolves the token when the config file only
+  //    points at where it lives. Asked only when it can answer: a binary the
+  //    shell just failed to find will fail to find it again, and each ask is
+  //    one more SSH login on the operator's server.
+  let cliToken: string | null = null;
+  if (binaryOnPath) {
+    const cliRun = await runRemote(exec, target, [
+      'openclaw',
+      'config',
+      'get',
+      'gateway.auth.token',
+    ]);
+    if (!cliRun.ok) return failed(cliRun.failure);
+    if (cliRun.result.code === 0) {
+      cliToken = parseCliToken(cliRun.result.stdout);
+    } else {
+      const transport = classifyTransport(cliRun.result);
+      if (transport) return failed(transport.failure, transport.message);
     }
-    if (cliToken) {
-      return {
-        ok: true,
-        facts: {
-          version,
-          gatewayPort,
-          sharedToken: cliToken,
-          tokenSource: 'cli',
-        },
-      };
-    }
-    // Reached the config and read it, and neither it nor the CLI yielded a
-    // usable token. This is the indirection case. Distinct from an unreadable
-    // config, because the operator's next step is different: supply a token
-    // rather than fix a permission.
-    return failed('token-unavailable');
   }
 
   if (cliToken) {
@@ -815,6 +843,19 @@ export async function bootstrapGatewayCredentialOverSsh(
       },
     };
   }
+
+  if (configText !== null) {
+    // Reached the config and read it, and neither it nor the CLI yielded a
+    // usable token. This is the indirection case. Distinct from an unreadable
+    // config, because the operator's next step is different: supply a token
+    // rather than fix a permission.
+    return failed('token-unavailable');
+  }
+
+  // Nothing readable and nothing on PATH: as far as this login can see there
+  // is no OpenClaw here. A named state the operator acts on, never an outage
+  // the ladder waits out.
+  if (!binaryOnPath) return failed('openclaw-missing');
 
   return configFailure
     ? failed(configFailure.failure, configFailure.message)

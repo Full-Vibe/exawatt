@@ -212,6 +212,9 @@ importers:
       '@noble/ed25519':
         specifier: ^3.0.1
         version: 3.0.1
+      json5:
+        specifier: ^2.2.3
+        version: 2.2.3
     devDependencies:
       typescript:
         specifier: ^5.9.3

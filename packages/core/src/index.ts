@@ -19,7 +19,7 @@ export {
   deriveDeviceId,
 } from './oc/auth';
 export type { OCDeviceKeypair, OCGatewayConfig } from './oc/auth';
-export { OCClient } from './oc/client';
+export { OCClient, OCGatewayError, gatewayAnswered } from './oc/client';
 export { OCMethods } from './oc/methods';
 export type {
   OCClientConfig,

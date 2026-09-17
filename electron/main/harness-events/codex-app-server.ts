@@ -6,10 +6,16 @@
  * protocol for thread lineage and lifecycle. It never reads rollout files,
  * process trees, worktrees, or terminal text.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import {
+  execFile,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from 'child_process';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { promisify } from 'util';
 import { defaultShell, type PtySessionInfo } from '../pty/session-manager';
 import { planLoginShell, shellQuote } from '../pty/login-shell';
 import type { DelegationReportSink } from './delegation-monitor';
@@ -113,13 +119,48 @@ export class CodexProtocolReadError extends Error {
 }
 
 function observationFailure(error: unknown): DelegationObservation['reason'] {
-  return error instanceof CodexProtocolReadError && error.unsupported
+  // A permanent verdict is the installed provider declining the protocol,
+  // not a read Exawatt is retrying, so it discloses as unsupported.
+  return (
+    (error instanceof CodexProtocolReadError && error.unsupported) ||
+    isPermanentVerdict(error)
+  )
     ? 'unsupported'
     : 'read-failed';
 }
 
+/**
+ * A verdict about the installed provider, not about this attempt.
+ *
+ * Every other failure this adapter meets is transient: a spawn that failed, a
+ * request that timed out, a process that exited. Asking again is the right
+ * response to those. A protocol verdict is different in kind: the installed
+ * app-server is older than the schema this adapter reads, or it emitted a
+ * frame this adapter refuses, and asking the same binary again returns the
+ * same verdict. Throwing it as a plain error put it on the retry ladder, which
+ * spawned a login shell and a `codex app-server` every 30 seconds for as long
+ * as any Codex Session was live (BUG-146). The marker is what lets the
+ * observer remember it instead.
+ */
+export class CodexProtocolIncompatibleError extends Error {
+  readonly permanent = true as const;
+
+  constructor(message: string) {
+    super(`Codex delegation protocol incompatible: ${message}`);
+    this.name = 'CodexProtocolIncompatibleError';
+  }
+}
+
+/** Is this a verdict about the binary rather than a failure of the attempt? */
+export function isPermanentVerdict(error: unknown): error is Error {
+  return (
+    error instanceof Error &&
+    (error as { permanent?: unknown }).permanent === true
+  );
+}
+
 function protocolError(message: string): Error {
-  return new Error(`Codex delegation protocol incompatible: ${message}`);
+  return new CodexProtocolIncompatibleError(message);
 }
 
 function codexInvocation(): string {
@@ -281,6 +322,47 @@ export function parseCodexConversationItems(value: unknown): unknown[] {
       throw protocolError('thread/items/list entry has no item object');
     return item;
   });
+}
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Where the operator's login shell finds `codex`. One shell spawn, made once
+ * when a permanent verdict is recorded, so the verdict can be keyed to the
+ * binary it judged. Null when the shell did not answer with an absolute path;
+ * the verdict is then keyed to the observed Session set alone.
+ */
+async function resolveCodexBinary(): Promise<string | null> {
+  const shell = await defaultShell();
+  const plan = planLoginShell(shell, {
+    command: `command -v ${codexInvocation()}`,
+  });
+  try {
+    const result = await execFileAsync(shell, plan.args, {
+      cwd: plan.cwd,
+      timeout: 8_000,
+      maxBuffer: 64 * 1024,
+      encoding: 'utf8',
+    });
+    const resolved = result.stdout.split('\n')[0]?.trim();
+    return resolved && path.isAbsolute(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The binary as it is on disk right now. A `stat`, never a spawn: this is what
+ * a remembered verdict is re-checked against on every poll, so it has to be
+ * free. Null when the path is gone, which counts as a change.
+ */
+function fingerprintCodexBinary(binaryPath: string): string | null {
+  try {
+    const stats = fs.statSync(binaryPath);
+    return `${stats.ino}:${stats.size}:${stats.mtimeMs}`;
+  } catch {
+    return null;
+  }
 }
 
 /** JSON-RPC client for the installed Codex app-server. */
@@ -575,6 +657,28 @@ export interface CodexDelegationObserverOptions {
   sink?: DelegationReportSink;
   autoPoll?: boolean;
   observations?: DelegationObservations;
+  /** Where the login shell finds the binary; spawned once per verdict. */
+  resolveBinary?: () => Promise<string | null>;
+  /** The binary as it is on disk; a stat, checked on every poll. */
+  fingerprintBinary?: (binaryPath: string) => string | null;
+}
+
+/**
+ * A permanent verdict the observer holds instead of retrying.
+ *
+ * Keyed to the binary that was judged, by path and on-disk fingerprint, and
+ * to the set of Sessions it was judged over. The verdict lifts when either
+ * changes: the binary was upgraded or replaced, or a new Codex Session was
+ * launched, which is the operator's own moment to have upgraded it. Nothing
+ * lifts it on a timer, because a timer is what it replaces.
+ */
+interface CodexDelegationVerdict {
+  error: Error;
+  /** The provider's own `initialize` user agent, when it answered one. */
+  version: string | null;
+  binaryPath: string | null;
+  fingerprint: string | null;
+  recordedAt: number;
 }
 
 interface SessionManagerLike extends EventEmitter {
@@ -634,11 +738,21 @@ export class CodexDelegationObserver {
   private readonly pollIntervalMs: number;
   private readonly autoPoll: boolean;
   private readonly observations: DelegationObservations;
+  private readonly resolveBinary: () => Promise<string | null>;
+  private readonly fingerprintBinary: (binaryPath: string) => string | null;
   private client: CodexDelegationProtocol | null = null;
   private sink: DelegationReportSink | null = null;
   private timer: NodeJS.Timeout | null = null;
   private polling = false;
   private retryMs = 1_000;
+  /**
+   * The verdict being held, with the Session-set generation it was judged
+   * over. A generation bump is a new Session or a dropped one; either is a
+   * reason to look once more.
+   */
+  private held: { verdict: CodexDelegationVerdict; generation: number } | null =
+    null;
+  private rootsGeneration = 0;
 
   constructor(options: CodexDelegationObserverOptions = {}) {
     this.clientFactory =
@@ -647,6 +761,13 @@ export class CodexDelegationObserver {
     this.autoPoll = options.autoPoll ?? true;
     this.observations = options.observations ?? delegationObservations;
     this.sink = options.sink ?? null;
+    this.resolveBinary = options.resolveBinary ?? resolveCodexBinary;
+    this.fingerprintBinary = options.fingerprintBinary ?? fingerprintCodexBinary;
+  }
+
+  /** The permanent verdict this observer is holding, if any. */
+  get verdict(): CodexDelegationVerdict | null {
+    return this.held?.verdict ?? null;
   }
 
   attach(manager: SessionManagerLike, sink: DelegationReportSink): void {
@@ -678,11 +799,12 @@ export class CodexDelegationObserver {
     this.roots.set(session.id, {
       threadId: session.harnessSessionId,
     });
+    this.rootsGeneration += 1;
     if (this.autoPoll) this.schedule(0);
   }
 
   drop(sessionId: string): void {
-    this.roots.delete(sessionId);
+    if (this.roots.delete(sessionId)) this.rootsGeneration += 1;
     this.observations.drop(sessionId);
     if (this.roots.size === 0) {
       if (this.timer) clearTimeout(this.timer);
@@ -697,11 +819,19 @@ export class CodexDelegationObserver {
     if (this.polling || this.roots.size === 0) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    if (this.holdsVerdict()) {
+      // Nothing is spawned while a verdict stands. The re-check above was a
+      // stat; the next one is scheduled at the ladder's ceiling, so a held
+      // verdict costs one stat every thirty seconds and no process.
+      if (this.autoPoll) this.schedule(MAX_BACKOFF_MS);
+      return;
+    }
     this.polling = true;
     const client = this.client ?? this.clientFactory();
     this.client = client;
     const roots = [...this.roots.entries()];
     let failed = false;
+    let permanent: Error | null = null;
     try {
       await client.connect();
       const snapshots = await settleConcurrent(
@@ -726,11 +856,13 @@ export class CodexDelegationObserver {
         } else {
           this.withdraw(sessionId, snapshot.reason, client.version);
           failed = true;
+          if (isPermanentVerdict(snapshot.reason)) permanent = snapshot.reason;
         }
       }
     } catch (error) {
       if (this.client !== client) return;
       failed = true;
+      if (isPermanentVerdict(error)) permanent = error;
       for (const [sessionId, root] of roots) {
         if (this.roots.get(sessionId) === root)
           this.withdraw(sessionId, error, client.version);
@@ -741,12 +873,77 @@ export class CodexDelegationObserver {
         client.close();
         this.client = null;
       }
-      if (this.autoPoll)
-        this.schedule(failed ? this.retryMs : this.pollIntervalMs);
-      this.retryMs = failed
-        ? Math.min(MAX_BACKOFF_MS, this.retryMs * 2)
-        : 1_000;
+      if (permanent !== null) this.remember(permanent, client);
+      if (this.autoPoll) {
+        this.schedule(
+          permanent !== null
+            ? MAX_BACKOFF_MS
+            : failed
+              ? this.retryMs
+              : this.pollIntervalMs
+        );
+      }
+      this.retryMs =
+        failed && permanent === null
+          ? Math.min(MAX_BACKOFF_MS, this.retryMs * 2)
+          : 1_000;
     }
+  }
+
+  /**
+   * Hold a permanent verdict instead of retrying it.
+   *
+   * Recorded synchronously, so a poll that starts before the binary is
+   * resolved already sees it held; the binary path and fingerprint arrive
+   * afterwards from the one shell spawn this costs, and only if this verdict
+   * is still the one being held.
+   */
+  private remember(error: Error, client: CodexDelegationProtocol): void {
+    const verdict: CodexDelegationVerdict = {
+      error,
+      version: client.version ?? null,
+      binaryPath: null,
+      fingerprint: null,
+      recordedAt: Date.now(),
+    };
+    this.held = { verdict, generation: this.rootsGeneration };
+    console.warn(
+      `[codex-delegation] holding a permanent verdict, no retry until the binary or the Session set changes: ${error.message}` +
+        (verdict.version ? ` (${verdict.version})` : '')
+    );
+    this.resolveBinary()
+      .then(binaryPath => {
+        if (this.held?.verdict !== verdict || binaryPath === null) return;
+        verdict.binaryPath = binaryPath;
+        verdict.fingerprint = this.fingerprintBinary(binaryPath);
+      })
+      .catch(() => {
+        // Unresolved is allowed: the verdict then lifts on a Session change.
+      });
+  }
+
+  /**
+   * Whether the held verdict still applies. It lifts when the Session set
+   * changed since it was judged or when the binary on disk is no longer the
+   * one it was judged against; both are re-checked here, at no more than the
+   * cost of one stat.
+   */
+  private holdsVerdict(): boolean {
+    const held = this.held;
+    if (held === null) return false;
+    if (held.generation !== this.rootsGeneration) {
+      this.held = null;
+      return false;
+    }
+    const { binaryPath, fingerprint } = held.verdict;
+    if (
+      binaryPath !== null &&
+      this.fingerprintBinary(binaryPath) !== fingerprint
+    ) {
+      this.held = null;
+      return false;
+    }
+    return true;
   }
 
   private async snapshot(

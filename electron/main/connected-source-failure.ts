@@ -43,10 +43,24 @@ export const TUNNEL_FAILURE_TO_SOURCE_FAILURE: Readonly<
 /**
  * Bootstrap failures translated the same way.
  *
- * `openclaw-missing` is `gateway-down`: the login worked and nothing is serving
- * a Gateway there. `token-unavailable` is `auth-rejected`: the source declares
- * no shared secret, so Exawatt has no credential to present, and the operator
- * resolves it the same way as any other credential problem (the documented
+ * Only `unreachable` may become a class the reconnect ladder retries. The
+ * question this table answers for every other row is "does waiting heal it?",
+ * and the answer for a fact about the login, the file, or the configuration
+ * is no: a person has to change something.
+ *
+ * `openclaw-missing` is `unknown`, and deliberately NOT `gateway-down`. It
+ * used to be, on the reading that a login with no OpenClaw has no Gateway; but
+ * the bootstrap reads it off `openclaw --version` under the server's
+ * NON-INTERACTIVE shell, and a Homebrew or npm install that a login shell finds
+ * is routinely absent from that PATH. That is a fact about PATH, not an outage,
+ * and reporting it as one made a saved source sit Reconnecting forever, four
+ * SSH logins a minute, over a Gateway that was up (BUG-146). The bootstrap
+ * itself no longer gates the configuration read on the binary, so this class
+ * is now reached only when the configuration could not be read either; the
+ * operator's sentence names the install, and nothing retries it on a timer.
+ * `token-unavailable` is `auth-rejected`: the source declares no shared
+ * secret, so Exawatt has no credential to present, and the operator resolves
+ * it the same way as any other credential problem (the documented
  * paste-a-token fallback). `unreadable-config` stays `unknown` rather than
  * guessing which of several causes applied.
  */
@@ -56,7 +70,7 @@ export const BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE: Readonly<
   'invalid-target': 'unknown',
   unreachable: 'host-unreachable',
   'auth-rejected': 'auth-rejected',
-  'openclaw-missing': 'gateway-down',
+  'openclaw-missing': 'unknown',
   'token-unavailable': 'auth-rejected',
   'unreadable-config': 'unknown',
   unknown: 'unknown',

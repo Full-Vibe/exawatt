@@ -383,12 +383,114 @@ describe('bootstrapGatewayCredentialOverSsh token acquisition', () => {
         tokenSource: 'config-file',
       },
     });
+    // The file is read first and the CLI is not asked at all once the file
+    // has answered: each ask is one more SSH login on the operator's server.
     expect(calls.map(call => call.argv.join(' '))).toEqual([
-      'openclaw --version',
-      'openclaw config get gateway.auth.token',
       'cat .openclaw/openclaw.json',
+      'openclaw --version',
     ]);
   });
+
+  it('reads a hand-edited JSON5 configuration, as OpenClaw itself does', async () => {
+    const { exec } = fakeExec(
+      healthyResponder(argv =>
+        argv[0] === 'cat'
+          ? {
+              stdout: [
+                '{',
+                '  // edited by hand',
+                `  gateway: { port: 4343, auth: { mode: 'token', token: '${FILE_TOKEN}', }, },`,
+                '}',
+                '',
+              ].join('\n'),
+            }
+          : undefined
+      )
+    );
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      facts: { gatewayPort: 4343, sharedToken: FILE_TOKEN },
+    });
+  });
+
+  it('reads the configuration even when the non-interactive shell cannot find openclaw', async () => {
+    // Homebrew or npm on the server, absent from sshd's PATH: the config is
+    // right there and the Gateway is up. A PATH fact is not an outage.
+    const { exec, calls } = fakeExec(
+      healthyResponder(argv =>
+        argv[0] === 'openclaw'
+          ? { code: 127, stderr: 'bash: openclaw: command not found' }
+          : undefined
+      )
+    );
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
+    expect(result).toEqual({
+      ok: true,
+      facts: {
+        version: null,
+        gatewayPort: 4242,
+        sharedToken: FILE_TOKEN,
+        tokenSource: 'config-file',
+      },
+    });
+    // A binary the shell could not find is not asked for the token either.
+    expect(calls.map(call => call.argv.join(' '))).not.toContain(
+      'openclaw config get gateway.auth.token'
+    );
+  });
+
+  it('reports openclaw-missing only when neither the file nor the binary is there', async () => {
+    const { exec, calls } = fakeExec(
+      healthyResponder(argv => {
+        if (argv[0] === 'openclaw') {
+          return { code: 127, stderr: 'bash: openclaw: command not found' };
+        }
+        if (argv[0] === 'cat') {
+          return {
+            code: 1,
+            stderr: 'cat: .openclaw/openclaw.json: No such file or directory',
+          };
+        }
+        return undefined;
+      })
+    );
+    const result = await bootstrapGatewayCredentialOverSsh(
+      ALIAS_DESTINATION,
+      exec
+    );
+    expect(result.ok === false && result.failure).toBe('openclaw-missing');
+    expect(result.ok === false && result.message).toMatch(/installed/i);
+    expect(calls).toHaveLength(2);
+  });
+
+  it.each(['***\n', '"***"\n', '********', 'abc***def\n', '••••••'])(
+    'refuses the masked value %j as a credential',
+    async stdout => {
+      // OpenClaw 2026.7.x masks `config get gateway.auth.token`. The mask
+      // satisfied the one-line shape test and was handed to the Gateway as
+      // the token, ranked above the honest token-unavailable answer.
+      const { exec } = fakeExec(
+        healthyResponder(argv => {
+          if (argv.includes('get')) return { stdout };
+          if (argv[0] === 'cat') return { stdout: INDIRECTION_CONFIG };
+          return undefined;
+        })
+      );
+      const result = await bootstrapGatewayCredentialOverSsh(
+        ALIAS_DESTINATION,
+        exec
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.failure).toBe('token-unavailable');
+    }
+  );
 
   it('runs only remote arguments that survive the allowlist', async () => {
     const { exec, calls } = fakeExec(healthyResponder());
@@ -405,67 +507,71 @@ describe('bootstrapGatewayCredentialOverSsh token acquisition', () => {
     }
   });
 
-  it('falls through to the config file when the CLI prints a JSON blob', async () => {
+  /**
+   * The CLI is consulted only when the file holds nothing literal, so every
+   * case about what it prints runs over the indirection config; over the
+   * plain one the CLI is never asked and the case would prove nothing.
+   */
+  function cliAnswering(answer: Partial<RemoteExecResult>): Responder {
+    return argv => {
+      if (argv.includes('get')) return answer;
+      if (argv[0] === 'cat') return { stdout: INDIRECTION_CONFIG };
+      return undefined;
+    };
+  }
+
+  it('refuses a JSON blob from the CLI as a credential', async () => {
     const { exec } = fakeExec(
-      healthyResponder(argv =>
-        argv.includes('get')
-          ? {
-              stdout:
-                '{"source":"file","provider":"gateway_auth_token","id":"value"}\n',
-            }
-          : undefined
+      healthyResponder(
+        cliAnswering({
+          stdout:
+            '{"source":"file","provider":"gateway_auth_token","id":"value"}\n',
+        })
       )
     );
     const result = await bootstrapGatewayCredentialOverSsh(
       ALIAS_DESTINATION,
       exec
     );
-    expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
-    expect(result.ok && result.facts.tokenSource).toBe('config-file');
+    expect(result.ok === false && result.failure).toBe('token-unavailable');
   });
 
-  it('falls through when the CLI prints an error sentence on a zero exit', async () => {
+  it('refuses an error sentence the CLI printed on a zero exit', async () => {
     const { exec } = fakeExec(
-      healthyResponder(argv =>
-        argv.includes('get')
-          ? { stdout: 'error: unknown config key gateway.auth.token\n' }
-          : undefined
+      healthyResponder(
+        cliAnswering({
+          stdout: 'error: unknown config key gateway.auth.token\n',
+        })
       )
     );
     const result = await bootstrapGatewayCredentialOverSsh(
       ALIAS_DESTINATION,
       exec
     );
-    expect(result.ok && result.facts.tokenSource).toBe('config-file');
+    expect(result.ok === false && result.failure).toBe('token-unavailable');
   });
 
   it.each(['undefined\n', 'null\n', '  \n', '(null)'])(
-    'falls through when the CLI prints the placeholder %j',
+    'refuses the placeholder %j the CLI printed',
     async stdout => {
-      const { exec } = fakeExec(
-        healthyResponder(argv =>
-          argv.includes('get') ? { stdout } : undefined
-        )
-      );
+      const { exec } = fakeExec(healthyResponder(cliAnswering({ stdout })));
       const result = await bootstrapGatewayCredentialOverSsh(
         ALIAS_DESTINATION,
         exec
       );
-      expect(result.ok && result.facts.tokenSource).toBe('config-file');
+      expect(result.ok === false && result.failure).toBe('token-unavailable');
     }
   );
 
-  it('falls through when the CLI exits non-zero without a transport reason', async () => {
+  it('reports token-unavailable when the CLI exits non-zero without a transport reason', async () => {
     const { exec } = fakeExec(
-      healthyResponder(argv =>
-        argv.includes('get') ? { code: 1, stderr: 'unknown key' } : undefined
-      )
+      healthyResponder(cliAnswering({ code: 1, stderr: 'unknown key' }))
     );
     const result = await bootstrapGatewayCredentialOverSsh(
       ALIAS_DESTINATION,
       exec
     );
-    expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
+    expect(result.ok === false && result.failure).toBe('token-unavailable');
   });
 
   it('unwraps a JSON-quoted single-line token from the CLI', async () => {
@@ -592,18 +698,15 @@ describe('bootstrapGatewayCredentialOverSsh token acquisition', () => {
 });
 
 describe('bootstrapGatewayCredentialOverSsh failure classification', () => {
-  /** [label, remote exit code, stderr, expected failure] */
+  /**
+   * [label, remote exit code, stderr, expected failure]
+   *
+   * A missing binary is the REMOTE shell's status, never ssh's own 255, and
+   * on its own it no longer fails anything: the wording is classified by
+   * `indicatesMissingCommand`, exercised below, and becomes a failure only
+   * when the configuration could not be read either.
+   */
   const cases: ReadonlyArray<[string, number, string, string]> = [
-    // A missing binary is the REMOTE shell's status, never ssh's own 255.
-    [
-      'command not found',
-      127,
-      `bash: openclaw: command not found`,
-      'openclaw-missing',
-    ],
-    ['not found', 127, `sh: 1: openclaw: not found`, 'openclaw-missing'],
-    ['no such file', 127, `no such file or directory`, 'openclaw-missing'],
-
     // ssh's own failures all arrive as status 255.
     [
       'permission denied',
@@ -693,13 +796,38 @@ describe('bootstrapGatewayCredentialOverSsh failure classification', () => {
     expect(result.ok === false && result.failure).toBe(expected);
   });
 
+  it.each([
+    ['command not found', `bash: openclaw: command not found`],
+    ['not found', `sh: 1: openclaw: not found`],
+    ['no such file', `no such file or directory`],
+  ])(
+    'reads %s as a missing binary, and reports it only beside an unreadable file',
+    async (_label, stderr) => {
+      const { exec } = fakeExec(
+        healthyResponder(argv => {
+          if (argv[0] === 'openclaw') return { code: 127, stderr };
+          if (argv[0] === 'cat') return { code: 1, stderr: 'No such file' };
+          return undefined;
+        })
+      );
+      const result = await bootstrapGatewayCredentialOverSsh(
+        ALIAS_DESTINATION,
+        exec
+      );
+      expect(result.ok === false && result.failure).toBe('openclaw-missing');
+    }
+  );
+
   it('classifies a transport failure raised at the token step', async () => {
     const { exec } = fakeExec(
-      healthyResponder(argv =>
-        argv.includes('get')
-          ? { code: 255, stderr: `Permission denied (publickey).` }
-          : undefined
-      )
+      healthyResponder(argv => {
+        if (argv.includes('get')) {
+          return { code: 255, stderr: `Permission denied (publickey).` };
+        }
+        // The token step is only reached over a file with nothing literal.
+        if (argv[0] === 'cat') return { stdout: INDIRECTION_CONFIG };
+        return undefined;
+      })
     );
     const result = await bootstrapGatewayCredentialOverSsh(
       ALIAS_DESTINATION,
@@ -786,6 +914,8 @@ describe('bootstrapGatewayCredentialOverSsh redaction', () => {
           const forced = perturb(argv);
           if (forced) return forced;
           if (argv.includes('get')) return { code: 1, stderr: 'unresolved' };
+          // The token step is only reached over a file with nothing literal.
+          if (argv[0] === 'cat') return { stdout: INDIRECTION_CONFIG };
           return undefined;
         })
       );
@@ -815,9 +945,14 @@ describe('bootstrapGatewayCredentialOverSsh redaction', () => {
     ];
     for (const [code, stderr] of stderrs) {
       const { exec } = fakeExec(
-        healthyResponder(argv =>
-          argv.includes('--version') ? { code, stderr } : undefined
-        )
+        healthyResponder(argv => {
+          if (argv.includes('--version')) return { code, stderr };
+          // A missing binary is only a failure beside an unreadable file.
+          if (code === 127 && argv[0] === 'cat') {
+            return { code: 1, stderr: 'No such file' };
+          }
+          return undefined;
+        })
       );
       const result = await bootstrapGatewayCredentialOverSsh(
         ALIAS_DESTINATION,
@@ -1088,7 +1223,8 @@ describe('resolveGatewayCredential', () => {
     });
 
     expect(result.ok && result.facts.sharedToken).toBe(FILE_TOKEN);
-    expect(calls).toHaveLength(3);
+    // The file answered, so the CLI was never asked: two logins, not three.
+    expect(calls).toHaveLength(2);
     for (const call of calls) {
       // The forward port is connection material for the tunnel, not part of
       // the destination the bootstrap logs into.
@@ -1219,7 +1355,7 @@ describe('buildRemoteExecArgs for a manually entered server', () => {
       () => false
     );
     expect(result.ok).toBe(true);
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(2);
   });
 });
 

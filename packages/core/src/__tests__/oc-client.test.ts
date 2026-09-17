@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { OCClient } from '../oc/client';
+import { OCClient, OCGatewayError, gatewayAnswered } from '../oc/client';
 import * as auth from '../oc/auth';
 
 /**
@@ -507,5 +507,160 @@ describe('OCClient', () => {
     expect(statuses).toContain('connecting');
     expect(statuses).toContain('connected');
     expect(statuses).toContain('disconnected');
+  });
+
+  describe('an answer versus silence (BUG-146)', () => {
+    it("marks a refusal the Gateway answered with, so a caller can tell it from a timeout", async () => {
+      const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+      const { connectPromise, socket } = await beginConnect(client);
+      const settled = connectPromise.then(
+        () => null,
+        (error: unknown) => error
+      );
+
+      socket.serverSend({
+        type: 'event',
+        event: 'connect.challenge',
+        payload: { nonce: 'nonce-refused', ts: 1111 },
+      });
+      await flush();
+      const connectRequest = JSON.parse(socket.sentMessages[0]) as {
+        id: string;
+      };
+      socket.serverSend({
+        type: 'res',
+        id: connectRequest.id,
+        ok: false,
+        error: { message: 'FORBIDDEN: operator.write scope required' },
+      });
+      await flush();
+
+      const error = await settled;
+      expect(error).toBeInstanceOf(OCGatewayError);
+      expect(gatewayAnswered(error)).toBe(true);
+    });
+
+    it('does not mark a connection that closed without answering', async () => {
+      const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+      const { connectPromise, socket } = await beginConnect(client);
+      const settled = connectPromise.then(
+        () => null,
+        (error: unknown) => error
+      );
+
+      socket.close();
+      await flush();
+
+      const error = await settled;
+      expect(error).toBeInstanceOf(Error);
+      expect(gatewayAnswered(error)).toBe(false);
+    });
+
+    it('does not mark a request that timed out', async () => {
+      const client = new OCClient({
+        url: 'ws://127.0.0.1:18789',
+        requestTimeoutMs: 1,
+      });
+      const { connectPromise, socket } = await beginConnect(client);
+      await completeHandshake(socket);
+      await connectPromise;
+
+      const settled = client.call('agents.list').then(
+        () => null,
+        (error: unknown) => error
+      );
+      // The timeout is the deadline the client owns; the test waits for the
+      // rejection it produces rather than for a number of milliseconds.
+      const error = await settled;
+      expect(error).toBeInstanceOf(Error);
+      expect(gatewayAnswered(error)).toBe(false);
+      client.disconnect();
+    });
+
+    it('reads the marker structurally, so a second copy of the module still counts', () => {
+      const foreign = Object.assign(new Error('unauthorized'), {
+        gatewayAnswered: true,
+      });
+      expect(gatewayAnswered(foreign)).toBe(true);
+      expect(gatewayAnswered(new Error('unauthorized'))).toBe(false);
+      expect(gatewayAnswered('unauthorized')).toBe(false);
+      expect(gatewayAnswered(null)).toBe(false);
+    });
+  });
+
+  describe('a non-conforming frame (BUG-146)', () => {
+    /**
+     * Frames a Gateway could send that are valid JSON and not a frame. Each
+     * one used to throw inside a detached async handler, which is an
+     * unhandled rejection nothing in main records.
+     */
+    const NON_FRAMES: unknown[] = [
+      null,
+      42,
+      'hello',
+      [],
+      { type: 'event', event: 'connect.challenge', payload: null },
+      { type: 'event', event: 'connect.challenge', payload: 'nonce-1' },
+      { type: 'event', event: 'connect.challenge', payload: {} },
+      { type: 'res' },
+      { type: 'res', id: 7 },
+      { type: 'event' },
+    ];
+
+    /**
+     * `unhandledRejection` is reported after the microtask queue drains, on a
+     * later turn of the event loop. Waiting one turn is waiting for that
+     * effect, not for a duration.
+     */
+    const eventLoopTurn = (): Promise<void> =>
+      new Promise(resolve => setImmediate(resolve));
+
+    it('never escapes as an unhandled rejection and never stalls a later handshake', async () => {
+      const escaped: unknown[] = [];
+      const capture = (reason: unknown): void => {
+        escaped.push(reason);
+      };
+      process.on('unhandledRejection', capture);
+      try {
+        for (const frame of NON_FRAMES) {
+          MockWebSocket.instances = [];
+          const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+          const reported: Error[] = [];
+          client.on('connection:error', error => {
+            reported.push(error);
+          });
+          const { connectPromise, socket } = await beginConnect(client);
+          const settled = connectPromise.then(
+            () => 'connected' as const,
+            (error: unknown) => error
+          );
+
+          socket.serverSend(frame);
+          await flush();
+          await eventLoopTurn();
+
+          // A challenge with nothing to sign is answered honestly and at once
+          // rather than left to the connect timeout; everything else is
+          // dropped and the real challenge that follows still completes.
+          const isChallenge =
+            !!frame &&
+            typeof frame === 'object' &&
+            (frame as { event?: unknown }).event === 'connect.challenge';
+          if (isChallenge) {
+            const outcome = await settled;
+            expect(outcome).toBeInstanceOf(Error);
+            expect(reported.length).toBeGreaterThan(0);
+          } else {
+            await completeHandshake(socket);
+            expect(await settled).toBe('connected');
+          }
+          client.disconnect();
+        }
+        await eventLoopTurn();
+      } finally {
+        process.off('unhandledRejection', capture);
+      }
+      expect(escaped).toEqual([]);
+    });
   });
 });

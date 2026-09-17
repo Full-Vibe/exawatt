@@ -1,5 +1,6 @@
 import {
   adaptOpenClawTopology,
+  gatewayAnswered,
   generateDeviceKeypair,
   readGrantedAuthority,
   resolveConnectionStatus,
@@ -1257,7 +1258,7 @@ export class ConnectedGatewaySession {
 
     let requested: SourceAuthority = this.grantedAuthority;
     let opened = await this.openHandshake(client);
-    if (!opened.ok && requested === 'write') {
+    if (!opened.ok && opened.answered && requested === 'write') {
       /*
        * Asking for less than the source approved is always allowed, so a
        * refused write ask means the approval this record remembers no longer
@@ -1266,6 +1267,12 @@ export class ConnectedGatewaySession {
        * the honest downgrade instead of stranding the source over authority it
        * does not have. The reverse fallback does not exist and must not: no
        * failure may widen what Exawatt asks for.
+       *
+       * Only on an ANSWERED refusal. A handshake that timed out or whose
+       * socket closed says nothing about authority, and falling back on it
+       * persisted `read` over a source that still approved write, for good,
+       * because the next reconnect asked for what the record now said
+       * (BUG-146). Silence keeps the requested scope and rides the ladder.
        */
       requested = 'read';
       config.scopes = [...SCOPES_FOR_AUTHORITY.read];
@@ -1332,14 +1339,29 @@ export class ConnectedGatewaySession {
    * a Gateway that was answering perfectly well. It is protocol text, not
    * transport text, and it is the sentence that makes the next step obvious.
    */
-  private async openHandshake(
-    client: ConnectedGatewayClient
-  ): Promise<{ ok: true } | { ok: false; sentence: string | null }> {
+  private async openHandshake(client: ConnectedGatewayClient): Promise<
+    | { ok: true }
+    | {
+        ok: false;
+        sentence: string | null;
+        /**
+         * True when the Gateway itself refused; false when the connection
+         * timed out or closed without an answer. The client marks the
+         * difference (`OCGatewayError`), and it decides whether a caller may
+         * conclude anything about authority from the failure.
+         */
+        answered: boolean;
+      }
+  > {
     try {
       await client.connect();
       return { ok: true };
     } catch (error) {
-      return { ok: false, sentence: sourceSentence(error) };
+      return {
+        ok: false,
+        sentence: sourceSentence(error),
+        answered: gatewayAnswered(error),
+      };
     }
   }
 
@@ -1572,6 +1594,16 @@ export class ConnectedGatewaySession {
       this.clearObservationTimers();
       this.retrying = false;
       this.setPhase('failed');
+      /*
+       * The report keeps the snapshot and the identity; it does not keep the
+       * connection. Nothing watches this socket once the session is failed,
+       * so leaving it up meant an `ssh` child holding a forward open on the
+       * operator's server and a Gateway subscription streaming into a
+       * session that had stopped listening, until the operator remapped or
+       * the process quit (BUG-146). Both paths in, first connect and
+       * periodic read, end here, so the close lives here.
+       */
+      await this.teardownConnection();
       return {
         ok: false,
         outcome: 'identity-drift',

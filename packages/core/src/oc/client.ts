@@ -23,6 +23,43 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * A no the Gateway itself said, as opposed to silence.
+ *
+ * Every rejection out of this client is one of two kinds, and callers have to
+ * tell them apart because they call for opposite next steps. The Gateway
+ * ANSWERED: it received the request and refused it in its own words, so asking
+ * the same thing again will be refused again, and what the operator must
+ * change is the ask (the scope, the credential). Or nothing answered: the
+ * request timed out, the socket closed, the connection never opened. That is
+ * an observation about the transport and about nothing else, so the same ask
+ * is worth repeating and no conclusion about authority may be drawn from it.
+ *
+ * Collapsing the two is how a saved source lost write access for good
+ * (BUG-146): a write-scope handshake that timed out was treated as a refusal,
+ * the session fell back to read, and persisted the downgrade. This class is
+ * the wall between them. It is a structural marker rather than only a
+ * subclass because the Electron main bundle and the workspace package can
+ * hold two copies of this module; `gatewayAnswered` reads the marker so the
+ * distinction survives that.
+ */
+export class OCGatewayError extends Error {
+  readonly gatewayAnswered = true as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'OCGatewayError';
+  }
+}
+
+/** Did the Gateway say this, or did the connection merely fail to carry it? */
+export function gatewayAnswered(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { gatewayAnswered?: unknown }).gatewayAnswered === true
+  );
+}
+
 export interface OCClientConfig {
   url: string;
   token?: string;
@@ -303,7 +340,19 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       if (typeof event.data !== 'string') {
         return;
       }
-      void this._handleMessage(event.data);
+      /*
+       * A frame the Gateway sends is untrusted input, and the handler is async,
+       * so a throw inside it would leave this event handler as an unhandled
+       * rejection with no owner: nothing in main logs it and nothing recovers
+       * (BUG-146, adjacent to BUG-129). The handler is total for the frame
+       * shapes below; this catch is the wall for whatever shape comes next.
+       */
+      this._handleMessage(event.data).catch((error: unknown) => {
+        const failure =
+          error instanceof Error ? error : new Error(String(error));
+        console.warn('[OCClient] frame handling failed:', failure.message);
+        this.emit('connection:error', failure);
+      });
     };
 
     socket.onerror = () => {
@@ -349,6 +398,11 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     try {
       frame = JSON.parse(raw);
     } catch {
+      return;
+    }
+    // `null`, a number, a string, or an array all parse and none is a frame.
+    // Reading `.type` off `null` is a throw, and this handler runs detached.
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
       return;
     }
 
@@ -402,6 +456,22 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
 
   private async _handleChallenge(challenge: OCConnectChallenge): Promise<void> {
     console.log('[OCClient] Received connect.challenge, signing...');
+    if (
+      !challenge ||
+      typeof challenge !== 'object' ||
+      typeof challenge.nonce !== 'string'
+    ) {
+      // A challenge with nothing to sign cannot become a handshake. Rejecting
+      // the pending connect() here is honest and immediate; leaving it to the
+      // connect timeout would report silence about a Gateway that answered.
+      const failure = new Error(
+        'Gateway sent a connect.challenge without a nonce'
+      );
+      this.handshakeFailure = failure;
+      this._setStatus('error');
+      this.emit('connection:error', failure);
+      return;
+    }
     const keypair = this.keypair;
     if (!keypair) {
       this.emit('connection:error', new Error('No device keypair available'));
@@ -509,9 +579,15 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     if (response.ok) {
       pending.resolve(response.payload);
     } else {
+      // The Gateway received this request and refused it: an answer, marked
+      // as one so a caller can tell it from a timeout or a closed socket.
       const errData = response.error as { message?: string } | undefined;
       pending.reject(
-        new Error(errData?.message ?? `RPC error for request ${response.id}`)
+        new OCGatewayError(
+          typeof errData?.message === 'string'
+            ? errData.message
+            : `RPC error for request ${response.id}`
+        )
       );
     }
   }

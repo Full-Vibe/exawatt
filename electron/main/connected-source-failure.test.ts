@@ -96,6 +96,24 @@ describe('the failure vocabularies', () => {
     }
   });
 
+  it('lets only an unreachable server become a class the ladder retries (BUG-146)', () => {
+    // The reconnect ladder retries `host-unreachable` and `gateway-down` and
+    // nothing else. A bootstrap failure is a fact about the login, the file,
+    // or the configuration, none of which heals by waiting: `openclaw-missing`
+    // as `gateway-down` kept a saved source Reconnecting indefinitely, four
+    // SSH logins per attempt, over a Gateway that was up.
+    const retried: SourceFailureClass[] = ['host-unreachable', 'gateway-down'];
+    for (const [failure, mapped] of Object.entries(
+      BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE
+    )) {
+      if (failure === 'unreachable') {
+        expect(mapped).toBe('host-unreachable');
+      } else {
+        expect(retried).not.toContain(mapped);
+      }
+    }
+  });
+
   it('never reports a fault on this machine as one on the server', () => {
     // A target Exawatt could not even form is a configuration fault here, and
     // `host-unreachable` would send the operator to check a network that is

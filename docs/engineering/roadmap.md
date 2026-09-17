@@ -1693,6 +1693,17 @@ Milestones:
   `7dc07d2c29c31e26917c001f63038c07b30a7b23` then proved both live SSH-alias
   Gateways, three source-qualified Agents, Team/Fleet opening, relaunch-stable
   Agent/Project/UI identity, observation-only authority, and exact cleanup.
+- C6 Failure predicate hardening — LANDED 2026-09-16 (BUG-146): the
+  release-candidate review found seven defects of one class in this path,
+  "connection failed" and "source refused" collapsed into one predicate and
+  permanent verdicts thrown as retryable failures. Fixed as one predicate per
+  layer: the bootstrap reads the configuration before it probes the binary and
+  a PATH fact is no longer an outage, a masked CLI answer is not a token, the
+  configuration is read as the JSON5 OpenClaw itself reads, a write handshake
+  narrows only on an answered refusal, drift closes the connection it
+  reports, a non-conforming frame cannot escape as an unhandled rejection,
+  and main records the ones that do. Unit fixtures fail without each fix;
+  the live two-Gateway pass was not re-run.
 
 Exit criteria: active discovery offers Marcus, Scout, and Tyler exactly once;
 Priya remains retired unless explicitly selected; source Sessions/cron/helpers
@@ -2078,6 +2089,8 @@ Status: planned — accepted 2026-08-04 from the unit-test throughput pass. The 
 2026-09-13 bounded application: BUG-137 adds `pnpm exports:check` to the landing floor, a delta-only refusal of new exports with no consumer. It is the smallest M1-shaped rule, one public-contract constraint on changed files, and it neither starts the migration nor changes the exit criteria.
 
 2026-09-16 bounded application (ENG-023 D7 / BUG-081): the reported-turn wiring between `AttentionMonitor` and `DelegationMonitor` moved out of `pty-ipc` into `electron/main/harness-events/turn-truth.ts`, one module that `pty-ipc` and `turn-truth-pipeline.test.ts` both run, so the turn-truth contract under test is the contract that ships rather than a hand-mirrored copy. An M1-shaped seam taken as a bounded refactor demanded by the repair, nothing more.
+
+2026-09-16 bounded application: BUG-146 adopted two M1-shaped boundary contracts ahead of the migration, each owned and tested in the package that produces it and consumed structurally by Electron main. `@exawatt/core`'s OC client marks a rejection the Gateway answered (`OCGatewayError`, read by `gatewayAnswered` rather than `instanceof`, because main's CJS bundle and the workspace package can hold two copies of the module), and the Codex adapter marks a permanent protocol verdict (`CodexProtocolIncompatibleError`, `isPermanentVerdict`). The [project doc's 2026-09-16 entry](projects/connected-openclaw-and-hosted-agents.md#2026-09-16--seven-defects-one-predicate) records why the marker had to be a contract and not a string match. No verification-topology change.
 
 2026-09-23 bounded application: ENG-015 S6.4 extracted the Session lifecycle vocabulary into `packages/ui-model/src/session-lifecycle.ts`, an M1-shaped seam (one public entrypoint through `@exawatt/ui-model`, no inward dependency on `src`, its own unit suite in the package's Vitest project) consumed by five renderer surfaces and pinned by one cross-surface contract test. It is evidence for the seam discovery M0 owns, not a start on the repository-wide migration.
 

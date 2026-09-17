@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 import type { ChildProcessWithoutNullStreams } from 'child_process';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PtySessionInfo } from '../pty/session-manager';
 import {
   DelegationMonitor,
@@ -11,8 +11,10 @@ import {
   CODEX_OBSERVER_MAX_CONCURRENT_READS,
   CodexAppServerClient,
   CodexDelegationObserver,
+  CodexProtocolIncompatibleError,
   codexProtocolVersion,
   codexProtocolVersionSupported,
+  isPermanentVerdict,
   parseCodexLatestTurn,
   parseCodexSubagentActivity,
   parseCodexThreadPage,
@@ -73,6 +75,10 @@ class FakeProtocol implements CodexDelegationProtocol {
   closeCalls = 0;
   latestTurnCalls = 0;
   fail = false;
+  /** A permanent verdict `connect` answers with, when the binary is judged. */
+  connectVerdict: Error | null = null;
+  /** A permanent verdict a read answers with, when a frame is refused. */
+  readVerdict: Error | null = null;
   descendants: CodexChildThread[] = [];
   turns = new Map<string, CodexTurnSummary | null>();
   activity = new Map<string, CodexSubagentActivity>();
@@ -80,6 +86,7 @@ class FakeProtocol implements CodexDelegationProtocol {
   async connect(): Promise<void> {
     this.connectCalls += 1;
     if (this.fail) throw new Error('unavailable');
+    if (this.connectVerdict) throw this.connectVerdict;
   }
 
   close(): void {
@@ -88,6 +95,7 @@ class FakeProtocol implements CodexDelegationProtocol {
 
   async listDescendants(_root?: string): Promise<CodexChildThread[]> {
     if (this.fail) throw new Error('disconnected');
+    if (this.readVerdict) throw this.readVerdict;
     return this.descendants;
   }
 
@@ -300,6 +308,221 @@ describe('Codex app-server connection custody', () => {
       'rejected',
     ]);
     expect(child.killed).toBe(true);
+  });
+});
+
+/**
+ * An app-server whose answers the test scripts per method. Everything else is
+ * the same stdio shape `fakeAppServer` presents.
+ */
+function fakeAppServerAnswering(answer: (method: string) => unknown) {
+  const process = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    killed: false,
+    kill() {
+      this.killed = true;
+      return true;
+    },
+  });
+  process.stdin.on('data', bytes => {
+    const request = JSON.parse(String(bytes));
+    if (request.id === undefined) return;
+    const result = answer(request.method);
+    // `undefined` scripts a request the server never answers.
+    if (result === undefined) return;
+    process.stdout.write(
+      JSON.stringify({ id: request.id, result }) + '\n'
+    );
+  });
+  return process as unknown as ChildProcessWithoutNullStreams;
+}
+
+describe('permanent verdicts about the installed app-server (BUG-146)', () => {
+  it('reports an app-server older than the schema as a verdict, not a failed attempt', async () => {
+    const child = fakeAppServerAnswering(method =>
+      method === 'initialize'
+        ? { userAgent: 'exawatt-delegation/0.140.0 (fixture)' }
+        : { data: [], nextCursor: null }
+    );
+    const client = new CodexAppServerClient(async () => child);
+    const outcome = await client.connect().then(
+      () => null,
+      (error: unknown) => error
+    );
+    expect(outcome).toBeInstanceOf(CodexProtocolIncompatibleError);
+    expect(isPermanentVerdict(outcome)).toBe(true);
+    // The judged version survives the failed connect, for the record.
+    expect(client.version).toBe('0.140.0');
+    expect(child.killed).toBe(true);
+  });
+
+  it('reports a page over the frame cap as a verdict, since re-reading it returns the same page', async () => {
+    // One `thread/items/list` page whose serialized frame exceeds 2 MiB. The
+    // adapter refuses the frame, which is right; what was wrong was
+    // treating the refusal as a transient failure and reconnecting into it.
+    const child = fakeAppServerAnswering(method =>
+      method === 'initialize'
+        ? { userAgent: 'exawatt-delegation/0.147.0 (fixture)' }
+        : method === 'thread/items/list'
+          ? {
+              data: [{ item: { type: 'agentMessage', text: 'x'.repeat(2_200_000) } }],
+              nextCursor: null,
+            }
+          : { data: [], nextCursor: null }
+    );
+    const client = new CodexAppServerClient(async () => child);
+    await client.connect();
+    const outcome = await client.latestSubagentActivity(ROOT, ['child']).then(
+      () => null,
+      (error: unknown) => error
+    );
+    expect(isPermanentVerdict(outcome)).toBe(true);
+    expect((outcome as Error).message).toMatch(/2 MiB/u);
+  });
+
+  it('treats a request that timed out or a process that exited as a failed attempt', async () => {
+    // Answers `initialize` and nothing else, so the read is still pending
+    // when the process goes away.
+    const exited = fakeAppServerAnswering(method =>
+      method === 'initialize'
+        ? { userAgent: 'exawatt-delegation/0.147.0 (fixture)' }
+        : undefined
+    );
+    const client = new CodexAppServerClient(async () => exited);
+    await client.connect();
+    const pending = client.listDescendants(ROOT).then(
+      () => null,
+      (error: unknown) => error
+    );
+    exited.emit('exit', 1, null);
+    const outcome = await pending;
+    expect(outcome).toBeInstanceOf(Error);
+    expect(isPermanentVerdict(outcome)).toBe(false);
+  });
+
+  /**
+   * An observer whose binary the test controls. `autoPoll` is off, so every
+   * poll below is one the test asked for; the assertions are about how many
+   * app-servers a verdict costs, which is the defect.
+   */
+  function verdictHarness(options: { resolvedBinary?: string | null } = {}) {
+    const protocol = new FakeProtocol();
+    let fingerprint = 'inode-1:size-1:mtime-1';
+    let resolves = 0;
+    const cleared: string[] = [];
+    const observer = new CodexDelegationObserver({
+      clientFactory: () => protocol,
+      pollIntervalMs: 60_000,
+      autoPoll: false,
+      sink: {
+        report: () => {},
+        reconcileReportedChildren: () => {},
+        clearReportedChildren: id => {
+          cleared.push(id);
+        },
+      },
+      resolveBinary: async () => {
+        resolves += 1;
+        return options.resolvedBinary === undefined
+          ? '/opt/fixture/bin/codex'
+          : options.resolvedBinary;
+      },
+      fingerprintBinary: () => fingerprint,
+    });
+    observer.observe(session());
+    return {
+      protocol,
+      observer,
+      cleared,
+      resolves: () => resolves,
+      replaceBinary() {
+        fingerprint = 'inode-2:size-2:mtime-2';
+      },
+    };
+  }
+
+  it('holds a verdict instead of spawning again on every poll', async () => {
+    const h = verdictHarness();
+    h.protocol.connectVerdict = new CodexProtocolIncompatibleError(
+      'installed app-server is older than 0.147.0'
+    );
+
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(1);
+    expect(h.observer.verdict?.error).toBe(h.protocol.connectVerdict);
+    expect(h.cleared).toEqual(['pty-codex']);
+    // The binary is resolved once, at verdict time, and never on a poll.
+    await vi.waitFor(() => expect(h.observer.verdict?.binaryPath).not.toBeNull());
+    expect(h.resolves()).toBe(1);
+
+    await h.observer.pollNow();
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(1);
+    expect(h.resolves()).toBe(1);
+  });
+
+  it('looks again once the binary on disk changes', async () => {
+    const h = verdictHarness();
+    h.protocol.connectVerdict = new CodexProtocolIncompatibleError(
+      'installed app-server is older than 0.147.0'
+    );
+    await h.observer.pollNow();
+    await vi.waitFor(() => expect(h.observer.verdict?.fingerprint).not.toBeNull());
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(1);
+
+    // The operator upgraded Codex.
+    h.replaceBinary();
+    h.protocol.connectVerdict = null;
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(2);
+    expect(h.observer.verdict).toBeNull();
+  });
+
+  it('looks again once a new Codex Session is observed', async () => {
+    const h = verdictHarness({ resolvedBinary: null });
+    h.protocol.connectVerdict = new CodexProtocolIncompatibleError(
+      'installed app-server is older than 0.147.0'
+    );
+    await h.observer.pollNow();
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(1);
+
+    h.observer.observe(
+      session({ id: 'pty-codex-2', harnessSessionId: `${ROOT.slice(0, -1)}0` })
+    );
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(2);
+    h.observer.drop('pty-codex-2');
+    h.observer.drop('pty-codex');
+  });
+
+  it('holds a verdict a read produced, not only one the connect produced', async () => {
+    const h = verdictHarness();
+    h.protocol.readVerdict = new CodexProtocolIncompatibleError(
+      'app-server frame exceeded 2 MiB'
+    );
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(1);
+    expect(h.protocol.closeCalls).toBe(1);
+    expect(h.observer.verdict?.error).toBe(h.protocol.readVerdict);
+
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(1);
+    h.observer.drop('pty-codex');
+  });
+
+  it('still retries a transient failure through the ladder', async () => {
+    const h = verdictHarness();
+    h.protocol.fail = true;
+    await h.observer.pollNow();
+    expect(h.observer.verdict).toBeNull();
+    h.protocol.fail = false;
+    await h.observer.pollNow();
+    expect(h.protocol.connectCalls).toBe(2);
+    h.observer.drop('pty-codex');
   });
 });
 

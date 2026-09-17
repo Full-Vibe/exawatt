@@ -1275,3 +1275,115 @@ now exists and holds zero sources: the operator opened Connect during the
 clipped-list night and did not save a source. H2.1–H2.3 above are shaped from
 the gaps this document already recorded; the first move is still to connect
 both Gateways and live with them.
+
+### 2026-09-16 — seven defects, one predicate
+
+The release-candidate review of this path found seven defects (BUG-146). None
+was live-reported and none blocked the release alone; together they were one
+class, and the class was about to ship in the first release with remote
+Connect. Two layers had collapsed "the connection failed" into "the source
+refused", and three had thrown a verdict that cannot change on retry in the
+same shape as a failure that can. Each was fixed by making the predicate
+explicit where it is produced, and each fix is pinned by a unit fixture that
+fails without it; the mutation run reverted all of them at once and every
+item's test went red.
+
+**The bootstrap read the wrong thing first.** `bootstrapGatewayCredentialOverSsh`
+probed `openclaw --version` before anything else, on the reading that it was
+the cheapest proof the login worked and OpenClaw was there. It runs under the
+server's non-interactive `sshd` shell, and a Homebrew or npm OpenClaw that
+the login shell finds is routinely absent from that PATH. The configuration
+file, which is the trustworthy credential source and the only place the
+declared port appears, sat behind that probe; `openclaw-missing` mapped to
+`gateway-down`; and the ladder re-ran the whole bootstrap, four SSH logins,
+every 60 seconds for as long as the source was saved. The file is read first
+now and is never gated on the binary. The version probe stays as evidence and
+as the one fact that says whether the CLI is worth asking; the CLI is asked
+only when the file holds nothing literal and the binary answered, which also
+takes the happy path from three logins to two. `openclaw-missing` is reached
+only beside an unreadable file, and `BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE` is
+now pinned by a test that lets only `unreachable` become a class the ladder
+retries. The C1 note that "the file is the trustworthy source and the CLI is
+only worth trying when the file has nothing literal to give" was already the
+stated rule; the code had not followed it all the way.
+
+**A mask is a refusal.** The same C1 live run recorded that `config get
+gateway.auth.token` answers with a masked value on 2026.7.x. `parseCliToken`
+still accepted `***`: it is one whitespace-free line, which was the whole
+shape test, and it ranked above the honest `token-unavailable`. Any mask
+glyph in the answer now fails closed toward the file.
+
+**The file is JSON5.** OpenClaw's own loader parses `openclaw.json` with
+`JSON5.parse`; both Exawatt readers used `JSON.parse`, so a hand-edited file
+with a comment or a trailing comma read as "could not read the configuration"
+and sent the operator to check a permission on a file the Gateway was reading
+fine. `parseGatewayConfigText` in `@exawatt/core` is the one grammar now, used
+by the local read and the remote bootstrap. `json5` 2.2.3 was already in the
+dependency graph (Babel, electron-builder); it becomes a production dependency
+of `@exawatt/core`, which places it in the Electron runtime closure
+`scripts/lib/electron-runtime-deps.mjs` stages, and the notices file was
+regenerated.
+
+**Silence is not a refusal.** `pair()` fell back from write to read on any
+`!opened.ok` and then persisted `read` to the record, so one timed-out
+handshake on the way to a source that still approved write downgraded the
+saved source for good: the next reconnect asked for what the record now said.
+The core client marks a rejection the Gateway actually answered
+(`OCGatewayError`), and `openHandshake` reports `answered` beside the
+sentence. The marker is read structurally (`gatewayAnswered`) rather than by
+`instanceof`, because main's CJS bundle and the workspace package can hold two
+copies of the module and a class identity check would silently read every
+refusal as silence. The fallback fires only on an answered refusal; a timeout
+keeps the write ask, classifies as `gateway-down`, and rides the ladder, which
+the fixture proves by silencing one handshake and watching the retry pair at
+write scope with nothing persisted.
+
+**A verdict is not a failure.** The Codex read adapter judged an installed
+app-server older than 0.147 by throwing a plain error from `connect()`, and
+the observer's ladder, capped at 30 seconds with no memory, spawned a login
+shell and a `codex app-server` on every tick for as long as any Codex Session
+was live. `CodexProtocolIncompatibleError` marks a permanent verdict; the
+observer holds it instead of retrying, keyed to the binary it judged (the
+path is resolved through the login shell once, at verdict time; each later
+poll is a `stat`) and to the Session set it was judged over. It looks again
+when the binary on disk changes or when a new Codex Session is observed, which
+is the operator's own moment to have upgraded; nothing lifts it on a timer.
+The `thread/items/list` page over the 2 MiB frame cap was verified by code
+path to enter the same loop: `acceptOutput` fails the client, the pending read
+rejects, the observer withdraws and reconnects into the same page. It is a
+verdict about the binary and the thread rather than the binary alone, and the
+frame's owner is not attributable from the byte stream, so it rides the same
+per-binary memory and is lifted by the same Session-set change. That is
+coarser than ideal and strictly better than today: the same observation was
+already withdrawn for every root on each overflow, with a spawn every 30
+seconds on top.
+
+**Drift reported and kept the connection.** The drift branch returned before
+`establish()`'s teardown and before `watchForDrops()`, so a session in
+`failed` held an `ssh` child with a forward open on the operator's server and
+a Gateway subscription streaming into nothing, until remap or quit. The drift
+branch of `discover()` closes the connection itself now, which covers both
+paths in, first connect and periodic read; the snapshot and identity it keeps
+for the operator were never the connection.
+
+**A frame that is not a frame.** `socket.onmessage` called
+`void this._handleMessage(...)`; a JSON `null`, a primitive, an array, or a
+`connect.challenge` without a nonce threw inside that detached promise, and
+main registered no `unhandledRejection` listener, so the throw reached
+nothing. The handler is total for those shapes, the detached call has a
+catch wall that emits `connection:error`, and the fixture asserts no
+rejection escapes across every shape while a later real handshake still
+completes. This is adjacent to BUG-129 rather than BUG-129: main now has
+`electron/main/unhandled-rejection-trace.ts`, one `main.unhandled-rejection`
+record per escaped rejection in `logs/main.jsonl`, at most six per minute and
+two hundred per run, one `suppressed` line per window and one `exhausted` line
+per run after that, disabled permanently on its own first throw, exactly the
+stall trace's discipline. The renderer half and the `render-process-gone` and
+`unresponsive` handling stay open under BUG-129.
+
+What a fixture cannot prove: the two operator Gateways were not connected for
+this change, so the reordered bootstrap has not run against a real `sshd`
+PATH, and the live two-Gateway test self-skipped as designed. The behaviours
+that changed are all on the far side of injected seams the C3 and C5 live
+passes already exercised; the next real connect from the installed app is the
+observation that closes this.
