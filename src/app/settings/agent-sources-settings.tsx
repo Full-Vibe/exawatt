@@ -587,10 +587,18 @@ function SourceDetail({
           label="Exact resume"
           value={source.capabilities.exactResume ? 'Supported' : 'Unavailable'}
         />
-        <CapabilityRow
-          label="Delegation"
-          value={source.capabilities.delegationObservation}
-        />
+        {source.facts.delegation ? (
+          <FactRow
+            label="Delegation"
+            fact={source.facts.delegation}
+            now={now}
+          />
+        ) : (
+          <CapabilityRow
+            label="Delegation"
+            value={source.capabilities.delegationObservation}
+          />
+        )}
         <CapabilityRow
           label="Security enforcement"
           value={source.capabilities.enforcementOwner}
@@ -832,6 +840,25 @@ export function AgentSourcesSettings({
   useEffect(() => {
     void refresh(false, false);
   }, [refresh]);
+
+  useEffect(
+    () =>
+      window.electron?.agentSources?.onDelegation?.(({ adapterId, fact }) => {
+        const project = (snapshot: typeof registry) => ({
+          ...snapshot,
+          sources: snapshot.sources.map(source => {
+            if (source.adapterId !== adapterId) return source;
+            const facts = { ...source.facts };
+            if (fact) facts.delegation = fact;
+            else delete facts.delegation;
+            return { ...source, facts };
+          }),
+        });
+        latestRegistry.current = project(latestRegistry.current);
+        setRegistry(project);
+      }),
+    []
+  );
 
   const selected = useMemo(
     () => registry.sources.find(source => source.id === selectedId) ?? null,

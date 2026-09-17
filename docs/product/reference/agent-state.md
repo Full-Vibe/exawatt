@@ -11,6 +11,13 @@ or actively producing output without exposing a structured plan. Exawatt
 should preserve those distinctions rather than compressing them into a vague
 label such as `active` or an invented completion percentage.
 
+Delegation observation health is also independent of work state. An empty
+successful census means no live children were reported; a failed census means
+Exawatt cannot establish that fact. When some lifecycle reads fail, verified
+children remain visible while unverified claims are withdrawn without a
+completion Event. Agent Sources exposes that coverage separately from the
+parent's turn and the source's ability to launch.
+
 ## Region / question model
 
 At a fleet-comparison altitude, every visual region should answer one operator

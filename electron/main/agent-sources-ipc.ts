@@ -1,4 +1,6 @@
-import { shell } from 'electron';
+import { BrowserWindow, shell } from 'electron';
+import { broadcastToWindows } from './window-broadcast';
+import { delegationObservations } from './harness-events/delegation-observation';
 import type { AgentSourceAction, AgentSourceAdapterId } from '@exawatt/core';
 import { handleTrusted } from './ipc-security';
 import {
@@ -17,6 +19,13 @@ import { agentSourceDeclaration } from './pty/generated-agent-source-declaration
  * small source-owned action vocabulary.
  */
 export function registerAgentSourcesIPC(): void {
+  delegationObservations.on('changed', (adapterId, fact) => {
+    broadcastToWindows(
+      BrowserWindow.getAllWindows(),
+      'agent-sources:delegation',
+      { adapterId, fact }
+    );
+  });
   handleTrusted(
     'agent-sources:list',
     async (_event, scope: 'all' | 'launch' = 'all', refresh = false) => {

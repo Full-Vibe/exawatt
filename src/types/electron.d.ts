@@ -100,6 +100,12 @@ export interface ElectronCommandEngineApi {
 }
 
 export interface ElectronAgentSourcesApi {
+  onDelegation?: (
+    callback: (update: {
+      adapterId: AgentSourceAdapterId;
+      fact: AgentSourceFact | null;
+    }) => void
+  ) => () => void;
   list: (
     scope?: 'all' | 'launch',
     refresh?: boolean

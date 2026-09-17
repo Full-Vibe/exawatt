@@ -13,6 +13,11 @@ import * as path from 'path';
 import { defaultShell, type PtySessionInfo } from '../pty/session-manager';
 import { planLoginShell, shellQuote } from '../pty/login-shell';
 import type { DelegationReportSink } from './delegation-monitor';
+import {
+  delegationObservations,
+  type DelegationObservations,
+  type DelegationObservation,
+} from './delegation-observation';
 
 const MINIMUM_PROTOCOL_VERSION = [0, 147, 0] as const;
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
@@ -55,6 +60,7 @@ export interface CodexTurnSummary {
 export type CodexSubagentActivity = 'started' | 'interacted' | 'interrupted';
 
 export interface CodexDelegationProtocol {
+  readonly version?: string | null;
   connect(): Promise<void>;
   close(): void;
   listDescendants(ancestorThreadId: string): Promise<CodexChildThread[]>;
@@ -69,6 +75,7 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  method: string;
 }
 
 function object(value: unknown): JsonObject | null {
@@ -85,6 +92,30 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+export class CodexProtocolReadError extends Error {
+  constructor(
+    readonly method: string,
+    readonly code: number | undefined,
+    message: string
+  ) {
+    super(message);
+  }
+  get unsupported(): boolean {
+    return (
+      this.code === -32601 ||
+      /method[^\r\n]*(?:not[ -]supported|unsupported|not[ -]found)|unsupported[ -]method/i.test(
+        this.message
+      )
+    );
+  }
+}
+
+function observationFailure(error: unknown): DelegationObservation['reason'] {
+  return error instanceof CodexProtocolReadError && error.unsupported
+    ? 'unsupported'
+    : 'read-failed';
 }
 
 function protocolError(message: string): Error {
@@ -247,6 +278,7 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
   private stdoutBuffer = '';
   private stderrTail = '';
   private connected = false;
+  version: string | null = null;
 
   private generation = 0;
   private connecting: Promise<void> | null = null;
@@ -313,6 +345,7 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
         })
       );
       const version = codexProtocolVersion(initialized?.userAgent);
+      this.version = version?.join('.') ?? null;
       if (!version || !codexProtocolVersionSupported(version)) {
         throw protocolError('installed app-server is older than 0.147.0');
       }
@@ -409,7 +442,7 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
         reject(new Error(`Codex app-server request timed out: ${method}`));
       }, REQUEST_TIMEOUT_MS);
       timer.unref?.();
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, method });
       try {
         this.write({ method, id, params });
       } catch (error) {
@@ -463,7 +496,9 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       const error = object(message.error);
       if (error) {
         pending.reject(
-          new Error(
+          new CodexProtocolReadError(
+            pending.method,
+            finiteNumber(error.code),
             typeof error.message === 'string'
               ? error.message
               : 'Codex app-server request failed'
@@ -514,6 +549,7 @@ export interface CodexDelegationObserverOptions {
   pollIntervalMs?: number;
   sink?: DelegationReportSink;
   autoPoll?: boolean;
+  observations?: DelegationObservations;
 }
 
 interface SessionManagerLike extends EventEmitter {
@@ -534,16 +570,13 @@ function childAgentType(thread: CodexChildThread): string {
 async function settleConcurrent<T, R>(
   values: readonly T[],
   concurrency: number,
-  read: (value: T) => Promise<R>,
-  stopOnFailure = false
+  read: (value: T) => Promise<R>
 ): Promise<PromiseSettledResult<R>[]> {
   const results: PromiseSettledResult<R>[] = new Array(values.length);
   let cursor = 0;
-  let failed = false;
   await Promise.all(
     Array.from({ length: Math.min(concurrency, values.length) }, async () => {
       for (;;) {
-        if (failed && stopOnFailure) return;
         const index = cursor++;
         if (index >= values.length) return;
         try {
@@ -552,7 +585,6 @@ async function settleConcurrent<T, R>(
             value: await read(values[index]),
           };
         } catch (reason) {
-          failed = true;
           results[index] = { status: 'rejected', reason };
         }
       }
@@ -561,13 +593,9 @@ async function settleConcurrent<T, R>(
   return results;
 }
 
-function fulfilledReads<T>(results: PromiseSettledResult<T>[]): T[] {
-  const rejected = results.find(result => result?.status === 'rejected');
-  if (rejected?.status === 'rejected') throw rejected.reason;
-  return results.map(result => {
-    if (result.status === 'rejected') throw result.reason;
-    return result.value;
-  });
+interface ObservedCensus {
+  children: Map<string, ObservedChild>;
+  observation: DelegationObservation;
 }
 
 /**
@@ -580,6 +608,7 @@ export class CodexDelegationObserver {
   private readonly clientFactory: () => CodexDelegationProtocol;
   private readonly pollIntervalMs: number;
   private readonly autoPoll: boolean;
+  private readonly observations: DelegationObservations;
   private client: CodexDelegationProtocol | null = null;
   private sink: DelegationReportSink | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -591,6 +620,7 @@ export class CodexDelegationObserver {
       options.clientFactory ?? (() => new CodexAppServerClient());
     this.pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
     this.autoPoll = options.autoPoll ?? true;
+    this.observations = options.observations ?? delegationObservations;
     this.sink = options.sink ?? null;
   }
 
@@ -619,6 +649,7 @@ export class CodexDelegationObserver {
     const existing = this.roots.get(session.id);
     if (existing?.threadId === session.harnessSessionId) return;
     if (existing) this.withdraw(session.id);
+    this.observations.drop(session.id);
     this.roots.set(session.id, {
       threadId: session.harnessSessionId,
     });
@@ -627,6 +658,7 @@ export class CodexDelegationObserver {
 
   drop(sessionId: string): void {
     this.roots.delete(sessionId);
+    this.observations.drop(sessionId);
     if (this.roots.size === 0) {
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
@@ -660,17 +692,23 @@ export class CodexDelegationObserver {
         if (this.roots.get(sessionId) !== root) continue;
         const snapshot = snapshots[index];
         if (snapshot.status === 'fulfilled') {
-          this.publish(sessionId, snapshot.value);
+          this.publish(sessionId, snapshot.value.children);
+          this.observations.report(
+            'codex',
+            sessionId,
+            snapshot.value.observation
+          );
         } else {
-          this.withdraw(sessionId);
+          this.withdraw(sessionId, snapshot.reason, client.version);
           failed = true;
         }
       }
-    } catch {
+    } catch (error) {
       if (this.client !== client) return;
       failed = true;
       for (const [sessionId, root] of roots) {
-        if (this.roots.get(sessionId) === root) this.withdraw(sessionId);
+        if (this.roots.get(sessionId) === root)
+          this.withdraw(sessionId, error, client.version);
       }
     } finally {
       this.polling = false;
@@ -689,65 +727,92 @@ export class CodexDelegationObserver {
   private async snapshot(
     client: CodexDelegationProtocol,
     root: ObservedRoot
-  ): Promise<Map<string, ObservedChild>> {
+  ): Promise<ObservedCensus> {
+    // Failure of lineage invalidates the root. Lifecycle reads only invalidate
+    // their child (or the ambiguous siblings sharing one parent activity read).
     const descendants = await client.listDescendants(root.threadId);
     const children = new Map<string, ObservedChild>();
-    const unresolved = fulfilledReads(
-      await settleConcurrent(
-        descendants,
-        MAX_CHILD_READS,
-        async thread => {
-          // updatedAt has source-defined precision. A completed child can resume
-          // within the same timestamp, so it cannot cache terminal lifecycle.
-          const turn = await client.latestTurn(thread.id);
-          const observed: ObservedChild = {
-            id: thread.id,
-            agentType: childAgentType(thread),
-            description: childDescription(thread),
-            startedAt: thread.createdAt * 1_000,
-            live: turn?.status === 'inProgress',
-            completed: turn?.status === 'completed',
-          };
-          children.set(thread.id, observed);
-          const ambiguous =
-            turn === null ||
-            (turn.status === 'interrupted' && turn.completedAt === null);
-          return ambiguous ? { thread, observed } : null;
-        },
-        true
-      )
-    ).filter(
-      (item): item is { thread: CodexChildThread; observed: ObservedChild } =>
-        item !== null
+    const unresolved: { thread: CodexChildThread; observed: ObservedChild }[] =
+      [];
+    const failures: DelegationObservation['reason'][] = [];
+    const turns = await settleConcurrent(descendants, MAX_CHILD_READS, thread =>
+      client.latestTurn(thread.id)
     );
-
-    // A second read-side app-server reports turns owned by the interactive
-    // TUI as interrupted/null while they are still running. The immediate
-    // parent's source-owned activity disambiguates that state exactly.
-    const unresolvedByParent = new Map<string, typeof unresolved>();
-    for (const item of unresolved) {
-      const siblings = unresolvedByParent.get(item.thread.parentThreadId) ?? [];
-      siblings.push(item);
-      unresolvedByParent.set(item.thread.parentThreadId, siblings);
+    for (let index = 0; index < descendants.length; index += 1) {
+      const thread = descendants[index];
+      const result = turns[index];
+      if (result.status === 'rejected') {
+        failures.push(observationFailure(result.reason));
+        continue;
+      }
+      const turn = result.value;
+      const observed: ObservedChild = {
+        id: thread.id,
+        agentType: childAgentType(thread),
+        description: childDescription(thread),
+        startedAt: thread.createdAt * 1_000,
+        live: turn?.status === 'inProgress',
+        completed: turn?.status === 'completed',
+      };
+      if (
+        turn === null ||
+        (turn.status === 'interrupted' && turn.completedAt === null)
+      ) {
+        unresolved.push({ thread, observed });
+      } else children.set(thread.id, observed);
     }
-    fulfilledReads(
-      await settleConcurrent(
-        [...unresolvedByParent],
-        MAX_CHILD_READS,
-        async ([parentThreadId, items]) => {
-          const activity = await client.latestSubagentActivity(
-            parentThreadId,
-            items.map(item => item.thread.id)
-          );
-          for (const item of items) {
-            const kind = activity.get(item.thread.id);
-            item.observed.live = kind === 'started' || kind === 'interacted';
-          }
-        },
-        true
-      )
+
+    // TUI-owned turns can look interrupted/null. Only the immediate parent's
+    // source-owned activity can disambiguate; a missing activity is NOT idle.
+    const byParent = new Map<string, typeof unresolved>();
+    for (const item of unresolved) {
+      const siblings = byParent.get(item.thread.parentThreadId) ?? [];
+      siblings.push(item);
+      byParent.set(item.thread.parentThreadId, siblings);
+    }
+    const parents = [...byParent];
+    const activities = await settleConcurrent(
+      parents,
+      MAX_CHILD_READS,
+      ([parent, items]) =>
+        client.latestSubagentActivity(
+          parent,
+          items.map(item => item.thread.id)
+        )
     );
-    return children;
+    for (let index = 0; index < parents.length; index += 1) {
+      const result = activities[index];
+      if (result.status === 'rejected') {
+        failures.push(observationFailure(result.reason));
+        continue;
+      }
+      for (const { thread, observed } of parents[index][1]) {
+        const kind = result.value.get(thread.id);
+        if (!kind) {
+          failures.push('read-failed');
+          continue;
+        }
+        observed.live = kind === 'started' || kind === 'interacted';
+        children.set(thread.id, observed);
+      }
+    }
+    return {
+      children,
+      observation: {
+        state: failures.length
+          ? children.size
+            ? 'partial'
+            : 'unavailable'
+          : 'complete',
+        reason: failures.includes('unsupported')
+          ? 'unsupported'
+          : failures.length
+            ? 'read-failed'
+            : null,
+        version: client.version ?? null,
+        observedAt: Date.now(),
+      },
+    };
   }
 
   private publish(
@@ -777,8 +842,19 @@ export class CodexDelegationObserver {
     );
   }
 
-  private withdraw(sessionId: string): void {
+  private withdraw(
+    sessionId: string,
+    error?: unknown,
+    version?: string | null
+  ): void {
     this.sink?.clearReportedChildren(sessionId);
+    if (error !== undefined)
+      this.observations.report('codex', sessionId, {
+        state: 'unavailable',
+        reason: observationFailure(error),
+        version: version ?? null,
+        observedAt: Date.now(),
+      });
   }
 
   private schedule(delay: number): void {

@@ -1004,3 +1004,60 @@ already observes descendants at any depth, so D6 is a projection/correlation
 repair: capture a depth-2 snapshot, keep immediate-parent lineage distinct from
 root Session board scope, render every descendant exactly once at every
 altitude, and survive reconnect/completion without flattening or inference.
+
+## 2026-09-16 — BUG-133 half 2: isolate uncertainty and disclose observation health
+
+**Keep verified children visible and tell the operator when coverage is incomplete.**
+The operator authorized both repairs and confirmed the prior Session's three
+subagents appeared in Fleet. That observation rules out a universal rendering
+failure; it does not prove that every Codex version reports every live child.
+No partner reply is requested. Half 1 (disclosed harness context) remains
+unshaped; BUG-134 (aggregate/filter census loss) remains separately scoped.
+
+### Execution contract
+
+- Ownership: the Codex read adapter owns protocol interpretation and read
+  failure scope. The existing DelegationMonitor owns child lifecycle. A
+  source-agnostic `DelegationObservations` owner carries observation health to
+  the Agent Source registry, independently of parent turn/attention state.
+  This composes with the in-flight D7 census refactor without a competing
+  reducer or a change to its lifecycle APIs.
+- Sequence: settle every bounded child read; keep successful independent
+  lifecycle reads; resolve ambiguous children only through their immediate
+  parent's activity; publish the verified set atomically with no invented
+  completions; publish complete/partial/unavailable coverage separately.
+  Root lineage failure still withdraws that root. Failure to read one parent's
+  activity invalidates only its ambiguous children. A missing activity is
+  unknown, not a report of idle.
+- Evidence: JSON-RPC method/code survives the client boundary. Unsupported
+  method responses are distinguished from transient read failures; version
+  comes from initialization, never a hardcoded version blacklist. Recovery
+  comes from subsequent successful protocol reads. Observation status spans
+  active roots; one healthy Session cannot conceal an unavailable sibling.
+- Presentation: reuse the existing Agent Sources Delegation row and `FactRow`
+  with observed provenance and explanation. No new surface, signal, color,
+  or gallery grammar. Design-system rungs: settings operational neutrals,
+  chrome-title/chrome-label and the existing reading-row spacing. Changes
+  arrive over a narrow IPC subscription and current health overlays cached
+  discovery. A successful empty census is distinct from a failed census
+  without publishing an artificial `ownTurn: available` record.
+- Boundary: observation failure does not block launch, stop a child, read local
+  side effects, or create a turn-end event. No claim that Exawatt can restore
+  lifecycle authority that the installed provider refuses.
+
+Acceptance: failed child reads preserve independently verified siblings at
+Agent/Team/Fleet; failed parent activity does not erase other parents; unknown
+children are withdrawn without completion; empty success, partial, unavailable,
+recovery, identity change and exit have explicit coverage behavior; source
+Settings receives the same runtime truth; bounded concurrency remains intact.
+
+Verification: 49 focused protocol/coverage/Settings tests passed, the source
+registry's 19 tests passed, type-check and Electron compilation passed.
+`eval:electron:delegation` passed 30 pipeline checks, including an actual refused
+JSON-RPC, surviving sibling, source-row rendering, and recovery pushed into an
+open Settings page. `eval:electron:agent-sources` passed registry, source-owned
+launch/resume, responsive Settings and theme checks. The source-row screenshot
+was visually inspected at 1200×760. Normal delivery reruns the required gates on
+the integrated candidate and queues dogfood installation; queued is not installed.
+The provider limitation remains open: this repairs isolation and disclosure,
+not the missing upstream authority.

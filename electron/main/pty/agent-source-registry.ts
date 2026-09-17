@@ -29,6 +29,8 @@ import {
   FUTURE_AGENT_SOURCE_CATALOG,
 } from './generated-agent-source-declarations';
 
+import { delegationObservations } from '../harness-events/delegation-observation';
+
 const execFileAsync = promisify(execFile);
 
 interface CommandResult {
@@ -1550,7 +1552,7 @@ function launchRegistryView(
 /** Short-lived, coalesced observations keep a ribbon full of draft composers
  * from repeatedly spawning status CLIs. Explicit Settings rechecks bypass the
  * cache, preserving operator control and accurate freshness. */
-export async function inspectAgentSources(
+async function inspectAgentSourceDeclarations(
   shell: string,
   scope: 'all' | 'launch' = 'all',
   refresh = false
@@ -1577,6 +1579,16 @@ export async function inspectAgentSources(
       registryInFlight.delete(scope);
     }
   }
+}
+
+export async function inspectAgentSources(
+  shell: string,
+  scope: 'all' | 'launch' = 'all',
+  refresh = false
+): Promise<AgentSourceRegistrySnapshot> {
+  return delegationObservations.project(
+    await inspectAgentSourceDeclarations(shell, scope, refresh)
+  );
 }
 
 /**

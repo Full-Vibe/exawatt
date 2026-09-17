@@ -144,6 +144,8 @@ export interface AgentSourceSnapshot extends AgentSourceDeclaration {
     identity: AgentSourceFact;
     compatibility: AgentSourceFact;
     modelDiscovery: AgentSourceFact;
+    /** Runtime observation health; independent of launch and parent turn state. */
+    delegation?: AgentSourceFact;
   };
   actions: {
     recheck: boolean;

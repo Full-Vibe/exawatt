@@ -129,7 +129,9 @@ from the newest Session.
 
 Agents can create or coordinate subagents when their source supports it. Exawatt
 should model this without assuming all providers expose the same internal
-structure. A source-native context, cron run, helper, or subagent is not
+structure. Observation coverage is separate from the work itself: unavailable
+lifecycle evidence does not mean a child stopped. Exawatt preserves verified
+children and reports incomplete coverage on the Agent Source. A source-native context, cron run, helper, or subagent is not
 automatically another top-level coworker or Initiative: its activity rolls into
 the parent Agent until it is separately addressable and operationally
 meaningful. One durable Agent may therefore own multiple contexts without

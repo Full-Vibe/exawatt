@@ -52,7 +52,11 @@ check succeeds. Demo Mode labels its facts as simulated. Use **Recheck** after
 changing a CLI or gateway. A source-owned sign-in action opens as a terminal tab and
 Settings checks again while the flow completes; a missing CLI links to its
 installation guide. Registry failures remain visibly stale or unavailable and
-cannot enable Agent launch.
+cannot enable Agent launch. While a Codex Session is being observed, the
+Delegation row also reports whether its child census is complete, partially
+observable, or unobservable. Open the explanation for a provider limitation.
+Unverified children are hidden; verified siblings remain visible. This reading
+does not stop their work or prevent another Agent launch.
 
 ### Connect existing OpenClaw Agents
 

@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
   platform: process.platform,
   agentSources: {
+    onDelegation: subscribe<unknown>('agent-sources:delegation'),
     list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
       ipcRenderer.invoke('agent-sources:list', scope, refresh),
     act: (

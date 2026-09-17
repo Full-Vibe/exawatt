@@ -20,6 +20,50 @@ import {
 } from './connected-sources-section';
 
 describe('Agent Source Settings', () => {
+  it('replaces declared delegation with observed coverage and clears it on source exit', async () => {
+    const registry = fallbackAgentSourceRegistry('all');
+    const source = registry.sources[0];
+    let update!: Parameters<
+      NonNullable<
+        import('@/types/electron').ElectronAgentSourcesApi['onDelegation']
+      >
+    >[0];
+    const unsubscribe = vi.fn();
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: {
+        isElectron: true,
+        platform: 'darwin',
+        agentSources: {
+          list: vi.fn(async () => registry),
+          onDelegation: (callback: typeof update) => {
+            update = callback;
+            return unsubscribe;
+          },
+        },
+      },
+    });
+    const view = render(<AgentSourcesSettings />);
+    await screen.findByText(source.capabilities.delegationObservation);
+    const fact = {
+      ...source.facts.installation,
+      basis: 'observed' as const,
+      state: 'unavailable' as const,
+      value: 'fixture coverage refusal',
+    };
+    reactAct(() => update({ adapterId: source.adapterId, fact }));
+    expect(screen.getByText(fact.value)).toBeInTheDocument();
+    expect(
+      screen.queryByText(source.capabilities.delegationObservation)
+    ).not.toBeInTheDocument();
+    reactAct(() => update({ adapterId: source.adapterId, fact: null }));
+    expect(
+      screen.getByText(source.capabilities.delegationObservation)
+    ).toBeInTheDocument();
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
   afterEach(() => {
     cleanup();
     Reflect.deleteProperty(window, 'electron');

@@ -234,12 +234,16 @@ if (cargv[0] === 'app-server') {
         reply(message.id, {
           data: child
             ? [{
-                status: child.live ? 'interrupted' : (child.status || 'completed'),
+                status: child.live ? (child.direct ? 'inProgress' : 'interrupted') : (child.status || 'completed'),
                 completedAt: child.live ? null : child.updatedAt,
               }]
             : [],
         });
       } else if (message.method === 'thread/items/list') {
+        if (state.refuseActivity) {
+          process.stdout.write(JSON.stringify({ id: message.id, error: { code: -32601, message: 'method not supported' } }) + '\\n');
+          continue;
+        }
         reply(message.id, {
           data: state.children.map(child => ({
             item: {
@@ -310,6 +314,12 @@ process.stdin.on('data', chunk => {
         // Deliberately preserve updatedAt: source timestamps cannot gate lifecycle.
         fs.writeFileSync(protocolStatePath, JSON.stringify(state));
       }
+    } else if (line === 'activity-refused' || line === 'activity-restored') {
+      const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
+      state.refuseActivity = line === 'activity-refused';
+      state.children[0].live = true;
+      state.children[0].direct = true;
+      fs.writeFileSync(protocolStatePath, JSON.stringify(state));
     } else if (line === 'protocol-down' || line === 'protocol-up') {
       const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
       state.available = line === 'protocol-up';

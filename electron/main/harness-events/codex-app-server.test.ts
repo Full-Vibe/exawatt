@@ -21,6 +21,8 @@ import {
   type CodexSubagentActivity,
   type CodexTurnSummary,
 } from './codex-app-server';
+import { DelegationObservations } from './delegation-observation';
+import { CodexProtocolReadError } from './codex-app-server';
 import { sessionGlyphState } from '../../../src/components/workspace/session-status';
 import {
   sessionStatus,
@@ -212,6 +214,55 @@ function fakeAppServer() {
 }
 
 describe('Codex app-server connection custody', () => {
+  it.each([
+    'thread/items/list is not supported yet',
+    'Unsupported method: thread/items/list',
+    'Method thread/items/list is not supported',
+  ])(
+    'distinguishes a refused method from a transient read error: %s',
+    message => {
+      expect(
+        new CodexProtocolReadError(
+          'thread/items/list',
+          message.startsWith('thread/') ? -32601 : -32000,
+          message
+        ).unsupported
+      ).toBe(true);
+      expect(
+        new CodexProtocolReadError(
+          'thread/items/list',
+          -32000,
+          'Read timed out'
+        ).unsupported
+      ).toBe(false);
+    }
+  );
+
+  it('preserves refused RPC identity and the initialized provider version', async () => {
+    const process = fakeAppServer();
+    const client = new CodexAppServerClient(async () => process);
+    await client.connect();
+    expect(client.version).toBe('0.147.0');
+    process.stdin.removeAllListeners('data');
+    process.stdin.on('data', bytes => {
+      const request = JSON.parse(String(bytes));
+      process.stdout.write(
+        JSON.stringify({
+          id: request.id,
+          error: { code: -32601, message: 'method not supported' },
+        }) + '\n'
+      );
+    });
+    await expect(
+      client.latestSubagentActivity(ROOT, ['child'])
+    ).rejects.toMatchObject({
+      method: 'thread/items/list',
+      code: -32601,
+      unsupported: true,
+    });
+    client.close();
+  });
+
   it('ignores late output, errors and exit from a closed process after reconnect', async () => {
     const first = fakeAppServer();
     const second = fakeAppServer();
@@ -262,6 +313,7 @@ describe('CodexDelegationObserver', () => {
 
   function harness() {
     const protocol = new FakeProtocol();
+    const observations = new DelegationObservations();
     const monitor = new DelegationMonitor();
     const lifecycle: unknown[] = [];
     monitor.on('harness-event', (_id, event) => lifecycle.push(event));
@@ -272,6 +324,7 @@ describe('CodexDelegationObserver', () => {
       clearReportedChildren: id => monitor.clearReportedChildren(id),
     };
     const observer = new CodexDelegationObserver({
+      observations,
       clientFactory: () => protocol,
       pollIntervalMs: 60_000,
       sink,
@@ -279,7 +332,7 @@ describe('CodexDelegationObserver', () => {
     });
     observers.push(observer);
     observer.observe(session());
-    return { protocol, monitor, lifecycle, observer };
+    return { protocol, monitor, lifecycle, observer, observations };
   }
 
   it('reports an exact two-child census once and ends children by source ID', async () => {
@@ -470,7 +523,7 @@ describe('CodexDelegationObserver', () => {
     for (const root of roots) h.observer.drop(root);
   });
 
-  it('stops queued child reads on failure and settles the in-flight batch', async () => {
+  it('settles every child read despite failures without leaking work', async () => {
     const h = harness();
     h.protocol.descendants = Array.from(
       { length: CODEX_OBSERVER_MAX_CONCURRENT_READS * 2 },
@@ -486,9 +539,72 @@ describe('CodexDelegationObserver', () => {
       throw new Error('disconnected');
     };
     await h.observer.pollNow();
-    expect(reads).toBeLessThanOrEqual(CODEX_OBSERVER_MAX_CONCURRENT_READS);
+    expect(reads).toBe(h.protocol.descendants.length);
     expect(inFlight).toBe(0);
     expect(h.monitor.getLive('pty-codex')).toBeNull();
+  });
+
+  it('isolates failed turn reads, parent activity refusals, and missing activities', async () => {
+    const h = harness();
+    h.protocol.descendants = [
+      child('unreadable', 1),
+      child('verified', 2),
+      child('ambiguous', 3),
+      child('nested', 4, { parentThreadId: 'other-parent' }),
+    ];
+    h.protocol.latestTurn = async id => {
+      if (id === 'unreadable') throw new Error('thread unavailable');
+      return id === 'verified'
+        ? { status: 'inProgress', completedAt: null }
+        : running();
+    };
+    h.protocol.latestSubagentActivity = async parent => {
+      if (parent === ROOT)
+        throw new CodexProtocolReadError(
+          'thread/items/list',
+          -32601,
+          'method not supported'
+        );
+      return new Map([['nested', 'started']]);
+    };
+    await h.observer.pollNow();
+    expect(
+      h.monitor.getLive('pty-codex')?.children.map(item => item.id)
+    ).toEqual(['verified', 'nested']);
+    expect(h.observations.fact('codex')).toMatchObject({
+      state: 'degraded',
+      basis: 'observed',
+    });
+    expect(
+      h.lifecycle.filter(
+        event => (event as { kind: string }).kind === 'child-end'
+      )
+    ).toEqual([]);
+    // Recovery is live protocol evidence, never a version blacklist.
+    h.protocol.latestTurn = async () => ({
+      status: 'inProgress',
+      completedAt: null,
+    });
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')?.children).toHaveLength(4);
+    expect(h.observations.fact('codex')?.state).toBe('ready');
+    h.protocol.latestTurn = async () => running();
+    h.protocol.latestSubagentActivity = async () => new Map();
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+    expect(h.observations.fact('codex')?.state).toBe('unavailable');
+  });
+
+  it('publishes successful zero separately from an unavailable census and drops exited roots', async () => {
+    const h = harness();
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+    expect(h.observations.fact('codex')?.state).toBe('ready');
+    h.protocol.fail = true;
+    await h.observer.pollNow();
+    expect(h.observations.fact('codex')?.state).toBe('unavailable');
+    h.observer.drop('pty-codex');
+    expect(h.observations.fact('codex')).toBeNull();
   });
 
   it('drives Agent, Team, and Fleet through the existing source-agnostic model', async () => {

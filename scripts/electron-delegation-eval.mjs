@@ -320,6 +320,55 @@ try {
       );
       check('Codex reconnect resnapshots authoritative descendants', true);
 
+      await sendCodex('activity-refused');
+      const sourceFact = () =>
+        page.evaluate(async () => {
+          const registry = await window.electron.agentSources.list('launch');
+          return registry.sources.find(source => source.adapterId === 'codex')
+            ?.facts.delegation;
+        });
+      await until(
+        async () => (await sourceFact())?.state === 'degraded',
+        'refused method to publish partial coverage'
+      );
+      const isolated = (await sessions()).find(s => s.id === codex.id);
+      check(
+        'refused activity preserves independently verified sibling',
+        isolated?.delegation?.children.length === 1 &&
+          isolated.delegation.children[0].id === fixture.codex.childIds[0]
+      );
+      check(
+        'source health names observation loss without claiming completion',
+        (await sourceFact())?.basis === 'observed' &&
+          isolated?.attention?.kind !== 'turn-end'
+      );
+      await page.goto(new URL('/settings', page.url()).href);
+      await page.getByRole('button', { name: /^Codex,/ }).click();
+      const partialFact = await sourceFact();
+      await page.getByText(partialFact.value, { exact: true }).waitFor();
+      await page
+        .getByText(partialFact.value, { exact: true })
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: join(root, 'delegation-source-partial.png'),
+      });
+      check(
+        'Agent Sources renders runtime coverage instead of its declaration',
+        true
+      );
+      await sendCodex('activity-restored');
+      await until(
+        async () => (await sourceFact())?.state === 'ready',
+        'restored protocol to clear observation fault'
+      );
+      check('runtime coverage recovers after a refused RPC', true);
+      const recoveredFact = await sourceFact();
+      await page.getByText(recoveredFact.value, { exact: true }).waitFor();
+      check(
+        'Agent Sources receives observation recovery without a recheck',
+        true
+      );
+
       await page.screenshot({
         path: join(root, 'delegation.png'),
         fullPage: false,

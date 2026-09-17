@@ -462,8 +462,16 @@ model. Reconnect replaces the observation from a fresh descendant snapshot.
 The shared monitor applies each child census atomically, accepts source-proven
 resumption over delta-event tombstones, and emits completion only for explicit
 completed turns. Poll generations reject stale identity responses; one failed
-Session read cannot withdraw another Session's successful census. Process
-callbacks are scoped to their connection generation.
+Session read cannot withdraw another Session's successful census. Child read
+failures also cannot withdraw independently verified siblings: ambiguous
+children share only their immediate parent's activity-read failure domain.
+Missing activity is unknown, never idle. Process callbacks are scoped to their
+connection generation. `DelegationObservations` separately aggregates runtime
+complete/partial/unavailable coverage across active Sessions into the source
+registry's delegation fact. That fact overlays cached discovery and streams to
+Settings; it neither changes launch readiness nor manufactures parent turn
+truth. Successful empty and unavailable censuses remain distinguishable there.
+See decision `0040` for the failure-domain and presentation contract.
 An unavailable or incompatible protocol withdraws the observation to absent;
 files, worktrees, process trees, and terminal text are never delegation
 evidence.
