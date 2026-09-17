@@ -23,6 +23,7 @@ import { CONSUMPTION_CHROME as CHROME, duration, percent } from '../flux';
 import {
   ACCOUNT_LABEL,
   HARNESS_LABEL,
+  planReadIsUnknown,
   planReadState,
   type ConsumptionSourceView,
 } from '../model';
@@ -163,7 +164,7 @@ function SourceRows({
       >
         {/* an account-scoped window is named for the ACCOUNT, not the tool
             that happens to share its credential */}
-        {planLevel || state === 'off' || state === 'unreadable'
+        {planLevel || planReadIsUnknown(state)
           ? ACCOUNT_LABEL[source.harness]
           : HARNESS_LABEL[source.harness]}
       </span>
@@ -173,13 +174,16 @@ function SourceRows({
           className="font-ui text-chrome-micro leading-4"
           style={{ color: PANEL.faint }}
         >
-          {/* three causes, three sentences: a failed read must never wear
-              the capability sentence (the D1 honesty inversion) */}
+          {/* four causes, four sentences: a failed read must never wear
+              the capability sentence (the D1 honesty inversion), and a
+              build with no grant is never the operator's switch (BUG-149) */}
           {state === 'off'
-            ? 'Reads are turned off in Settings — position unknown, not zero.'
-            : state === 'unreadable'
-              ? 'This account cannot be read right now — position unknown, not zero.'
-              : 'No plan record on disk — this source is unmetered here, not at zero.'}
+            ? 'Reads are turned off in Settings. Position unknown, not zero.'
+            : state === 'unconfigured'
+              ? 'Reads are not configured in this build. Position unknown, not zero.'
+              : state === 'unreadable'
+                ? 'This account is not readable right now. Position unknown, not zero.'
+                : 'No plan record on disk. This source is unmetered here, not at zero.'}
         </p>
       ) : (
         readings.map(r => (
@@ -197,7 +201,7 @@ function SourceRows({
           className="font-ui text-chrome-micro leading-4"
           style={{ color: PANEL.faint }}
         >
-          From your Claude account — plan-wide, including claude.ai.
+          From your Claude account, plan-wide, including claude.ai.
         </p>
       )}
     </div>

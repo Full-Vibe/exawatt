@@ -359,6 +359,17 @@ describe('planReadState', () => {
     expect(unknownPlanSources([source], NOW)).toHaveLength(0);
   });
 
+  it('separates a build with no grant from the operator switching the read off', () => {
+    const source = claude([], {
+      status: 'unconfigured',
+      observedAtMs: null,
+      planType: null,
+      spend: null,
+    });
+    expect(planReadState(source, NOW)).toBe('unconfigured');
+    expect(unknownPlanSources([source], NOW)).toHaveLength(1);
+  });
+
   it('separates a disabled read from an absent capability', () => {
     const source = claude([], {
       status: 'disabled',

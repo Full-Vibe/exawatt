@@ -104,7 +104,7 @@ describe('Headroom names what it cannot see (D1)', () => {
         paces={readAllWindows(codexSource(5), NOW, true)}
         silent={[claude]}
         nowMs={NOW}
-        unknownNote="Claude account is not readable — this verdict covers the sources that reported."
+        unknownNote="Claude account is not readable. This verdict covers the sources that reported."
       />
     );
     expect(screen.getByText('position unknown')).toBeTruthy();
@@ -113,7 +113,7 @@ describe('Headroom names what it cannot see (D1)', () => {
     expect(screen.queryByText(/keeps no plan, quota/)).toBeNull();
     expect(screen.queryByText('no plan record')).toBeNull();
     expect(
-      screen.getByText(/this verdict covers the sources that reported/)
+      screen.getByText(/verdict covers the sources that reported/)
     ).toBeTruthy();
   });
 
@@ -134,6 +134,27 @@ describe('Headroom names what it cannot see (D1)', () => {
     );
     expect(screen.getByText('read turned off')).toBeTruthy();
     expect(screen.getByText(/turned off in Settings/)).toBeTruthy();
+  });
+
+  it('says a build has no grant rather than that the operator turned the read off', () => {
+    render(
+      <Verdict
+        paces={readAllWindows(codexSource(5), NOW, true)}
+        silent={[
+          claudeSource({
+            status: 'unconfigured',
+            observedAtMs: null,
+            planType: null,
+            spend: null,
+          }),
+        ]}
+        nowMs={NOW}
+      />
+    );
+    expect(screen.getByText('not configured')).toBeTruthy();
+    expect(screen.getByText(/not configured in this build/)).toBeTruthy();
+    expect(screen.queryByText(/turned off/)).toBeNull();
+    expect(screen.queryByText(/Settings/)).toBeNull();
   });
 
   it('keeps the capability sentence for a source with no account read at all', () => {

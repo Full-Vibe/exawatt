@@ -484,7 +484,12 @@ export class ClaudePlanAccountService {
   }
 
   /** Current state, synchronously. Disabled serves ABSENCE — no windows,
-   *  no rates — while persisted state stays on disk for a later re-enable. */
+   *  no rates — while persisted state stays on disk for a later re-enable.
+   *  A build with no grant says so as its own status: the capability fact
+   *  and the operator's preference are two different facts, and folding the
+   *  first into the second painted every community build's meter as a
+   *  switch the operator had turned off, pointing at a Settings control that
+   *  build does not render (BUG-149). */
   view(): ClaudePlanAccountView {
     if (!this.enabled) {
       return {
@@ -493,7 +498,7 @@ export class ClaudePlanAccountService {
         rates: {},
         account: {
           source: 'claude-code',
-          status: 'disabled',
+          status: this.remoteReadAllowed ? 'disabled' : 'unconfigured',
           observedAt: null,
           planType: null,
           spend: null,

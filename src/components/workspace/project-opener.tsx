@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
-import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
+import {
+  listProjects,
+  projectRegistryScope,
+  rebindProjectPath,
+} from '@/lib/projects/registry';
 import { extractRecentProjects } from './switcher-rows';
 import {
   mergeProjectLibrary,
@@ -30,6 +34,46 @@ import {
   ConnectSourceDialog,
   type ConnectSourceResult,
 } from './connect-source-dialog';
+
+type ProjectOpenerRoute = 'projects' | 'connect';
+
+/**
+ * The chooser's position in the workspace, as ONE value: closed, or the
+ * route it is on.
+ *
+ * The route is not standing state beside `open`. The chooser closes itself
+ * to hand the screen to Connect and reopens itself when Connect is cancelled
+ * or the native folder picker is dismissed; a route that survived that round
+ * trip re-entered Connect on every reopen, so File → Connect existing Agent…
+ * could never be cancelled (BUG-147). With closed as a member of the same
+ * value, the chooser reopening itself lands on the Project routes, and only
+ * a fresh summons can put it on Connect.
+ */
+export function useProjectOpenerState(): {
+  open: boolean;
+  initialRoute: ProjectOpenerRoute;
+  onOpenChange: (open: boolean) => void;
+  /** Open the chooser on a route. The default is the Project routes. */
+  summon: (route?: ProjectOpenerRoute) => void;
+} {
+  const [position, setPosition] = useState<'closed' | ProjectOpenerRoute>(
+    'closed'
+  );
+  const summon = useCallback(
+    (route: ProjectOpenerRoute = 'projects') => setPosition(route),
+    []
+  );
+  const onOpenChange = useCallback(
+    (next: boolean) => setPosition(next ? 'projects' : 'closed'),
+    []
+  );
+  return {
+    open: position !== 'closed',
+    initialRoute: position === 'closed' ? 'projects' : position,
+    onOpenChange,
+    summon,
+  };
+}
 
 export function ProjectOpener({
   open,
@@ -59,7 +103,7 @@ export function ProjectOpener({
    * here rather than opening a second door to the same place, so cancelling
    * still returns to the chooser the route belongs to.
    */
-  initialRoute?: 'projects' | 'connect';
+  initialRoute?: ProjectOpenerRoute;
 }) {
   const [synced, setSynced] = useState<
     Awaited<ReturnType<typeof listProjects>>
@@ -98,19 +142,26 @@ export function ProjectOpener({
       return;
     }
     let cancelled = false;
+    let syncFailed = false;
     setLoading(true);
     setSyncUnavailable(false);
     setConnectSupported(Boolean(window.electron?.connectedSources));
     void Promise.all([
       listProjects().catch(() => {
-        if (!cancelled) setSyncUnavailable(true);
+        syncFailed = true;
         return [];
       }),
       window.electron?.workspace?.load() ?? Promise.resolve(null),
-    ]).then(([projects, layout]) => {
+      projectRegistryScope().catch(() => 'local' as const),
+    ]).then(([projects, layout, scope]) => {
       if (cancelled) return;
       setSynced(projects);
       setRecents(extractRecentProjects(layout));
+      // "Local Projects" is the registry's own answer: a signed-out account
+      // build serves the local registry (BUG-150), and a hosted read that
+      // failed is not syncing either. Community has nothing to sync and
+      // carries no label.
+      setSyncUnavailable(syncFailed || scope === 'signed-out');
       setLoading(false);
     });
     return () => {

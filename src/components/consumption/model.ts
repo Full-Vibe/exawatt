@@ -65,7 +65,7 @@ export const ACCOUNT_LABEL: Record<Harness, string> = {
 
 /** ENG-038 disclosure, stated once wherever an account window is rendered. */
 export const PLAN_LEVEL_NOTE =
-  'Account windows are plan-wide — usage outside Exawatt is included.';
+  'Account windows are plan-wide. Usage outside Exawatt is included.';
 
 /**
  * Disjoint raw-unit segments for one scope. `null` on any unit means the
@@ -233,7 +233,7 @@ export interface AccountSpendView {
  * is made, once, for every surface.
  */
 export interface AccountReadView {
-  status: 'ok' | 'unavailable' | 'disabled';
+  status: 'ok' | 'unavailable' | 'disabled' | 'unconfigured';
   /** Last SUCCESSFUL read; null when none has ever succeeded. */
   observedAtMs: number | null;
   /** The account's own plan identity, e.g. `max`. */
@@ -337,7 +337,12 @@ export function planWindowLabel(windowMinutes: number): string {
  * capability fact and a fleet that could see LESS looked healthier. Absent is
  * never zero, and unknown is never absent.
  */
-export type PlanReadState = 'reported' | 'none' | 'off' | 'unreadable';
+export type PlanReadState =
+  | 'reported'
+  | 'none'
+  | 'off'
+  | 'unconfigured'
+  | 'unreadable';
 
 export function planReadState(
   source: ConsumptionSourceView,
@@ -349,6 +354,10 @@ export function planReadState(
   const account = source.accountRead;
   if (!account) return 'none';
   if (account.status === 'disabled') return 'off';
+  // The build holds no grant to read the account (BUG-149). The position is
+  // as unknown as `off`, but it was never the operator's switch, and there
+  // is no Settings control to send them to.
+  if (account.status === 'unconfigured') return 'unconfigured';
   // `ok` with nothing live means the read succeeded but its observation has
   // gone stale — still unknown, never a reassuring absence.
   return 'unreadable';
@@ -356,7 +365,9 @@ export function planReadState(
 
 /** True for the states where the source's true position is UNKNOWN. */
 export function planReadIsUnknown(state: PlanReadState): boolean {
-  return state === 'off' || state === 'unreadable';
+  return (
+    state === 'off' || state === 'unconfigured' || state === 'unreadable'
+  );
 }
 
 /** Sources whose plan position is unknown right now. */

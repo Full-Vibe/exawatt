@@ -234,10 +234,26 @@ describe('unknownVerdictNote — naming what the verdict misses', () => {
     expect(unknownVerdictNote(demoWith([claude(undefined)]))).toBeNull();
   });
 
+  const unconfigured = {
+    status: 'unconfigured' as const,
+    observedAtMs: null,
+    planType: null,
+    spend: null,
+  };
+
   it('names one unreadable account', () => {
     expect(unknownVerdictNote(demoWith([claude(failing)]))).toBe(
-      'Claude account is not readable — this verdict covers the sources that reported.'
+      'Claude account is not readable. This verdict covers the sources that reported.'
     );
+  });
+
+  it('names a build with no grant as such, never as the operator turning it off', () => {
+    expect(unknownVerdictNote(demoWith([claude(unconfigured)]))).toBe(
+      'Claude account is not configured in this build. This verdict covers the sources that reported.'
+    );
+    expect(
+      unknownVerdictNote(demoWith([claude(unconfigured), grok(off)]))
+    ).toContain('are not readable');
   });
 
   it('says "turned off" only when every unknown source is switched off', () => {

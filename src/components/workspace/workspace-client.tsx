@@ -27,7 +27,8 @@ import {
   type ReactNode,
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { LAYOUT_CLASS, TerminalPane, type PaneLayout } from './terminal-pane';
+import { TerminalPane } from './terminal-pane';
+import { LAYOUT_CLASS, type PaneLayout } from './pane-layout';
 import {
   resolveComposerSlot,
   resolveStageLayout,
@@ -52,7 +53,7 @@ import {
 } from './close-confirm';
 import { navHistory, type NavLocation } from '@/components/nav/nav-history';
 import { operatorPosition } from '@/components/nav/operator-position';
-import { ProjectOpener } from './project-opener';
+import { ProjectOpener, useProjectOpenerState } from './project-opener';
 import { ExposeOverlay, type TeamSelection } from './expose-overlay';
 import { teamViewProjects } from './team-order';
 import { useTeamOrderPreference } from './team-order-preference';
@@ -294,10 +295,8 @@ export function WorkspaceClient() {
   const [font, setFont] = useState<EffectiveTerminalFont | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [resumeNoticeDismissed, setResumeNoticeDismissed] = useState(false);
-  const [projectOpenerOpen, setProjectOpenerOpen] = useState(false);
-  const [projectOpenerRoute, setProjectOpenerRoute] = useState<
-    'projects' | 'connect'
-  >('projects');
+  const projectOpener = useProjectOpenerState();
+  const summonProjectOpener = projectOpener.summon;
   // One spoken channel for the workspace. It began as reorder-only; ⌘J's
   // no-op is the second caller, and D44's contract is that a command never
   // just silently does nothing.
@@ -494,14 +493,32 @@ export function WorkspaceClient() {
           candidate.source.id === result.sourceId &&
           candidate.nativeAgentId === result.openNativeAgentId
       );
-      if (!agent) return;
+      if (agent) {
+        await openRemoteAgent({
+          agentId: agent.id,
+          nativeAgentId: agent.nativeAgentId,
+          sourceId: agent.source.id,
+          displayName: agent.displayName,
+          projectId: agent.projectId,
+          projectLabel: agent.projectLabel,
+        });
+        return;
+      }
+      // A failed read is not "not there". The last-known roster may already
+      // name the Agent, because the source's own change tick read it first.
+      const known = coworkersRef.current.find(
+        candidate =>
+          candidate.sourceId === result.sourceId &&
+          candidate.nativeAgentId === result.openNativeAgentId
+      );
+      if (!known) return;
       await openRemoteAgent({
-        agentId: agent.id,
-        nativeAgentId: agent.nativeAgentId,
-        sourceId: agent.source.id,
-        displayName: agent.displayName,
-        projectId: agent.projectId,
-        projectLabel: agent.projectLabel,
+        agentId: known.agentId,
+        nativeAgentId: known.nativeAgentId,
+        sourceId: known.sourceId,
+        displayName: known.name,
+        projectId: known.projectId,
+        projectLabel: known.projectLabel,
       });
     },
     [openRemoteAgent, refreshRemoteRoster]
@@ -533,14 +550,30 @@ export function WorkspaceClient() {
       const agent = refreshed?.agents.find(
         candidate => candidate.id === agentId
       );
-      if (!agent) return;
+      if (agent) {
+        await openRemoteAgent({
+          agentId: agent.id,
+          nativeAgentId: agent.nativeAgentId,
+          sourceId: agent.source.id,
+          displayName: agent.displayName,
+          projectId: agent.projectId,
+          projectLabel: agent.projectLabel,
+        });
+        return;
+      }
+      // A failed read is not "not there": a change tick's read may have
+      // landed the Agent in the roster while this one was in flight.
+      const landed = coworkersRef.current.find(
+        candidate => candidate.agentId === agentId
+      );
+      if (!landed) return;
       await openRemoteAgent({
-        agentId: agent.id,
-        nativeAgentId: agent.nativeAgentId,
-        sourceId: agent.source.id,
-        displayName: agent.displayName,
-        projectId: agent.projectId,
-        projectLabel: agent.projectLabel,
+        agentId: landed.agentId,
+        nativeAgentId: landed.nativeAgentId,
+        sourceId: landed.sourceId,
+        displayName: landed.name,
+        projectId: landed.projectId,
+        projectLabel: landed.projectLabel,
       });
     };
     const handle = (event: Event) => {
@@ -645,37 +678,29 @@ export function WorkspaceClient() {
     if (!inElectron) return;
     const openPicker = () => {
       consumePendingProjectPicker();
-      setProjectOpenerRoute('projects');
-      setProjectOpenerOpen(true);
+      summonProjectOpener('projects');
     };
     // Connect is a route ON the chooser, so the File menu opens the chooser
     // already there rather than a second door onto the same flow.
     const openConnect = () => {
       consumePendingConnectAgentSource();
-      setProjectOpenerRoute('connect');
-      setProjectOpenerOpen(true);
+      summonProjectOpener('connect');
     };
     window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openPicker);
     window.addEventListener(OPEN_CONNECT_SOURCE_EVENT, openConnect);
-    if (consumePendingProjectPicker()) {
-      setProjectOpenerRoute('projects');
-      setProjectOpenerOpen(true);
-    }
-    if (consumePendingConnectAgentSource()) {
-      setProjectOpenerRoute('connect');
-      setProjectOpenerOpen(true);
-    }
+    if (consumePendingProjectPicker()) summonProjectOpener('projects');
+    if (consumePendingConnectAgentSource()) summonProjectOpener('connect');
     return () => {
       window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openPicker);
       window.removeEventListener(OPEN_CONNECT_SOURCE_EVENT, openConnect);
     };
-  }, [inElectron]);
+  }, [inElectron, summonProjectOpener]);
 
   useEffect(() => {
     if (!inElectron) return;
     const ensureProject = (event: Event) => {
       if (!activeProject || projectRootPath(activeProject) === null) {
-        setProjectOpenerOpen(true);
+        summonProjectOpener();
         return;
       }
       // the summon IS a new tab now (D24): the draft pane hosts the
@@ -690,11 +715,11 @@ export function WorkspaceClient() {
     };
     window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
     if (!activeProject && hasPendingAgentComposer()) {
-      setProjectOpenerOpen(true);
+      summonProjectOpener();
     }
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
-  }, [inElectron, activeProject, createDraftTab]);
+  }, [inElectron, activeProject, createDraftTab, summonProjectOpener]);
 
   const readyAgentCount = useMemo(
     () =>
@@ -1537,15 +1562,15 @@ export function WorkspaceClient() {
   // Project chooser when nothing is open
   const newDraftTab = useCallback(() => {
     if (!activeProject || projectRootPath(activeProject) === null) {
-      setProjectOpenerOpen(true);
+      summonProjectOpener();
       return false;
     }
     if (!createDraftTab()) {
-      setProjectOpenerOpen(true);
+      summonProjectOpener();
       return false;
     }
     return true;
-  }, [activeProject, createDraftTab]);
+  }, [activeProject, createDraftTab, summonProjectOpener]);
 
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
@@ -1604,7 +1629,7 @@ export function WorkspaceClient() {
           ? launchHere('shell')
           : false,
       newProject: () => {
-        setProjectOpenerOpen(true);
+        summonProjectOpener();
         return true;
       },
       closeActive: () => {
@@ -1742,6 +1767,7 @@ export function WorkspaceClient() {
     activateCommandAltitude,
     openCommandPalette,
     openHelpModal,
+    summonProjectOpener,
   ]);
   useWorkspaceShortcuts(shortcutActions, inElectron);
 
@@ -1946,7 +1972,7 @@ export function WorkspaceClient() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setProjectOpenerOpen(true)}
+              onClick={() => summonProjectOpener()}
               className="shrink-0 font-mono text-chrome-title!"
             >
               <FolderOpen className="h-3.5 w-3.5" />
@@ -2195,7 +2221,7 @@ export function WorkspaceClient() {
                 <div className="flex h-full flex-col items-center justify-center gap-4">
                   <button
                     type="button"
-                    onClick={() => setProjectOpenerOpen(true)}
+                    onClick={() => summonProjectOpener()}
                     className="inline-flex h-10 items-center gap-2 rounded border px-4 font-mono text-sm outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: HUD.text,
@@ -2234,35 +2260,25 @@ export function WorkspaceClient() {
                         // A coworker's pane is its conversation, never a
                         // terminal: there is no local process to attach to,
                         // and no scrollback of Exawatt's to keep alive. It
-                        // mounts only while visible, so the workspace holds
-                        // one conversation subscription per pane on screen
-                        // rather than one per tab ever opened.
-                        if (layout === 'hidden') return null;
+                        // stays mounted like every other live pane (D26),
+                        // because the pane IS where the operator's draft,
+                        // undelivered outbox and read transcript live; it
+                        // used to mount only while visible, so ⌘2 then ⌘1
+                        // threw all three away (BUG-148).
                         return (
-                          <div
+                          <RemoteAgentPane
                             key={tab.id}
-                            data-pane={layout}
-                            className={LAYOUT_CLASS[layout]}
-                            style={
-                              layout === 'right'
-                                ? { borderLeft: `1px solid ${HUD.strokeSoft}` }
-                                : undefined
-                            }
-                            onMouseDown={
+                            layout={layout}
+                            onActivate={
                               tab.id !== activeTab?.id
                                 ? () => selectTab(dir, tab.id)
                                 : undefined
                             }
-                          >
-                            <div className="absolute inset-0 min-h-0">
-                              <RemoteAgentPane
-                                onReconnect={reconnectSource}
-                                onRequestWriteAccess={requestSourceWriteAccess}
-                                roster={remoteRoster}
-                                tab={tab}
-                              />
-                            </div>
-                          </div>
+                            onReconnect={reconnectSource}
+                            onRequestWriteAccess={requestSourceWriteAccess}
+                            roster={remoteRoster}
+                            tab={tab}
+                          />
                         );
                       }
                       const incarnation =
@@ -2482,9 +2498,9 @@ export function WorkspaceClient() {
         />
       )}
       <ProjectOpener
-        open={projectOpenerOpen}
-        initialRoute={projectOpenerRoute}
-        onOpenChange={setProjectOpenerOpen}
+        open={projectOpener.open}
+        initialRoute={projectOpener.initialRoute}
+        onOpenChange={projectOpener.onOpenChange}
         workspaceProjects={projects}
         onOpenProject={openProject}
         onImportProjects={importProjects}

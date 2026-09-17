@@ -11,7 +11,7 @@
  * composer. Only drafts are unpinnable (there is nothing to watch yet).
  */
 import type { SessionTab, WorkspaceTab } from './use-workspace-state';
-import type { PaneLayout } from './terminal-pane';
+import type { PaneLayout } from './pane-layout';
 
 export interface StageTabRef {
   tab: WorkspaceTab;

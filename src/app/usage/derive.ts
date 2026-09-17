@@ -108,10 +108,17 @@ export function unknownVerdictNote(
     names.length === 1
       ? names[0]
       : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  const allOff = unknown.every(s => planReadState(s, demo.nowMs) === 'off');
-  return allOff
-    ? `${list} ${names.length === 1 ? 'is' : 'are'} turned off — this verdict covers the sources that reported.`
-    : `${list} ${names.length === 1 ? 'is' : 'are'} not readable — this verdict covers the sources that reported.`;
+  const states = new Set(unknown.map(s => planReadState(s, demo.nowMs)));
+  const verb = names.length === 1 ? 'is' : 'are';
+  // One cause, one sentence. A mix never softens a real failure into a
+  // preference, and a build with no grant is never the operator's switch.
+  const fact =
+    states.size === 1 && states.has('off')
+      ? `${list} ${verb} turned off`
+      : states.size === 1 && states.has('unconfigured')
+        ? `${list} ${verb} not configured in this build`
+        : `${list} ${verb} not readable`;
+  return `${fact}. This verdict covers the sources that reported.`;
 }
 
 /** Vendor-account plan-credit spend, per source that reports it (ENG-038). */

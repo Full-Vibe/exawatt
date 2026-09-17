@@ -70,10 +70,19 @@ import { emptyDiagnostics } from './types';
  *   to judge.
  * - `disabled` means the operator switched the read off: nothing is fetched
  *   and no windows from this account ride the snapshot at all.
+ * - `unconfigured` means THIS BUILD holds no grant to make the read (the
+ *   distribution declares no stable signed identity, BUG-060), so there is
+ *   no switch for the operator to have turned. It is never presented as the
+ *   operator's own choice; Settings shows the same fact as "Not configured
+ *   in this build" (BUG-149).
  * - `spend` is the vendor's usage-credit figure (the spend-class dimension,
  *   captured for the model; deliberately no UI in ENG-038 slice 1).
  */
-export type ProviderPlanAccountStatus = 'ok' | 'unavailable' | 'disabled';
+export type ProviderPlanAccountStatus =
+  | 'ok'
+  | 'unavailable'
+  | 'disabled'
+  | 'unconfigured';
 
 /** Vendor-reported usage-credit spend, in minor currency units. */
 export interface ProviderPlanSpend {

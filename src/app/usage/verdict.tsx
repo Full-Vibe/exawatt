@@ -23,6 +23,7 @@ import {
 } from '@/components/consumption/flux';
 import {
   PLAN_LEVEL_NOTE,
+  planReadIsUnknown,
   planReadState,
   sourceOwnerLabel,
   windowOwnerLabel,
@@ -170,7 +171,7 @@ function SilentRow({
   nowMs: number;
 }) {
   const state = planReadState(source, nowMs);
-  const unknown = state === 'off' || state === 'unreadable';
+  const unknown = planReadIsUnknown(state);
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3">
@@ -191,6 +192,7 @@ function SilentRow({
 /** The right-hand state word. Unknown never borrows absence's phrasing. */
 function stateFigure(state: PlanReadState): string {
   if (state === 'off') return 'read turned off';
+  if (state === 'unconfigured') return 'not configured';
   if (state === 'unreadable') return 'position unknown';
   return 'no plan record';
 }
@@ -203,6 +205,9 @@ function readReason(
 ): string {
   const name = sourceOwnerLabel(source);
   if (state === 'off') return `${name} reads are turned off in Settings.`;
+  if (state === 'unconfigured') {
+    return `${name} reads are not configured in this build.`;
+  }
   const observedAtMs = source.accountRead?.observedAtMs ?? null;
   return observedAtMs === null
     ? `${name} has never been read successfully.`

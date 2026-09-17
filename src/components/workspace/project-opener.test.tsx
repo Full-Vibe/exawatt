@@ -8,15 +8,19 @@ import {
 } from '@testing-library/react';
 import { type ComponentProps, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProjectOpener } from './project-opener';
+import { ProjectOpener, useProjectOpenerState } from './project-opener';
 
-const { listProjects, rebindProjectPath } = vi.hoisted(() => ({
-  listProjects: vi.fn(),
-  rebindProjectPath: vi.fn(),
-}));
+const { listProjects, projectRegistryScope, rebindProjectPath } = vi.hoisted(
+  () => ({
+    listProjects: vi.fn(),
+    projectRegistryScope: vi.fn(),
+    rebindProjectPath: vi.fn(),
+  })
+);
 
 vi.mock('@/lib/projects/registry', () => ({
   listProjects,
+  projectRegistryScope,
   rebindProjectPath,
 }));
 
@@ -87,6 +91,7 @@ function renderControlledProjectOpener({
 describe('Project opener', () => {
   beforeEach(() => {
     listProjects.mockReset().mockResolvedValue([]);
+    projectRegistryScope.mockReset().mockResolvedValue('local');
     rebindProjectPath.mockReset().mockResolvedValue(undefined);
     window.electron = {
       isElectron: true,
@@ -368,6 +373,26 @@ describe('Project opener', () => {
     ).toBeEnabled();
   });
 
+  it('labels the registry local while an account build is signed out', async () => {
+    projectRegistryScope.mockResolvedValue('signed-out');
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+    expect(await screen.findByText('Local Projects')).toBeVisible();
+  });
+
+  it('carries no sync label in a Community build, which has nothing to sync', async () => {
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+    await screen.findByText('No Projects yet.');
+    expect(screen.queryByText('Local Projects')).toBeNull();
+  });
+
   it('says so when connecting has no desktop process to run in', async () => {
     delete (window.electron as { connectedSources?: unknown }).connectedSources;
     renderControlledProjectOpener({
@@ -382,5 +407,84 @@ describe('Project opener', () => {
       ).toBeDisabled()
     );
     expect(screen.getByText('Desktop app only')).toBeInTheDocument();
+  });
+});
+
+/**
+ * BUG-147: the File menu's Connect command enters the chooser already on the
+ * connect route, and cancelling Connect must land on the chooser's Project
+ * routes and STAY there. The route is the chooser's own position, so the
+ * harness holds it through the same hook the workspace does; a harness that
+ * kept a standing `route` beside `open` would reproduce the loop instead of
+ * proving it gone.
+ */
+describe('Project opener summoned on the connect route', () => {
+  function Workspace({
+    onOpenChange,
+  }: {
+    onOpenChange: (open: boolean) => void;
+  }) {
+    const opener = useProjectOpenerState();
+    return (
+      <>
+        <button type="button" onClick={() => opener.summon('connect')}>
+          File: Connect existing Agent
+        </button>
+        <ProjectOpener
+          open={opener.open}
+          initialRoute={opener.initialRoute}
+          onOpenChange={next => {
+            onOpenChange(next);
+            opener.onOpenChange(next);
+          }}
+          workspaceProjects={[]}
+          onOpenProject={vi.fn(async () => true)}
+          onImportProjects={vi.fn(async () => true)}
+        />
+      </>
+    );
+  }
+
+  it('can be cancelled: the chooser comes back on its Project routes and stays', async () => {
+    const onOpenChange = vi.fn();
+    render(<Workspace onOpenChange={onOpenChange} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'File: Connect existing Agent' })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Connect existing Agent',
+    });
+    // Connect took the screen; the chooser is the owner underneath.
+    expect(document.querySelector('[data-project-opener]')).toBeNull();
+
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Cancel connecting' })
+    );
+
+    // The chooser is back on the routes Connect sits beside, once.
+    await screen.findByText('No Projects yet.');
+    expect(
+      screen.queryByRole('dialog', { name: 'Connect existing Agent' })
+    ).toBeNull();
+    expect(onOpenChange.mock.calls.map(([value]) => value)).toEqual([
+      false,
+      true,
+    ]);
+
+    // Closing the chooser closes everything; a fresh summons enters again.
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    });
+    await waitFor(() =>
+      expect(document.querySelector('[data-project-opener]')).toBeNull()
+    );
+    expect(
+      screen.queryByRole('dialog', { name: 'Connect existing Agent' })
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'File: Connect existing Agent' })
+    );
+    await screen.findByRole('dialog', { name: 'Connect existing Agent' });
   });
 });

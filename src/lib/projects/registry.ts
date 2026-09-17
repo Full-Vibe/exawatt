@@ -73,6 +73,44 @@ function optionalProjectClient() {
   return createOptionalClient(resolvedDistribution());
 }
 
+type HostedProjectClient = NonNullable<ReturnType<typeof optionalProjectClient>>;
+
+type ProjectStore =
+  | { kind: 'local'; reason: 'no-account' | 'signed-out' }
+  | { kind: 'hosted'; supabase: HostedProjectClient; userId: string };
+
+/**
+ * Where the registry serves from, decided per call.
+ *
+ * The hosted registry is the signed-in operator's. Every other position is
+ * the local namespace: a Community build, and an account build whose
+ * operator has not signed in. Agents, Projects, and Demo Mode work without
+ * an account, and Connect maps an Agent into a durable Project before its
+ * dialog closes, so the mapping step needs a registry to write to whether or
+ * not the operator ever signs in (BUG-150). Before this, "the build declares
+ * an account" was read as "there is a user", and a signed-out operator
+ * reached Connect's last step with a registry that threw on Save.
+ */
+async function projectStore(): Promise<ProjectStore> {
+  const supabase = optionalProjectClient();
+  if (!supabase) return { kind: 'local', reason: 'no-account' };
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { kind: 'local', reason: 'signed-out' };
+  return { kind: 'hosted', supabase, userId: session.user.id };
+}
+
+type ProjectRegistryScope = 'hosted' | 'local' | 'signed-out';
+
+/** Which registry a caller is about to read or write. `signed-out` is the
+ *  local registry in a build that could sync once the operator signs in. */
+export async function projectRegistryScope(): Promise<ProjectRegistryScope> {
+  const store = await projectStore();
+  if (store.kind === 'hosted') return 'hosted';
+  return store.reason === 'signed-out' ? 'signed-out' : 'local';
+}
+
 function sortedLiveProjects(projects: readonly Project[]): Project[] {
   return projects
     .filter(project => project.archived_at === null)
@@ -168,9 +206,7 @@ export function buildRepositoryInsert(
   };
 }
 
-async function requireUserId(
-  supabase: NonNullable<ReturnType<typeof createOptionalClient>>
-): Promise<string> {
+async function requireUserId(supabase: HostedProjectClient): Promise<string> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -178,13 +214,15 @@ async function requireUserId(
   return user.id;
 }
 
-/** Live (non-archived) Projects for the signed-in user, in display order:
- *  operator sort_order first, then most-recently-opened. Throws when signed
- *  out — RLS would otherwise return zero rows as a success, and callers could
- *  not tell "no Projects" from "not syncing" (ENG-016 D8). */
+/** Live (non-archived) Projects in display order: operator sort_order first,
+ *  then most-recently-opened. Signed out serves the local registry. A session
+ *  that cannot be validated still throws (ENG-016 D8): RLS would otherwise
+ *  return zero rows as a success, and callers could not tell "no Projects"
+ *  from "not syncing". */
 export async function listProjects(): Promise<Project[]> {
-  const supabase = optionalProjectClient();
-  if (!supabase) return sortedLiveProjects(readLocalProjects());
+  const store = await projectStore();
+  if (store.kind === 'local') return sortedLiveProjects(readLocalProjects());
+  const { supabase } = store;
   await requireUserId(supabase);
   const { data, error } = await supabase
     .from('projects')
@@ -202,8 +240,8 @@ export async function listProjects(): Promise<Project[]> {
 export async function openRepositoryProject(
   ref: RepositoryProjectRef
 ): Promise<Project> {
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     const projects = readLocalProjects();
     const nowIso = new Date().toISOString();
     const existing = projects.find(
@@ -227,6 +265,7 @@ export async function openRepositoryProject(
     writeLocalProjects([...projects, created]);
     return created;
   }
+  const { supabase } = store;
   const userId = await requireUserId(supabase);
   const nowIso = new Date().toISOString();
   // Reuse an existing Project for this directory (the unique (user_id,
@@ -275,8 +314,8 @@ export async function openManualProject(
   if (!ref.id.trim() || !trimmed) {
     throw new Error('A manual Project needs an identity and name.');
   }
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     const projects = readLocalProjects();
     const nowIso = new Date().toISOString();
     const existing = projects.find(project => project.id === ref.id);
@@ -305,6 +344,7 @@ export async function openManualProject(
     return created;
   }
 
+  const { supabase } = store;
   const userId = await requireUserId(supabase);
   const nowIso = new Date().toISOString();
   const existing = await supabase
@@ -350,8 +390,8 @@ export async function openManualProject(
 export async function renameProject(id: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
       name: trimmed,
@@ -359,7 +399,7 @@ export async function renameProject(id: string, name: string): Promise<void> {
     }));
     return;
   }
-  const { error } = await supabase
+  const { error } = await store.supabase
     .from('projects')
     .update({ name: trimmed })
     .eq('id', id);
@@ -370,8 +410,8 @@ export async function setProjectColor(
   id: string,
   color: string
 ): Promise<void> {
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
       color,
@@ -379,7 +419,7 @@ export async function setProjectColor(
     }));
     return;
   }
-  const { error } = await supabase
+  const { error } = await store.supabase
     .from('projects')
     .update({ color })
     .eq('id', id);
@@ -394,8 +434,8 @@ export async function rebindProjectPath(
   id: string,
   rootPath: string
 ): Promise<void> {
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
       root_path: rootPath,
@@ -404,7 +444,7 @@ export async function rebindProjectPath(
     }));
     return;
   }
-  const { error } = await supabase
+  const { error } = await store.supabase
     .from('projects')
     .update({ root_path: rootPath, last_opened_at: new Date().toISOString() })
     .eq('id', id);
@@ -414,8 +454,8 @@ export async function rebindProjectPath(
 /** Soft-remove: archived Projects drop out of the registry but keep their row
  *  (and any future history) instead of a destructive delete. */
 export async function archiveProject(id: string): Promise<void> {
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
       archived_at: nowIso,
@@ -423,7 +463,7 @@ export async function archiveProject(id: string): Promise<void> {
     }));
     return;
   }
-  const { error } = await supabase
+  const { error } = await store.supabase
     .from('projects')
     .update({ archived_at: new Date().toISOString() })
     .eq('id', id);
@@ -432,8 +472,8 @@ export async function archiveProject(id: string): Promise<void> {
 
 /** Persist a new manual ordering (drag-to-reorder in the Projects surface). */
 export async function reorderProjects(orderedIds: string[]): Promise<void> {
-  const supabase = optionalProjectClient();
-  if (!supabase) {
+  const store = await projectStore();
+  if (store.kind === 'local') {
     const order = new Map(orderedIds.map((id, index) => [id, index]));
     const nowIso = new Date().toISOString();
     writeLocalProjects(
@@ -448,7 +488,7 @@ export async function reorderProjects(orderedIds: string[]): Promise<void> {
   }
   const results = await Promise.all(
     orderedIds.map((id, i) =>
-      supabase.from('projects').update({ sort_order: i }).eq('id', id)
+      store.supabase.from('projects').update({ sort_order: i }).eq('id', id)
     )
   );
   // surface a failed reorder like every sibling accessor does, rather than

@@ -7,8 +7,14 @@
  * a terminal; for a coworker it is this, and never a terminal — there is no
  * process here to attach to.
  *
- * The pane's whole job is to decide which of three honest states the tab is
- * in before the surface ever mounts:
+ * The pane sits on the stage the way a terminal pane does: it takes its
+ * `layout` and stays mounted while hidden. The operator's draft, the outbox
+ * that has not been delivered yet, and the transcript already read all live
+ * in the surface below, so unmounting on a tab switch threw all three away
+ * and re-read the history over the tunnel on the way back (BUG-148).
+ *
+ * Its own job is to decide which of three honest states the tab is in before
+ * the surface ever mounts:
  *
  * - Exawatt has not read the roster yet, and says only that;
  * - the roster names this Agent, and the surface takes over;
@@ -25,6 +31,7 @@ import {
   resolveRemoteAgentTab,
   type RemoteRoster,
 } from './remote-agent-roster';
+import { LAYOUT_CLASS, type PaneLayout } from '../pane-layout';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from '../workspace-theme';
 
 export interface RemoteAgentPaneProps {
@@ -36,6 +43,10 @@ export interface RemoteAgentPaneProps {
     projectLabel: string;
   };
   roster: RemoteRoster;
+  /** Where the pane sits on the stage. Hidden keeps it mounted. */
+  layout?: PaneLayout;
+  /** Pressing an inactive pane selects its tab, as it does for a terminal. */
+  onActivate?: () => void;
   /** Injected in tests and previews; defaults to the Electron bridge. */
   bridge?: RemoteAgentBridge | null;
   onRequestWriteAccess?: (sourceId: string) => void;
@@ -45,10 +56,43 @@ export interface RemoteAgentPaneProps {
 export function RemoteAgentPane({
   tab,
   roster,
+  layout = 'full',
+  onActivate,
   bridge,
   onRequestWriteAccess,
   onReconnect,
 }: RemoteAgentPaneProps) {
+  return (
+    <div
+      data-pane={layout}
+      className={LAYOUT_CLASS[layout]}
+      style={
+        layout === 'right'
+          ? { borderLeft: `1px solid ${HUD.strokeSoft}` }
+          : undefined
+      }
+      onMouseDown={layout !== 'hidden' ? onActivate : undefined}
+    >
+      <div className="absolute inset-0 min-h-0">
+        <RemoteAgentPaneBody
+          bridge={bridge}
+          onReconnect={onReconnect}
+          onRequestWriteAccess={onRequestWriteAccess}
+          roster={roster}
+          tab={tab}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RemoteAgentPaneBody({
+  tab,
+  roster,
+  bridge,
+  onRequestWriteAccess,
+  onReconnect,
+}: Omit<RemoteAgentPaneProps, 'layout' | 'onActivate'>) {
   const resolution = resolveRemoteAgentTab(tab, roster);
 
   if (resolution.kind === 'present') {

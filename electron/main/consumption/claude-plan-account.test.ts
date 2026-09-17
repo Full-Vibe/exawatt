@@ -509,7 +509,8 @@ describe('ClaudePlanAccountService', () => {
 
     expect(readCredential).not.toHaveBeenCalled();
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(svc.view().account.status).toBe('disabled');
+    // The missing grant is its own status, never the operator's switch.
+    expect(svc.view().account.status).toBe('unconfigured');
   });
 
   it('switching off mid-life hides the windows on the very next view', async () => {
