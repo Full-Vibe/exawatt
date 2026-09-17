@@ -193,6 +193,36 @@ export function mergeFleetAttention(
 }
 
 /**
+ * What the fleet-wide surfaces get from a merge that may be PARTIAL, said
+ * out loud (BUG-135). A producer that could not look at some Sessions (the
+ * roadmap producer whose read failed) narrows the merged view; the tab
+ * strip, the Project dot and the ⌘J queue index a record and have no
+ * vocabulary yet for "unwatched", so the record they receive carries the
+ * known signals and `unseen` names, per Session, the producers that were
+ * blind to it. Silence in `signals` for a Session in `unseen` is not quiet;
+ * a surface that gains the vocabulary reads `unseen` and says so. This is
+ * the one place that decision is made, instead of a cast at each consumer.
+ */
+export interface SealedAttention {
+  readonly signals: FleetAttentionSignals;
+  /** Session id → the producers that never looked at it. Empty when the
+   *  merge is complete, which is the common case. */
+  readonly unseen: ReadonlyMap<string, readonly string[]>;
+}
+
+export function sealAttentionView(
+  view: SessionAttentionView,
+  sessionIds: Iterable<string>
+): SealedAttention {
+  const unseen = new Map<string, readonly string[]>();
+  for (const sessionId of sessionIds) {
+    const knowledge = attentionAt(view, sessionId);
+    if (!knowledge.known) unseen.set(sessionId, knowledge.unseenBy);
+  }
+  return { signals: view.signals as FleetAttentionSignals, unseen };
+}
+
+/**
  * The empty complete map: every producer looked, nobody needs the operator.
  * Surfaces and fixtures with no attention wiring at all say this instead of
  * casting a bare object, so "no signals" stays distinguishable from "no

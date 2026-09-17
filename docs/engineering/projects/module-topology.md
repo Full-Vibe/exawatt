@@ -69,6 +69,17 @@ Falsified along the way, so the next agent does not re-diagnose:
   its samples read tens of milliseconds and BUG-062 stayed "unconfirmed";
   the one 1,474 ms sample in that report was the registry.
 
+The same class surfaced once more before this landed, in the fleet roadmap
+producer: a roadmap read that failed wrote the same `absent` a Project with
+no roadmap gets, so a roadmap over the reader's byte limit read as quiet on
+the strip, the Project dot and ⌘J. BUG-135 gives it the fact model's answer
+(`failed` is unknown, the last good parse stands as a fact with an age, the
+producer declares itself blind, and one Project's reads share a
+`createLatestRequest` channel so an older read cannot land after a newer
+one). The residual it declares: the strip and ⌘J have no "unwatched"
+vocabulary yet; `sealAttentionView` carries the blind Sessions beside the
+signals for the surface that gains it.
+
 Next seams, in the order the evidence suggests: the model-catalog read (the
 same stale-while-revalidate shape, already disk-backed by BUG-115, still
 cwd-scoped so a fresh worktree pays every catalog probe), then the launch

@@ -7,6 +7,7 @@ import {
   delegationElapsedLabel,
   delegationRailRows,
   attentionAt,
+  sealAttentionView,
   fleetAttention,
   mergeAttention,
   mergeFleetAttention,
@@ -440,6 +441,29 @@ describe('attention eligibility is one rule (BUG-009)', () => {
 // was fleet-wide, roadmap attention was the active Project's lens only, and
 // the merge could not express the difference — so a Session blocked in
 // another Project came back from the map indistinguishable from a quiet one.
+// BUG-135: the fleet surfaces index a record and have no vocabulary for
+// "unwatched" yet, so the seal over a partial merge is explicit and carries
+// the blind spots beside the signals instead of hiding them in a cast.
+describe('sealAttentionView (BUG-135)', () => {
+  it('names, per Session, the producers that never looked', () => {
+    const narrow = scopedAttention('roadmap', {}, ['b1']);
+    const sealed = sealAttentionView(
+      mergeAttention(fleetAttention('pty', {}), narrow),
+      ['a1', 'b1']
+    );
+    expect(sealed.unseen).toEqual(new Map([['a1', ['roadmap']]]));
+    expect(sealed.signals).toEqual({});
+  });
+
+  it('has nothing unseen over a complete merge', () => {
+    const sealed = sealAttentionView(
+      mergeAttention(fleetAttention('pty', {}), fleetAttention('roadmap', {})),
+      ['a1']
+    );
+    expect(sealed.unseen.size).toBe(0);
+  });
+});
+
 describe('a producer declares its scope (BUG-026)', () => {
   const blocked = { kind: 'roadmap-blocked' as const, since: 10 };
   // "the operator is standing in Project B": a producer that only looked at

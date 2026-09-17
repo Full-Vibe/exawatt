@@ -52,27 +52,34 @@ export interface LatestRequest {
   invalidate(): void;
 }
 
-export function useLatestRequest(): LatestRequest {
+/**
+ * The primitive without the hook, for a channel that is keyed at runtime
+ * (one per open Project) and so cannot be a hook of its own. Own it in a
+ * ref and `invalidate()` it when the key goes away.
+ */
+export function createLatestRequest(): LatestRequest {
   // The one generation counter this primitive exists to replace elsewhere.
-  const generation = useRef(0);
-  useEffect(
-    () => () => {
-      generation.current += 1;
+  let generation = 0;
+  const ticket = (mine: number): RequestTicket => ({
+    get current() {
+      return generation === mine;
     },
-    []
-  );
-  return useMemo(() => {
-    const ticket = (mine: number): RequestTicket => ({
-      get current() {
-        return generation.current === mine;
-      },
-    });
-    return {
-      begin: () => ticket(++generation.current),
-      current: () => ticket(generation.current),
-      invalidate() {
-        generation.current += 1;
-      },
-    };
+  });
+  return {
+    begin: () => ticket(++generation),
+    current: () => ticket(generation),
+    invalidate() {
+      generation += 1;
+    },
+  };
+}
+
+export function useLatestRequest(): LatestRequest {
+  const channel = useRef<LatestRequest | null>(null);
+  channel.current ??= createLatestRequest();
+  useEffect(() => {
+    const owned = channel.current;
+    return () => owned?.invalidate();
   }, []);
+  return useMemo(() => channel.current!, []);
 }

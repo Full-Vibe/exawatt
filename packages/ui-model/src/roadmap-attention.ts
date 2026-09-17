@@ -54,11 +54,17 @@ export interface RoadmapAttentionSession {
 
 /** One Project's roadmap as the producer sees it. `pending` is the honest
  *  third state: the read has not answered yet, so this Project's Sessions are
- *  neither blocked nor cleared. */
+ *  neither blocked nor cleared. `failed` is the fourth (BUG-135): the read
+ *  ran and could not answer (the file is over the reader's limit, the IPC
+ *  rejected), which is not the same fact as a Project with no roadmap. A
+ *  failed read is never evidence about the roadmap, so the producer's view
+ *  of that Project's Sessions is unknown, never quiet. */
 export type RoadmapAttentionRead =
   | { status: 'pending' }
-  /** no roadmap file, or it could not be read/parsed */
+  /** a successful read of nothing: no roadmap file in this Project */
   | { status: 'absent' }
+  /** the read did not answer; nothing is known about this Project */
+  | { status: 'failed'; error: string }
   | { status: 'ok'; doc: RoadmapDoc };
 
 export interface RoadmapAttentionProject {
@@ -72,6 +78,10 @@ export interface FleetRoadmapAttention {
   blocked: RoadmapBlockedSession[];
   /** Sessions whose Project has not answered yet — unknown, not clear */
   pending: string[];
+  /** Sessions whose Project's roadmap could not be read — unknown, not clear
+   *  (BUG-135). Together with `pending`, the Sessions this producer must
+   *  declare itself blind to rather than let read as quiet. */
+  unread: string[];
 }
 
 /** Renderer-side worktree evidence: the basename of a Session cwd that has
@@ -132,9 +142,14 @@ export function deriveFleetRoadmapBlocked(
 ): FleetRoadmapAttention {
   const blocked: RoadmapBlockedSession[] = [];
   const pending: string[] = [];
+  const unread: string[] = [];
   for (const project of projects) {
     if (project.read.status === 'pending') {
       pending.push(...project.sessions.map(session => session.sessionId));
+      continue;
+    }
+    if (project.read.status === 'failed') {
+      unread.push(...project.sessions.map(session => session.sessionId));
       continue;
     }
     if (project.read.status !== 'ok') continue;
@@ -157,7 +172,7 @@ export function deriveFleetRoadmapBlocked(
       }
     }
   }
-  return { blocked, pending };
+  return { blocked, pending, unread };
 }
 
 /**
@@ -169,7 +184,7 @@ export function deriveFleetRoadmapBlocked(
  * fresh clock: the documented oldest-first walk silently ordered by "least
  * recently visited" instead. Pins now survive Project switches, drop when the
  * block clears, and are held (never re-stamped) while a Project's roadmap
- * read is still pending.
+ * read is still pending or has failed.
  */
 export function pinRoadmapBlockedSince(
   previous: ReadonlyMap<string, number>,
@@ -181,7 +196,8 @@ export function pinRoadmapBlockedSince(
     if (pinned.has(entry.sessionId)) continue;
     pinned.set(entry.sessionId, previous.get(entry.sessionId) ?? now);
   }
-  for (const sessionId of fleet.pending) {
+  // A block whose Project cannot currently be read is not cleared either.
+  for (const sessionId of [...fleet.pending, ...fleet.unread]) {
     const held = previous.get(sessionId);
     if (held !== undefined && !pinned.has(sessionId)) {
       pinned.set(sessionId, held);

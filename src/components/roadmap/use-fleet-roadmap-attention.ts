@@ -19,11 +19,22 @@
  *
  * Nothing here runs per render, per PTY tick, or per Session: there is no
  * per-Session git evidence, deliberately (see `roadmap-attention.ts`).
+ *
+ * A read that FAILS is not a Project with no roadmap (BUG-135). It used to
+ * write the same `absent` a successful read of nothing writes, so a roadmap
+ * over the reader's byte limit made the strip, the Project dot and ⌘J read
+ * every Session in that Project as quiet while the rail showed the error.
+ * Now a failed read keeps the last good parse when there is one (a fact with
+ * an age, the readiness model's rule), and with nothing known it declares
+ * the producer BLIND to that Project's Sessions, so the merge answers
+ * unknown for them and names this producer.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseRoadmap } from '@exawatt/core';
 import {
+  createLatestRequest,
   useLatestRequest,
+  type LatestRequest,
   type RequestTicket,
 } from '@/hooks/use-latest-request';
 import {
@@ -35,7 +46,8 @@ import {
 } from '@exawatt/ui-model';
 import {
   fleetAttention,
-  type FleetAttentionSource,
+  scopedAttention,
+  type AttentionSource,
   type SessionAttentionSignal,
 } from '@/components/workspace/session-status';
 
@@ -54,9 +66,13 @@ interface CachedRead {
 const PENDING: CachedRead = { mtimeMs: null, read: { status: 'pending' } };
 const ABSENT: CachedRead = { mtimeMs: null, read: { status: 'absent' } };
 
+function failed(error: string): CachedRead {
+  return { mtimeMs: null, read: { status: 'failed', error } };
+}
+
 export function useFleetRoadmapAttention(
   projects: readonly FleetRoadmapProject[]
-): FleetAttentionSource {
+): AttentionSource {
   const [reads, setReads] = useState<Record<string, CachedRead>>({});
   const dirsKey = useMemo(
     () =>
@@ -71,6 +87,19 @@ export function useFleetRoadmapAttention(
   // Project closed (or after a newer pass started) must not resurrect stale
   // state. Follow-up reads (file change, focus) belong to the current pass.
   const passes = useLatestRequest();
+  // And one channel per Project: two reads of the same roadmap can overlap
+  // (a file change during a focus refresh), and the older one must not land
+  // after the newer one. The mtime guard below only skips a parse; ordering
+  // is this channel's job.
+  const channels = useRef(new Map<string, LatestRequest>());
+  const channelFor = (dir: string): LatestRequest => {
+    let channel = channels.current.get(dir);
+    if (!channel) {
+      channel = createLatestRequest();
+      channels.current.set(dir, channel);
+    }
+    return channel;
+  };
 
   const load = useRef<(dir: string, pass: RequestTicket) => void>(() => {});
   load.current = (dir: string, pass: RequestTicket) => {
@@ -79,36 +108,46 @@ export function useFleetRoadmapAttention(
       setReads(prev => (prev[dir] === ABSENT ? prev : { ...prev, [dir]: ABSENT }));
       return;
     }
+    const ticket = channelFor(dir).begin();
+    const commit = (next: (cached: CachedRead | undefined) => CachedRead) => {
+      if (!pass.current || !ticket.current) return;
+      setReads(prev => {
+        const cached = prev[dir];
+        const entry = next(cached);
+        return entry === cached ? prev : { ...prev, [dir]: entry };
+      });
+    };
+    // A read that did not answer is not evidence about the roadmap: the last
+    // good parse stands (aged), and with nothing known the Project is unread.
+    const keepOrFail = (error: string) => (cached: CachedRead | undefined) =>
+      cached?.read.status === 'ok' ? cached : failed(error);
     void api
       .read(dir)
       .then(result => {
-        if (!pass.current) return;
-        setReads(prev => {
-          const cached = prev[dir];
-          if (result.status !== 'ok') {
-            return cached?.read.status === 'absent'
-              ? prev
-              : { ...prev, [dir]: ABSENT };
-          }
+        if (result.status === 'error') {
+          commit(keepOrFail(result.error));
+          return;
+        }
+        if (result.status !== 'ok') {
+          commit(cached => (cached === ABSENT ? cached : ABSENT));
+          return;
+        }
+        commit(cached => {
           // The parse is the expensive half; an unchanged file skips it and
           // returns the same state object, so no consumer re-renders.
           if (cached?.mtimeMs === result.mtimeMs && cached.read.status === 'ok') {
-            return prev;
+            return cached;
           }
           const doc = parseRoadmap(result.text, {
             projectDir: dir,
             file: result.file,
           });
-          return {
-            ...prev,
-            [dir]: { mtimeMs: result.mtimeMs, read: { status: 'ok', doc } },
-          };
+          return { mtimeMs: result.mtimeMs, read: { status: 'ok', doc } };
         });
       })
-      .catch(() => {
-        if (!pass.current) return;
-        setReads(prev =>
-          prev[dir]?.read.status === 'absent' ? prev : { ...prev, [dir]: ABSENT }
+      .catch((reason: unknown) => {
+        commit(
+          keepOrFail(reason instanceof Error ? reason.message : String(reason))
         );
       });
   };
@@ -117,6 +156,12 @@ export function useFleetRoadmapAttention(
   useEffect(() => {
     const pass = passes.begin();
     const open = new Set(dirs);
+    for (const [dir, channel] of channels.current) {
+      if (!open.has(dir)) {
+        channel.invalidate();
+        channels.current.delete(dir);
+      }
+    }
     setReads(prev => {
       const next: Record<string, CachedRead> = {};
       let changed = false;
@@ -182,7 +227,17 @@ export function useFleetRoadmapAttention(
       signals[entry.sessionId] = { kind: 'roadmap-blocked', since };
     }
     // Fleet-wide by construction: every open Project's live Sessions were
-    // evaluated by the same rule, wherever the operator is standing.
-    return fleetAttention('roadmap', signals);
-  }, [fleet]);
+    // evaluated by the same rule, wherever the operator is standing. Unless
+    // some could not be: a Session whose Project has not answered, or whose
+    // roadmap could not be read, is outside this producer's coverage, and
+    // saying so is what keeps the merge from reading it as quiet.
+    const blind = new Set([...fleet.pending, ...fleet.unread]);
+    if (blind.size === 0) return fleetAttention('roadmap', signals);
+    const covered = projects.flatMap(project =>
+      project.sessions
+        .map(session => session.sessionId)
+        .filter(sessionId => !blind.has(sessionId))
+    );
+    return scopedAttention('roadmap', signals, covered);
+  }, [fleet, projects]);
 }

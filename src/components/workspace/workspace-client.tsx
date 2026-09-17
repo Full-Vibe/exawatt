@@ -170,7 +170,9 @@ import {
   attentionJumpQueue,
   attentionNeedsOperator,
   fleetAttention,
+  mergeAttention,
   mergeFleetAttention,
+  sealAttentionView,
   sessionGlyphState,
   sessionLensTurnState,
   sessionTurnFacts,
@@ -971,13 +973,23 @@ export function WorkspaceClient() {
   );
   const roadmapAttention = useFleetRoadmapAttention(roadmapAttentionProjects);
   // Attention sources compose. A quiet harness result must never mask an
-  // independent roadmap block for the same Session, and neither producer may
-  // narrow what the fleet-wide surfaces below are allowed to read.
-  const mergedAttention = useMemo(
+  // independent roadmap block for the same Session. The roadmap producer
+  // declares itself blind to the Sessions of a Project whose roadmap it
+  // could not read (BUG-135), so the merge is sealed HERE, explicitly, with
+  // those Sessions named in `unseen` rather than read as quiet.
+  const sealedAttention = useMemo(
     () =>
-      mergeFleetAttention(fleetAttention('pty', attention), roadmapAttention),
-    [attention, roadmapAttention]
+      sealAttentionView(
+        mergeAttention(fleetAttention('pty', attention), roadmapAttention),
+        projects.flatMap(project =>
+          project.tabs
+            .filter(isSessionTab)
+            .flatMap(tab => (tab.sessionId ? [tab.sessionId] : []))
+        )
+      ),
+    [attention, projects, roadmapAttention]
   );
+  const mergedAttention = sealedAttention.signals;
   // What the Team altitude PAINTS, for the tab ring (BUG-021). `⌘⇧[`/`⌘⇧]`
   // step "the next Session in display order", and while Team is open the
   // display is this grid, not the strip underneath it. Same sort function

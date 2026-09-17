@@ -16,8 +16,17 @@ export const ROADMAP_DISCOVERY_ORDER = [
   'roadmap.md',
 ] as const;
 
-/** Roadmaps are documents, not databases; 1 MiB is beyond any honest one. */
-const MAX_ROADMAP_BYTES = 1024 * 1024;
+/**
+ * Roadmaps are documents, not databases, and this bound exists so a runaway
+ * file can never freeze the renderer's parse. It was 1 MiB; the operator's own
+ * roadmap reached 871 KB on 2026-09-16, growing about 470 KB a month, and a
+ * limit a real document reaches is a cliff, not a bound. 8 MiB is beyond any
+ * honest roadmap for a year and a parse the renderer can still afford.
+ * Crossing it is an `error` result that every consumer surfaces as a failed
+ * read (unknown, never quiet: BUG-135), so the cliff is visible if it ever
+ * arrives.
+ */
+export const MAX_ROADMAP_BYTES = 8 * 1024 * 1024;
 
 export type RoadmapReadResult =
   | { status: 'ok'; file: string; text: string; mtimeMs: number }
@@ -65,7 +74,10 @@ export async function readRoadmap(projectDir: string): Promise<RoadmapReadResult
     }
     if (!stat.isFile()) continue;
     if (stat.size > MAX_ROADMAP_BYTES) {
-      return { status: 'error', error: `${candidate} exceeds the 1 MiB roadmap limit` };
+      return {
+        status: 'error',
+        error: `${candidate} exceeds the ${MAX_ROADMAP_BYTES / (1024 * 1024)} MiB roadmap limit`,
+      };
     }
     try {
       const text = await fs.promises.readFile(resolved, 'utf8');

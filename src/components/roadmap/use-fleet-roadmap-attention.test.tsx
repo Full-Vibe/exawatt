@@ -1,5 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  attentionAt,
+  fleetAttention,
+  mergeAttention,
+} from '@/components/workspace/session-status';
 import { useFleetRoadmapAttention } from './use-fleet-roadmap-attention';
 
 const BLOCKED = `## Now
@@ -110,6 +115,98 @@ describe('useFleetRoadmapAttention', () => {
     rerender({ projects: [BRAVO, ALPHA] });
     await waitFor(() => expect(result.current.signals.sb).toBeDefined());
     expect(result.current.signals.sb.since).toBe(since);
+  });
+
+  // BUG-135. The roadmap reader refuses a file over its byte limit with
+  // `status: 'error'`; this hook wrote the same `absent` a Project with no
+  // roadmap gets, so the strip, the Project dot and ⌘J read every Session in
+  // that Project as quiet while the rail showed the error.
+  it('declares itself blind to a Project whose roadmap could not be read', async () => {
+    electron({
+      read: vi.fn(async (dir: string) =>
+        dir === '/b'
+          ? { status: 'error' as const, error: 'roadmap.md exceeds the limit' }
+          : { status: 'ok' as const, text: CLEAN, file: 'ROADMAP.md', mtimeMs: 1 }
+      ),
+    });
+    const { result } = renderHook(() => useFleetRoadmapAttention([ALPHA, BRAVO]));
+    await waitFor(() =>
+      expect(result.current.scope).toEqual({
+        kind: 'sessions',
+        sessionIds: new Set(['sa']),
+      })
+    );
+    const view = mergeAttention(fleetAttention('pty', {}), result.current);
+    expect(attentionAt(view, 'sa')).toEqual({ known: true, signal: undefined });
+    expect(attentionAt(view, 'sb')).toEqual({
+      known: false,
+      unseenBy: ['roadmap'],
+    });
+  });
+
+  it('declares itself blind when the read itself rejects', async () => {
+    electron({ read: vi.fn().mockRejectedValue(new Error('bridge down')) });
+    const { result } = renderHook(() => useFleetRoadmapAttention([ALPHA]));
+    await waitFor(() =>
+      expect(result.current.scope).toEqual({
+        kind: 'sessions',
+        sessionIds: new Set(),
+      })
+    );
+  });
+
+  it('keeps the last good parse when a later read fails, as a fact with an age', async () => {
+    let fail = false;
+    electron({
+      read: vi.fn(async () =>
+        fail
+          ? { status: 'error' as const, error: 'roadmap.md exceeds the limit' }
+          : { status: 'ok' as const, text: BLOCKED, file: 'ROADMAP.md', mtimeMs: 1 }
+      ),
+    });
+    const { result } = renderHook(() => useFleetRoadmapAttention([BRAVO]));
+    await waitFor(() => expect(result.current.signals.sb).toBeDefined());
+    fail = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+    });
+    // The block the last good parse showed still stands, and the producer
+    // still covers the Session: nothing about the roadmap has been learned.
+    expect(result.current.signals.sb?.kind).toBe('roadmap-blocked');
+    expect(result.current.scope).toEqual({ kind: 'fleet' });
+  });
+
+  it('never lets an older read of the same roadmap land after a newer one', async () => {
+    let release!: () => void;
+    const first = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    let calls = 0;
+    electron({
+      read: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          // The mount read: answers last, with the OLDER file state.
+          await first;
+          return { status: 'ok' as const, text: CLEAN, file: 'ROADMAP.md', mtimeMs: 1 };
+        }
+        return { status: 'ok' as const, text: BLOCKED, file: 'ROADMAP.md', mtimeMs: 2 };
+      }),
+    });
+    const { result } = renderHook(() => useFleetRoadmapAttention([BRAVO]));
+    await waitFor(() => expect(calls).toBe(1));
+    // A focus refresh starts a newer read that answers first.
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.signals.sb).toBeDefined());
+    await act(async () => {
+      release();
+      await Promise.resolve();
+    });
+    expect(result.current.signals.sb?.kind).toBe('roadmap-blocked');
   });
 
   it('treats a Project with no roadmap as clear, not blocked', async () => {

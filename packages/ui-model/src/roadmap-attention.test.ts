@@ -112,6 +112,33 @@ describe('deriveFleetRoadmapBlocked', () => {
     expect(fleet.blocked).toEqual([]);
   });
 
+  // BUG-135: a read that did not answer is not a Project with no roadmap.
+  // Its Sessions are neither blocked nor cleared; they are unread, and the
+  // producer must say so instead of letting the merge read them as quiet.
+  it('reports a Project whose roadmap could not be read as unread, never clear', () => {
+    const fleet = deriveFleetRoadmapBlocked([
+      {
+        dir: B,
+        read: { status: 'failed', error: 'roadmap.md exceeds the limit' },
+        sessions: [session('sb', { cwd: B, declaredItemId: 'B-1' })],
+      },
+      project(A, null, [session('sa')]),
+    ]);
+    expect(fleet.blocked).toEqual([]);
+    expect(fleet.unread).toEqual(['sb']);
+    expect(fleet.pending).toEqual([]);
+  });
+
+  it('holds a pin while that Project cannot be read', () => {
+    const previous = new Map([['sb', 5]]);
+    const pinned = pinRoadmapBlockedSince(
+      previous,
+      { blocked: [], pending: [], unread: ['sb'] },
+      99
+    );
+    expect(pinned.get('sb')).toBe(5);
+  });
+
   it('reports a Project whose roadmap has not answered yet as pending', () => {
     const fleet = deriveFleetRoadmapBlocked([
       { dir: B, read: { status: 'pending' }, sessions: [session('b1', { cwd: B })] },
@@ -131,6 +158,7 @@ describe('pinRoadmapBlockedSince', () => {
       reason: 'B-1 is blocked',
     })),
     pending,
+    unread: [],
   });
 
   it('survives a Project round trip instead of re-stamping (BUG-026)', () => {
