@@ -733,3 +733,14 @@ bounds, and optional timestamps. Production admission remains the source-IO,
 renderer and same-Session gates in the adoption brief. Because no runtime caller
 uses this pure module and no Electron-facing behavior changes, this groundwork
 requires the repository floor and relevant core tests, not a dogfood package.
+
+### 2026-09-17 — Operator evidence: browser capability awareness
+
+**Agents need an honest account of the tools available in their environment.**
+Row `956279da-6e34-4a39-88b3-81e6af4aeac5` reports Agents saying they cannot
+see the Internet, and asks whether context injection, harness-native browsers,
+or a unified Exawatt browser should solve it. Evidence belongs to ENG-003 and
+ENG-023's environment-awareness work (BUG-133). No browser vendor or first-party
+implementation is selected. Reuse the capability-boundary investigation in
+`agent-terminal-workspace.md`; distinguish missing tools from missing context
+before shaping implementation. Prompt text alone cannot grant browser access.

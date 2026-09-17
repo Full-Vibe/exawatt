@@ -1601,3 +1601,18 @@ Sequencing: precedes ENG-003 and all long-arc items (operator, 2026-07-06: excel
 Project doc:
 
 - `docs/engineering/projects/stellar-small-fleet.md`
+
+### 2026-09-17 — Operator evidence: Project fold and pause
+
+**Two Project-level requests need interaction shaping before implementation.**
+Both are evidence for ENG-015, not authorization to equate folding with stopping.
+
+- `491c36ce-83b1-4538-b372-83c634b41137`: with one visible Project, the
+  operator cannot minimize it from the toolbar; request is to click the Project
+  name and show Agents as icons. Explicitly requests UX research/shaping.
+- `645757b3-db18-4ce4-890f-d0c15d9ba62e`: freeze an entire Project and reopen
+  it together. Project resume exists; define the stop/checkpoint semantics,
+  active-turn handling, and exact-resume boundary before adding the inverse.
+
+Keep these separate: visual folding must not imply process suspension; a
+Project pause must not promise a provider checkpoint it cannot preserve.

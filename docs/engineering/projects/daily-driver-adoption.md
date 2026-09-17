@@ -7080,3 +7080,19 @@ stopped; the native gallery can be reopened at `/hud-gallery/native-conversation
 in any bootstrapped checkout. Remote atomic checkpoints remain available.
 Private `origin/master` contains the batch; public projection still refuses the
 pre-existing divergent history. No release workflow or public reseed was run.
+
+### 2026-09-17 — Operator evidence: active Session controls and Clone to
+
+**Active configuration and current handoff context need their own design pass.**
+
+- `bf2f5a02-596a-4dc7-8077-41598d80eee0` requests first-class model/effort
+  selectors in Agent chrome, reusing the launcher's components and data, plus
+  less directory/title-bar space. The attached screenshot was inspected: stacked
+  chrome motivates the request. ENG-016 owns the surface; ENG-003 owns actual
+  source capabilities. A live selector must distinguish observed configuration
+  from launch defaults and expose changes only where the harness supports them.
+- `462b165f-6421-44a1-a7fc-b78d6075cdff` reports Clone to using a weeks-old
+  initial prompt instead of current Session context, and asks for harness and
+  local/cloud identity near the action. Evidence for D46 and ENG-037: research
+  handoff summaries and user stories before expanding the bounded prompt bridge.
+  Do not label a prompt-only clone an exact resume or live state transfer.

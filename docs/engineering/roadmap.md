@@ -1326,6 +1326,12 @@ Project doc:
 
 - `docs/engineering/projects/agent-coordination-substrate.md`
 
+Recent evidence (2026-09-17, `67650ff5-7d9e-491c-812f-ee38e6a68161`):
+the operator reports a partner building an ad hoc mailbox so Agents exchange
+notes without a human courier, with human review of their messages. This
+reinforces the existing auditable blackboard/bus direction; it does not
+authorize skipping C2's research, shaping, or staged coordination ladder.
+
 ### ENG-005 Initiative primitive
 
 Status: planned
@@ -1869,6 +1875,10 @@ Relations, recorded not shaped:
 Open questions for the design pass: what honestly carries across (instructions, plan, context summary, file state) versus what cannot (provider-side conversation state — the deep transfer is not a provider resume, and the UI must not imply otherwise); and whether the frozen artifact is repo-visible (ENG-019) or machine-local.
 
 PARTIALLY ANSWERED AND CHEAP HALF LANDED 2026-08-03: D46 ships **Clone to…** on every started Agent Session's keyboard-complete context menu and in `⌘K`. It creates a new Agent on one exact available configuration using bounded `sessionClonePrompt` handoff text, leaves the original Session intact, passes no provider resume identity, and excludes Shell and unavailable targets. Supporting copy says it starts a new Agent with a handoff; “transfer” remains acceptable vocabulary for the broader user problem but cannot claim live provider-state migration. Deliberately NOT pulled forward: automatic suggestion on plan-window exhaustion (it would mean pattern-matching harness output, the inference class this repo has been burned by in D4/D38/D40), the frozen-artifact format, and everything that carries more than a prompt. This item stays `planned` and unshaped for the freeze-and-reinflate half.
+
+Recent evidence (2026-09-17): Clone to reused an old initial prompt rather than
+current work (`462b165f`); the report and shaping boundary are recorded in the
+[daily-driver project log](projects/daily-driver-adoption.md#2026-09-17--operator-evidence-active-session-controls-and-clone-to).
 
 ### ENG-038 Provider consumption accounts
 
