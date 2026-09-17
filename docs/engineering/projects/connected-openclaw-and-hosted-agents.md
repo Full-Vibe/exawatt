@@ -384,6 +384,15 @@ simulated evidence.
   `tasks.cancel`; the production UI exposes primary-conversation send. No
   Pause, schedule/configuration mutation, Gateway administration, or VPS
   lifecycle control is included.
+- **H2.1 Work and automations on the connected coworker — planned, shaped
+  2026-09-14.** Close the gap the 2026-08-20 entry recorded: the roster DTO
+  carries no work or automation evidence, so the pane shows Conversation only.
+- **H2.2 One-gesture write approval — planned, shaped 2026-09-14; needs one
+  operator decision.** Approve Exawatt's own pending write request on the
+  server through the operator's existing SSH identity instead of by hand.
+- **H2.3 Remote needs-you and result — planned, shaped 2026-09-14.** Give
+  D40's `blocked` and `complete` remote evidence from the read-scoped
+  subscriptions.
 - **H3 Exawatt-managed placement — NOT ACTIVE; REQUIRES A DESIGN PASS (operator,
   2026-08-19).** H3 would force business and custody decisions, including
   whether and how the product charges, and the operator asked that it be shaped
@@ -401,6 +410,91 @@ simulated evidence.
 
 ENG-011 later proves mixed-source scale; ENG-012 supplies hosted metadata,
 governance, policy ceilings, and billing. Neither owns a parallel roster.
+
+## H2.1–H2.3 execution packets (shaped 2026-09-14 for pickup)
+
+State on 2026-09-16: BUG-132 is fixed, integrated as `6a1daaac`, dogfood
+installed, and the running app is that build. The connected-source store file
+exists and holds zero sources; neither dogfood Gateway has been connected from
+the installed app. The first step is the operator's, not an agent's: connect
+both Gateways from ⌘N and use them for a few days. Build the packets below
+against that use, in order. Alias names and endpoints never enter this doc.
+
+### H2.1 Work and automations reach the pane
+
+- **Why:** `ConnectedSourceRuntime.discover()` already calls `cron.list`,
+  `status`, and `sessions.list` (with `hasActiveRun`), and the projection
+  kernel derives a work stack and automation rows from them (2026-08-19
+  entry), but the renderer roster DTO carries none of it, so
+  `RemoteAgentSurface.work` receives the empty stack in production and a
+  coworker with no `main` Session opens to nothing.
+- **Where:** the roster boundary in `electron/main/connected-sources-ipc.ts`
+  (`connected-sources:agents`) and its renderer readers
+  `src/components/workspace/remote-agent/remote-agent-roster.ts` and
+  `use-remote-coworkers.ts`; the consumer is
+  `src/components/workspace/remote-agent/remote-agent-surface.tsx`. Demo
+  parity lives in `packages/core/src/sources/demo-connected-source.ts` and the
+  lifecycle contract in `electron/main/connected-source-lifecycle.contract.ts`.
+- **Rules:** bounded and source-reported; never turn `contextCount` into work
+  state; stale and unavailable dim the work stack exactly as they dim the
+  transcript (C4 finding); cron and helper noise stays collapsed until it
+  produces an Event, result, fault, or human gate (design brief).
+- **Acceptance:** each dogfood coworker opens showing current work and
+  automations from its source; the coworker with no `main` Session leads with
+  Automations and shows them; the lifecycle contract and the packaged
+  connected-fleet gate carry the DTO; Demo passes the same contract.
+
+### H2.2 One-gesture write approval (operator decision first)
+
+- **Today:** `request-command-authority` enqueues a pending pairing request on
+  the Gateway; the operator approves it by hand with the source's CLI. Exawatt
+  deliberately holds neither `operator.pairing` nor `operator.admin` (H1
+  criterion, decision `0037` §4, 2026-08-18 entries).
+- **Decision needed:** whether authority may be placement-dependent. For a
+  customer-hosted source reached over the operator's own SSH alias, the
+  operator IS the server's admin; running the source's approval command over
+  that alias adds no authority Exawatt did not already have. The agent
+  recommendation of 2026-09-14 is to adopt this for SSH-alias sources only and
+  keep the refusal for anything reached by shared token. If adopted: amend the
+  H1 criterion and `0037` §4, add the amendment-chain row, and keep the
+  generality test (another operator, another provider).
+- **Where:** `electron/main/gateway-bootstrap.ts` already owns a bounded
+  remote exec over the alias (`createSshRemoteExec`); the authority tiers are
+  in `electron/main/connected-gateway-authority.ts`; the surface's
+  approval-pending state is in `remote-agent-surface.tsx`. The live send proof
+  (`connected-openclaw-send.live.test.ts`) and the fail2ban note in the
+  2026-08-19 hardening entry bound how the proof may touch a real server.
+- **Acceptance:** from approval-pending, one gesture completes the approval of
+  exactly the request Exawatt made and the composer becomes ready without a
+  terminal; a refused or absent request is named in the source's words; the
+  gesture is absent for non-alias transports.
+
+### H2.3 Remote needs-you and result
+
+- **Today:** remote D40 reaches `active`, `unreported`, and `error` only
+  (C2 and H2 entries); `complete`, `blocked`, and `reviewing` are listed by
+  name as unreachable so adding evidence has to be deliberate.
+- **Where:** `sessions.subscribe` and `sessions.messages.subscribe` are read
+  scoped (2026-08-18 entry) and already feed the conversation; the work-state
+  derivation is in the projection kernel and `connected-source-runtime.ts`.
+- **Acceptance:** a finished remote turn lights `complete` and a remote human
+  gate lights `blocked`, each with the named source evidence; anything without
+  evidence stays unreachable and listed. Fleet then answers "who is waiting on
+  me" for connected coworkers.
+
+### ⌘T on a box (not shaped; recorded so nobody re-derives it)
+
+A Launch Configuration (`packages/core/src/launch-configurations.ts`) carries
+`sourceId` but no placement. The launcher's source list filters to PTY
+harnesses with interactive launch (`src/components/workspace/agent-sources.ts`),
+which structurally excludes the OpenClaw source. `agents.create` and
+`sessions.create` are `operator.admin` and are not requestable
+(`connected-gateway-authority.ts`). Launch itself goes through
+`electron/main/pty/session-manager.ts`, which has no remote branch. The
+gesture therefore needs the H2.2 authority decision, a placement on the launch
+configuration, an unfiltered launcher, and a launch path through the connected
+source runtime. It belongs to the ENG-016 D54 flow pass and the ENG-033 H3
+pass, not to a packet here.
 
 ## H1 acceptance criteria
 
@@ -1172,3 +1266,12 @@ installed app at all. The two Gateways the milestones were proved against
 have not been connected since C5 cleaned up after itself, and the main log
 carries no connected-source event between 2026-08-17 and today. What ENG-010
 shipped is proven; what it has not yet had is a day of ordinary use.
+
+### 2026-09-16 — state for pickup
+
+BUG-132 integrated as `6a1daaac`, dogfood-installed the same night, and the
+app was relaunched on that build on 2026-09-14. The connected-source store file
+now exists and holds zero sources: the operator opened Connect during the
+clipped-list night and did not save a source. H2.1–H2.3 above are shaped from
+the gaps this document already recorded; the first move is still to connect
+both Gateways and live with them.

@@ -46,7 +46,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-030 | Open-source readiness                            | active-build | Public repo is live; repair projection/history parity, exact-tree CI/security, and public Release provenance before the friend cohort. Contribution intake is trigger-deferred. |
 | ENG-031 | Website — vision communication and guides        | active-build | SHAPED 2026-08-14 — the overhaul IS the ENG-030 launch surface; altitude-ladder spine, band system, live board hero.                                                                   |
 | ENG-032 | Theming and visual identity                      | done         | T0–T5.3 LANDED — three presets share one app-global Manual/Auto contract with browser-paint and public-typography continuity gates.                                                    |
-| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed for existing customer-hosted Agents; managed placement and explicit clone/move remain future design work, with no paid-cloud implementation active.                       |
+| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped 2026-09-14 for pickup (work stack, one-gesture write approval, remote needs-you); managed placement and clone/move remain design work, no paid cloud. |
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
@@ -1698,6 +1698,17 @@ Status: planned — H0–H2 landed for existing customer-hosted Agents. H3/H4 re
 future design work requiring explicit authorization; no paid-cloud implementation
 is active. Created 2026-08-02 and reshaped around the OpenClaw dogfood topology.
 
+2026-09-14 first-use note (operator: "control my fleet of two Hetzner-hosted
+agents via the Exawatt UI, as if they're first-class citizens"): the installed
+app's first attempt to connect the dogfood fleet hit BUG-132, fixed and
+installed the same night. As of 2026-09-16 neither dogfood Gateway is connected
+in the installed app, so H1/H2 are proven but not yet in daily use. The gaps
+that would make a connected coworker feel second-class are recorded, not
+guessed, and are shaped below as H2.1–H2.3 for pickup; execution detail is in
+the project doc's "H2.1–H2.3 execution packets" section. Sequence: connect the
+fleet and live with it before building; then H2.1, H2.2 (needs one operator
+decision), H2.3.
+
 2026-09-07 dependency note: demand for provider-hosted conversation discovery/attachment is recorded in the [ENG-003 investigation](projects/agent-source-architecture.md#2026-09-07--adoption-source-investigation). It is distinct from managed placement; implementation depends on a supported interface, not on private endpoint emulation.
 
 Direction (operator framing): "One-click to push this agent up to the cloud, in
@@ -1729,11 +1740,50 @@ Milestones:
   `chat.send`, `chat.abort`, `sessions.steer`, and `tasks.cancel`. The UI exposes
   primary-conversation send, not generic administration; no Pause, schedule,
   configuration, Gateway stop, or VPS shutdown control is implied.
+- H2.1 Connected coworkers carry their work and automations — planned,
+  shaped 2026-09-14 for pickup. The runtime already fetches `cron.list`,
+  `status`, and per-session `hasActiveRun`, and the kernel derives a work stack
+  and automation rows from them, but the renderer roster DTO carries none of it
+  (recorded 2026-08-20), so the production Agent pane shows Conversation only
+  and a coworker with no `main` Session opens to nothing. Add a bounded,
+  source-reported work/automation DTO at the existing roster boundary and feed
+  the remote surface's work stack; never derive work state from a context
+  count. Exit: each dogfood coworker opens showing current work and automations
+  from its source, stale and unavailable dim both, Demo passes the same contract.
+- H2.2 Grant a coworker a voice in one gesture — planned, shaped 2026-09-14;
+  NEEDS ONE OPERATOR DECISION before build. Today Exawatt asks for
+  `operator.write` and the operator approves the pending device by hand on the
+  server with the source's CLI, because Exawatt refuses to hold pairing or
+  admin authority (H1 criterion; decision `0037` §4). For a server the operator
+  already reaches as admin over the same SSH alias, that is ceremony without a
+  security gain. Proposal: an explicit "Approve on server" gesture runs the
+  source's own approval command over the existing alias through the bootstrap's
+  bounded remote exec, scoped to the exact pending request Exawatt made;
+  authority stays placement-dependent (customer-hosted through the operator's
+  own SSH identity, never through a shared token alone). Adopting it amends the
+  H1 "never requests admin" criterion and `0037` §4 and takes an amendment-chain
+  row when decided. Agent recommendation, 2026-09-14: adopt. It is also the
+  policy decision the ⌘T gesture below depends on.
+- H2.3 Remote work state reaches D40's needs-you and result — planned, shaped
+  2026-09-14. Only active, unreported, and error are reachable for a connected
+  coworker; a turn boundary and a human gate have no remote evidence, so Fleet
+  cannot say which coworker is waiting on the operator. Map the read-scoped
+  session and run subscriptions to `complete` and `blocked` with named evidence
+  per state; states without evidence stay listed by name (the H2 rule).
 - H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
   authorization pass for provisioning, credential custody, deletion, billing,
   and control-plane ownership before implementation begins.
 - H4 Clone or move — enumerate what transfers and what remains source-local
   before offering a gesture. No false provider-session continuity.
+
+The ⌘T "start a coworker on that box" gesture (operator, 2026-09-13: near-term
+control of the two-box fleet is the seed of spin-up-in-cloud) is not shaped
+here. It inherits ENG-016 D54's New Agent flow pass and depends on H2.2's
+authority decision. What the code already has and lacks, for whoever picks it
+up: a Launch Configuration carries a source id but no placement; the launcher
+filters sources to PTY harnesses, which structurally excludes the OpenClaw
+source; and `agents.create` is admin scope, which Exawatt does not request.
+Roughly four files and one policy decision; the project doc names them.
 
 The existing _Push to cloud_ announced affordance remains a promise, not the
 label for attaching an existing remote Agent. It becomes actionable only at H4,
