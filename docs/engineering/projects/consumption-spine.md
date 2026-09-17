@@ -346,6 +346,48 @@ machine.
 
 ## 8. Roadmap milestone log
 
+### BUG-141 — the horizon is a live read from one owner, and "publishing, anchor unknown" is the ceiling (landed 2026-09-16)
+
+**A boot-time snapshot of a fact the same boot writes later.** BUG-032's
+widening (above) read `operatorProfile.startedAt` once in `main.ts` while
+constructing the scanner. That field is two days younger than `v0.1.10`, so
+a `v0.1.10` profile is `{ autoPublish: true }` with no anchor, the horizon
+resolved to 14 days, hydrate pruned everything older, the first compaction
+rewrote the log without it, and two minutes later the renderer's first sync
+recovered the hosted `joined_at`, recorded it, scanned "everything since"
+(now 14 days), and the RPC replaced the hosted aggregate with that. Watermarks
+mark every file consumed, so a relaunch under the widened horizon re-reads
+nothing. Found by the release-candidate review, not in a running build;
+incident `0023` carries the diagnosis and the mutation method that proves the
+test fails on master.
+
+**Fix, in the spine's own shape.** `electron/main/consumption/retention-policy.ts`
+is the one owner: a closure over the settings store that
+`ConsumptionStateStore.load` consults at hydrate and the scanner consults at
+the end of every pass before the compaction decision.
+`resolveSampleHorizonMs` now takes the profile — off is the default, on with
+an anchor covers it, on with NO anchor is the 400-day ceiling.
+`ConsumptionSampleWindow.setHorizonMs` narrows in place and reports what it
+dropped; a narrowing that dropped samples compacts regardless of the byte
+ratio, so the anchor the sync writes shrinks the window and the log on the
+next pass without a relaunch. The review's sibling was real and closes here
+too: the window's anchor is `min(newest sample, wall time + 24 h)`, so one
+sample stamped by a fast clock cannot evict the corpus (clamping down only
+ever retains more, so `0039` §4's backup and clock-jump cases still hold). A
+failed settings read resolves to the ceiling, never to "not publishing".
+
+**The deliverable is the test.** `retention-migration.test.ts` builds the
+`v0.1.10` state (a horizon-free scan over a 90-day Codex corpus, every file
+watermarked, the anchorless profile) and drives boot → hydrate → first pass →
+the sync's anchor write → the sync's scan → the next pass → relaunch,
+asserting the payload the sync would publish. On master's product files it
+publishes 3 days instead of 9 and retains 5 samples instead of 28; on the fix
+all four cases pass, including the non-publishing control.
+`eval:consumption-scan` over the operator's real corpus: unchanged behaviour
+for a non-publishing profile (8,664 samples in the default window; the eval's
+`> 10,000` bar predated BUG-032 and measured his calendar, so it now asserts
+the window holds samples).
+
 ### BUG-032 — samples get the retention horizon observations always had (landed 2026-08-16)
 
 **A log bound is not a state bound.** `consumption-scan/log-v1.jsonl` had

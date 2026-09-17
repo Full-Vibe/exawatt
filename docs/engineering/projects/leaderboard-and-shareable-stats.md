@@ -607,6 +607,20 @@ Exit criteria:
 
 ## Roadmap milestone log
 
+### 2026-09-16 — BUG-141 the sync's anchor recovery no longer races the scanner's retention
+
+The A3 repair above recovers a missing local anchor from the hosted
+`joined_at` and then scans everything since it. That is correct, and it was
+the second half of a data-loss path: the scanner it asks had already been
+constructed at boot with a horizon computed from the anchor that did not yet
+exist, so a `v0.1.10` profile hydrated under 14 days and the recovered
+`joined_at` scanned 14 days, which `sync_operator_stats` then installed over
+the hosted history. Nothing in this module changed; the consumption spine now
+re-reads the anchor from the settings store at hydrate and after every pass
+and treats "publishing, anchor unknown" as the ceiling, so the first sync
+after the fix publishes the full history. Incident `0023` has the sequence
+and the test that fails on master.
+
 ### 2026-08-03 — A0 design pass
 
 Shaped through an operator interview after research into tokenmaxxing,

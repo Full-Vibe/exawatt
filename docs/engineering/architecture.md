@@ -708,14 +708,18 @@ the rule and the three defects that produced it.
 | ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `workspace.json`                | small-object layout: ids, titles, cwds, lifecycle, drafts       | no large field may live here at all                                                                                                                                                                     | —                                                                              |
 | `goal-visuals/`                 | content-addressed side store, keyed by `GoalVisual.identityKey` | 64 entries / 48 MB                                                                                                                                                                                      | the workspace save path, which is the only place that knows the referenced set |
-| `consumption-scan/log-v1.jsonl` | append log compacted from live state                            | samples: 14 days behind the newest sample, widened to cover an active Operator-profile publication anchor, clamped at 400 days; observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write           |
+| `consumption-scan/log-v1.jsonl` | append log compacted from live state                            | samples: 14 days behind the newest sample (an anchor no further than a day past wall time), widened to cover an active Operator-profile publication anchor and to the 400-day ceiling while that anchor is still unknown, re-read live at hydrate and after every pass (BUG-141); observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write; `retention-policy.ts` owns the horizon |
 | `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                | `AgentModelCatalogCache.write`, plus one sweep on load                         |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written
 once and read on demand, so the record stays cheap to rewrite on a hot path.
 And **an age bound is anchored on the data, not the clock** — at the newest
-record seen — so a clock jump or a restored backup cannot empty a collection.
+record seen — so a clock jump or a restored backup cannot empty a collection;
+the data is trusted only as far as wall time plus a tolerance, so one misdated
+record cannot empty it either. A bound whose policy input a later write can
+change is a live read at every point of enforcement, never a value captured at
+boot (BUG-141, incident `0023`).
 
 ## Object Model
 

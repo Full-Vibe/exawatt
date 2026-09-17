@@ -80,6 +80,24 @@ eviction.**
    path: the workspace migration's interleaving defect was found by a
    randomized storm of concurrent loads and saves, not by reading the code.
 
+## Amendment 2026-09-16 (BUG-141, incident `0023`)
+
+Two refinements from the first defect this rule produced rather than
+prevented. **§4 gains a bound on the data itself:** the anchor is the newest
+record seen, but no further ahead of wall time than a stated tolerance
+(`CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS`, one day). Clamping the anchor down
+can only retain more, so the backup and clock-jump cases §4 protects still
+hold, and one record stamped by a fast clock can no longer evict the whole
+collection. **A policy input is a live read.** Where a bound depends on a fact
+that a later write can change — the Operator-profile publication anchor,
+written by the renderer's first sync minutes after boot — the bound is
+re-resolved from that fact's owner at every point of enforcement (hydrate,
+and before every compaction), never captured once at construction. And while
+the fact is known to be pending (publishing is on, the anchor is not yet
+recorded), the bound resolves to its widest value: retaining too much for one
+pass costs nothing, pruning under an anchor that arrives two minutes later
+deleted months of a published profile.
+
 ## Consequences
 
 - A new persisted collection without a stated bound is a review finding, the
