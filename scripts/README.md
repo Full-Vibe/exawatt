@@ -74,6 +74,8 @@ such without first revalidating their fixture and owner:
 - `renderer-session-lifecycle-leak-probe.mjs`
 - `session-lifecycle-leak-probe.mjs`
 - `cold-composer-probe.mjs` — opt-in staged-renderer launch measurements; requires an explicit build SHA and an isolated fixture profile
+- `agent-source-registry-probe.mjs` — opt-in: login shells and wall time of one cold Agent Source registry read on this machine, plus the remembered read (BUG-062)
+- `composer-registry-cold-probe.mjs` — opt-in: ⌘T to a live Start with the registry cache expired, shells per ⌘T, and the first ⌘T after a restart, against this checkout's dev server (BUG-062)
 - `terminal-cost-probe.mjs`
 - `transcript-replay-probe.mjs`
 
