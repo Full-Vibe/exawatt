@@ -357,134 +357,132 @@ export function isPersistableAppearancePreferences(
   );
 }
 
-export function parseSettings(raw: unknown): ExawattSettings {
-  if (!raw || typeof raw !== 'object') return {};
-  const settings: ExawattSettings = {};
-  {
-    const t = (raw as { terminal?: unknown }).terminal;
-    if (t && typeof t === 'object') {
-      const {
-        fontFamily,
-        fontSize,
-        lineHeight,
-        letterSpacing,
-        fontStrokeWidth,
-      } = t as Record<string, unknown>;
-      const terminal: TerminalFontSettings = {};
-      if (typeof fontFamily === 'string' && fontFamily.trim()) {
-        terminal.fontFamily = fontFamily.trim();
-      }
-      if (
-        typeof fontSize === 'number' &&
-        Number.isFinite(fontSize) &&
-        fontSize >= 8 &&
-        fontSize <= 32
-      )
-        terminal.fontSize = fontSize;
-      if (
-        typeof lineHeight === 'number' &&
-        Number.isFinite(lineHeight) &&
-        lineHeight >= 0.8 &&
-        lineHeight <= 2
-      )
-        terminal.lineHeight = lineHeight;
-      if (
-        typeof letterSpacing === 'number' &&
-        Number.isFinite(letterSpacing) &&
-        letterSpacing >= -5 &&
-        letterSpacing <= 20
-      )
-        terminal.letterSpacing = letterSpacing;
-      if (
-        typeof fontStrokeWidth === 'number' &&
-        Number.isFinite(fontStrokeWidth) &&
-        fontStrokeWidth >= 0 &&
-        fontStrokeWidth <= 1
-      )
-        terminal.fontStrokeWidth = fontStrokeWidth;
-      if (Object.keys(terminal).length > 0) settings.terminal = terminal;
+/**
+ * One parser per persisted field, and nothing else decides what the file
+ * holds (BUG-142). `parseSettings` and `writeSettings` both derive from this
+ * table, and the mapped type requires an entry for EVERY key of
+ * `ExawattSettings`: a field added to the interface without a parser here is
+ * a compile error, not a silently write-only setting. That is the class
+ * BUG-044 shipped into — `keyboardShortcuts` was written by its IPC channel
+ * and never assigned back by the parser, so a rebind vanished on relaunch and
+ * any other settings write erased it from disk within the session, and no
+ * test crossed the channel to notice.
+ *
+ * Each parser is total over `unknown` and returns `undefined` for "absent or
+ * unusable", which keeps the file's silence: nothing here invents a default.
+ */
+type SettingsFieldParser<T> = (raw: unknown) => T | undefined;
+
+const SETTINGS_SCHEMA: {
+  readonly [K in keyof ExawattSettings]-?: SettingsFieldParser<
+    NonNullable<ExawattSettings[K]>
+  >;
+} = {
+  terminal: raw => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const { fontFamily, fontSize, lineHeight, letterSpacing, fontStrokeWidth } =
+      raw as Record<string, unknown>;
+    const terminal: TerminalFontSettings = {};
+    if (typeof fontFamily === 'string' && fontFamily.trim()) {
+      terminal.fontFamily = fontFamily.trim();
     }
-  }
-  const notifications = (raw as { notifications?: unknown }).notifications;
-  if (notifications && typeof notifications === 'object') {
-    const candidate = notifications as {
-      attention?: unknown;
-      dockBadge?: unknown;
-    };
+    if (
+      typeof fontSize === 'number' &&
+      Number.isFinite(fontSize) &&
+      fontSize >= 8 &&
+      fontSize <= 32
+    )
+      terminal.fontSize = fontSize;
+    if (
+      typeof lineHeight === 'number' &&
+      Number.isFinite(lineHeight) &&
+      lineHeight >= 0.8 &&
+      lineHeight <= 2
+    )
+      terminal.lineHeight = lineHeight;
+    if (
+      typeof letterSpacing === 'number' &&
+      Number.isFinite(letterSpacing) &&
+      letterSpacing >= -5 &&
+      letterSpacing <= 20
+    )
+      terminal.letterSpacing = letterSpacing;
+    if (
+      typeof fontStrokeWidth === 'number' &&
+      Number.isFinite(fontStrokeWidth) &&
+      fontStrokeWidth >= 0 &&
+      fontStrokeWidth <= 1
+    )
+      terminal.fontStrokeWidth = fontStrokeWidth;
+    return Object.keys(terminal).length > 0 ? terminal : undefined;
+  },
+  notifications: raw => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const candidate = raw as { attention?: unknown; dockBadge?: unknown };
+    if (
+      typeof candidate.attention !== 'boolean' &&
+      typeof candidate.dockBadge !== 'boolean'
+    ) {
+      return undefined;
+    }
     const parsed: NonNullable<ExawattSettings['notifications']> = {
       attention:
         typeof candidate.attention === 'boolean' ? candidate.attention : false,
     };
     if (typeof candidate.dockBadge === 'boolean')
       parsed.dockBadge = candidate.dockBadge;
-    if (
-      typeof candidate.attention === 'boolean' ||
-      typeof candidate.dockBadge === 'boolean'
-    )
-      settings.notifications = parsed;
-  }
+    return parsed;
+  },
   // Only an explicit boolean is a choice. A missing or malformed hosted-feature
   // key stays absent so `?.hosted !== false` resolves it to the disclosed
   // default instead of silently opting the operator out.
-  const contextLabels = (raw as { contextLabels?: unknown }).contextLabels;
-  if (contextLabels && typeof contextLabels === 'object') {
-    const hosted = (contextLabels as { hosted?: unknown }).hosted;
-    if (typeof hosted === 'boolean') settings.contextLabels = { hosted };
-  }
-  const conversationSummaries = (raw as { conversationSummaries?: unknown })
-    .conversationSummaries;
-  if (conversationSummaries && typeof conversationSummaries === 'object') {
-    const hosted = (conversationSummaries as { hosted?: unknown }).hosted;
-    if (typeof hosted === 'boolean') {
-      settings.conversationSummaries = { hosted };
-    }
-  }
-  const goalVisuals = (raw as { goalVisuals?: unknown }).goalVisuals;
-  if (goalVisuals && typeof goalVisuals === 'object') {
-    const enabled = (goalVisuals as { enabled?: unknown }).enabled;
-    if (typeof enabled === 'boolean') settings.goalVisuals = { enabled };
-  }
-  const reentryRecap = (raw as { reentryRecap?: unknown }).reentryRecap;
-  if (reentryRecap && typeof reentryRecap === 'object') {
-    const enabled = (reentryRecap as { enabled?: unknown }).enabled;
-    if (typeof enabled === 'boolean') settings.reentryRecap = { enabled };
-  }
-  const claudePlanWindows = (raw as { claudePlanWindows?: unknown })
-    .claudePlanWindows;
-  if (claudePlanWindows && typeof claudePlanWindows === 'object') {
-    const enabled = (claudePlanWindows as { enabled?: unknown }).enabled;
-    if (typeof enabled === 'boolean') settings.claudePlanWindows = { enabled };
-  }
+  contextLabels: raw => {
+    const hosted = explicitBoolean(raw, 'hosted');
+    return hosted === undefined ? undefined : { hosted };
+  },
+  conversationSummaries: raw => {
+    const hosted = explicitBoolean(raw, 'hosted');
+    return hosted === undefined ? undefined : { hosted };
+  },
+  goalVisuals: raw => {
+    const enabled = explicitBoolean(raw, 'enabled');
+    return enabled === undefined ? undefined : { enabled };
+  },
+  reentryRecap: raw => {
+    const enabled = explicitBoolean(raw, 'enabled');
+    return enabled === undefined ? undefined : { enabled };
+  },
+  claudePlanWindows: raw => {
+    const enabled = explicitBoolean(raw, 'enabled');
+    return enabled === undefined ? undefined : { enabled };
+  },
   // Opposite polarity from every switch above: absent means OFF (decision
   // `0029` — publishing is opt-in), so a malformed key falls back to not
   // publishing rather than silently opting the operator in.
-  const operatorProfile = (raw as { operatorProfile?: unknown })
-    .operatorProfile;
-  if (operatorProfile && typeof operatorProfile === 'object') {
-    const candidate = operatorProfile as {
+  operatorProfile: raw => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const candidate = raw as {
       autoPublish?: unknown;
       startedAt?: unknown;
       lastSyncedAt?: unknown;
       profileEnabled?: unknown;
     };
-    const autoPublish = candidate.autoPublish;
-    if (typeof autoPublish === 'boolean') {
-      const parsed: NonNullable<ExawattSettings['operatorProfile']> = {
-        autoPublish,
-      };
-      const startedAt = normalizedTimestamp(candidate.startedAt);
-      const lastSyncedAt = normalizedTimestamp(candidate.lastSyncedAt);
-      if (startedAt) parsed.startedAt = startedAt;
-      if (lastSyncedAt) parsed.lastSyncedAt = lastSyncedAt;
-      if (typeof candidate.profileEnabled === 'boolean') {
-        parsed.profileEnabled = candidate.profileEnabled;
-      }
-      settings.operatorProfile = parsed;
+    if (typeof candidate.autoPublish !== 'boolean') return undefined;
+    const parsed: NonNullable<ExawattSettings['operatorProfile']> = {
+      autoPublish: candidate.autoPublish,
+    };
+    const startedAt = normalizedTimestamp(candidate.startedAt);
+    const lastSyncedAt = normalizedTimestamp(candidate.lastSyncedAt);
+    if (startedAt) parsed.startedAt = startedAt;
+    if (lastSyncedAt) parsed.lastSyncedAt = lastSyncedAt;
+    if (typeof candidate.profileEnabled === 'boolean') {
+      parsed.profileEnabled = candidate.profileEnabled;
     }
-  }
-  const agentSources = (raw as { agentSources?: unknown }).agentSources;
-  if (agentSources && typeof agentSources === 'object') {
-    const candidate = agentSources as {
+    return parsed;
+  },
+  agentSources: raw => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const candidate = raw as {
       projectLastUsed?: unknown;
       sourceRecency?: unknown;
       projectPermissionModes?: unknown;
@@ -555,21 +553,42 @@ export function parseSettings(raw: unknown): ExawattSettings {
         }
       }
     }
-    settings.agentSources = {
-      projectLastUsed,
-      sourceRecency,
-      projectPermissionModes,
-    };
+    return { projectLastUsed, sourceRecency, projectPermissionModes };
+  },
+  // A present key is a stored pool, however malformed: the pool parser
+  // degrades entries rather than the whole record.
+  launchConfigurations: raw =>
+    raw === undefined ? undefined : parseLaunchConfigurationPool(raw),
+  appearance: raw => parseAppearancePreferences(raw) ?? undefined,
+  // Absent means "this device has never stored a choice", which is what lets
+  // a signed-in operator adopt an account copy exactly once; a present key,
+  // however malformed, is a choice, parsed by the same total parser the
+  // renderer reads back with (BUG-044).
+  keyboardShortcuts: raw =>
+    raw === undefined ? undefined : parseKeyboardShortcutOverrides(raw),
+};
+
+/** Every field the settings file may carry, in schema order. */
+export const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as ReadonlyArray<
+  keyof ExawattSettings
+>;
+
+function explicitBoolean(raw: unknown, key: string): boolean | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = (raw as Record<string, unknown>)[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+export function parseSettings(raw: unknown): ExawattSettings {
+  if (!raw || typeof raw !== 'object') return {};
+  const record = raw as Record<string, unknown>;
+  const settings: ExawattSettings = {};
+  for (const key of SETTINGS_KEYS) {
+    const value = SETTINGS_SCHEMA[key](record[key]);
+    if (value !== undefined) {
+      (settings as Record<string, unknown>)[key] = value;
+    }
   }
-  if (Object.prototype.hasOwnProperty.call(raw, 'launchConfigurations')) {
-    settings.launchConfigurations = parseLaunchConfigurationPool(
-      (raw as { launchConfigurations?: unknown }).launchConfigurations
-    );
-  }
-  const appearance = parseAppearancePreferences(
-    (raw as { appearance?: unknown }).appearance
-  );
-  if (appearance) settings.appearance = appearance;
   return settings;
 }
 
@@ -615,12 +634,21 @@ export function loadSettings(): ExawattSettings {
   return settings;
 }
 
-function writeSettings(settings: ExawattSettings): void {
+/**
+ * The persisted shape is the schema's, key for key: a value that has no
+ * parser cannot be written, so the file can never hold something `parseSettings`
+ * would drop on the next read.
+ */
+export function writeSettings(settings: ExawattSettings): void {
+  const persisted: Record<string, unknown> = {};
+  for (const key of SETTINGS_KEYS) {
+    if (settings[key] !== undefined) persisted[key] = settings[key];
+  }
   const file = settingsFile();
   const staging = `${file}.tmp-${process.pid}`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try {
-    fs.writeFileSync(staging, `${JSON.stringify(settings, null, 2)}\n`, {
+    fs.writeFileSync(staging, `${JSON.stringify(persisted, null, 2)}\n`, {
       mode: 0o600,
     });
     fs.renameSync(staging, file);
