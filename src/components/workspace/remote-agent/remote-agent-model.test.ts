@@ -12,6 +12,8 @@ import {
   COMPOSER_WITHHELD_REASONS,
   EMPTY_WORK_STACK,
   LAST_KNOWN_BADGE,
+  CONVERSATION_UNREAD_COPY,
+  EMPTY_CONVERSATION_NOTE,
   NO_CONVERSATION_NOTE,
   REMOTE_CONNECTION_STATES,
   SEND_REFUSALS,
@@ -163,6 +165,9 @@ describe('vocabulary', () => {
       ]),
       NO_CONVERSATION_NOTE,
       LAST_KNOWN_BADGE,
+      CONVERSATION_UNREAD_COPY.note,
+      CONVERSATION_UNREAD_COPY.headline,
+      EMPTY_CONVERSATION_NOTE,
     ];
     for (const value of strings) {
       expect(value).not.toMatch(/cannot|can't|unable|not allowed|denied/i);
@@ -230,6 +235,46 @@ describe('the front door', () => {
       'work',
       'history',
     ]);
+  });
+
+  it('says the conversation was not read, with the read as the remedy, when a first read fails on a reachable source', () => {
+    const view = describeRemoteAgent(
+      input({
+        conversation: {
+          kind: 'unread',
+          contextId: null,
+          turns: [],
+          olderAvailable: false,
+        },
+      })
+    );
+    expect(view.frontDoor.kind).toBe('unread');
+    if (view.frontDoor.kind !== 'unread') throw new Error('unreachable');
+    expect(view.frontDoor.note).toBe(CONVERSATION_UNREAD_COPY.note);
+    expect(view.composer.kind).toBe('withheld');
+    if (view.composer.kind !== 'withheld') throw new Error('unreachable');
+    expect(view.composer.reason).toBe('conversation-unread');
+    expect(view.composer.headline).toBe(CONVERSATION_UNREAD_COPY.headline);
+    expect(view.composer.action?.id).toBe('read-again');
+  });
+
+  it('points a failed first read at Reconnect, not at the read, while the source is unreachable', () => {
+    const view = describeRemoteAgent(
+      input({
+        conversation: {
+          kind: 'unread',
+          contextId: null,
+          turns: [],
+          olderAvailable: false,
+        },
+        connection: connection('unavailable'),
+        canReconnect: true,
+      })
+    );
+    expect(view.frontDoor.kind).toBe('unread');
+    if (view.composer.kind !== 'withheld') throw new Error('unreachable');
+    expect(view.composer.reason).toBe('connection-unavailable');
+    expect(view.composer.action?.id).toBe('reconnect');
   });
 
   it('keeps last-known turns on screen when the read failed', () => {
@@ -375,6 +420,14 @@ describe('honest composer states', () => {
     const reached = new Set<string>();
     const cases: RemoteAgentInput[] = [
       input({ conversation: { kind: 'loading' } }),
+      input({
+        conversation: {
+          kind: 'unread',
+          contextId: null,
+          turns: [],
+          olderAvailable: false,
+        },
+      }),
       input({ conversation: { kind: 'absent' } }),
       input({ authority: 'not-requested' }),
       input({ authority: 'approval-pending' }),

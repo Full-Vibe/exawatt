@@ -345,7 +345,7 @@ function AutomationOnlyAgentPanel() {
         data-conversation-state="unavailable"
         style={{ color: HUD.textDim }}
       >
-        Conversation unavailable on this source
+        No conversation on this source
       </p>
     </article>
   );

@@ -41,28 +41,40 @@ export interface RemoteCoworkers {
 export function useRemoteCoworkers(enabled = true): RemoteCoworkers {
   const [roster, setRoster] = useState<RemoteRoster>(EMPTY_REMOTE_ROSTER);
   const readGeneration = useRef(0);
+  /** The newest read in flight. A superseded read answers with ITS result. */
+  const newestRead = useRef<Promise<RemoteRoster | null> | null>(null);
 
-  const read = useCallback(async () => {
+  const read = useCallback((): Promise<RemoteRoster | null> => {
     const api = connectedSourcesApi();
-    if (!api) return null;
+    if (!api) return Promise.resolve(null);
     const generation = ++readGeneration.current;
-    try {
-      const [sources, agents, authorities] = await Promise.all([
-        api.list(),
-        api.agents(),
-        api.commandAuthority(),
-      ]);
-      const next = { sources, agents, authorities, loaded: true } as const;
-      // Mount, change ticks, Reconnect, and Connect completion can overlap.
-      // A read started before a newer one cannot overwrite newer topology.
-      if (generation !== readGeneration.current) return null;
-      setRoster(next);
-      return next;
-    } catch {
-      // Keep the last-known roster. Losing the read says nothing about the
-      // coworkers, and replacing what is on screen with emptiness would.
-      return null;
-    }
+    const task = (async () => {
+      try {
+        const [sources, agents, authorities] = await Promise.all([
+          api.list(),
+          api.agents(),
+          api.commandAuthority(),
+        ]);
+        const next = { sources, agents, authorities, loaded: true } as const;
+        // Mount, change ticks, Reconnect, and Connect completion can overlap.
+        // A read started before a newer one cannot overwrite newer topology,
+        // and it does not answer with nothing either: null is a FAILED read,
+        // and "Connect and open X" read it as "X is not there" and opened
+        // nothing whenever the source's own change tick raced the refresh.
+        // The newer read's answer is the current roster, so wait for it.
+        if (generation !== readGeneration.current) {
+          return newestRead.current ?? next;
+        }
+        setRoster(next);
+        return next;
+      } catch {
+        // Keep the last-known roster. Losing the read says nothing about the
+        // coworkers, and replacing what is on screen with emptiness would.
+        return null;
+      }
+    })();
+    newestRead.current = task;
+    return task;
   }, []);
 
   useEffect(() => {

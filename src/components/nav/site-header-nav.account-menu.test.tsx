@@ -100,21 +100,23 @@ describe('SiteHeaderNav account menu', () => {
     expect(screen.queryByRole('menuitem', { name: 'Sign in' })).toBeNull();
   });
 
-  it('keeps the desktop menu useful while naming absent accounts', async () => {
+  it('keeps the desktop menu useful while stating what this build is not configured for', async () => {
     render(<SiteHeaderNav isAuthenticated={false} accountAvailable={false} />);
 
     openAccountMenu();
 
-    expect(
-      await screen.findByRole('menuitem', {
-        name: 'Accounts unavailable in this build',
-      })
-    ).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.queryByRole('menuitem', { name: 'Sign in' })).toBeNull();
+    // The verbs keep their names and the build states its own fact beside
+    // them; nothing here is a way in, and nothing says what the operator
+    // cannot do.
+    const signIn = await screen.findByRole('menuitem', {
+      name: /Sign in.*Not configured in this build/,
+    });
+    expect(signIn).toHaveAttribute('aria-disabled', 'true');
+    expect(signIn.closest('a')).toBeNull();
     expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeVisible();
     expect(
       screen.getByRole('menuitem', {
-        name: 'Feedback unavailable in this build',
+        name: /Submit feedback.*Not configured in this build/,
       })
     ).toHaveAttribute('aria-disabled', 'true');
   });

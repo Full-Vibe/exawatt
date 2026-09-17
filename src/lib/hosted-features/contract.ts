@@ -168,7 +168,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // claude CLI already signed in on this machine, so the request is the
     // operator's own API traffic.
     destination:
-      'Anthropic, through your own Claude Code sign-in — never Exawatt',
+      'Anthropic, through your own Claude Code sign-in, never Exawatt',
     cost: 'Coming back to a Session shows no "since you left" line; you catch up by reading the terminal.',
     defaultEnabled: true,
     // Genuinely null: the recap shells out to the operator's own `claude`

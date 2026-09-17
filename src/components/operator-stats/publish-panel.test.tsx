@@ -531,10 +531,10 @@ describe('an unconfigured distribution', () => {
     await mount();
 
     expect(
-      screen.getByRole('heading', { name: 'Operator publishing unavailable' })
+      screen.getByRole('heading', { name: 'Operator publishing' })
     ).toBeTruthy();
     expect(screen.getByText(/Not configured in this build/)).toBeTruthy();
-    expect(screen.getByText(/local usage stays on this device/)).toBeTruthy();
+    expect(screen.getByText(/Local usage stays on this device/)).toBeTruthy();
     expect(createOptionalClient).not.toHaveBeenCalled();
     expect(client.current!.auth.getSession).not.toHaveBeenCalled();
     expect(client.current!.auth.getUserIdentities).not.toHaveBeenCalled();
@@ -576,7 +576,7 @@ describe('publishing paused (the off state)', () => {
 
     expect(
       screen.getByText(
-        'Paused — your profile stays visible and stops updating.'
+        'Paused. Your profile stays visible and stops updating.'
       )
     ).toBeTruthy();
     expect(

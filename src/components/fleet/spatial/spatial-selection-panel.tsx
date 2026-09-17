@@ -71,17 +71,30 @@ function ScopeCount({
   count,
   label,
   color,
+  mark = 'dot',
 }: {
   count: number;
   label: string;
   color: string;
+  /** `ring` is the unreported mark: the unlit paint, an open socket rather
+   *  than a filled dot, matching the status-light atom for a reading nobody
+   *  gave. Hue is not what separates it from idle. */
+  mark?: 'dot' | 'ring';
 }) {
   return (
     <span className="flex items-center gap-1 whitespace-nowrap">
       <span
         aria-hidden="true"
         className="h-1.5 w-1.5 rounded-full"
-        style={{ background: color, opacity: count > 0 ? 1 : 0.35 }}
+        data-scope-mark={mark}
+        style={
+          mark === 'ring'
+            ? {
+                boxShadow: `inset 0 0 0 1px ${color}`,
+                opacity: count > 0 ? 1 : 0.35,
+              }
+            : { background: color, opacity: count > 0 ? 1 : 0.35 }
+        }
       />
       <span className="font-mono tabular-nums text-foreground">{count}</span>
       <span className="text-muted-foreground">{label}</span>
@@ -147,6 +160,15 @@ function MultiSelectionCommand({
             count={activity.idle}
             label="idle"
             color={statusColors.idle}
+          />
+          {/* Silence is counted, never banded with rest (BUG-151): the
+              board's population channel already keeps this band, and the
+              selection's census has to agree with it. */}
+          <ScopeCount
+            count={activity.unreported}
+            label="not reported"
+            color={statusColors.idle}
+            mark="ring"
           />
         </div>
       )}

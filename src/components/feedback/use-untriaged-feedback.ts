@@ -28,17 +28,23 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    // Mount and each accepted submission start a sample, and they overlap:
+    // the count on screen is the NEWEST sample's, never whichever response
+    // happened to land last.
+    let generation = 0;
     const sample = async () => {
+      const mine = ++generation;
+      const stale = () => cancelled || mine !== generation;
       try {
         const distribution = resolvedDistribution();
         const endpoint = distribution.services.productFeedback;
         if (!endpoint) {
-          if (!cancelled) setCount(null);
+          if (!stale()) setCount(null);
           return;
         }
         const supabase = createOptionalClient(distribution);
         if (!supabase) {
-          if (!cancelled) setCount(null);
+          if (!stale()) setCount(null);
           return;
         }
         // Signed out ⇒ no query: an unauthenticated REST call is a
@@ -46,7 +52,7 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
         // surface that mounts this hook.
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) {
-          if (!cancelled) setCount(null);
+          if (!stale()) setCount(null);
           return;
         }
         const response = await fetchCompatibleService(endpoint, {
@@ -65,13 +71,13 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
             return parsed;
           }
         );
-        if (!cancelled) {
+        if (!stale()) {
           setCount(
             capability?.canTriage ? (capability.untriagedCount ?? null) : null
           );
         }
       } catch {
-        if (!cancelled) setCount(null);
+        if (!stale()) setCount(null);
       }
     };
     void sample();

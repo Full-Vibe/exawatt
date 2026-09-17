@@ -21,7 +21,6 @@ import {
 import {
   Building2,
   Check,
-  CircleOff,
   ChevronLeft,
   ChevronRight,
   Laptop,
@@ -593,14 +592,25 @@ export function SiteHeaderNav({
                   Settings
                 </Link>
               </DropdownMenuItem>
+              {/* A verb keeps its name; the build states its own fact beside
+                  it, in the words Settings uses for the same fact. Neither
+                  line tells the operator what they cannot do. */}
               <DropdownMenuItem
                 disabled={!feedback?.isAvailable}
                 onSelect={() => feedback?.openFeedback()}
+                data-feedback-not-configured={
+                  feedback?.isAvailable ? undefined : ''
+                }
               >
                 <MessageSquareWarning className="mr-2 h-4 w-4" />
-                {feedback?.isAvailable
-                  ? 'Submit feedback'
-                  : 'Feedback unavailable in this build'}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">Submit feedback</span>
+                  {feedback?.isAvailable ? null : (
+                    <span className="truncate text-chrome-meta text-muted-foreground">
+                      Not configured in this build
+                    </span>
+                  )}
+                </span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {isAuthenticated ? (
@@ -624,8 +634,13 @@ export function SiteHeaderNav({
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem disabled data-account-not-configured>
-                  <CircleOff className="mr-2 h-4 w-4" />
-                  Accounts unavailable in this build
+                  <LogIn className="mr-2 h-4 w-4" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">Sign in</span>
+                    <span className="truncate text-chrome-meta text-muted-foreground">
+                      Not configured in this build
+                    </span>
+                  </span>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

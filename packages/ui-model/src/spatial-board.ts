@@ -1594,6 +1594,13 @@ export interface SpatialScopeActivity {
   working: number;
   blocked: number;
   idle: number;
+  /**
+   * Agents whose source reported no work state. Counted apart from `idle`
+   * for the same reason `SpatialBoardStatusCounts.unreported` is: a coworker
+   * nobody has heard from is not resting, and the selection panel painted
+   * it as one (BUG-151, the BUG-009 class of two predicates over one fact).
+   */
+  unreported: number;
   burn: {
     rawTokens: number;
     normalizedTokens: number;
@@ -1614,10 +1621,13 @@ export function selectSpatialScopeActivity(
     working: 0,
     blocked: 0,
     idle: 0,
+    unreported: 0,
     burn: null,
   };
   for (const agent of agents) {
-    if (agent.status === 'working' || agent.status === 'reviewing') {
+    if (agent.status === null) {
+      summary.unreported++;
+    } else if (agent.status === 'working' || agent.status === 'reviewing') {
       summary.working++;
     } else if (agent.status === 'blocked' || agent.status === 'error') {
       summary.blocked++;

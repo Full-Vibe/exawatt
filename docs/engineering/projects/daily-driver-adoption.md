@@ -7275,3 +7275,36 @@ privacy and storage suites and type checks pass. The repository delivery queue
 runs all declared surface gates on the final commit; integration, installation
 and update-feed publication remain distinct delivery records, never inferred
 from these local checks.
+
+### 2026-09-16 — Roadmap milestone log: two surfaces stated facts about the build that were not true
+
+From the renderer release-candidate review. Both are first-run honesty on a
+community build, which is the build every new operator meets first.
+
+**The meter blamed the operator for a switch the build does not have
+(BUG-149).** `ClaudePlanAccountService` computes `enabled` as the operator's
+preference AND the build's grant to make the read through Exawatt's own
+network stack (BUG-060). `view()` served `status: 'disabled'` for `!enabled`,
+and `ProviderPlanAccountStatus` had no other word for it, so a community
+build, and the official build until its stored contract moves off schema 1,
+rendered "Reads are turned off in Settings" in the meter popover and "read
+turned off" on `/usage`, and sent the operator to a Settings row that those
+builds render as "Not configured in this build". The capability fact and the
+preference are two facts; the status has a fourth member, `unconfigured`,
+carried as its own unknown through `planReadState`, and both surfaces now say
+what Settings says. The main-process test that pinned the fold
+("an unsigned runtime cannot be opened by changing the setting") pins the
+split instead.
+
+**The desktop account menu said what the operator could not do (BUG-153,
+grouped).** "Feedback unavailable in this build" and "Accounts unavailable in
+this build" both described the build in the reader's second person. Each row
+keeps its verb and states the build's fact beneath it, in the menu's own
+two-line idiom and in Settings' words: `Submit feedback` / `Not configured in
+this build`, `Sign in` / `Not configured in this build`. First attempt put the
+fact as a trailing hint on the same line and it overflowed the `w-72` menu;
+the screenshot caught it before the test did, which is the reason the
+screenshot rule exists. The publish panel's "Operator publishing unavailable"
+heading and the em-dash strings in the usage page, meter, publish panel and
+hosted-features disclosure moved in the same landing.
+

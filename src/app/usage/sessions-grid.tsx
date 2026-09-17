@@ -171,7 +171,7 @@ function SessionRow({
             title={
               r.identified
                 ? undefined
-                : 'outside the fleet record — measured from local logs, no session identity'
+                : 'outside the fleet record: measured from local logs, no session identity'
             }
           >
             {r.title}
@@ -224,7 +224,7 @@ function SessionRow({
           <span
             title={
               r.identified
-                ? 'not recorded — the live read carries no intervention counts yet'
+                ? 'not recorded: the live read carries no intervention counts yet'
                 : 'no session record for this id'
             }
           >

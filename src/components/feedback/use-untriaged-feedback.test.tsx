@@ -28,6 +28,7 @@ vi.mock('@/lib/distribution/resolved', () => ({
 vi.mock('@/lib/supabase/client', () => ({ createOptionalClient }));
 
 import { useUntriagedFeedbackCount } from './use-untriaged-feedback';
+import { FEEDBACK_SUBMITTED_EVENT } from './quick-feedback-events';
 
 function serviceResponse(body: unknown): Response {
   return Response.json(body, {
@@ -107,5 +108,32 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1 / WP1b)', () => {
     const { result } = renderHook(() => useUntriagedFeedbackCount());
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(result.current).toBeNull();
+  });
+});
+
+describe('overlapping samples', () => {
+  it('shows the newest sample even when an older response lands last', async () => {
+    let resolveFirst!: (value: Response) => void;
+    const first = new Promise<Response>(resolve => {
+      resolveFirst = resolve;
+    });
+    fetchMock
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce(
+        serviceResponse({ schemaVersion: 1, canTriage: true, untriagedCount: 1 })
+      );
+    const { result } = renderHook(() => useUntriagedFeedbackCount());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    // A submission is accepted while the mount sample is still in flight.
+    window.dispatchEvent(new Event(FEEDBACK_SUBMITTED_EVENT));
+    await waitFor(() => expect(result.current).toBe(1));
+
+    // The older sample answers afterwards with a stale count.
+    resolveFirst(
+      serviceResponse({ schemaVersion: 1, canTriage: true, untriagedCount: 7 })
+    );
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(result.current).toBe(1);
   });
 });

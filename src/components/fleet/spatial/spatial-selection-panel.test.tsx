@@ -242,6 +242,7 @@ describe('SpatialSelectionPanel', () => {
         working: 1,
         blocked: 1,
         idle: 0,
+        unreported: 0,
         burn: null,
       },
     });
@@ -251,5 +252,25 @@ describe('SpatialSelectionPanel', () => {
     expect(screen.getByText('2 Agents')).toBeInTheDocument();
     expect(screen.getByText('Direct 2 Agents')).toBeInTheDocument();
     expect(screen.getByText('working')).toBeInTheDocument();
+  });
+
+  it('counts a coworker nobody has heard from as not reported, never as idle (BUG-151)', () => {
+    renderPanel({
+      selectedAgents: [agentView(), agentView({ id: 'a2', name: 'Second' })],
+      scopeActivity: {
+        agentCount: 2,
+        working: 1,
+        blocked: 0,
+        idle: 0,
+        unreported: 1,
+        burn: null,
+      },
+    });
+    const unreported = screen.getByText('not reported').parentElement!;
+    expect(unreported.textContent).toContain('1');
+    expect(
+      unreported.querySelector('[data-scope-mark="ring"]')
+    ).not.toBeNull();
+    expect(screen.getByText('idle').parentElement!.textContent).toContain('0');
   });
 });

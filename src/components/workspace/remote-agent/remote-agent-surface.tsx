@@ -47,6 +47,7 @@ import {
 } from '@/components/status-light';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from '../workspace-theme';
 import {
+  EMPTY_CONVERSATION_NOTE,
   EMPTY_OUTBOX,
   EMPTY_WORK_STACK,
   LAST_KNOWN_BADGE,
@@ -545,40 +546,32 @@ export function RemoteAgentSurface({
   const readConversation = useCallback(async () => {
     const api = bridgeRef.current;
     if (!api) return;
+    // A failed read is not evidence about the Agent. Whatever is on screen
+    // stays, and freshness is what says it is not current. A first read
+    // that fails leaves an `unread` with nothing last-known, which the model
+    // presents as its own state with the read as the remedy; it used to
+    // leave `loading` standing, and the pane said "Opening the conversation"
+    // for as long as the tab lived (BUG-152).
+    const unread = (current: ConversationLoad): ConversationLoad =>
+      current.kind === 'declared' || current.kind === 'unread'
+        ? {
+            kind: 'unread',
+            contextId: current.contextId,
+            turns: current.turns,
+            olderAvailable: current.olderAvailable,
+          }
+        : current.kind === 'absent'
+          ? current
+          : { kind: 'unread', contextId: null, turns: [], olderAvailable: false };
     let reply: ConversationReply;
     try {
       reply = await api.conversation(agent.id);
     } catch {
-      // A failed read is not evidence about the Agent. Whatever is on screen
-      // stays, and freshness is what says it is not current.
-      setLoad(current =>
-        current.kind === 'declared'
-          ? {
-              kind: 'unread',
-              contextId: current.contextId,
-              turns: current.turns,
-              olderAvailable: current.olderAvailable,
-            }
-          : current
-      );
+      setLoad(unread);
       return;
     }
     if (!reply.ok) {
-      setLoad(current =>
-        current.kind === 'declared'
-          ? {
-              kind: 'unread',
-              contextId: current.contextId,
-              turns: current.turns,
-              olderAvailable: current.olderAvailable,
-            }
-          : {
-              kind: 'unread',
-              contextId: null,
-              turns: [],
-              olderAvailable: false,
-            }
-      );
+      setLoad(unread);
       return;
     }
     if (reply.contextId === null) {
@@ -880,8 +873,28 @@ export function RemoteAgentSurface({
             ) : null}
           </div>
           {frontDoor.kind === 'loading' ? (
-            <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
+            <p
+              className="text-chrome-meta"
+              data-conversation-state="loading"
+              style={{ color: HUD.textDim }}
+            >
               Opening the conversation
+            </p>
+          ) : frontDoor.kind === 'unread' ? (
+            <p
+              className="text-chrome-meta"
+              data-conversation-state="unread"
+              style={{ color: HUD.textDim }}
+            >
+              {frontDoor.note}
+            </p>
+          ) : frontDoor.turns.length === 0 && outbox.length === 0 ? (
+            <p
+              className="text-chrome-meta"
+              data-conversation-state="empty"
+              style={{ color: HUD.textDim }}
+            >
+              {EMPTY_CONVERSATION_NOTE}
             </p>
           ) : (
             <ul
@@ -1016,7 +1029,9 @@ export function RemoteAgentSurface({
               onClick={
                 composer.action.id === 'request-send-access'
                   ? onRequestWriteAccess
-                  : onReconnect
+                  : composer.action.id === 'reconnect'
+                    ? onReconnect
+                    : () => void readConversation()
               }
             >
               {composer.action.label}

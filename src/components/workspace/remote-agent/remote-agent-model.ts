@@ -62,6 +62,7 @@ export type WriteAuthority = (typeof WRITE_AUTHORITY_STATES)[number];
 
 export const COMPOSER_WITHHELD_REASONS = [
   'conversation-loading',
+  'conversation-unread',
   'no-primary-conversation',
   'write-access-not-requested',
   'write-access-awaiting-approval',
@@ -199,7 +200,7 @@ export interface ComposerTarget {
 }
 
 export interface ComposerAction {
-  id: 'request-send-access' | 'reconnect';
+  id: 'request-send-access' | 'reconnect' | 'read-again';
   label: string;
 }
 
@@ -217,6 +218,9 @@ export type ComposerState =
 
 export type FrontDoor =
   | { kind: 'loading'; heading: string }
+  /** Exawatt asked for the conversation and did not get one. Loading and
+   *  empty are different facts, and neither is this one (BUG-152). */
+  | { kind: 'unread'; heading: string; note: string }
   | {
       kind: 'conversation';
       heading: string;
@@ -280,7 +284,18 @@ export const HISTORY_HEADING = 'History';
  * about the Agent whose source declares no conversation. It is repeated
  * verbatim so the two surfaces agree.
  */
-export const NO_CONVERSATION_NOTE = 'Conversation unavailable on this source';
+export const NO_CONVERSATION_NOTE = 'No conversation on this source';
+
+/** A read that failed on a source Exawatt can still reach, with the one
+ *  verb that completes it. Never the loading line: waiting and failing are
+ *  different facts (BUG-152). */
+export const CONVERSATION_UNREAD_COPY = {
+  note: 'Not read from the source',
+  headline: 'Exawatt did not read the conversation',
+} as const;
+
+/** An empty conversation is a fact of its own, not a read still in flight. */
+export const EMPTY_CONVERSATION_NOTE = 'No messages yet';
 
 export const LAST_KNOWN_BADGE = 'Last known';
 
@@ -338,6 +353,10 @@ const REQUEST_ACCESS_ACTION: ComposerAction = {
 const RECONNECT_ACTION: ComposerAction = {
   id: 'reconnect',
   label: 'Reconnect',
+};
+const READ_AGAIN_ACTION: ComposerAction = {
+  id: 'read-again',
+  label: 'Try again',
 };
 
 /**
@@ -601,6 +620,27 @@ function composerFor(
     };
   }
 
+  if (input.conversation.kind === 'unread' && target === null) {
+    // Exawatt asked and got nothing back, so it has no Home to address. On a
+    // reachable source the remedy is the read itself; on an unreachable one
+    // it is the connection, and the read follows the reconnect on its own.
+    const offline = input.connection.state === 'unavailable';
+    return {
+      kind: 'withheld',
+      reason: offline ? 'connection-unavailable' : 'conversation-unread',
+      target,
+      headline: offline
+        ? 'Exawatt is not connected to this source right now'
+        : CONVERSATION_UNREAD_COPY.headline,
+      detail: offline ? 'Reconnect to read it.' : null,
+      action: offline
+        ? input.canReconnect
+          ? RECONNECT_ACTION
+          : null
+        : READ_AGAIN_ACTION,
+    };
+  }
+
   if (input.conversation.kind === 'loading' || target === null) {
     // Exawatt does not yet know which context is this Agent's Home. It says
     // only what it is doing about that, and never guesses one.
@@ -672,7 +712,13 @@ function frontDoorFor(input: RemoteAgentInput): FrontDoor {
     return { kind: 'loading', heading: FRONT_DOOR_HEADING };
   }
   if (load.contextId === null) {
-    return { kind: 'loading', heading: FRONT_DOOR_HEADING };
+    // `unread` with nothing last-known: the read failed before any content
+    // arrived. It used to collapse into the loading line and wait forever.
+    return {
+      kind: 'unread',
+      heading: FRONT_DOOR_HEADING,
+      note: CONVERSATION_UNREAD_COPY.note,
+    };
   }
   return {
     kind: 'conversation',

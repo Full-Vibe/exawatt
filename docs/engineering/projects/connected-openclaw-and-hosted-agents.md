@@ -1387,3 +1387,89 @@ PATH, and the live two-Gateway test self-skipped as designed. The behaviours
 that changed are all on the far side of injected seams the C3 and C5 live
 passes already exercised; the next real connect from the installed app is the
 observation that closes this.
+
+### 2026-09-16 — the release-candidate review found the connect path dead-ending and the coworker pane forgetful
+
+A read-only review of the renderer against current master, two days after
+BUG-132, confirmed five defects on ENG-010's own path. None had been seen in
+use, for the reason the BUG-132 entry already gives: the feature has had no
+ordinary day yet. All five landed in one change with a unit at the seam each
+crossed, and every unit was run against the old shape first.
+
+**File → Connect could not be cancelled (BUG-147).** The chooser hands the
+screen to Connect by closing itself and takes it back by reopening itself,
+which is right; what was wrong is that the route it was summoned on lived
+beside `open` in `workspace-client` as standing state nobody reset, so the
+reopen re-entered Connect every time. The repair is a shape, not a reset:
+`useProjectOpenerState` makes closed a member of the same value as the route,
+so a self-reopen cannot be on Connect and only a summons can. The test uses
+the real hook; a harness that kept its own `route` beside `open` would have
+reproduced the loop and proved nothing.
+
+**The coworker pane forgot everything on a tab switch (BUG-148).** The stage
+mounted `RemoteAgentPane` only while visible, on the reasoning that one
+subscription per pane on screen beat one per tab ever opened. Every piece of
+operator state lives in that pane, so the reasoning bought a subscription and
+spent the operator's half-typed message, their undelivered outbox with its
+retry, and the transcript they had already read, re-fetched over the tunnel
+on the way back. This is BUG-041 again: the unmount IS the defect, and the
+answer is the one a terminal pane already had. The pane takes its `layout`
+and stays mounted while hidden; `pane-layout.ts` now holds
+`PaneLayout`/`LAYOUT_CLASS` so the coworker pane does not import xterm to
+share two constants with the terminal.
+
+**A signed-out account build could not save the mapping (BUG-150).** The
+mapping step needs a Project with a registry id; a signed-out operator has
+none, so "New Project" was the only option and `openManualProject` threw
+`Not authenticated` on Save, after the whole flow. The decision was between
+making Connect work without an account and stating the prerequisite at the
+entry point. The first, because the product already promises "Agents,
+Projects, and Demo Mode work without an account", and because the mapping's
+durable identity is main-process state that never needed the hosted row. The
+registry now asks whether a user session exists, per call, instead of
+whether the build declares an account, and serves the local namespace
+otherwise; the chooser reads `projectRegistryScope()` and keeps its "Local
+Projects" label for the signed-out case. What is NOT done: Projects made
+locally while signed out do not migrate into the hosted registry on a later
+sign-in. Repository Projects re-link by path on the next registry sync;
+manual ones keep their local identity and keep working as local Projects.
+That is recorded on the roadmap entry as the residual.
+
+**A failed first read looked like a slow one (BUG-152).** The surface's catch
+left `loading` standing when it had nothing last-known, and a refused read's
+`unread` with a null context collapsed into the loading presentation in both
+`frontDoorFor` and `composerFor`. Three facts, one line, no retry. The model
+now names the third: `FrontDoor.unread`, a `conversation-unread` composer
+reason, and `Try again` as its action on a reachable source, with Reconnect
+staying the remedy on an unreachable one. An empty conversation says "No
+messages yet" over a ready composer, so empty and loading no longer share a
+presentation either.
+
+**The selection panel counted silence as rest (BUG-151).** The board's own
+census carries `unreported` as its sixth band (this doc, 2026-08-19), and
+`selectSpatialScopeActivity` never learned that: `status: null` fell into
+its `else`, the panel said "idle". `SpatialScopeActivity.unreported` is the
+fourth count, drawn with the open-ring mark the status-light atom uses for
+a reading nobody gave, in the unlit paint, because hue is not what separates
+it from idle.
+
+Two smaller things rode along because they sat on the same path. A superseded
+roster read in `useRemoteCoworkers` answered `null`, which is the failed-read
+value, so "Connect and open X" could close and open nothing when main's own
+change tick raced the dialog's refresh; a superseded read now answers with
+the newer read's roster, and the two callers fall back to the last-known
+roster on a genuine failure. And the coworker surface's "Conversation
+unavailable on this source" became "No conversation on this source", with
+the gallery study it was copied from.
+
+Evidence: `project-opener.test.tsx` (the cancel round trip and the second
+summons), `remote-agent-pane.test.tsx` (full → hidden → full), the
+`remote-agent-model`/`-surface` reads, `registry-signed-out.dom.test.ts`,
+`spatial-board.test.ts`, `spatial-selection-panel.test.tsx`,
+`use-remote-coworkers.test.tsx`; `eval:workspace:chrome`, `eval:navigation`,
+and `eval:r3f` green against the worktree's dev server. The packaged gates
+(`eval:electron:connected-fleet`, `eval:electron:lifecycle`) were waived for
+this landing: no packaged build of this tree exists and the review asked for
+no dogfood build; the connected-fleet eval is the next thing to run against
+the next packaged candidate.
+

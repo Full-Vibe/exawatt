@@ -1151,8 +1151,30 @@ describe('selectSpatialScopeActivity', () => {
       working: 2,
       blocked: 2,
       idle: 2,
+      unreported: 0,
       burn: null,
     });
+  });
+
+  it('counts a work state nobody reported apart from idle, and the buckets still sum to the scope', () => {
+    const summary = selectSpatialScopeActivity(
+      fleet([
+        agent('a', 'Alpha', 'working'),
+        agent('b', 'Alpha', 'idle'),
+        agent('c', 'Alpha', null),
+        agent('d', 'Alpha', null),
+      ])
+    );
+    expect(summary).toMatchObject({
+      agentCount: 4,
+      working: 1,
+      blocked: 0,
+      idle: 1,
+      unreported: 2,
+    });
+    expect(
+      summary.working + summary.blocked + summary.idle + summary.unreported
+    ).toBe(summary.agentCount);
   });
 
   it('scopes to a selection and totals its reported burn, unreported stays absent', () => {

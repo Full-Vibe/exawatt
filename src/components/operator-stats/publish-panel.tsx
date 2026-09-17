@@ -60,7 +60,7 @@ const SYNC_FAILURE_COPY: Record<OperatorStatsSyncFailure, string> = {
   'local-scan': 'Local usage scan failed. Sync will retry automatically.',
   'local-state':
     'Publishing state could not be saved. Restart Exawatt to retry.',
-  network: 'Offline — sync will retry automatically.',
+  network: 'Offline. Sync will retry automatically.',
   unauthorized: 'Sign in again to resume publishing.',
   identity: 'Relink GitHub to resume publishing.',
   rejected: 'Usage could not be published. Sync will retry automatically.',
@@ -359,10 +359,8 @@ export function PublishPanel() {
     return (
       <aside className={styles.publishPanel} data-operator-stats="unavailable">
         <div>
-          <h2>Operator publishing unavailable</h2>
-          <p>
-            Not configured in this build · local usage stays on this device.
-          </p>
+          <h2>Operator publishing</h2>
+          <p>Not configured in this build. Local usage stays on this device.</p>
         </div>
       </aside>
     );
@@ -458,7 +456,7 @@ export function PublishPanel() {
   const syncing = sync.phase === 'syncing';
   const statusLine = !autoPublish
     ? published
-      ? 'Paused — your profile stays visible and stops updating.'
+      ? 'Paused. Your profile stays visible and stops updating.'
       : null
     : syncing
       ? 'Syncing…'
@@ -468,7 +466,7 @@ export function PublishPanel() {
           : 'Sync failed. Sync will retry automatically.'
         : sync.lastSyncedAt
           ? `Up to date · synced ${formatSyncedAt(sync.lastSyncedAt)}`
-          : 'Publishing on — first sync runs shortly.';
+          : 'Publishing on. First sync runs shortly.';
   const syncState = !autoPublish
     ? 'paused'
     : syncing
@@ -506,7 +504,7 @@ export function PublishPanel() {
         {!autoPublish && !published && (
           <p className={styles.disclosure}>
             Turning publishing on shares aggregate daily totals and Run records
-            — agent hours, fleet size, durations, and token counts — under your
+            (agent hours, fleet size, durations, and token counts) under your
             GitHub handle, name, and avatar. Prompts, responses, code, Project
             names, and file paths never leave this machine. Recording starts
             when you turn it on; earlier local history is not uploaded.

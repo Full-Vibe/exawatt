@@ -24,6 +24,8 @@ import type {
   SendReply,
 } from './remote-agent-surface';
 import {
+  CONVERSATION_UNREAD_COPY,
+  EMPTY_CONVERSATION_NOTE,
   NO_CONVERSATION_NOTE,
   type ConversationTurn,
   type ConversationUpdate,
@@ -227,6 +229,51 @@ describe('the front door', () => {
 });
 
 /* -------------------------------------------------------------------------- */
+
+describe('a conversation that did not load', () => {
+  it('says so instead of opening forever, and reads again on request (BUG-152)', async () => {
+    const conversation = vi
+      .fn<RemoteAgentBridge['conversation']>()
+      .mockRejectedValueOnce(new Error('tunnel dropped'))
+      .mockResolvedValue({
+        ok: true,
+        contextId: PRIMARY,
+        turns: TURNS,
+        hasMore: false,
+      });
+    await renderSurface({ bridge: makeBridge({ conversation }) });
+
+    expect(
+      document.querySelector('[data-conversation-state="unread"]')
+    ).not.toBeNull();
+    expect(screen.queryByText('Opening the conversation')).toBeNull();
+    expect(screen.getByText(CONVERSATION_UNREAD_COPY.headline)).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText(TURNS[1]!.text);
+    expect(conversation).toHaveBeenCalledTimes(2);
+    expect(composer()).toBeVisible();
+  });
+
+  it('treats a refused read the same as a dropped one', async () => {
+    const conversation = vi
+      .fn<RemoteAgentBridge['conversation']>()
+      .mockResolvedValue({ ok: false, reason: 'gateway-timeout' });
+    await renderSurface({ bridge: makeBridge({ conversation }) });
+    expect(screen.getByText(CONVERSATION_UNREAD_COPY.note)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
+  });
+
+  it('shows an empty conversation as empty, with the composer ready', async () => {
+    await renderSurface({ bridge: makeBridge({}, []) });
+    expect(screen.getByText(EMPTY_CONVERSATION_NOTE)).toBeVisible();
+    expect(
+      document.querySelector('[data-conversation-state="empty"]')
+    ).not.toBeNull();
+    expect(screen.queryByText('Opening the conversation')).toBeNull();
+    expect(composer()).toBeVisible();
+  });
+});
 
 describe('the composer', () => {
   it('addresses the primary conversation', async () => {
