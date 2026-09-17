@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { loadavg, tmpdir, userInfo } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { execFileSync } from 'node:child_process';
@@ -53,7 +53,7 @@ function loginShell() {
   try {
     return execFileSync(
       '/usr/bin/dscl',
-      ['.', '-read', `/Users/${userInfo().username}`, 'UserShell'],
+      ['.', '-read', posix.join('/Users', userInfo().username), 'UserShell'],
       { encoding: 'utf8' }
     )
       .replace('UserShell:', '')
