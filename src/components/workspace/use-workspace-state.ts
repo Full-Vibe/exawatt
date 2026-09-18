@@ -1253,8 +1253,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                     harness: tab.harness,
                     cwd: tab.cwd,
                     initialTask: tab.initialTask ?? null,
-                    launchModel: tab.launchModel,
-                    launchEffort: tab.launchEffort,
                     harnessSessionId: tab.harnessSessionId,
                   },
                 ]
@@ -1820,6 +1818,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 titleKind: tab.titleKind,
                 cwd: tab.cwd,
                 sessionId: stopped ? null : tab.sessionId,
+                launchModel: tab.launchModel,
+                launchEffort: tab.launchEffort,
                 harnessSessionId: tab.harnessSessionId,
                 roadmapItemId: tab.roadmapItemId,
                 lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,

@@ -7172,3 +7172,13 @@ the model gate drove the production Model control and proved exact provider and
 durable identity, argv overrides, permission preservation, busy refusal and one
 replacement. Chrome and launcher geometry gates passed. Packaged lifecycle and
 release verification are still required before reporting the update shipped.
+
+The packaged connected-fleet, three-generation rehydration and full lifecycle
+gates passed on 2026-09-18, including the previously reported non-workspace quit
+step. The extended Model gate caught and repaired missing serialization of the
+launch choice; it now verifies one saved tab, model/effort preservation and one
+live process after renderer reload. The ribbon gate verifies reversing collapse
+mid-transition without selection loss or terminal resize. The shared menu's
+portal/active-descendant contract replaced three obsolete local-menu assertions;
+all 37 ribbon tests and 150 related state tests pass. Integration/release follows
+through the repository-owned floor; no gate is waived.

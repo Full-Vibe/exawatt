@@ -55,6 +55,7 @@ try {
     await page
       .getByRole('option', { name: 'Fixture Claude Sol · High', exact: true })
       .click();
+    await page.screenshot({ path: '/tmp/exawatt-session-model.png' });
     await page
       .getByRole('button', { name: 'Apply and resume', exact: true })
       .click();
@@ -90,6 +91,33 @@ try {
       s => !s.exited && s.durableSessionId === claude.durableSessionId
     );
     assert.equal(live.length, 1);
+    const saved = await until(async () => {
+      const workspace = JSON.parse(
+        readFileSync(join(fixture.userData, 'workspace.json'), 'utf8')
+      );
+      const tabs = workspace.projects
+        .flatMap(project => project.tabs)
+        .filter(tab => tab.durableSessionId === claude.durableSessionId);
+      return tabs.length === 1 &&
+        tabs[0].launchModel === FIXTURE_CLAUDE_MODEL_ID &&
+        tabs[0].launchEffort === 'high'
+        ? tabs[0]
+        : null;
+    }, 'one persisted Session with the applied choice');
+    await page.reload();
+    await page.locator(`[data-tab-id="${saved.id}"]`).waitFor();
+    await until(
+      async () =>
+        (await sessions()).filter(
+          s => !s.exited && s.durableSessionId === claude.durableSessionId
+        ).length === 1,
+      'one live process after renderer reload'
+    );
+    await page
+      .getByRole('button', {
+        name: new RegExp(`^Session model: ${FIXTURE_CLAUDE_MODEL_ID}`),
+      })
+      .waitFor();
     console.log(
       'PASS model change: busy/invalid choices preserve process; exact identity, launch flags, permission policy and single replacement proven'
     );

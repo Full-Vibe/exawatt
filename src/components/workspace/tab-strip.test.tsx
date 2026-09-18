@@ -396,8 +396,8 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     const deadTab = container.querySelectorAll('[data-tab-id]')[1];
     fireEvent.contextMenu(deadTab);
-    const menu = container.querySelector('[data-strip-menu]');
-    expect(menu?.textContent).toContain('Pin in split');
+    const menu = screen.getByRole('menu');
+    expect(menu.textContent).toContain('Pin in split');
     expect(menu?.textContent).toContain('Resume This Agent');
     expect(menu?.textContent).toContain('Close');
   });
@@ -443,7 +443,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(container.querySelector('[data-strip-menu]')).toBeNull();
   });
 
-  it('uses roving focus with Home, End, and Tab exit semantics', async () => {
+  it('keeps menu focus while Home and End move the active descendant, and Tab exits', async () => {
     strip({ tabs: [tab({ id: 'a' })], onCloseProject: vi.fn() });
     const projectTrigger = screen.getByRole('button', { name: 'repo' });
     const sessionTrigger = screen.getByRole('button', {
@@ -453,13 +453,13 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.keyDown(projectTrigger, { key: 'F10', shiftKey: true });
     const menu = screen.getByRole('menu', { name: 'repo Project actions' });
     const items = screen.getAllByRole('menuitem');
-    await waitFor(() => expect(items[0]).toHaveFocus());
-    expect(items.filter(item => item.tabIndex === 0)).toHaveLength(1);
+    await waitFor(() => expect(menu).toHaveFocus());
+    expect(menu).toHaveAttribute('aria-activedescendant', items[0].id);
 
     fireEvent.keyDown(menu, { key: 'End' });
-    expect(items.at(-1)).toHaveFocus();
+    expect(menu).toHaveAttribute('aria-activedescendant', items.at(-1)!.id);
     fireEvent.keyDown(menu, { key: 'Home' });
-    expect(items[0]).toHaveFocus();
+    expect(menu).toHaveAttribute('aria-activedescendant', items[0].id);
     fireEvent.keyDown(menu, { key: 'Tab' });
     await waitFor(() => expect(sessionTrigger).toHaveFocus());
   });
@@ -535,14 +535,18 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     );
     const clone = screen.getByRole('menuitem', { name: 'Clone to…' });
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
-    expect(clone).toHaveFocus();
+    expect(screen.getByRole('menu')).toHaveAttribute(
+      'aria-activedescendant',
+      clone.id
+    );
     fireEvent.keyDown(clone, { key: 'ArrowRight' });
     await waitFor(() =>
-      expect(
+      expect(screen.getByRole('menu')).toHaveAttribute(
+        'aria-activedescendant',
         screen.getByRole('menuitem', {
           name: 'Clone to Codex, GPT-5.6 Codex, High',
-        })
-      ).toHaveFocus()
+        }).id
+      )
     );
     fireEvent.click(
       screen.getByRole('menuitem', { name: 'Clone to OpenCode, Kimi K2' })
