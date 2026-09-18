@@ -7182,3 +7182,9 @@ mid-transition without selection loss or terminal resize. The shared menu's
 portal/active-descendant contract replaced three obsolete local-menu assertions;
 all 37 ribbon tests and 150 related state tests pass. Integration/release follows
 through the repository-owned floor; no gate is waived.
+
+All declared gates and the full delivery floor passed before queue admission.
+The queue-head rebase encountered concurrent D6/D8 planning updates; both sets
+of canon are retained. D7 supplies the integrated lifecycle owner for that future
+work. BUG-052, FIX-015 and FIX-016 close with this delivery batch; signed release
+publication remains a separate operational step and is not implied by landing.

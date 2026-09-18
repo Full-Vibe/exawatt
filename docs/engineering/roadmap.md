@@ -2145,7 +2145,7 @@ Two consequences worth stating plainly, because a reader will notice both:
 
 ### FIX-015 Toggle the active Project between titles and icons
 
-Status: small-fix · ENG-016 · operator selected 2026-09-17; feedback `491c36ce`.
+Status: done · ENG-016 · 0.1.11 delivery batch, 2026-09-18; feedback `491c36ce`.
 
 Click the active Project name to toggle the existing mini presentation without
 changing Agent selection or stopping work. Icon selection preserves compact
@@ -2153,7 +2153,7 @@ mode. [Accepted interaction and verification](projects/daily-driver-adoption.md#
 
 ### FIX-016 Change the model within the same Session
 
-Status: small-fix · ENG-016 · operator selected 2026-09-17; feedback `bf2f5a02`.
+Status: done · ENG-016 · 0.1.11 delivery batch, 2026-09-18; feedback `bf2f5a02`.
 
 Shared catalog/effort controls, explicit Apply and resume, exact conversation
 identity, preserved permission policy and no active-turn interruption. First
