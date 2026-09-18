@@ -1068,10 +1068,15 @@ async function fetchExistingPublicTip(workdir, { repository, ref = 'master' }) {
   if (typeof repository !== 'string' || repository.length === 0) {
     fail('fastForwardFrom.repository must be a repository path or URL');
   }
-  const advertised = await git(['ls-remote', repository, ref], {
-    cwd: workdir,
-  });
-  if (advertised.trim() === '') return null;
+  // Immutable release-prefix SHAs are fetchable objects, not advertised ref
+  // names. A missing object must fail the fetch; only an absent named branch
+  // denotes an empty publication target.
+  if (!/^[0-9a-f]{40}$/u.test(ref)) {
+    const advertised = await git(['ls-remote', repository, ref], {
+      cwd: workdir,
+    });
+    if (advertised.trim() === '') return null;
+  }
   await git(
     [
       'fetch',
