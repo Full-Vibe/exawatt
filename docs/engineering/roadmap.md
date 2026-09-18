@@ -123,9 +123,12 @@ The demo the front is aimed at carries three operator-named risks — it looks u
 Execution packets for 4–6 parallel agents, with the file-ownership collision map, are in **`projects/demo-arc-execution.md`**. That document holds no scope of its own; every packet points back at the item that owns it.
 
 **2026-09-16 launch-runway amendment.** ENG-030's remaining work is
-sequenced as packets R1 through R9 under its milestones; R1 (security tab to
-zero), R2 (BUG-125), R3 (BUG-129) and R4 (first official GitHub Release) are
-the open front and may run in parallel. Pick from there.
+sequenced as packets R1 through R9 under its milestones; R1 (security controls and
+alert disposition), R2 (BUG-125), R3 (BUG-129) and R4 (first official GitHub Release) are
+the open front and may run in parallel. Pick from there. **Amended 2026-09-18:**
+R5 prioritizes user setup and feedback; contributor recruitment waits for OS6.2.
+R7 success gates R9. First-month success is repeat real use by a small cohort,
+not contributor volume or paid-hosting interest.
 
 ## Operating Model
 
@@ -1452,7 +1455,7 @@ Milestones:
 - [ ] OS5.5 First green public CI and live repository security: CI, Secret Scan and CodeQL runs pass on the repaired public source (2026-09-07); live-control verification and individual alert disposition remain separate work.
 - [ ] OS4.4 Official public Release provenance: the private dispatch-only workflow publishes one immutable public tag/Release whose signed assets and source archive verify the embedded `ReleaseProvenanceV1` tuple before the Supabase feed advances. AMENDED 2026-09-13: official builds are published as GitHub Releases before the launch moment, which is also what retires BUG-130; the rescued `agent/oss-release-workflow` branch on origin is the R3/R4 packet and needs a rebase and review, not a merge.
 - [x] OS4.5 Hosted reference-service conformance: all seven production operations and Exawatt's composed private handlers pass the same Apache V1, legacy, mismatch, absent-capability, idempotency, media, closed-envelope, problem, and no-replay matrix as the strict custom-distributor harness (completed 2026-08-20).
-- [ ] OS6.0 Public presentation polish after the operational gates: complete the already-promoted footer-copy removal, repository homepage/topics/labels, stable package metadata, social preview, and a CI badge only after a real public run is green. AMENDED 2026-09-13 (operator answers): create the Discord server and point README, SUPPORT.md and the launch post at it; publish `docs/engineering/guides/add-an-agent-source.md` with the ordered touch list and a copyable eval, and seed five to eight good-first-issue items inside the day-one lanes so day-one pull requests land on a lane rather than on the grab-bag files (acceptance stays OS6.2 trigger-deferred); declare `engines.node` and `.nvmrc`; neutralize the projector commit trailer wording.
+- [ ] OS6.0 Public presentation polish after the operational gates: complete the already-promoted footer-copy removal, repository homepage/topics/labels, stable package metadata, social preview, and a CI badge only after a real public run is green. AMENDED 2026-09-13 (operator answers): create the Discord server and point README, SUPPORT.md and the launch post at it; publish `docs/engineering/guides/add-an-agent-source.md` with the ordered touch list and a copyable eval, and prepare contribution guidance (AMENDED 2026-09-18: publishing starter issues and recruiting contributors wait for OS6.2; launch prioritizes users and feedback); declare `engines.node` and `.nvmrc`; neutralize the projector commit trailer wording.
 - [ ] OS6.1 Three-to-five Mac friends complete clean public setup with no private knowledge.
 - [ ] OS6.2 Trigger-deferred contributor intake: activate before the first non-bot external PR is accepted, contribution lanes are advertised, or another writer is added; then fix the CLA/base-record and exact-PR import contract and prove two real loops. It does not gate OS6.1 while no human contributors exist.
 
@@ -1468,53 +1471,54 @@ may run in parallel).** Each packet names its owner and its done-when; an
 agent picking one up works in its own worktree and lands through
 `pnpm agent:land`. The runway does not loosen any gate above.
 
-- **R1 Security tab to zero (OS5.5, agent; repository settings need the
-  operator's admin token, so the agent flips them with `gh api` and records
-  each change, or the operator flips them himself).** Enable native secret
-  scanning and push protection; add one ruleset requiring CI, the CLA check,
-  Secret Scan and CodeQL before merge to `master` with a bypass for the
-  projector identity only; close the six stale Dependabot pull requests (the
-  lockfile they targeted was refreshed at `f4d0122f`, BUG-127); fix the 13
-  polynomial-ReDoS alerts (BUG-128) and dismiss any true false positive with
-  a written reason. Done when the public Security tab and the pull-request
-  list are both empty and a fork PR still runs green without secrets.
+- **R1 Security controls and alert disposition (OS5.5, agent).** Refresh
+  live dependency and CodeQL findings; fix or individually disposition each
+  with evidence, and close only genuinely superseded bot PRs. Enable native
+  secret scanning and push protection; reconcile required CI, CLA, Secret
+  Scan and CodeQL checks with the actual projector identity and prove its
+  authorized direct push remains possible. Update the settings verifier to
+  enforce these controls, including rulesets. Done when current findings are
+  resolved with reasons, controls pass read-back and behavioral checks, and
+  fork CI runs without secrets. Historical alert counts are not acceptance.
 - **R2 Corrupt stores stop erasing state (BUG-125, agent).** Done when a
   seeded-garbage `sources.json`, `workspace.json` or settings file is moved
   aside and logged, the store refuses to overwrite it, and each store has the
-  regression.
+  regression, including restart and explicit recovery without losing the
+  quarantined original.
 - **R3 Async failures reach the log (BUG-129, agent).** Done when
   `unhandledRejection`, renderer `error`/`unhandledrejection`, and
   `unresponsive` each produce a redacted `logs/main.jsonl` record in a test,
-  and `render-process-gone` reloads rather than observes.
+  and renderer recovery is bounded, preserves Sessions, and avoids reload
+  loops. Logging must preserve fatal-error semantics; test the packaged runtime.
 - **R4 First official GitHub Release (OS4.4, agent then operator).** Rebase
   `agent/oss-release-workflow` (three commits, about six conflict sites) onto
   master, land it, then the operator runs the private dispatch-only workflow
-  so v0.1.10 exists as an immutable public tag and Release with its
+  so the next unused version exists as an immutable public tag and Release with its
   `ReleaseProvenanceV1` record. Done when the Release page shows the signed
   DMG, notes and provenance, and the site's Changelog link resolves to it
   (retires BUG-130).
-- **R5 Contributor on-ramp (OS6.0, agent).** Publish
-  `docs/engineering/guides/add-an-agent-source.md` (ordered touch list across
-  the registry, harness registry, models, session manager, conversation
-  catalog, preload unions and renderer switches, plus a copyable eval), seed
-  five to eight starter issues inside the day-one lanes, declare
-  `engines.node` and `.nvmrc` (CI runs 22), retire or reconcile `PROJECT.md`
-  against the README, cut internal process vocabulary from `CONTRIBUTING.md`,
-  set repository topics, homepage and a provenance-recorded social preview,
-  and make projector commit trailers neutral. Acceptance stays OS6.2
-  trigger-deferred. Done when a newcomer can find the recipe, a starter
-  issue, and the exact build commands without asking.
-- **R6 README answers the two guaranteed questions (OS6.0, agent).** One
-  paragraph on why the project exists and how it survives (the hosted layer
-  is the business; comparable open-source orchestrators that had no answer
-  are gone), and one paragraph on the AGPL question (an unmodified official
-  build carries no obligation for the user; the share-back applies to people
-  who modify and redistribute). Done when both paragraphs are in the public
-  README above the fold and read in production voice.
+- **R5 User on-ramp (OS6.0, agent; amended 2026-09-18).** Make public
+  install, Demo Mode, local Agent Source setup and feedback instructions
+  usable without private knowledge; declare `engines.node` and `.nvmrc`,
+  reconcile `PROJECT.md` with README, simplify `CONTRIBUTING.md`, and finish
+  repository metadata and neutral projector trailers. Prepare the Agent
+  Source recipe as documentation, but defer advertised starter issues and
+  active contributor recruitment until OS6.2's safeguards and two real loops
+  pass. Done when a newcomer can install, do first useful work, and report
+  a blocker using only public instructions.
+- **R6 README explains purpose and licensing (OS6.0, agent).** Explain
+  the user problem, the independently useful community build and hosted
+  services as the business direction without promising proven sustainability.
+  Distinguish ordinary use, redistribution obligations and modified network
+  use in the AGPL explanation. Done when both explanations are discoverable
+  in the public README, accurate, and in production voice.
 - **R7 Friend cohort (OS6.1, operator recruits, agent prepares).** The agent
-  writes the one-page setup checklist and a blocker-capture template; the
+  writes the one-page setup checklist and a blocker-capture template for
+  an identified release candidate; the
   operator sends it to three to five Mac developer friends. Done per the
-  OS6.1 exit criteria, with every blocker promoted to a doc fix or a BUG.
+  OS6.1 exit criteria: three to five friends complete the checks without
+  private setup knowledge, every blocker is recorded, and launch-blocking
+  findings are resolved and rechecked. Successful R7 acceptance gates R9.
 - **R8 Discord wired in (OS6.0, operator creates, agent wires).** The
   operator creates the server and posts the invite; the agent links it from
   README, SUPPORT.md and the day-one welcome, which names what is
@@ -2168,6 +2172,8 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D8 mandatory prelaunch disclosure/preview and pending UX confirmation | Operator confirmation, 2026-09-18 | Direction accepted with silent-by-default context delivery. No required preview, acknowledgement or success notice; safe details stay inspectable on demand. Brief updated; new visuals still require gallery review. |
 | BUG-133 half 1 unshaped injection/interception alternatives | ENG-023 D8 research brief, 2026-09-18 | Plan one disclosed source-owned environment contribution, never task replay/question interception. Per-operation preservation/adoption evidence gates each provider; UX direction confirmed; normal context delivery is silent, with on-demand inspection. [Brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end). |
+| ENG-030 R5 contributor recruitment, R9 without R7, and R4 naming v0.1.10 | Operator answers and runway review, 2026-09-18 | Launch prioritizes users and feedback; starter issues and contributor recruitment wait for OS6.2. Successful R7 cohort acceptance gates R9; first-month outcome is repeat real use. R4 uses the next unused version, preserving the existing tag and the detailed provenance contract. See decision 0036 and the project log. |
+| BUG-133 half 1 unshaped injection/interception alternatives | ENG-023 D8 research brief, 2026-09-18 | Plan one disclosed source-owned environment contribution, never task replay/question interception. Per-operation preservation/adoption evidence gates each provider; UX direction proposed for confirmation. [Brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end). |
 | D6 depth-only scope and D3c parent-filter/capped/aggregate population | ENG-023 D6 research brief, 2026-09-18 | Expand to full scoped census, same-entity queries, separate match/context sets and conserved projection buckets; preserve Agent footprint and Consumption. New visuals need gallery acceptance. |
 | ENG-028 settings injection treated as proof of instruction composition | ENG-023 D8, 2026-09-18 | Hook configuration proves a transport seam only; instruction precedence, resume adoption and inheritance require separate source evidence. Types remain separate. |
 | D3c initial `0.72×` ratio and skipped-child arrow navigation | Existing operator peer-scale amendment / current navigation, reconciled 2026-09-18 | `0.92×` peer scale and keyboard child inspection supersede the stale initial tuning note; independent child commands remain gated by D2. |
