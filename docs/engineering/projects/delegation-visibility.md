@@ -1301,7 +1301,16 @@ Where an adapter cannot prove completeness, its known children remain useful but
 its coverage must not default to complete. Read the local census owner and
 source freshness rather than applying one invented provider-independent timeout.
 
-### Proposed UX brief and review scenes
+### Confirmed UX direction and review scenes
+
+Operator confirmation (2026-09-18): direction accepted, with “we don't need to
+be super verbose with the disclosure part — I'm fine if it's silent.” Normal
+launch/context delivery is silent by default. No mandatory preview, disclosure
+row, acknowledgement or success message. Exact safe context and delivery evidence
+remain available on demand through existing details; receipt plumbing is not a
+reason to add chrome. Explain a material visibility limitation concisely where
+it matters. This amends the mandatory prelaunch preview below, not instruction
+preservation or evidence truth. Gallery review is still owed for new visuals.
 
 Primary user action: **find the delegated worker and reach its owning work**.
 The default healthy case keeps current quiet indicators. No success banner, new
@@ -1310,8 +1319,8 @@ surface is proposed.
 
 | State / interaction | Proposed use of existing surfaces |
 | --- | --- |
-| Before launch | Compact, expandable preview of the context Exawatt will supply in existing launch details; prepared text and limitations visible without crowding the task. Revalidate the digest when configuration changes; preview is not delivery. |
-| Running / resumed / failed context delivery | An action in the existing ribbon Session context menu opens a shared receipt viewer, also used by launch preview and discoverable through the command registry. Keep inspection reachable for omitted/unsupported/failed delivery and zero children. Source-level support stays in Agent Sources; it is not a Session receipt. |
+| Before launch | Silent by default. Optional inspection through existing launch details may show prepared context; no new default disclosure row or required preview. Revalidate any opened preview when configuration changes; preview is not delivery. |
+| Running / resumed / failed context delivery | On-demand inspection through existing Session details/context actions can expose the receipt; reuse that view for optional launch inspection. No automatic success notice or receipt presentation. Keep inspection reachable for omitted/unsupported/failed delivery and zero children. Source-level support stays in Agent Sources; it is not a Session receipt. |
 | Complete, zero children | No fake workers; ordinary empty delegation state remains quiet and distinguishable from unavailable coverage. |
 | Complete, children present | Existing Agent/Team indicators and Fleet child units; inspection reaches full roster. |
 | Partial/unavailable/stale | At most one neutral coverage fact/link in the existing parent Delegated/metadata area, also reachable with zero observed children. Source detail provides the explanation. Mixed-source scope never lets one healthy source hide another. |
@@ -1337,11 +1346,12 @@ unknown ancestry; below/at/above each imported rendering budget; selection and
 focus through aggregation, filter changes and withdrawal. Do not duplicate
 production components into a study. Retire the study when accepted behavior ships.
 
-Review decisions still needed: exact disclosure placement/expansion; how a
+Review decisions still needed: quiet on-demand inspection placement; how a
 context-only parent is labeled; aggregate count composition; the one place-of-use
 coverage link. These are visual/interaction choices, not reasons to defer the
-identity, preservation, census and privacy invariants. The proposed direction is
-reviewable now; gallery acceptance is still required before production wiring.
+identity, preservation, census and privacy invariants. The direction is operator-
+confirmed with silent-by-default context delivery; gallery acceptance is still
+required before production wiring.
 
 ### Executable sequence, parallel lanes and exit criteria
 
@@ -1353,7 +1363,7 @@ reviewable now; gallery acceptance is still required before production wiring.
 | D6.4 — integration owner | `spatial-fleet-client`, board projection/target resolution, existing DOM panel, keyboard and canvas consumers. | D6.2 + accepted D6.3. Remove capped-geometry semantic reads and bare-ID lookup. Prove identical match membership and census at every budget/altitude in Live and Demo. BUG-134 and BUG-094 close only against this proof. |
 | D8.1 — launch contract owner | Core capability/receipt contract, main-process composer, `harness-command`, `harness-registry`, `session-manager`, safe artifact lifecycle. | Can proceed independently of D6. Refuse hidden task/policy mutation; test fresh/resume/clone/recovery/cleanup boundaries. Agree contract with provider lanes before shared-file edits. |
 | D8.2 — provider evidence lanes | Isolated source-specific probes and adapters for Claude, Codex, OpenCode, Grok, each with a capability evidence matrix. | Parallel research/probes; one launch-contract owner integrates shared registry changes. Codex instruction preservation/resume is the highest-risk release gate. No unsupported inheritance promise or automatic policy workaround. |
-| D8.3 — disclosure/integration owner | Existing launcher/Session inspection/Agent Sources receipt projections; source-specific fixture launch tests. | D8.1 + proven provider cells + UX review. Actual supplied text equals disclosed text; no secrets/task leakage; unsupported cells visible. Stable conditional orientation may ship independently; guidance to new D6 drill behavior waits for D6.4. |
+| D8.3 — disclosure/integration owner | Existing launcher/Session inspection/Agent Sources receipt projections; source-specific fixture launch tests. | D8.1 + proven provider cells + UX review. On-demand inspection matches actual supplied text; no secrets/task leakage; unsupported cells inspectable; normal delivery stays silent. Stable conditional orientation may ship independently; guidance to new D6 drill behavior waits for D6.4. |
 | D8.4 — acceptance owner | Small installed-provider evidence packet and packaged Electron journey, tied to immutable SHA/provider versions. | Fresh and resume assessed separately, including safe user-config preservation. BUG-133 half 1 remains open until the Codex report is resolved; a Claude-only rollout is partial. |
 
 One owner edits each shared file at a time. Provider research, census selectors,
@@ -1405,8 +1415,9 @@ fixtures, passed commands, remaining review decisions and actual delivery state.
   those capabilities are evidenced.
 
 This brief plans the improvements; it does not mark either bug fixed or any
-provider delivery path implemented. The UX brief remains proposed until operator
-confirmation; production gallery acceptance remains a distinct later checkpoint.
+provider delivery path implemented. The operator confirmed the UX direction with
+silent-by-default context delivery on 2026-09-18; production gallery acceptance
+remains a distinct later checkpoint.
 
 ### Historical report preserved from the roadmap
 

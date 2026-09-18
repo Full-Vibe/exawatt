@@ -492,8 +492,10 @@ preservation and model adoption for its supported fresh/resume paths. Operator
 task, provider configuration, hook credentials and future Types keep separate
 custody. Only Exawatt-authored text enters the receipt. Prepared, supplied and
 verified adoption are distinct; external attachment is not prompt delivery.
-These are planned contracts, not current runtime capabilities. UX direction is
-proposed and new visual states require gallery review before production wiring.
+These are planned contracts, not current runtime capabilities. The operator
+confirmed the UX direction on 2026-09-18: context delivery is silent by default,
+with safe details available on demand. New visual states still require gallery
+review before production wiring.
 
 #### Agent Source registry and connection truth
 

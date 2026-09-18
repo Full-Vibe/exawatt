@@ -1,7 +1,7 @@
 # 0041: Delegation evidence precedes representation and launch guidance
 
 - Date: 2026-09-18
-- Status: proposed; implementation and visual acceptance remain gated
+- Status: proposed architecture; UX direction confirmed 2026-09-18, visual acceptance remains gated
 - Roadmap: ENG-023 D6 / D8, BUG-094 / BUG-133 half 1 / BUG-134
 
 **Separate what the harness knows, what the source proves, and what the UI draws.**
@@ -28,7 +28,9 @@ Proposed contract:
   Session and launch generation. Prepared, supplied and verified model adoption
   are different evidence. Resume, compaction and child inheritance each need
   proof; argv acceptance alone cannot establish adoption.
-- Use existing launch, Session inspection and Agent Sources surfaces. Quiet
+- Use existing launch, Session inspection and Agent Sources surfaces. Context
+  delivery is silent by default (operator confirmation, 2026-09-18); exact safe
+  details stay available on demand, with no mandatory preview or success notice. Quiet
   place-of-use coverage clarifies partial/unknown observations without another
   status light. New visual grammar requires DOM/R3F gallery review.
 
@@ -46,3 +48,4 @@ chat, ENG-028 Types and ENG-029 coordination remain separate work.
 The [execution brief](../projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end)
 is the detailed contract, provider matrix and acceptance sequence. This record
 proposes architecture; it does not assert implementation or accepted visual design.
+The operator accepted the UX direction with the silent-by-default amendment above.
