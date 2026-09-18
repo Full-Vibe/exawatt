@@ -20,6 +20,7 @@ import type { ITheme } from '@xterm/xterm';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { useAppearance } from '@/components/appearance/appearance-provider';
+import { ActionMenu, type ActionMenuItem } from '@/components/ui/option-menu';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
@@ -143,7 +144,7 @@ export function TerminalPane({
           : api.openPath(target.path, cwd);
       void opened.catch((error: unknown) => {
         setNotice(
-          `Could not open ${terminalTargetLabel(target)} — ${describeOpenFailure(error)}`
+          `Could not open ${terminalTargetLabel(target)}: ${describeOpenFailure(error)}`
         );
       });
     },
@@ -161,6 +162,58 @@ export function TerminalPane({
     const timer = setTimeout(() => setNotice(null), 6_000);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  // The right-click menu's rows: the target under the pointer first, when
+  // there is one, then the edit verbs. Each row runs AFTER the menu has
+  // closed and handed focus back, so Paste lands in a focused terminal.
+  const contextMenuItems = useMemo<ActionMenuItem[]>(() => {
+    const target = contextMenu?.target ?? null;
+    const targetRows: ActionMenuItem[] = target
+      ? [
+          {
+            id: 'open-target',
+            label: `Open ${terminalTargetLabel(target)}`,
+            section: 'target',
+            attributes: { 'data-terminal-open-target': '' },
+            onSelect: () => openTarget(target),
+          },
+          {
+            id: 'copy-target',
+            label: terminalTargetCopyVerb(target),
+            section: 'target',
+            attributes: { 'data-terminal-copy-target': '' },
+            onSelect: () => {
+              void window.electron?.pty?.copyText(
+                terminalTargetCopyText(target)
+              );
+            },
+          },
+        ]
+      : [];
+    return [
+      ...targetRows,
+      {
+        id: 'copy',
+        label: 'Copy',
+        section: 'edit',
+        onSelect: () => termRef.current?.copySelection(),
+      },
+      {
+        id: 'paste',
+        label: 'Paste',
+        section: 'edit',
+        onSelect: () => {
+          void window.electron?.pty?.pasteClipboard(sessionId);
+        },
+      },
+      {
+        id: 'select-all',
+        label: 'Select All',
+        section: 'edit',
+        onSelect: () => termRef.current?.selectAll(),
+      },
+    ];
+  }, [contextMenu, openTarget, sessionId]);
 
   useEffect(() => {
     const el = container.current;
@@ -293,6 +346,21 @@ export function TerminalPane({
       // The pane claims exactly the chords it implements; a declined chord
       // (for example ⌘⇧F quick feedback) bubbles on to the workspace layers.
       term.attachCustomKeyEventHandler(event => {
+        // ⇧F10 and the Menu key open the context menu at the cursor. Claimed
+        // here, before xterm translates them, for every phase: xterm would
+        // otherwise write F10's escape sequence to the PTY on keydown and
+        // pull focus back from the menu on keyup.
+        if (isContextMenuKey(event)) {
+          if (event.type === 'keydown') {
+            const cursor = term.textarea?.getBoundingClientRect();
+            setContextMenu({
+              x: cursor?.left ?? 0,
+              y: cursor?.bottom ?? 0,
+              target: null,
+            });
+          }
+          return false;
+        }
         const verb = matchTerminalChord(event);
         if (!verb) return true;
         event.preventDefault();
@@ -480,26 +548,6 @@ export function TerminalPane({
   };
 
   useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-      termRef.current?.focus();
-    };
-    window.addEventListener('pointerdown', close);
-    window.addEventListener('blur', close);
-    window.addEventListener('keydown', closeOnEscape, true);
-    return () => {
-      window.removeEventListener('pointerdown', close);
-      window.removeEventListener('blur', close);
-      window.removeEventListener('keydown', closeOnEscape, true);
-    };
-  }, [contextMenu]);
-
-  useEffect(() => {
     if (font) termRef.current?.applyFont(font);
   }, [font]);
 
@@ -551,8 +599,8 @@ export function TerminalPane({
       onContextMenu={event => {
         event.preventDefault();
         setContextMenu({
-          x: Math.min(event.clientX, window.innerWidth - 200),
-          y: Math.min(event.clientY, window.innerHeight - 180),
+          x: event.clientX,
+          y: event.clientY,
           // snapshot what the pointer is on, so later mouse movement cannot
           // change what the open menu is about
           target: hoveredTarget.current,
@@ -620,90 +668,23 @@ export function TerminalPane({
           </button>
         </div>
       )}
-      {contextMenu && (
-        <div
-          role="menu"
-          aria-label="Terminal actions"
-          className="fixed z-50 min-w-36 border py-1 text-sm shadow-xl"
-          style={{
-            left: contextMenu.x,
-            top: contextMenu.y,
-            color: WORKSPACE_HUD.text,
-            background: WORKSPACE_HUD.bg.panel,
-            borderColor: WORKSPACE_HUD.strokeSoft,
-          }}
-          onPointerDown={event => event.stopPropagation()}
-        >
-          {contextMenu.target && (
-            <>
-              <button
-                role="menuitem"
-                data-terminal-open-target
-                className="block w-full truncate px-3 py-1.5 text-left hover:bg-hud-fill-hi"
-                onClick={() => {
-                  const target = contextMenu.target;
-                  setContextMenu(null);
-                  if (target) openTarget(target);
-                }}
-              >
-                Open {terminalTargetLabel(contextMenu.target)}
-              </button>
-              <button
-                role="menuitem"
-                data-terminal-copy-target
-                className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
-                onClick={() => {
-                  const target = contextMenu.target;
-                  setContextMenu(null);
-                  if (target) {
-                    void window.electron?.pty?.copyText(
-                      terminalTargetCopyText(target)
-                    );
-                  }
-                }}
-              >
-                {terminalTargetCopyVerb(contextMenu.target)}
-              </button>
-              <div
-                role="separator"
-                className="my-1 border-t"
-                style={{ borderColor: WORKSPACE_HUD.strokeSoft }}
-              />
-            </>
-          )}
-          <button
-            role="menuitem"
-            className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
-            onClick={() => {
-              termRef.current?.copySelection();
-              setContextMenu(null);
-            }}
-          >
-            Copy
-          </button>
-          <button
-            role="menuitem"
-            className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
-            onClick={() => {
-              void window.electron?.pty?.pasteClipboard(sessionId);
-              setContextMenu(null);
-              termRef.current?.focus();
-            }}
-          >
-            Paste
-          </button>
-          <button
-            role="menuitem"
-            className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
-            onClick={() => {
-              termRef.current?.selectAll();
-              setContextMenu(null);
-            }}
-          >
-            Select All
-          </button>
-        </div>
-      )}
+      <ActionMenu
+        open={contextMenu !== null}
+        anchor={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
+        label="Terminal actions"
+        items={contextMenuItems}
+        onClose={reason => {
+          setContextMenu(null);
+          // Focus returns to the terminal on every keyboard close and every
+          // selection: `term.focus()` restores xterm's own focus state (the
+          // `focus` class, the solid cursor, a focus-in report if the TUI
+          // asked for one) and touches neither the viewport nor the buffer.
+          // The Escape that closed the menu was consumed by the menu, so no
+          // ESC byte reaches the PTY. A pointer-down elsewhere is delivered
+          // to what was clicked, and that click decides where focus goes.
+          if (reason !== 'outside') termRef.current?.focus();
+        }}
+      />
       {notice && (
         <div
           data-terminal-notice
@@ -720,6 +701,11 @@ export function TerminalPane({
       )}
     </div>
   );
+}
+
+/** ⇧F10 and the dedicated Menu key: the keyboard's right-click. */
+function isContextMenuKey(event: KeyboardEvent): boolean {
+  return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
 }
 
 /** IPC rejections arrive wrapped in the invoke channel's own prose. */

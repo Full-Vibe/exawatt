@@ -46,3 +46,16 @@ with options 2 or 3.
   `0003`'s hybrid rule: crisp accessible text in DOM, the scalable world in
   WebGL. The spatial surface navigates and summarizes sessions; it does not
   render terminal text.
+
+## Amendment — explicit model apply/resume (2026-09-18)
+
+Local Claude Code and Codex Sessions can apply a model/effort choice by stopping
+an idle process and resuming its exact provider conversation. This preserves
+the durable Session, permissions and task metadata without replaying the initial
+prompt. Validation and a second idle check precede stopping; process exit must
+settle before replacement. The UI says Apply and resume and discloses loss of
+unsent terminal input. Native interactive model commands exist, but Exawatt does
+not inject commands into an opaque TUI or change global harness defaults. A
+supported in-place source control API may replace this fallback later. Other
+sources retain explicit native-interface guidance; Demo uses the same control
+with its own source ports.

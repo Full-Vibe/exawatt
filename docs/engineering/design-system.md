@@ -245,6 +245,16 @@ Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not rec
 
 ---
 
+## Menus
+
+Value selection uses `OptionMenu`; actions use its `ActionMenu` face in the
+same module. Both use the existing Radix popover and shared keyboard grammar.
+Terminal and Project/Session context menus must not implement separate focus
+loops. An action menu owns arrows, type-ahead, Home/End and Escape while open;
+its caller restores focus synchronously on keyboard close. Closing a terminal
+menu must never forward the close key to the PTY. Use `text-chrome-label`, HUD
+semantic text, existing overlay material and the dense chrome spacing rung.
+
 ## Dialogs
 
 A dialog's primary action states the chord that presses it, on the button's own
@@ -689,3 +699,12 @@ snapshot, never an intermediate layout storm.
 - 2026-08-03 — ENG-008 E6 ambient chrome meter (review candidate, gallery + flagged title-bar mount): the consumption channel gains a **monochrome-until-it-matters** register for always-on chrome. At ≤20px in the title bar the meter renders in chrome neutrals (zinc ladder) through healthy/warm and switches to the FLUX violet→magenta ramp only when a window runs hot or is spent — the battery-gauge idiom, escalation by state change, never motion. This does not change FLUX ownership (the expository `/consumption` surface keeps its always-colored treatment); it adds the calm-at-rest register for ambient chrome so a healthy meter is furniture, not a signal. The even-pace tick (`METER_MONO.tick`, a fixed neutral hairline at the elapsed-fraction position) is the meter's second mark; constant-footprint and reduced-motion rules apply as everywhere. Components in `src/components/consumption/meter/`. RESOLVED same day: the operator picked the fraction-bar form and it shipped enabled in chrome (E8, `CHROME_METER_FORM: 'bar'`); the four-form gallery study retired 2026-08-03 per the workbench rule — the forms and per-form assessments live in git history and the E6 milestone log.
 - 2026-08-02 — decision `0025`: reversed only the keyswitch-study portion of G1 retirement after operator review. Restored the interactive R3F material bench to `/hud-gallery` and a lean T7 paint/variant gate; kept the unused DOM `TactileActionKey` CSS retired and the New Agent composer on the standard shadcn button. Evidence: `/hud-gallery#keyswitch-material-studies` and `scripts/r3f-eval/report/t7-keyswitch.png`.
 - 2026-08-03 — Voice section added (ENG-036), from the operator's `/organization` correction (thesis lede + "Asked by users" header in main product UI). Production-voice sweep executed in the same change: `/organization`, `/cloud`, `/coordination`, `/agent-types` (the `PreviewSurfaceShell` `question` prop and the intent/designed-shape footer sentences retired), `/consumption` (all four acts, unit ladder, cost-per-agent and intervention sections rewritten from question-headers to noun headings and captions), the demo Session pane empty state, and the `UnbuiltLegend`. Readiness markers, demo banners, and "not recorded"/"unreported" states unchanged — they are the honesty channel the essays were duplicating.
+
+- 2026-09-17 — Project compact mode and Session model control (FIX-015/016):
+  the operator accepted active-header title/icon toggling with selection retained,
+  then corrected the model control to one dropdown of exact model/effort choices.
+  The existing `OptionMenu` supports staged selection with an explicit apply
+  footer; the trigger continues showing committed launch truth until applying.
+  Ribbon placement retains D45's 210ms transform glide and fixed height, with
+  a 150ms title-opacity reveal and a reduced-motion bypass. No type, color or
+  spacing rung changes. Review screenshots retained outside the source tree.

@@ -229,6 +229,9 @@ export function TabStrip({
   const reducedMotion = usePrefersReducedMotion();
   const router = useRouter();
   const ordinalHints = useOrdinalHints();
+  const [compactProjects, setCompactProjects] = useState<ReadonlySet<string>>(
+    new Set()
+  );
   const [editing, setEditing] = useState<Editing | null>(null);
   const [menu, setMenu] = useState<{
     x: number;
@@ -358,6 +361,7 @@ export function TabStrip({
               estimateRibbonTokenWidth(token)) + 34,
           tabs: [],
           active: token.project.dir === activeDir,
+          compact: compactProjects.has(token.project.dir),
         });
         continue;
       }
@@ -384,6 +388,7 @@ export function TabStrip({
     return layoutRibbonRow(blocks, containerWidth, layoutPolicy);
   }, [
     activeDir,
+    compactProjects,
     containerWidth,
     headerWidths,
     layoutEntries,
@@ -1297,7 +1302,21 @@ export function TabStrip({
                     aria-label={project.name}
                     aria-current={groupActive ? 'true' : undefined}
                     tabIndex={visible ? 0 : -1}
-                    onClick={() => onSelectProject(token.sourceProjectIndex)}
+                    aria-expanded={
+                      groupActive
+                        ? !compactProjects.has(project.dir)
+                        : undefined
+                    }
+                    onClick={() => {
+                      if (groupActive) {
+                        setCompactProjects(previous => {
+                          const next = new Set(previous);
+                          if (next.has(project.dir)) next.delete(project.dir);
+                          else next.add(project.dir);
+                          return next;
+                        });
+                      } else onSelectProject(token.sourceProjectIndex);
+                    }}
                     onDoubleClick={() =>
                       setEditing({
                         kind: 'group',
@@ -1314,7 +1333,7 @@ export function TabStrip({
                         keyboardMenuPoint(event.currentTarget)
                       );
                     }}
-                    title={`${rootPath ?? project.name}${
+                    title={`${rootPath ?? project.name}${groupActive ? (compactProjects.has(project.dir) ? '\nShow Agent titles' : '\nShow Agent icons') : ''}${
                       folded
                         ? `\n${project.tabs.length} Sessions — select to open`
                         : ''
@@ -1876,7 +1895,7 @@ export function TabStrip({
                         onPick={next => onSetProjectColor(project.dir, next)}
                       />
                     </>
-                  ) : condensed || (dead && !isDraft && !on) ? null : (
+                  ) : dead && !isDraft && !on ? null : (
                     // A stopped unselected chip drops its title entirely (D42
                     // review round, amends the D23 hover-unfurl): a reveal that
                     // grows the chip feeds the width model and shifts layout —
@@ -1884,7 +1903,9 @@ export function TabStrip({
                     // on condensed chips.
                     <span
                       data-tab-label
-                      className="block min-w-0 flex-1 truncate font-sans leading-tight"
+                      aria-hidden={condensed || undefined}
+                      className="block min-w-0 flex-1 truncate font-sans leading-tight transition-opacity duration-150 motion-reduce:transition-none"
+                      style={{ opacity: condensed ? 0 : 1 }}
                     >
                       <span
                         data-subtitle={

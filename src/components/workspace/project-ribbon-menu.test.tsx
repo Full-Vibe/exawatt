@@ -1,10 +1,63 @@
+/**
+ * The Project and Session context menus over the one menu primitive's action
+ * face (decision `0033`, BUG-052). These drive the real Radix popover the
+ * strip mounts, so they hold the contract the tab strip relies on: one
+ * highlighted row from the moment it opens, arrows that wrap, a drill-in
+ * whose highlight and cursor agree, Escape that reports `trigger`, and the
+ * BUG-051 identity rule that two same-labelled rows stay two rows.
+ */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { StripContextMenu, type StripMenuItem } from './project-ribbon-menu';
 
-describe('StripContextMenu readiness rows (ENG-026 N3)', () => {
-  afterEach(cleanup);
+beforeAll(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  );
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: vi.fn(),
+  });
+});
 
+afterAll(() => {
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+});
+
+afterEach(cleanup);
+
+const menu = () => screen.getByRole('menu', { name: 'Session actions' });
+const press = (key: string, init: KeyboardEventInit = {}) =>
+  fireEvent.keyDown(menu(), { key, ...init });
+const activeRow = () =>
+  screen.getAllByRole('menuitem').find(row => row.hasAttribute('data-active'));
+/** The row's own label, without the submenu chevron or the muted note. */
+const activeLabel = () =>
+  activeRow()?.querySelector('span span')?.textContent ??
+  activeRow()?.querySelector('span')?.textContent ??
+  null;
+
+function renderMenu(items: StripMenuItem[], onClose = vi.fn()) {
+  render(
+    <StripContextMenu
+      x={10}
+      y={10}
+      color="#50E6FF"
+      label="Session actions"
+      items={items}
+      onClose={onClose}
+    />
+  );
+  return onClose;
+}
+
+describe('StripContextMenu readiness rows (ENG-026 N3)', () => {
   const items: StripMenuItem[] = [
     { id: 'rename', label: 'Rename…', onSelect: vi.fn() },
     {
@@ -16,108 +69,72 @@ describe('StripContextMenu readiness rows (ENG-026 N3)', () => {
     { id: 'close', label: 'Close', danger: true, onSelect: vi.fn() },
   ];
 
-  function renderMenu() {
-    return render(
-      <StripContextMenu
-        x={10}
-        y={10}
-        color="#50E6FF"
-        label="Session actions"
-        items={items}
-        onClose={vi.fn()}
-      />
-    );
-  }
-
   it('renders the announced row inert, outside the menuitem focus loop', () => {
-    renderMenu();
+    renderMenu(items);
     const announced = screen.getByTitle(
-      'Coming soon — run this Agent on an Exawatt-hosted plan (Cloud)'
+      'Coming soon: run this Agent on an Exawatt-hosted plan (Cloud)'
     );
     expect(announced.getAttribute('data-readiness')).toBe('announced');
     expect(announced.getAttribute('role')).toBeNull();
     expect(announced.querySelector('[inert]')).not.toBeNull();
-    // keyboard navigation iterates menuitems only — the announced row is
+    // keyboard navigation iterates menuitems only: the announced row is
     // skipped, not focus-trapped and not merely disabled
-    const menuitems = screen.getAllByRole('menuitem');
-    expect(menuitems.map(item => item.textContent)).toEqual([
-      'Rename…',
-      'CloudComing soon',
-      'Close',
-    ]);
+    expect(screen.getAllByRole('menuitem').map(row => row.textContent)).toEqual(
+      ['Rename…', 'CloudComing soon', 'Close']
+    );
+    press('ArrowDown');
+    expect(activeLabel()).toBe('Cloud');
   });
 
   it('a preview-surface entry row carries the muted Coming soon note and stays operable', () => {
-    renderMenu();
+    const onClose = renderMenu(items);
     const cloudRow = screen
       .getAllByRole('menuitem')
-      .find(item => item.textContent?.startsWith('Cloud'))!;
+      .find(row => row.textContent?.startsWith('Cloud'))!;
     expect(cloudRow.textContent).toContain('Coming soon');
-    cloudRow.click();
+    fireEvent.click(cloudRow);
     expect(items[2].onSelect).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledWith('trigger');
   });
 
   it('the announced row cannot be operated', () => {
-    renderMenu();
-    const announced = screen.getByTitle(
-      'Coming soon — run this Agent on an Exawatt-hosted plan (Cloud)'
+    const onClose = renderMenu(items);
+    fireEvent.click(
+      screen.getByTitle(
+        'Coming soon: run this Agent on an Exawatt-hosted plan (Cloud)'
+      )
     );
-    // no handler exists to call; clicking must not throw and must not close
-    announced.click();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
 describe('StripContextMenu keyboard standing', () => {
-  afterEach(cleanup);
-
-  const targets: StripMenuItem[] = [
+  const targets = (): StripMenuItem[] => [
     { id: 'claude-opus', label: 'Claude Opus', onSelect: vi.fn() },
     { id: 'codex', label: 'Codex', onSelect: vi.fn() },
   ];
-  const items: StripMenuItem[] = [
+  const items = (children: StripMenuItem[]): StripMenuItem[] => [
     { id: 'rename', label: 'Rename…', onSelect: vi.fn() },
-    { id: 'clone-to', label: 'Clone to…', children: targets },
+    { id: 'clone-to', label: 'Clone to…', children },
     { id: 'close', label: 'Close', danger: true, onSelect: vi.fn() },
   ];
 
-  const renderMenu = () =>
-    render(
-      <StripContextMenu
-        x={10}
-        y={10}
-        color="#50E6FF"
-        label="Session actions"
-        items={items}
-        onClose={vi.fn()}
-      />
-    );
-
-  const activeRow = () =>
-    screen
-      .getAllByRole('menuitem')
-      .find(row => row.hasAttribute('data-menu-active'));
-  /** The row's own label, without the submenu chevron or the muted note. */
-  const activeLabel = () =>
-    activeRow()?.querySelector('span')?.textContent ?? null;
-
-  const press = (key: string) =>
-    fireEvent.keyDown(screen.getByRole('menu'), { key });
-
-  it('marks exactly one row as the one you are on, from the moment it opens', () => {
-    renderMenu();
-    // The highlight used to ride on `:focus-visible`, which does not match
-    // focus moved out of a POINTER-opened menu — so a right-click menu
-    // highlighted nothing and read as keyboard-dead.
+  it('takes the keyboard and marks exactly one row from the moment it opens', () => {
+    renderMenu(items(targets()));
+    expect(document.activeElement).toBe(menu());
     expect(activeLabel()).toBe('Rename…');
     expect(
-      screen
-        .getAllByRole('menuitem')
-        .filter(r => r.hasAttribute('data-menu-active'))
+      screen.getAllByRole('menuitem').filter(r => r.hasAttribute('data-active'))
     ).toHaveLength(1);
+    // one owner for the keyboard: the menu names its highlight, rows are
+    // not tabstops of their own
+    expect(menu().getAttribute('aria-activedescendant')).toBe(
+      activeRow()!.id
+    );
   });
 
   it('walks rows with the arrow keys and wraps at both ends', () => {
-    renderMenu();
+    renderMenu(items(targets()));
     press('ArrowDown');
     expect(activeLabel()).toBe('Clone to…');
     press('ArrowDown');
@@ -132,44 +149,84 @@ describe('StripContextMenu keyboard standing', () => {
     expect(activeLabel()).toBe('Close');
   });
 
-  it('keeps the highlight and the roving tabstop on the SAME row inside a submenu', () => {
-    renderMenu();
+  it('jumps by typing, the macOS way', () => {
+    renderMenu(items(targets()));
+    press('c');
+    expect(activeLabel()).toBe('Clone to…');
+    press('c');
+    expect(activeLabel()).toBe('Close');
+  });
+
+  it('drills in on the first ACTION and keeps highlight and cursor on one row', () => {
+    renderMenu(items(targets()));
     press('ArrowDown');
     press('ArrowRight');
-    // Drilling in lands on the first ACTION, not on the drill-out row above
-    // it. Arrow keys used to walk the DOM's menuitem buttons while tabIndex
-    // was assigned from each item's index in the ITEM list; the drill-out row
-    // shifted the two apart by one, so the highlight and the tabstop pointed
-    // at different rows.
     expect(activeLabel()).toBe('Claude Opus');
-    const rows = screen.getAllByRole('menuitem');
-    const tabbable = rows.filter(row => row.getAttribute('tabindex') === '0');
-    expect(tabbable).toHaveLength(1);
-    expect(tabbable[0]).toBe(activeRow());
-
+    expect(menu().getAttribute('aria-activedescendant')).toBe(
+      activeRow()!.id
+    );
     press('ArrowDown');
     expect(activeLabel()).toBe('Codex');
     press('ArrowLeft');
     expect(activeLabel()).toBe('Rename…');
   });
 
-  it('selects the highlighted target with Enter', () => {
-    renderMenu();
+  it('selects the highlighted target with Enter, closing before it runs', () => {
+    const children = targets();
+    const calls: string[] = [];
+    (children[0].onSelect as ReturnType<typeof vi.fn>).mockImplementation(
+      () => calls.push('select')
+    );
+    const onClose = renderMenu(
+      items(children),
+      vi.fn(() => calls.push('close'))
+    );
     press('ArrowDown');
     press('ArrowRight');
-    activeRow()!.click();
-    expect(targets[0].onSelect).toHaveBeenCalled();
+    press('Enter');
+    expect(onClose).toHaveBeenCalledWith('trigger');
+    expect(calls).toEqual(['close', 'select']);
+  });
+
+  it('reports Escape as a return to the trigger, once', () => {
+    const onClose = renderMenu(items(targets()));
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('trigger');
+  });
+
+  it('backs out of a submenu on Escape instead of closing', () => {
+    const onClose = renderMenu(items(targets()));
+    press('ArrowDown');
+    press('ArrowRight');
+    expect(activeLabel()).toBe('Claude Opus');
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(activeLabel()).toBe('Rename…');
+  });
+
+  it('hands Tab to the strip as next / previous', () => {
+    const onClose = renderMenu(items(targets()));
+    press('Tab');
+    expect(onClose).toHaveBeenCalledWith('next');
+  });
+
+  it('hands ⇧Tab to the strip as previous', () => {
+    const onClose = renderMenu(items(targets()));
+    press('Tab', { shiftKey: true });
+    expect(onClose).toHaveBeenCalledWith('previous');
   });
 });
 
 describe('StripContextMenu row identity (BUG-051)', () => {
-  afterEach(cleanup);
-
-  // Two setups on one model share a label BY DESIGN — the launcher names a
+  // Two setups on one model share a label BY DESIGN: the launcher names a
   // row after its model and puts the reasoning effort on the quiet note. The
   // menu used to key rows on that label, so Clone to… on a Codex Session
-  // highlighted BOTH `GPT-5.6 Codex` rows at once and could not tell them
-  // apart (operator, 2026-08-17).
+  // highlighted BOTH `GPT-5.6 Codex` rows at once (operator, 2026-08-17).
   const sameLabel = (): StripMenuItem[] => [
     {
       id: 'agent:codex:gpt-5.6:high',
@@ -188,29 +245,20 @@ describe('StripContextMenu row identity (BUG-051)', () => {
   ];
 
   const renderTargets = (targets: StripMenuItem[]) =>
-    render(
-      <StripContextMenu
-        x={10}
-        y={10}
-        color="#50E6FF"
-        label="Session actions"
-        items={[{ id: 'clone-to', label: 'Clone to…', children: targets }]}
-        onClose={vi.fn()}
-      />
-    );
+    renderMenu([{ id: 'clone-to', label: 'Clone to…', children: targets }]);
 
   const activeRows = () =>
     screen
       .getAllByRole('menuitem')
-      .filter(row => row.hasAttribute('data-menu-active'));
+      .filter(row => row.hasAttribute('data-active'));
 
   it('highlights exactly one of two same-labelled rows', () => {
     renderTargets(sameLabel());
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowRight' });
+    press('ArrowRight');
     expect(activeRows()).toHaveLength(1);
     expect(activeRows()[0].textContent).toContain('High');
 
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    press('ArrowDown');
     expect(activeRows()).toHaveLength(1);
     expect(activeRows()[0].textContent).toContain('Medium');
   });
@@ -218,16 +266,16 @@ describe('StripContextMenu row identity (BUG-051)', () => {
   it('keeps two same-labelled rows independently selectable', () => {
     const targets = sameLabel();
     renderTargets(targets);
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowRight' });
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
-    activeRows()[0].click();
+    press('ArrowRight');
+    press('ArrowDown');
+    fireEvent.click(activeRows()[0]);
     expect(targets[0].onSelect).not.toHaveBeenCalled();
     expect(targets[1].onSelect).toHaveBeenCalled();
   });
 
   it('separates them for a screen reader too', () => {
     renderTargets(sameLabel());
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowRight' });
+    press('ArrowRight');
     expect(
       screen.getByRole('menuitem', {
         name: 'Clone to Codex, GPT-5.6 Codex, High',

@@ -81,11 +81,23 @@ const setBenchWidth = async width => {
   await page.waitForTimeout(500);
 };
 const clickProject = async name => {
-  await page
+  const header = page
     .locator(`[data-ribbon-item="project"][data-project="${name}"]`)
-    .first()
-    .click();
-  await page.waitForTimeout(450);
+    .getByRole('button', { name, exact: true });
+  if ((await header.getAttribute('aria-current')) !== 'true')
+    await header.click();
+  if ((await header.getAttribute('aria-expanded')) === 'false')
+    await header.click();
+  await page.waitForFunction(
+    () =>
+      !document
+        .getAnimations()
+        .some(
+          animation =>
+            animation instanceof CSSTransition &&
+            animation.playState === 'running'
+        )
+  );
 };
 
 try {
@@ -107,6 +119,52 @@ try {
   if (afterSwitches !== beforeSwitches || heightAfter !== heightBefore) {
     throw new Error(
       `Project switches resized the stage: ${JSON.stringify({ beforeSwitches, afterSwitches, heightBefore, heightAfter })}`
+    );
+  }
+  // Reverse mid-flight using the same nodes: no terminal resize or selection loss.
+  const collapse = await page.evaluate(async () => {
+    const header = document.querySelector(
+      '[data-ribbon-item="project"][data-project="exawatt"] button[aria-label="exawatt"]'
+    );
+    const active = document.querySelector(
+      '[data-ribbon-item="initiative"][data-active="true"]'
+    );
+    const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    header.click();
+    await frame();
+    await frame();
+    const compact = header.getAttribute('aria-expanded') === 'false';
+    header.click();
+    await frame();
+    await frame();
+    return {
+      compact,
+      expanded: header.getAttribute('aria-expanded') === 'true',
+      retained:
+        active ===
+        document.querySelector(
+          '[data-ribbon-item="initiative"][data-active="true"]'
+        ),
+    };
+  });
+  await page.waitForFunction(
+    () =>
+      !document
+        .getAnimations()
+        .some(
+          animation =>
+            animation instanceof CSSTransition &&
+            animation.playState === 'running'
+        )
+  );
+  if (
+    !collapse.compact ||
+    !collapse.expanded ||
+    !collapse.retained ||
+    (await stageResizes()) !== beforeSwitches
+  ) {
+    throw new Error(
+      `Collapse reversal lost state or resized the terminal: ${JSON.stringify(collapse)}`
     );
   }
   await page.screenshot({
@@ -237,9 +295,7 @@ try {
   // (operator, 2026-08-04: "unresponsive"). The buttons themselves are of
   // course still hit targets; nothing else in that box is.
   const probeFace = node => {
-    const box = node
-      .querySelector('[data-tab-chrome]')
-      .getBoundingClientRect();
+    const box = node.querySelector('[data-tab-chrome]').getBoundingClientRect();
     return [0.15, 0.3, 0.5, 0.7, 0.85]
       .map(fraction => {
         const hit = document.elementFromPoint(
@@ -382,9 +438,7 @@ try {
             const box = el.getBoundingClientRect();
             return { id: el.getAttribute('data-tab-id'), x: box.x, y: box.y };
           })
-          .sort((a, b) =>
-            Math.abs(a.y - b.y) > 8 ? a.y - b.y : a.x - b.x
-          )
+          .sort((a, b) => (Math.abs(a.y - b.y) > 8 ? a.y - b.y : a.x - b.x))
           .map(item => item.id)
     );
   const before = await order();
@@ -394,17 +448,15 @@ try {
       node.scrollIntoView({ block: 'nearest', inline: 'start' })
     );
   await page.waitForTimeout(350);
-  const src = await page
-    .locator(`[data-tab-id="${before[0]}"]`)
-    .boundingBox();
-  const dst = await page
-    .locator(`[data-tab-id="${before[1]}"]`)
-    .boundingBox();
-  await page.mouse.move(src.x + 100, src.y + 13);
+  const src = await page.locator(`[data-tab-id="${before[0]}"]`).boundingBox();
+  const dst = await page.locator(`[data-tab-id="${before[1]}"]`).boundingBox();
+  await page.mouse.move(src.x + src.width / 2, src.y + 13);
   await page.mouse.down();
   for (let i = 1; i <= 12; i += 1) {
     await page.mouse.move(
-      src.x + 100 + ((dst.x + dst.width * 0.65 - src.x - 100) * i) / 12,
+      src.x +
+        src.width / 2 +
+        ((dst.x + dst.width * 0.65 - src.x - 100) * i) / 12,
       src.y + 13,
       { steps: 1 }
     );
@@ -421,7 +473,7 @@ try {
   const src2 = await page
     .locator(`[data-tab-id="${swapped[0]}"]`)
     .boundingBox();
-  await page.mouse.move(src2.x + 100, src2.y + 13);
+  await page.mouse.move(src2.x + src2.width / 2, src2.y + 13);
   await page.mouse.down();
   await page.mouse.move(src2.x + 360, src2.y + 13, { steps: 8 });
   await page.waitForTimeout(80);
@@ -550,9 +602,7 @@ try {
       const style = getComputedStyle(pinned);
       return {
         dir: pinned.getAttribute('data-ribbon-project-header'),
-        offset: Math.round(
-          pinned.getBoundingClientRect().left - view().left
-        ),
+        offset: Math.round(pinned.getBoundingClientRect().left - view().left),
         opaque:
           style.backgroundImage !== 'none' ||
           style.backgroundColor !== 'rgba(0, 0, 0, 0)',

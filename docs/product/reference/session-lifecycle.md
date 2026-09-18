@@ -57,6 +57,16 @@ conversation.
 Retained terminal output is labeled **Saved terminal history · read-only** so a
 stopped Session cannot be mistaken for an interactive terminal.
 
+## Model changes between turns
+
+**Apply and resume** changes a local Claude Code or Codex launch model/effort
+pair by replacing the process for the same exact provider conversation. It
+preserves the durable Session, Project, title and launch permission policy;
+it never replays the opening task. Invalid catalog choices, active work,
+operator gates, missing provider identity and concurrent requests refuse before
+stopping. A failed replacement leaves the saved Session available for recovery.
+Unsent terminal text is not preserved; the action discloses this before applying.
+
 ## Remote attachment and return
 
 Remote execution lifecycle is source-owned and separate from Exawatt's

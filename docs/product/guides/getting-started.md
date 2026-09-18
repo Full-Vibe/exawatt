@@ -101,7 +101,9 @@ count into a claim about billing or remaining plan capacity.
 
 The Project ribbon stays one row high. Projects fold into counted containers,
 the active Project's tabs shrink when needed, and the row scrolls only as a last
-resort; no Project or Agent disappears from the strip.
+resort; no Project or Agent disappears from the strip. Click the active Project
+name to toggle Agent titles and compact icons. Selecting an icon keeps that
+view; click the Project name again to restore titles. Agents keep working.
 
 Closing the last Agent leaves the empty Project and composer open. After a short
 inactive dwell, its compact header slides into the dormant tail instead of
@@ -214,3 +216,18 @@ Both modes should exercise the same interface concepts.
 - **Consumption:** cost, tokens, energy, time, and other resource usage.
 
 See `docs/product/concepts.md` for canonical definitions.
+
+## Change a Session's model
+
+For a running local Claude Code or Codex Session, open **Model** in the context
+row. Choose a model/effort combination from the same source catalog used by the
+launcher, then select **Apply and resume**. Exawatt waits for an eligible
+between-turn state: active work, delegated work and outstanding operator gates
+block the change. It starts a replacement process with the same saved provider
+conversation and permission policy. Unsent terminal input is not preserved.
+
+A launch choice is a request, not a live reading of subsequent model changes
+made in the terminal. Environment-controlled effort stays locked. Unsupported
+sources direct model selection to their native interface. If replacement fails,
+the saved Session remains available to resume. Demo Mode exercises the same
+selector against Demo choices without starting processes.

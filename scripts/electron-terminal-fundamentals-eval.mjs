@@ -383,6 +383,96 @@ await withElectronApp(
         copied.includes('EXAWATT_LINE_20000')
     );
 
+    // ── BUG-052: the right-click menu is keyboard-complete and gives the
+    // keyboard back. The menu takes DOM focus (so arrows move ITS highlight,
+    // not the shell's cursor), Escape closes it without an ESC byte reaching
+    // the PTY, and focus lands back in xterm with the viewport where it was.
+    await page.evaluate(
+      id => window.__XTERMS__[id].scrollLines(-40),
+      sessionId
+    );
+    const viewportBefore = await page.evaluate(
+      id => window.__XTERMS__[id].buffer.active.viewportY,
+      sessionId
+    );
+    const bufferBeforeMenu = await page.evaluate(
+      async id => window.electron?.pty?.buffer(id),
+      sessionId
+    );
+    await page
+      .locator('.terminal-pane')
+      .click({ button: 'right', position: { x: 40, y: 80 } });
+    const terminalMenu = page.getByRole('menu', { name: 'Terminal actions' });
+    await terminalMenu.waitFor();
+    check(
+      'the terminal menu takes the keyboard',
+      await page.evaluate(
+        () => document.activeElement?.getAttribute('role') === 'menu'
+      )
+    );
+    await page.keyboard.press('ArrowDown');
+    const highlighted = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('[role="menuitem"][data-active]')
+      ).map(element => element.textContent)
+    );
+    check(
+      'ArrowDown moves the menu highlight, not the shell',
+      highlighted.length === 1 && highlighted[0] === 'Paste',
+      JSON.stringify(highlighted)
+    );
+    await page.keyboard.press('Escape');
+    await terminalMenu.waitFor({ state: 'detached' });
+    const afterEscape = await page.evaluate(
+      id => ({
+        active: document.activeElement?.className ?? '',
+        focused: !!document.querySelector('.terminal-pane .xterm.focus'),
+        viewportY: window.__XTERMS__[id].buffer.active.viewportY,
+      }),
+      sessionId
+    );
+    check(
+      'Escape returns focus to the terminal',
+      afterEscape.active.includes('xterm-helper-textarea') &&
+        afterEscape.focused,
+      JSON.stringify(afterEscape)
+    );
+    check(
+      'Escape leaves the scroll position where it was',
+      afterEscape.viewportY === viewportBefore,
+      `${afterEscape.viewportY} vs ${viewportBefore}`
+    );
+    // Wait for the effect, never a number: a stray ESC would echo nothing at
+    // a fish prompt, so the oracle is the buffer being byte-identical after
+    // the PTY has had a turn to answer the keys the terminal did receive.
+    await page.evaluate(id => window.electron?.pty?.write(id, ''), sessionId);
+    await page.waitForTimeout(250);
+    const bufferAfterMenu = await page.evaluate(
+      async id => window.electron?.pty?.buffer(id),
+      sessionId
+    );
+    check(
+      'no key the menu consumed reached the PTY',
+      bufferAfterMenu === bufferBeforeMenu,
+      `${(bufferAfterMenu ?? '').length - (bufferBeforeMenu ?? '').length} bytes`
+    );
+    // The keyboard's right-click: ⇧F10 from inside the terminal.
+    await page.keyboard.press('Shift+F10');
+    await terminalMenu.waitFor();
+    check('⇧F10 opens the terminal menu from the keyboard', true);
+    await page.keyboard.press('Escape');
+    await terminalMenu.waitFor({ state: 'detached' });
+    check(
+      'the keyboard-opened menu also hands focus back',
+      await page.evaluate(
+        () => !!document.querySelector('.terminal-pane .xterm.focus')
+      )
+    );
+    await page.evaluate(
+      id => window.__XTERMS__[id].scrollToBottom(),
+      sessionId
+    );
+
     const clipboardMarker = 'EXAWATT_CLIPBOARD_TEXT_9713';
     await app.evaluate(
       ({ clipboard }, value) => clipboard.writeText(value),

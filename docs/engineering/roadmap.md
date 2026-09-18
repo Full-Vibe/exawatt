@@ -2143,6 +2143,23 @@ Two consequences worth stating plainly, because a reader will notice both:
   shapes that surface; until it lands, GitHub Issues is the place to
   report one. This section is history, not process.
 
+### FIX-015 Toggle the active Project between titles and icons
+
+Status: small-fix · ENG-016 · operator selected 2026-09-17; feedback `491c36ce`.
+
+Click the active Project name to toggle the existing mini presentation without
+changing Agent selection or stopping work. Icon selection preserves compact
+mode. [Accepted interaction and verification](projects/daily-driver-adoption.md#2026-09-17--light-shaping-project-collapse-and-session-model-changes).
+
+### FIX-016 Change the model within the same Session
+
+Status: small-fix · ENG-016 · operator selected 2026-09-17; feedback `bf2f5a02`.
+
+Shared catalog/effort controls, explicit Apply and resume, exact conversation
+identity, preserved permission policy and no active-turn interruption. First
+slice supports local Claude Code and Codex; unsupported sources are explicit.
+[Accepted interaction and boundaries](projects/daily-driver-adoption.md#2026-09-17--light-shaping-project-collapse-and-session-model-changes).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
@@ -2154,6 +2171,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | D6 depth-only scope and D3c parent-filter/capped/aggregate population | ENG-023 D6 research brief, 2026-09-18 | Expand to full scoped census, same-entity queries, separate match/context sets and conserved projection buckets; preserve Agent footprint and Consumption. New visuals need gallery acceptance. |
 | ENG-028 settings injection treated as proof of instruction composition | ENG-023 D8, 2026-09-18 | Hook configuration proves a transport seam only; instruction precedence, resume adoption and inheritance require separate source evidence. Types remain separate. |
 | D3c initial `0.72×` ratio and skipped-child arrow navigation | Existing operator peer-scale amendment / current navigation, reconciled 2026-09-18 | `0.92×` peer scale and keyboard child inspection supersede the stale initial tuning note; independent child commands remain gated by D2. |
+| D45 active Project always uses title tabs; model selection only at launch | FIX-015/FIX-016 operator acceptance, 2026-09-18 | Active Project name explicitly toggles titles/icons while selection and work continue. Local Claude/Codex model choices may apply through exact-conversation resume between turns. Single combined menu, no nested dropdowns. [Contract](projects/daily-driver-adoption.md#2026-09-18--approved-controls-wired-into-agent-and-demo-views). |
 | D5 root-wide child-read failure and BUG-133 half 2 left unshaped | Operator approval, 2026-09-16 | D5.1 isolates child/parent-activity failures and exposes source observation health separately from turn and launch truth; half 1 and BUG-134 remain open. [Contract](projects/delegation-visibility.md#2026-09-16--bug-133-half-2-isolate-uncertainty-and-disclose-observation-health). |
 | ENG-030's remaining milestones (OS5.5, OS4.4, OS6.0, OS6.1, OS6.2, OS6.3) | launch runway, 2026-09-16 | Sequenced as packets R1 through R9 under the ENG-030 milestones, each with owner and done-when; R1 to R4 run in parallel, R9 gates on R1, R4, R5, R6 and R8. No gate loosened. |
 | ENG-023 D4's stale-report reclaim exemption for reported children ("a running child ends with an event the harness guarantees, so it explains silence indefinitely") | ENG-023 D7 / BUG-081, 2026-09-16 | A reported child is a claim with coverage and an expiry, not a latch. Coverage is the harness's own census on every `Stop`/`SubagentStop` (`background_tasks`, measured on Claude Code 2.1.270) and, between boundaries, the parent PTY rendering its task footer every second; silence past the stale bound with no gate open now expires the census on the same instant a bare turn is reclaimed, withdrawn and never completed. The gate exemption, the byte-quiescence thresholds, and the no-children reclaim are unchanged. |

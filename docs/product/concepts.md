@@ -411,6 +411,12 @@ changing the harness's personal configuration. When a source cannot identify
 an exact default or an environment policy overrides the request, Exawatt keeps
 that uncertainty or constraint visible instead of inventing control.
 
+An existing local Claude Code or Codex Session can request a new model/effort
+pair through **Apply and resume** between turns. It replaces the process while
+retaining the exact provider conversation and Exawatt Session identity; it does
+not transfer to a different harness or change global defaults. Launch requests
+are not observations of later changes made inside the native terminal.
+
 The registry's source identity and account default are global source facts;
 the composer shows the Project-effective launch choice. Those values may
 differ without contradiction. Model catalogs are discovered from the source

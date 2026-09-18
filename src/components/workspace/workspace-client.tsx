@@ -14,6 +14,8 @@
  * parallel with the ENG-004 spatial regime — independent skins over the
  * same session system (see docs/product/operator-workflow.md).
  */
+import { sessionDelegationBusy } from './session-status';
+import { LiveSessionModelControl } from './live-session-model-control';
 import {
   useCallback,
   useEffect,
@@ -364,6 +366,7 @@ export function WorkspaceClient() {
     reopenClosedSession,
     reopenLastClosedSession,
     resumeTab,
+    changeSessionModel,
     resumeProject,
     resumeAll,
     selectProject,
@@ -2032,6 +2035,28 @@ export function WorkspaceClient() {
                       </span>
                     )
                   ))}
+                {activeSessionTab &&
+                  activeSessionTab.harness !== 'shell' &&
+                  activeSessionTab.lifecycle !== 'draft' && (
+                    <LiveSessionModelControl
+                      key={activeSessionTab.id}
+                      tab={activeSessionTab}
+                      busy={
+                        !!(
+                          activeSessionTab.sessionId &&
+                          (activity[activeSessionTab.sessionId] ||
+                            sessionDelegationBusy(
+                              delegation[activeSessionTab.sessionId]
+                            ) ||
+                            delegation[activeSessionTab.sessionId]?.blockedOn ||
+                            (attention[activeSessionTab.sessionId] &&
+                              attention[activeSessionTab.sessionId]?.kind !==
+                                'turn-end'))
+                        )
+                      }
+                      change={changeSessionModel}
+                    />
+                  )}
                 {/* Shown only where there is a terminal to focus: a draft's
                     pane is the composer, so this control had nothing to
                     address. It keeps its box either way — the button is the

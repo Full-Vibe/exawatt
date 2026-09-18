@@ -227,7 +227,15 @@ export interface GoalVisualRef {
   state: GoalVisual['state'];
 }
 
+export interface SessionModelChange {
+  model: string;
+  effort?: string;
+}
+
 export interface PtySessionInfo {
+  /** Launch request, not an observation of later native model changes. */
+  launchModel?: string;
+  launchEffort?: string;
   id: string;
   durableSessionId: string;
   harness: PtyHarness;
@@ -334,6 +342,10 @@ export interface ClosedSessionEntry {
 }
 
 export interface ElectronPtyApi {
+  changeModel: (
+    id: string,
+    choice: SessionModelChange
+  ) => Promise<PtyCreateResult>;
   create: (options: PtyCreateOptions) => Promise<PtyCreateResult>;
   listAgentModels: (
     harness: Exclude<PtyHarness, 'shell'>,

@@ -100,6 +100,8 @@ export interface RibbonProjectInput {
     miniWidth: number;
   }>;
   active: boolean;
+  /** Explicit icon view; selection remains active and never auto-folds. */
+  compact?: boolean;
 }
 
 export interface RibbonTarget {
@@ -244,7 +246,9 @@ export function layoutRibbonRow(
     projects.map(project => [
       project.dir,
       (project.active
-        ? 'open'
+        ? project.compact
+          ? 'mini'
+          : 'open'
         : folded.has(project.dir)
           ? 'folded'
           : 'mini') as ProjectPresentation,

@@ -504,7 +504,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Agent + Team Workspace',
           summary:
-            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, fresh-Session Clone, semantically merged attention, keyboard-complete Session control, and a convention-v2 roadmap lens.',
+            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, exact-Session model/effort apply-and-resume, active-Project icon collapse, fresh-Session Clone, semantically merged attention, keyboard-complete Session control, and a convention-v2 roadmap lens.',
           layer: 'ui',
           status: 'implemented',
           x: 205,

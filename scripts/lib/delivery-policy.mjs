@@ -72,6 +72,13 @@ const MAX_RERUN_FILES = 25;
  */
 export const SURFACE_GATES = [
   {
+    gate: 'eval:electron:model-change',
+    why: 'applying a model must preserve conversation identity and launch policy through the real control and IPC',
+    match: file =>
+      /session-model-(?:change|control)\.tsx?$/.test(file) ||
+      file === 'scripts/electron-model-change-eval.mjs',
+  },
+  {
     gate: 'eval:workspace:ribbon:bench',
     why: 'the Project ribbon is width/motion-sensitive and has a screenshot bench',
     match: file =>

@@ -15,6 +15,9 @@
  * Nothing in this file can reach `window.electron.pty` — the Demo tenant has
  * no path to a process by construction.
  */
+import { SessionModelControl } from '@/components/workspace/session-model-control';
+import { demoModelCatalog } from './model-choice-source';
+import type { SessionModelChange } from '@/types/electron';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FolderOpen, SquareTerminal, Target } from 'lucide-react';
@@ -141,6 +144,9 @@ export function DemoWorkspaceClient() {
   );
 
   const agents = useMemo(() => demoShellAgents(), []);
+  const [modelChoices, setModelChoices] = useState<
+    Record<string, SessionModelChange>
+  >({});
   const [projects, setProjects] = useState(() => demoShellProjects());
   const [closedTabs, setClosedTabs] = useState<ClosedDemoTab[]>([]);
   const summaries = useMemo(() => demoShellSummaries(), []);
@@ -769,6 +775,20 @@ export function DemoWorkspaceClient() {
                   >
                     {summaries[activeId]}
                   </span>
+                )}
+                {activeTab && (
+                  <SessionModelControl
+                    key={activeTab.id}
+                    loadCatalog={demoModelCatalog}
+                    initialModel={modelChoices[activeTab.id]?.model}
+                    initialEffort={modelChoices[activeTab.id]?.effort}
+                    apply={async choice => {
+                      setModelChoices(previous => ({
+                        ...previous,
+                        [activeTab.id]: choice,
+                      }));
+                    }}
+                  />
                 )}
                 <button
                   type="button"

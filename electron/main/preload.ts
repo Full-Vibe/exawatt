@@ -152,6 +152,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
+    changeModel: (id: string, choice: unknown) =>
+      ipcRenderer.invoke('pty:change-model', id, choice),
     listAgentModels: (harness: string, cwd: string, refresh?: boolean) =>
       ipcRenderer.invoke(
         'pty:list-agent-models',

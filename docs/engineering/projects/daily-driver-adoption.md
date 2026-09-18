@@ -7096,3 +7096,79 @@ pre-existing divergent history. No release workflow or public reseed was run.
   local/cloud identity near the action. Evidence for D46 and ENG-037: research
   handoff summaries and user stories before expanding the bounded prompt bridge.
   Do not label a prompt-only clone an exact resume or live state transfer.
+
+### 2026-09-17 — Terminal menu keyboard repair (BUG-052)
+
+**One shared action menu restores keyboard access without sending menu keys to the PTY.**
+The operator selected BUG-052 alongside BUG-081 and two lightly shaped features.
+Ported only the menu primitive, ribbon adapter, terminal mounting and terminal
+eval from `agent/command-surfaces`; command-palette and service-capability work
+on that branch remains separate. Arrows, type-ahead, Home/End, Enter and Escape
+belong to the menu; Shift+F10 opens it; closing restores xterm focus without
+replaying input or changing scroll position. Uses the design-system chrome-label
+scale, HUD roles and existing popover material. Focus and PTY isolation require
+the real terminal gate before completion.
+
+### 2026-09-17 — Light shaping: Project collapse and Session model changes
+
+**The operator accepted icon-only Project tabs and explicit apply/resume model changes.**
+
+- Audience/action: a daily operator controlling several Sessions; reclaim ribbon
+  space without losing selection, and change compute choice without a fresh
+  conversation. Project freeze is separate and outside this release.
+- Interaction: clicking the active Project name toggles titles and icons;
+  selecting an icon preserves compact mode. Keep status, tooltips, keyboard
+  selection and terminal geometry. Inactive Project selection stays navigation.
+  Compact state is local presentation, not stopping or suspending Agents.
+- Model control: the existing context row opens one shared `OptionMenu` list of exact
+  model/effort combinations (operator correction: no nested dropdowns). Source catalog rows, model-dependent effort and
+  environment locks remain authoritative. The primary action says **Apply and
+  resume**. Initial support: local Claude Code and Codex; other sources explain
+  their unavailable control instead of receiving synthetic terminal keystrokes.
+- Boundary: restart only between turns, with no delegated work or operator gate,
+  and only with an exact provider conversation identity. Preserve launch
+  permissions and durable Session identity; never resend the initial task,
+  create a clone, or change global harness defaults. Unsent terminal text is
+  explicitly disclosed as not preserved. Show launch choices as requests, never
+  pretend to observe model changes the operator made inside the native TUI.
+- States: loading, no catalog/unsupported, busy, identity not yet captured,
+  environment-locked effort, ready, restarting, requested/resumed, failed with
+  saved Session available for recovery. Concurrent requests and post-discovery
+  races must refuse before stopping the process. Tab/Project selection must
+  never move when a delayed command finishes.
+- Visual direction: existing commanding/lucid/kinetic context; chrome-label
+  controls, chrome-meta explanations, standard button/popover material and
+  dense-row spacing from the design system. No new status or color channel.
+  Review in `/hud-gallery/session-controls` before production wiring; DOM only,
+  since no canvas surface changes. Retire the study after acceptance/shipping.
+- Verification: pure layout and model-change behavior tests, real Electron
+  identity/argv/permission evidence, ribbon/terminal/chrome gates, and Demo
+  source isolation. Installed CLI help confirms session-scoped model/effort flags and exact resume;
+  the deterministic harness gate verifies their delivery without a paid inference.
+
+Source check: installed Claude Code 2.1.274 and Codex CLI 0.154.0.
+[Claude's model contract](https://code.claude.com/docs/en/model-config) says
+interactive `/model` can also write a future-session default; this is why this
+release uses explicit launch overrides and exact resume, not injected commands.
+
+### 2026-09-18 — Approved controls wired into Agent and Demo views
+
+**The operator accepted the combined menu and icon collapse for the release.**
+The context row now uses one list of model/effort combinations and an explicit
+Apply and resume action. The same control uses injected Demo catalog/apply ports;
+live Sessions use catalog validation, idle revalidation and exact-identity resume.
+Native Claude Code and Codex do have interactive model commands; the restart is
+Exawatt's current integration boundary, not a claim that harnesses cannot switch
+in place. A future supported control API may avoid the restart.
+
+Project title/icon changes retain their nodes and selection, animate position
+and label opacity in both directions, and respect reduced motion. Width stays
+instantaneous under D45 so the ribbon does not stretch. The accepted temporary
+`session-controls` gallery study is retired; the maintained ribbon bench remains.
+
+Verification before integration: 69 focused contract tests, type-check and lint
+passed. The real Electron menu gate proved keyboard ownership and focus restore;
+the model gate drove the production Model control and proved exact provider and
+durable identity, argv overrides, permission preservation, busy refusal and one
+replacement. Chrome and launcher geometry gates passed. Packaged lifecycle and
+release verification are still required before reporting the update shipped.

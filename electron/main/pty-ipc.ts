@@ -1,5 +1,9 @@
 import { BrowserWindow, Notification, app, nativeTheme, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
+import {
+  createSessionModelChanger,
+  type SessionModelChange,
+} from './pty/session-model-change';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
@@ -359,6 +363,39 @@ export function registerPtyIPC(
       };
     }
   });
+  const changeModel = createSessionModelChanger({
+    session: id => ptySessions.list().find(session => session.id === id),
+    available: id =>
+      !attentionMonitor.isWorking(id) &&
+      !delegationMonitor.isBusy(id) &&
+      !delegationMonitor.get(id)?.blockedOn &&
+      (!attentionMonitor.get(id) ||
+        attentionMonitor.get(id)?.kind === 'turn-end'),
+    catalog: async session =>
+      listAgentModels(
+        session.harness as 'claude' | 'codex',
+        session.cwd,
+        await defaultShell()
+      ),
+    restart: async (id, choice) => {
+      const session = await ptySessions.changeModel(id, choice);
+      attentionMonitor.noteEngaged(session.id);
+      return session;
+    },
+  });
+  handleTrusted(
+    'pty:change-model',
+    async (_event, id: string, choice: SessionModelChange) => {
+      try {
+        return { ok: true as const, session: await changeModel(id, choice) };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+  );
   handleTrusted(
     'pty:list-agent-models',
     async (

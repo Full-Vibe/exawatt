@@ -1,4 +1,8 @@
 import { EventEmitter } from 'events';
+import {
+  modelChangeResumeOptions,
+  type SessionModelChange,
+} from './session-model-change';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -106,6 +110,9 @@ export interface PtySessionInfo {
   lastDataAt: number;
   /** Durable provider identity; unlike `id`, survives a new PTY process. */
   harnessSessionId: string | null;
+  /** Requested at launch; native in-terminal changes may differ. */
+  launchModel?: string;
+  launchEffort?: string;
 }
 
 /**
@@ -153,6 +160,7 @@ export async function defaultShell(): Promise<string> {
 }
 
 interface Session {
+  launchOptions: PtyCreateOptions;
   proc: pty.IPty;
   info: PtySessionInfo;
   /** Real path used only for provider identity matching. Keep info.cwd as the
@@ -449,11 +457,14 @@ export class PtySessionManager extends EventEmitter {
       exitCode: null,
       lastDataAt: Date.now(),
       harnessSessionId,
+      launchModel: options.model,
+      launchEffort: options.effort,
     };
 
     const statedTask =
       options.initialPrompt?.trim() || options.statedTask?.trim();
     this.sessions.set(id, {
+      launchOptions: { ...options },
       proc,
       info,
       codexIdentityCwd: canonicalCwd,
@@ -937,6 +948,46 @@ export class PtySessionManager extends EventEmitter {
       s.proc.kill(signal)
     );
     await this.flushHistory();
+  }
+
+  async changeModel(
+    id: string,
+    choice: SessionModelChange
+  ): Promise<PtySessionInfo> {
+    const session = this.sessions.get(id);
+    if (!session || session.info.exited)
+      throw new Error('Session is no longer running.');
+    const options = modelChangeResumeOptions(
+      session.info,
+      session.launchOptions,
+      choice
+    );
+    // Subscribe before stopping: process death and node-pty's exit callback are
+    // separate boundaries. The old exit must settle before the replacement exists.
+    let onExit: (exitedId: string) => void = () => {};
+    let expiry: ReturnType<typeof setTimeout> | undefined;
+    const exited = new Promise<void>((resolve, reject) => {
+      expiry = setTimeout(
+        () =>
+          reject(
+            new Error(
+              'Agent stop was not confirmed. Resume the saved Session before changing model.'
+            )
+          ),
+        10_000
+      );
+      onExit = exitedId => {
+        if (exitedId === id) resolve();
+      };
+      this.on('exit', onExit);
+    });
+    try {
+      await Promise.all([this.stop(id), exited]);
+      return await this.create(options);
+    } finally {
+      if (expiry) clearTimeout(expiry);
+      this.off('exit', onExit);
+    }
   }
 
   /**

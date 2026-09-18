@@ -123,6 +123,8 @@ function persistedGoalVisual(
  * rather than these fields with empty values in them.
  */
 export interface SessionTab {
+  launchModel?: string;
+  launchEffort?: string;
   kind: 'session';
   /** stable across revives (sessionId changes when a tab is re-launchd) */
   id: string;
@@ -402,6 +404,8 @@ export function tabFromPtySession(
     roadmapItemId,
     initialTask,
     startedAt: session.startedAt,
+    launchModel: session.launchModel,
+    launchEffort: session.launchEffort,
   };
 }
 
@@ -494,6 +498,8 @@ export interface PersistedV6 {
        * persists; an untouched ⌘T tile still vanishes without ceremony. */
       draftTask?: string | null;
       draftSource?: string | null;
+      launchModel?: string;
+      launchEffort?: string;
       draftModel?: string | null;
       draftEffort?: string | null;
       draftTouched?: boolean;
@@ -757,6 +763,17 @@ export function parsePersisted(raw: unknown): PersistedV7 | null {
           return [
             {
               ...session,
+              launchModel:
+                typeof session.launchModel === 'string' &&
+                session.launchModel.length <= 512 &&
+                !/[\s\u0000-\u001f\u007f]/.test(session.launchModel)
+                  ? session.launchModel
+                  : undefined,
+              launchEffort:
+                typeof session.launchEffort === 'string' &&
+                /^[a-z][a-z0-9_-]{0,31}$/.test(session.launchEffort)
+                  ? session.launchEffort
+                  : undefined,
               kind: 'session' as const,
               durableSessionId,
               titleKind:
@@ -1236,6 +1253,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                     harness: tab.harness,
                     cwd: tab.cwd,
                     initialTask: tab.initialTask ?? null,
+                    launchModel: tab.launchModel,
+                    launchEffort: tab.launchEffort,
                     harnessSessionId: tab.harnessSessionId,
                   },
                 ]
@@ -1470,6 +1489,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 kind: 'session' as const,
                 initialTask,
                 startedAt: s.startedAt,
+                launchModel: s.launchModel,
+                launchEffort: s.launchEffort,
                 sessionId: s.id,
                 harnessSessionId:
                   s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
@@ -2665,6 +2686,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           durableSessionId: tab.durableSessionId,
           ...(permissionMode ? { permissionMode } : {}),
           ...(exactId ? { resumeSessionId: exactId } : {}),
+          ...(tab.launchModel ? { model: tab.launchModel } : {}),
+          ...(tab.launchEffort ? { effort: tab.launchEffort } : {}),
           ...(tab.initialTask ? { statedTask: tab.initialTask } : {}),
           ...(restoredSubtitle ? { restoredSubtitle } : {}),
           ...(size ?? {}),
@@ -2703,6 +2726,40 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       return true;
     },
     [summariesRef, updateTab]
+  );
+
+  const changeSessionModel = useCallback(
+    async (
+      tabId: string,
+      choice: import('@/types/electron').SessionModelChange
+    ) => {
+      const api = window.electron?.pty;
+      const tab = stateRef.current.projects
+        .flatMap(project => project.tabs)
+        .find(item => item.id === tabId);
+      if (!api || !tab || !isSessionTab(tab) || !tab.sessionId)
+        throw new Error('Session is no longer running.');
+      const result = await api.changeModel(tab.sessionId, choice);
+      if (!result.ok) throw new Error(result.error);
+      const retained = stateRef.current.projects.some(project =>
+        project.tabs.some(item => item.id === tabId)
+      );
+      if (!retained) {
+        await api.closeSession(result.session.durableSessionId);
+        return;
+      }
+      updateTab(tabId, {
+        sessionId: result.session.id,
+        harnessSessionId: result.session.harnessSessionId,
+        launchModel: result.session.launchModel,
+        launchEffort: result.session.launchEffort,
+        lifecycle: 'running',
+        resumeState: 'resumed',
+        exitCode: null,
+        startedAt: result.session.startedAt,
+      });
+    },
+    [updateTab]
   );
 
   const resumeTabs = useCallback(
@@ -3418,6 +3475,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     reopenLastClosedSession,
     listClosedSessions,
     resumeTab,
+    changeSessionModel,
     resumeProject,
     resumeAll,
     selectProject,

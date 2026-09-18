@@ -77,3 +77,10 @@ genuinely search-first and has its own ranking layer (D48).
   different behaviours across three axes in one panel.
 - If a future component library is ever adopted, `option-menu.tsx` is the one
   file that has to be reimplemented, not every call site.
+
+## 2026-09-17 amendment — Action menus share the primitive (BUG-052)
+
+The shared option-menu module now has an `ActionMenu` face for verbs. Terminal
+and ribbon context menus use it with a caller-owned synchronous close-focus
+callback; selection menus retain their listbox semantics. This replaces the
+handwritten terminal keyboard mechanism without changing launch choices.

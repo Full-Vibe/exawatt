@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -101,7 +101,10 @@ describe('single-row Project ribbon (D45)', () => {
     const b1 = container.querySelector('[data-tab-id="b1"]');
     expect(b1).not.toBeNull();
     expect(b1).toHaveAttribute('data-tab-condensed');
-    expect(b1?.textContent).not.toContain('Initiative b1');
+    expect(b1?.querySelector('[data-tab-label]')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
     expect(b1?.querySelector('[aria-label="Close Initiative b1"]')).toBeNull();
   });
 
@@ -134,12 +137,10 @@ describe('single-row Project ribbon (D45)', () => {
     // the row blank.
     const cap = `${DEFAULT_RIBBON_POLICY.maxTabWidth}px`;
     expect(
-      (container.querySelector('[data-tab-id="a1"]') as HTMLElement).style
-        .width
+      (container.querySelector('[data-tab-id="a1"]') as HTMLElement).style.width
     ).toBe(cap);
     expect(
-      (container.querySelector('[data-tab-id="a2"]') as HTMLElement).style
-        .width
+      (container.querySelector('[data-tab-id="a2"]') as HTMLElement).style.width
     ).toBe(cap);
   });
 
@@ -202,7 +203,10 @@ describe('single-row Project ribbon (D45)', () => {
     // The reported bug: a five-tab Project used to blank every other
     // Project's chips while a one-tab Project showed them all.
     const projects = [
-      project('/big', Array.from({ length: 5 }, (_, i) => tab(`big-${i}`))),
+      project(
+        '/big',
+        Array.from({ length: 5 }, (_, i) => tab(`big-${i}`))
+      ),
       project('/mid', [tab('m1'), tab('m2')]),
       project('/small', [tab('s1')]),
     ];
@@ -252,14 +256,18 @@ describe('single-row Project ribbon (D45)', () => {
     // An empty Project has no Agents to summarise, so it grows no dot —
     // which also means closing the last tab cannot shift the chips beside
     // it out from under the pointer mid-close (the D41 stability window).
-    const populated = [project('/alpha', [tab('a1')]), project('/beta', [tab('b1')])];
+    const populated = [
+      project('/alpha', [tab('a1')]),
+      project('/beta', [tab('b1')]),
+    ];
     const emptied = [project('/alpha', [tab('a1')]), project('/beta', [])];
     const { container, rerender } = ribbon({
       projects: populated,
       activeDir: '/alpha',
     });
     const marksIn = (name: string) =>
-      container.querySelector(`[data-project="${name}"]`)
+      container
+        .querySelector(`[data-project="${name}"]`)
         ?.querySelectorAll('[data-project-signal]').length;
     expect(marksIn('beta')).toBe(0);
     rerender(view({ projects: emptied, activeDir: '/alpha' }));
@@ -324,9 +332,9 @@ describe('single-row Project ribbon (D45)', () => {
     const { container } = ribbon({ projects, activeDir: projects[0].dir });
     expect(container.querySelector('[data-ribbon-overflow]')).toBeNull();
     // every Project still has a chip on screen
-    expect(container.querySelectorAll('[data-ribbon-item="project"]')).toHaveLength(
-      projects.length
-    );
+    expect(
+      container.querySelectorAll('[data-ribbon-item="project"]')
+    ).toHaveLength(projects.length);
   });
 });
 
@@ -376,5 +384,30 @@ describe('folded Projects stay reachable', () => {
     // at rest the container reports how much work it holds
     expect(badge?.getAttribute('data-project-folded-ordinals')).toBeNull();
     expect(badge?.textContent).toBe('3');
+  });
+});
+
+// Manual compact mode changes presentation, never the selected Session.
+describe('manual Project compact mode', () => {
+  it('keeps every Agent reachable and restores titles on the next header click', () => {
+    const projects = [project('/only', [tab('one'), tab('two')])];
+    const { container } = ribbon({ projects, activeDir: '/only' });
+    const header = container.querySelector(
+      '[data-project-chrome]'
+    ) as HTMLElement;
+    fireEvent.click(header);
+    expect(header).toHaveAttribute('aria-expanded', 'false');
+    const icon = container.querySelector(
+      '[data-tab-id="two"] [data-tab-chrome]'
+    ) as HTMLElement;
+    expect(icon).toHaveAccessibleName();
+    fireEvent.click(icon);
+    expect(header).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelectorAll('[data-tab-id]').length).toBe(
+      projects[0].tabs.length
+    );
+    fireEvent.click(header);
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(container.querySelector('[data-tab-condensed]')).toBeNull();
   });
 });

@@ -733,12 +733,12 @@ a stated bound (age, count, or bytes) and a named owner for eviction, enforced
 where the value is written rather than where it is read. Decision `0039` holds
 the rule and the three defects that produced it.
 
-| store                           | shape                                                           | bound                                                                                                                                                                                                   | eviction owner                                                                 |
-| ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `workspace.json`                | small-object layout: ids, titles, cwds, lifecycle, drafts       | no large field may live here at all                                                                                                                                                                     | —                                                                              |
-| `goal-visuals/`                 | content-addressed side store, keyed by `GoalVisual.identityKey` | 64 entries / 48 MB                                                                                                                                                                                      | the workspace save path, which is the only place that knows the referenced set |
+| store                           | shape                                                           | bound                                                                                                                                                                                                                                                                                                                                                     | eviction owner                                                                                               |
+| ------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `workspace.json`                | small-object layout: ids, titles, cwds, lifecycle, drafts       | no large field may live here at all                                                                                                                                                                                                                                                                                                                       | —                                                                                                            |
+| `goal-visuals/`                 | content-addressed side store, keyed by `GoalVisual.identityKey` | 64 entries / 48 MB                                                                                                                                                                                                                                                                                                                                        | the workspace save path, which is the only place that knows the referenced set                               |
 | `consumption-scan/log-v1.jsonl` | append log compacted from live state                            | samples: 14 days behind the newest sample (an anchor no further than a day past wall time), widened to cover an active Operator-profile publication anchor and to the 400-day ceiling while that anchor is still unknown, re-read live at hydrate and after every pass (BUG-141); observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write; `retention-policy.ts` owns the horizon |
-| `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                | `AgentModelCatalogCache.write`, plus one sweep on load                         |
+| `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                                                                                                                                                                  | `AgentModelCatalogCache.write`, plus one sweep on load                                                       |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written
@@ -1058,3 +1058,15 @@ Planned:
 ## Documentation Contract
 
 See `AGENTS.md`. Product, architecture, roadmap, and decision docs are live system state and must be updated with relevant changes.
+
+### Session model reconfiguration (ENG-016 FIX-016)
+
+The renderer's shared Session model menu consumes injected catalog and command
+ports; Demo Mode supplies fixture choices without a PTY path. Electron's trusted
+`pty:change-model` boundary validates model/effort against the source catalog,
+rechecks activity after discovery and serializes changes per runtime. The PTY
+manager waits for the old exit event before creating a replacement with the
+same provider and durable Session identity and original permission policy.
+It never writes a slash command into unknown terminal input. Launch choices
+persist with the Session layout and remain explicitly distinct from observed
+native configuration. Initial support is local Claude Code and Codex.
