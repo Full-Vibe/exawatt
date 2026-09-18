@@ -34,7 +34,15 @@ Type, and importing a named source Agent never creates a Type automatically.
 Marcus may be an individual Agent whose explicit Type is Reddit Marketer;
 another Reddit Marketer remains another coworker.
 
-**Mechanism already proven.** ENG-023 D1 verified that Exawatt can inject per-launch settings into Claude Code via `claude --settings <file>` — settings that MERGE with the user's own project hooks rather than clobbering them, written into Exawatt's own state directory, never mutating `~/.claude`. That is exactly the injection seam an Agent Type needs. ENG-016 D35 already crosses a typed launch boundary carrying model and effort. Types extend an existing path rather than inventing a meta-harness.
+**Transport seam proven; instruction composition still needs evidence.** ENG-023
+D1 verified per-launch Claude hook settings and merge behavior without mutating
+user configuration. That does not prove system/developer instruction precedence,
+resume adoption or child inheritance. ENG-023 D8's
+[provider matrix and launch contract](delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end)
+plans those proofs for optional environmental context. ENG-016 D35 already carries
+model/effort across a typed launch boundary. Types can reuse established transport
+and evidence, but retain their own portable identity, instructions and required-
+capability policy; D8 is not a Type rollout.
 
 **Storage.** Types are repo-storable _and_ portable across projects; the operator explicitly rejected the framing that those are mutually exclusive. Design toward a documented file format so a Type can live in a project repo, follow the operator between projects, and eventually be shared or vended by others.
 

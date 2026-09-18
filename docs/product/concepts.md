@@ -139,6 +139,11 @@ appearing as several clones. A bounded subagent run is delegated work beneath
 that coworker; a separately configured, persistent, directly addressable worker
 may project as another Agent. Concurrency alone never creates a new coworker.
 
+Planned ENG-023 D6 preserves observed delegated membership independently of
+rendering budgets and filters. Parent Agents, delegated runs and matching results
+are distinct counts; contextual ancestors support navigation without becoming
+matches or bulk-command targets. Coverage qualifies the evidence, not work state.
+
 ## Session
 
 A durable context-bearing execution record for an Agent. A Session may be an
@@ -441,6 +446,11 @@ variant. The Harness is derived from the configured source; it is not sufficient
 identity by itself because two source instances may use the same Harness with
 different endpoints, accounts, catalogs, or readiness. Agent Type is a future
 axis and remains explicitly coming soon; no Type identity is created today.
+
+Planned ENG-023 D8 adds disclosed environmental context beside the launch task,
+not another configuration identity or Agent Type. A Session receipt distinguishes
+prepared text, supplied text and verified model adoption. Context provides no
+new control authority and makes no promise of child inheritance or live visibility.
 
 A Launch Configuration exists so that starting an Agent is one choice rather
 than an assembly of independent settings. Its identity is deliberately those

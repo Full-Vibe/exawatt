@@ -2600,3 +2600,14 @@ Per-milestone acceptance detail and progress logs live in the project doc; keep 
 Project doc:
 
 - `docs/engineering/projects/spatial-operations-board.md`
+
+## 2026-09-18 — planned delegation population boundary
+
+ENG-023 D6 owns full delegated membership, entity query and coverage before
+board budgets. DOM and WebGL consume one model; full inspection cannot resolve
+from capped geometry. Project footprint retains its parent-Agent population
+meaning, child peer scale stays at the accepted 0.92 ratio, and bulk commands
+still target commandable Agents only. New context/aggregate/coverage visuals
+require a shared-fixture gallery review; this is not a shipped surface change.
+
+[Canonical execution detail](delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).

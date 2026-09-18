@@ -624,7 +624,7 @@ export const architectureManifest = {
           id: 'ui-model',
           label: 'UI Model',
           summary:
-            'Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes. Production Agent, Team, and Fleet surfaces now resolve local and customer-hosted coworkers through the same source-qualified Agent and Project identities.',
+            'Planned ENG-023 D6 adds a full delegation census and entity queries before bounded projection (not yet implemented). Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes. Production Agent, Team, and Fleet surfaces now resolve local and customer-hosted coworkers through the same source-qualified Agent and Project identities.',
           layer: 'coordination',
           status: 'active-build',
           x: 80,
@@ -636,7 +636,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One declaration contract plus Electron-main observations power Settings, launch, delegation, saved customer-hosted OpenClaw attachment, authoritative reconnect, coworker projection, and source-granted primary-conversation commands. Codex delegation uses its version-probed read-side app-server protocol, atomically reconciles verified children, isolates child and parent-activity read failures, separately publishes complete/partial/unavailable observation health to Agent Sources, and rejects stale connection observations; replay positions remain optional declared capabilities. A pure retained-history projection now normalizes bounded Codex/Claude records without IO or execution; production reading remains unwired.',
+            'Planned ENG-023 D8 adds disclosed environmental context and operation-specific delivery receipts (not yet implemented). One declaration contract plus Electron-main observations power Settings, launch, delegation, saved customer-hosted OpenClaw attachment, authoritative reconnect, coworker projection, and source-granted primary-conversation commands. Codex delegation uses its version-probed read-side app-server protocol, atomically reconciles verified children, isolates child and parent-activity read failures, separately publishes complete/partial/unavailable observation health to Agent Sources, and rejects stale connection observations; replay positions remain optional declared capabilities. A pure retained-history projection now normalizes bounded Codex/Claude records without IO or execution; production reading remains unwired.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

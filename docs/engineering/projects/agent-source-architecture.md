@@ -744,3 +744,13 @@ ENG-023's environment-awareness work (BUG-133). No browser vendor or first-party
 implementation is selected. Reuse the capability-boundary investigation in
 `agent-terminal-workspace.md`; distinguish missing tools from missing context
 before shaping implementation. Prompt text alone cannot grant browser access.
+
+## 2026-09-18 — planned context capability boundary
+
+ENG-023 D8 separates per-source launch-context support from each Session's
+actual delivery receipt. Hook injection support does not prove prompt composition
+or resume adoption; missing hooks do not imply missing additive context support.
+Use the provider matrix and preservation gates in the linked brief. Existing
+launchability, source custody and external attachment behavior remain unchanged.
+
+[Canonical execution detail](delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).

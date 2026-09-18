@@ -476,6 +476,25 @@ An unavailable or incompatible protocol withdraws the observation to absent;
 files, worktrees, process trees, and terminal text are never delegation
 evidence.
 
+#### Planned delegation evidence and launch context (ENG-023 D6/D8)
+
+The [researched execution brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end)
+and proposed decision `0041` extend the existing owners rather than introducing
+another orchestration layer. Source/lifecycle adapters retain scoped identity,
+immediate-parent lineage and root coverage; shared `ui-model` selectors own the
+full census, same-entity query, match/context sets and exact summaries before
+bounded DOM/WebGL projection. Full inspection must not read a capped drawing
+payload. Parent Agent, delegated-run and bulk-command counts remain distinct.
+
+Separately, Electron main prepares an optional Exawatt environmental contribution
+and a safe launch-generation receipt; each source adapter must prove instruction
+preservation and model adoption for its supported fresh/resume paths. Operator
+task, provider configuration, hook credentials and future Types keep separate
+custody. Only Exawatt-authored text enters the receipt. Prepared, supplied and
+verified adoption are distinct; external attachment is not prompt delivery.
+These are planned contracts, not current runtime capabilities. UX direction is
+proposed and new visual states require gallery review before production wiring.
+
 #### Agent Source registry and connection truth
 
 Settings consumes a source-agnostic Agent Source registry rather than reading

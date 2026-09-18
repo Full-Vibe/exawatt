@@ -6,6 +6,10 @@ This is execution detail for ENG-023, not a separate roadmap. The **design pass
 ran 2026-07-27** with the operator; its conclusions are recorded on the roadmap
 item, and this doc holds the durable evidence and contracts behind them.
 
+Current execution direction: [D6/D8 research brief, 2026-09-18](#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).
+Earlier sections are dated history where amended by that brief or the roadmap's
+Amendment chain; D5.1 is implemented, D6/D8 remain planned.
+
 ## Why this doc exists
 
 The roadmap item began as a direction capture, not a plan. It arrived with
@@ -800,7 +804,7 @@ What shipped against §9's acceptance list:
   the parent and lineage rides a spoke from the parent centre rather than a size
   difference. D3c's `0.72–0.82x` band and `0.70x` floor are superseded — a
   delegated worker is not a lesser Agent. A child still is not independently
-  commandable (arrow navigation skips it, it never joins **Direct N Agents**,
+  commandable (it never joins **Direct N Agents**,
   and activating opens the parent Session); at peer scale that is a mismatch to
   resolve when D2 gives a child a destination.
 - **Children carry the D40 Active mark** (2026-08-07, operator): a live child is
@@ -813,7 +817,7 @@ What shipped against §9's acceptance list:
   same lineage. Existing siblings keep their slots. A settled constellation adds
   no frames, and reduced motion keeps identical topology and census with no
   travel.
-- **Aggregation**: aggregate pieces carry no delegation, so the very-far tier
+- **Aggregation (historical implementation; superseded as a semantic contract by D6 below)**: aggregate pieces carry no delegation, so the very-far tier
   emits no units by construction and a large fleet never becomes a hairball.
   The 1k/10k tiers stay at six draw calls.
 - **Accessibility**: every visible child is a focusable DOM control whose name
@@ -826,8 +830,8 @@ What shipped against §9's acceptance list:
   list into an exact remaining count. Absent stays absent — an unreported
   description renders as such and never as a fabricated one.
 
-**Open, not settled.** §9 reserved three calls for gallery review. The ratio is
-fixed at `0.72x`; the orbit places each child just clear of the parent body,
+**Historical tuning note, amended by the operator's `0.92x` decision above.**
+§9 reserved three calls for gallery review. The initial ratio was `0.72x`; the orbit places each child just clear of the parent body,
 close enough that a dense Project altitude stays legible and far enough that no
 outline is needed to separate them; and the overflow lobe was chosen over a
 second ring. The
@@ -1061,3 +1065,443 @@ was visually inspected at 1200×760. Normal delivery reruns the required gates o
 the integrated candidate and queues dogfood installation; queued is not installed.
 The provider limitation remains open: this repairs isolation and disclosure,
 not the missing upstream authority.
+
+## 2026-09-18 — D6 and D8 execution brief: truthful delegation end to end
+
+**Give agents truthful Exawatt context and preserve every observed worker through the UI.**
+This is planning, not a shipped capability. The operator requested researched,
+holistic improvements for BUG-133 half 1 and BUG-134, with parallel execution-ready
+work. D6 owns population/lineage/query/projection; D8 owns disclosed launch context.
+They share evidence vocabulary, not a new orchestration service. ENG-028 Types,
+ENG-029 coordination, and D2 independent child conversation remain separate.
+
+### Current evidence and ownership
+
+Research baseline: integrated `9aeae5a7`, 2026-09-18. The operator and suggestions
+feedback lanes both contained zero untriaged rows; this pass promoted no inbox
+rows. Four independent investigations covered launch architecture, installed
+provider mechanisms, population selectors, and the user journey. Local probes
+were read-only; no model requests, credentials changes, or user configuration
+writes were made. Recheck installed versions before implementation.
+
+| Finding | Current evidence / consequence |
+| --- | --- |
+| D5.1 is integrated | `563dcd72` / decision `0040`: verified siblings survive failed reads; source Settings exposes observation health. This does not supply natural-language context or repair aggregation/filtering. |
+| Context and task have different owners | `harness-command.ts` validates operator `initialPrompt` and rejects it on exact resume; `session-manager.ts` wires integrations before spawn. Context must never become a fake task or replayed turn. |
+| Filter precedes child representation | `ui-model/src/index.ts::filterFleetState` matches parents only; `seedDelegationUnits` requires a visible parent. The matching child is never independently considered. |
+| Geometry incorrectly owns semantics | `spatial-board.ts` truncates child metadata to five, aggregates parent counts only, and the Fleet inspector reads the capped piece. Aggregate visibility/counts also ignore parent filter matches in some paths. Repair the shared query/summary boundary, not just child dots. |
+| Lineage is dropped upstream | Codex reads `parentThreadId` to resolve activity, then omits it from `ObservedChild`/published children. `AgentDelegatedChild` has no immediate-parent field. Geometry cannot reconstruct a source fact discarded here. |
+| Identity and propagation need repair | Child activation looks up bare child ID although board IDs are root-scoped. The local transport's dedupe key omits start time, and would miss added lineage/coverage unless amended. |
+| Provider support is operation-specific | Additive fresh-launch syntax does not establish safe resume, custom-agent composition, or child inheritance. Matrix below records actual evidence. |
+
+Adjacent candidates are **not integrated dependencies** merely because their docs
+say “landed.” Inspect ancestry at pickup, do not cherry-pick or alter their worktrees:
+
+| Candidate lane | Reuse boundary |
+| --- | --- |
+| `agent/delegation-census` (`85bfd314` at research) / D7, BUG-081 | Shared lifecycle census/expiry owner. D6 consumes/reconciles that owner after integration; it must not create another lifecycle reducer. `agent/quick-update` also carries this work; establish its current delivery state first. |
+| `agent/fix-renderer-blockers` (`900a8a00`) / BUG-145 | Corrects unreported **parent** status counts in selection. Preserve it in the common summary; it does not fix BUG-134. Its BUG-133 metadata repair must survive roadmap reconciliation. |
+| `agent/fleet-excellence` / ENG-004 | Filter-empty versus fleet-empty behavior and keyboard ownership are adjacent candidates. Reuse after reconciliation; do not recut their UX. |
+| `agent/command-surfaces`, `agent/lifecycle-vocabulary` | Resolve new inspection/navigation entry points through the current command and lifecycle contracts rather than adding local menu or status derivations. |
+
+### Shared architectural contract
+
+Keep five distinct facts: **operator task, supplied environment context,
+source-observed delegated membership, observation coverage, and UI representation**.
+Neither a prompt receipt nor an aggregate mark proves lifecycle. A lost read is
+not completion; a successful zero census is not missing coverage; a contextual
+parent is not a matching result; a drawn worker is not automatically commandable.
+Decision `0041` records the proposed decomposition and its review boundary.
+
+The common product outcome is that an operator can delegate, find the observed
+workers, understand limits, and return to the owning Session without stopping
+work to recreate it manually. First-time users should not need to understand
+provider internals. Frequent operators need quiet, stable density and short facts.
+This expresses the existing commanding/lucid/kinetic design context through
+accurate evidence and purposeful navigation, not more permanent chrome.
+
+### D8 — disclosed, source-owned launch context
+
+**Use one typed launch contribution, never natural-language interception.**
+`Launch Configuration` remains the reusable launch choice, `Agent Type` remains
+a future portable worker blueprint, and this contribution is only environmental
+context supplied by Exawatt. Do not introduce another top-level product noun.
+
+Main-process composition owns one bounded, versioned text contribution containing:
+Exawatt identity; the relationship of this Session to its Project; the distinction
+between source-created delegated work and separately launched Sessions; stable,
+conditional navigation guidance; and the limits of observation and control.
+Source adapters own encoding through a declared safe mechanism. The same renderer-
+safe receipt serves disclosure; UI does not reconstruct the prompt independently.
+
+Content intent, not a frozen test string: source-reported children may be inspected
+in Fleet under their owning Session; child activation can open that parent;
+Agent Sources reports observation coverage; children do not automatically acquire
+separate tabs. Never claim current counts, visibility, completion, UI focus,
+independent interaction, or ability to navigate on the operator's behalf. A model
+may explain where to go; this work gives it no new UI-control authority.
+
+Delivery evidence is distinct from source capability. Represent prepared text,
+actually supplied mechanism, and **verified model-visible context** separately.
+A successful process spawn or argv construction proves only supply. A receipt
+records template revision/digest, launch operation, mechanism, evidence basis,
+bounded exact Exawatt-authored text and reason when omitted, unsupported,
+conflicted or failed. Never retain or expose the composed provider value when it
+contains user instructions. Bind receipts to durable Session ID, launch generation,
+source/version and timestamp; reject stale asynchronous receipt updates.
+Historical receipts are not proof that a resumed process adopted new instructions.
+Do not label a source “context aware” based only on a flag or a plausible answer.
+
+Privacy/ownership contract:
+
+- V1 contains product-authored environmental facts, not arbitrary repo content,
+  other Project names, inventory, absolute paths, prompts/results, provider config,
+  credentials, hook tokens, or analytics IDs. The harness already has its cwd;
+  duplicating sensitive context is unnecessary. Treat any later user-authored
+  contribution as quoted data, never privileged instructions.
+- Preview and inspection show exactly what Exawatt supplies and make clear it
+  travels through the chosen provider. Keep the model-readable artifact separate
+  from token-bearing hook settings. Never expose those settings as prompt text.
+- Proposed hard bound: 4 KiB UTF-8 per contribution, with a normal copy target
+  below roughly 400 estimated tokens. Estimate is not a model-independent token
+  guarantee. Oversize input fails compilation visibly, never silently truncates.
+- Reuse app-owned, owner-readable per-launch file lifecycle where a file is needed;
+  cleanup on failed spawn/exit/startup residue. Keep any retained safe receipt with
+  the existing Session record and its retention owner, not an unbounded new ledger.
+  Retain the current receipt and only an explicitly
+  bounded prior receipt if needed; Session forget/reap clears both.
+  Declare its size class under decision `0039` before adding persistent storage.
+- Preserve provider defaults, effective user/project instructions, selected custom
+  agent, permissions, tools, hooks and sandbox. No global/project config mutation,
+  `AGENTS.md` edits, provider-home substitution, terminal typing, or task-prefix hack.
+- Context is optional environment assistance. A conflict omits it with a reason
+  while preserving ordinary launch. If a future Type requires context delivery,
+  ENG-028 owns that stronger launch requirement; do not invent it here.
+
+#### Provider research matrix (read 2026-09-18)
+
+| Source / locally observed version | Evidence and candidate mechanism | Shipping gate |
+| --- | --- | --- |
+| Claude Code 2.1.274 | Official CLI supports additive `--append-system-prompt[-file]`. Existing `--settings` owns hook composition. | Fresh launch must preserve defaults/hooks. Resume normally reuses its first-request prompt snapshot until compaction; neither new argv nor a new file proves immediate adoption. Do not silently switch snapshot policy. Child-specific append flags are print-only, not proof of interactive inheritance. |
+| Codex 0.154.0 | `-c developer_instructions=…` is accepted by fresh/resume CLI; official config describes additional instructions. | It is a **scalar override**, not a merge with the user's existing key. Prove safe effective-config composition, correct precedence, resume adoption, and deduplication. If preservation cannot be established, disclose conflict/unverified support. Never substitute `model_instructions_file`, which replaces built-in instructions. |
+| OpenCode 1.18.30 | Existing `OPENCODE_CONFIG_CONTENT` seam can carry instruction-file paths; official rules combine configured files with `AGENTS.md`. | Prove cross-layer array composition, managed-setting precedence, custom-agent/default-prompt preservation and resume. Preserve the existing refusal to overwrite occupied inline config. Do not assume agent `prompt` is additive. |
+| Grok Build 1.0.3 | Installed help exposes additive interactive `--rules`; the official reference also documents its `--append-system-prompt` alias. | Prove fresh/resume behavior and permission/tool invariance. Its missing injectable delegation hooks do not mean context is unsupported. Do not use replacing `--agent`; that rejection remains binding. |
+| OpenClaw, local or hosted | Connected sources attach existing coworkers outside the local PTY launch union. | Do not retrofit or mutate their prompts. Mark not applied for attachment. A future source-owned launch/write capability needs its own proof and custody. |
+| Custom / shell / Demo | Custom is not currently a runnable adapter; shell is deliberately not an Agent; Demo is a first-class source. | No text for shell. No invented custom capability. Demo simulates the same contract and receipts through its source adapter, without provider invocation. |
+
+Primary references, with read date above:
+[Claude CLI and resumed prompt snapshots](https://code.claude.com/docs/en/cli-reference#system-prompt-flags-in-resumed-conversations),
+[Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
+[Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents),
+[OpenCode configuration precedence](https://opencode.ai/docs/config/),
+[OpenCode rules](https://opencode.ai/docs/rules/),
+[OpenCode agents](https://opencode.ai/docs/agents/),
+[Grok CLI reference](https://docs.x.ai/build/cli/reference).
+These are mechanisms, not evidence that Exawatt already applies them. Local help
+and official docs differ; absence from help is not proof of absence.
+
+#### Lifecycle matrix and provider proof
+
+| Path | Required behavior |
+| --- | --- |
+| Fresh | Compose once in main before the operator task; preserve task bytes, selected source and exact identity capture. |
+| Exact resume | Keep provider conversation identity and no extra user turn/task replay. Verify immediate adoption separately from after-compaction adoption. Otherwise show historical, not supplied, or supplied-but-adoption-deferred/unverified context honestly. |
+| Clone or fresh continuation | Build target-source context anew; existing handoff remains the task. Do not copy old receipts, tokens, injection syntax or stale capability assertions. |
+| Recovery after app restart | Re-evaluate delivery for the new process; metadata-only `statedTask` and subtitle remain unsent. A stored receipt is historical evidence only. |
+| Already-running / external | No keystroke retrofit. No claim of delivery. |
+| Delegated child | Do not promise inheritance. Verify default/custom/nested child configurations separately; children receive no parent control credentials or false independent Exawatt Session identity. |
+| Compaction / configuration update | Probe retention and deduplication; record changes without replacing unrelated instructions. No silent switch of provider prompt-snapshot policy. |
+
+Use isolated temporary canary configuration, source-native debug facilities where
+available, and actual launch commands. Inspect only sanitized canary preservation
+results, never log real effective configuration. Codex `debug prompt-input` and
+OpenCode `debug config` / `debug agent` are possible evidence tools, not assumed
+universal APIs. Read-only debug inspection may establish prompt assembly; any
+remaining model-comprehension check is a small explicit manual acceptance probe,
+not a probabilistic CI assertion that an answer contains “Fleet.” BUG-133 cannot
+close on Claude-only support: the affected Codex path must meet its delivery and
+preservation contract or remain explicitly partial/open.
+
+### D6 — census first, query second, representation last
+
+**One source-neutral roster owns membership; geometry never owns truth.**
+The pipeline is source report → existing lifecycle reconciliation → normalized
+root-scoped census and coverage → entity query → summaries and representation
+buckets → DOM/WebGL. Preserve source-observed immediate parent independently from
+the root Session used for navigation. Unknown lineage stays unknown; cycles and
+missing ancestors fall back to the known root for navigation only. Retain an
+invalid/unknown lineage fact; never draw the fallback as an asserted immediate-
+parent edge. Reject self/cross-root edges and resolve parent IDs only in scope.
+
+Identity must distinguish source instance, durable root Session and provider child
+ID; use launch/connection generations to reject stale observations, not as a
+replacement for durable Session identity. Resolve any provider ID-reuse semantics
+in the source adapter before publishing a new child incarnation. Same provider ID under two roots must never collide; opaque ID equality alone
+cannot select a child. Retain metadata/time/lineage changes through transport
+change detection. Do not infer ancestry from labels, paths, screen proximity, or
+arrival order. Consume D7 if integrated; otherwise reconcile its contract with
+its owner before editing shared lifecycle files.
+
+Counts and filtering:
+
+- Maintain separate parent Agent count, observed delegated-run count, matching
+  counts, contextual-anchor set and coverage. Adding children never inflates
+  commandable Agent count or double-counts Consumption. Project footprint retains
+  its current Agent-population meaning; semantic census repair is not a circle-
+  area redesign.
+- Match each entity independently. Search and status conditions must hold for the
+  **same entity**; do not combine a parent's text match with a child's status.
+  Child fields are source-reported labels/type and known live-work fact, not the
+  parent's goal/status copied into a pretend independent Agent.
+- Recommended query semantics: parent-only match returns the parent as a match;
+  its nonmatching children remain accessible as surrounding delegation context
+  in inspection, not silently counted as matches. Child-only match retains its
+  root/known ancestors as labeled context anchors, excluded from matching and
+  bulk-command counts. With neither text nor status filters, return all observed
+  members within the selected scope. Context anchors remain explicitly inspectable
+  and openable. Scope filters constrain
+  both kinds consistently. Gallery review must confirm the context-anchor reading.
+- A blocked parent can have working children. Current child contract proves live
+  delegated work, not a complete per-child fault/approval/status taxonomy. Derive
+  only that known live fact; unknown status never inherits the parent's status.
+- Total and matching summaries come from the same full roster, including unknown
+  parent statuses. Repair the aggregate-parent filter mismatch alongside children.
+  Do not let an aggregate claim unfiltered totals are query matches.
+
+Representation and navigation:
+
+- Budgets constrain individual glyphs, labels, tethers and accessible rendered
+  rows, not membership. Every matching child belongs to exactly one individual,
+  overflow or aggregate representation bucket. Buckets retain resolvable member
+  identities independently from capped drawing metadata.
+- Far aggregates report parent/delegated counts separately. A verified count with
+  partial coverage is a known lower bound, not “the total.” Do not invent a number
+  of missing children. Unknown children are not fabricated census entries.
+- Inspector/roster reads the full selector, not `piece.delegation.children`.
+  Overflow opens an existing parent/Project inspection path with bounded paging
+  or virtualization, where every member is searchable and reachable. No inert
+  “N more” endpoint and no DOM node per worker at fleet scale.
+- Selection resolution uses scoped identities. Preserve focus/selection across
+  layout changes; if a child withdraws, move to its surviving known parent/root
+  or existing stable board fallback with an accessible explanation. Withdrawal
+  never means completion. Opening a child still opens its owning parent Session
+  until D2 proves an independent provider destination.
+- Keep one persistent WebGL world, stable Project placement under filters and
+  camera altitude, bounded draw calls and allocation proportional to roster size.
+  Reuse renderer primitives and current peer-scale treatment. R3F is an executor,
+  not a second census, status or query implementation.
+
+Coverage must reach the place it qualifies. D5.1's source-wide fact cannot be
+relabeled as a particular root's health. Extend the existing observation owner to
+publish a renderer-safe root-scoped fact (and derive the source rollup from it),
+retaining empty success separately from unknown, partial, unavailable and stale
+observations. Push updates, reconnect and identity/drop behavior use existing
+Session/transport channels. Do not make a new poller or turn-state field.
+Where an adapter cannot prove completeness, its known children remain useful but
+its coverage must not default to complete. Read the local census owner and
+source freshness rather than applying one invented provider-independent timeout.
+
+### Proposed UX brief and review scenes
+
+Primary user action: **find the delegated worker and reach its owning work**.
+The default healthy case keeps current quiet indicators. No success banner, new
+status light, persistent global warning, setup wizard, or independent agent-control
+surface is proposed.
+
+| State / interaction | Proposed use of existing surfaces |
+| --- | --- |
+| Before launch | Compact, expandable preview of the context Exawatt will supply in existing launch details; prepared text and limitations visible without crowding the task. Revalidate the digest when configuration changes; preview is not delivery. |
+| Running / resumed / failed context delivery | An action in the existing ribbon Session context menu opens a shared receipt viewer, also used by launch preview and discoverable through the command registry. Keep inspection reachable for omitted/unsupported/failed delivery and zero children. Source-level support stays in Agent Sources; it is not a Session receipt. |
+| Complete, zero children | No fake workers; ordinary empty delegation state remains quiet and distinguishable from unavailable coverage. |
+| Complete, children present | Existing Agent/Team indicators and Fleet child units; inspection reaches full roster. |
+| Partial/unavailable/stale | At most one neutral coverage fact/link in the existing parent Delegated/metadata area, also reachable with zero observed children. Source detail provides the explanation. Mixed-source scope never lets one healthy source hide another. |
+| Child-only match | Child remains findable; parent is legible lineage context with explicit non-match treatment, not dimmed below contrast requirements. |
+| Aggregate / overflow | Separate known parent/delegated counts; activation drills into existing inspection with full matching roster. |
+| No query matches | Existing filtered-empty grammar; source coverage remains reachable and zero matches does not claim zero workers. |
+| Navigate to source detail and back | Preserve Project/parent selection and filter intent through current navigation authority. Do not hardcode shortcuts in injected text; use stable product destinations. |
+
+Use `docs/engineering/design-system.md`: existing chrome-title/label controls,
+chrome-meta one-line fact, semantic/HUD dim roles, operational p-3/p-4 and gap-2/3.
+Coverage gets no D40 light, fault hue, readiness dashes, Consumption hatch or
+ambient animation. Review Air, Night, Classic, maximum interface scale, narrow
+layout, reduced motion, low power, keyboard focus and screen-reader output.
+The `.impeccable.md` context is interpreted through this newer design canon, not
+as permission to reintroduce a dark-only presentation.
+
+Gallery proof is a temporary extension of the current board/launcher workbench,
+with real DOM and R3F siblings driven by **one fixture** where both are affected.
+Required scenes: 0/1/4/5/17 children; child-only and parent-only query; conjunction
+trap; working child/blocked parent; healthy zero vs unavailable zero; partial
+coverage with survivors; mixed sources; colliding raw IDs; depth-two lineage and
+unknown ancestry; below/at/above each imported rendering budget; selection and
+focus through aggregation, filter changes and withdrawal. Do not duplicate
+production components into a study. Retire the study when accepted behavior ships.
+
+Review decisions still needed: exact disclosure placement/expansion; how a
+context-only parent is labeled; aggregate count composition; the one place-of-use
+coverage link. These are visual/interaction choices, not reasons to defer the
+identity, preservation, census and privacy invariants. The proposed direction is
+reviewable now; gallery acceptance is still required before production wiring.
+
+### Executable sequence, parallel lanes and exit criteria
+
+| Milestone / owner | Scope and files | Dependencies and acceptance |
+| --- | --- | --- |
+| D6.1 — evidence model owner | `core/src/types/agent.ts`, local/Demo transports, existing delegation/observation owners, Codex normalization. Preserve identity, root vs immediate-parent lineage, full roster and scoped coverage. | Reconcile D7 and BUG-145 candidates first. Fixtures prove collision-free identity, unknown ancestry, metadata/coverage propagation, zero-vs-unknown, no invented completion; no renderer changes required. |
+| D6.2 — query/model owner | Focused pure census/query/summary selectors in `ui-model`; migrate parent-only `filterFleetState` use at Fleet deliberately rather than changing unrelated consumers silently. | D6.1 contract stable. Match/context sets, scope summaries and conservation tests pass for parents and children; Consumption/command semantics unchanged. |
+| D6.3 — UX owner | Shared-fixture DOM/R3F gallery, existing selection/overflow/full-roster paths and source-detail return journey. | Can prototype against D6.1 contract while D6.2 develops. Operator review chooses the new visual/interaction grammar. No new production visuals before acceptance. |
+| D6.4 — integration owner | `spatial-fleet-client`, board projection/target resolution, existing DOM panel, keyboard and canvas consumers. | D6.2 + accepted D6.3. Remove capped-geometry semantic reads and bare-ID lookup. Prove identical match membership and census at every budget/altitude in Live and Demo. BUG-134 and BUG-094 close only against this proof. |
+| D8.1 — launch contract owner | Core capability/receipt contract, main-process composer, `harness-command`, `harness-registry`, `session-manager`, safe artifact lifecycle. | Can proceed independently of D6. Refuse hidden task/policy mutation; test fresh/resume/clone/recovery/cleanup boundaries. Agree contract with provider lanes before shared-file edits. |
+| D8.2 — provider evidence lanes | Isolated source-specific probes and adapters for Claude, Codex, OpenCode, Grok, each with a capability evidence matrix. | Parallel research/probes; one launch-contract owner integrates shared registry changes. Codex instruction preservation/resume is the highest-risk release gate. No unsupported inheritance promise or automatic policy workaround. |
+| D8.3 — disclosure/integration owner | Existing launcher/Session inspection/Agent Sources receipt projections; source-specific fixture launch tests. | D8.1 + proven provider cells + UX review. Actual supplied text equals disclosed text; no secrets/task leakage; unsupported cells visible. Stable conditional orientation may ship independently; guidance to new D6 drill behavior waits for D6.4. |
+| D8.4 — acceptance owner | Small installed-provider evidence packet and packaged Electron journey, tied to immutable SHA/provider versions. | Fresh and resume assessed separately, including safe user-config preservation. BUG-133 half 1 remains open until the Codex report is resolved; a Claude-only rollout is partial. |
+
+One owner edits each shared file at a time. Provider research, census selectors,
+and the UX study can run in parallel after their DTO contracts agree; adapters do
+not independently redesign common launch APIs. No milestone depends on building
+all Types, a coordination bus, new autonomous UI tools, or independent child chat.
+Each implementation handoff must record baseline SHA, exact allowed paths,
+fixtures, passed commands, remaining review decisions and actual delivery state.
+
+### Verification and rollout contract
+
+- Property/invariant tests: unique census membership; exact partition of matching
+  children across individual/overflow/aggregate buckets; parent counts unaffected
+  by child additions; context anchors excluded from matches/bulk-command targets; same-entity
+  query conjunction; filter clear restores membership; budget changes preserve
+  counts and root navigation; child beyond slot five remains discoverable; no
+  Consumption duplication; source-total coordinates remain stable under filters.
+- Transport/lifecycle tests: changed labels/time/lineage/coverage reach consumers;
+  root identity generations reject stale updates; reconnect replaces authority;
+  withdrawal is not completion; unknown parent edges stay unknown; complete zero
+  remains distinct from no report. Use existing D5.1/D7 tests, not a second truth
+  reducer. Validate invalid/cyclic lineage without recursion hazards.
+- Repair existing test premises: assertions that children vanish with an excluded
+  parent, aggregate geometry implies no census, or semantic roster ends at the
+  rendering cap are obsolete. Keep the actual protection—bounded graphics—while
+  adding full-membership assertions. Never pin today's copy or exact layout sizes.
+- Launch tests: exact task bytes/identity preserved; provider instruction canaries
+  survive composition; hooks/permissions/custom-agent choices unchanged; receipts
+  match the actual payload; no cross-launch contamination; UTF-8 bound and safe
+  cleanup; fresh/resume/clone/recovery/compaction evidence distinguished. Fixtures
+  consume actual adapter-generated configuration, not a parallel test-only path.
+- Relevant gates per changed surface: `eval:electron:delegation`, source/launcher
+  and resume gates; board/spatial and `eval:r3f` for Canvas changes; keyboard/DOM
+  parity and packaged connected-source gate when preload/shared transport changes.
+  Read `SURFACE_GATES`, do not copy a frozen gate list as a waiver. Use each
+  implementation worktree's own dev server and stable signed browser boundary.
+- Scale is a semantic and allocation contract: test around imported budgets and
+  large roster probes; bounded rendered objects/rows, linear census construction,
+  cached stable identities, no per-frame scan of the full roster. Use allocation
+  probes and the existing board eval, not host-dependent duration assertions.
+- Deliver model-first, then reviewed UI, then source support per proven lifecycle
+  cells. A failed optional context contribution degrades to an honest receipt;
+  a failed census observation withdraws only unsupported claims. Rollback must
+  preserve user configuration and retain useful known children, not restore silent
+  disappearance or claim capabilities unavailable on the installed source.
+- After installed evidence proves the complete delegate → find → inspect journey,
+  record that evidence in roadmap progress and link it from marketing/ideas. No
+  “all harnesses,” independent child chat, or complete visibility claim before
+  those capabilities are evidenced.
+
+This brief plans the improvements; it does not mark either bug fixed or any
+provider delivery path implemented. The UX brief remains proposed until operator
+confirmation; production gallery acceptance remains a distinct later checkpoint.
+
+### Historical report preserved from the roadmap
+
+The following is the 2026-09-16 diagnosis, not current capability or delivery
+state. D5.1 subsequently repaired isolation and source disclosure; D6/D8 above
+supersede the unshaped remedies. The partner's exact installed version was not
+verified, so the historical assertion that both users ran the same version is
+not evidence about that machine. Current keyboard navigation includes children;
+D3c's old skip-child wording is superseded, while bulk-command exclusion remains.
+
+#### Original BUG-134: Delegated children vanish from the Fleet census with no trace at aggregate resolution and under any filter
+
+Status: open · ENG-023 · found 2026-09-16 while reading the child-render path
+for BUG-133, not from a live report.
+
+Two drop paths, both silent, both in `packages/ui-model/src/spatial-board.ts`:
+
+1. Aggregate pieces carry no delegation (`:1092`), so past any of the
+   individual-resolution budgets — 240 fleet Agents, 64 per zone, 24 Projects
+   (`:1186`, `:1317`, `:1328`) — children stop rendering AND stop counting.
+   They are not in `statusCounts` either (`:356`, top-level Agents only), so
+   they leave no dot, no census, and no "+N delegated" line. D3c §4 says
+   children contribute to visible population mass; above the budget they
+   contribute nothing at all. Absent reads the same as zero, which is the
+   rule this repo keeps relearning.
+2. `seedDelegationUnits` requires the PARENT visible (`:1783`), and fleet
+   filtering runs over parents only
+   (`src/components/fleet/spatial/spatial-fleet-client.tsx:163`, `:198`), so
+   any search or status filter that excludes a parent silently removes every
+   one of its children — including children that match the filter themselves.
+
+Both are exact-census violations rather than layout bugs; the overflow lobe
+already proves the board can say "+13 more" honestly. Shape the fix in a
+design pass with the D3c brief in hand.
+
+#### Original BUG-133: An agent asked about its own subagents cannot tell the user where Exawatt shows them
+
+Status: open · ENG-023 · found 2026-09-14 in a design partner's Slack report
+with a screenshot; the context half touches ENG-028.
+
+What happened: in a Project Session running Codex CLI, the partner asked the
+agent to spin up specialist subagents. It staffed "Wave 1" and sat on
+"Waiting for agents / No agents completed yet". The partner asked "why can't
+I see the agents independently here?" The agent answered that they run as
+internal child workers of the conversation, not as separate user-facing chats
+or tabs. The partner interrupted it, stopped the children, and asked for a
+script to spin the agents up by hand. The partner then checked Fleet, and
+Fleet showed no child units for that Session.
+
+Two defects, one report:
+
+1. **The harness has no idea it is running inside Exawatt.** Its answer is
+   true from where the harness sits and wrong for this user. Exawatt exists to
+   show those children, but the agent cannot say "look at Fleet" or "switch to
+   that tab", so its honest answer taught the user to give up on delegation.
+   Operator direction, left unshaped until a design pass: give Exawatt-launched
+   agents their context, either by injecting it at launch (the per-launch
+   settings seam from ENG-023 D1 that ENG-028 Types build on) or by
+   intercepting delegation and visualization questions. Whatever is injected
+   must stay user-visible, per ENG-023's disclosure exit criterion.
+2. **Fleet showed no children for a delegating Codex Session.** ENG-023 D5 is
+   supposed to render these. DIAGNOSED 2026-09-16 by reading the adapter; the
+   build version the partner was on does not matter, because the defect is in
+   the installed provider, not in the app. A second read-side app-server
+   reports turns owned by the interactive TUI as `interrupted` with a null
+   `completedAt`, so every genuinely live child is ambiguous by construction
+   (`electron/main/harness-events/codex-app-server.ts:711-715`) and must be
+   disambiguated through the immediate parent's `thread/items/list` activity
+   (`:733-749`). Codex 0.153.4 advertises that method and answers
+   method-not-supported, measured independently by the native-source
+   investigation and recorded at
+   `docs/engineering/projects/daily-driver-adoption.md:6904-6909`. The
+   rejection propagates through `fulfilledReads` (`:564-571`), which rethrows
+   rather than degrading, so ONE refused read aborts the whole session
+   snapshot and the adapter withdraws every child to absent. Withdrawal is
+   correct behavior — D5 refuses to invent a census it cannot authorize — but
+   the result is that Codex delegation is currently unobservable on the
+   provider version the operator and the partner both run, and nothing says so
+   anywhere in the product. Two consequences worth separating: the adapter has
+   no per-child isolation (one bad child withdraws its healthy siblings,
+   `:696-722`), and a Codex record with zero children publishes as `null`
+   rather than as an empty census, so every surface silently falls back to
+   byte inference (`electron/main/harness-events/delegation-state.ts:167-176`;
+   Codex has no `eventChannel` binding, so children are the only fact that can
+   make its record live).
+
+Order: half 2 first, and it is now a question of what Exawatt can honestly say
+when a provider withholds the authority D5 needs — not a rendering fix. Half 1
+only helps once the surface it points at is truthful.
+
+Half 2 repaired (2026-09-16, operator-approved): isolate child
+and parent-activity read failures, retain verified siblings, and disclose
+complete/partial/unavailable delegation observation in the existing Agent
+Sources capability row. Keep observation health independent of turn and launch
+truth. The operator confirmed the prior Session's three subagents were visible.
+[Execution contract](#2026-09-16--bug-133-half-2-isolate-uncertainty-and-disclose-observation-health).
+Half 1 remains unshaped; the provider's withheld authority is not repaired by
+this application change. BUG-134 remains separate.

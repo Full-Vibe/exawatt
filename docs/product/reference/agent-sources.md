@@ -369,3 +369,17 @@ visibly rather than silently start with broader authority.
 
 This is a future governance contract, not a second policy engine in today's
 desktop app.
+
+## Planned launch context and delegation census (ENG-023 D6/D8)
+
+These improvements are planned, not available controls. Exawatt-authored context
+will explain the host and stable navigation only where a source can safely apply
+it. Each provider operation must preserve existing instructions; fresh support
+does not imply resume or child-inheritance support. Exact safe text and delivery
+evidence will be inspectable separately from source capability. Optional context
+failure must preserve ordinary launch with an honest explanation.
+
+Fleet's planned census keeps observed delegated work findable through filters,
+aggregation and full inspection, with parent Agent counts separate from delegated
+runs. Unavailable coverage never means zero workers. Child activation continues
+to reach the owning Session; this does not promise independent child chat.
