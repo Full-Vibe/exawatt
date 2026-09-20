@@ -504,7 +504,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Agent + Team Workspace',
           summary:
-            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, exact-Session model/effort apply-and-resume, active-Project icon collapse, fresh-Session Clone, semantically merged attention, keyboard-complete Session control, and a convention-v2 roadmap lens.',
+            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, exact-Session model/effort apply-and-resume, active-Project icon collapse, fresh-Session Clone, semantically merged attention, keyboard-complete Session control, and a convention-v2 roadmap lens. Shared command offers, current-context Clone and capability-gated Project pause preserve exact recovery.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -744,7 +744,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted IPC, strict build-time distribution identity with cross-artifact digests, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, optional official auth/update capabilities, native-network PKCE, atomic delivery, and parser-validated roadmap transactions. Every persisted collection declares a size class and eviction owner (decision `0039`): the layout stays a small-object record and large per-Session artifacts live in a content-addressed side store, referenced by id.',
+            'Immediate launch frame, trusted IPC, strict build-time distribution identity with cross-artifact digests, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, optional official auth/update capabilities, native-network PKCE, atomic delivery, and parser-validated roadmap transactions. Every persisted collection declares a size class and eviction owner (decision `0039`): the layout stays a small-object record and large per-Session artifacts live in a content-addressed side store, referenced by id. JSON stores distinguish absence/corruption, enforce durable write interlocks and support explicit repair/retry recovery.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

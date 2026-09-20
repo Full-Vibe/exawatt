@@ -378,6 +378,8 @@ Milestones:
 - D71 Native conversation experience (active-build): investigate supported source interfaces, ship structured native reading, and enable native controls only per proven capability and single execution ownership. [Execution](projects/daily-driver-adoption.md#2026-09-07--adoption-execution-brief).
 - D72 Packaged first-use acceptance (active-build): prove fresh install, setup, first result, recovery and upgrade on an immutable candidate; reconcile ENG-030 delivery work and record installed/released evidence separately. [Execution](projects/daily-driver-adoption.md#2026-09-07--adoption-execution-brief). [Installed repair checkpoint](projects/daily-driver-adoption.md#final-delivery-checkpoint--2026-09-07); fresh-install/upgrade cohort acceptance remains open.
 
+- D73 Shared Session operations (done, 0.1.13 delivery batch, 2026-09-20; FIX-017–019 and BUG-125): predictable commands, automatic current-context Clone, confirmed active Project pause, and explicit storage recovery. [Execution](projects/daily-driver-adoption.md#2026-09-20--shared-session-operations-and-storage-recovery).
+
 Sequencing: D0 → D1 → D2, then dogfood begins while D3–D7 continue at full speed. D17 precedes additional adoption polish without interrupting active ENG-015 or ENG-017 work. ENG-017 follows the adoption blockers; ENG-004 V2.1+ stays parked until dogfood asks for the map. D46's source and model-picker dependencies landed in ENG-003 S2/S3 before the completed ribbon runtime; no D46 dependency remains open.
 
 Project doc:
@@ -2164,12 +2166,48 @@ identity, preserved permission policy and no active-turn interruption. First
 slice supports local Claude Code and Codex; unsupported sources are explicit.
 [Accepted interaction and boundaries](projects/daily-driver-adoption.md#2026-09-17--light-shaping-project-collapse-and-session-model-changes).
 
+### FIX-017 Predictable command discovery and truthful availability
+
+Status: done · ENG-016 · D73; operator-selected, 2026-09-20.
+
+One command offer policy supplies availability and reasons across command
+surfaces; opening selection is stable and independent of incidental render
+order. Exit: keyboard invocation and disabled reasons agree with source and
+Session capabilities in Demo and Live. Reuse the existing menu treatment.
+[Execution contract](projects/daily-driver-adoption.md#2026-09-20--shared-session-operations-and-storage-recovery).
+
+### FIX-018 Clone the current work without another step
+
+Status: done · ENG-016 · D46/D64; operator-selected, 2026-09-20.
+
+The existing Clone to target selection captures bounded current context from
+the exact source Session, then creates one fresh Session. No preview, extra
+confirmation, hosted summarization, or provider resume identity. Exit: current
+native user/assistant prose supersedes the opening task; unsupported, unavailable
+or corrupt native context fails explicitly before launch, and races cannot clone
+a different Session. Raw terminal output is never a fallback. [Execution contract](projects/daily-driver-adoption.md#2026-09-20--shared-session-operations-and-storage-recovery).
+
+### FIX-019 Pause and resume a Project without losing its Sessions
+
+Status: done · ENG-016 · operator-selected, 2026-09-20.
+
+Pause stops eligible local processes while retaining tabs, history and exact
+provider identity. Active work requires confirmation with blue, default-focused
+Cancel and explicit Pause now; idle scope pauses directly. Exit: confirmation
+binds exact targets, activity changes cannot bypass consent, unrelated Projects
+continue, and Resume uses existing exact-identity recovery with honest source
+and shell exclusions. [Execution contract](projects/daily-driver-adoption.md#2026-09-20--shared-session-operations-and-storage-recovery).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FIX-018 proposed retained-terminal fallback | FIX-018 implementation safety review, 2026-09-20 | Raw terminal output can contain tool results, reasoning or credentials. Clone accepts only structurally filtered prose from the exact owned local Claude/Codex native conversation; unsupported, unavailable or corrupt context fails before launch without another user gesture. |
+| D46/D64 opening-task-only Clone handoff | FIX-018 operator acceptance, 2026-09-20 | Existing target selection captures current exact-Session context automatically; no extra clicks or review dialog. Clone remains a fresh Session without provider resume identity. |
+| Project freeze/wait-until-idle alternative | FIX-019 operator acceptance, 2026-09-20 | Use Pause: interrupt immediately after confirmation when work is active; blue default Cancel and explicit Pause now. Idle scope needs no dialog. Retain Session records and exact recovery. |
+| BUG-125 missing/corrupt shared fallback | BUG-125 execution contract, 2026-09-20 | Preserve damage and a durable write interlock across restart, surface repair/retry, and reopen mutation only after validated repair. |
 | D8 mandatory prelaunch disclosure/preview and pending UX confirmation | Operator confirmation, 2026-09-18 | Direction accepted with silent-by-default context delivery. No required preview, acknowledgement or success notice; safe details stay inspectable on demand. Brief updated; new visuals still require gallery review. |
 | BUG-133 half 1 unshaped injection/interception alternatives | ENG-023 D8 research brief, 2026-09-18 | Plan one disclosed source-owned environment contribution, never task replay/question interception. Per-operation preservation/adoption evidence gates each provider; UX direction confirmed; normal context delivery is silent, with on-demand inspection. [Brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end). |
 | ENG-030 R5 contributor recruitment, R9 without R7, and R4 naming v0.1.10 | Operator answers and runway review, 2026-09-18 | Launch prioritizes users and feedback; starter issues and contributor recruitment wait for OS6.2. Successful R7 cohort acceptance gates R9; first-month outcome is repeat real use. R4 uses the next unused version, preserving the existing tag and the detailed provenance contract. See decision 0036 and the project log. |

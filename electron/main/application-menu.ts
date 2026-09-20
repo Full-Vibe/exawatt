@@ -4,9 +4,11 @@ import {
   FIXED_SESSION_MENU_COMMANDS,
   agentSourceMenuCommandId,
   bindingToAccelerator,
+  commandVerbOffered,
   getCommandVerb,
   isChordKeys,
   menuCommandVerbs,
+  type CommandVerbCapability,
   type CommandVerbMenu,
 } from '@exawatt/core';
 import { AGENT_SOURCE_DECLARATIONS } from './pty/generated-agent-source-declarations';
@@ -92,6 +94,13 @@ export interface ApplicationMenuContext {
   buildSha: string;
   isDev: boolean;
   feedbackAuthenticated: boolean;
+  /**
+   * The capabilities the distribution contract configures. A verb that names
+   * a capability outside this set publishes no row at all: a community build
+   * has no feedback service, so it carries no Submit Feedback item rather
+   * than a disabled one that names a service the build cannot reach.
+   */
+  capabilities: ReadonlySet<CommandVerbCapability>;
   accelerators: Record<string, string>;
   availability: Record<string, boolean>;
   onCommand: (command: string) => void;
@@ -120,19 +129,24 @@ function commandItem(
   };
 }
 
-/** A menu row for a declared verb. Throws when the manifest says it has none,
- *  so the template can never publish a row the contract does not know about. */
-function verbItem(
+/** The menu rows for a declared verb: one row, or none where this build's
+ *  contract does not offer the verb. Throws when the manifest says the verb
+ *  has no menu item at all, so the template can never publish a row the
+ *  contract does not know about. */
+function verbItems(
   context: ApplicationMenuContext,
   verbId: string
-): MenuItemConstructorOptions {
+): MenuItemConstructorOptions[] {
   const verb = getCommandVerb(verbId);
   if (verb.menu === null) {
     throw new Error(
       `Command verb ${verbId} declares no native menu item: ${verb.menuDiscoverability}`
     );
   }
-  return commandItem(context, verb.menu.commandId, verb.menu.label, verb.menu);
+  if (!commandVerbOffered(verb, context.capabilities)) return [];
+  return [
+    commandItem(context, verb.menu.commandId, verb.menu.label, verb.menu),
+  ];
 }
 
 /** A fresh object per row: Electron owns the template it is handed, so no two
@@ -142,7 +156,7 @@ const separator = (): MenuItemConstructorOptions => ({ type: 'separator' });
 export function buildApplicationMenuTemplate(
   context: ApplicationMenuContext
 ): MenuItemConstructorOptions[] {
-  const verb = (id: string) => verbItem(context, id);
+  const verb = (id: string) => verbItems(context, id);
   const command = (commandId: string, label: string) =>
     commandItem(context, commandId, label);
 
@@ -165,7 +179,7 @@ export function buildApplicationMenuTemplate(
             ]
           : []),
         separator(),
-        verb('open-settings'),
+        ...verb('open-settings'),
         separator(),
         { role: 'services' },
         separator(),
@@ -179,13 +193,13 @@ export function buildApplicationMenuTemplate(
     {
       label: 'File',
       submenu: [
-        verb('workspace-new-project'),
+        ...verb('workspace-new-project'),
         // Same class of object, same menu: Open Project names a directory on
         // this machine, Connect names a Gateway the operator already runs.
-        verb('connect-agent-source'),
+        ...verb('connect-agent-source'),
         separator(),
-        verb('workspace-reveal-path'),
-        verb('workspace-close-project'),
+        ...verb('workspace-reveal-path'),
+        ...verb('workspace-close-project'),
       ],
     },
     {
@@ -219,11 +233,11 @@ export function buildApplicationMenuTemplate(
     {
       label: 'Go',
       submenu: [
-        verb('command-palette'),
+        ...verb('command-palette'),
         separator(),
-        verb('command-terminal'),
-        verb('command-sessions'),
-        verb('command-spatial'),
+        ...verb('command-terminal'),
+        ...verb('command-sessions'),
+        ...verb('command-spatial'),
         separator(),
         // Vision surfaces (ENG-026 N1) are navigable preview pages, honestly
         // marked on-surface — never dead menu items.
@@ -231,10 +245,10 @@ export function buildApplicationMenuTemplate(
           command(entry.commandId, entry.label)
         ),
         separator(),
-        verb('workspace-roadmap'),
+        ...verb('workspace-roadmap'),
         separator(),
-        verb('history-back'),
-        verb('history-forward'),
+        ...verb('history-back'),
+        ...verb('history-forward'),
       ],
     },
     {
@@ -244,21 +258,22 @@ export function buildApplicationMenuTemplate(
           command(entry.commandId, entry.label)
         ),
         separator(),
-        verb('workspace-new-agent'),
-        verb('workspace-new-shell'),
+        ...verb('workspace-new-agent'),
+        ...verb('workspace-new-shell'),
         separator(),
-        verb('workspace-reopen-closed-tab'),
-        verb('workspace-rename'),
-        verb('workspace-split'),
+        ...verb('workspace-reopen-closed-tab'),
+        ...verb('workspace-rename'),
+        ...verb('workspace-split'),
         ...FIXED_SESSION_MENU_COMMANDS.map(entry =>
           command(entry.id, entry.label)
         ),
-        verb('workspace-close-tab'),
+        ...verb('workspace-close-tab'),
         separator(),
-        verb('workspace-resume-agent'),
-        verb('workspace-resume-scope'),
+        ...verb('workspace-pause-project'),
+        ...verb('workspace-resume-agent'),
+        ...verb('workspace-resume-scope'),
         separator(),
-        verb('workspace-jump-attention'),
+        ...verb('workspace-jump-attention'),
       ],
     },
     {
@@ -273,14 +288,17 @@ export function buildApplicationMenuTemplate(
     {
       label: 'Help',
       submenu: [
-        {
-          ...verb('quick-feedback'),
+        // The dialog, not the ⌘⇧F capture bar: `submit-feedback` owns this row
+        // and prints no chord, because the chord opens a different surface.
+        // Absent entirely where the contract configures no feedback service.
+        ...verb('submit-feedback').map(item => ({
+          ...item,
           label: context.feedbackAuthenticated
-            ? 'Submit Feedback…'
-            : 'Submit Feedback… (Sign in required)',
+            ? item.label
+            : `${item.label} (Sign in required)`,
           enabled: context.feedbackAuthenticated,
-        },
-        verb('help-modal-slash'),
+        })),
+        ...verb('help-modal-slash'),
         separator(),
         {
           label: "Window Management Isn't Working…",

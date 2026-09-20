@@ -227,6 +227,15 @@ export interface GoalVisualRef {
   state: GoalVisual['state'];
 }
 
+export interface SessionPauseResult {
+  durableSessionId: string;
+  status: 'paused' | 'already-paused' | 'unsupported' | 'failed';
+  error?: string;
+}
+export type SessionPauseBatchResult =
+  | { kind: 'needs-confirmation'; activeSessionIds: string[] }
+  | { kind: 'completed'; results: SessionPauseResult[] };
+
 export interface SessionModelChange {
   model: string;
   effort?: string;
@@ -342,6 +351,10 @@ export interface ClosedSessionEntry {
 }
 
 export interface ElectronPtyApi {
+  pauseSessions: (
+    durableSessionIds: string[],
+    confirmed?: boolean
+  ) => Promise<SessionPauseBatchResult>;
   changeModel: (
     id: string,
     choice: SessionModelChange
@@ -415,6 +428,12 @@ export interface ElectronPtyApi {
     exists: boolean;
   }>;
   /** The transcript as readable lines, rendered in main and bounded. */
+  cloneContext: (durableSessionId: string) => Promise<{
+    text: string;
+    provenance: 'source-conversation';
+    capturedAt: number;
+    partial: boolean;
+  }>;
   retainedTranscript: (
     durableSessionId: string,
     maxLines?: number
@@ -553,6 +572,13 @@ export interface ElectronWorkspaceApi {
   load: () => Promise<unknown | null>;
   save: (state: unknown) => Promise<void>;
   recovery: () => Promise<{ previousRunInterrupted: boolean }>;
+  storageRecovery: () => Promise<{
+    required: boolean;
+    recoveryFile?: string;
+    originalFile?: string;
+  }>;
+  retryRecovery: () => Promise<void>;
+  revealRecovery: () => Promise<void>;
   onChanged: (handler: (state: unknown) => void) => () => void;
 }
 

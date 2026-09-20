@@ -48,6 +48,14 @@ Project / Context Group exists to make context switching cheaper. It should summ
 A Project can be open with no Agent or Session running. Selecting a Project
 changes context; it does not implicitly create work.
 
+Project **Pause** stops eligible local Agent processes while keeping their
+Session records, tabs, history and exact provider identities. It interrupts
+immediately after confirmation when work is active; idle scope needs no dialog.
+Cancel is the blue default action and Pause now names the interruption.
+Resume uses the existing exact-Session recovery path. Shells are excluded;
+unsupported sources explain their capability boundary. Neither collapse nor
+remote disconnect pauses execution.
+
 A Project has an opaque Exawatt-owned identity and a separately renameable
 label. A local folder is an optional binding, not that identity: a Project with
 no folder remains valid and openable, while Finder, local launch, worktree, and
@@ -500,10 +508,16 @@ make Shell an Agent Source; it remains a Project tool.
 **Clone to…** is a fresh-Session handoff between Agent configurations. From a
 started Agent Session's context menu or `⌘K`, the operator selects one exact
 available Agent target; Exawatt creates a distinct Session with bounded
-Exawatt-owned goal/context handoff text, leaves the original Session untouched,
+Exawatt-owned current-context handoff text, leaves the original Session untouched,
 and passes no provider resume identity. Shell and unavailable targets are
 excluded. Clone is not live conversation migration, provider-state transfer,
-or automatic failover.
+or automatic failover. The target selection is the whole gesture: no extra
+preview or confirmation. Current source-owned user/assistant context is read
+locally from exact owned Claude Code or Codex conversations and structurally
+filtered to user/assistant prose. Unsupported, unavailable or corrupt native
+context fails explicitly before launch. Raw terminal output is never a fallback;
+the source opening task alone is not a claim of current work. No new hosted
+summarization is introduced.
 
 ## Gateway
 

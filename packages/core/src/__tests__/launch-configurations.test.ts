@@ -5,6 +5,7 @@ import {
   deleteLaunchConfiguration,
   emptyLaunchConfigurationPool,
   launchConfigurationId,
+  isStoredLaunchConfigurationPool,
   migrateAgentSourceMemory,
   parseLaunchConfigurationPool,
   rankLaunchTargets,
@@ -237,4 +238,32 @@ describe('Launch Configuration persistence parsing and migration', () => {
       )
     ).toThrow('Invalid Launch Configuration identity');
   });
+});
+
+describe('stored Launch Configuration integrity', () => {
+  it('accepts legacy aliases, numeric usage, and unknown fields without losing choices', () => {
+    const legacy = {
+      items: [{ ...opus, id: 'legacy-opus', futureField: true }],
+      projectUsage: { '/repo': { 'legacy-opus': 42 } },
+      projectPins: { '/repo': ['legacy-opus'] },
+    };
+    expect(isStoredLaunchConfigurationPool(legacy)).toBe(true);
+    const migrated = parseLaunchConfigurationPool(legacy);
+    expect(isStoredLaunchConfigurationPool(migrated)).toBe(true);
+    expect(migrated.projects['/repo'].pins).toEqual([
+      launchConfigurationId(opus),
+    ]);
+  });
+
+  it.each([
+    { ...opus, createdAt: 'damaged' },
+    { ...opus, labels: { model: 123 } },
+  ])(
+    'rejects present known configuration fields the total parser would drop: %j',
+    configuration => {
+      expect(
+        isStoredLaunchConfigurationPool({ configurations: [configuration] })
+      ).toBe(false);
+    }
+  );
 });

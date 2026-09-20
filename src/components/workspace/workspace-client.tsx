@@ -14,6 +14,7 @@
  * parallel with the ENG-004 spatial regime — independent skins over the
  * same session system (see docs/product/operator-workflow.md).
  */
+import { WorkspaceStorageRecovery } from './workspace-storage-recovery';
 import { sessionDelegationBusy } from './session-status';
 import { LiveSessionModelControl } from './live-session-model-control';
 import {
@@ -42,7 +43,12 @@ import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
 import { Button } from '@/components/ui/button';
-import { CloseConfirm, CloseProjectConfirm } from './close-confirm';
+import { useProjectPauseInteraction } from './use-project-pause-interaction';
+import {
+  CloseConfirm,
+  CloseProjectConfirm,
+  PauseProjectConfirm,
+} from './close-confirm';
 import { navHistory, type NavLocation } from '@/components/nav/nav-history';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener } from './project-opener';
@@ -70,6 +76,7 @@ import {
 import {
   JUMP_ATTENTION_EVENT,
   RESUME_ACTIVE_AGENT_EVENT,
+  PAUSE_ACTIVE_PROJECT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
@@ -335,6 +342,8 @@ export function WorkspaceClient() {
   const {
     projects,
     ready,
+    workspaceLoadFailure,
+    retryWorkspaceLoad,
     activeProject,
     activeTab,
     pinnedTabId,
@@ -367,6 +376,7 @@ export function WorkspaceClient() {
     reopenLastClosedSession,
     resumeTab,
     changeSessionModel,
+    pauseProject,
     resumeProject,
     resumeAll,
     selectProject,
@@ -1282,6 +1292,25 @@ export function WorkspaceClient() {
   // an ambient toast narrates archived closes (auto-fades)
   const [closeToast, setCloseToast] = useState<string | null>(null);
   const closeToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectPause = useProjectPauseInteraction(
+    projects,
+    pauseProject,
+    announceWorkspace,
+    setError
+  );
+  const requestProjectPause = projectPause.requestPause;
+  useEffect(() => {
+    const pauseActiveProject = () => {
+      if (activeProject) void requestProjectPause(activeProject.dir);
+    };
+    window.addEventListener(PAUSE_ACTIVE_PROJECT_EVENT, pauseActiveProject);
+    return () =>
+      window.removeEventListener(
+        PAUSE_ACTIVE_PROJECT_EVENT,
+        pauseActiveProject
+      );
+  }, [activeProject, requestProjectPause]);
+
   const [closeConfirm, setCloseConfirm] = useState<{
     tabId: string;
     title: string;
@@ -1414,6 +1443,13 @@ export function WorkspaceClient() {
     );
     return deriveWorkspaceCommandAvailability({
       activeProjectName: activeProject?.name ?? null,
+      activeProjectPausableCount:
+        activeProject?.tabs.filter(
+          tab =>
+            isSessionTab(tab) &&
+            tab.harness !== 'shell' &&
+            tab.sessionId !== null
+        ).length ?? 0,
       hasLocalProjectRoot: activeProjectRootPath !== null,
       hasActiveTab: activeTab !== null,
       canToggleSplit:
@@ -1717,6 +1753,16 @@ export function WorkspaceClient() {
     );
   }
 
+  if (workspaceLoadFailure) {
+    return (
+      <WorkspaceStorageRecovery
+        failure={workspaceLoadFailure}
+        onRetry={retryWorkspaceLoad}
+        onReveal={() => window.electron!.workspace!.revealRecovery()}
+      />
+    );
+  }
+
   const allTabs = projects.flatMap(g =>
     g.tabs.map(t => ({ tab: t, dir: g.dir }))
   );
@@ -1828,6 +1874,8 @@ export function WorkspaceClient() {
               delegation={delegation}
               onTogglePinTab={togglePinTab}
               onResumeTab={id => void resumeTab(id)}
+              onPauseProject={dir => void projectPause.requestPause(dir)}
+              onResumeProject={resumeProject}
               cloneTargets={cloneTargets}
               onCloneTab={(id, target) => void cloneSession(id, target)}
               onNewAgent={dir => createDraftTab(dir)}
@@ -2383,6 +2431,15 @@ export function WorkspaceClient() {
         onOpenContextProject={openContextProject}
         onAgentSourceConnected={result => void finishConnectedSource(result)}
       />
+      {projectPause.confirmation && (
+        <PauseProjectConfirm
+          title={projectPause.confirmation.name}
+          color={projectPause.confirmation.color}
+          activeCount={projectPause.confirmation.activeCount}
+          onPause={projectPause.confirmPause}
+          onCancel={projectPause.cancelPause}
+        />
+      )}
       {closeConfirm && (
         <CloseConfirm
           title={closeConfirm.title}

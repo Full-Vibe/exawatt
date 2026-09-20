@@ -14,10 +14,7 @@
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import type { SessionGlyphState } from './session-status';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 
 export function CloseConfirm({
   title,
@@ -104,9 +101,7 @@ export function CloseConfirm({
             <>It is still working — closing interrupts the turn in flight. </>
           )}
           {turn === 'blocked' && (
-            <>
-              It is waiting on your answer — closing discards the question.{' '}
-            </>
+            <>It is waiting on your answer — closing discards the question. </>
           )}
           The agent stops, and the Session — conversation, goal, and scrollback
           — moves to Recently closed. Reopen it from ⌘K within 14 days.
@@ -254,6 +249,107 @@ export function CloseProjectConfirm({
             className="font-mono"
           >
             Close Project ⏎
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Project pause uses the existing dialog recipe, with the safe action as default. */
+export function PauseProjectConfirm({
+  title,
+  activeCount,
+  color,
+  onPause,
+  onCancel,
+}: {
+  title: string;
+  activeCount: number;
+  color: string;
+  onPause: () => void;
+  onCancel: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    cancelRef.current?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
+  }, []);
+  return (
+    <div
+      data-project-pause-confirm
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Pause ${title}?`}
+      onKeyDown={e => {
+        e.stopPropagation();
+        // Enter and Space keep native focused-button activation. Cancel is
+        // initially focused; deliberately focusing Pause makes it actionable.
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+          return;
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const other =
+            document.activeElement === closeRef.current
+              ? cancelRef.current
+              : closeRef.current;
+          other?.focus();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150"
+      style={{ background: withThemeAlpha(HUD.bg.void, 0.55) }}
+      onClick={onCancel}
+    >
+      <div
+        className="flex w-[26rem] max-w-[calc(100%-2rem)] flex-col gap-3 rounded border p-4"
+        style={{
+          borderColor: withThemeAlpha(color, 0.33),
+          background: HUD.bg.panelFill,
+          boxShadow: `0 0 28px ${withThemeAlpha(HUD.bg.void, 0.55)}, 0 0 12px ${withThemeAlpha(color, 0.13)}`,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="font-mono text-sm" style={{ color: HUD.text }}>
+          Pause Project <span style={{ color }}>{title}</span>?
+        </div>
+        <div
+          className="font-sans text-xs leading-5"
+          style={{ color: HUD.textDim }}
+        >
+          {activeCount} {activeCount === 1 ? 'Agent has' : 'Agents have'} active
+          work. Pause now interrupts that work immediately, including any
+          unanswered request. Sessions and saved history stay here; resume when
+          ready. Unfinished work may need to be retried.
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            ref={cancelRef}
+            type="button"
+            size="sm"
+            onClick={onCancel}
+            className="font-mono"
+          >
+            Cancel ⏎
+          </Button>
+          <Button
+            ref={closeRef}
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPause}
+            className="font-mono"
+          >
+            Pause now
           </Button>
         </div>
       </div>

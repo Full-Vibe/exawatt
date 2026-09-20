@@ -1,6 +1,4 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { readJsonDocument, writeJsonFileAtomic } from '../atomic-json-file';
 
 /**
  * Recently-closed Session ledger (ENG-016 D23).
@@ -63,6 +61,15 @@ function validEntry(e: unknown): e is ClosedSessionEntry {
   );
 }
 
+function validLedger(value: unknown): boolean {
+  const ledger = value as Partial<StoredLedgerV1> | null;
+  return (
+    ledger?.v === 1 &&
+    Array.isArray(ledger.entries) &&
+    ledger.entries.every(validEntry)
+  );
+}
+
 export class ClosedSessionLedger {
   private entries: ClosedSessionEntry[] | null = null;
 
@@ -76,35 +83,18 @@ export class ClosedSessionLedger {
 
   private load(): ClosedSessionEntry[] {
     if (this.entries) return this.entries;
-    try {
-      const raw = JSON.parse(
-        fs.readFileSync(this.file, 'utf8')
-      ) as StoredLedgerV1;
-      this.entries =
-        raw?.v === 1 && Array.isArray(raw.entries)
-          ? raw.entries.filter(validEntry)
-          : [];
-    } catch {
-      // missing or corrupt ledger = empty; a broken file must never block
-      // closing tabs
-      this.entries = [];
-    }
+    const raw = readJsonDocument(
+      this.file,
+      validLedger
+    ) as StoredLedgerV1 | null;
+    this.entries = raw?.entries ?? [];
     return this.entries;
   }
 
-  private persist(): void {
-    const stored: StoredLedgerV1 = { v: 1, entries: this.load() };
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp-${process.pid}-${randomUUID()}`;
-    try {
-      fs.writeFileSync(tmp, JSON.stringify(stored), {
-        mode: 0o600,
-        flag: 'wx',
-      });
-      fs.renameSync(tmp, this.file);
-    } finally {
-      fs.rmSync(tmp, { force: true });
-    }
+  private persist(entries: ClosedSessionEntry[]): void {
+    const stored: StoredLedgerV1 = { v: 1, entries };
+    writeJsonFileAtomic(this.file, stored);
+    this.entries = entries;
   }
 
   /** newest first — the palette's listing order */
@@ -117,35 +107,36 @@ export class ClosedSessionLedger {
     if (!validEntry(stamped)) {
       throw new Error('invalid closed-session entry');
     }
+    readJsonDocument(this.file, validLedger);
     // re-closing the same durable Session replaces its older entry
-    this.entries = this.load().filter(
+    const next = this.load().filter(
       candidate => candidate.durableSessionId !== entry.durableSessionId
     );
-    this.entries.push(stamped);
-    this.persist();
+    next.push(stamped);
+    this.persist(next);
     return stamped;
   }
 
   /** remove and return an entry for reopen — history stays untouched */
   take(durableSessionId: string): ClosedSessionEntry | null {
+    readJsonDocument(this.file, validLedger);
     const entries = this.load();
     const entry = entries.find(
       candidate => candidate.durableSessionId === durableSessionId
     );
     if (!entry) return null;
-    this.entries = entries.filter(candidate => candidate !== entry);
-    this.persist();
+    this.persist(entries.filter(candidate => candidate !== entry));
     return entry;
   }
 
   /** delete expired entries AND their retained history */
   async reap(): Promise<number> {
     const cutoff = this.now() - this.retentionMs;
+    readJsonDocument(this.file, validLedger);
     const entries = this.load();
     const expired = entries.filter(entry => entry.closedAt <= cutoff);
     if (expired.length === 0) return 0;
-    this.entries = entries.filter(entry => entry.closedAt > cutoff);
-    this.persist();
+    this.persist(entries.filter(entry => entry.closedAt > cutoff));
     for (const entry of expired) {
       try {
         await this.purgeHistory(entry.durableSessionId);

@@ -72,6 +72,20 @@ const MAX_RERUN_FILES = 25;
  */
 export const SURFACE_GATES = [
   {
+    gate: 'eval:electron:project-pause',
+    why: 'Project pause must confirm interruption and preserve exact resumable Sessions through the real UI and IPC',
+    match: file =>
+      /(?:project-pause|pause-project|session-pause)/.test(file) ||
+      file === 'src/components/workspace/close-confirm.tsx',
+  },
+  {
+    gate: 'eval:electron:clone-context',
+    why: 'Clone must launch a distinct Agent from current owned context through the existing one-gesture action',
+    match: file =>
+      /(?:session-clone|session-clone-context)\.tsx?$/.test(file) ||
+      file === 'scripts/electron-clone-context-eval.mjs',
+  },
+  {
     gate: 'eval:electron:model-change',
     why: 'applying a model must preserve conversation identity and launch policy through the real control and IPC',
     match: file =>
@@ -173,6 +187,8 @@ export const SURFACE_GATES = [
       file === 'electron/main/application-menu.ts' ||
       file === 'packages/core/src/shortcuts/command-verbs.ts' ||
       file === 'src/components/shortcuts/shortcut-provider.tsx' ||
+      file === 'src/components/shortcuts/command-palette.tsx' ||
+      file === 'src/components/shortcuts/palette-groups.ts' ||
       file === 'src/components/nav/nav-history.ts' ||
       file === 'src/components/nav/command-navigation-provider.tsx' ||
       file === 'src/components/feedback/product-feedback-provider.tsx' ||

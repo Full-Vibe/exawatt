@@ -201,6 +201,7 @@ export class PtySessionManager extends EventEmitter {
   private acceptingCreates = true;
   private creating = 0;
   private creatingDurableIds = new Set<string>();
+  private sessionOperations = new Set<string>();
   private claimedCodexIds = new Set<string>();
   private claimedOpencodeIds = new Set<string>();
   private pendingProviderIdentities = new Set<Promise<void>>();
@@ -272,11 +273,24 @@ export class PtySessionManager extends EventEmitter {
   }
 
   async create(options: PtyCreateOptions): Promise<PtySessionInfo> {
+    return this.createForOperation(options);
+  }
+
+  private async createForOperation(
+    options: PtyCreateOptions,
+    ownedIdentity?: string
+  ): Promise<PtySessionInfo> {
     if (!this.acceptingCreates) {
       throw new Error(`${this.productName} is stopping Sessions`);
     }
     const durableSessionId =
       options.durableSessionId ?? `session-${randomUUID()}`;
+    if (
+      this.sessionOperations.has(durableSessionId) &&
+      ownedIdentity !== durableSessionId
+    ) {
+      throw new Error('This Session already has an operation in progress');
+    }
     if (this.creatingDurableIds.has(durableSessionId)) {
       throw new Error('This Session is already starting');
     }
@@ -950,30 +964,59 @@ export class PtySessionManager extends EventEmitter {
     await this.flushHistory();
   }
 
-  async changeModel(
+  private acquireSessionOperation(identity: string): () => void {
+    if (
+      this.sessionOperations.has(identity) ||
+      this.creatingDurableIds.has(identity)
+    )
+      throw new Error('This Session already has an operation in progress.');
+    this.sessionOperations.add(identity);
+    return () => {
+      this.sessionOperations.delete(identity);
+    };
+  }
+
+  /** The durable identity is the exclusion boundary across runtime incarnations. */
+  private async withSessionOperation<T>(
     id: string,
-    choice: SessionModelChange
-  ): Promise<PtySessionInfo> {
+    run: () => Promise<T>
+  ): Promise<T> {
     const session = this.sessions.get(id);
-    if (!session || session.info.exited)
-      throw new Error('Session is no longer running.');
-    const options = modelChangeResumeOptions(
-      session.info,
-      session.launchOptions,
-      choice
-    );
-    // Subscribe before stopping: process death and node-pty's exit callback are
-    // separate boundaries. The old exit must settle before the replacement exists.
+    if (!session) throw new Error('Session is no longer available.');
+    const release = this.acquireSessionOperation(session.info.durableSessionId);
+    try {
+      return await run();
+    } finally {
+      release();
+    }
+  }
+
+  async closeSession(durableSessionId: string, discard = false): Promise<void> {
+    const release = this.acquireSessionOperation(durableSessionId);
+    try {
+      const session = [...this.sessions.values()].find(
+        item => item.info.durableSessionId === durableSessionId
+      );
+      if (session && !session.info.exited) {
+        await this.settleProviderIdentity(session.info.id);
+        await this.stopAndConfirmExit(session.info.id);
+      }
+      this.forgetExited(durableSessionId);
+      if (discard) await this.purgeHistory(durableSessionId);
+    } finally {
+      release();
+    }
+  }
+
+  /** Await both process-group death and the authoritative node-pty exit event. */
+  async stopAndConfirmExit(id: string): Promise<void> {
+    const session = this.sessions.get(id);
+    if (!session || session.info.exited) return;
     let onExit: (exitedId: string) => void = () => {};
     let expiry: ReturnType<typeof setTimeout> | undefined;
     const exited = new Promise<void>((resolve, reject) => {
       expiry = setTimeout(
-        () =>
-          reject(
-            new Error(
-              'Agent stop was not confirmed. Resume the saved Session before changing model.'
-            )
-          ),
+        () => reject(new Error('Agent stop was not confirmed.')),
         10_000
       );
       onExit = exitedId => {
@@ -983,11 +1026,66 @@ export class PtySessionManager extends EventEmitter {
     });
     try {
       await Promise.all([this.stop(id), exited]);
-      return await this.create(options);
     } finally {
       if (expiry) clearTimeout(expiry);
       this.off('exit', onExit);
     }
+  }
+
+  /** Prepare all selected identities before admitting a Project-wide stop. */
+  async prepareSessionPause(
+    id: string
+  ): Promise<{ stop(): Promise<void>; release(): void }> {
+    const initial = this.sessions.get(id);
+    if (!initial) throw new Error('Session is no longer available.');
+    const release = this.acquireSessionOperation(initial.info.durableSessionId);
+    try {
+      await this.settleProviderIdentity(id);
+      const session = this.sessions.get(id);
+      if (!session) throw new Error('Session is no longer available.');
+      if (session.info.harness === 'shell' || !session.info.harnessSessionId)
+        throw new Error(
+          'A saved Agent conversation is required before pausing.'
+        );
+      return { stop: () => this.stopAndConfirmExit(id), release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  async pauseSession(
+    id: string,
+    canStop: () => boolean = () => true
+  ): Promise<void> {
+    const prepared = await this.prepareSessionPause(id);
+    try {
+      if (!canStop())
+        throw new Error(
+          'The Agent started working. Pause again to confirm interruption.'
+        );
+      await prepared.stop();
+    } finally {
+      prepared.release();
+    }
+  }
+
+  async changeModel(
+    id: string,
+    choice: SessionModelChange
+  ): Promise<PtySessionInfo> {
+    return this.withSessionOperation(id, async () => {
+      const session = this.sessions.get(id);
+      if (!session || session.info.exited)
+        throw new Error('Session is no longer running.');
+      const options = modelChangeResumeOptions(
+        session.info,
+        session.launchOptions,
+        choice
+      );
+      await this.stopAndConfirmExit(id);
+      return this.createForOperation(options, session.info.durableSessionId);
+    });
   }
 
   /**

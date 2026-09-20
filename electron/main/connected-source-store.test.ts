@@ -260,7 +260,7 @@ describe('ConnectedSourceStore', () => {
     expect(store().list()).toEqual([]);
   });
 
-  it('drops an unreadable row instead of losing the whole registry', () => {
+  it('preserves the whole registry when a stored row cannot be decoded', () => {
     const target = store();
     addOne(target);
     const file = path.join(dir, 'connected-sources.json');
@@ -269,15 +269,63 @@ describe('ConnectedSourceStore', () => {
     parsed.sources.push({ nonsense: true });
     fs.writeFileSync(file, JSON.stringify(parsed));
 
-    const records = store().list();
-    expect(records).toHaveLength(1);
-    expect(records[0].id).toBe(BUILD_BOX);
+    expect(() => store().list()).toThrow(/needs recovery/);
+    expect(() => addOne(store())).toThrow(/needs recovery/);
   });
 
-  it('treats a corrupt records file as an empty registry', () => {
+  it('preserves corrupt records and refuses mutation across reopen', () => {
     fs.writeFileSync(path.join(dir, 'connected-sources.json'), '{ not json');
-    expect(store().list()).toEqual([]);
+    expect(() => store().list()).toThrow(/needs recovery/);
+    expect(() => addOne(store())).toThrow(/needs recovery/);
+    expect(fs.readdirSync(dir).some(name => name.includes('.corrupt-'))).toBe(
+      true
+    );
   });
+
+  it('unreadable credentials cannot detach the source or clear its custody flag', () => {
+    const target = store();
+    addOne(target);
+    const before = fs.readFileSync(
+      path.join(dir, 'connected-sources.json'),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(dir, 'connected-source-secrets.json'),
+      '{broken ciphertext'
+    );
+    expect(() => target.clearDeviceToken(BUILD_BOX)).toThrow(/needs recovery/);
+    expect(() => store().remove(BUILD_BOX)).toThrow(/needs recovery/);
+    expect(
+      fs.readFileSync(path.join(dir, 'connected-sources.json'), 'utf8')
+    ).toBe(before);
+  });
+
+  it.each([
+    { tokens: [], devices: {} },
+    { tokens: { source: 123 }, devices: {} },
+    { tokens: {}, devices: 'damaged' },
+  ])(
+    'preserves structurally damaged credential maps without clearing custody: %j',
+    shape => {
+      const target = store();
+      addOne(target);
+      const records = fs.readFileSync(
+        path.join(dir, 'connected-sources.json'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'connected-source-secrets.json'),
+        JSON.stringify({ schemaVersion: 1, ...shape })
+      );
+      expect(() => target.readDeviceToken(BUILD_BOX)).toThrow(/needs recovery/);
+      expect(() => store().clearDeviceToken(BUILD_BOX)).toThrow(
+        /needs recovery/
+      );
+      expect(
+        fs.readFileSync(path.join(dir, 'connected-sources.json'), 'utf8')
+      ).toBe(records);
+    }
+  );
 
   it('renames without touching transport or credential state', () => {
     const target = store();

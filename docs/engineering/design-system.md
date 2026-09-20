@@ -255,6 +255,14 @@ its caller restores focus synchronously on keyboard close. Closing a terminal
 menu must never forward the close key to the PTY. Use `text-chrome-label`, HUD
 semantic text, existing overlay material and the dense chrome spacing rung.
 
+The command palette keeps the same row typography and materials. Its shared
+`palette-groups` model orders current Sessions and Projects ahead of Workspace
+switches. Workspace switches cannot become the empty-query opening selection or
+appear in Recent; an intentional search can still select them. Async data may
+refine the opening selection only until the operator moves it. Commands for a
+service absent from this distribution are omitted across keyboard, palette and
+native menu; temporarily unavailable commands keep a disabled row with a reason.
+
 ## Dialogs
 
 A dialog's primary action states the chord that presses it, on the button's own

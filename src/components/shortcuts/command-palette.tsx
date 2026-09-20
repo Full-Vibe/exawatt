@@ -1,6 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import {
+  Fragment,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CommandDialog,
@@ -13,7 +21,12 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { shortcutRegistry, formatShortcutKeys } from '@/lib/shortcuts';
-import { getCommandVerb } from '@exawatt/core';
+import {
+  commandVerbCapabilities,
+  commandVerbOffered,
+  getCommandVerb,
+} from '@exawatt/core';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import {
   SquareTerminal,
   Settings,
@@ -47,6 +60,7 @@ import {
   Trophy,
   CopyPlus,
   Play,
+  Pause,
   ListRestart,
   FolderSearch,
   FolderX,
@@ -61,6 +75,7 @@ import {
   EDIT_ACTIVE_PROJECT_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
+  PAUSE_ACTIVE_PROJECT_EVENT,
   RESUME_ACTIVE_AGENT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
   CLOSE_ACTIVE_EVENT,
@@ -137,6 +152,12 @@ import {
   recordPaletteUse,
 } from './palette-recents';
 import { paletteFilter, paletteValue } from './palette-filter';
+import {
+  PALETTE_GROUPS,
+  paletteGroup,
+  paletteGroupMayLand,
+  type PaletteGroupId,
+} from './palette-groups';
 import {
   commandPaletteConfigurationKey,
   commandPaletteConfigurationRequest,
@@ -223,6 +244,7 @@ const WORKSPACE_PALETTE_ROW_ID = {
   color: verbRow('rename-project'),
   split: verbRow('workspace-split'),
   jump: verbRow('workspace-jump-attention'),
+  pauseProject: verbRow('workspace-pause-project'),
   resumeAgent: verbRow('workspace-resume-agent'),
   resumeScope: verbRow('workspace-resume-scope'),
   roadmap: verbRow('workspace-roadmap'),
@@ -333,12 +355,27 @@ export function CommandPalette({
   const [paletteMode, setPaletteMode] = useState<'commands' | 'themes'>(
     'commands'
   );
+  // The cursor, controlled (cmdk's own contract for a controlled `value`).
+  // cmdk selects the first row it registers and then keeps that row as
+  // later rows arrive, so on an empty query the palette would open on
+  // "Go to Agent" and leave the Sessions that load a few milliseconds later
+  // sitting above it. The opening-highlight effect re-targets the cursor as
+  // rows arrive, until the operator moves it himself.
+  const [rowValue, setRowValue] = useState('');
+  const userNavigated = useRef(false);
   const [themeValue, setThemeValue] = useState('');
   const [committedThemeId, setCommittedThemeId] = useState('');
   const [themeSaving, setThemeSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const previewOwned = useRef(false);
   const inElectron = typeof window !== 'undefined' && !!window.electron?.pty;
+  // Capability-gated verbs (feedback) render only where the distribution
+  // contract configures the service; a row that could never do anything is
+  // not offered rather than listed and dead.
+  const capabilities = useMemo(
+    () => commandVerbCapabilities(resolvedDistribution()),
+    []
+  );
   // Demo tenant (ENG-027 W2): the palette lists the demo Workspace's
   // Sessions and drops every verb that reaches Personal truth or a PTY —
   // launching, shells, Projects, reopen. Demo tabs cannot spawn a process.
@@ -356,6 +393,13 @@ export function CommandPalette({
   // Reset search AND session rows when closing — stale rows on reopen can
   // list dead sessions or wrong statuses until the refetch lands, and Enter
   // on one would silently do nothing
+  // Each open starts the opening-highlight rule over.
+  useEffect(() => {
+    if (!open) return;
+    userNavigated.current = false;
+    setRowValue('');
+  }, [open]);
+
   useEffect(() => {
     if (!open) {
       if (previewOwned.current) {
@@ -628,6 +672,19 @@ export function CommandPalette({
       'agent',
     ];
     return [
+      {
+        id: WORKSPACE_PALETTE_ROW_ID.pauseProject,
+        label: 'Pause this Project',
+        value: paletteValue(
+          'Pause this Project',
+          WORKSPACE_PALETTE_ROW_ID.pauseProject
+        ),
+        keywords: ['pause', 'project', 'stop', 'agents'],
+        icon: Pause,
+        demoAvailable: true,
+        availability: workspaceAvailability.commands['pause-project'],
+        onSelect: () => dispatch(PAUSE_ACTIVE_PROJECT_EVENT),
+      },
       ...(workspaceAvailability.commands['resume-agent'].available
         ? [
             {
@@ -994,18 +1051,18 @@ export function CommandPalette({
   // Quick feedback (ENG-025 F1): the palette is the discoverable face of
   // ⌘⇧F; each kind-specific verb opens the same capture bar pre-set.
   const feedback = useOptionalProductFeedback();
-  const feedbackAvailable = feedback?.isAvailable ?? false;
   const feedbackAuthed = feedback?.isAuthenticated ?? false;
   const actionItems = useMemo<CommandItem[]>(() => {
     void shortcutVersion;
+    const feedbackOffered = commandVerbOffered(
+      getCommandVerb('quick-feedback'),
+      capabilities
+    );
+    // Offered but signed out: the row stays, disabled, and says why. Not
+    // offered at all: no row.
     const feedbackAvailability: CommandAvailability | undefined = feedbackAuthed
       ? undefined
-      : {
-          available: false,
-          reason: feedbackAvailable
-            ? 'Sign in required'
-            : 'Unavailable in this build',
-        };
+      : { available: false, reason: 'Sign in required' };
     const feedbackVerb = (
       id: string,
       label: string,
@@ -1043,38 +1100,42 @@ export function CommandPalette({
         icon: Palette,
         onSelect: enterThemePicker,
       },
-      feedbackVerb(
-        ACTION_PALETTE_ROW_ID.feedback,
-        'Send feedback',
-        ['send', 'feedback', 'comment', 'note', 'tell us'],
-        MessageSquarePlus,
-        'general',
-        true
-      ),
-      feedbackVerb(
-        ACTION_PALETTE_ROW_ID.feedbackBug,
-        'Report a bug',
-        ['report', 'bug', 'broken', 'issue', 'problem', 'wrong', 'crash'],
-        Bug,
-        'bug',
-        false
-      ),
-      feedbackVerb(
-        ACTION_PALETTE_ROW_ID.feedbackIdea,
-        'Suggest an idea',
-        [
-          'suggest',
-          'idea',
-          'feature',
-          'request',
-          'enhancement',
-          'improve',
-          'wish',
-        ],
-        Lightbulb,
-        'idea',
-        false
-      ),
+      ...(feedbackOffered
+        ? [
+            feedbackVerb(
+              ACTION_PALETTE_ROW_ID.feedback,
+              'Send feedback',
+              ['send', 'feedback', 'comment', 'note', 'tell us'],
+              MessageSquarePlus,
+              'general',
+              true
+            ),
+            feedbackVerb(
+              ACTION_PALETTE_ROW_ID.feedbackBug,
+              'Report a bug',
+              ['report', 'bug', 'broken', 'issue', 'problem', 'wrong', 'crash'],
+              Bug,
+              'bug',
+              false
+            ),
+            feedbackVerb(
+              ACTION_PALETTE_ROW_ID.feedbackIdea,
+              'Suggest an idea',
+              [
+                'suggest',
+                'idea',
+                'feature',
+                'request',
+                'enhancement',
+                'improve',
+                'wish',
+              ],
+              Lightbulb,
+              'idea',
+              false
+            ),
+          ]
+        : []),
       {
         id: ACTION_PALETTE_ROW_ID.help,
         label: 'Keyboard Shortcuts',
@@ -1093,8 +1154,8 @@ export function CommandPalette({
       },
     ];
   }, [
+    capabilities,
     enterThemePicker,
-    feedbackAvailable,
     feedbackAuthed,
     handleSelect,
     onOpenHelpModal,
@@ -1114,19 +1175,24 @@ export function CommandPalette({
   const recentRows = useMemo(() => {
     const candidates = new Map<string, RecentCandidate>();
     for (const item of [...navigationItems, ...actionItems]) {
+      if (item.availability && !item.availability.available) continue;
       candidates.set(item.id, {
         label: item.label,
         icon: item.icon,
         onSelect: item.onSelect,
       });
     }
-    for (const row of workspaceRows) {
-      if (row.action !== 'switch' && row.action !== 'open-preview') continue;
-      candidates.set(row.id, {
-        label: row.workspace.name,
-        icon: WORKSPACE_ICONS[row.workspace.kind],
-        onSelect: () => selectWorkspace(row),
-      });
+    // A tenant switch is never the opening highlight, and Recent renders
+    // first, so a Workspaces row is not a Recent candidate (`palette-groups`).
+    if (paletteGroupMayLand('workspaces')) {
+      for (const row of workspaceRows) {
+        if (row.action !== 'switch' && row.action !== 'open-preview') continue;
+        candidates.set(row.id, {
+          label: row.workspace.name,
+          icon: WORKSPACE_ICONS[row.workspace.kind],
+          onSelect: () => selectWorkspace(row),
+        });
+      }
     }
     if (inElectron && !inDemoTenant) {
       for (const configuration of launchConfigurations) {
@@ -1202,38 +1268,543 @@ export function CommandPalette({
     workspaceAvailability,
   ]);
 
-  const navigationGroup = (
-    <CommandGroup heading="Navigation">
-      {navigationItems.map(item => (
+  /**
+   * One node per group, keyed by the group model; `PALETTE_GROUPS` decides
+   * the order they render in and which of them the opening highlight may
+   * land on. A group that has nothing to offer right now is `null` and draws
+   * neither heading nor separator.
+   */
+  const groupProps = (id: PaletteGroupId) => ({
+    heading: paletteGroup(id).heading,
+    'data-palette-group': id,
+    // the opening-highlight effect below reads this: only a landing group's
+    // first row may be the cursor's opening position
+    'data-palette-landing': paletteGroupMayLand(id) ? '' : undefined,
+  });
+  const groupNodes: Record<PaletteGroupId, ReactNode | null> = {
+    recent:
+      !search && recentRows.length > 0 ? (
+        <CommandGroup {...groupProps('recent')}>
+          {recentRows.map(row => (
+            <CommandItem
+              key={`recent-use-${row.id}`}
+              value={`recent ${row.id}`}
+              onSelect={() => {
+                recordPaletteUse(row.id);
+                row.onSelect();
+              }}
+            >
+              {row.icon ? (
+                <row.icon className="mr-2 h-4 w-4" />
+              ) : row.launchConfiguration?.configuration.kind === 'agent' ? (
+                <SourceIdentityMark
+                  className="mr-2"
+                  color={
+                    AGENT_SOURCE_META[
+                      row.launchConfiguration.configuration.source
+                    ].color
+                  }
+                >
+                  <HarnessGlyph
+                    harness={row.launchConfiguration.configuration.source}
+                    size={13}
+                  />
+                </SourceIdentityMark>
+              ) : row.launchConfiguration?.configuration.kind === 'shell' ? (
+                <SquareTerminal className="mr-2 h-4 w-4" />
+              ) : row.color ? (
+                <span
+                  className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                  style={{ background: row.color }}
+                />
+              ) : (
+                <History className="mr-2 h-4 w-4" />
+              )}
+              <span className="truncate">{row.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      ) : null,
+    sessions:
+      (inElectron || inDemoTenant) && sessions.length > 0 ? (
+        <CommandGroup {...groupProps('sessions')}>
+          {sessions.map(s => {
+            const status = STATUS_META[s.status];
+            return (
+              <CommandItem
+                key={s.id}
+                value={paletteValue(s.title, s.id)}
+                keywords={[
+                  s.projectName,
+                  ...(s.roadmapItemId ? [s.roadmapItemId] : []),
+                  ...(s.subtitle ? [s.subtitle] : []),
+                ]}
+                onSelect={() => openSession(s.id)}
+                data-session-id={s.id}
+              >
+                <span
+                  className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                  style={{
+                    background: s.color,
+                    boxShadow: `0 0 5px ${s.color}`,
+                  }}
+                />
+                {s.harness !== 'shell' && (
+                  <SourceIdentityMark
+                    className="mr-1.5"
+                    color={HARNESS_META[s.harness].color}
+                  >
+                    <HarnessGlyph harness={s.harness} size={12} />
+                  </SourceIdentityMark>
+                )}
+                <span className="min-w-0 flex-1 truncate">
+                  {s.title}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {s.projectName}
+                    {s.roadmapItemId ? ` · ${s.roadmapItemId}` : ''}
+                    {s.subtitle ? ` · ${s.subtitle}` : ''}
+                  </span>
+                </span>
+                <span
+                  className="ml-3 inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
+                  data-session-status={s.status}
+                  style={{ color: status.color }}
+                >
+                  {s.status === 'needs-you' ? (
+                    <AttentionMarker />
+                  ) : s.status === 'fault' ? (
+                    <StatusLight decorative size="compact" state="fault" />
+                  ) : s.status !== 'exited' ? (
+                    <SessionStatusGlyph state={s.status} />
+                  ) : null}
+                  <span>{status.label}</span>
+                </span>
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+      ) : null,
+    start: personalVerbs ? (
+      <CommandGroup {...groupProps('start')}>
+        {launchConfigurations.map(configuration => {
+          const key = commandPaletteConfigurationKey(configuration);
+          const snapshot = configuration.configuration;
+          const shellUnavailable =
+            snapshot.kind === 'shell' &&
+            !workspaceAvailability.commands['launch-shell'].available;
+          return (
+            <CommandItem
+              key={`launch-${key}`}
+              value={paletteValue(configuration.label, `launch-${key}`)}
+              keywords={[
+                'start',
+                'launch',
+                'configuration',
+                'new',
+                'session',
+                'task',
+                ...(configuration.searchValue
+                  ? [configuration.searchValue]
+                  : []),
+              ]}
+              onSelect={() => {
+                recordPaletteUse(`launch:${key}`);
+                openLaunchConfiguration(configuration);
+              }}
+              disabled={shellUnavailable}
+              title={
+                shellUnavailable
+                  ? (workspaceAvailability.commands['launch-shell'].reason ??
+                    undefined)
+                  : undefined
+              }
+              data-launch-configuration={key}
+            >
+              {snapshot.kind === 'agent' ? (
+                <SourceIdentityMark
+                  className="mr-2"
+                  color={AGENT_SOURCE_META[snapshot.source].color}
+                >
+                  <HarnessGlyph harness={snapshot.source} size={13} />
+                </SourceIdentityMark>
+              ) : (
+                <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>{configuration.label}</span>
+              {shellUnavailable && (
+                <CommandShortcut>
+                  {workspaceAvailability.commands['launch-shell'].reason}
+                </CommandShortcut>
+              )}
+            </CommandItem>
+          );
+        })}
+      </CommandGroup>
+    ) : null,
+    clone:
+      personalVerbs && cloneTargets.length > 0 ? (
+        <CommandGroup {...groupProps('clone')}>
+          {cloneTargets.map(target => (
+            <CommandItem
+              key={`clone-${target.id}`}
+              value={paletteValue(target.label, `clone-${target.id}`)}
+              keywords={[
+                'clone',
+                'active',
+                'agent',
+                'new session',
+                'handoff',
+                target.accessibleLabel,
+                target.source,
+                target.modelId,
+                ...(target.effort ? [target.effort] : []),
+              ]}
+              onSelect={() => cloneActiveAgent(target)}
+            >
+              <CopyPlus className="mr-2 h-3.5 w-3.5 shrink-0" />
+              {/* Two setups on one model share a label by design, so
+                the effort rides beside it exactly as it does on the
+                launcher chip and the Clone to… menu. */}
+              <span>{target.label}</span>
+              {target.detail ? (
+                <span className="ml-2 text-hud-text-dim">{target.detail}</span>
+              ) : null}
+              <CommandShortcut>
+                starts a new Agent with a handoff
+              </CommandShortcut>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      ) : null,
+    projects: personalVerbs ? (
+      <CommandGroup {...groupProps('projects')}>
+        {projects
+          .filter(p => p.root_path)
+          .map(p => (
+            <CommandItem
+              key={`project-${p.id}`}
+              value={paletteValue(p.name, `project-${p.id}`)}
+              keywords={[
+                'project',
+                'open',
+                ...(p.root_path ? [p.root_path] : []),
+              ]}
+              onSelect={() => {
+                recordPaletteUse(`project:${p.root_path}`);
+                openProject(p);
+              }}
+            >
+              <span
+                className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                style={{ background: p.color ?? HUD.textDim }}
+              />
+              <span className="truncate">{p.name}</span>
+              <span
+                className="ml-auto truncate pl-2 text-chrome-micro"
+                style={{ color: HUD.textDim }}
+              >
+                {p.root_path}
+              </span>
+            </CommandItem>
+          ))}
+        {/* local recency fallback (D8): Projects the registry doesn't
+        cover right now — closed tabs, signed out, offline */}
+        {recents
+          .filter(r => !projects.some(p => p.root_path === r.dir))
+          .map(r => (
+            <CommandItem
+              key={`recent-${r.dir}`}
+              value={paletteValue(r.name, `recent-${r.dir}`)}
+              keywords={['project', 'open', 'recent', r.dir]}
+              onSelect={() => {
+                recordPaletteUse(`project:${r.dir}`);
+                openRecentProject(r.dir);
+              }}
+            >
+              <span
+                className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                style={{ background: r.color ?? HUD.textDim }}
+              />
+              <span className="truncate">{r.name}</span>
+              <span
+                className="ml-auto truncate pl-2 text-chrome-micro"
+                style={{ color: HUD.textDim }}
+              >
+                {r.dir}
+              </span>
+            </CommandItem>
+          ))}
+        {registryFailed && (
+          <CommandItem
+            value={paletteValue(
+              'Sign in to sync Projects across machines',
+              'project-sign-in'
+            )}
+            keywords={['project', 'sign in', 'sync', 'account']}
+            onSelect={() => handleSelect(() => router.push('/sign-in'))}
+          >
+            <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
+            <span>Sign in to sync Projects across machines</span>
+          </CommandItem>
+        )}
         <CommandItem
-          key={item.id}
-          value={item.value}
-          keywords={item.keywords}
-          onSelect={() => {
-            recordPaletteUse(item.id);
-            item.onSelect();
-          }}
+          value={paletteValue('Add project…', 'project-add')}
+          keywords={[
+            'project',
+            'add',
+            'new',
+            'open',
+            'folder',
+            'directory',
+            'browse',
+          ]}
+          onSelect={addProject}
         >
-          <item.icon className="mr-2 h-4 w-4" />
-          <span>{item.label}</span>
-          {item.shortcut ? (
+          <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
+          <span>Add project…</span>
+          {newProjectShortcut && (
             <CommandShortcut>
-              {formatShortcutKeys(item.shortcut)}
+              {formatShortcutKeys(newProjectShortcut)}
             </CommandShortcut>
-          ) : item.note ? (
-            <CommandShortcut>{item.note}</CommandShortcut>
-          ) : null}
+          )}
         </CommandItem>
-      ))}
-    </CommandGroup>
+      </CommandGroup>
+    ) : null,
+    workspace:
+      workspaceVerbs && onWorkspaceRoute && tenantWorkspaceItems.length > 0 ? (
+        <CommandGroup {...groupProps('workspace')}>
+          {tenantWorkspaceItems.map(item => (
+            <CommandItem
+              key={item.id}
+              value={item.value}
+              keywords={[
+                ...(item.keywords ?? []),
+                ...(item.availability?.reason
+                  ? [item.availability.reason]
+                  : []),
+              ]}
+              disabled={
+                item.availability ? !item.availability.available : undefined
+              }
+              title={item.availability?.reason ?? undefined}
+              onSelect={() => {
+                recordPaletteUse(item.id);
+                item.onSelect();
+              }}
+            >
+              <item.icon className="mr-2 h-4 w-4" />
+              <span>{item.label}</span>
+              {item.availability && !item.availability.available ? (
+                <CommandShortcut>{item.availability.reason}</CommandShortcut>
+              ) : item.shortcut ? (
+                <CommandShortcut>
+                  {formatShortcutKeys(item.shortcut)}
+                </CommandShortcut>
+              ) : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      ) : null,
+    'recently-closed':
+      personalVerbs && onWorkspaceRoute && closedSessions.length > 0 ? (
+        <CommandGroup {...groupProps('recently-closed')}>
+          {closedSessions.map(entry => (
+            <CommandItem
+              key={entry.durableSessionId}
+              value={paletteValue(
+                `Reopen ${entry.projectName} · ${entry.goal ?? entry.title}`,
+                `closed-${entry.durableSessionId}`
+              )}
+              keywords={[
+                'reopen',
+                'closed',
+                entry.projectName,
+                entry.title,
+                entry.harness,
+                ...(entry.goal ? [entry.goal] : []),
+              ]}
+              onSelect={() => {
+                recordPaletteUse('ws-reopen-closed');
+                handleSelect(() =>
+                  window.dispatchEvent(
+                    new CustomEvent(REOPEN_CLOSED_EVENT, {
+                      detail: {
+                        durableSessionId: entry.durableSessionId,
+                      },
+                    })
+                  )
+                );
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              <span>
+                Reopen {entry.projectName} · {entry.goal ?? entry.title}
+              </span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      ) : null,
+    fleet:
+      inElectron && onSpatialRoute ? (
+        <CommandGroup {...groupProps('fleet')}>
+          <CommandItem
+            value={paletteValue(
+              'Toggle projection (top-down ↔ angled)',
+              'spatial-projection'
+            )}
+            keywords={[
+              'fleet',
+              'spatial',
+              'toggle',
+              'projection',
+              'top-down',
+              'angled',
+              'fixed',
+              'view',
+            ]}
+            onSelect={() => {
+              recordPaletteUse('spatial-projection');
+              toggleProjection();
+            }}
+          >
+            <RotateCw className="mr-2 h-4 w-4" />
+            <span>Toggle projection (top-down ↔ angled)</span>
+            <CommandShortcut>V</CommandShortcut>
+          </CommandItem>
+        </CommandGroup>
+      ) : null,
+    navigation: (
+      <CommandGroup {...groupProps('navigation')}>
+        {navigationItems.map(item => (
+          <CommandItem
+            key={item.id}
+            value={item.value}
+            keywords={item.keywords}
+            onSelect={() => {
+              recordPaletteUse(item.id);
+              item.onSelect();
+            }}
+          >
+            <item.icon className="mr-2 h-4 w-4" />
+            <span>{item.label}</span>
+            {item.shortcut ? (
+              <CommandShortcut>
+                {formatShortcutKeys(item.shortcut)}
+              </CommandShortcut>
+            ) : item.note ? (
+              <CommandShortcut>{item.note}</CommandShortcut>
+            ) : null}
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ),
+    workspaces:
+      workspaceRows.length > 0 ? (
+        <CommandGroup {...groupProps('workspaces')}>
+          {workspaceRows.map(row => {
+            const Icon = WORKSPACE_ICONS[row.workspace.kind];
+            const disabled =
+              row.action === 'current' || row.action === 'unavailable';
+            return (
+              <CommandItem
+                key={row.id}
+                value={row.value}
+                keywords={row.keywords}
+                disabled={disabled}
+                data-palette-workspace-current={
+                  row.action === 'current' ? row.workspace.id : undefined
+                }
+                data-palette-workspace-switch={
+                  row.action === 'switch' ? row.workspace.id : undefined
+                }
+                data-palette-workspace-preview={
+                  row.action === 'open-preview' ? row.workspace.id : undefined
+                }
+                onSelect={() => {
+                  recordPaletteUse(row.id);
+                  selectWorkspace(row);
+                }}
+              >
+                <Icon className="mr-2 h-4 w-4 shrink-0" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{row.workspace.name}</span>
+                  {row.workspace.tagline && (
+                    <span className="truncate text-chrome-meta text-muted-foreground">
+                      {row.workspace.tagline}
+                    </span>
+                  )}
+                </span>
+                {row.action === 'current' && (
+                  <Check
+                    aria-hidden
+                    className="ml-2 h-3.5 w-3.5 shrink-0 text-primary"
+                  />
+                )}
+                {row.note && <CommandShortcut>{row.note}</CommandShortcut>}
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+      ) : null,
+    actions: (
+      <CommandGroup {...groupProps('actions')}>
+        {actionItems.map(item => (
+          <CommandItem
+            key={item.id}
+            value={item.value}
+            keywords={item.keywords}
+            disabled={
+              item.availability ? !item.availability.available : undefined
+            }
+            title={item.availability?.reason ?? undefined}
+            onSelect={() => {
+              recordPaletteUse(item.id);
+              item.onSelect();
+            }}
+          >
+            <item.icon className="mr-2 h-4 w-4" />
+            <span>{item.label}</span>
+            {item.availability && !item.availability.available ? (
+              <CommandShortcut>{item.availability.reason}</CommandShortcut>
+            ) : item.shortcut ? (
+              <CommandShortcut>
+                {formatShortcutKeys(item.shortcut)}
+              </CommandShortcut>
+            ) : null}
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ),
+  };
+  const renderedGroups = PALETTE_GROUPS.filter(
+    group => groupNodes[group.id] !== null
   );
+
+  // Opening highlight: the first enabled row of the first rendered
+  // landing group, read from the rows as they stand so it can never name a
+  // row the list does not have. Re-applied as async groups (Sessions,
+  // Projects) arrive above the cursor; never once the operator has moved it,
+  // and never while a query is ranking rows.
+  useEffect(() => {
+    if (!open || paletteMode !== 'commands' || search !== '') return;
+    if (userNavigated.current) return;
+    const first = listRef.current?.querySelector<HTMLElement>(
+      '[cmdk-group][data-palette-landing] [cmdk-item]:not([data-disabled="true"])'
+    );
+    const value = first?.getAttribute('data-value');
+    if (value && value !== rowValue) setRowValue(value);
+    // `renderedGroups` is the rows on screen this render; a new set of rows
+    // (Sessions arriving) is exactly when the target may have moved.
+  }, [open, paletteMode, search, rowValue, renderedGroups]);
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={handlePaletteOpenChange}
-      commandValue={paletteMode === 'themes' ? themeValue : undefined}
-      onCommandValueChange={paletteMode === 'themes' ? previewTheme : undefined}
+      commandValue={paletteMode === 'themes' ? themeValue : rowValue}
+      onCommandValueChange={
+        paletteMode === 'themes' ? previewTheme : setRowValue
+      }
       // structural ranking bands (ENG-016) — commands mode only; the theme
       // picker keeps cmdk's default scoring over its plain values
       commandFilter={paletteMode === 'themes' ? undefined : paletteFilter}
@@ -1254,7 +1825,29 @@ export function CommandPalette({
           onSelect={themeId => void commitTheme(themeId)}
         />
       ) : (
-        <>
+        <div
+          className="contents"
+          // The operator moving the cursor, by key or by pointer, ends the
+          // opening-highlight rule for this open.
+          onKeyDown={event => {
+            if (
+              event.key === 'ArrowDown' ||
+              event.key === 'ArrowUp' ||
+              event.key === 'Home' ||
+              event.key === 'End' ||
+              event.key === 'PageDown' ||
+              event.key === 'PageUp' ||
+              (event.ctrlKey && ['n', 'p', 'j', 'k'].includes(event.key))
+            ) {
+              userNavigated.current = true;
+            }
+          }}
+          onPointerMove={event => {
+            if ((event.target as Element).closest('[cmdk-item]')) {
+              userNavigated.current = true;
+            }
+          }}
+        >
           <CommandInput
             placeholder="Type a command or search..."
             value={search}
@@ -1262,529 +1855,16 @@ export function CommandPalette({
           />
           <CommandList ref={listRef}>
             <CommandEmpty>No results found.</CommandEmpty>
-
-            {!search && recentRows.length > 0 && (
-              <>
-                <CommandGroup heading="Recent">
-                  {recentRows.map(row => (
-                    <CommandItem
-                      key={`recent-use-${row.id}`}
-                      value={`recent ${row.id}`}
-                      onSelect={() => {
-                        recordPaletteUse(row.id);
-                        row.onSelect();
-                      }}
-                    >
-                      {row.icon ? (
-                        <row.icon className="mr-2 h-4 w-4" />
-                      ) : row.launchConfiguration?.configuration.kind ===
-                        'agent' ? (
-                        <SourceIdentityMark
-                          className="mr-2"
-                          color={
-                            AGENT_SOURCE_META[
-                              row.launchConfiguration.configuration.source
-                            ].color
-                          }
-                        >
-                          <HarnessGlyph
-                            harness={
-                              row.launchConfiguration.configuration.source
-                            }
-                            size={13}
-                          />
-                        </SourceIdentityMark>
-                      ) : row.launchConfiguration?.configuration.kind ===
-                        'shell' ? (
-                        <SquareTerminal className="mr-2 h-4 w-4" />
-                      ) : row.color ? (
-                        <span
-                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                          style={{ background: row.color }}
-                        />
-                      ) : (
-                        <History className="mr-2 h-4 w-4" />
-                      )}
-                      <span className="truncate">{row.label}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {workspaceRows.length > 0 && (
-              <>
-                <CommandGroup heading="Workspaces">
-                  {workspaceRows.map(row => {
-                    const Icon = WORKSPACE_ICONS[row.workspace.kind];
-                    const disabled =
-                      row.action === 'current' || row.action === 'unavailable';
-                    return (
-                      <CommandItem
-                        key={row.id}
-                        value={row.value}
-                        keywords={row.keywords}
-                        disabled={disabled}
-                        data-palette-workspace-current={
-                          row.action === 'current'
-                            ? row.workspace.id
-                            : undefined
-                        }
-                        data-palette-workspace-switch={
-                          row.action === 'switch' ? row.workspace.id : undefined
-                        }
-                        data-palette-workspace-preview={
-                          row.action === 'open-preview'
-                            ? row.workspace.id
-                            : undefined
-                        }
-                        onSelect={() => {
-                          recordPaletteUse(row.id);
-                          selectWorkspace(row);
-                        }}
-                      >
-                        <Icon className="mr-2 h-4 w-4 shrink-0" />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate">{row.workspace.name}</span>
-                          {row.workspace.tagline && (
-                            <span className="truncate text-chrome-meta text-muted-foreground">
-                              {row.workspace.tagline}
-                            </span>
-                          )}
-                        </span>
-                        {row.action === 'current' && (
-                          <Check
-                            aria-hidden
-                            className="ml-2 h-3.5 w-3.5 shrink-0 text-primary"
-                          />
-                        )}
-                        {row.note && (
-                          <CommandShortcut>{row.note}</CommandShortcut>
-                        )}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {(inElectron || inDemoTenant) && sessions.length > 0 && (
-              <>
-                <CommandGroup heading="Sessions">
-                  {sessions.map(s => {
-                    const status = STATUS_META[s.status];
-                    return (
-                      <CommandItem
-                        key={s.id}
-                        value={paletteValue(s.title, s.id)}
-                        keywords={[
-                          s.projectName,
-                          ...(s.roadmapItemId ? [s.roadmapItemId] : []),
-                          ...(s.subtitle ? [s.subtitle] : []),
-                        ]}
-                        onSelect={() => openSession(s.id)}
-                        data-session-id={s.id}
-                      >
-                        <span
-                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                          style={{
-                            background: s.color,
-                            boxShadow: `0 0 5px ${s.color}`,
-                          }}
-                        />
-                        {s.harness !== 'shell' && (
-                          <SourceIdentityMark
-                            className="mr-1.5"
-                            color={HARNESS_META[s.harness].color}
-                          >
-                            <HarnessGlyph harness={s.harness} size={12} />
-                          </SourceIdentityMark>
-                        )}
-                        <span className="min-w-0 flex-1 truncate">
-                          {s.title}
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            {s.projectName}
-                            {s.roadmapItemId ? ` · ${s.roadmapItemId}` : ''}
-                            {s.subtitle ? ` · ${s.subtitle}` : ''}
-                          </span>
-                        </span>
-                        <span
-                          className="ml-3 inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
-                          data-session-status={s.status}
-                          style={{ color: status.color }}
-                        >
-                          {s.status === 'needs-you' ? (
-                            <AttentionMarker />
-                          ) : s.status === 'fault' ? (
-                            <StatusLight
-                              decorative
-                              size="compact"
-                              state="fault"
-                            />
-                          ) : s.status !== 'exited' ? (
-                            <SessionStatusGlyph state={s.status} />
-                          ) : null}
-                          <span>{status.label}</span>
-                        </span>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {personalVerbs && (
-              <>
-                <CommandGroup heading="Start">
-                  {launchConfigurations.map(configuration => {
-                    const key = commandPaletteConfigurationKey(configuration);
-                    const snapshot = configuration.configuration;
-                    const shellUnavailable =
-                      snapshot.kind === 'shell' &&
-                      !workspaceAvailability.commands['launch-shell'].available;
-                    return (
-                      <CommandItem
-                        key={`launch-${key}`}
-                        value={paletteValue(
-                          configuration.label,
-                          `launch-${key}`
-                        )}
-                        keywords={[
-                          'start',
-                          'launch',
-                          'configuration',
-                          'new',
-                          'session',
-                          'task',
-                          ...(configuration.searchValue
-                            ? [configuration.searchValue]
-                            : []),
-                        ]}
-                        onSelect={() => {
-                          recordPaletteUse(`launch:${key}`);
-                          openLaunchConfiguration(configuration);
-                        }}
-                        disabled={shellUnavailable}
-                        title={
-                          shellUnavailable
-                            ? (workspaceAvailability.commands['launch-shell']
-                                .reason ?? undefined)
-                            : undefined
-                        }
-                        data-launch-configuration={key}
-                      >
-                        {snapshot.kind === 'agent' ? (
-                          <SourceIdentityMark
-                            className="mr-2"
-                            color={AGENT_SOURCE_META[snapshot.source].color}
-                          >
-                            <HarnessGlyph harness={snapshot.source} size={13} />
-                          </SourceIdentityMark>
-                        ) : (
-                          <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
-                        )}
-                        <span>{configuration.label}</span>
-                        {shellUnavailable && (
-                          <CommandShortcut>
-                            {
-                              workspaceAvailability.commands['launch-shell']
-                                .reason
-                            }
-                          </CommandShortcut>
-                        )}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {personalVerbs && cloneTargets.length > 0 && (
-              <>
-                <CommandGroup heading="Clone active Agent to">
-                  {cloneTargets.map(target => (
-                    <CommandItem
-                      key={`clone-${target.id}`}
-                      value={paletteValue(target.label, `clone-${target.id}`)}
-                      keywords={[
-                        'clone',
-                        'active',
-                        'agent',
-                        'new session',
-                        'handoff',
-                        target.accessibleLabel,
-                        target.source,
-                        target.modelId,
-                        ...(target.effort ? [target.effort] : []),
-                      ]}
-                      onSelect={() => cloneActiveAgent(target)}
-                    >
-                      <CopyPlus className="mr-2 h-3.5 w-3.5 shrink-0" />
-                      {/* Two setups on one model share a label by design, so
-                          the effort rides beside it exactly as it does on the
-                          launcher chip and the Clone to… menu. */}
-                      <span>{target.label}</span>
-                      {target.detail ? (
-                        <span className="ml-2 text-hud-text-dim">
-                          {target.detail}
-                        </span>
-                      ) : null}
-                      <CommandShortcut>
-                        starts a new Agent with a handoff
-                      </CommandShortcut>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {personalVerbs && (
-              <>
-                <CommandGroup heading="Projects">
-                  {projects
-                    .filter(p => p.root_path)
-                    .map(p => (
-                      <CommandItem
-                        key={`project-${p.id}`}
-                        value={paletteValue(p.name, `project-${p.id}`)}
-                        keywords={[
-                          'project',
-                          'open',
-                          ...(p.root_path ? [p.root_path] : []),
-                        ]}
-                        onSelect={() => {
-                          recordPaletteUse(`project:${p.root_path}`);
-                          openProject(p);
-                        }}
-                      >
-                        <span
-                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                          style={{ background: p.color ?? HUD.textDim }}
-                        />
-                        <span className="truncate">{p.name}</span>
-                        <span
-                          className="ml-auto truncate pl-2 text-chrome-micro"
-                          style={{ color: HUD.textDim }}
-                        >
-                          {p.root_path}
-                        </span>
-                      </CommandItem>
-                    ))}
-                  {/* local recency fallback (D8): Projects the registry doesn't
-                  cover right now — closed tabs, signed out, offline */}
-                  {recents
-                    .filter(r => !projects.some(p => p.root_path === r.dir))
-                    .map(r => (
-                      <CommandItem
-                        key={`recent-${r.dir}`}
-                        value={paletteValue(r.name, `recent-${r.dir}`)}
-                        keywords={['project', 'open', 'recent', r.dir]}
-                        onSelect={() => {
-                          recordPaletteUse(`project:${r.dir}`);
-                          openRecentProject(r.dir);
-                        }}
-                      >
-                        <span
-                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                          style={{ background: r.color ?? HUD.textDim }}
-                        />
-                        <span className="truncate">{r.name}</span>
-                        <span
-                          className="ml-auto truncate pl-2 text-chrome-micro"
-                          style={{ color: HUD.textDim }}
-                        >
-                          {r.dir}
-                        </span>
-                      </CommandItem>
-                    ))}
-                  {registryFailed && (
-                    <CommandItem
-                      value={paletteValue(
-                        'Sign in to sync Projects across machines',
-                        'project-sign-in'
-                      )}
-                      keywords={['project', 'sign in', 'sync', 'account']}
-                      onSelect={() =>
-                        handleSelect(() => router.push('/sign-in'))
-                      }
-                    >
-                      <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
-                      <span>Sign in to sync Projects across machines</span>
-                    </CommandItem>
-                  )}
-                  <CommandItem
-                    value={paletteValue('Add project…', 'project-add')}
-                    keywords={[
-                      'project',
-                      'add',
-                      'new',
-                      'open',
-                      'folder',
-                      'directory',
-                      'browse',
-                    ]}
-                    onSelect={addProject}
-                  >
-                    <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
-                    <span>Add project…</span>
-                    {newProjectShortcut && (
-                      <CommandShortcut>
-                        {formatShortcutKeys(newProjectShortcut)}
-                      </CommandShortcut>
-                    )}
-                  </CommandItem>
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-            {workspaceVerbs &&
-              onWorkspaceRoute &&
-              tenantWorkspaceItems.length > 0 && (
-                <>
-                  <CommandGroup heading="Workspace">
-                    {tenantWorkspaceItems.map(item => (
-                      <CommandItem
-                        key={item.id}
-                        value={item.value}
-                        keywords={[
-                          ...(item.keywords ?? []),
-                          ...(item.availability?.reason
-                            ? [item.availability.reason]
-                            : []),
-                        ]}
-                        disabled={
-                          item.availability
-                            ? !item.availability.available
-                            : undefined
-                        }
-                        title={item.availability?.reason ?? undefined}
-                        onSelect={() => {
-                          recordPaletteUse(item.id);
-                          item.onSelect();
-                        }}
-                      >
-                        <item.icon className="mr-2 h-4 w-4" />
-                        <span>{item.label}</span>
-                        {item.availability && !item.availability.available ? (
-                          <CommandShortcut>
-                            {item.availability.reason}
-                          </CommandShortcut>
-                        ) : item.shortcut ? (
-                          <CommandShortcut>
-                            {formatShortcutKeys(item.shortcut)}
-                          </CommandShortcut>
-                        ) : null}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
+            {renderedGroups.map((group, index) => (
+              <Fragment key={group.id}>
+                {groupNodes[group.id]}
+                {index < renderedGroups.length - 1 ? (
                   <CommandSeparator />
-                </>
-              )}
-            {personalVerbs && onWorkspaceRoute && closedSessions.length > 0 && (
-              <>
-                <CommandGroup heading="Recently closed">
-                  {closedSessions.map(entry => (
-                    <CommandItem
-                      key={entry.durableSessionId}
-                      value={paletteValue(
-                        `Reopen ${entry.projectName} · ${entry.goal ?? entry.title}`,
-                        `closed-${entry.durableSessionId}`
-                      )}
-                      keywords={[
-                        'reopen',
-                        'closed',
-                        entry.projectName,
-                        entry.title,
-                        entry.harness,
-                        ...(entry.goal ? [entry.goal] : []),
-                      ]}
-                      onSelect={() => {
-                        recordPaletteUse('ws-reopen-closed');
-                        handleSelect(() =>
-                          window.dispatchEvent(
-                            new CustomEvent(REOPEN_CLOSED_EVENT, {
-                              detail: {
-                                durableSessionId: entry.durableSessionId,
-                              },
-                            })
-                          )
-                        );
-                      }}
-                    >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      <span>
-                        Reopen {entry.projectName} · {entry.goal ?? entry.title}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {inElectron && onSpatialRoute && (
-              <>
-                <CommandGroup heading="Fleet">
-                  <CommandItem
-                    value={paletteValue(
-                      'Toggle projection (top-down ↔ angled)',
-                      'spatial-projection'
-                    )}
-                    keywords={[
-                      'fleet',
-                      'spatial',
-                      'toggle',
-                      'projection',
-                      'top-down',
-                      'angled',
-                      'fixed',
-                      'view',
-                    ]}
-                    onSelect={() => {
-                      recordPaletteUse('spatial-projection');
-                      toggleProjection();
-                    }}
-                  >
-                    <RotateCw className="mr-2 h-4 w-4" />
-                    <span>Toggle projection (top-down ↔ angled)</span>
-                    <CommandShortcut>V</CommandShortcut>
-                  </CommandItem>
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {navigationGroup}
-            <CommandSeparator />
-
-            <CommandGroup heading="Actions">
-              {actionItems.map(item => (
-                <CommandItem
-                  key={item.id}
-                  value={item.value}
-                  keywords={item.keywords}
-                  onSelect={() => {
-                    recordPaletteUse(item.id);
-                    item.onSelect();
-                  }}
-                >
-                  <item.icon className="mr-2 h-4 w-4" />
-                  <span>{item.label}</span>
-                  {item.shortcut && (
-                    <CommandShortcut>
-                      {formatShortcutKeys(item.shortcut)}
-                    </CommandShortcut>
-                  )}
-                </CommandItem>
-              ))}
-            </CommandGroup>
+                ) : null}
+              </Fragment>
+            ))}
           </CommandList>
-        </>
+        </div>
       )}
     </CommandDialog>
   );

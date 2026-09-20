@@ -58,6 +58,8 @@ export interface WorkspaceCommandAvailabilityInput {
   resumableAgentCount: number;
   /** …of those, the ones in the selected Project. */
   activeProjectResumableCount: number;
+  /** Running local Agents with an exact identity, in the selected Project. */
+  activeProjectPausableCount?: number;
   /** the selected tab is itself a parked Agent with an exact identity */
   activeTabCanResume: boolean;
 }
@@ -86,6 +88,7 @@ export function deriveWorkspaceCommandAvailability({
   closedSessionCount,
   resumableAgentCount,
   activeProjectResumableCount,
+  activeProjectPausableCount = 0,
   activeTabCanResume,
 }: WorkspaceCommandAvailabilityInput): WorkspaceCommandAvailability {
   const hasProject = activeProjectName !== null;
@@ -175,6 +178,11 @@ export function deriveWorkspaceCommandAvailability({
       // Recovery keeps D36's exact-identity contract: a tab without a
       // captured provider ID is never counted, so neither verb can offer to
       // guess one (ENG-018).
+      'pause-project': !hasProject
+        ? unavailable('Open a Project first')
+        : activeProjectPausableCount > 0
+          ? available()
+          : unavailable('No running local Agents in this Project'),
       'resume-agent': activeTabCanResume
         ? available()
         : unavailable('This Agent is not parked'),

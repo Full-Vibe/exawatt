@@ -57,6 +57,22 @@ conversation.
 Retained terminal output is labeled **Saved terminal history · read-only** so a
 stopped Session cannot be mistaken for an interactive terminal.
 
+## Pausing a Project
+
+**Pause Project** stops eligible local Agent processes and retains the Project,
+tabs, saved terminal history and exact provider conversation identities. Shells
+are excluded. Unsupported Agent Sources explain why they cannot be paused;
+closing their local view is never substituted for stopping their work.
+
+If the target Agents have activity, confirmation explains the interruption.
+**Cancel** is blue and focused by default; **Pause now** interrupts immediately.
+With no activity, the action needs no dialog. The request binds exact Sessions
+and rechecks activity before stopping; a newly active Session cannot inherit
+consent for an idle scope. Partial failures remain visible rather than making
+the whole Project look paused. Resume uses the recovery scopes below the
+workspace and starts eligible Agents against their exact saved conversations,
+without replaying the opening task.
+
 ## Model changes between turns
 
 **Apply and resume** changes a local Claude Code or Codex launch model/effort
@@ -171,12 +187,23 @@ Agent Source, source-native model, and effort or variant. Shell and unavailable
 configurations are excluded.
 
 Clone creates a distinct new Agent and Session. Exawatt gives it a bounded,
-Exawatt-owned goal/context handoff derived from the original Session, leaves the
+Exawatt-owned current-context handoff derived from the original Session, leaves the
 original untouched, and passes no provider conversation or resume identity.
 There is no live process migration, shared conversation state, automatic
 failover, or source substitution. The new Session succeeds or fails as an
 ordinary fresh launch, and only success updates that Project's Launch
 Configuration frecency.
+
+Choosing the target is sufficient; there is no extra preview or confirmation.
+For local Claude Code and Codex, context comes from the exact owned native
+conversation, structurally filtered to recent user/assistant prose and excluding
+native tool and reasoning records. The handoff is bounded to 16,000 characters.
+Unsupported, unavailable or corrupt native context fails explicitly before a
+new Session launches. Raw terminal output is never a fallback: it may contain
+tool results, reasoning or credentials. The opening task alone is not represented
+as current conversation state. Context gathering introduces no
+hosted summarization; the handoff is sent to the selected target as fresh-launch
+input under that source's ordinary data handling.
 
 ## Local data
 
@@ -184,3 +211,10 @@ Retained terminal history is machine-local, private to the current OS account,
 and bounded to the latest 4 MB per Session. Closing keeps that history through
 the 14-day recovery window; expiry removes it. Provider-owned conversation
 history remains governed by the provider.
+
+Malformed or invalid local JSON is not treated as first-launch absence. Exawatt
+preserves damaged bytes and blocks writes to the affected store across restart.
+The recovery surface lets the operator reveal the file and retry after repair;
+only validated data clears the interlock. This slice provides no destructive
+reset action. Diagnostics identify the store and failure without exposing file
+contents or credentials.

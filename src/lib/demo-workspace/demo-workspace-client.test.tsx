@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
@@ -42,6 +42,35 @@ function projectOrder(container: HTMLElement): string[] {
 }
 
 describe('Demo workspace on the real ribbon (W6)', () => {
+  it('pauses and resumes fixture Sessions through the same Project menu', async () => {
+    const { container } = view();
+    const project = demoShellProjects().find(item =>
+      item.tabs.some(tab => tab.id === 'vg-home-onboard')
+    )!;
+    const token = container.querySelector<HTMLElement>(
+      `[data-ribbon-key="project:${project.dir}"]`
+    )!;
+    fireEvent.contextMenu(token);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Pause Agents' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: `Pause ${project.name}?`,
+    });
+    expect(dialog).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause now' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    );
+    fireEvent.contextMenu(token);
+    expect(
+      screen.queryByRole('menuitem', { name: 'Pause Agents' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Resume Agents' }));
+    fireEvent.contextMenu(token);
+    expect(
+      screen.getByRole('menuitem', { name: 'Pause Agents' })
+    ).toBeInTheDocument();
+  });
+
   it('renders the live TabStrip chrome, not a demo-only navigation surface', () => {
     const { container } = view();
     expect(

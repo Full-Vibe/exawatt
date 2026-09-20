@@ -187,10 +187,14 @@ await withElectronApp(
     'Go>Project Roadmap displays Command+B',
     goMenu.sub.some(s => s.includes('Project Roadmap|Command+B|reg:false'))
   );
+  const submitFeedbackRow = helpMenu.sub.find(row => row.startsWith('Submit Feedback…'));
   check(
-    'Help>Submit Feedback… displays Command+Shift+F',
-    helpMenu.sub.some(s => s.includes('Command+Shift+F|reg:false'))
+    'Feedback menu capability matches the distribution contract',
+    feedbackEnabled ? submitFeedbackRow !== undefined : submitFeedbackRow === undefined
   );
+  if (feedbackEnabled) {
+    check('Feedback dialog does not advertise the capture bar shortcut', submitFeedbackRow.split('|')[1] === '');
+  }
   check(
     'Help>Keyboard Shortcuts displays Command+/',
     helpMenu.sub.some(s => s.includes('Keyboard Shortcuts|Command+/|reg:false'))
@@ -334,6 +338,14 @@ await withElectronApp(
   await page.waitForTimeout(800);
   await page.keyboard.press('Meta+KeyK');
   await page.waitForTimeout(700);
+  await page.locator('[cmdk-item][aria-selected="true"]').waitFor();
+  const openingGroup = await page.locator('[cmdk-item][aria-selected="true"]').evaluate(
+    row => row.closest('[data-palette-group]')?.getAttribute('data-palette-group')
+  );
+  check('empty-query palette never defaults to switching Workspaces', Boolean(openingGroup) && openingGroup !== 'workspaces');
+  if (!feedbackEnabled) {
+    check('palette omits unconfigured feedback service commands', await page.locator('[cmdk-item][data-value*="action-feedback"]').count() === 0);
+  }
   const paletteText = await page.locator('[cmdk-list]').innerText();
   check('palette has Go to Agent', paletteText.includes('Go to Agent'));
   check('palette has Go to Team', paletteText.includes('Go to Team'));

@@ -229,6 +229,26 @@ describe('a late launch does not move the operator (BUG-018)', () => {
     expect(view.result.current.activeTab?.id).toBe('tab-draft');
   });
 
+  it('preserves an earlier gesture claim when context preparation outlives selection', async () => {
+    const view = await mountedWorkspace();
+    const focusClaim = operatorPosition.claimHere();
+    act(() => view.result.current.selectTab(REPO, 'tab-other'));
+    let launched: Promise<boolean> | null = null;
+    act(() => {
+      launched = view.result.current.launch({
+        harness: 'claude',
+        dir: REPO,
+        focusClaim,
+      });
+    });
+    await act(async () => {
+      launcher.land(session('durable-prepared'));
+      await launched;
+    });
+    expect(view.result.current.projects[0].tabs).toHaveLength(3);
+    expect(view.result.current.activeTab?.id).toBe('tab-other');
+  });
+
   it('appends a new Session quietly when he left the Project it came from', async () => {
     const view = await mountedWorkspace();
 

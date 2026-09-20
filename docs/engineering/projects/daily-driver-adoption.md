@@ -7188,3 +7188,90 @@ The queue-head rebase encountered concurrent D6/D8 planning updates; both sets
 of canon are retained. D7 supplies the integrated lifecycle owner for that future
 work. BUG-052, FIX-015 and FIX-016 close with this delivery batch; signed release
 publication remains a separate operational step and is not implied by landing.
+
+### 2026-09-20 — Shared Session operations and storage recovery
+
+**Make the existing commands reliable and frictionless through shared owners.**
+
+Status: implemented for the 0.1.13 delivery batch; operator-approved scope, implementation and delivery
+evidence pending. This is the execution detail for BUG-125 and FIX-017–019,
+not a separate roadmap. Work runs in isolated branches; one integration review
+owns the combined result and release evidence.
+
+The operator selected a coherent daily-driver batch after 0.1.12: predictable
+command discovery, current-context Clone to, Project pause/resume, and the
+corrupt-JSON repair. Their instruction is architectural: strengthen common
+boundaries so good behavior follows naturally, rather than stacking exceptions.
+
+**Accepted interaction.** Clone retains its existing choose-target gesture.
+It automatically gathers current context; no preview or extra confirmation.
+Pause interrupts immediately. Only activity requires a confirmation explaining
+that work will be interrupted while tabs/history remain; Cancel is blue and
+default-focused, Pause now is explicit. With no activity, pause directly.
+This supersedes the proposed wait-until-idle default. Resume keeps the existing
+exact-Session recovery grammar. “Freeze” is not a new product state.
+
+**Ownership and sequence.** Independent command, clone, storage and pause
+changes converge through the Session/source boundaries. Command availability
+and opening selection have one shared policy. Source-qualified identity owns
+context reads and process commands; the renderer presents capability and
+failure, not guessed source state. Storage distinguishes absence from damage
+before consumers derive empty defaults. Reuse accepted menu/dialog components;
+Demo drives the same command semantics through fixture ports. Root integration
+updates this log with reviewed implementation and evidence before delivery.
+
+**Clone contract.** Bound the handoff to 16,000 characters from the exact local
+owned Claude Code or Codex provider conversation, structurally filtered to
+user/assistant prose and excluding native reasoning and tool records. Prefer
+recent context over the historic opening prompt. Unsupported, unavailable or
+corrupt native context fails explicitly before a new Session launches. Raw
+terminal output is never a fallback: it can contain tool results, reasoning or
+credentials. This safety refinement replaces the initial fallback proposal
+after implementation review, without adding another user gesture.
+No new hosted summarization is introduced; selected handoff text goes to the
+chosen target as ordinary fresh-launch input. Preserve source placement and
+Session identity while reading; fail safely if the source disappears. The
+original keeps working. The target receives no resume ID and success alone
+trains launch frecency. Missing context must not silently look like a current
+handoff made from an old first task.
+
+**Pause contract.** Local non-shell Agents only in this slice. Snapshot exact eligible target IDs and the disclosed active
+scope, not a mutable Project label. Confirm only when activity requires it;
+revalidate identity and activity before acting so a newly busy Session cannot
+bypass confirmation. Stop processes without closing tabs or deleting history.
+Wait for real lifecycle outcomes; report partial failure honestly. Resume starts
+eligible Agents sequentially using retained provider identity and never replays
+a task. Shells do not gain invented exact-resume capability. Connected sources
+remain source-capability-gated; disconnect cannot impersonate pause.
+
+**Storage contract.** Shared reads return absent, corrupt, or valid data. On
+damage, preserve the bytes and persist an interlock so restart cannot convert
+quarantine into first-launch absence. Refuse writes until a validated repair;
+show actionable recovery with reveal and retry, without secrets or file contents
+in diagnostics. A safe presentation fallback never authorizes overwriting the
+store. Connected source/credential damage must remain distinguishable from a
+deliberate empty configuration.
+
+**Exit evidence.** Test opening selection and capability agreement; exact
+source context, bounds/exclusions and close/read races; active/idle pause,
+cancel, changing activity, target identity and exact resume; corrupt-store
+save/restart refusal and repaired-file recovery. Review the integrated lifecycle
+and privacy boundary independently, run relevant repository surface gates on
+the integration tree, then record integrated, installed and released states
+separately. Release and marketing claims wait for that evidence.
+
+**2026-09-20 implementation and review evidence.** Shared durable operation
+ownership now spans pause, model replacement and close; all selected identities
+prepare before any unconfirmed batch stop. Renderer admission starts before
+preference reads, replacement adoption reconciles early exits, and old-runtime
+exit events cannot clear a replacement. The real Electron pause gate proves
+initial Cancel/Enter, explicit Tab/Enter interruption, quiet direct pause and
+exact resume with retained tab/task. The Clone gate proves a distinct Session,
+current native prose, and unchanged original; independent review removed the
+unsafe terminal fallback and corrected Codex item envelopes. Storage review
+added read/write schema validation beside the Launch Configuration domain parser
+and fail-closed settings recovery for I/O errors. Focused operation, command,
+privacy and storage suites and type checks pass. The repository delivery queue
+runs all declared surface gates on the final commit; integration, installation
+and update-feed publication remain distinct delivery records, never inferred
+from these local checks.

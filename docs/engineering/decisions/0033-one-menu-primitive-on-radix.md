@@ -84,3 +84,20 @@ The shared option-menu module now has an `ActionMenu` face for verbs. Terminal
 and ribbon context menus use it with a caller-owned synchronous close-focus
 callback; selection menus retain their listbox semantics. This replaces the
 handwritten terminal keyboard mechanism without changing launch choices.
+
+
+## 2026-09-20 amendment — Command discovery has one offer contract
+
+The command-verb manifest declares distribution service requirements. The
+renderer registry, native menu and palette use that same offer decision, so a
+service absent from the build creates neither a dead row nor an inert advertised
+shortcut. Authentication and current Workspace context remain temporary
+availability with an explanatory disabled row. The capture bar and full feedback
+dialog are separate verbs because their invocation and keyboard behavior differ.
+
+The palette's group model also owns default-selection eligibility. Switching the
+whole Workspace is deliberate: it stays searchable, but never becomes the
+empty-query opening highlight or a Recent shortcut. cmdk's controlled value
+follows async Session arrival until an operator chooses another row; incoming
+data must not move an intentional selection. Existing row styles and help
+shortcuts remain unchanged.

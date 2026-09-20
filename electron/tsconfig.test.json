@@ -38,7 +38,11 @@
     "main/connected-*.ts",
     "main/ssh-*.ts",
     "main/gateway-bootstrap*.ts",
-    "main/atomic-json-file.ts",
+    "main/atomic-json-file*.ts",
+    "main/store-integrity.test.ts",
+    "main/workspace-store*.ts",
+    "main/settings-store*.ts",
+    "main/pty/closed-session-ledger*.ts",
     "main/untrusted-input.ts",
     "main/gateway-identity.ts"
   ],

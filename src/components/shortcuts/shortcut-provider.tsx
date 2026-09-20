@@ -27,17 +27,23 @@ import type {
   KeyBinding,
   ShortcutContext as ShortcutCtx,
   Shortcut,
+  ShortcutDefinition,
 } from '@/types/shortcuts';
 import { isChord } from '@/types/shortcuts';
 import {
   bindingToAccelerator,
+  commandVerbCapabilities,
   commandVerbForMenuCommand,
+  commandVerbOffered,
+  getCommandVerb,
   menuCommandShortcutIds,
   menuCommandVerbs,
   FIXED_SESSION_MENU_COMMAND_IDS,
   agentSourceMenuCommandId,
+  type CommandVerbCapability,
   type WorkspaceContextCommand,
 } from '@exawatt/core';
+import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
 import type { AgentSourceId } from '@/components/workspace/agent-sources';
 import {
@@ -57,6 +63,7 @@ import {
   CLOSE_ACTIVE_PROJECT_EVENT,
   REVEAL_ACTIVE_PATH_EVENT,
   OPEN_ROADMAP_EVENT,
+  PAUSE_ACTIVE_PROJECT_EVENT,
   RESUME_ACTIVE_AGENT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
   requestProjectPicker,
@@ -80,6 +87,23 @@ import {
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
+
+/**
+ * The registry's projection of the manifest for ONE build: every rebindable
+ * verb the distribution contract offers. A verb that names a capability the
+ * contract does not configure never enters the registry, so the cheat sheet,
+ * Settings, the palette's shortcut column and the workspace key layer all
+ * stop offering it at once (the way a non-personal tenant drops the launch
+ * verbs at the dispatch point). Exported so the command-verb contract can
+ * hold both distributions to it.
+ */
+export function registrableShortcuts(
+  capabilities: ReadonlySet<CommandVerbCapability>
+): ShortcutDefinition[] {
+  return defaultShortcuts.filter(definition =>
+    commandVerbOffered(getCommandVerb(definition.id), capabilities)
+  );
+}
 
 /** application-menu command → the registry id whose binding it displays
  *  (D10): rebinding a verb updates the menu's accelerator column. Derived
@@ -167,6 +191,7 @@ export const DISPATCHED_MENU_COMMAND_IDS: ReadonlySet<string> = new Set([
   'reveal-path',
   'jump-attention',
   'open-roadmap',
+  'pause-project',
   'resume-agent',
   'resume-scope',
   // Handled by the shortcut switch above rather than the menu switch, because
@@ -278,63 +303,68 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       );
   }, []);
 
-  // Create and register default shortcuts with actions
+  // Create and register default shortcuts with actions. Only the verbs this
+  // build's contract offers: a community build has no feedback service, so
+  // ⌘⇧F is not a binding here rather than a binding that does nothing.
   useEffect(() => {
-    const shortcuts: Shortcut[] = defaultShortcuts.map(def => ({
-      ...def,
-      action: () => {
-        // go-chords navigate to their manifest surface — one source of truth
-        // for names and targets (ENG-016 D8)
-        const surface = surfaceForShortcut(def.id);
-        if (surface) {
-          if (surface.tier === 'spine') {
-            activateCommandAltitude(surface.id as CommandAltitude);
-          } else {
-            navigateCommandSurface(resolveSurfaceHref(surface));
+    const capabilities = commandVerbCapabilities(resolvedDistribution());
+    const shortcuts: Shortcut[] = registrableShortcuts(capabilities).map(
+      def => ({
+        ...def,
+        action: () => {
+          // go-chords navigate to their manifest surface — one source of truth
+          // for names and targets (ENG-016 D8)
+          const surface = surfaceForShortcut(def.id);
+          if (surface) {
+            if (surface.tier === 'spine') {
+              activateCommandAltitude(surface.id as CommandAltitude);
+            } else {
+              navigateCommandSurface(resolveSurfaceHref(surface));
+            }
+            return;
           }
-          return;
-        }
-        switch (def.id) {
-          case 'history-back':
-            navigateBack();
-            break;
-          case 'history-forward':
-            navigateForward();
-            break;
-          case 'command-terminal':
-            activateCommandAltitude('terminal');
-            break;
-          case 'command-sessions':
-            activateCommandAltitude('sessions');
-            break;
-          case 'command-spatial':
-            activateCommandAltitude('spatial');
-            break;
-          case 'command-palette':
-            setCommandPaletteOpen(true);
-            break;
-          // ⌘, is registered natively in the packaged app, so the main
-          // process usually gets there first; this keeps the verb live in the
-          // browser, where there is no menu bar to catch it.
-          case 'open-settings':
-            navigateCommandSurface('/settings');
-            break;
-          case 'quick-feedback':
-            requestQuickFeedback();
-            break;
-          // The open dialog owns its Return (BUG-049). The target is whichever
-          // dialog declared a primary action most recently, so one verb serves
-          // every dialog and none of them holds its own keydown handler.
-          case 'dialog-primary-action':
-            runTopDialogPrimaryAction();
-            break;
-          case 'help-modal':
-          case 'help-modal-slash':
-            setHelpModalOpen(true);
-            break;
-        }
-      },
-    }));
+          switch (def.id) {
+            case 'history-back':
+              navigateBack();
+              break;
+            case 'history-forward':
+              navigateForward();
+              break;
+            case 'command-terminal':
+              activateCommandAltitude('terminal');
+              break;
+            case 'command-sessions':
+              activateCommandAltitude('sessions');
+              break;
+            case 'command-spatial':
+              activateCommandAltitude('spatial');
+              break;
+            case 'command-palette':
+              setCommandPaletteOpen(true);
+              break;
+            // ⌘, is registered natively in the packaged app, so the main
+            // process usually gets there first; this keeps the verb live in the
+            // browser, where there is no menu bar to catch it.
+            case 'open-settings':
+              navigateCommandSurface('/settings');
+              break;
+            case 'quick-feedback':
+              requestQuickFeedback();
+              break;
+            // The open dialog owns its Return (BUG-049). The target is whichever
+            // dialog declared a primary action most recently, so one verb serves
+            // every dialog and none of them holds its own keydown handler.
+            case 'dialog-primary-action':
+              runTopDialogPrimaryAction();
+              break;
+            case 'help-modal':
+            case 'help-modal-slash':
+              setHelpModalOpen(true);
+              break;
+          }
+        },
+      })
+    );
 
     shortcutRegistry.registerAll(shortcuts);
 
@@ -526,6 +556,14 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             workspaceAvailability.commands['open-roadmap'].available
           ) {
             dispatch(OPEN_ROADMAP_EVENT);
+          }
+          break;
+        case 'pause-project':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['pause-project'].available
+          ) {
+            dispatch(PAUSE_ACTIVE_PROJECT_EVENT);
           }
           break;
         case 'resume-agent':

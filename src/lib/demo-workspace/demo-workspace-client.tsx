@@ -29,11 +29,16 @@ import {
 import { teamViewProjects } from '@/components/workspace/team-order';
 import { useTeamOrderPreference } from '@/components/workspace/team-order-preference';
 import { TabStrip } from '@/components/workspace/tab-strip';
-import { CloseConfirm } from '@/components/workspace/close-confirm';
+import { useProjectPauseInteraction } from '@/components/workspace/use-project-pause-interaction';
+import {
+  CloseConfirm,
+  PauseProjectConfirm,
+} from '@/components/workspace/close-confirm';
 import { WorkspaceKeyHint } from '@/components/workspace/workspace-client';
 import { middleTruncatePath } from '@/components/workspace/path-label';
 import {
   SESSION_JUMP_EVENT,
+  PAUSE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
   CLOSE_ACTIVE_EVENT,
@@ -55,6 +60,7 @@ import {
   nextTabInRing,
 } from '@/components/workspace/tab-ring';
 import {
+  sessionTurnFacts,
   orderedAttentionTargets,
   attentionNeedsOperator,
   fleetAttention,
@@ -152,14 +158,47 @@ export function DemoWorkspaceClient() {
   const summaries = useMemo(() => demoShellSummaries(), []);
   // Demo Mode's attention channel covers the whole demo fleet, exactly as
   // main's PTY channel covers the real one; it says so for the same reason.
-  const attention = useMemo(
-    () => mergeFleetAttention(fleetAttention('demo', demoShellAttention())),
-    []
+  const [pausedIds, setPausedIds] = useState<ReadonlySet<string>>(
+    () => new Set()
   );
-  const activity = useMemo(() => demoShellActivity(), []);
+  const attention = useMemo(
+    () =>
+      mergeFleetAttention(
+        fleetAttention(
+          'demo',
+          Object.fromEntries(
+            Object.entries(demoShellAttention()).filter(
+              ([id]) => !pausedIds.has(id)
+            )
+          )
+        )
+      ),
+    [pausedIds]
+  );
+  const activity = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(demoShellActivity()).filter(([id]) => !pausedIds.has(id))
+      ),
+    [pausedIds]
+  );
   const { mode: teamOrderMode } = useTeamOrderPreference();
-  const engaged = useMemo(() => demoShellEngaged(), []);
-  const delegation = useMemo(() => demoShellDelegation(), []);
+  const engaged = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(demoShellEngaged()).filter(([id]) => !pausedIds.has(id))
+      ),
+    [pausedIds]
+  );
+  const delegation = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(demoShellDelegation()).filter(
+          ([id]) => !pausedIds.has(id)
+        )
+      ),
+    [pausedIds]
+  );
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
   const initiativeByTab = useMemo(() => demoShellInitiatives(), []);
@@ -194,6 +233,100 @@ export function DemoWorkspaceClient() {
       message,
     }));
   }, []);
+
+  const pauseProject = useCallback(
+    async (dir: string, confirmedIds?: string[]) => {
+      const tabs =
+        projects
+          .find(project => project.dir === dir)
+          ?.tabs.filter(tab => tab.sessionId !== null) ?? [];
+      const sessionIds = confirmedIds ?? tabs.map(tab => tab.durableSessionId);
+      const activeSessionIds = tabs
+        .filter(tab => {
+          const facts = sessionTurnFacts(tab, {
+            activity,
+            engaged,
+            summaries,
+            delegation,
+          });
+          return (
+            sessionIds.includes(tab.durableSessionId) &&
+            (facts.working || facts.delegatedBusy || facts.blocked)
+          );
+        })
+        .map(tab => tab.durableSessionId);
+      if (!confirmedIds && activeSessionIds.length) {
+        return {
+          kind: 'needs-confirmation' as const,
+          activeSessionIds,
+          sessionIds,
+        };
+      }
+      const paused = tabs.filter(tab =>
+        sessionIds.includes(tab.durableSessionId)
+      );
+      const ids = new Set(paused.map(tab => tab.durableSessionId));
+      setPausedIds(current => new Set([...current, ...ids]));
+      setProjects(current =>
+        current.map(project => ({
+          ...project,
+          tabs: project.tabs.map(tab =>
+            ids.has(tab.durableSessionId)
+              ? {
+                  ...tab,
+                  sessionId: null,
+                  harnessSessionId: tab.durableSessionId,
+                  resumeState: 'ended-resumable' as const,
+                  lifecycle: 'stopped-clean' as const,
+                }
+              : tab
+          ),
+        }))
+      );
+      return {
+        kind: 'completed' as const,
+        sessionIds,
+        results: paused.map(tab => ({
+          durableSessionId: tab.durableSessionId,
+          status: 'paused' as const,
+        })),
+      };
+    },
+    [projects, activity, delegation, engaged, summaries]
+  );
+  const projectPause = useProjectPauseInteraction(
+    projects,
+    pauseProject,
+    announceReorder
+  );
+
+  const resumeProject = useCallback(
+    (dir: string) => {
+      const ids = new Set(
+        projects
+          .find(project => project.dir === dir)
+          ?.tabs.filter(tab => pausedIds.has(tab.durableSessionId))
+          .map(tab => tab.durableSessionId) ?? []
+      );
+      setPausedIds(current => new Set([...current].filter(id => !ids.has(id))));
+      setProjects(current =>
+        current.map(project => ({
+          ...project,
+          tabs: project.tabs.map(tab =>
+            ids.has(tab.durableSessionId)
+              ? {
+                  ...tab,
+                  sessionId: tab.durableSessionId,
+                  resumeState: 'resumed' as const,
+                  lifecycle: 'running' as const,
+                }
+              : tab
+          ),
+        }))
+      );
+    },
+    [projects, pausedIds]
+  );
 
   // ⌘K / Fleet-altitude jumps: same event contract as the live shell
   useEffect(() => {
@@ -572,6 +705,8 @@ export function DemoWorkspaceClient() {
     );
     return deriveWorkspaceCommandAvailability({
       activeProjectName: activeProject?.name ?? null,
+      activeProjectPausableCount:
+        activeProject?.tabs.filter(tab => tab.sessionId !== null).length ?? 0,
       hasActiveTab: activeTab !== null,
       canToggleSplit: false,
       canClose: activeTab !== null,
@@ -652,6 +787,18 @@ export function DemoWorkspaceClient() {
       !hint.command || commandAvailability.commands[hint.command].available
   );
 
+  const requestProjectPause = projectPause.requestPause;
+  useEffect(() => {
+    const pauseActiveProject = () => {
+      if (activeProject) void requestProjectPause(activeProject.dir);
+    };
+    window.addEventListener(PAUSE_ACTIVE_PROJECT_EVENT, pauseActiveProject);
+    return () =>
+      window.removeEventListener(
+        PAUSE_ACTIVE_PROJECT_EVENT,
+        pauseActiveProject
+      );
+  }, [activeProject, requestProjectPause]);
   return (
     <div
       data-demo-workspace
@@ -697,6 +844,8 @@ export function DemoWorkspaceClient() {
                 if (demoShellFleetAgentById(tabId)) setActiveId(tabId);
               }}
               onCloseTab={requestClose}
+              onPauseProject={dir => void projectPause.requestPause(dir)}
+              onResumeProject={resumeProject}
               onRenameTab={renameTab}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
@@ -883,6 +1032,15 @@ export function DemoWorkspaceClient() {
         />
       )}
 
+      {projectPause.confirmation && (
+        <PauseProjectConfirm
+          title={projectPause.confirmation.name}
+          color={projectPause.confirmation.color}
+          activeCount={projectPause.confirmation.activeCount}
+          onPause={projectPause.confirmPause}
+          onCancel={projectPause.cancelPause}
+        />
+      )}
       {closeConfirm && (
         <CloseConfirm
           title={closeConfirm.title}

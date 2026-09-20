@@ -41,8 +41,8 @@ describe('sessionClonePrompt', () => {
     });
 
     expect(prompt).toContain('fresh Codex Agent Session');
-    expect(prompt).toContain('Goal: Ship the launch ribbon');
-    expect(prompt).toContain('Handoff: Tests pass; visual QA remains.');
+    expect(prompt).toContain('Ship the launch ribbon');
+    expect(prompt).toContain('Tests pass; visual QA remains.');
     expect(prompt).toContain('Do not assume access');
     expect(prompt).not.toMatch(/session[- ]?id|providerSessionId/i);
   });
@@ -52,9 +52,16 @@ describe('sessionClonePrompt', () => {
       target: 'claude',
       initialTask: `goal-${'g'.repeat(5_000)}`,
       contextSummary: `context-${'c'.repeat(5_000)}`,
+      currentContext: {
+        text: 'old'.repeat(20_000) + 'latest request',
+        provenance: 'source-conversation',
+        capturedAt: 0,
+        partial: true,
+      },
     });
 
-    expect(prompt.length).toBeLessThanOrEqual(2_400);
+    expect(prompt.length).toBeLessThanOrEqual(20_000);
+    expect(prompt).toContain('latest request');
     expect(prompt).toContain('…');
   });
 

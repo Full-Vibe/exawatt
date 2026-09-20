@@ -5,7 +5,7 @@ import {
   sourceAgentKey,
   type AgentProjectionMapping,
 } from '@exawatt/core';
-import { readJsonFile, writeJsonFileAtomic } from './atomic-json-file';
+import { readJsonDocument, writeJsonFileAtomic } from './atomic-json-file';
 import {
   normalizeGatewayIdentity,
   type GatewayIdentity,
@@ -170,6 +170,45 @@ function normalizeMappings(
   return [...bySourceAgent.values()];
 }
 
+/** A persisted plan may normalize legacy labels, but never silently lose identities. */
+function validStoredPlan(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    (value.schemaVersion !== undefined &&
+      value.schemaVersion !== PLAN_SCHEMA_VERSION) ||
+    (value.projectionVersion !== undefined &&
+      value.projectionVersion !== AGENT_PROJECTION_VERSION) ||
+    !Array.isArray(value.mappings) ||
+    value.mappings.length > MAX_MAPPINGS ||
+    normalizeMappings(value.mappings).length !== value.mappings.length
+  )
+    return false;
+  if (value.boundIdentities === undefined) return true; // Legacy pre-binding plans.
+  if (
+    !isRecord(value.boundIdentities) ||
+    Object.keys(value.boundIdentities).length > MAX_MAPPINGS
+  )
+    return false;
+  return Object.entries(value.boundIdentities).every(([sourceId, identity]) => {
+    if (
+      !validText(sourceId, MAX_ID_LENGTH) ||
+      !isRecord(identity) ||
+      typeof identity.version !== 'string' ||
+      !Array.isArray(identity.nativeAgentIds)
+    )
+      return false;
+    const parsed = normalizeGatewayIdentity(identity);
+    return (
+      parsed !== null &&
+      parsed.version === identity.version &&
+      parsed.nativeAgentIds.length === identity.nativeAgentIds.length &&
+      identity.nativeAgentIds.every(
+        id => typeof id === 'string' && parsed.nativeAgentIds.includes(id)
+      )
+    );
+  });
+}
+
 /** The plan on disk. */
 export class FileConnectedAgentProjectionPlanStore implements ConnectedAgentProjectionPlanStore {
   private readonly file: string;
@@ -179,8 +218,8 @@ export class FileConnectedAgentProjectionPlanStore implements ConnectedAgentProj
   }
 
   read(): ConnectedAgentProjectionPlan {
-    // Missing or corrupt is an empty plan, never a crash on boot.
-    const parsed = readJsonFile(this.file);
+    // Only a missing file is an empty plan; unreadable state requires recovery.
+    const parsed = readJsonDocument(this.file, validStoredPlan);
     if (!isRecord(parsed)) return EMPTY_PROJECTION_PLAN;
     // A file written before bound identities existed simply has none, which
     // reads as "never seen" and is the right answer for a source Exawatt has
@@ -198,11 +237,15 @@ export class FileConnectedAgentProjectionPlanStore implements ConnectedAgentProj
   }
 
   write(plan: ConnectedAgentProjectionPlan): void {
-    writeJsonFileAtomic(this.file, {
-      schemaVersion: PLAN_SCHEMA_VERSION,
-      projectionVersion: AGENT_PROJECTION_VERSION,
-      mappings: plan.mappings,
-      boundIdentities: plan.boundIdentities,
-    });
+    writeJsonFileAtomic(
+      this.file,
+      {
+        schemaVersion: PLAN_SCHEMA_VERSION,
+        projectionVersion: AGENT_PROJECTION_VERSION,
+        mappings: plan.mappings,
+        boundIdentities: plan.boundIdentities,
+      },
+      validStoredPlan
+    );
   }
 }

@@ -31,6 +31,20 @@ function input(
 }
 
 describe('workspace command availability', () => {
+  it('offers pause only for a selected Project with pausable Agents', () => {
+    for (const [activeProjectName, activeProjectPausableCount, expected] of [
+      [null, 2, false],
+      ['Project', 0, false],
+      ['Project', 2, true],
+    ] as const) {
+      const command = deriveWorkspaceCommandAvailability(
+        input({ activeProjectName, activeProjectPausableCount })
+      ).commands['pause-project'];
+      expect(command.available).toBe(expected);
+      expect(command.reason === null).toBe(expected);
+    }
+  });
+
   it('explains commands that cannot act before a Project is open', () => {
     const state = deriveWorkspaceCommandAvailability(input());
 

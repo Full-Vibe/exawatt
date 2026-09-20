@@ -152,6 +152,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
+    pauseSessions: (ids: string[], confirmed?: boolean) =>
+      ipcRenderer.invoke('pty:pause-sessions', ids, confirmed),
     changeModel: (id: string, choice: unknown) =>
       ipcRenderer.invoke('pty:change-model', id, choice),
     listAgentModels: (harness: string, cwd: string, refresh?: boolean) =>
@@ -194,6 +196,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:buffer-since', id, cursor),
     retainedHistoryMeta: (durableSessionId: string) =>
       ipcRenderer.invoke('pty:retained-history-meta', durableSessionId),
+    cloneContext: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:clone-context', durableSessionId),
     retainedTranscript: (durableSessionId: string, maxLines?: number) =>
       ipcRenderer.invoke('pty:retained-transcript', durableSessionId, maxLines),
     pasteClipboard: (id: string) =>
@@ -263,6 +267,9 @@ contextBridge.exposeInMainWorld('electron', {
     load: () => ipcRenderer.invoke('workspace:load'),
     save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
     recovery: () => ipcRenderer.invoke('workspace:recovery'),
+    storageRecovery: () => ipcRenderer.invoke('workspace:storage-recovery'),
+    retryRecovery: () => ipcRenderer.invoke('workspace:retry-recovery'),
+    revealRecovery: () => ipcRenderer.invoke('workspace:reveal-recovery'),
     onChanged: subscribe<unknown>('workspace:changed'),
   },
   roadmap: {

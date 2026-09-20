@@ -13,6 +13,9 @@ import { undoRoadmapState, writeRoadmapState } from './roadmap-writer';
 // pure logic under test, so the module is stood down rather than resolved
 // (BUG-057). The four suites that need `app` already mock it with a body.
 vi.mock('electron', () => ({}));
+// These structural writer tests use the default policy. Persistence and policy
+// overrides have their own suites; an absent Electron mock is not a settings API.
+vi.mock('../settings-store', () => ({ loadSettings: () => ({}) }));
 
 const roots: string[] = [];
 

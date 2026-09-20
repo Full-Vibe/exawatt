@@ -16,6 +16,7 @@ import {
   isCompatibleServiceProtocolError,
   submitProductFeedback,
 } from '@exawatt/core/distribution';
+import { commandVerbMenuCommandId } from '@exawatt/core';
 import {
   Camera,
   Check,
@@ -108,6 +109,16 @@ function dataUrlFromFile(file: File): Promise<string> {
 }
 
 /**
+ * The menu command that opens the feedback DIALOG: Help ▸ Submit Feedback…
+ * (BUG-049's ⌘⏎ surface), as distinct from the ⌘⇧F capture bar. Read from
+ * the manifest rather than spelled here, so the verb that publishes the
+ * menu item and the listener that answers it cannot name different
+ * commands: renaming or unpublishing the verb fails at module load.
+ */
+const SUBMIT_FEEDBACK_MENU_COMMAND =
+  commandVerbMenuCommandId('submit-feedback');
+
+/**
  * The menu commands this provider dispatches (ENG-010 C2).
  *
  * Menu dispatch is spread across a few owners, and a menu item whose owner
@@ -115,7 +126,7 @@ function dataUrlFromFile(file: File): Promise<string> {
  * command-verb contract can prove every declared menu verb reaches one.
  */
 export const FEEDBACK_MENU_COMMAND_IDS: ReadonlySet<string> = new Set([
-  'submit-feedback',
+  SUBMIT_FEEDBACK_MENU_COMMAND,
 ]);
 
 export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
@@ -186,7 +197,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     () =>
       window.electron?.menu?.onCommand(command => {
         if (
-          command === 'submit-feedback' &&
+          command === SUBMIT_FEEDBACK_MENU_COMMAND &&
           feedbackAvailable &&
           tokenRef.current
         ) {
@@ -483,7 +494,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     if (!sent) {
       setStatus('error');
       setError(
-        'Feedback could not be sent. Your text is still here—try again.'
+        'Feedback could not be sent. Your text is still here, so try again.'
       );
       return;
     }

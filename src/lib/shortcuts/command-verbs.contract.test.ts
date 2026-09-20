@@ -1,14 +1,23 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_COMMAND_VERB_CAPABILITIES,
   COMMAND_VERBS,
+  COMMUNITY_DISTRIBUTION,
   FIXED_SESSION_MENU_COMMANDS,
   agentSourceMenuCommandId,
   bindingToAccelerator,
+  commandVerbCapabilities,
+  commandVerbOffered,
   isChordKeys,
   keyboardCommandVerbs,
   menuCommandShortcutIds,
   menuCommandVerbs,
+  offeredCommandVerbs,
+  parseDistributionContractJson,
   type CommandVerb,
+  type CommandVerbCapability,
   type CommandVerbMenuSection,
 } from '@exawatt/core';
 import { STATIC_PALETTE_ROW_IDS } from '@/components/shortcuts/command-palette';
@@ -17,6 +26,7 @@ import {
   DISPATCHED_MENU_COMMAND_IDS,
   LIVE_WORKSPACE_MENU_COMMANDS,
   WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS,
+  registrableShortcuts,
 } from '@/components/shortcuts/shortcut-provider';
 import { FEEDBACK_MENU_COMMAND_IDS } from '@/components/feedback/product-feedback-provider';
 import { EMPTY_WORKSPACE_COMMAND_AVAILABILITY } from '@/components/workspace/workspace-command-availability';
@@ -53,6 +63,21 @@ interface MenuRow {
 
 const APP_NAME = 'Exawatt';
 
+/** Every capability at once: the base contract holds for the whole manifest,
+ *  and the capability describe below narrows it per distribution. */
+const EVERY_CAPABILITY: ReadonlySet<CommandVerbCapability> = new Set(
+  ALL_COMMAND_VERB_CAPABILITIES
+);
+
+/** The two distributions this repository builds: the default community
+ *  contract and the official example that stands in for operator custody. */
+const OFFICIAL_EXAMPLE = parseDistributionContractJson(
+  readFileSync(
+    path.join(process.cwd(), 'scripts', 'distribution.official.example.json'),
+    'utf8'
+  )
+);
+
 /**
  * The menu a section names. Typed as a TOTAL record, so a new section in the
  * manifest cannot compile until it says which menu publishes it — and the
@@ -75,13 +100,16 @@ const SECTION_BY_MENU_LABEL = new Map<string, CommandVerbMenuSection>(
   ])
 );
 
-function flattenMenu(): MenuRow[] {
+function flattenMenu(
+  capabilities: ReadonlySet<CommandVerbCapability> = EVERY_CAPABILITY
+): MenuRow[] {
   const template = buildApplicationMenuTemplate({
     appName: APP_NAME,
     version: '9.9.9',
     buildSha: 'abcdef123456',
     isDev: false,
     feedbackAuthenticated: true,
+    capabilities,
     accelerators: defaultMenuAccelerators(),
     availability: Object.fromEntries(
       availabilityMenuCommands().map(command => [command, true])
@@ -154,6 +182,17 @@ describe('keyboard surface', () => {
     expect(defaultShortcuts.map(shortcut => shortcut.id)).toEqual(
       keyboardCommandVerbs().map(verb => verb.id)
     );
+  });
+
+  it('registers, per build, exactly the verbs that build offers', () => {
+    for (const contract of [COMMUNITY_DISTRIBUTION, OFFICIAL_EXAMPLE]) {
+      const capabilities = commandVerbCapabilities(contract);
+      expect(registrableShortcuts(capabilities).map(s => s.id)).toEqual(
+        keyboardCommandVerbs(offeredCommandVerbs(capabilities)).map(
+          verb => verb.id
+        )
+      );
+    }
   });
 
   it('carries each verb’s declared binding and label', () => {
@@ -391,6 +430,116 @@ describe('application identity', () => {
     const build = labels.indexOf('Build abcdef123456');
     expect(version).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(version);
+  });
+});
+
+/**
+ * Capability-gated verbs (2026-09-13). A verb that reaches a distribution
+ * service is not OFFERED where the contract configures none: no registry
+ * binding, no palette row, no menu item. Both distributions this repository
+ * builds are held to it, so neither direction goes unchecked: the community
+ * contract must drop every gated verb and the official example must carry
+ * every one.
+ */
+describe('capability-gated verbs', () => {
+  const gated = COMMAND_VERBS.filter(verb => verb.capability !== undefined);
+
+  it('exist, and each names a capability the contract can configure', () => {
+    expect(gated.length).toBeGreaterThan(0);
+    for (const verb of gated) {
+      expect(ALL_COMMAND_VERB_CAPABILITIES, verb.id).toContain(verb.capability);
+    }
+  });
+
+  it('are absent from a community build on every surface', () => {
+    const capabilities = commandVerbCapabilities(COMMUNITY_DISTRIBUTION);
+    expect([...capabilities]).toEqual([]);
+    const rows = flattenMenu(capabilities);
+    const registered = new Set(
+      registrableShortcuts(capabilities).map(s => s.id)
+    );
+    for (const verb of gated) {
+      expect(commandVerbOffered(verb, capabilities), verb.id).toBe(false);
+      if (verb.menu !== null) {
+        expect(
+          rows.find(row => row.id === verb.menu!.commandId),
+          verb.id
+        ).toBeUndefined();
+      }
+      expect(registered.has(verb.id), verb.id).toBe(false);
+    }
+  });
+
+  it('are present in the official build on every surface they declare', () => {
+    const capabilities = commandVerbCapabilities(OFFICIAL_EXAMPLE);
+    expect([...capabilities].sort()).toEqual(
+      [...ALL_COMMAND_VERB_CAPABILITIES].sort()
+    );
+    const rows = flattenMenu(capabilities);
+    const registered = new Set(
+      registrableShortcuts(capabilities).map(s => s.id)
+    );
+    for (const verb of gated) {
+      expect(commandVerbOffered(verb, capabilities), verb.id).toBe(true);
+      if (verb.menu !== null) {
+        expect(
+          rows.find(row => row.id === verb.menu!.commandId)?.label,
+          verb.id
+        ).toBe(verb.menu.label);
+      }
+      expect(registered.has(verb.id), verb.id).toBe(verb.keys !== null);
+    }
+  });
+
+  it('never drops an ungated verb from either build', () => {
+    for (const contract of [COMMUNITY_DISTRIBUTION, OFFICIAL_EXAMPLE]) {
+      const offered = new Set(
+        offeredCommandVerbs(commandVerbCapabilities(contract)).map(
+          verb => verb.id
+        )
+      );
+      for (const verb of COMMAND_VERBS) {
+        if (verb.capability === undefined) {
+          expect(offered.has(verb.id), verb.id).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+/**
+ * The feedback dialog's menu item (Help ▸ Submit Feedback…) is owned by ONE
+ * verb and answered by the feedback provider. One verb used to carry the
+ * ⌘⇧F capture bar AND this menu item, so the menu printed the bar's chord
+ * beside the dialog's name. The dispatcher reads its command id from the
+ * manifest now; this joins the two so the verb cannot lose its listener.
+ */
+describe('feedback surfaces', () => {
+  it('gives the dialog and the capture bar their own verbs', () => {
+    const bar = COMMAND_VERBS.find(verb => verb.id === 'quick-feedback')!;
+    const dialog = COMMAND_VERBS.find(verb => verb.id === 'submit-feedback')!;
+    expect(bar.keys).not.toBeNull();
+    expect(bar.menu).toBeNull();
+    expect(dialog.keys).toBeNull();
+    expect(dialog.menu).not.toBeNull();
+    expect(bar.capability).toBe(dialog.capability);
+  });
+
+  it('routes every product-feedback menu verb to the feedback dispatcher', () => {
+    const feedbackMenuCommands = menuCommandVerbs()
+      .filter(verb => verb.capability === 'product-feedback')
+      .map(verb => verb.menu.commandId);
+    expect(feedbackMenuCommands.length).toBeGreaterThan(0);
+    expect([...FEEDBACK_MENU_COMMAND_IDS].sort()).toEqual(
+      feedbackMenuCommands.sort()
+    );
+  });
+
+  it('prints no chord on the dialog’s menu row', () => {
+    const dialog = menuCommandVerbs().find(
+      verb => verb.id === 'submit-feedback'
+    )!;
+    expect(menuRow(dialog.menu.commandId)?.accelerator).toBeUndefined();
   });
 });
 

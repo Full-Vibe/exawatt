@@ -91,6 +91,8 @@ function electronStub(sessions: PtySessionInfo[]) {
   const pty = {
     list: vi.fn(() => Promise.resolve(sessions)),
     create: vi.fn(),
+    changeModel: vi.fn(),
+    pauseSessions: vi.fn(),
     closeSession: vi.fn(() => Promise.resolve(true)),
     archiveSession: vi.fn(
       (entry: Record<string, unknown>): Promise<Record<string, unknown>> =>
@@ -312,6 +314,143 @@ describe('a forgotten Session leaves nothing behind in the renderer', () => {
  * A Session-keyed collection must therefore come from the owner, so the hook
  * body declares none of its own.
  */
+describe('retained Session operation ownership', () => {
+  it('admits only one resume before preferences return', async () => {
+    const { view, pty, emit } = await mountedWorkspace([
+      liveSession(DURABLE, PTY, { harnessSessionId: 'exact-conversation' }),
+    ]);
+    await act(async () =>
+      emit('exit', { id: PTY, durableSessionId: DURABLE, exitCode: 0 })
+    );
+    let release!: (settings: object) => void;
+    Object.assign(window.electron!, {
+      settings: {
+        get: () =>
+          new Promise(resolve => {
+            release = resolve;
+          }),
+      },
+    });
+    pty.create.mockResolvedValue({
+      ok: true,
+      session: liveSession(DURABLE, 'replacement', {
+        harnessSessionId: 'exact-conversation',
+      }),
+    });
+    const tabId = view.result.current.projects[0].tabs[0].id;
+    let first!: Promise<boolean>;
+    await act(async () => {
+      first = view.result.current.resumeTab(tabId);
+      expect(await view.result.current.resumeTab(tabId)).toBe(false);
+    });
+    expect(pty.create).not.toHaveBeenCalled();
+    await act(async () => {
+      release({});
+      await first;
+    });
+    expect(pty.create).toHaveBeenCalledTimes(1);
+    expect(pty.create.mock.calls[0][0]).toMatchObject({
+      durableSessionId: DURABLE,
+      resumeSessionId: 'exact-conversation',
+    });
+    expect(pty.create.mock.calls[0][0]).not.toHaveProperty('initialPrompt');
+  });
+
+  it('ignores the old runtime exit after model replacement', async () => {
+    const { view, pty, emit } = await mountedWorkspace([
+      liveSession(DURABLE, PTY, { harnessSessionId: 'exact-conversation' }),
+    ]);
+    pty.changeModel.mockResolvedValue({
+      ok: true,
+      session: liveSession(DURABLE, 'replacement', {
+        harnessSessionId: 'exact-conversation',
+        launchModel: 'new-model',
+      }),
+    });
+    await act(async () => {
+      await view.result.current.changeSessionModel(
+        view.result.current.projects[0].tabs[0].id,
+        { model: 'new-model' }
+      );
+    });
+    await act(async () =>
+      emit('exit', { id: PTY, durableSessionId: DURABLE, exitCode: 0 })
+    );
+    expect(view.result.current.projects[0].tabs[0]).toMatchObject({
+      sessionId: 'replacement',
+      lifecycle: 'running',
+    });
+    await act(async () =>
+      emit('exit', {
+        id: 'replacement',
+        durableSessionId: DURABLE,
+        exitCode: 0,
+      })
+    );
+    expect(view.result.current.projects[0].tabs[0]).toMatchObject({
+      sessionId: null,
+      resumeState: 'ended-resumable',
+    });
+  });
+
+  it.each(['returned', 'broadcast'] as const)(
+    'retains a replacement that exits before adoption (%s)',
+    async mode => {
+      const { view, pty, emit } = await mountedWorkspace([
+        liveSession(DURABLE, PTY, { harnessSessionId: 'exact-conversation' }),
+      ]);
+      pty.changeModel.mockImplementation(async () => {
+        const replacement = liveSession(DURABLE, 'replacement', {
+          harnessSessionId: 'exact-conversation',
+          exited: mode === 'returned',
+          exitCode: mode === 'returned' ? 7 : null,
+        });
+        if (mode === 'broadcast')
+          emit('exit', {
+            id: 'replacement',
+            durableSessionId: DURABLE,
+            exitCode: 7,
+          });
+        return { ok: true, session: replacement };
+      });
+      await act(async () => {
+        await view.result.current.changeSessionModel(
+          view.result.current.projects[0].tabs[0].id,
+          { model: 'new-model' }
+        );
+      });
+      expect(view.result.current.projects[0].tabs[0]).toMatchObject({
+        sessionId: null,
+        lifecycle: 'exited',
+        resumeState: 'ended-resumable',
+        exitCode: 7,
+      });
+    }
+  );
+
+  it('retries confirmation for the original membership only', async () => {
+    const { view, pty } = await mountedWorkspace([
+      liveSession(DURABLE, PTY, { harnessSessionId: 'exact-conversation' }),
+      liveSession('new-agent', 'new-runtime', {
+        harnessSessionId: 'new-conversation',
+      }),
+    ]);
+    pty.pauseSessions.mockResolvedValue({
+      kind: 'completed',
+      results: [{ durableSessionId: DURABLE, status: 'paused' }],
+    });
+    await act(async () => {
+      await view.result.current.pauseProject(REPO, [DURABLE]);
+    });
+    expect(pty.pauseSessions).toHaveBeenCalledWith([DURABLE], true);
+    expect(
+      view.result.current.projects[0].tabs.find(
+        tab => tab.kind === 'session' && tab.durableSessionId === 'new-agent'
+      )
+    ).toMatchObject({ sessionId: 'new-runtime' });
+  });
+});
+
 describe('Session-keyed renderer state is declared through one owner', () => {
   const source = readFileSync(
     path.join(__dirname, 'use-workspace-state.ts'),

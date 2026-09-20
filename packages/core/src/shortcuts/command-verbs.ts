@@ -29,6 +29,7 @@
  */
 
 import { CONSUMPTION_SURFACE_NAME } from '../surface-names';
+import type { DistributionContractV2 } from '../distribution/contract';
 
 export type CommandVerbModifier = 'ctrl' | 'alt' | 'shift' | 'meta';
 
@@ -79,6 +80,7 @@ export type WorkspaceContextCommand =
   | 'move-project-right'
   | 'jump-attention'
   | 'open-roadmap'
+  | 'pause-project'
   | 'resume-agent'
   | 'resume-scope'
   | 'reveal-path'
@@ -102,6 +104,37 @@ export interface CommandVerbMenu {
    * never sees the keydown. Reserved for macOS chrome invariants (⌘,).
    */
   registerAccelerator?: true;
+}
+
+/**
+ * A distribution SERVICE a verb reaches. The distribution contract decides
+ * whether the service exists in this build; a verb naming a capability the
+ * contract does not configure is not offered anywhere: no registry binding,
+ * no palette row, no menu item. `commandVerbCapabilities` is the one place
+ * that reads the contract for this, so a new capability is born with its
+ * contract fact or does not compile.
+ */
+export type CommandVerbCapability = 'product-feedback';
+
+const CAPABILITY_CONFIGURED: Record<
+  CommandVerbCapability,
+  (contract: DistributionContractV2) => boolean
+> = {
+  'product-feedback': contract => contract.services.productFeedback !== null,
+};
+
+export const ALL_COMMAND_VERB_CAPABILITIES: readonly CommandVerbCapability[] =
+  Object.keys(CAPABILITY_CONFIGURED) as CommandVerbCapability[];
+
+/** The capabilities a distribution contract configures. */
+export function commandVerbCapabilities(
+  contract: DistributionContractV2
+): ReadonlySet<CommandVerbCapability> {
+  return new Set(
+    ALL_COMMAND_VERB_CAPABILITIES.filter(capability =>
+      CAPABILITY_CONFIGURED[capability](contract)
+    )
+  );
 }
 
 export type CommandVerbKeyboard = {
@@ -153,6 +186,14 @@ export type CommandVerb = {
    * them itself; a verb NO other shell implements cannot use that as a gate.
    */
   tenantScope?: 'personal-workspace';
+  /**
+   * Verbs that reach a distribution SERVICE are dropped whole where the
+   * contract configures none, the way `tenantScope` drops personal-workspace
+   * verbs on another tenant: a community build must not list a Send feedback
+   * row that does nothing, and a rebindable chord for it would be a lie in
+   * the cheat sheet. Every projection filters through `commandVerbOffered`.
+   */
+  capability?: CommandVerbCapability;
 } & (KeyboardSurfaced | KeyboardUnsurfaced) &
   (PaletteSurfaced | PaletteUnsurfaced) &
   (MenuSurfaced | MenuUnsurfaced);
@@ -600,6 +641,22 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
   // tab already on screen. One chord for both would make the consequence —
   // including whether a provider starts billing — depend on invisible state.
   {
+    id: 'workspace-pause-project',
+    label: 'Pause this Project',
+    description:
+      'Stop this Project’s local Agents while keeping their Sessions ready to resume',
+    keys: null,
+    keyboardDiscoverability:
+      'Pause affects every local Agent in the selected Project; the searchable palette and native menu provide deliberate access without an easily mistaken global chord.',
+    availability: 'pause-project',
+    palette: { rowId: 'ws-pause-project' },
+    menu: {
+      commandId: 'pause-project',
+      label: 'Pause This Project',
+      section: 'session',
+    },
+  },
+  {
     id: 'workspace-resume-agent',
     label: 'Resume this Agent',
     description: 'Restart the selected parked Agent on its exact Session',
@@ -618,7 +675,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     id: 'workspace-resume-scope',
     label: 'Resume the parked Agents',
     description:
-      "Restart the recovery bar's scope — this Project, or every Project",
+      "Restart the recovery bar's scope: this Project, or every Project",
     keys: { key: 'r', modifiers: ['meta', 'alt', 'shift'] },
     category: 'workspace',
     contexts: ['workspace'],
@@ -645,6 +702,15 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
       section: 'session',
     },
   },
+  // Two feedback verbs, one queue. ⌘⇧F is the keyboard-first capture bar
+  // (ENG-025 F1): it takes a screenshot before it renders and sends on ⏎.
+  // Help ▸ Submit Feedback… is the dialog (BUG-049's ⌘⏎ surface), the form a
+  // menu reader expects with a type, a screenshot preview and a text field.
+  // One verb used to carry both: its chord opened the bar while its menu
+  // item opened the dialog, and the menu printed the bar's chord beside the
+  // dialog's name. Each surface now has its own verb, so the contract test
+  // can join the Help item to the dispatcher that opens the dialog, and the
+  // menu prints no chord it does not honour.
   {
     id: 'quick-feedback',
     label: 'Send feedback',
@@ -652,7 +718,24 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     keys: { key: 'f', modifiers: ['meta', 'shift'] },
     category: 'actions',
     contexts: ['global'],
+    capability: 'product-feedback',
     palette: { rowId: 'action-feedback' },
+    menu: null,
+    menuDiscoverability:
+      'The Help menu opens the full feedback dialog through `submit-feedback`, which is the form a menu reader expects; the capture bar is keyboard-first and prints its chord on the palette row instead.',
+  },
+  {
+    id: 'submit-feedback',
+    label: 'Submit feedback dialog',
+    description:
+      'Open the feedback form with a type, a message, and a screenshot',
+    keys: null,
+    keyboardDiscoverability:
+      '⌘⇧F already reaches feedback from anywhere as the capture bar, which sends on ⏎ and is the faster path; the dialog is the mouse and menu route into the same queue, and a second chord for one destination would spend a combo on the slower form.',
+    capability: 'product-feedback',
+    palette: null,
+    paletteDiscoverability:
+      "The palette's feedback rows open the capture bar pre-set to a kind, which is what a reader typing feedback into the palette is already doing; a fourth row for the dialog would list the same queue twice and rank against the three.",
     menu: {
       commandId: 'submit-feedback',
       label: 'Submit Feedback…',
@@ -697,19 +780,51 @@ export function getCommandVerb(id: string): CommandVerb {
   return verb;
 }
 
+/** Does this build offer the verb at all? A verb without a capability is
+ *  offered everywhere; one with a capability only where the contract
+ *  configures it. */
+export function commandVerbOffered(
+  verb: CommandVerb,
+  capabilities: ReadonlySet<CommandVerbCapability>
+): boolean {
+  return verb.capability === undefined || capabilities.has(verb.capability);
+}
+
+/** The manifest as this build offers it, in declaration order. */
+export function offeredCommandVerbs(
+  capabilities: ReadonlySet<CommandVerbCapability>
+): readonly CommandVerb[] {
+  return COMMAND_VERBS.filter(verb => commandVerbOffered(verb, capabilities));
+}
+
+/** The menu command id a verb publishes. Throws with the written reason when
+ *  the manifest says it has none, so a dispatcher cannot claim a command the
+ *  menu never sends. */
+export function commandVerbMenuCommandId(verbId: string): string {
+  const verb = getCommandVerb(verbId);
+  if (verb.menu === null) {
+    throw new Error(
+      `Command verb ${verbId} declares no native menu item: ${verb.menuDiscoverability}`
+    );
+  }
+  return verb.menu.commandId;
+}
+
 /** Verbs that hold a rebindable registry binding, in declaration order. */
-export function keyboardCommandVerbs(): readonly (CommandVerb &
-  CommandVerbKeyboard)[] {
-  return COMMAND_VERBS.filter(
+export function keyboardCommandVerbs(
+  verbs: readonly CommandVerb[] = COMMAND_VERBS
+): readonly (CommandVerb & CommandVerbKeyboard)[] {
+  return verbs.filter(
     (verb): verb is CommandVerb & CommandVerbKeyboard => verb.keys !== null
   );
 }
 
 /** Verbs that publish a native menu item, in that section's declaration order. */
 export function menuCommandVerbs(
-  section?: CommandVerbMenuSection
+  section?: CommandVerbMenuSection,
+  verbs: readonly CommandVerb[] = COMMAND_VERBS
 ): readonly (CommandVerb & { menu: CommandVerbMenu })[] {
-  return COMMAND_VERBS.filter(
+  return verbs.filter(
     (verb): verb is CommandVerb & { menu: CommandVerbMenu } =>
       verb.menu !== null &&
       (section === undefined || verb.menu.section === section)

@@ -1,3 +1,5 @@
+import { createSessionPauser } from './pty/session-pause';
+import { readSessionCloneContext } from './pty/session-clone-context';
 import { BrowserWindow, Notification, app, nativeTheme, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import {
@@ -29,7 +31,12 @@ import {
   type ClosedSessionEntry,
 } from './pty/closed-session-ledger';
 import { createWorktree, expandTilde } from './pty/project-resolve';
-import { loadWorkspace, saveWorkspace } from './workspace-store';
+import {
+  loadWorkspace,
+  saveWorkspace,
+  recoverWorkspace,
+  workspaceStorageRecovery,
+} from './workspace-store';
 import { hydrateGoalVisual, retainGoalVisual } from './goal-visual-store';
 import {
   loadSettings,
@@ -103,8 +110,14 @@ export function registerPtyIPC(
   const publishClosedSessionCount = () =>
     broadcast('pty:closed-sessions-changed', closedLedger.list().length);
   const reapClosedSessions = async () => {
-    const reaped = await closedLedger.reap();
-    if (reaped > 0) publishClosedSessionCount();
+    try {
+      const reaped = await closedLedger.reap();
+      if (reaped > 0) publishClosedSessionCount();
+    } catch (error) {
+      diagnostics('closed-sessions.reap-failed', {
+        error: error instanceof Error ? error.message : 'Store unavailable',
+      });
+    }
   };
   void reapClosedSessions();
   const reapTimer = setInterval(
@@ -363,6 +376,24 @@ export function registerPtyIPC(
       };
     }
   });
+  const pauseSessions = createSessionPauser({
+    session: durableSessionId =>
+      ptySessions
+        .list()
+        .find(session => session.durableSessionId === durableSessionId),
+    active: id =>
+      attentionMonitor.isWorking(id) ||
+      delegationMonitor.isBusy(id) ||
+      !!delegationMonitor.get(id)?.blockedOn ||
+      (!!attentionMonitor.get(id) &&
+        attentionMonitor.get(id)?.kind !== 'turn-end'),
+    prepare: id => ptySessions.prepareSessionPause(id),
+  });
+  handleTrusted(
+    'pty:pause-sessions',
+    (_event, ids: string[], confirmed?: boolean) =>
+      pauseSessions(ids, confirmed)
+  );
   const changeModel = createSessionModelChanger({
     session: id => ptySessions.list().find(session => session.id === id),
     available: id =>
@@ -516,28 +547,7 @@ export function registerPtyIPC(
   handleTrusted(
     'pty:close-session',
     async (_event, durableSessionId: string, discard = false) => {
-      const session = ptySessions
-        .list()
-        .find(item => item.durableSessionId === durableSessionId);
-      if (session && !session.exited) {
-        await ptySessions.settleProviderIdentity(session.id);
-        await ptySessions.stop(session.id);
-        // stop() awaits process-group death, but node-pty's exit callback
-        // lands on a later tick — wait for the honest exited flag so the
-        // archive that follows sees a dead session
-        const deadline = Date.now() + 3_000;
-        while (Date.now() < deadline) {
-          const current = ptySessions
-            .list()
-            .find(item => item.durableSessionId === durableSessionId);
-          if (!current || current.exited) break;
-          await new Promise(resolve => setTimeout(resolve, 25));
-        }
-      }
-      // the dead record must not resurrect the closed tab on rehydration;
-      // a discarded (never-started) session also sheds its banner history
-      ptySessions.forgetExited(durableSessionId);
-      if (discard) await ptySessions.purgeHistory(durableSessionId);
+      await ptySessions.closeSession(durableSessionId, discard);
       return true;
     }
   );
@@ -601,6 +611,28 @@ export function registerPtyIPC(
     ...ptySessions.bufferSince(id, cursor),
     cursor: ptySessions.bufferCursor(id),
   }));
+  handleTrusted(
+    'pty:clone-context',
+    async (_event, durableSessionId: string) => {
+      if (
+        typeof durableSessionId !== 'string' ||
+        !/^[A-Za-z0-9._-]{1,200}$/.test(durableSessionId)
+      ) {
+        throw new Error('Invalid Session identity');
+      }
+      const runtime = ptySessions
+        .list()
+        .find(row => row.durableSessionId === durableSessionId);
+      const identity =
+        runtime ??
+        ptySessions
+          .listProviderIdentities()
+          .find(row => row.durableSessionId === durableSessionId);
+      if (!identity || identity.harness === 'shell')
+        throw new Error('The original Agent Session is unavailable.');
+      return readSessionCloneContext(identity);
+    }
+  );
   // The paused-Agent record's read: O(1), no transcript (incident 0008).
   handleTrusted(
     'pty:retained-history-meta',
@@ -772,6 +804,13 @@ export function registerPtyIPC(
     broadcast('workspace:changed', state);
   });
   handleTrusted('workspace:recovery', () => ({ previousRunInterrupted }));
+  handleTrusted('workspace:storage-recovery', () => workspaceStorageRecovery());
+  handleTrusted('workspace:retry-recovery', () => recoverWorkspace('retry'));
+  handleTrusted('workspace:reveal-recovery', () => {
+    const recovery = workspaceStorageRecovery();
+    const file = recovery.recoveryFile ?? recovery.originalFile;
+    if (file) shell.showItemInFolder(file);
+  });
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());

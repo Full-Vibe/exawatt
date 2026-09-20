@@ -1,6 +1,6 @@
 {
   "name": "exawatt",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -140,7 +140,9 @@
     "eval:roadmap:rail": "node scripts/roadmap-rail-eval.mjs",
     "electron:build:dogfood:official": "EXAWATT_DISTRIBUTION_PROFILE=official node scripts/build-dogfood.mjs",
     "open-source:catchup": "node scripts/public-catchup.mjs",
-    "eval:electron:model-change": "node scripts/electron-model-change-eval.mjs"
+    "eval:electron:project-pause": "node scripts/electron-project-pause-eval.mjs",
+    "eval:electron:model-change": "node scripts/electron-model-change-eval.mjs",
+    "eval:electron:clone-context": "node scripts/electron-clone-context-eval.mjs"
   },
   "dependencies": {
     "@exawatt/core": "workspace:*",

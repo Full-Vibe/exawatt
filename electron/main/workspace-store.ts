@@ -1,5 +1,10 @@
 import { app } from 'electron';
-import * as fs from 'fs';
+import {
+  readJsonDocumentAsync,
+  readJsonFile,
+  recoverJsonFile,
+  writeJsonFileAtomicAsync,
+} from './atomic-json-file';
 import * as path from 'path';
 import {
   goalVisualStore,
@@ -20,7 +25,6 @@ import {
  */
 export class WorkspaceStore {
   private saveTail: Promise<void> = Promise.resolve();
-  private temporarySequence = 0;
 
   constructor(private readonly file: string) {}
 
@@ -40,14 +44,10 @@ export class WorkspaceStore {
     migrate?: (state: unknown) => Promise<boolean>
   ): Promise<unknown | null> {
     const operation = this.saveTail.then(async () => {
-      let state: unknown;
-      try {
-        state = JSON.parse(await fs.promises.readFile(this.file, 'utf8'));
-      } catch {
-        return null;
-      }
+      const state = await readJsonDocumentAsync(this.file);
+      if (state === null) return null;
       if (migrate && (await migrate(state))) {
-        await this.replace(JSON.stringify(state));
+        await writeJsonFileAtomicAsync(this.file, state);
       }
       return state;
     });
@@ -59,23 +59,19 @@ export class WorkspaceStore {
   }
 
   async save(state: unknown): Promise<void> {
-    const serialized = JSON.stringify(state);
-    const operation = this.saveTail.then(() => this.replace(serialized));
+    const snapshot: unknown = JSON.parse(JSON.stringify(state));
+    const operation = this.saveTail.then(() =>
+      writeJsonFileAtomicAsync(this.file, snapshot)
+    );
     this.saveTail = operation.catch(() => undefined);
     await operation;
   }
-
-  private async replace(serialized: string): Promise<void> {
-    await fs.promises.mkdir(path.dirname(this.file), { recursive: true });
-    const temporary = `${this.file}.tmp-${process.pid}-${++this.temporarySequence}`;
-    try {
-      await fs.promises.writeFile(temporary, serialized, { mode: 0o600 });
-      await fs.promises.chmod(temporary, 0o600);
-      await fs.promises.rename(temporary, this.file);
-      await fs.promises.chmod(this.file, 0o600);
-    } finally {
-      await fs.promises.rm(temporary, { force: true });
-    }
+  async recover(action: 'retry' | 'reset'): Promise<void> {
+    const operation = this.saveTail.then(() =>
+      recoverJsonFile(this.file, action)
+    );
+    this.saveTail = operation.catch(() => undefined);
+    await operation;
   }
 }
 
@@ -170,4 +166,21 @@ export async function saveWorkspace(state: unknown): Promise<void> {
   void goalVisualStore()
     .sweep(referencedGoalVisualKeys(state))
     .catch(() => undefined);
+}
+
+/** Deliberate recovery is serialized with pending workspace checkpoints. */
+export function recoverWorkspace(action: 'retry' | 'reset'): Promise<void> {
+  return store().recover(action);
+}
+
+export function workspaceStorageRecovery(): {
+  required: boolean;
+  recoveryFile?: string;
+  originalFile?: string;
+} {
+  const originalFile = path.join(app.getPath('userData'), 'workspace.json');
+  const result = readJsonFile(originalFile);
+  return result.status === 'corrupt'
+    ? { required: true, recoveryFile: result.recoveryFile, originalFile }
+    : { required: false, originalFile };
 }

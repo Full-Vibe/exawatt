@@ -102,6 +102,7 @@ import {
   isSessionTab,
   projectRootPath,
   tabIsLive,
+  tabCanResumeAsAgent,
   type Project,
 } from './use-workspace-state';
 
@@ -166,6 +167,8 @@ export function TabStrip({
   onCloneTab,
   onNewAgent,
   onCloseProject,
+  onPauseProject,
+  onResumeProject,
   onRevealPath,
   onReorderTab,
   onReorderProject,
@@ -195,6 +198,8 @@ export function TabStrip({
   onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
   onNewAgent?: (dir: string) => void;
   onCloseProject?: (dir: string) => void;
+  onPauseProject?: (dir: string) => void;
+  onResumeProject?: (dir: string) => void;
   onRevealPath?: (cwd: string) => void;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
@@ -1175,6 +1180,31 @@ export function TabStrip({
                         id: 'reveal-project',
                         label: 'Reveal in Finder',
                         onSelect: () => onRevealPath(rootPath),
+                      },
+                    ]
+                  : []),
+                ...(onPauseProject &&
+                project.tabs.some(
+                  tab =>
+                    isSessionTab(tab) &&
+                    tab.harness !== 'shell' &&
+                    tab.sessionId !== null
+                )
+                  ? [
+                      {
+                        id: 'pause-project',
+                        label: 'Pause Agents',
+                        focusAfterSelect: 'none' as const,
+                        onSelect: () => onPauseProject(project.dir),
+                      },
+                    ]
+                  : []),
+                ...(onResumeProject && project.tabs.some(tabCanResumeAsAgent)
+                  ? [
+                      {
+                        id: 'resume-project',
+                        label: 'Resume Agents',
+                        onSelect: () => onResumeProject(project.dir),
                       },
                     ]
                   : []),

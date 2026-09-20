@@ -75,6 +75,7 @@ export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
  *  the selected Agent, and the recovery bar's own default scope. Semantics
  *  stay entirely in the workspace: these events carry no identity, so a row
  *  can never ask for a resume the bar would not perform. */
+export const PAUSE_ACTIVE_PROJECT_EVENT = 'exawatt:pause-active-project';
 export const RESUME_ACTIVE_AGENT_EVENT = 'exawatt:resume-active-agent';
 export const RESUME_PARKED_SCOPE_EVENT = 'exawatt:resume-parked-scope';
 export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';

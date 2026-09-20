@@ -1,3 +1,4 @@
+import { configureJsonStoreDiagnostics } from './atomic-json-file';
 import {
   app,
   BrowserWindow,
@@ -108,6 +109,7 @@ import {
   loadPackagedDistribution,
 } from './distribution';
 import { resolveDistributionIdentity } from '@exawatt/core/distribution';
+import { commandVerbCapabilities } from '@exawatt/core';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -847,6 +849,7 @@ function resetMenuAvailability(): void {
 }
 
 let feedbackAuthenticated = false;
+const menuCapabilities = commandVerbCapabilities(distribution.contract);
 
 const ACCELERATOR_PATTERN =
   /^((Command|Control|Alt|Shift)\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|[\[\]\\;',./`=-]|Enter|Escape|Tab|Space|Backspace|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown)$/;
@@ -915,6 +918,7 @@ function createMenu(): void {
         buildSha: buildInfo.sha.slice(0, 12),
         isDev,
         feedbackAuthenticated,
+        capabilities: menuCapabilities,
         accelerators: menuAccelerators,
         availability: menuAvailability,
         onCommand: sendMenuCommand,
@@ -1637,6 +1641,7 @@ function watchShellStartupArtifacts(
 
 app.whenReady().then(() => {
   mainDiagnostics = createMainDiagnostics();
+  configureJsonStoreDiagnostics(mainDiagnostics);
   // Standing main-thread instrumentation: the next beachball records itself.
   // Started before the window so a stall during startup is captured too.
   installMainThreadStallTrace(

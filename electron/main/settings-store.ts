@@ -1,5 +1,9 @@
 import { app } from 'electron';
-import * as fs from 'fs';
+import {
+  readJsonFile,
+  writeJsonFileAtomic,
+  reportJsonStoreReadFailure,
+} from './atomic-json-file';
 import * as path from 'path';
 import {
   THEME_BOOTSTRAP_REGISTRY,
@@ -9,6 +13,7 @@ import {
   deleteLaunchConfiguration as deleteConfiguration,
   emptyLaunchConfigurationPool,
   parseLaunchConfigurationPool,
+  isStoredLaunchConfigurationPool,
   recordLaunchConfigurationSuccess as recordConfigurationSuccess,
   renameLaunchConfiguration as renameConfiguration,
   saveNamedLaunchConfiguration as saveNamedConfiguration,
@@ -596,32 +601,137 @@ function settingsFile(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-export function loadSettings(): ExawattSettings {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
-  } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
-      return {};
+/** Total UI parsers may normalize input; stored choices must not disappear during that normalization. */
+function validStoredSettings(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  const knownProperties: Partial<
+    Record<keyof ExawattSettings, readonly string[]>
+  > = {
+    terminal: [
+      'fontFamily',
+      'fontSize',
+      'lineHeight',
+      'letterSpacing',
+      'fontStrokeWidth',
+    ],
+    notifications: ['attention', 'dockBadge'],
+    contextLabels: ['hosted'],
+    conversationSummaries: ['hosted'],
+    goalVisuals: ['enabled'],
+    reentryRecap: ['enabled'],
+    claudePlanWindows: ['enabled'],
+    operatorProfile: [
+      'autoPublish',
+      'startedAt',
+      'lastSyncedAt',
+      'profileEnabled',
+    ],
+  };
+  for (const key of SETTINGS_KEYS) {
+    if (!(key in raw)) continue;
+    const parsed = SETTINGS_SCHEMA[key](raw[key]);
+    if (parsed === undefined) return false;
+    const fields = knownProperties[key];
+    if (!fields) continue;
+    const input = raw[key];
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      return false;
+    for (const field of fields) {
+      if (
+        field in input &&
+        typeof (parsed as Record<string, unknown>)[field] !==
+          typeof (input as Record<string, unknown>)[field]
+      )
+        return false;
     }
-    return {
-      appearance: structuredClone(
-        CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
-      ),
-    };
   }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return {
-      appearance: structuredClone(
-        CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
-      ),
-    };
+  // Some legacy total parsers accept a broad envelope and discard damaged rows.
+  // Validate those envelopes at disk custody, while retaining documented legacy aliases.
+  if (raw.agentSources !== undefined) {
+    if (
+      !raw.agentSources ||
+      typeof raw.agentSources !== 'object' ||
+      Array.isArray(raw.agentSources)
+    )
+      return false;
+    const input = raw.agentSources as Record<string, unknown>;
+    const parsed = SETTINGS_SCHEMA.agentSources(input)!;
+    for (const key of [
+      'projectLastUsed',
+      'sourceRecency',
+      'projectPermissionModes',
+    ] as const) {
+      if (input[key] === undefined) continue;
+      const source = input[key];
+      if (!source || typeof source !== 'object' || Array.isArray(source))
+        return false;
+      for (const [entryKey, entry] of Object.entries(source)) {
+        const result = parsed[key][entryKey];
+        if (result === undefined) return false;
+        if (key === 'projectPermissionModes') {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+            return false;
+          if (
+            Object.keys(entry).some(
+              sourceId => !(sourceId in (result as Record<string, unknown>))
+            )
+          )
+            return false;
+        }
+      }
+    }
   }
+  if (
+    raw.launchConfigurations !== undefined &&
+    !isStoredLaunchConfigurationPool(raw.launchConfigurations)
+  )
+    return false;
+  if (raw.keyboardShortcuts !== undefined) {
+    const input = raw.keyboardShortcuts;
+    if (!input || typeof input !== 'object') return false;
+    const envelope = Array.isArray(input)
+      ? { overrides: input }
+      : (input as Record<string, unknown>);
+    if (
+      !Array.isArray(envelope.overrides) ||
+      ('schemaVersion' in envelope && envelope.schemaVersion !== 1) ||
+      !envelope.overrides.every(
+        entry => parseKeyboardShortcutOverrides([entry]).overrides.length === 1
+      )
+    )
+      return false;
+  }
+  return true;
+}
+
+function recoverySettings(): ExawattSettings {
+  return {
+    appearance: structuredClone(
+      CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
+    ),
+    contextLabels: { hosted: false },
+    conversationSummaries: { hosted: false },
+    goalVisuals: { enabled: false },
+    reentryRecap: { enabled: false },
+    claudePlanWindows: { enabled: false },
+    operatorProfile: { autoPublish: false },
+  };
+}
+
+export function loadSettings(): ExawattSettings {
+  let result;
+  try {
+    result = readJsonFile(settingsFile(), validStoredSettings);
+  } catch {
+    // Native appearance is read before the first window. An inaccessible file
+    // must not prevent the recovery UI from opening or enable outbound work.
+    reportJsonStoreReadFailure(settingsFile());
+    return recoverySettings();
+  }
+  if (result.status === 'absent') return {};
+  if (result.status === 'corrupt') return recoverySettings();
+  const raw = result.value as Record<string, unknown>;
   const settings = parseSettings(raw);
   if (
     Object.prototype.hasOwnProperty.call(raw, 'appearance') &&
@@ -644,28 +754,7 @@ export function writeSettings(settings: ExawattSettings): void {
   for (const key of SETTINGS_KEYS) {
     if (settings[key] !== undefined) persisted[key] = settings[key];
   }
-  const file = settingsFile();
-  const staging = `${file}.tmp-${process.pid}`;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  try {
-    fs.writeFileSync(staging, `${JSON.stringify(persisted, null, 2)}\n`, {
-      mode: 0o600,
-    });
-    fs.renameSync(staging, file);
-  } finally {
-    try {
-      fs.unlinkSync(staging);
-    } catch (error) {
-      if (
-        !error ||
-        typeof error !== 'object' ||
-        !('code' in error) ||
-        error.code !== 'ENOENT'
-      ) {
-        throw error;
-      }
-    }
-  }
+  writeJsonFileAtomic(settingsFile(), persisted, validStoredSettings);
 }
 
 function launchConfigurationPool(

@@ -170,10 +170,21 @@ macOS Session menu.
 
 A started Agent tab's context menu and **⌘K** offer **Clone to…** with the exact
 available Agent configurations. Clone starts a distinct new Agent Session with
-a bounded, Exawatt-owned goal/context handoff. The original Session remains
+a bounded handoff of current context, gathered automatically with no extra
+click. Current-context cloning reads local Claude Code or Codex conversation
+prose; if that native context is unsupported or cannot be read safely, Exawatt
+explains the failure before starting another Session. The original Session remains
 untouched, and Exawatt passes no provider resume identity or live conversation
 state to the new source. This is a fresh handoff, not migration, failover, or
 resume.
+
+## Pausing a Project
+
+Choose **Pause Project** to stop its eligible local Agents while retaining their
+tabs and history. When work is active, review the interruption notice and choose
+**Pause now**; the blue default is **Cancel**. Idle Agents pause directly.
+Shells are excluded, and unsupported sources explain why. Resume the Project
+through the existing recovery control to return to the exact conversations.
 
 ## Quitting and returning
 
@@ -231,3 +242,10 @@ made in the terminal. Environment-controlled effort stays locked. Unsupported
 sources direct model selection to their native interface. If replacement fails,
 the saved Session remains available to resume. Demo Mode exercises the same
 selector against Demo choices without starting processes.
+
+## Recovering damaged local data
+
+If Exawatt reports damaged local data, it preserves the affected file and blocks
+changes to that store. Use the recovery surface to reveal the file, repair it or
+restore a valid copy, then retry. Restarting the app does not clear this
+protection, and recovery does not silently reset your configuration.

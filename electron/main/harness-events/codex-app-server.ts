@@ -270,6 +270,19 @@ async function launchCodexAppServer(): Promise<ChildProcessWithoutNullStreams> {
   });
 }
 
+/** The protocol returns item envelopes in requested descending order. */
+export function parseCodexConversationItems(value: unknown): unknown[] {
+  const page = object(value);
+  if (!Array.isArray(page?.data))
+    throw protocolError('thread/items/list response has no data array');
+  return [...page.data].reverse().map(entry => {
+    const item = object(object(entry)?.item);
+    if (!item)
+      throw protocolError('thread/items/list entry has no item object');
+    return item;
+  });
+}
+
 /** JSON-RPC client for the installed Codex app-server. */
 export class CodexAppServerClient implements CodexDelegationProtocol {
   private process: ChildProcessWithoutNullStreams | null = null;
@@ -432,6 +445,18 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     throw protocolError(
       'thread/items/list exceeded the bounded activity pages'
     );
+  }
+
+  /** An explicit local handoff reads only this exact thread's recent items. */
+  async recentConversationItems(threadId: string): Promise<unknown[]> {
+    const page = object(
+      await this.request('thread/items/list', {
+        threadId,
+        limit: 80,
+        sortDirection: 'desc',
+      })
+    );
+    return parseCodexConversationItems(page);
   }
 
   private request(method: string, params: JsonObject): Promise<unknown> {

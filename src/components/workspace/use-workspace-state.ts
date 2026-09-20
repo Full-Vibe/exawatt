@@ -23,6 +23,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
 import {
   useSessionScope,
@@ -31,7 +32,10 @@ import {
   useSessionScopedMap,
   useSessionScopedRecord,
 } from './session-scoped-state';
-import { operatorPosition } from '@/components/nav/operator-position';
+import {
+  operatorPosition,
+  type OperatorMoveClaim,
+} from '@/components/nav/operator-position';
 import { pickDistinctColor, projectColor } from './project-colors';
 import {
   moveProjectInList,
@@ -892,6 +896,8 @@ export function dropDetachedRemoteTabs(
 }
 
 export interface LaunchOptions {
+  /** Preserve the initiating gesture's focus authority across preparation. */
+  focusClaim?: OperatorMoveClaim;
   harness: PtyHarness;
   dir: string;
   permissionMode?: AgentPermissionMode;
@@ -960,6 +966,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [resumeBatchProgress, setResumeBatchProgress] =
     useState<ResumeBatchProgress | null>(null);
   const [ready, setReady] = useState(false);
+  const [workspaceLoadFailure, setWorkspaceLoadFailure] =
+    useState<WorkspaceLoadFailure | null>(null);
+  const [hydrationAttempt, setHydrationAttempt] = useState(0);
+  const retryWorkspaceLoad = useCallback(async () => {
+    if (workspaceLoadFailure?.required) {
+      await window.electron?.workspace?.retryRecovery();
+    }
+    setWorkspaceLoadFailure(null);
+    setHydrationAttempt(attempt => attempt + 1);
+  }, [workspaceLoadFailure]);
   /**
    * Every store below is keyed by a Session identity and is declared through
    * ONE owner (BUG-037, the renderer half of main's BUG-025). The owner also
@@ -1021,7 +1037,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  the workspace on it would only add churn. Not Session-keyed, and every
    *  entry is deleted by the request that added it. */
   const cloningRef = useRef(new Set<string>());
-  const resumeInFlightRef = useRef<Set<string>>(new Set());
+  const sessionOperationsRef = useRef<Set<string>>(new Set());
+  // Exits can precede the IPC reply that introduces a replacement runtime.
+  // Keep them only for the lifetime of the corresponding operation.
+  const operationExitsRef =
+    useSessionScopedMap<Record<string, number>>(sessionScope);
   /** Close/archive work is tracked so browser-style reopen cannot race the
    * optimistic strip removal and read the ledger before the entry lands. */
   const closeInFlightRef = useRef<Set<Promise<CloseOutcome>>>(new Set());
@@ -1233,10 +1253,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           loadTerminalFont(),
         ]);
       if (cancelled) return;
-      const persisted = dropDetachedRemoteTabs(
-        parsePersisted(persistedRaw),
-        configuredSourceIds
-      );
+      const decoded = parsePersisted(persistedRaw);
+      if (persistedRaw !== null && persistedRaw !== undefined && !decoded) {
+        throw new Error('Saved workspace format is not supported');
+      }
+      const persisted = dropDetachedRemoteTabs(decoded, configuredSourceIds);
       if (persisted && api.reconcileResumeIdentities) {
         const agentTabs = persisted.projects.flatMap(project =>
           project.tabs.flatMap(tab =>
@@ -1624,17 +1645,37 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           }
         })
         .catch(() => {});
-    })();
+    })().catch(async () => {
+      // Failed reads are not first launch. Keep every save/checkpoint gated
+      // behind readiness until the operator can load the preserved layout.
+      const recovery = await ws?.storageRecovery?.().catch(() => undefined);
+      if (cancelled) return;
+      setWorkspaceLoadFailure(recovery ?? { required: false });
+    });
 
     const offExit = api.onExit(({ id, durableSessionId, exitCode }) => {
+      if (
+        stateRef.current.projects.some(project =>
+          project.tabs.some(
+            tab =>
+              isSessionTab(tab) &&
+              tab.durableSessionId === durableSessionId &&
+              sessionOperationsRef.current.has(tab.id)
+          )
+        )
+      ) {
+        operationExitsRef.current.set(durableSessionId, {
+          ...operationExitsRef.current.get(durableSessionId),
+          [id]: exitCode,
+        });
+      }
       setProjects(prev =>
         prev.map(g => ({
           ...g,
           // PTY events are about local processes. A coworker tab has no
           // durable Session and no incarnation, so no event can name it.
           tabs: g.tabs.map(t =>
-            isSessionTab(t) &&
-            (t.sessionId === id || t.durableSessionId === durableSessionId)
+            isSessionTab(t) && t.sessionId === id
               ? {
                   ...t,
                   sessionId: null,
@@ -1744,7 +1785,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       offAttention?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hydrationAttempt]);
 
   const serializeWorkspace = useCallback(
     (cleanShutdown = false): PersistedV7 => {
@@ -1976,14 +2017,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // the position that authorises going to the new Session NOW, while the
       // ask is his. ⌘T launches from the draft tab itself, so that tab is the
       // position; every other path launches from wherever he stands.
-      const claim = opts.reuseTabId
-        ? operatorPosition.claimTab(
-            stateRef.current.projects.find(group =>
-              group.tabs.some(tab => tab.id === opts.reuseTabId)
-            )?.dir ?? dir,
-            opts.reuseTabId
-          )
-        : operatorPosition.claimHere();
+      const claim =
+        opts.focusClaim ??
+        (opts.reuseTabId
+          ? operatorPosition.claimTab(
+              stateRef.current.projects.find(group =>
+                group.tabs.some(tab => tab.id === opts.reuseTabId)
+              )?.dir ?? dir,
+              opts.reuseTabId
+            )
+          : operatorPosition.claimHere());
       try {
         let cwd = dir;
         if (opts.worktreeBranch) {
@@ -2155,7 +2198,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         group.tabs.some(tab => tab.id === tabId)
       );
       const found = project?.tabs.find(candidate => candidate.id === tabId);
-      // Clone starts a NEW local Agent from an Exawatt-owned context summary.
+      // Clone starts a NEW local Agent from locally read current Session context.
       // A coworker's context is its source's, and Exawatt holds no authority
       // to spawn anything there, so the verb simply does not reach one.
       const tab = found && isSessionTab(found) ? found : null;
@@ -2174,6 +2217,26 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
 
+      const focusClaim = operatorPosition.claimTab(project.dir, tabId);
+      let currentContext: Awaited<
+        ReturnType<
+          NonNullable<
+            NonNullable<typeof window.electron>['pty']
+          >['cloneContext']
+        >
+      >;
+      try {
+        currentContext = await window.electron!.pty!.cloneContext(
+          tab.durableSessionId
+        );
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : 'Current Session context could not be read.'
+        );
+        return false;
+      }
       const [preferenceLoad, registryLoad, modelCatalog] = await Promise.all([
         loadAgentSourcePreferences(),
         loadAgentSourceRegistry('launch', true),
@@ -2202,6 +2265,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
 
+      // The menu's origin remains the owner across asynchronous source reads.
+      // Closing or moving it cancels; switching focus cannot redirect a clone.
+      const stillHere = stateRef.current.projects
+        .find(group => group.dir === project.dir)
+        ?.tabs.find(candidate => candidate.id === tabId);
+      if (
+        !stillHere ||
+        !isSessionTab(stillHere) ||
+        stillHere.durableSessionId !== tab.durableSessionId ||
+        stillHere.cwd !== tab.cwd ||
+        stillHere.sessionId !== tab.sessionId
+      )
+        return false;
+
       const permissionMode = permissionModeFor(
         preferenceLoad.preferences,
         project.dir,
@@ -2211,6 +2288,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           : DEFAULT_AGENT_PERMISSION_MODE
       );
       const cloned = await launch({
+        focusClaim,
         harness: target.source,
         dir: tab.cwd,
         permissionMode,
@@ -2220,6 +2298,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           target: target.source,
           initialTask: tab.initialTask,
           contextSummary,
+          currentContext,
         }),
         statedTask: tab.initialTask ?? contextSummary ?? undefined,
         roadmapItemId: tab.roadmapItemId ?? undefined,
@@ -2243,6 +2322,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       cloningRef.current.add(inFlightKey);
       try {
         return await cloneSessionOnce(tabId, target);
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : 'Clone could not be started.'
+        );
+        return false;
       } finally {
         cloningRef.current.delete(inFlightKey);
       }
@@ -2406,7 +2490,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         // the PTY bridge; closing a coworker's view never did.
         const api = window.electron?.pty;
         if (!api) return { kind: 'noop' };
-        if (tab.resumeState === 'resuming') {
+        if (
+          tab.resumeState === 'resuming' ||
+          sessionOperationsRef.current.has(tabId)
+        ) {
           return { kind: 'noop' };
         }
         if (tab.lifecycle === 'draft') {
@@ -2626,6 +2713,47 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     return true;
   }, [listClosedSessions, reopenClosedSession]);
 
+  /** A replacement belongs to the retained Session, never to whichever tab
+   * happens to be selected when the process responds. Close wins over adoption. */
+  const adoptSessionRuntime = useCallback(
+    async (tab: SessionTab, session: PtySessionInfo): Promise<boolean> => {
+      const retained = stateRef.current.projects
+        .flatMap(project => project.tabs)
+        .find(candidate => candidate.id === tab.id);
+      if (
+        !retained ||
+        !isSessionTab(retained) ||
+        retained.durableSessionId !== tab.durableSessionId
+      ) {
+        await window.electron?.pty?.closeSession(session.durableSessionId);
+        return false;
+      }
+      const observedExit = operationExitsRef.current.get(
+        tab.durableSessionId
+      )?.[session.id];
+      const exited = session.exited || observedExit !== undefined;
+      updateTab(tab.id, {
+        sessionId: exited ? null : session.id,
+        harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
+        cwd: session.cwd,
+        launchModel: session.launchModel,
+        launchEffort: session.launchEffort,
+        lifecycle: exited ? 'exited' : 'running',
+        resumeState: exited
+          ? session.harnessSessionId || tab.harnessSessionId
+            ? 'ended-resumable'
+            : 'identity-missing'
+          : session.harnessSessionId || tab.harnessSessionId
+            ? 'resumed'
+            : 'live',
+        exitCode: exited ? (observedExit ?? session.exitCode) : null,
+        startedAt: session.startedAt,
+      });
+      return true;
+    },
+    [operationExitsRef, updateTab]
+  );
+
   const resumeTab = useCallback(
     async (tabId: string, selectedHarnessId?: string): Promise<boolean> => {
       const api = window.electron?.pty;
@@ -2633,13 +2761,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const found = stateRef.current.projects
         .flatMap(project => project.tabs)
         .find(candidate => candidate.id === tabId);
-      // Resume starts a new local process for a saved provider conversation.
-      // A coworker has no local process, and asking its source to start one
-      // is a command Exawatt does not hold, so the verb refuses rather than
-      // pretending it did something.
       const tab = found && isSessionTab(found) ? found : null;
-      if (resumeInFlightRef.current.has(tabId)) return false;
-      if (!tab || tabIsLive(tab) || tab.resumeState === 'resuming')
+      if (
+        !tab ||
+        tabIsLive(tab) ||
+        tab.resumeState === 'resuming' ||
+        sessionOperationsRef.current.has(tabId)
+      )
         return false;
       const exactId = selectedHarnessId ?? tab.harnessSessionId;
       if (tab.harness !== 'shell' && !exactId) {
@@ -2648,38 +2776,46 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
         return false;
       }
-      const projectDir =
-        stateRef.current.projects.find(project =>
-          project.tabs.some(candidate => candidate.id === tabId)
-        )?.dir ?? tab.cwd;
-      const preferenceLoad =
-        tab.harness === 'shell' ? null : await loadAgentSourcePreferences();
-      const permissionMode =
-        tab.harness === 'shell'
-          ? undefined
-          : permissionModeFor(
-              preferenceLoad!.preferences,
-              projectDir,
-              tab.harness,
-              preferenceLoad!.usedSafeFallback
-                ? 'prompt'
-                : DEFAULT_AGENT_PERMISSION_MODE
-            );
-      resumeInFlightRef.current.add(tabId);
+      // Admission precedes every await, including preference loading.
+      sessionOperationsRef.current.add(tabId);
       updateTab(tabId, {
         resumeState: 'resuming',
         lifecycle: 'resuming',
         exitCode: null,
       });
-      const size = sizeRef.current?.() ?? null;
-      let result;
       try {
-        // the goal survives the resume (D21): statedTask re-anchors the
-        // summarizer's strongest signal, restoredSubtitle re-seeds the last
-        // goal — both metadata-only, never sent to the process
+        const projectDir =
+          stateRef.current.projects.find(project =>
+            project.tabs.some(candidate => candidate.id === tabId)
+          )?.dir ?? tab.cwd;
+        const preferenceLoad =
+          tab.harness === 'shell' ? null : await loadAgentSourcePreferences();
+        const permissionMode =
+          tab.harness === 'shell'
+            ? undefined
+            : permissionModeFor(
+                preferenceLoad!.preferences,
+                projectDir,
+                tab.harness,
+                preferenceLoad!.usedSafeFallback
+                  ? 'prompt'
+                  : DEFAULT_AGENT_PERMISSION_MODE
+              );
+        // A close while preferences were loading must not launch anything.
+        if (
+          !stateRef.current.projects.some(project =>
+            project.tabs.some(
+              candidate =>
+                candidate.id === tabId &&
+                isSessionTab(candidate) &&
+                candidate.durableSessionId === tab.durableSessionId
+            )
+          )
+        )
+          return false;
         const restoredSubtitle =
           summariesRef.current[tab.durableSessionId] ?? undefined;
-        result = await api.create({
+        const result = await api.create({
           harness: tab.harness,
           cwd: tab.cwd,
           title: tab.title,
@@ -2690,8 +2826,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           ...(tab.launchEffort ? { effort: tab.launchEffort } : {}),
           ...(tab.initialTask ? { statedTask: tab.initialTask } : {}),
           ...(restoredSubtitle ? { restoredSubtitle } : {}),
-          ...(size ?? {}),
+          ...(sizeRef.current?.() ?? {}),
         });
+        if (!result.ok) throw new Error(result.error);
+        const adopted = await adoptSessionRuntime(
+          { ...tab, harnessSessionId: exactId ?? null },
+          result.session
+        );
+        if (adopted) setError(null);
+        return adopted;
       } catch (cause) {
         updateTab(tabId, {
           resumeState: 'failed',
@@ -2703,29 +2846,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setError(`Could not resume ${tab.title}${detail}`);
         return false;
       } finally {
-        resumeInFlightRef.current.delete(tabId);
+        sessionOperationsRef.current.delete(tabId);
+        operationExitsRef.current.delete(tab.durableSessionId);
       }
-      if (!result.ok) {
-        updateTab(tabId, {
-          resumeState: 'failed',
-          lifecycle: 'failed',
-          exitCode: REVIVE_FAILED,
-        });
-        setError(result.error);
-        return false;
-      }
-      updateTab(tabId, {
-        sessionId: result.session.id,
-        harnessSessionId: result.session.harnessSessionId ?? exactId ?? null,
-        cwd: result.session.cwd,
-        resumeState: exactId ? 'resumed' : 'live',
-        lifecycle: 'running',
-        exitCode: null,
-      });
-      setError(null);
-      return true;
     },
-    [summariesRef, updateTab]
+    [adoptSessionRuntime, operationExitsRef, summariesRef, updateTab]
   );
 
   const changeSessionModel = useCallback(
@@ -2739,27 +2864,70 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         .find(item => item.id === tabId);
       if (!api || !tab || !isSessionTab(tab) || !tab.sessionId)
         throw new Error('Session is no longer running.');
-      const result = await api.changeModel(tab.sessionId, choice);
-      if (!result.ok) throw new Error(result.error);
-      const retained = stateRef.current.projects.some(project =>
-        project.tabs.some(item => item.id === tabId)
-      );
-      if (!retained) {
-        await api.closeSession(result.session.durableSessionId);
-        return;
+      if (sessionOperationsRef.current.has(tabId))
+        throw new Error('A Session operation is already in progress.');
+      sessionOperationsRef.current.add(tabId);
+      try {
+        const result = await api.changeModel(tab.sessionId, choice);
+        if (!result.ok) throw new Error(result.error);
+        await adoptSessionRuntime(tab, result.session);
+      } finally {
+        sessionOperationsRef.current.delete(tabId);
+        operationExitsRef.current.delete(tab.durableSessionId);
       }
-      updateTab(tabId, {
-        sessionId: result.session.id,
-        harnessSessionId: result.session.harnessSessionId,
-        launchModel: result.session.launchModel,
-        launchEffort: result.session.launchEffort,
-        lifecycle: 'running',
-        resumeState: 'resumed',
-        exitCode: null,
-        startedAt: result.session.startedAt,
-      });
     },
-    [updateTab]
+    [adoptSessionRuntime, operationExitsRef]
+  );
+
+  const pauseProject = useCallback(
+    async (projectDir: string, confirmedSessionIds?: string[]) => {
+      const tabs =
+        stateRef.current.projects.find(project => project.dir === projectDir)
+          ?.tabs ?? [];
+      const targets = tabs
+        .filter(isSessionTab)
+        .filter(
+          tab =>
+            tab.harness !== 'shell' &&
+            (confirmedSessionIds
+              ? confirmedSessionIds.includes(tab.durableSessionId)
+              : !!tab.sessionId)
+        );
+      const sessionIds = targets.map(tab => tab.durableSessionId);
+      const api = window.electron?.pty;
+      if (!api?.pauseSessions) throw new Error('Project pause is unavailable.');
+      if (targets.some(tab => sessionOperationsRef.current.has(tab.id)))
+        throw new Error('A Session operation is already in progress.');
+      targets.forEach(tab => sessionOperationsRef.current.add(tab.id));
+      try {
+        const result = await api.pauseSessions(
+          sessionIds,
+          confirmedSessionIds !== undefined
+        );
+        if (result.kind === 'completed') {
+          for (const item of result.results) {
+            if (item.status !== 'paused' && item.status !== 'already-paused')
+              continue;
+            const tab = targets.find(
+              target => target.durableSessionId === item.durableSessionId
+            );
+            if (tab)
+              updateTab(tab.id, {
+                sessionId: null,
+                lifecycle: 'stopped-clean',
+                exitCode: null,
+              });
+          }
+        }
+        return { ...result, sessionIds };
+      } finally {
+        targets.forEach(tab => {
+          sessionOperationsRef.current.delete(tab.id);
+          operationExitsRef.current.delete(tab.durableSessionId);
+        });
+      }
+    },
+    [operationExitsRef, updateTab]
   );
 
   const resumeTabs = useCallback(
@@ -3460,6 +3628,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setError,
     dismissReentryRecap,
     ready,
+    workspaceLoadFailure,
+    retryWorkspaceLoad,
     launch,
     cloneSession,
     launchHere,
@@ -3477,6 +3647,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     resumeTab,
     changeSessionModel,
     resumeProject,
+    pauseProject,
     resumeAll,
     selectProject,
     selectTab,

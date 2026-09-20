@@ -1070,3 +1070,37 @@ same provider and durable Session identity and original permission policy.
 It never writes a slash command into unknown terminal input. Launch choices
 persist with the Session layout and remain explicitly distinct from observed
 native configuration. Initial support is local Claude Code and Codex.
+
+### Shared Session operations and recoverable storage (ENG-016)
+
+FIX-017–019 and BUG-125 strengthen existing source and lifecycle boundaries.
+Command offers share distribution capabilities, contextual availability and
+reasons. Palette opening selection prioritizes Session/Project context and
+preserves deliberate selection across asynchronous results; a Workspace switch
+is never an incidental empty-query default.
+
+Clone's exact source identity owns local context gathering. The current slice
+reads only owned local Claude Code and Codex native conversations, structurally
+filtered to user/assistant prose within a 16,000-character handoff bound. Native
+reasoning and tool records are excluded. Unsupported, unavailable or corrupt
+native context fails explicitly before launch; raw terminal output cannot be a
+fallback because it may contain tool results, reasoning or credentials. The
+existing target selection creates a fresh Session without a provider resume ID,
+extra confirmation or a new hosted summarization step. Future sources must
+provide the same source-owned context capability rather than terminal scraping.
+
+`pty.pauseSessions` coordinates exact local non-shell targets. The renderer
+requests confirmation for activity with default Cancel; main revalidates the
+bound identities and activity before stopping processes. Tabs, history and
+provider identities survive for the existing exact-resume path. Sources without
+this lifecycle capability remain explicitly unavailable. Demo uses the shared
+interaction through its own data/command ports.
+
+JSON persistence converges on one absence/corruption/validity boundary. A corrupt
+read preserves evidence and installs a durable write interlock before later
+mutations. Quarantine cannot look like fresh-install absence on restart.
+`workspace.storageRecovery`, `retryRecovery` and `revealRecovery` expose a
+repair-and-retry path; no destructive reset is added. Successful validation of a
+repaired file clears protection. Diagnostics never emit stored values. These
+contracts remain active-build until the integration log records verification
+and delivery; they do not imply new remote lifecycle support.

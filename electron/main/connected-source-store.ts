@@ -11,7 +11,7 @@ import {
   type SourceAuthority,
   type SourceTransport,
 } from '@exawatt/core';
-import { readJsonFile, writeJsonFileAtomic } from './atomic-json-file';
+import { readJsonDocument, writeJsonFileAtomic } from './atomic-json-file';
 
 /**
  * Persisted registry of configured Agent Sources (ENG-010 C1).
@@ -210,25 +210,48 @@ interface SecretsFileShape {
   devices: Record<string, string>;
 }
 
-/**
- * One map of source id to ciphertext, read from a file this process wrote but
- * anything on the machine could have edited. Oversized and non-string values
- * are dropped rather than carried: a decrypt is the only thing that can
- * validate the contents, and nothing here should be able to grow the file it
- * writes back.
- */
-function readCiphertextMap(
-  value: unknown,
-  maxLength: number
-): Record<string, string> {
-  const safe: Record<string, string> = {};
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return safe;
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string' && entry.length <= maxLength) {
-      safe[key] = entry;
-    }
-  }
-  return safe;
+/** Ciphertext structure is validated before any read-modify-write can drop a key. */
+function validCiphertextMap(value: unknown, maxLength: number): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every(
+      entry => typeof entry === 'string' && entry.length <= maxLength
+    )
+  );
+}
+
+function validSecretsFile(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    (record.schemaVersion === undefined ||
+      record.schemaVersion === RECORDS_SCHEMA_VERSION) &&
+    validCiphertextMap(record.tokens, MAX_TOKEN_LENGTH * 2) &&
+    // Token-only credentials predate paired-device storage.
+    (record.devices === undefined ||
+      validCiphertextMap(record.devices, MAX_KEYPAIR_LENGTH * 2))
+  );
+}
+
+function validSourceRegistry(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (
+    (record.schemaVersion !== undefined &&
+      record.schemaVersion !== RECORDS_SCHEMA_VERSION) ||
+    !Array.isArray(record.sources) ||
+    record.sources.length > MAX_SOURCES
+  )
+    return false;
+  const ids = new Set<string>();
+  return record.sources.every(candidate => {
+    const parsed = parseConnectedSourceRecord(candidate);
+    if (!parsed.ok || ids.has(parsed.record.id)) return false;
+    ids.add(parsed.record.id);
+    return true;
+  });
 }
 
 export class ConnectedSourceStore {
@@ -243,12 +266,12 @@ export class ConnectedSourceStore {
   }
 
   /**
-   * Every configured source, in creation order. Invalid rows are dropped
-   * rather than throwing: one hand-edited record must not make the whole
-   * registry unreadable.
+   * Every configured source, in creation order. Stored rows must all decode:
+   * otherwise preserve the whole registry for recovery instead of allowing a
+   * later edit to silently erase whichever sources could not be read.
    */
   list(): ConnectedSourceRecord[] {
-    const parsed = readJsonFile(this.recordsPath);
+    const parsed = readJsonDocument(this.recordsPath, validSourceRegistry);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return [];
     }
@@ -415,8 +438,10 @@ export class ConnectedSourceStore {
     const records = this.list();
     const next = records.filter(record => record.id !== id);
     if (next.length === records.length) return false;
-    this.persist(next);
+    // Verify both documents before detaching either half of the source.
+    this.readSecrets();
     this.clearDeviceToken(id);
+    this.persist(next);
     return true;
   }
 
@@ -458,7 +483,7 @@ export class ConnectedSourceStore {
       const secrets = this.readSecrets();
       secrets.tokens[id] = encryptedToken.toString('base64');
       secrets.devices[id] = encryptedKeypair.toString('base64');
-      writeJsonFileAtomic(this.secretsPath, secrets);
+      writeJsonFileAtomic(this.secretsPath, secrets, validSecretsFile);
       this.setCredentialFlag(id, true);
       return { ok: true };
     } catch {
@@ -507,12 +532,7 @@ export class ConnectedSourceStore {
     }
     delete secrets.tokens[id];
     delete secrets.devices[id];
-    try {
-      writeJsonFileAtomic(this.secretsPath, secrets);
-    } catch {
-      // Nothing recoverable here; the flag below still stops Exawatt from
-      // claiming a credential it cannot read.
-    }
+    writeJsonFileAtomic(this.secretsPath, secrets, validSecretsFile);
     this.setCredentialFlag(id, false);
   }
 
@@ -552,22 +572,25 @@ export class ConnectedSourceStore {
   }
 
   private readSecrets(): SecretsFileShape {
-    const parsed = readJsonFile(this.secretsPath);
-    const file =
-      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? (parsed as { tokens?: unknown; devices?: unknown })
-        : {};
+    const file = readJsonDocument(
+      this.secretsPath,
+      validSecretsFile
+    ) as SecretsFileShape | null;
     return {
       schemaVersion: RECORDS_SCHEMA_VERSION,
-      tokens: readCiphertextMap(file.tokens, MAX_TOKEN_LENGTH * 2),
-      devices: readCiphertextMap(file.devices, MAX_KEYPAIR_LENGTH * 2),
+      tokens: { ...file?.tokens },
+      devices: { ...file?.devices },
     };
   }
 
   private persist(records: readonly ConnectedSourceRecord[]): void {
-    writeJsonFileAtomic(this.recordsPath, {
-      schemaVersion: RECORDS_SCHEMA_VERSION,
-      sources: records,
-    });
+    writeJsonFileAtomic(
+      this.recordsPath,
+      {
+        schemaVersion: RECORDS_SCHEMA_VERSION,
+        sources: records,
+      },
+      validSourceRegistry
+    );
   }
 }

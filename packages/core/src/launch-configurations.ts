@@ -616,3 +616,77 @@ export function parseLaunchConfigurationPool(
   }
   return empty;
 }
+
+/**
+ * Disk custody is stricter than the total UI parser: normalization may migrate
+ * aliases and deduplicate identities, but must not discard an unreadable choice.
+ * Keep this beside the parser so persisted validation uses the same vocabulary.
+ */
+export function isStoredLaunchConfigurationPool(raw: unknown): boolean {
+  const record = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+  if (
+    !record(raw) ||
+    (raw.schemaVersion !== undefined &&
+      raw.schemaVersion !== LAUNCH_CONFIGURATION_SCHEMA_VERSION)
+  )
+    return false;
+  const aliases = new Map<string, string>();
+  const validIds = new Set<string>([SHELL_LAUNCH_TARGET_ID]);
+  for (const key of ['configurations', 'items']) {
+    const rows = raw[key];
+    if (rows === undefined) continue;
+    if (!Array.isArray(rows)) return false;
+    for (const row of rows) {
+      const parsed = parseConfiguration(row, 0);
+      if (!parsed || !record(row)) return false;
+      if (
+        row.createdAt !== undefined &&
+        finiteTimestamp(row.createdAt) === null
+      )
+        return false;
+      if (row.labels !== undefined) {
+        if (!record(row.labels)) return false;
+        for (const field of ['source', 'model', 'effort', 'type']) {
+          if (
+            row.labels[field] !== undefined &&
+            boundedNonEmptyString(row.labels[field], MAX_LABEL_LENGTH) === null
+          )
+            return false;
+        }
+      }
+      validIds.add(parsed.id);
+      if (typeof row.id === 'string') aliases.set(row.id, parsed.id);
+    }
+  }
+  const validTarget = (id: unknown): id is string =>
+    typeof id === 'string' && validIds.has(aliases.get(id) ?? id);
+  const validPins = (pins: unknown): boolean =>
+    Array.isArray(pins) && pins.every(validTarget);
+  const validUsage = (usage: unknown): boolean =>
+    record(usage) &&
+    Object.entries(usage).every(
+      ([id, value]) => validTarget(id) && parseUsage(value) !== null
+    );
+  for (const key of ['projects', 'projectUsage', 'projectPins']) {
+    const projects = raw[key];
+    if (projects === undefined) continue;
+    if (!record(projects)) return false;
+    for (const [project, state] of Object.entries(projects)) {
+      if (!validProjectKey(project)) return false;
+      if (key === 'projectUsage') {
+        if (!validUsage(state)) return false;
+      } else if (key === 'projectPins') {
+        if (!validPins(state)) return false;
+      } else {
+        if (
+          !record(state) ||
+          (state.usage !== undefined && !validUsage(state.usage)) ||
+          (state.pins !== undefined && !validPins(state.pins))
+        )
+          return false;
+      }
+    }
+  }
+  return true;
+}

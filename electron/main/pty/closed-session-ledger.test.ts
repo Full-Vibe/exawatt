@@ -91,14 +91,26 @@ describe('ClosedSessionLedger (D23)', () => {
     expect(await ledger.reap()).toBe(0);
   });
 
-  it('a corrupt ledger file reads as empty and heals on next write', () => {
+  it('a corrupt ledger refuses reads and writes across reopen', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(file, '{not json');
     const ledger = make();
-    expect(ledger.list()).toEqual([]);
-    ledger.add(entry('a'));
-    expect(make().list()).toHaveLength(1);
+    expect(() => ledger.list()).toThrow(/needs recovery/);
+    expect(() => ledger.add(entry('a'))).toThrow(/needs recovery/);
+    expect(() => make().add(entry('a'))).toThrow(/needs recovery/);
   });
+
+  it.each(['{damaged after load', '{"wrongEnvelope":true}'])(
+    'damage after a cached read blocks reap before retained history is deleted: %s',
+    async bytes => {
+      const ledger = make();
+      ledger.add(entry('a'));
+      fs.writeFileSync(file, bytes);
+      clock += 1001;
+      await expect(ledger.reap()).rejects.toThrow(/needs recovery/);
+      expect(purged).toEqual([]);
+    }
+  );
 
   it('take on an unknown id returns null without touching the file', () => {
     const ledger = make();
