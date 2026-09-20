@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readJsonFile } from './atomic-json-file';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { launchConfigurationId, SHELL_LAUNCH_TARGET_ID } from '@exawatt/core';
 
@@ -109,7 +110,7 @@ describe('Launch Configuration settings persistence', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
   });
 
-  it('isolates corrupt Launch Configuration data from valid settings', () => {
+  it('preserves settings containing corrupt Launch Configurations instead of rewriting a partial pool', () => {
     const file = path.join(electronState.userData, 'settings.json');
     fs.writeFileSync(
       file,
@@ -125,13 +126,15 @@ describe('Launch Configuration settings persistence', () => {
         },
       })
     );
-    expect(loadSettings()).toMatchObject({
-      terminal: { fontSize: 15 },
-      launchConfigurations: {
-        schemaVersion: 1,
-        configurations: [],
-        projects: {},
-      },
-    });
+    const original = fs.readFileSync(file, 'utf8');
+    expect(loadSettings().contextLabels?.hosted).toBe(false);
+    expect(() => recordLaunchConfigurationSuccess('/alpha', opus, 40)).toThrow(
+      /needs recovery/
+    );
+    const preserved = readJsonFile(file);
+    if (preserved.status !== 'corrupt')
+      throw new Error('Expected preserved corruption');
+    expect(fs.readFileSync(preserved.recoveryFile, 'utf8')).toBe(original);
+    expect(fs.existsSync(file)).toBe(false);
   });
 });

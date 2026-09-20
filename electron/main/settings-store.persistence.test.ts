@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readJsonFile, recoverJsonFile } from './atomic-json-file';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronState = vi.hoisted(() => ({ userData: '' }));
@@ -176,26 +177,37 @@ describe('appearance settings persistence', () => {
     });
   });
 
-  it('distinguishes a missing preference from corrupt settings', () => {
+  it('keeps corrupt preferences read-only until repaired data is explicitly acknowledged', () => {
     const file = path.join(electronState.userData, 'settings.json');
-
     expect(loadSettings()).toEqual({});
-    fs.writeFileSync(file, JSON.stringify({ terminal: { fontSize: 15 } }));
-    expect(loadSettings()).toEqual({ terminal: { fontSize: 15 } });
-
     fs.writeFileSync(file, '{');
-    expect(loadSettings()).toEqual({ appearance: normalizedClassic });
+    const recovery = loadSettings();
+    expect(recovery.appearance).toEqual(normalizedClassic);
+    expect(recovery.contextLabels?.hosted).toBe(false);
+    expect(recovery.conversationSummaries?.hosted).toBe(false);
+    expect(recovery.reentryRecap?.enabled).toBe(false);
+    expect(recovery.claudePlanWindows?.enabled).toBe(false);
+    expect(recovery.operatorProfile?.autoPublish).toBe(false);
+    expect(() => setHostedContextLabels(true)).toThrow(/needs recovery/);
+    const preserved = readJsonFile(file);
+    if (preserved.status !== 'corrupt')
+      throw new Error('Expected preserved corruption');
+    expect(fs.readFileSync(preserved.recoveryFile, 'utf8')).toBe('{');
 
+    // Merely putting valid bytes back must not bypass the durable interlock.
     fs.writeFileSync(
       file,
-      JSON.stringify({
-        terminal: { fontSize: 15 },
-        appearance: { ...classic, injectedCss: 'body{}' },
-      })
+      JSON.stringify({ terminal: { fontSize: 15 }, appearance: classic })
     );
+    expect(() => setHostedContextLabels(true)).toThrow(/needs recovery/);
+    recoverJsonFile(file, 'retry');
     expect(loadSettings()).toEqual({
       terminal: { fontSize: 15 },
       appearance: normalizedClassic,
     });
+    expect(setHostedContextLabels(false).contextLabels).toEqual({
+      hosted: false,
+    });
+    expect(fs.readFileSync(preserved.recoveryFile, 'utf8')).toBe('{');
   });
 });
