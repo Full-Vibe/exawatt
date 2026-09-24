@@ -392,11 +392,18 @@ export const SURFACE_GATES = [
     // named here, so the change that broke it never had to run the eval that
     // catches it. The composer's render site is part of "the only way to start
     // a Session", whatever component the launcher itself lives in.
+    //
+    // ENG-039 M1 / BUG-050: the eval's last step asserts that a quit from a
+    // non-workspace surface opens no native dialog, which it now reads from
+    // the one seam every shutdown dialog passes through. The sequence that
+    // owns that seam, and the script that reads it, can each break the step.
     match: file =>
       file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
       file === 'src/components/workspace/launcher/setup-detail.tsx' ||
       file === 'src/components/workspace/workspace-client.tsx' ||
-      file === 'electron/main/pty/session-manager.ts',
+      file === 'electron/main/pty/session-manager.ts' ||
+      file === 'electron/main/shutdown-sequence.ts' ||
+      file === 'scripts/electron-session-lifecycle-eval.mjs',
   },
   {
     gate: 'eval:electron:idempotency',

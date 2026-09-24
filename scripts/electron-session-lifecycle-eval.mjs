@@ -406,19 +406,40 @@ try {
   });
   await page.locator('[data-command-altitude-level="spatial"]').click();
   await page.waitForURL(/\/fleet\/spatial/);
+  // BUG-050: tell a quit that PROMPTS from a quit that is merely slow. This
+  // step used to read "did not close within 2.5s" as "a native modal is up",
+  // and a loaded machine made an honest quit slower than that. Every native
+  // dialog the shutdown sequence can open now names itself on main's console
+  // first (`shutdown-sequence.ts`), so a prompt fails this step at once and
+  // by name, and the close only has to happen within the eval's usual bound.
+  const nativeDialog = new Promise((_, reject) =>
+    app.on('console', message => {
+      const text = message.text();
+      if (text.includes('[shutdown] native dialog')) {
+        reject(new Error(`Non-workspace quit opened a native modal: ${text}`));
+      }
+    })
+  );
   const finalClose = waitForClose(app);
+  const quitRequestedAt = Date.now();
   await requestQuit(app);
   await Promise.race([
     finalClose,
+    nativeDialog,
     new Promise((_, reject) =>
       setTimeout(
-        () => reject(new Error('Non-workspace quit waited for a native modal')),
-        2_500
+        () =>
+          reject(
+            new Error('Non-workspace quit did not close (TIMED OUT after 25s)')
+          ),
+        25_000
       )
     ),
   ]);
   app = null;
-  console.log('[eng-018] non-workspace quit completed without a native modal');
+  console.log(
+    `[eng-018] non-workspace quit closed in ${Date.now() - quitRequestedAt}ms without a native modal`
+  );
 
   console.log(
     'PASS session lifecycle: 2 Claude + 2 Codex + shell, cancel/quit/corrupt-history/restore/resume/crash/non-workspace-quit'

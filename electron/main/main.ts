@@ -50,11 +50,7 @@ import {
   saveWorkspace,
 } from './workspace-store';
 import type { PtySessionManager } from './pty/session-manager';
-import type {
-  ShutdownCoordinator,
-  ShutdownIntent,
-  ShutdownPhase,
-} from './shutdown-coordinator';
+import type { ShutdownCoordinator } from './shutdown-coordinator';
 import type { RunStateStore } from './run-state';
 import type { ElectronAuthCoordinator } from './auth-coordinator';
 import { createElectronAuthCookies } from './auth-cookies';
@@ -69,12 +65,13 @@ import {
   dialogChannels,
 } from './app-ipc';
 import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
-import {
-  registerIpcModules,
-  registerTrustedChannels,
-  type TrustedChannels,
-} from './ipc-table';
+import { registerIpcModules, registerTrustedChannels } from './ipc-table';
 import { createMenuController } from './menu-controller';
+import {
+  createBeforeQuitHandler,
+  createCheckpointBroker,
+  createShutdownSequence,
+} from './shutdown-sequence';
 import {
   createMainWindowController,
   createStartupScreen,
@@ -157,7 +154,6 @@ const safeThemeLaunch = process.argv.includes('--safe-theme');
 
 let rendererReadyPromise: Promise<string> | null = null;
 let rendererWasWarmAtLaunch = false;
-let bootstrapExitInProgress = false;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let consumptionScanner: ConsumptionScannerService | null = null;
 let claudePlanAccount: ClaudePlanAccountService | null = null;
@@ -179,7 +175,6 @@ let checkForUpdatesFromMenu: () => Promise<void> = async () => {};
  *  inventing an idle status (ENG-025 F5). */
 let currentUpdateStatus: () => Record<string, unknown> | null = () => null;
 
-let shutdownCopy: typeof import('./shutdown-coordinator').shutdownCopy;
 let safeElectronAuthError: (error: unknown) => {
   name: string;
   message: string;
@@ -196,8 +191,6 @@ let safeElectronAuthError: (error: unknown) => {
  */
 let isElectronAuthLinkOutcome: ((value: unknown) => boolean) | null = null;
 let startupComplete = false;
-const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
-const workspaceCheckpointOwners = new Set<number>();
 const openDirectoryPicker = createDirectoryPicker({
   showOpenDialog: (parent, options) =>
     parent
@@ -302,6 +295,43 @@ if (rendererWasWarmAtLaunch) {
   void rendererReadyPromise.catch(() => {});
 }
 
+const checkpoints = createCheckpointBroker({ randomUUID });
+const shutdownSequence = createShutdownSequence({
+  productName: distributionIdentity.productName,
+  testQuitResponses,
+  env: process.env,
+  showMessageBox: options => {
+    const parent = liveMainWindow();
+    return parent
+      ? dialog.showMessageBox(parent, options)
+      : dialog.showMessageBox(options);
+  },
+  window: () => mainWindow.current(),
+  allWindows: () => BrowserWindow.getAllWindows(),
+  checkpoints,
+  workspace: {
+    load: loadWorkspace,
+    mergeHarnessIdentities,
+    save: saveWorkspace,
+  },
+  cleanup: [
+    () => disposeRoadmapWatchers(),
+    () => disposePty(),
+    () => rendererServer.stop(),
+    () =>
+      fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json')),
+  ],
+  finalize: intent => {
+    if (intent === 'update') installProductUpdate();
+    else {
+      // A restart must come back on its own; a quit must not.
+      if (intent === 'restart') app.relaunch();
+      app.quit();
+    }
+  },
+  coordinator: () => shutdownCoordinator,
+});
+
 const workspace = createWorkspaceTarget({
   isDev,
   devUrl: DEV_URL,
@@ -320,7 +350,7 @@ const mainWindow = createMainWindowController({
     if (process.platform === 'darwin') app.setActivationPolicy('regular');
   },
   onNavigationReset: () => menu.resetAvailability(),
-  onCheckpointOwnerLost: id => workspaceCheckpointOwners.delete(id),
+  onCheckpointOwnerLost: id => checkpoints.release(id),
   onLaunchScreenLoaded: () => startupScreen.repaint(),
   onWorkspaceLoaded: url => deepLinks.deliverPending(url),
 });
@@ -383,7 +413,8 @@ const menu = createMenuController({
     onCheckForUpdates: productUpdatesEnabled
       ? () => void checkForUpdatesFromMenu()
       : undefined,
-    onWindowManagementHelp: () => void promptWindowManagementRestart(),
+    onWindowManagementHelp: () =>
+      void shutdownSequence.promptWindowManagementRestart(),
   }),
   install: template =>
     Menu.setApplicationMenu(Menu.buildFromTemplate(template)),
@@ -417,25 +448,6 @@ const appearanceIpc = createAppearanceIpc({
   allWindows: () => BrowserWindow.getAllWindows(),
   assertTrustedSender: event => assertTrustedIpcSender(event),
 });
-/** The renderer that owns mutable workspace state answers checkpoints. */
-const checkpointChannels: TrustedChannels = {
-  'app:set-workspace-checkpoint-owner': (
-    event,
-    ownsWorkspaceState: boolean
-  ) => {
-    if (typeof ownsWorkspaceState !== 'boolean') return;
-    if (ownsWorkspaceState) workspaceCheckpointOwners.add(event.sender.id);
-    else workspaceCheckpointOwners.delete(event.sender.id);
-  },
-  'app:complete-checkpoint': (_event, requestId: string, ok: boolean) => {
-    if (typeof requestId !== 'string' || typeof ok !== 'boolean') return;
-    const complete = pendingCheckpoints.get(requestId);
-    if (!complete) return;
-    pendingCheckpoints.delete(requestId);
-    complete(ok);
-  },
-};
-
 /** Main's own channels, keyed by name, through the one trusted door. */
 function registerMainChannels(): void {
   registerTrustedChannels(
@@ -468,7 +480,7 @@ function registerMainChannels(): void {
         windowFor: sender => BrowserWindow.fromWebContents(sender),
       }),
       appearanceIpc.channels,
-      checkpointChannels,
+      checkpoints.channels,
       menu.channels,
     ],
     handleTrusted
@@ -501,189 +513,6 @@ function watchInstalledBuild(): void {
   };
   fs.watchFile(statePath, { interval: 2_000 }, () => void report());
   void report();
-}
-
-function broadcastShutdown(
-  phase: ShutdownPhase,
-  counts: { agents: number; shells: number }
-): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('app:shutdown-status', { phase, ...counts });
-    }
-  }
-}
-
-async function confirmShutdown(
-  intent: ShutdownIntent,
-  counts: { agents: number; shells: number }
-): Promise<boolean> {
-  if (process.env.EXAWATT_TEST === '1') {
-    const response =
-      testQuitResponses.shift() ?? process.env.EXAWATT_TEST_QUIT_RESPONSE;
-    if (response === 'cancel') return false;
-    return true;
-  }
-  const copy = shutdownCopy(intent, counts, distributionIdentity.productName);
-  const options: Electron.MessageBoxOptions = {
-    type: 'warning',
-    title: copy.title,
-    message: copy.title,
-    detail:
-      intent === 'update'
-        ? `${copy.detail} The downloaded update will then install and reopen ${distributionIdentity.productName}.`
-        : intent === 'restart'
-          ? `${copy.detail} ${distributionIdentity.productName} reopens automatically.`
-          : copy.detail,
-    buttons: [
-      'Cancel',
-      intent === 'quit' ? 'Quit and Stop' : 'Restart and Stop',
-    ],
-    cancelId: 0,
-    noLink: true,
-  };
-  const result = liveMainWindow()
-    ? await dialog.showMessageBox(liveMainWindow()!, options)
-    : await dialog.showMessageBox(options);
-  return result.response === 1;
-}
-
-/**
- * Operator-initiated explanation for incident 0001: after long uptime macOS can
- * stop vending Exawatt's accessibility element, and every AX-driven window
- * manager (Divvy, Rectangle, Hammerspoon) then resolves the app to zero windows
- * and silently does nothing. Exawatt CANNOT detect this — self-inspection
- * returns kAXErrorAPIDisabled without Accessibility permission, and asking the
- * operator to grant that for one degraded case is not worth it. So the remedy
- * is named here rather than detected, and routed through the normal shutdown
- * coordinator so Sessions and history checkpoint and rehydrate.
- */
-async function promptWindowManagementRestart(): Promise<void> {
-  const message = "Window management isn't working?";
-  const options: Electron.MessageBoxOptions = {
-    type: 'info',
-    title: message,
-    message,
-    detail: `After ${distributionIdentity.productName} has been open a long time, macOS can stop sharing its window with tools like Divvy, Rectangle, and Hammerspoon, so their shortcuts do nothing and you hear an error sound. This is a known macOS issue with Electron apps that ${distributionIdentity.productName} cannot detect or repair on its own.\n\nRestarting fixes it. Projects, Sessions, and terminal history are saved and restored; running agents stop and can be resumed afterwards.`,
-    buttons: ['Cancel', `Restart ${distributionIdentity.productName}`],
-    defaultId: 1,
-    cancelId: 0,
-    noLink: true,
-  };
-  const result = liveMainWindow()
-    ? await dialog.showMessageBox(liveMainWindow()!, options)
-    : await dialog.showMessageBox(options);
-  if (result.response === 1) await shutdownCoordinator?.request('restart');
-}
-
-async function confirmWithoutCheckpoint(
-  intent: ShutdownIntent
-): Promise<boolean> {
-  if (
-    process.env.EXAWATT_TEST === '1' &&
-    process.env.EXAWATT_TEST_CHECKPOINT_FAILURE === 'confirm'
-  ) {
-    return true;
-  }
-  const options: Electron.MessageBoxOptions = {
-    type: 'warning',
-    title: `${distributionIdentity.productName} couldn't save the latest Session state`,
-    message: `${distributionIdentity.productName} couldn't save the latest Session state`,
-    detail:
-      'Quitting now may lose recent layout changes. Terminal history already checkpointed by the main process will remain.',
-    buttons: ['Cancel', intent === 'quit' ? 'Quit Anyway' : 'Restart Anyway'],
-    cancelId: 0,
-    noLink: true,
-  };
-  const result = liveMainWindow()
-    ? await dialog.showMessageBox(liveMainWindow()!, options)
-    : await dialog.showMessageBox(options);
-  return result.response === 1;
-}
-
-/**
- * When no renderer owns mutable workspace state (quit from /settings or the
- * Fleet altitude, or a non-personal tenant Workspace has the shell unmounted
- * behind the ENG-027 scope gate), the persisted LAYOUT is authoritative — but
- * harness identities settled after the shell unmounted still need to land.
- * Merge them into the store in-process so stale harness session ids cannot
- * survive a quit that never reaches the renderer checkpoint.
- */
-async function refreshPersistedHarnessIdentities(): Promise<boolean> {
-  try {
-    const live = new Map<string, string>();
-    for (const session of ptySessions.list()) {
-      if (session.harnessSessionId) {
-        live.set(session.durableSessionId, session.harnessSessionId);
-      }
-    }
-    if (live.size === 0) return true;
-    const state = await loadWorkspace();
-    if (!mergeHarnessIdentities(state, live)) return true;
-    await saveWorkspace(state);
-    return true;
-  } catch (error) {
-    console.error('[shutdown] harness identity refresh failed', error);
-    return false;
-  }
-}
-
-async function checkpointRenderer(
-  intent: ShutdownIntent,
-  stage: 'pre-stop' | 'stopped'
-): Promise<boolean> {
-  if (stage === 'pre-stop') await ptySessions.settleProviderIdentities();
-  const win = mainWindow.current();
-  // Workspace state is mutable only while the workspace hook is mounted;
-  // otherwise the store on disk holds the layout and main lands the settled
-  // harness identities itself.
-  if (!win || win.isDestroyed()) return refreshPersistedHarnessIdentities();
-  if (!workspaceCheckpointOwners.has(win.webContents.id)) {
-    return refreshPersistedHarnessIdentities();
-  }
-  const requestId = randomUUID();
-  return await new Promise<boolean>(resolve => {
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      pendingCheckpoints.delete(requestId);
-      resolve(ok);
-    };
-    const timeout = setTimeout(() => finish(false), 3_000);
-    pendingCheckpoints.set(requestId, finish);
-    win.webContents.send('app:checkpoint-request', {
-      requestId,
-      reason: intent,
-      stage,
-    });
-  });
-}
-
-async function cleanupForExit(): Promise<void> {
-  disposeRoadmapWatchers();
-  await disposePty();
-  await rendererServer.stop();
-  fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json'));
-}
-
-async function reportShutdownFailure(error: unknown): Promise<void> {
-  const detail = error instanceof Error ? error.message : String(error);
-  const options: Electron.MessageBoxOptions = {
-    type: 'error',
-    title: `${distributionIdentity.productName} couldn't stop every Session`,
-    message: `${distributionIdentity.productName} couldn't stop every Session`,
-    detail: `${detail.slice(0, 400)}\n\n${distributionIdentity.productName} will remain open. Check the affected Session before quitting again.`,
-    buttons: ['OK'],
-    noLink: true,
-  };
-  const parent = liveMainWindow();
-  if (parent) {
-    await dialog.showMessageBox(parent, options);
-  } else {
-    await dialog.showMessageBox(options);
-  }
 }
 
 async function bootstrapCommandSurface(): Promise<void> {
@@ -768,7 +597,6 @@ async function bootstrapCommandSurface(): Promise<void> {
     checkForUpdatesFromMenu = runtime.updater.checkForUpdatesFromMenu;
     currentUpdateStatus = () => ({ ...runtime.updater.currentUpdateStatus() });
   }
-  shutdownCopy = runtime.shutdown.shutdownCopy;
   safeElectronAuthError = runtime.auth.safeElectronAuthError;
   isElectronAuthLinkOutcome = runtime.auth.isElectronAuthLinkOutcome;
 
@@ -914,34 +742,13 @@ async function bootstrapCommandSurface(): Promise<void> {
     },
     { id: 'analytics', register: registerAnalyticsIPC },
   ]);
-  shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
-    countLive: () => {
-      const live = ptySessions.list().filter(session => !session.exited);
-      return {
-        agents: live.filter(session => session.harness !== 'shell').length,
-        shells: live.filter(session => session.harness === 'shell').length,
-      };
-    },
-    confirm: confirmShutdown,
-    checkpoint: checkpointRenderer,
-    confirmWithoutCheckpoint,
-    pauseNewWork: () => ptySessions.pauseCreates(),
-    resumeNewWork: () => ptySessions.resumeCreates(),
-    flushHistory: () => ptySessions.flushHistory(),
-    stopProcesses: () => ptySessions.stopAll(),
-    markClean: () => runStateStore?.markClean() ?? Promise.resolve(),
-    cleanup: cleanupForExit,
-    failure: reportShutdownFailure,
-    finalize: intent => {
-      if (intent === 'update') installProductUpdate();
-      else {
-        // A restart must come back on its own; a quit must not.
-        if (intent === 'restart') app.relaunch();
-        app.quit();
-      }
-    },
-    status: broadcastShutdown,
-  });
+  shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator(
+    shutdownSequence.coordinatorDependencies({
+      sessions: ptySessions,
+      shutdownCopy: runtime.shutdown.shutdownCopy,
+      markClean: () => runStateStore?.markClean() ?? Promise.resolve(),
+    })
+  );
   if (productUpdatesEnabled) {
     runtime.updater.registerProductUpdater(
       productUpdateFeedUrl,
@@ -1105,26 +912,21 @@ process.on('uncaughtExceptionMonitor', () => {
   }
 });
 
-app.on('before-quit', event => {
-  // Abort any in-flight background scan and settle its state writes. The
-  // store is crash-safe (append-ordered, atomic meta), so this is a courtesy
-  // flush, never a correctness requirement — it must not delay quit.
-  void consumptionScanner?.dispose();
-  claudePlanAccount?.dispose();
-  if (!shutdownCoordinator) {
-    if (bootstrapExitInProgress) return;
-    event.preventDefault();
-    bootstrapExitInProgress = true;
-    void rendererServer
-      .stop()
-      .catch(error => console.error('[shutdown] renderer stop failed', error))
-      .finally(() => app.quit());
-    return;
-  }
-  if (shutdownCoordinator.allowsFinalExit) return;
-  event.preventDefault();
-  void shutdownCoordinator.request('quit');
-});
+app.on(
+  'before-quit',
+  createBeforeQuitHandler({
+    // Abort any in-flight background scan and settle its state writes. The
+    // store is crash-safe (append-ordered, atomic meta), so this is a courtesy
+    // flush, never a correctness requirement — it must not delay quit.
+    disposeServices: () => {
+      void consumptionScanner?.dispose();
+      claudePlanAccount?.dispose();
+    },
+    coordinator: () => shutdownCoordinator,
+    stopRendererServer: () => rendererServer.stop(),
+    quit: () => app.quit(),
+  })
+);
 
 // macOS: keep app in dock when all windows closed
 app.on('window-all-closed', () => {
