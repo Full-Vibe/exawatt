@@ -485,7 +485,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:navigation-paint',
     why: 'the home-to-Architecture path must never paint a light frame between two dark grounds',
-    quarantined: 'BUG-212',
     match: file =>
       file.startsWith('src/app/architecture/') ||
       file === 'src/components/nav/site-header-nav.tsx' ||

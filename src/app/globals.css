@@ -292,6 +292,17 @@ html:has(main[data-home-arrangement='proposed']) body {
   background: #0e1216 !important;
 }
 
+/* The Architecture map is the same kind of all-dark page, and its document
+   stayed on the app's light `--background` (BUG-212): an overscroll showed a
+   light band past either end, and `eval:navigation-paint` read that canvas.
+   The loading state is covered too, because it replaces the map in place. */
+html:has(main[data-architecture-map]),
+html:has(main[data-architecture-map]) body,
+html:has([data-architecture-loading]),
+html:has([data-architecture-loading]) body {
+  background: var(--exa-public-exhibition-canvas) !important;
+}
+
 @media (max-height: 520px) {
   .home-hero-content {
     gap: 1rem;

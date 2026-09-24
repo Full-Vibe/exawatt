@@ -10,7 +10,7 @@
  *   EXA_BASE=http://localhost:<port> pnpm eval:navigation-paint
  */
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
@@ -33,7 +33,18 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-function readOnePixelPng(png) {
+/**
+ * Read RGB at viewport points from ONE full-viewport PNG capture.
+ *
+ * The capture has to be one atomic viewport frame (BUG-212). Playwright's
+ * clipped `page.screenshot` turns a viewport clip into a document rectangle
+ * with a separate `Page.getLayoutMetrics` round trip before it captures, so a
+ * navigation that resets scroll between the two reads a pixel of the NEW
+ * document at the OLD page's offset: 6.8k px down a 4.5k document, which is
+ * the bare canvas, not anything a reader saw. Only the rows up to the lowest
+ * point are unfiltered, which keeps a sample cheaper than two clipped shots.
+ */
+function readViewportPixels(png, points) {
   const signature = png.subarray(0, 8).toString('hex');
   assert(signature === '89504e470d0a1a0a', 'Screenshot was not a PNG');
 
@@ -42,6 +53,7 @@ function readOnePixelPng(png) {
   let height = 0;
   let bitDepth = 0;
   let colorType = 0;
+  let interlace = 0;
   const imageData = [];
 
   while (offset < png.length) {
@@ -55,6 +67,7 @@ function readOnePixelPng(png) {
       height = data.readUInt32BE(4);
       bitDepth = data[8];
       colorType = data[9];
+      interlace = data[12];
     } else if (type === 'IDAT') {
       imageData.push(data);
     } else if (type === 'IEND') {
@@ -62,22 +75,48 @@ function readOnePixelPng(png) {
     }
   }
 
-  assert(
-    width === 1 && height === 1,
-    `Expected a 1px PNG, got ${width}x${height}`
-  );
   assert(bitDepth === 8, `Expected 8-bit PNG channels, got ${bitDepth}`);
-  const channels =
-    colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 0 ? 1 : 0;
+  assert(interlace === 0, 'Expected a non-interlaced PNG');
+  const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
   assert(channels > 0, `Unsupported PNG color type ${colorType}`);
+  for (const { x, y } of points) {
+    assert(
+      x < width && y < height,
+      `Sample point ${x},${y} is outside the ${width}x${height} capture`
+    );
+  }
 
-  const scanline = inflateSync(Buffer.concat(imageData));
-  assert(scanline.length >= channels + 1, 'PNG scanline was incomplete');
-  // The first pixel has no left or prior-row neighbor, so every PNG filter
-  // reconstructs its channels directly from the encoded bytes.
-  const values = [...scanline.subarray(1, channels + 1)];
-  if (colorType === 0) return { r: values[0], g: values[0], b: values[0] };
-  return { r: values[0], g: values[1], b: values[2] };
+  const stride = width * channels;
+  const rows = inflateSync(Buffer.concat(imageData));
+  const lastRow = Math.max(...points.map(point => point.y));
+  for (let y = 0; y <= lastRow; y += 1) {
+    const start = y * (stride + 1) + 1;
+    const filter = rows[start - 1];
+    const above = start - (stride + 1);
+    if (filter === 0) continue;
+    for (let x = 0; x < stride; x += 1) {
+      const a = x >= channels ? rows[start + x - channels] : 0;
+      const b = y > 0 ? rows[above + x] : 0;
+      let predictor;
+      if (filter === 1) predictor = a;
+      else if (filter === 2) predictor = b;
+      else if (filter === 3) predictor = (a + b) >> 1;
+      else if (filter === 4) {
+        const c = x >= channels && y > 0 ? rows[above + x - channels] : 0;
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        predictor = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      } else throw new Error(`Unknown PNG filter ${filter}`);
+      rows[start + x] = (rows[start + x] + predictor) & 0xff;
+    }
+  }
+
+  return points.map(({ x, y }) => {
+    const index = y * (stride + 1) + 1 + x * channels;
+    return { r: rows[index], g: rows[index + 1], b: rows[index + 2] };
+  });
 }
 
 function isLightFlash({ r, g, b }) {
@@ -139,22 +178,31 @@ try {
     .locator('#site-header')
     .getAttribute('data-public-dark-chrome');
   const samples = [];
+  const cdp = await context.newCDPSession(page);
+  let firstLightFrame = null;
 
   navigationArmed = true;
   await command.click({ noWaitAfter: true });
   const startedAt = performance.now();
 
   while (performance.now() - startedAt < TIMEOUT_MS) {
-    const bodyPng = await page.screenshot({
-      clip: { ...SAMPLE_POINT, width: 1, height: 1 },
-      type: 'png',
+    // Without a clip, Chromium captures the viewport as it is composited, in
+    // one step, so both pixels come from the same painted frame.
+    const { data } = await cdp.send('Page.captureScreenshot', {
+      format: 'png',
+      optimizeForSpeed: true,
     });
-    const headerPng = await page.screenshot({
-      clip: { ...HEADER_SAMPLE_POINT, width: 1, height: 1 },
-      type: 'png',
-    });
-    const bodyPixel = readOnePixelPng(bodyPng);
-    const headerPixel = readOnePixelPng(headerPng);
+    const framePng = Buffer.from(data, 'base64');
+    const [bodyPixel, headerPixel] = readViewportPixels(framePng, [
+      SAMPLE_POINT,
+      HEADER_SAMPLE_POINT,
+    ]);
+    if (
+      !firstLightFrame &&
+      (isLightFlash(bodyPixel) || isLightFlash(headerPixel))
+    ) {
+      firstLightFrame = framePng;
+    }
     const state = await page.evaluate(() => ({
       path: location.pathname,
       theme: document.documentElement.dataset.exaTheme,
@@ -189,6 +237,14 @@ try {
 
   await page.locator('main h1').waitFor();
   await page.screenshot({ path: join(OUTPUT, 'after.png') });
+  // The document canvas is what a reader sees past either end of the page on
+  // a rubber-band overscroll, so it has to be the exhibition's ground too.
+  const documentGround = await page.evaluate(() => {
+    const [r, g, b] = getComputedStyle(document.documentElement)
+      .backgroundColor.match(/\d+(\.\d+)?/g)
+      .map(Number);
+    return { r, g, b };
+  });
 
   const bodyFlashSamples = samples.filter(sample =>
     isLightFlash(sample.bodyPixel)
@@ -205,8 +261,8 @@ try {
   const loadingSamples = samples.filter(sample => sample.architectureLoading);
   const final = samples.at(-1);
 
-  if (bodyFlashSamples.length > 0 || headerFlashSamples.length > 0) {
-    await page.screenshot({ path: join(OUTPUT, 'failure-current-frame.png') });
+  if (firstLightFrame) {
+    writeFileSync(join(OUTPUT, 'failure-light-frame.png'), firstLightFrame);
   }
 
   assert(samples.length > 1, 'Navigation paint sampler captured no transition');
@@ -231,6 +287,10 @@ try {
   assert(
     loadingSamples.every(sample => !isLightFlash(sample.bodyPixel)),
     `Architecture loading floor exposed a light frame: ${JSON.stringify(loadingSamples)}`
+  );
+  assert(
+    !isLightFlash(documentGround),
+    `Architecture's document ground is light under the dark page: ${JSON.stringify(documentGround)}`
   );
   assert(errors.length === 0, `Browser errors:\n${errors.join('\n')}`);
 
