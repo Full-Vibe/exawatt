@@ -6,7 +6,7 @@
  * React, or the clock beyond minting an identity, so every rule about what a
  * tab IS can be unit-tested without mounting the workspace.
  */
-import { isDefaultHarnessTitle } from '../harnesses';
+import { HARNESS_META, isDefaultHarnessTitle } from '../harnesses';
 import {
   sessionCanResume,
   sessionLifecyclePresentation,
@@ -399,6 +399,131 @@ export function isLegacyCatalogTitleLeak(candidate: {
     candidate.title.trim().endsWith('…') &&
     candidate.title.trim().split(/\s+/).length > 6
   );
+}
+
+/**
+ * The ⌘T new-tab page (D24): a real strip tab whose pane is the composer.
+ * No process, no resume identity; `requestedSource` is the source a summon
+ * asked for (palette "Start Agent with X"), null for the recommendation.
+ */
+export function newDraftTab(
+  cwd: string,
+  requestedSource: AgentSourceId | null
+): SessionTab {
+  return {
+    kind: 'session',
+    id: newTabId(),
+    durableSessionId: newDurableSessionId(),
+    harness: 'claude',
+    title: 'New agent',
+    titleKind: 'default',
+    cwd,
+    sessionId: null,
+    harnessSessionId: null,
+    resumeState: 'identity-missing',
+    lifecycle: 'draft',
+    exitCode: null,
+    roadmapItemId: null,
+    initialTask: null,
+    draftSource: requestedSource,
+    draftTask: null,
+    draftModel: null,
+    draftEffort: null,
+    draftTouched: false,
+    draftWorktree: false,
+    draftBranch: null,
+    draftRoadmapItemId: null,
+  };
+}
+
+/**
+ * A soft-closed Session back as a stopped tab (D23): its title, goal
+ * statement, and provider identity, never a process. Reopen restores; it
+ * never starts anything.
+ */
+export function tabFromClosedEntry(
+  entry: ClosedSessionEntry,
+  id: string
+): SessionTab {
+  // BUG-209: the ledger is a file, and main admits any harness string it
+  // finds there; this path has always assumed a harness this build knows.
+  const harness = entry.harness as PtyHarness;
+  const repairsLegacyCatalogTitle =
+    entry.titleKind === undefined &&
+    isLegacyCatalogTitleLeak({
+      ...entry,
+      harness,
+      semanticSummary: entry.goal,
+    });
+  return {
+    kind: 'session',
+    id,
+    durableSessionId: entry.durableSessionId,
+    harness,
+    title: repairsLegacyCatalogTitle
+      ? HARNESS_META[harness].label
+      : entry.title,
+    titleKind: repairsLegacyCatalogTitle
+      ? 'default'
+      : entry.titleKind === 'default' || entry.titleKind === 'operator'
+        ? entry.titleKind
+        : isDefaultHarnessTitle(harness, entry.title)
+          ? 'default'
+          : 'operator',
+    cwd: entry.cwd,
+    sessionId: null,
+    harnessSessionId: entry.harnessSessionId,
+    resumeState:
+      entry.harnessSessionId || entry.harness === 'shell'
+        ? 'ended-resumable'
+        : 'identity-missing',
+    lifecycle: 'stopped-clean',
+    exitCode: null,
+    roadmapItemId: null,
+    initialTask: entry.initialTask,
+  };
+}
+
+/** How an incarnation ended, as `pty:exit` said, when that event beat the
+ *  reply that introduced the incarnation. */
+export interface ObservedExit {
+  exitCode: number;
+  exitSignal: string | null;
+}
+
+/**
+ * What a retained tab becomes when a replacement incarnation answers a
+ * resume or a model change. An exit that arrived before the reply wins: the
+ * process is already gone, whatever the reply says.
+ */
+export function runtimeAdoptionPatch(
+  tab: SessionTab,
+  session: PtySessionRecord,
+  observedExit: ObservedExit | undefined
+): Partial<SessionTab> {
+  const exited = session.exited || observedExit !== undefined;
+  return {
+    sessionId: exited ? null : session.id,
+    harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
+    cwd: session.cwd,
+    launchModel: session.launchModel,
+    launchEffort: session.launchEffort,
+    lifecycle: exited ? 'exited' : 'running',
+    resumeState: exited
+      ? session.harnessSessionId || tab.harnessSessionId
+        ? 'ended-resumable'
+        : 'identity-missing'
+      : session.harnessSessionId || tab.harnessSessionId
+        ? 'resumed'
+        : 'live',
+    exitCode: exited ? (observedExit?.exitCode ?? session.exitCode) : null,
+    exitSignal: exited
+      ? observedExit
+        ? observedExit.exitSignal
+        : session.exitSignal
+      : null,
+    startedAt: session.startedAt,
+  };
 }
 
 /** The layout the workspace owns: what a save writes and every verb reads. */

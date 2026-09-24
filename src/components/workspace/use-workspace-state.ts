@@ -24,7 +24,7 @@ import {
   useState,
 } from 'react';
 import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
-import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
+import { HARNESS_META } from './harnesses';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -36,11 +36,9 @@ import {
   operatorPosition,
   type OperatorMoveClaim,
 } from '@/components/nav/operator-position';
-import { pickDistinctColor } from './project-colors';
 import {
   moveProjectInList,
   moveTabWithinProject,
-  nextActiveTabAfterClose,
   nextTabInRing,
   placeProjectBeside,
   placeTabBeside,
@@ -101,11 +99,13 @@ import type {
 import {
   REVIVE_FAILED,
   applyWorkspaceDraftPatch,
-  isLegacyCatalogTitleLeak,
   isRemoteAgentTab,
   isSessionTab,
+  newDraftTab,
   newDurableSessionId,
   newTabId,
+  runtimeAdoptionPatch,
+  tabFromClosedEntry,
   projectRootPath,
   remoteAgentGroupDir,
   resumableAgentTabsInProject,
@@ -142,6 +142,25 @@ import {
   withLiveHarnessIdentities,
 } from './workspace-state/layout-serialize';
 import { RecentProjects } from './workspace-state/recent-projects';
+import {
+  adoptObservedIdentity,
+  appendTab,
+  closeEmptyProjectGroup,
+  linkRegistryProject,
+  markPtyExited,
+  openContextGroup,
+  openProjectGroup,
+  openProjectGroups,
+  patchDraft,
+  patchSessionTab,
+  pendingRegistryEdits,
+  placeTab,
+  reconcileRegistry,
+  removeTab,
+  renameRemoteAgentViews,
+  replaceTab,
+  reseedDraft,
+} from './workspace-state/project-list';
 
 // The workspace model and its persisted shapes live in `workspace-state/`;
 // this module stays the one entry point every caller imports them from.
@@ -387,19 +406,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     (ref: { rootPath: string; name: string }) => {
       void openRepositoryProject(ref)
         .then(proj => {
-          setProjects(prev =>
-            prev.map(group =>
-              group.dir === proj.root_path
-                ? {
-                    ...group,
-                    registryId: proj.id,
-                    rootPath: proj.root_path,
-                    name: proj.name || group.name,
-                    color: proj.color || group.color,
-                  }
-                : group
-            )
-          );
+          setProjects(prev => linkRegistryProject(prev, proj));
           if (!proj.color) {
             const group = stateRef.current.projects.find(
               project => project.dir === proj.root_path
@@ -467,28 +474,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         roadmapItemId ?? null,
         initialTask ?? null
       );
-      setProjects(prev => {
-        const i = prev.findIndex(g => g.dir === s.projectDir);
-        if (i === -1) {
-          return [
-            ...prev,
-            {
-              dir: s.projectDir,
-              name: s.projectName,
-              color: pickDistinctColor(prev.map(g => g.color)),
-              tabs: [tab],
-              activeTabId: tab.id,
-            },
-          ];
-        }
-        const next = [...prev];
-        next[i] = {
-          ...next[i],
-          tabs: [...next[i].tabs, tab],
-          activeTabId: next[i].activeTabId ?? tab.id,
-        };
-        return next;
-      });
+      setProjects(prev =>
+        placeTab(prev, { dir: s.projectDir, name: s.projectName }, tab)
+      );
       return tab.id;
     },
     []
@@ -501,18 +489,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * from writing a lifecycle onto someone else's Agent.
    */
   const updateTab = useCallback((tabId: string, patch: Partial<SessionTab>) => {
-    setProjects(prev =>
-      prev.map(g =>
-        g.tabs.some(t => t.id === tabId && isSessionTab(t))
-          ? {
-              ...g,
-              tabs: g.tabs.map(t =>
-                t.id === tabId && isSessionTab(t) ? { ...t, ...patch } : t
-              ),
-            }
-          : g
-      )
-    );
+    setProjects(prev => patchSessionTab(prev, tabId, patch));
   }, []);
 
   /** S13.3 secondary path: attach a running Session to an item locally. */
@@ -687,46 +664,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       void listProjects()
         .then(registry => {
           if (cancelled || registry.length === 0) return;
-          const byPath = new Map(
-            registry
-              .filter(project => project.root_path !== null)
-              .map(project => [project.root_path, project] as const)
-          );
-          const byId = new Map(registry.map(project => [project.id, project]));
-          setProjects(prev =>
-            prev.map(g => {
-              const rootPath = projectRootPath(g);
-              const r =
-                (rootPath ? byPath.get(rootPath) : undefined) ??
-                byId.get(g.dir);
-              if (!r) return g;
-              // A rename/recolor made during this async window must win over
-              // the now-stale registry snapshot: link the row but keep the
-              // local edit (it's pushed up below so it still syncs). Otherwise
-              // adopt the synced name/color.
-              return editedDirsRef.current.has(g.dir)
-                ? { ...g, registryId: r.id, rootPath: r.root_path }
-                : {
-                    ...g,
-                    registryId: r.id,
-                    rootPath: r.root_path,
-                    name: r.name || g.name,
-                    color: r.color || g.color,
-                  };
-            })
-          );
+          // A rename/recolor made during this async window must win over
+          // the now-stale registry snapshot: link the row but keep the
+          // local edit (it's pushed up below so it still syncs). Otherwise
+          // adopt the synced name/color.
+          const editedDirs = editedDirsRef.current;
+          setProjects(prev => reconcileRegistry(prev, registry, editedDirs));
           // Edits made before the row's id was known couldn't sync (the verbs
           // guard on registryId); now that we have the ids, push them up.
-          for (const g of stateRef.current.projects) {
-            const rootPath = projectRootPath(g);
-            const r =
-              (rootPath ? byPath.get(rootPath) : undefined) ?? byId.get(g.dir);
-            if (!r || !editedDirsRef.current.has(g.dir)) continue;
-            if (g.name && g.name !== r.name) {
-              void registryRenameProject(r.id, g.name).catch(() => {});
+          for (const edit of pendingRegistryEdits(
+            stateRef.current.projects,
+            registry,
+            editedDirs
+          )) {
+            if (edit.name !== undefined) {
+              void registryRenameProject(edit.id, edit.name).catch(() => {});
             }
-            if (g.color && g.color !== r.color) {
-              void registrySetProjectColor(r.id, g.color).catch(() => {});
+            if (edit.color !== undefined) {
+              void registrySetProjectColor(edit.id, edit.color).catch(() => {});
             }
           }
         })
@@ -756,48 +711,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             [id]: { exitCode, exitSignal },
           });
         }
-        setProjects(prev =>
-          prev.map(g => ({
-            ...g,
-            // PTY events are about local processes. A coworker tab has no
-            // durable Session and no incarnation, so no event can name it.
-            tabs: g.tabs.map(t =>
-              isSessionTab(t) && t.sessionId === id
-                ? {
-                    ...t,
-                    sessionId: null,
-                    exitCode,
-                    exitSignal,
-                    resumeState: t.harnessSessionId
-                      ? 'ended-resumable'
-                      : 'identity-missing',
-                    lifecycle: 'exited',
-                  }
-                : t
-            ),
-          }))
-        );
+        setProjects(prev => markPtyExited(prev, { id, exitCode, exitSignal }));
       }
     );
     const offIdentity = api.onIdentity?.(
       ({ id, durableSessionId, harnessSessionId }) => {
         observedIdentitiesRef.current.set(durableSessionId, harnessSessionId);
         setProjects(prev =>
-          prev.map(g => ({
-            ...g,
-            tabs: g.tabs.map(t =>
-              isSessionTab(t) &&
-              (t.sessionId === id || t.durableSessionId === durableSessionId)
-                ? {
-                    ...t,
-                    harnessSessionId,
-                    resumeState: t.sessionId
-                      ? t.resumeState
-                      : 'ended-resumable',
-                  }
-                : t
-            ),
-          }))
+          adoptObservedIdentity(prev, {
+            id,
+            durableSessionId,
+            harnessSessionId,
+          })
         );
       }
     );
@@ -1098,16 +1023,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             opts.roadmapItemId ?? null,
             statedTask || opts.initialPrompt?.trim() || null
           );
-          setProjects(prev =>
-            prev.map(grp =>
-              grp.tabs.some(t => t.id === tabId)
-                ? {
-                    ...grp,
-                    tabs: grp.tabs.map(t => (t.id === tabId ? tab : t)),
-                  }
-                : grp
-            )
-          );
+          setProjects(prev => replaceTab(prev, tabId, tab));
         } else {
           addSession(
             launchedSession,
@@ -1307,54 +1223,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
       if (existing) {
         if (Object.keys(requested).length > 0) {
-          setProjects(prev =>
-            prev.map(grp =>
-              grp.dir === g.dir
-                ? {
-                    ...grp,
-                    tabs: grp.tabs.map(t =>
-                      t.id === existing.id && isSessionTab(t)
-                        ? applyWorkspaceDraftPatch(t, requested)
-                        : t
-                    ),
-                  }
-                : grp
-            )
-          );
+          setProjects(prev => reseedDraft(prev, g.dir, existing.id, requested));
         }
         moveOperator(g.dir, existing.id);
         return existing.id;
       }
-      const tab: SessionTab = {
-        kind: 'session',
-        id: newTabId(),
-        durableSessionId: newDurableSessionId(),
-        harness: 'claude',
-        title: 'New agent',
-        titleKind: 'default',
-        cwd: g.dir,
-        sessionId: null,
-        harnessSessionId: null,
-        resumeState: 'identity-missing',
-        lifecycle: 'draft',
-        exitCode: null,
-        roadmapItemId: null,
-        initialTask: null,
-        draftSource: requestedSource ?? null,
-        draftTask: null,
-        draftModel: null,
-        draftEffort: null,
-        draftTouched: false,
-        draftWorktree: false,
-        draftBranch: null,
-        draftRoadmapItemId: null,
-      };
-      const seededTab = applyWorkspaceDraftPatch(tab, requested);
-      setProjects(prev =>
-        prev.map(grp =>
-          grp.dir === g.dir ? { ...grp, tabs: [...grp.tabs, seededTab] } : grp
-        )
+      const seededTab = applyWorkspaceDraftPatch(
+        newDraftTab(g.dir, requestedSource ?? null),
+        requested
       );
+      setProjects(prev => appendTab(prev, g.dir, seededTab));
       moveOperator(g.dir, seededTab.id);
       return seededTab.id;
     },
@@ -1367,30 +1245,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  return the same state so per-keystroke calls stay cheap. */
   const updateDraft = useCallback(
     (tabId: string, patch: WorkspaceDraftPatch) => {
-      setProjects(prev => {
-        const group = prev.find(g => g.tabs.some(t => t.id === tabId));
-        const found = group?.tabs.find(t => t.id === tabId);
-        // Only a draft carries composer work, and only a Session tab can be a
-        // draft: a coworker is opened, never composed.
-        const tab = found && isSessionTab(found) ? found : null;
-        if (!group || !tab || tab.lifecycle !== 'draft') return prev;
-        const nextTab = applyWorkspaceDraftPatch(tab, patch);
-        if (
-          Object.keys(patch).every(key => {
-            const field = key as keyof WorkspaceDraftPatch;
-            return nextTab[field] === tab[field];
-          })
-        )
-          return prev;
-        return prev.map(g =>
-          g === group
-            ? {
-                ...g,
-                tabs: g.tabs.map(t => (t.id === tabId ? nextTab : t)),
-              }
-            : g
-        );
-      });
+      setProjects(prev => patchDraft(prev, tabId, patch));
     },
     []
   );
@@ -1399,20 +1254,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  the active tab activates its right neighbor, like Chrome (D24) */
   const removeTabFromLayout = useCallback((tabId: string) => {
     setPinnedTabId(cur => (cur === tabId ? null : cur));
-    setProjects(prev =>
-      prev.map(grp => {
-        if (!grp.tabs.some(t => t.id === tabId)) return grp;
-        const activeTabId =
-          grp.activeTabId === tabId
-            ? nextActiveTabAfterClose(grp.tabs, tabId)
-            : grp.activeTabId;
-        return {
-          ...grp,
-          tabs: grp.tabs.filter(t => t.id !== tabId),
-          activeTabId,
-        };
-      })
-    );
+    setProjects(prev => removeTab(prev, tabId));
   }, []);
 
   /** Close grammar (D27): ⌘W CLOSES, like Chrome. A started live agent
@@ -1553,43 +1395,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         : operatorPosition.claimHere();
       const entry = await api.reopenSession(durableSessionId);
       if (!entry) return false;
-      // BUG-209: the ledger is a file, and main admits any harness string it
-      // finds there; this path has always assumed a harness this build knows.
-      const harness = entry.harness as PtyHarness;
-      const repairsLegacyCatalogTitle =
-        entry.titleKind === undefined &&
-        isLegacyCatalogTitleLeak({
-          ...entry,
-          harness,
-          semanticSummary: entry.goal,
-        });
-      const tab: SessionTab = {
-        kind: 'session',
-        id: reuseTabId ?? newTabId(),
-        durableSessionId: entry.durableSessionId,
-        harness,
-        title: repairsLegacyCatalogTitle
-          ? HARNESS_META[harness].label
-          : entry.title,
-        titleKind: repairsLegacyCatalogTitle
-          ? 'default'
-          : entry.titleKind === 'default' || entry.titleKind === 'operator'
-            ? entry.titleKind
-            : isDefaultHarnessTitle(harness, entry.title)
-              ? 'default'
-              : 'operator',
-        cwd: entry.cwd,
-        sessionId: null,
-        harnessSessionId: entry.harnessSessionId,
-        resumeState:
-          entry.harnessSessionId || entry.harness === 'shell'
-            ? 'ended-resumable'
-            : 'identity-missing',
-        lifecycle: 'stopped-clean',
-        exitCode: null,
-        roadmapItemId: null,
-        initialTask: entry.initialTask,
-      };
+      const tab = tabFromClosedEntry(entry, reuseTabId ?? newTabId());
       if (entry.goal) {
         setSummaries(prev => ({
           ...prev,
@@ -1597,40 +1403,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }));
       }
       const mayMove = claim.stillCurrent();
-      setProjects(prev => {
-        const i = prev.findIndex(grp => grp.dir === entry.projectDir);
-        if (i === -1) {
-          return [
-            ...prev,
-            {
-              dir: entry.projectDir,
-              name: entry.projectName,
-              color: pickDistinctColor(prev.map(grp => grp.color)),
-              tabs: [tab],
-              activeTabId: tab.id,
-            },
-          ];
-        }
-        const next = [...prev];
-        const replacesDraft =
-          !!reuseTabId &&
-          next[i].tabs.some(
-            candidate =>
-              candidate.id === reuseTabId &&
-              isSessionTab(candidate) &&
-              candidate.lifecycle === 'draft'
-          );
-        next[i] = {
-          ...next[i],
-          tabs: replacesDraft
-            ? next[i].tabs.map(candidate =>
-                candidate.id === reuseTabId ? tab : candidate
-              )
-            : [...next[i].tabs, tab],
-          activeTabId: next[i].activeTabId ?? tab.id,
-        };
-        return next;
-      });
+      setProjects(prev =>
+        placeTab(
+          prev,
+          { dir: entry.projectDir, name: entry.projectName },
+          tab,
+          reuseTabId
+        )
+      );
       if (mayMove) moveOperator(entry.projectDir, tab.id);
       return true;
     },
@@ -1685,29 +1465,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const observedExit = operationExitsRef.current.get(
         tab.durableSessionId
       )?.[session.id];
-      const exited = session.exited || observedExit !== undefined;
-      updateTab(tab.id, {
-        sessionId: exited ? null : session.id,
-        harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
-        cwd: session.cwd,
-        launchModel: session.launchModel,
-        launchEffort: session.launchEffort,
-        lifecycle: exited ? 'exited' : 'running',
-        resumeState: exited
-          ? session.harnessSessionId || tab.harnessSessionId
-            ? 'ended-resumable'
-            : 'identity-missing'
-          : session.harnessSessionId || tab.harnessSessionId
-            ? 'resumed'
-            : 'live',
-        exitCode: exited ? (observedExit?.exitCode ?? session.exitCode) : null,
-        exitSignal: exited
-          ? observedExit
-            ? observedExit.exitSignal
-            : session.exitSignal
-          : null,
-        startedAt: session.startedAt,
-      });
+      updateTab(tab.id, runtimeAdoptionPatch(tab, session, observedExit));
       return true;
     },
     [operationExitsRef, updateTab]
@@ -1958,19 +1716,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       const canonicalDir = result.projectDir;
       const mayMove = claim.stillCurrent();
-      setProjects(prev => {
-        if (prev.some(project => project.dir === canonicalDir)) return prev;
-        return [
-          ...prev,
-          {
-            dir: canonicalDir,
-            name: result.projectName,
-            color: pickDistinctColor(prev.map(project => project.color)),
-            tabs: [],
-            activeTabId: null,
-          },
-        ];
-      });
+      setProjects(prev =>
+        openProjectGroup(prev, {
+          dir: canonicalDir,
+          name: result.projectName,
+        })
+      );
       // The Project is registered either way; going to it needs the ask to
       // still be his (the resolve is a main-process round trip).
       if (mayMove) moveOperator(canonicalDir, null);
@@ -2038,20 +1789,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           );
         if (existing) {
           // The source owns the names; a rename there shows here on next open.
-          setProjects(prev =>
-            prev.map(project => ({
-              ...project,
-              tabs: project.tabs.map(tab =>
-                isRemoteAgentTab(tab) && tab.agentId === ref.agentId
-                  ? {
-                      ...tab,
-                      title: ref.displayName,
-                      projectLabel: ref.projectLabel,
-                    }
-                  : tab
-              ),
-            }))
-          );
+          setProjects(prev => renameRemoteAgentViews(prev, ref));
           if (claim.stillCurrent()) moveOperator(existing.dir, existing.tab.id);
           return existing.tab.id;
         }
@@ -2064,34 +1802,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           agentId: ref.agentId,
           projectLabel: ref.projectLabel,
         };
-        setProjects(prev => {
-          const index = prev.findIndex(project => project.dir === dir);
-          if (index === -1) {
-            // The Project this Agent was mapped to at Connect time is not open.
-            // It is still where the coworker belongs, so the group opens with
-            // the mapping's own label rather than the coworker landing in
-            // whichever Project the operator happens to be standing in.
-            return [
-              ...prev,
-              {
-                dir,
-                rootPath: registryProject?.root_path ?? null,
-                registryId: registryProject?.id ?? ref.projectId,
-                name: ref.projectLabel || ref.displayName,
-                color: pickDistinctColor(prev.map(project => project.color)),
-                tabs: [tab],
-                activeTabId: tab.id,
-              },
-            ];
-          }
-          const next = [...prev];
-          next[index] = {
-            ...next[index],
-            tabs: [...next[index].tabs, tab],
-            activeTabId: next[index].activeTabId ?? tab.id,
-          };
-          return next;
-        });
+        // The Project this Agent was mapped to at Connect time may not be
+        // open. It is still where the coworker belongs, so the group opens
+        // with the mapping's own label rather than the coworker landing in
+        // whichever Project the operator happens to be standing in.
+        setProjects(prev =>
+          placeTab(
+            prev,
+            {
+              dir,
+              rootPath: registryProject?.root_path ?? null,
+              registryId: registryProject?.id ?? ref.projectId,
+              name: ref.projectLabel || ref.displayName,
+            },
+            tab
+          )
+        );
         if (claim.stillCurrent()) moveOperator(dir, tab.id);
         return tab.id;
       })();
@@ -2115,26 +1841,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** Open a durable Context Group whose local folder binding is absent. */
   const openContextProject = useCallback(
     (ref: { id: string; name: string; color: string | null }): void => {
-      setProjects(prev => {
-        const index = prev.findIndex(
-          project => project.registryId === ref.id || project.dir === ref.id
-        );
-        if (index !== -1) return prev;
-        return [
-          ...prev,
-          {
-            dir: ref.id,
-            rootPath: null,
-            registryId: ref.id,
-            name: ref.name,
-            color:
-              ref.color ??
-              pickDistinctColor(prev.map(project => project.color)),
-            tabs: [],
-            activeTabId: null,
-          },
-        ];
-      });
+      setProjects(prev => openContextGroup(prev, ref));
       moveOperator(ref.id, null);
     },
     [moveOperator]
@@ -2166,20 +1873,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
       if (refs.length === 0) return false;
       const mayMove = claim.stillCurrent();
-      setProjects(prev => {
-        const next = [...prev];
-        for (const ref of refs) {
-          if (next.some(project => project.dir === ref.projectDir)) continue;
-          next.push({
-            dir: ref.projectDir,
-            name: ref.projectName,
-            color: pickDistinctColor(next.map(project => project.color)),
-            tabs: [],
-            activeTabId: null,
-          });
-        }
-        return next;
-      });
+      setProjects(prev =>
+        openProjectGroups(
+          prev,
+          refs.map(ref => ({ dir: ref.projectDir, name: ref.projectName }))
+        )
+      );
       const first = refs[0];
       if (mayMove) moveOperator(first.projectDir, null);
       setLastUsedDir(first.projectDir);
@@ -2211,13 +1910,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // Seed recency synchronously so ⌘N can always bring a closed group back.
       recents.recordClosed(project, Date.now());
 
-      setProjects(previous =>
-        previous.some(
-          candidate => candidate.dir === dir && candidate.tabs.length > 0
-        )
-          ? previous
-          : previous.filter(candidate => candidate.dir !== dir)
-      );
+      setProjects(previous => closeEmptyProjectGroup(previous, dir));
       if (currentDir === dir) {
         setActiveDir(groups[index + 1]?.dir ?? groups[index - 1]?.dir ?? null);
       }
