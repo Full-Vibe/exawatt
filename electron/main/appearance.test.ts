@@ -4,6 +4,7 @@ import {
   refreshNativeWindowBackgrounds,
   rendererAppearanceBootstrapSnapshot,
   resolveNativeAppearance,
+  testSystemDarkOverride,
 } from './appearance';
 import type { ElectronAppearancePreferencesV1 } from './settings-store';
 
@@ -172,5 +173,15 @@ describe('resolveNativeAppearance', () => {
     expect(resolved.themeId).toBe('exawatt-night-dark');
     expect(live.setBackgroundColor).toHaveBeenCalledWith('#0B100E');
     expect(destroyed.setBackgroundColor).not.toHaveBeenCalled();
+  });
+});
+
+describe('testSystemDarkOverride', () => {
+  it('pins the OS appearance only for a test run that names one', () => {
+    expect(testSystemDarkOverride(true, 'dark')).toBe(true);
+    expect(testSystemDarkOverride(true, 'light')).toBe(false);
+    expect(testSystemDarkOverride(true, 'sepia')).toBeUndefined();
+    expect(testSystemDarkOverride(true, undefined)).toBeUndefined();
+    expect(testSystemDarkOverride(false, 'dark')).toBeUndefined();
   });
 });

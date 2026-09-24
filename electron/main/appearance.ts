@@ -129,6 +129,16 @@ export function resolveNativeAppearance(
   };
 }
 
+/** A test run may pin the OS appearance (EXAWATT_TEST_OS_APPEARANCE); any
+ *  other launch reads the real one. */
+export function testSystemDarkOverride(
+  isTest: boolean,
+  value: string | undefined
+): boolean | undefined {
+  if (!isTest) return undefined;
+  return value === 'dark' ? true : value === 'light' ? false : undefined;
+}
+
 /**
  * Auto must return Electron to the real system source before reading its
  * effective dark state. Otherwise a preceding Manual dark theme would make

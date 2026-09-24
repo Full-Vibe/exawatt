@@ -52,7 +52,11 @@ interface StartupScreenWindow {
  */
 export function createStartupScreen(
   window: () => StartupScreenWindow | null,
-  initial: StartupStage
+  initial: StartupStage = {
+    progress: 0.08,
+    label: 'Opening command surface',
+    detail: 'Preparing the local agent interface',
+  }
 ): {
   stage(): StartupStage;
   update(stage: StartupStage): void;
@@ -131,8 +135,10 @@ export interface MainWindowDependencies {
   onWorkspaceLoaded: (url: string) => void;
 }
 
-export interface MainWindowController {
+interface MainWindowController {
   current(): BrowserWindow | null;
+  /** The window when it can still parent a native dialog. */
+  live(): BrowserWindow | null;
   open(initialUrl: string, appearance: NativeAppearanceResolution): void;
 }
 
@@ -267,6 +273,7 @@ export function createMainWindowController(
 
   return {
     current: () => mainWindow,
+    live: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
     open: createWindow,
   };
 }

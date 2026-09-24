@@ -37,7 +37,7 @@ interface BroadcastWindow {
 
 type CheckpointStage = 'pre-stop' | 'stopped';
 
-export interface CheckpointBroker {
+interface CheckpointBroker {
   /** Whether the renderer in this web contents owns mutable workspace state. */
   owns(webContentsId: number): boolean;
   /** The renderer navigated away or went away: it no longer owns the state. */
@@ -116,8 +116,7 @@ type ShutdownSessions = Pick<
 
 export interface ShutdownSequenceDependencies {
   productName: string;
-  /** Automation answers for the quit confirmation, consumed in order. */
-  testQuitResponses: string[];
+  /** Automation reads its quit answers here (EXAWATT_TEST_QUIT_RESPONSES). */
   env: NodeJS.ProcessEnv;
   /** Shows a native message box over the main window when there is one. */
   showMessageBox: (options: MessageBoxOptions) => Promise<{ response: number }>;
@@ -134,7 +133,8 @@ export interface ShutdownSequenceDependencies {
   };
   /** Released in this order, each awaited, once every Session has stopped. */
   cleanup: ReadonlyArray<() => Promise<void> | void>;
-  finalize: (intent: ShutdownIntent) => void;
+  /** The last step, once cleanup has finished. */
+  finalize: { installUpdate(): void; relaunch(): void; quit(): void };
   /** For the window-management restart, which is a normal restart. */
   coordinator: () => {
     request(intent: ShutdownIntent): Promise<boolean>;
@@ -157,6 +157,14 @@ export function createShutdownSequence(
   deps: ShutdownSequenceDependencies
 ): ShutdownSequence {
   const productName = deps.productName;
+  /** Automation answers for the quit confirmation, consumed in order. */
+  const testQuitResponses =
+    deps.env.EXAWATT_TEST === '1'
+      ? (deps.env.EXAWATT_TEST_QUIT_RESPONSES ?? '')
+          .split(',')
+          .map(value => value.trim())
+          .filter(Boolean)
+      : [];
   const log = deps.log ?? (message => console.info(message));
   const logError =
     deps.logError ?? ((message, error) => console.error(message, error));
@@ -258,7 +266,7 @@ export function createShutdownSequence(
     ): Promise<boolean> {
       if (deps.env.EXAWATT_TEST === '1') {
         const response =
-          deps.testQuitResponses.shift() ?? deps.env.EXAWATT_TEST_QUIT_RESPONSE;
+          testQuitResponses.shift() ?? deps.env.EXAWATT_TEST_QUIT_RESPONSE;
         if (response === 'cancel') return false;
         return true;
       }
@@ -345,7 +353,14 @@ export function createShutdownSequence(
       markClean: runtime.markClean,
       cleanup: cleanupForExit,
       failure: reportShutdownFailure,
-      finalize: deps.finalize,
+      finalize: intent => {
+        if (intent === 'update') deps.finalize.installUpdate();
+        else {
+          // A restart must come back on its own; a quit must not.
+          if (intent === 'restart') deps.finalize.relaunch();
+          deps.finalize.quit();
+        }
+      },
       status: broadcastShutdown,
     };
   }

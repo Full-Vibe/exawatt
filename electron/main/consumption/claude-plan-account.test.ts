@@ -127,20 +127,24 @@ describe('Claude plan runtime network boundary', () => {
     ).toBe(false);
   });
 
-  // The guard above is only the boundary if main.ts actually asks it the
-  // contract's question. Nothing else covers that construction site, and
-  // BUG-060 was precisely a correct-looking call site passing the wrong input.
-  it('is wired in main.ts from the resolved contract, not a literal', () => {
+  // The guard above is only the boundary if the command surface actually asks
+  // it the contract's question. BUG-060 was precisely a correct-looking call
+  // site passing the wrong input. `command-surface.test.ts` drives that
+  // construction site with real contracts; this pins its source shape too.
+  it('is wired in the command surface from the resolved contract, not a literal', () => {
     const source = fs.readFileSync(
-      path.join(__dirname, '..', 'main.ts'),
+      path.join(__dirname, '..', 'command-surface.ts'),
       'utf8'
     );
     const call = source.slice(
       source.indexOf('remoteReadAllowed: isClaudePlanRemoteReadAllowed({'),
       source.indexOf('fetchFn: electronNetworkFetch')
     );
+    expect(source).toContain(
+      'const distribution = deps.build.distribution.contract;'
+    );
     expect(call).toContain(
-      "distribution.contract.ownAccount?.claudePlanUsage === 'stable-signed'"
+      "distribution.ownAccount?.claudePlanUsage === 'stable-signed'"
     );
     expect(call).not.toMatch(/stableSignedIdentity:\s*(true|false)/);
   });

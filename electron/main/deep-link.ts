@@ -44,7 +44,7 @@ export interface DeepLinkDependencies {
   logError?: (message: string, detail: unknown) => void;
 }
 
-export interface DeepLinkRouter {
+interface DeepLinkRouter {
   handle(url: string): void;
   /** Delivers a held link once the window has loaded `currentUrl`. */
   deliverPending(currentUrl: string): void;
@@ -197,7 +197,7 @@ export function registerDeepLinkProtocol(
   app: DeepLinkApp,
   protocolScheme: string | null,
   router: DeepLinkRouter,
-  launch: { defaultApp: boolean; execPath: string; argv: readonly string[] }
+  launch: { defaultApp?: boolean; execPath: string; argv: readonly string[] }
 ): void {
   if (!protocolScheme) return;
   // In dev (process.defaultApp), pass execPath + script so macOS can re-launch correctly.

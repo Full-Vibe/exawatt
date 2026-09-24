@@ -1,7 +1,13 @@
-import type { ChildProcess, SpawnOptions } from 'child_process';
+import {
+  execFile,
+  spawn as spawnChild,
+  type ChildProcess,
+  type SpawnOptions,
+} from 'child_process';
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
+import { promisify } from 'util';
 import { stopChildProcess } from './child-process-lifecycle';
 import type { RendererPortPolicy } from './renderer-port';
 
@@ -24,31 +30,31 @@ type Spawn = (
   options: SpawnOptions
 ) => ChildProcess;
 
-export interface RendererServerClock {
+interface RendererServerClock {
   now(): number;
   sleep(ms: number): Promise<void>;
 }
 
 export interface RendererServerDependencies {
-  /** `process.resourcesPath`: holds `renderer/renderer.zip` and its hash. */
-  resourcesPath: string;
+  /** Holds `renderer/renderer.zip` and its hash (`process.resourcesPath`). */
+  resourcesPath?: string;
   /** Read late: `userData` may be redirected before the first start. */
   userDataPath: () => string;
   /** The distribution's renderer-cache namespace. */
   cacheNamespace: string;
-  /** The Electron binary, run as Node for the server. */
-  execPath: string;
+  /** The Electron binary, run as Node for the server (`process.execPath`). */
+  execPath?: string;
   /** Names this process's staging directory so two launches never share one. */
-  pid: number;
+  pid?: number;
   /** Faster force-stop and cache pruning under automation. */
   isTest: boolean;
   /** The distribution-scoped environment the child inherits. */
   childEnvironment: () => NodeJS.ProcessEnv;
   /** Mirrors the server's stdout (EXAWATT_RENDERER_LOGS=1). */
   forwardStdout: boolean;
-  spawn: Spawn;
-  /** Unpacks `archive` into the empty directory `destination`. */
-  extractArchive: (archive: string, destination: string) => Promise<void>;
+  spawn?: Spawn;
+  /** Unpacks `archive` into the empty directory `destination` (default: ditto). */
+  extractArchive?: (archive: string, destination: string) => Promise<void>;
   /** Which port to serve on, told once the server answers (BUG-022). */
   ports: RendererPortPolicy;
   probe?: (url: string) => Promise<boolean>;
@@ -58,7 +64,7 @@ export interface RendererServerDependencies {
   warn?: (message: string, error: unknown) => void;
 }
 
-export interface RendererServer {
+interface RendererServer {
   /** Starts the child and resolves with the origin once it answers. */
   start(): Promise<string>;
   /** Stops the child; a rejection keeps it owned so a retry can stop it. */
@@ -129,13 +135,29 @@ export function createRendererServer(
   deps: RendererServerDependencies
 ): RendererServer {
   const probe = deps.probe ?? probeRenderer;
+  const spawn = deps.spawn ?? spawnChild;
+  const extractArchive =
+    deps.extractArchive ??
+    (async (archive: string, destination: string) => {
+      await promisify(execFile)('/usr/bin/ditto', [
+        '-x',
+        '-k',
+        archive,
+        destination,
+      ]);
+    });
   const clock = deps.clock ?? realClock;
   const writeStdout =
     deps.writeStdout ?? (data => process.stdout.write(data as Buffer));
   const writeStderr =
     deps.writeStderr ?? (data => process.stderr.write(data as Buffer));
   const warn = deps.warn ?? ((message, error) => console.warn(message, error));
-  const packagedRenderer = path.join(deps.resourcesPath, 'renderer');
+  const packagedRenderer = path.join(
+    deps.resourcesPath ?? process.resourcesPath,
+    'renderer'
+  );
+  const execPath = deps.execPath ?? process.execPath;
+  const pid = deps.pid ?? process.pid;
 
   let rendererServer: ChildProcess | null = null;
   let rendererOrigin: string | null = null;
@@ -174,10 +196,10 @@ export function createRendererServer(
     try {
       await fs.promises.access(path.join(standaloneRoot, 'server.js'));
     } catch {
-      const staging = `${versionRoot}.staging-${deps.pid}`;
+      const staging = `${versionRoot}.staging-${pid}`;
       await fs.promises.rm(staging, { recursive: true, force: true });
       await fs.promises.mkdir(staging, { recursive: true });
-      await deps.extractArchive(archive, staging);
+      await extractArchive(archive, staging);
       await fs.promises.mkdir(cacheRoot(), { recursive: true });
       await fs.promises.rename(staging, versionRoot).catch(async error => {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -186,7 +208,7 @@ export function createRendererServer(
     }
     const serverEntry = path.join(standaloneRoot, 'server.js');
     const launch = rendererServerLaunch(serverEntry);
-    rendererServer = deps.spawn(deps.execPath, launch.args, {
+    rendererServer = spawn(execPath, launch.args, {
       cwd: standaloneRoot,
       env: {
         ...deps.childEnvironment(),

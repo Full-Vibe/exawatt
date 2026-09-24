@@ -21,7 +21,12 @@ import {
   type DiagnosticsReport,
   type DiagnosticsReportInput,
 } from './diagnostics-report';
-import type { TrustedChannels } from './ipc-table';
+import { createDirectoryPicker } from './directory-picker';
+import {
+  distributionIpcCapabilities,
+  type ResolvedDistribution,
+} from './distribution';
+import { registerTrustedChannels, type TrustedChannels } from './ipc-table';
 import type { ElectronAppearancePreferencesV1 } from './settings-store';
 
 /**
@@ -342,4 +347,128 @@ export function createAppearanceIpc(deps: {
       });
     },
   };
+}
+
+/** The part of the Electron API main's own tables are wired to. */
+interface MainChannelsElectron {
+  app: {
+    getVersion(): string;
+    readonly isPackaged: boolean;
+    getAppPath(): string;
+    getPath(name: 'userData' | 'downloads'): string;
+    getLocale(): string;
+  };
+  BrowserWindow: {
+    fromWebContents(sender: WebContents): BrowserWindow | null;
+    getAllWindows(): BrowserWindow[];
+  };
+  dialog: Pick<Electron.Dialog, 'showOpenDialog'>;
+  shell: { showItemInFolder(fullPath: string): void };
+  nativeTheme: Parameters<typeof createAppearanceIpc>[0]['nativeTheme'];
+  systemPreferences: { getAccentColor?: () => string };
+  ipcMain: {
+    on(channel: string, listener: (event: IpcMainEvent) => void): unknown;
+  };
+}
+
+/**
+ * Main's own channels, keyed by name and registered through the one trusted
+ * door (`handle` is `handleTrusted`): sign-in, the folder picker, build info
+ * and diagnostics, the OS appearance, and whatever tables other owners hand
+ * in (the menu's, the checkpoint handshake's). Runtime state is read at call
+ * time, because this runs before the auth and Session runtime exist.
+ */
+export function registerMainChannels(deps: {
+  electron: MainChannelsElectron;
+  handle: Parameters<typeof registerTrustedChannels>[1];
+  assertTrustedSender: (event: IpcMainEvent) => void;
+  build: {
+    buildInfo: DiagnosticsReportInput['build'];
+    distribution: ResolvedDistribution;
+    identity: unknown;
+  };
+  runtime: {
+    readonly authCoordinator: AuthCoordinatorPort | null;
+    recordAuthDiagnostic: AuthDiagnosticRecorder;
+    safeAuthError(error: unknown): SafeAuthError;
+    currentUpdateStatus(): Record<string, unknown> | null;
+    liveSessionCount(): number;
+  };
+  env: NodeJS.ProcessEnv;
+  safeTheme: boolean;
+  appearancePreference: () => ElectronAppearancePreferencesV1 | undefined;
+  record: DiagnosticRecorder;
+  tables: readonly TrustedChannels[];
+}): void {
+  const { electron, runtime, build } = deps;
+  const windowFor = (sender: WebContents) =>
+    electron.BrowserWindow.fromWebContents(sender);
+  const appearance = createAppearanceIpc({
+    nativeTheme: electron.nativeTheme,
+    getAccentColor: electron.systemPreferences.getAccentColor
+      ? () => electron.systemPreferences.getAccentColor!()
+      : undefined,
+    appearancePreference: deps.appearancePreference,
+    safeTheme: deps.safeTheme,
+    allWindows: () => electron.BrowserWindow.getAllWindows(),
+    assertTrustedSender: deps.assertTrustedSender,
+  });
+  registerTrustedChannels(
+    [
+      authChannels({
+        coordinator: () => runtime.authCoordinator,
+        record: (event, fields) => runtime.recordAuthDiagnostic(event, fields),
+        safeAuthError: error => runtime.safeAuthError(error),
+        env: deps.env,
+      }),
+      dialogChannels({
+        openDirectoryPicker: createDirectoryPicker({
+          showOpenDialog: (parent, options) =>
+            parent
+              ? electron.dialog.showOpenDialog(parent, options)
+              : electron.dialog.showOpenDialog(options),
+        }),
+        windowFor,
+        env: deps.env,
+      }),
+      appChannels({
+        buildInfo: () => ({
+          ...build.buildInfo,
+          // marketed version alongside the exact sha (ENG-025 feedback stamping)
+          version: electron.app.getVersion(),
+          distribution: {
+            contract: build.distribution.contract,
+            digest: build.distribution.digest,
+            identity: build.identity,
+            capabilities: distributionIpcCapabilities(
+              build.distribution.contract
+            ),
+          },
+        }),
+        reports: createDiagnosticsReports({
+          input: () => ({
+            build: build.buildInfo,
+            appVersion: electron.app.getVersion(),
+            packaged: electron.app.isPackaged,
+            installPath: electron.app.getAppPath(),
+            logDirectory: path.join(electron.app.getPath('userData'), 'logs'),
+            updateStatus: runtime.currentUpdateStatus(),
+            liveSessions: runtime.liveSessionCount(),
+            locale: electron.app.getLocale(),
+          }),
+          downloadsPath: () => electron.app.getPath('downloads'),
+          showItemInFolder: filePath =>
+            electron.shell.showItemInFolder(filePath),
+        }),
+        record: deps.record,
+        windowFor,
+      }),
+      appearance.channels,
+      ...deps.tables,
+    ],
+    deps.handle
+  );
+  appearance.register((channel, listener) =>
+    electron.ipcMain.on(channel, listener)
+  );
 }

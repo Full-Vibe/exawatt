@@ -17,7 +17,7 @@ type TrustedHandler = Parameters<typeof handleTrusted>[1];
 export type TrustedChannels = Readonly<Record<string, TrustedHandler>>;
 
 /** A module that owns its own channels and registers them itself. */
-export interface IpcModuleRegistration {
+interface IpcModuleRegistration {
   /** For diagnostics and duplicate detection, not a channel name. */
   id: string;
   register(): void;

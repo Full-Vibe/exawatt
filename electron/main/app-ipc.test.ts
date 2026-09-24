@@ -20,7 +20,9 @@ const {
   createAppearanceIpc,
   createDiagnosticsReports,
   dialogChannels,
+  registerMainChannels,
 } = await import('./app-ipc');
+const { COMMUNITY_DISTRIBUTION } = await import('@exawatt/core');
 
 const sender = { id: 3 } as unknown as WebContents;
 const EVENT = { sender } as IpcMainInvokeEvent;
@@ -341,5 +343,87 @@ describe('createAppearanceIpc', () => {
         },
       ],
     ]);
+  });
+});
+
+describe('registerMainChannels', () => {
+  function register(tables: TrustedChannels[] = []) {
+    const trusted: string[] = [];
+    const sync: string[] = [];
+    registerMainChannels({
+      electron: {
+        app: {
+          getVersion: () => '0.1.13',
+          isPackaged: true,
+          getAppPath: () => '/Applications/Exawatt.app',
+          getPath: () => downloads,
+          getLocale: () => 'en-US',
+        },
+        BrowserWindow: {
+          fromWebContents: () => null,
+          getAllWindows: () => [],
+        },
+        dialog: {
+          showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+        },
+        shell: { showItemInFolder: () => {} },
+        nativeTheme: {
+          shouldUseDarkColors: false,
+          shouldUseHighContrastColors: false,
+          shouldUseInvertedColorScheme: false,
+          on: () => {},
+        },
+        systemPreferences: {},
+        ipcMain: { on: channel => sync.push(channel) },
+      } as never,
+      handle: channel => trusted.push(channel),
+      assertTrustedSender: () => {},
+      build: {
+        buildInfo: { sha: 'abc', branch: 'master', delivery: 'dogfood' },
+        distribution: {
+          contract: COMMUNITY_DISTRIBUTION,
+          canonical: '{}',
+          digest: 'digest',
+        },
+        identity: { productName: 'Exawatt Community' },
+      },
+      runtime: {
+        authCoordinator: null,
+        recordAuthDiagnostic: () => {},
+        safeAuthError: () => ({ name: 'Error', message: 'x' }),
+        currentUpdateStatus: () => null,
+        liveSessionCount: () => 0,
+      },
+      env: {},
+      safeTheme: false,
+      appearancePreference: () => undefined,
+      record: () => {},
+      tables,
+    });
+    return { trusted, sync };
+  }
+
+  it("registers main's own tables and the tables other owners hand in, through the trusted door", () => {
+    const { trusted, sync } = register([
+      { 'menu:sync-availability': () => {} },
+    ]);
+
+    expect(trusted).toEqual(
+      expect.arrayContaining([
+        'auth:start-google',
+        'dialog:openDirectory',
+        'app:get-build-info',
+        'app:appearance',
+        'menu:sync-availability',
+      ])
+    );
+    expect(new Set(trusted).size).toBe(trusted.length);
+    expect(sync).toEqual(['app:appearance-bootstrap']);
+  });
+
+  it('refuses a handed-in table that claims one of main’s channels', () => {
+    expect(() => register([{ 'app:get-build-info': () => {} }])).toThrow(
+      'IPC channel app:get-build-info is registered twice'
+    );
   });
 });

@@ -78,8 +78,12 @@ function world(
   let stored = options.storedLayout ?? { tabs: [] };
   const deps: ShutdownSequenceDependencies = {
     productName: 'Exawatt',
-    testQuitResponses: [...(options.responses ?? [])],
-    env: options.env ?? { EXAWATT_TEST: '1' },
+    env: {
+      ...(options.env ?? { EXAWATT_TEST: '1' }),
+      ...(options.responses
+        ? { EXAWATT_TEST_QUIT_RESPONSES: options.responses.join(', ') }
+        : {}),
+    },
     showMessageBox: async dialogOptions => {
       dialogs.push(dialogOptions);
       log.push(`dialog:${dialogOptions.title}`);
@@ -121,7 +125,11 @@ function world(
       },
       () => void log.push('cleanup:renderer-server'),
     ],
-    finalize: intent => log.push(`finalize:${intent}`),
+    finalize: {
+      installUpdate: () => void log.push('finalize:install-update'),
+      relaunch: () => void log.push('finalize:relaunch'),
+      quit: () => void log.push('finalize:quit'),
+    },
     coordinator: () => coordinator,
     log: message => log.push(message),
     logError: message => log.push(`error:${message}`),
@@ -328,6 +336,15 @@ describe('the shutdown sequence', () => {
     expect(log).not.toContain('finalize:quit');
   });
 
+  it('hands an update restart to the installer instead of quitting', async () => {
+    const { log, coordinator } = world();
+
+    expect(await coordinator.request('update')).toBe(true);
+
+    expect(log[log.length - 1]).toBe('finalize:install-update');
+    expect(log).not.toContain('finalize:quit');
+  });
+
   it('broadcasts each phase to open windows', async () => {
     const { sent, coordinator } = world({ sessions: [agent('a')] });
     await coordinator.request('quit');
@@ -342,14 +359,17 @@ describe('the shutdown sequence', () => {
   it('restarts through the coordinator only when the operator chooses Restart', async () => {
     const declined = world({ env: {}, dialogResponse: 0 });
     await declined.sequence.promptWindowManagementRestart();
-    expect(declined.log).not.toContain('finalize:restart');
+    expect(declined.log).not.toContain('finalize:relaunch');
 
     const accepted = world({ env: {}, dialogResponse: 1 });
     await accepted.sequence.promptWindowManagementRestart();
     expect(accepted.log[0]).toBe(
       '[shutdown] native dialog: window-management-restart'
     );
-    expect(accepted.log).toContain('finalize:restart');
+    expect(accepted.log.slice(-2)).toEqual([
+      'finalize:relaunch',
+      'finalize:quit',
+    ]);
   });
 });
 

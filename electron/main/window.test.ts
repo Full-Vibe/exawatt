@@ -232,6 +232,16 @@ describe('createMainWindowController', () => {
     expect(log).toEqual(['launch-screen', `workspace:${WORKSPACE}`]);
   });
 
+  it('offers a window as a dialog parent only while it is alive', () => {
+    const { controller, windows } = harness();
+    controller.open(WORKSPACE, appearance);
+    expect(controller.live()).toBe(windows[0]);
+
+    windows[0].destroyed = true;
+    expect(controller.current()).toBe(windows[0]);
+    expect(controller.live()).toBeNull();
+  });
+
   it('forgets a closed window', () => {
     const { controller, windows, log } = harness();
     controller.open(WORKSPACE, appearance);
@@ -240,6 +250,7 @@ describe('createMainWindowController', () => {
     windows[0].emit('closed');
 
     expect(controller.current()).toBeNull();
+    expect(controller.live()).toBeNull();
     expect(log).toEqual(['menu-reset', 'owner-lost:7']);
   });
 

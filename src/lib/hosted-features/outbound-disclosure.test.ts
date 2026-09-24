@@ -355,7 +355,8 @@ const OUTBOUND_CALL_SITES: Record<string, string | readonly string[] | null> = {
   'electron/main/consumption/claude-plan-account.ts':
     '## 7. Locally spawned agent harnesses',
   // Injects `electron.net.fetch` into the modules above; opens no destination.
-  'electron/main/main.ts': null,
+  // Bootstrap moved out of `main.ts` with the ENG-039 composition root.
+  'electron/main/command-surface.ts': null,
   'electron/main/pty/conversation-catalog.ts':
     '## 3. Hosted conversation summaries',
   // The compatible-service boundary constructs transport for five operation

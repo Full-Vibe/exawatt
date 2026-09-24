@@ -23,7 +23,7 @@ interface MenuCommandTarget {
   webContents: { send(channel: string, ...args: unknown[]): void };
 }
 
-export interface MenuControllerDependencies {
+interface MenuControllerDependencies {
   /** Read at every rebuild. */
   context: () => FixedMenuContext;
   /** Installs a template as the application menu. */
@@ -32,7 +32,7 @@ export interface MenuControllerDependencies {
   commandTarget: () => MenuCommandTarget | undefined;
 }
 
-export interface MenuController {
+interface MenuController {
   rebuild(): void;
   /** Disables every renderer-published command until it republishes. */
   resetAvailability(): void;
