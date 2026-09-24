@@ -2275,24 +2275,28 @@ and shell exclusions. [Execution contract](projects/daily-driver-adoption.md#202
 
 ### BUG-143 Spatial deep links leave unused bottom space
 
-Status: bug · ENG-004 · operator feedback 072c0009, promoted 2026-09-23.
+Status: done · ENG-004 · operator feedback 072c0009, promoted 2026-09-23.
 
-Restore full available viewport height on direct Spatial entry and resize.
+One route-owned viewport fills direct Spatial entry and resize; constrained
+inspectors and cramped-window scrolling keep controls reachable.
 [Report and acceptance](projects/spatial-operations-board.md#2026-09-23--spatial-deep-link-viewport-report-bug-143).
 
 ### BUG-144 Avatar Theme submenu is occluded
 
-Status: bug · ENG-032 · operator feedback 13591993, promoted 2026-09-23.
+Status: done · ENG-032 · operator feedback 13591993, promoted 2026-09-23.
 
-Keep the submenu visible and keyboard reachable through shared menu ownership.
+Shared popup portals and collision sizing keep nested menus visible, pointer
+reachable and keyboard operable; the chrome gate enforces the boundary.
 [Report and acceptance](projects/theming-and-visual-identity.md#2026-09-23--avatar-theme-submenu-occlusion-bug-144).
 
 ### BUG-145 A running Claude monitor is shown as requiring input
 
-Status: bug · ENG-023 · operator feedback b2b53b9b, promoted 2026-09-23.
+Status: done · ENG-023 · operator feedback b2b53b9b, promoted 2026-09-23.
 
-Correct false attention while preserving real approval/input requests. Richer
-mixed-state presentation remains deferred. [Evidence and acceptance](projects/delegation-visibility.md#2026-09-23--a-running-monitor-must-not-imply-input-required-bug-145).
+Source-reported non-Agent work shares activity truth across attention and
+Agent/Team/Fleet projections; real approval/input requests retain precedence.
+Quiet manual task stops refresh at the next source boundary or Session exit.
+Richer mixed-state presentation remains deferred. [Evidence and acceptance](projects/delegation-visibility.md#2026-09-23--a-running-monitor-must-not-imply-input-required-bug-145).
 
 ## Amendment chain
 
@@ -2300,6 +2304,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BUG-081 blanket silence expiry of reported work | BUG-145 source-census repair, 2026-09-23 | Silent non-Agent monitors/tools retain the source's last reported state until census replacement or Session exit. Silence cannot prove completion; existing foreground/delegated stale recovery remains for records without reported non-Agent work. |
 | FIX-018 proposed retained-terminal fallback | FIX-018 implementation safety review, 2026-09-20 | Raw terminal output can contain tool results, reasoning or credentials. Clone accepts only structurally filtered prose from the exact owned local Claude/Codex native conversation; unsupported, unavailable or corrupt context fails before launch without another user gesture. |
 | D46/D64 opening-task-only Clone handoff | FIX-018 operator acceptance, 2026-09-20 | Existing target selection captures current exact-Session context automatically; no extra clicks or review dialog. Clone remains a fresh Session without provider resume identity. |
 | Project freeze/wait-until-idle alternative | FIX-019 operator acceptance, 2026-09-20 | Use Pause: interrupt immediately after confirmation when work is active; blue default Cancel and explicit Pause now. Idle scope needs no dialog. Retain Session records and exact recovery. |
