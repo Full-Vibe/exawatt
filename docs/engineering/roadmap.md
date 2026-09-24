@@ -2332,6 +2332,24 @@ Status: bug · ENG-004 · operator product-feedback `1f51081a-6983-41a3-b713-57f
 
 Add a Fleet keyboard path that selects/follows an attention Agent with ⌘J, then opens that Session in Agent view on Enter. Reuse existing attention eligibility and Session handoff. [Report and execution notes](projects/spatial-operations-board.md#2026-09-24--spatial-attention-keyboard-request-bug-163).
 
+### BUG-195 Docs pushed straight to master skipped every landing check
+
+Status: done · ENG-022 · found 2026-09-23 when `0cbcb226` turned master's own roadmap red; resolved 2026-09-24.
+
+The in-place docs path in `/triage-feedback` and `/capture-conversation`
+commits to master without `agent:land`, so no landing check ran. `0cbcb226`
+added one blank line before `### BUG-163`; the public render carried a
+blank-line seam, recipe-renderers failed eight subtests, and every queued
+landing failed its rebase checks until `594df51c`. BUG-131 was the same path
+twice. Fix: `pnpm docs:check` runs the floor's docs checks on the working
+tree in about five seconds, and the versioned `.githooks/pre-push`, installed
+by `pnpm hooks:install` into the common git config and re-run by
+`worktree:setup`, refuses a docs push to origin's master that fails them.
+`agent:land` excuses only the SHA its floor verified. Proven against a local
+bare remote in `scripts/docs-check.test.mjs`. `--no-verify` and a machine
+without the hook still get through; only a server-side rule refuses those.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
