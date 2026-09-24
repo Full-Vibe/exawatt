@@ -1805,8 +1805,9 @@ Milestones:
   the remote surface's work stack; never derive work state from a context
   count. Exit: each dogfood coworker opens showing current work and automations
   from its source, stale and unavailable dim both, Demo passes the same contract.
-- H2.2 Grant a coworker a voice in one gesture — planned, shaped 2026-09-14;
-  NEEDS ONE OPERATOR DECISION before build. Today Exawatt asks for
+- H2.2 Grant a coworker a voice in one gesture — DECIDED 2026-09-24 and
+  folded into H2.4's per-server setup step (see H2.4 and the amendment chain);
+  the shaping below is the history of that decision. Today Exawatt asks for
   `operator.write` and the operator approves the pending device by hand on the
   server with the source's CLI, because Exawatt refuses to hold pairing or
   admin authority (H1 criterion; decision `0037` §4). For a server the operator
@@ -1836,10 +1837,16 @@ Milestones:
   for now, until we decide more clearly later" (⌘T inside a Project connects a
   remote coworker into that Project; ⌘N connects under Remote). The ⌘T entry
   overlaps ENG-016 D54, the New Agent flow design pass, and must be shaped
-  with it rather than beside it. Open: send access, H2.2's one-gesture
-  approval (the operator asked what send access means; answered 2026-09-23,
-  decision pending). The UI shape goes through `/hud-gallery` for operator
-  review before production.
+  with it rather than beside it. Send access, H2.2's one-gesture
+  approval, was decided on 2026-09-24 (below). The UI shape goes through
+  `/hud-gallery` for operator review before production.
+  Direction ACCEPTED 2026-09-24 ("I generally like the new UI direction for
+  remote connection and agent management") after review of the
+  `/hud-gallery/connect-flow` study. Send access DECIDED the same day: it is a
+  step in setting up each server, "one-click to run that command or let the
+  user copy and run it themselves". One approval covers every Agent on the
+  server. Execution is split into packets P1 to P5 in the project doc's H2.4
+  section; P3 amends decision `0037` §4 (amendment chain).
 - H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
   authorization pass for provisioning, credential custody, deletion, billing,
   and control-plane ownership before implementation begins.
@@ -2331,6 +2338,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ENG-010/ENG-033: Exawatt asks for send access and never grants it (decision `0037` §4; the H1 criterion that Exawatt never requests `operator.admin` or `operator.pairing`) | operator, 2026-09-24 | Send access is a step in setting up each server. One click has Exawatt run the approval of its OWN pending request over the operator's own SSH login; the alternative is copying that command and running it by hand, then Check again. Exawatt still holds no pairing or admin authority of its own and never approves a request it cannot prove is its own. |
 | BUG-081 blanket silence expiry of reported work | BUG-145 source-census repair, 2026-09-23 | Silent non-Agent monitors/tools retain the source's last reported state until census replacement or Session exit. Silence cannot prove completion; existing foreground/delegated stale recovery remains for records without reported non-Agent work. |
 | FIX-018 proposed retained-terminal fallback | FIX-018 implementation safety review, 2026-09-20 | Raw terminal output can contain tool results, reasoning or credentials. Clone accepts only structurally filtered prose from the exact owned local Claude/Codex native conversation; unsupported, unavailable or corrupt context fails before launch without another user gesture. |
 | D46/D64 opening-task-only Clone handoff | FIX-018 operator acceptance, 2026-09-20 | Existing target selection captures current exact-Session context automatically; no extra clicks or review dialog. Clone remains a fresh Session without provider resume identity. |

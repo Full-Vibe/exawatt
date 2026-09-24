@@ -175,3 +175,14 @@ Concurrency alone never creates a coworker. The exact Team/Fleet presentation
 remains reversible and must be tested with real multi-context OpenClaw activity.
 The operator confirmed this as the default on 2026-08-16, explicitly as a
 two-way door rather than a permanent ontology lock.
+
+## Amendment, 2026-09-24: send access is part of server setup
+
+§4 said Exawatt asks for command authority and cannot grant it. The operator
+amended that on 2026-09-24: send access is a step in setting up each server,
+"one-click to run that command or let the user copy and run it themselves".
+The one click runs the source's own approval command, for Exawatt's own
+pending request only, over the operator's own SSH login to that server. What
+does not change: Exawatt persists no pairing or admin credential, never
+approves a request it cannot prove is its own, and a source reached without an
+SSH identity keeps the ask-and-wait path. Execution is ENG-033 H2.4 P3.

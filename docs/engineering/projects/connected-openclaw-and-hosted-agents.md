@@ -546,6 +546,52 @@ expired-session operators (see BUG-150 and the workspace-honesty work).
 Prototype in `/hud-gallery` for operator review before production, per the
 design system.
 
+**Operator decisions, 2026-09-24.** The direction is accepted ("I generally
+like the new UI direction for remote connection and agent management"), and
+send access is decided: "that should be like a connection or setup flow to set
+up a particular server endpoint. It should be one-click to run that command or
+let the user copy and run it themselves." The operator also asked whether this
+is needed for every user or once for him: every user does it once per server
+per machine (a new Mac, or a detach and reconnect, pairs a new device).
+
+**Execution packets.** In dependency order; each lands through the normal
+queue with the connected-fleet gate.
+
+- **P1 Remote home.** One Exawatt-owned, folderless, renameable Project,
+  "Remote" for now, created on first need and used as ⌘N Connect's default.
+  Touches the Project registry, so it lands after the workspace-honesty work
+  on signed-in, signed-out, and expired-session registries, and must hold for
+  all three.
+- **P2 One-step Connect.** Filter with type-ahead; saved servers marked with
+  their Agents and a Manage link to Settings; picking a server tests it in
+  place; a failure stays on its row and saves nothing (persist a source only
+  after discovery succeeds, which retires BUG-157's release-on-switch); Agents
+  checked inline with rename; one Project choice for the batch; primary
+  "Connect N Agents"; skip the source step while OpenClaw is the only
+  connectable adapter; land on the Project with the new coworker marked; a
+  ⌘K row and a permanent Settings entry.
+- **P3 Send access as server setup.** One click runs `openclaw devices
+  approve <id>` for Exawatt's OWN pending request over the source's SSH
+  destination; the copy path shows the same exact command; Check again
+  completes both. Feasibility checked 2026-09-24 against OpenClaw's own
+  source (`src/infra/device-pairing.types.ts`, `src/cli/devices-cli.runtime.ts`
+  on main): every pending request carries `requestId`, `deviceId`, and
+  `publicKey`, and `devices list --json` writes the pairing list unchanged, so
+  Exawatt matches its own request by device id and public key and approves
+  only that one. Confirm the same shape on the operator's Gateway version
+  before shipping; if a Gateway's list does not identify the device, the
+  one-click path refuses rather than approving a guessed entry. Alias and
+  manual transports only; a shared-token source has no SSH identity to act
+  with.
+- **P4 ⌘T.** Connected coworkers become launch setups ("Send to Scout"; the
+  coworker joins the current Project), and "Connect a server into <Project>"
+  sits under More. The launcher is ENG-016 D54's surface and carries in-flight
+  readiness work, so this packet is shaped with D54 and coordinated with that
+  work before it starts.
+- **P5 UI eval.** Turn the audit harness (stand-in `ssh` plus
+  `ConnectedGatewayFixture`) into a Connect UI eval that measures clicks,
+  screens, and SSH logins, and gate P2 to P4 on it.
+
 **Evidence to keep.** The audit's walkthrough drove the real preload and IPC
 with a stand-in `ssh` on PATH forwarding to `ConnectedGatewayFixture`; it
 found BUG-155 and BUG-157, which no unit and no packaged gate had. H2.4 should
@@ -1619,3 +1665,13 @@ app against the fixed tree. Check again said "Not approved yet" before the
 server approved and opened the composer after; Cancel on the connected server
 left 1 source and 2 mappings; the dead server was dialed once, before the
 switch, and never after.
+
+### 2026-09-24 — direction accepted, send access decided
+
+The operator reviewed the `/hud-gallery/connect-flow` study and accepted the
+direction. He decided send access as a per-server setup step with two paths,
+one click or copy-and-run, which amends decision `0037` §4: Exawatt may run
+the approval of its own pending request through the operator's own SSH login,
+on an explicit gesture. It still holds no pairing or admin authority of its
+own. The study was revised to show that step, and H2.4 is split into packets
+P1 to P5 above.
