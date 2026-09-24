@@ -320,9 +320,11 @@ test('a gated surface owes its gate', () => {
     'src/components/workspace/tab-strip.tsx',
     'docs/engineering/roadmap.md',
   ]);
+  // BUG-161: the ribbon owes its bench AND the Project/Agent eval, which
+  // drives Project selection and tab close through the same strip.
   assert.deepEqual(
     missing.map(entry => entry.gate),
-    ['eval:workspace:ribbon:bench']
+    ['eval:workspace:ribbon:bench', 'eval:electron:project-agent']
   );
   assert.deepEqual(missing[0].paths, [
     'src/components/workspace/tab-strip.tsx',
@@ -347,7 +349,7 @@ test('declaring the gate through --verify satisfies it', () => {
   assert.deepEqual(
     missingSurfaceGates(
       ['src/components/workspace/tab-strip.tsx'],
-      ['eval:workspace:ribbon:bench']
+      ['eval:workspace:ribbon:bench', 'eval:electron:project-agent']
     ),
     []
   );
@@ -462,6 +464,7 @@ test('several gated surfaces in one change owe each gate once', () => {
   assert.deepEqual(missing.map(entry => entry.gate).sort(), [
     'eval:electron:idempotency',
     'eval:electron:lifecycle',
+    'eval:electron:project-agent',
     'eval:workspace:launcher',
     'eval:workspace:ribbon:bench',
   ]);

@@ -342,6 +342,47 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
   });
 }
 
+/**
+ * The app every eval body receives: Playwright's own, except that
+ * `app.evaluate` cannot lose its result to a garbage collection (BUG-175).
+ *
+ * V8's inspector awaits every main-process evaluate through a promise it holds
+ * only WEAKLY. A callback that returns a plain value gets a synthesised
+ * `Promise.resolve(value)` that nothing else references, and Electron's main
+ * process drains microtasks only at Node's explicit checkpoints. A collection
+ * that lands between the call and the next checkpoint takes that promise, V8
+ * answers `Promise was collected`, and Playwright rewrites every such protocol
+ * error to "Execution context was destroyed, most likely because of a
+ * navigation" — with no navigation anywhere. The spine gate failed that way
+ * two runs in ten, both times on the menu read right after main rebuilt the
+ * menu, which is the allocation most likely to bring the collection on.
+ *
+ * An async callback's promise is retained by the microtask that resumes it,
+ * so the fix is to make every callback async: the caller's function is sent
+ * as source and evaluated in main's global scope, exactly as Playwright's own
+ * utility script does, inside an async wrapper. A probe that forced a
+ * collection into that window lost 31 of 100 plain-value results and none of
+ * 100 async ones. Wrapping here, once, covers every eval without asking each
+ * call site to remember a rule nothing else would enforce.
+ */
+function anchorMainEvaluate(app) {
+  const evaluate = (fn, arg) =>
+    typeof fn === 'function'
+      ? app.evaluate(
+          async (electron, call) =>
+            (0, eval)(`(${call.source})`)(electron, call.arg),
+          { source: fn.toString(), arg }
+        )
+      : app.evaluate(fn, arg);
+  return new Proxy(app, {
+    get(target, property) {
+      if (property === 'evaluate') return evaluate;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 function resetThrowawayUserData(userData) {
   if (!userData) return;
   const temp = realpathOrSelf(tmpdir());
@@ -422,7 +463,7 @@ async function runElectronAttempt({
 
   try {
     const page = await app.firstWindow({ timeout: firstWindowMs });
-    return await body(app, page);
+    return await body(anchorMainEvaluate(app), page);
   } finally {
     await shutdown();
     process.off('SIGINT', onSignal);

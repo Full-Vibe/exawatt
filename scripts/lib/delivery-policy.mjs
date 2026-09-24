@@ -299,10 +299,20 @@ export const SURFACE_GATES = [
     // `scripts/lib/electron-eval.mjs` is here for the same reason one layer
     // down: it is now the single owner of how an eval drives this surface, so
     // changing it must run something that uses it.
+    //
+    // BUG-161: the script also drives the Project ribbon — selecting Projects
+    // by their chips, closing tabs by their Close controls, the dormant tail —
+    // and `tab-strip.tsx` owns all of it. FIX-015 made a click on the ACTIVE
+    // Project's chip toggle compact icons, which have no Close control; the
+    // script's select-by-click became a collapse, and the gate went red on
+    // master with nothing routed to notice. The script itself joins for the
+    // reason the spine gate names its own.
     match: file =>
       file === 'src/components/workspace/launch-controls.tsx' ||
+      file === 'src/components/workspace/tab-strip.tsx' ||
       file === 'scripts/lib/electron-eval.mjs' ||
-      file === 'scripts/lib/harness-probe-fixture.mjs',
+      file === 'scripts/lib/harness-probe-fixture.mjs' ||
+      file === 'scripts/electron-project-agent-launcher-eval.mjs',
   },
   {
     gate: 'eval:roadmap:rail',

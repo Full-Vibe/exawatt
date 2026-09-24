@@ -224,6 +224,20 @@ async function waitForBuffer(page, sessionId, fragment) {
   );
 }
 
+/** Stand in a Project through its ribbon chip. A chip click selects only an
+ *  INACTIVE Project; on the active one it toggles Agent titles and compact
+ *  icons (FIX-015, operator-accepted 2026-09-17), and a compact Project's tabs
+ *  render no Close control. So a select is idempotent, never a bare click. */
+async function selectProject(page, name) {
+  const chip = page.locator(`[data-project="${name}"] [data-project-chrome]`);
+  if ((await chip.getAttribute('aria-current')) !== 'true') await chip.click();
+  await page
+    .locator(
+      `[data-project="${name}"] [data-project-chrome][aria-current="true"]`
+    )
+    .waitFor();
+}
+
 function launcherAxis(page, id) {
   return page.locator(`[data-detail-axis="${id}"] [data-option-menu-trigger]`);
 }
@@ -1345,9 +1359,12 @@ try {
         'importing Projects starts no process',
         (await sessions(page)).length === 0
       );
-      const bravoProject = page.locator('[data-project="bravo"]');
-      await bravoProject.waitFor();
-      await bravoProject.locator('[data-project-chrome]').click();
+      // Import already stands the operator in the first imported Project, so
+      // bravo is the ACTIVE Project here. Selecting it must not be a bare chip
+      // click: that collapses it to compact icons, whose tabs have no Close
+      // control, and the step below then timed out on a missing button
+      // (BUG-161).
+      await selectProject(page, 'bravo');
       await page.locator('[data-agent-composer]').waitFor();
       await page
         .getByRole('button', { name: 'All engines and models' })
