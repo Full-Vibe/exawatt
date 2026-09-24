@@ -87,13 +87,6 @@ export function heroSourceLabel(adapterId: string): string {
   );
 }
 
-export function heroSourceColor(adapterId: string): string {
-  return (
-    AGENT_SOURCE_DECLARATIONS.find(entry => entry.adapterId === adapterId)
-      ?.color ?? '#8B8B8B'
-  );
-}
-
 export function buildHeroBoardCapture(): HeroBoardCapture {
   const state = demoWorkspaceFleetState();
   // The harness that runs each Agent is fixture data on the DEMO agent, not on
@@ -232,7 +225,6 @@ export function buildHeroBoardCapture(): HeroBoardCapture {
     sources: sourceIds.map(adapterId => ({
       adapterId,
       label: heroSourceLabel(adapterId),
-      color: heroSourceColor(adapterId),
     })),
     // `burnIntensity` is already normalized against the hottest reporting
     // Agent, so the ceiling is 1 by construction. Carried anyway, because a

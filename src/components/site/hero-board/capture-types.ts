@@ -74,17 +74,17 @@ export interface HeroBoardDelegation {
   overflow: number;
 }
 
-/** One harness on the board: what the launcher calls it, in its own colour,
- *  under its own declared id (ENG-031 W10).
+/** One harness on the board: what the launcher calls it, under its own
+ *  declared id (ENG-031 W10).
  *
  *  `adapterId` is `contracts/agent-sources.json`'s own key, carried here so
  *  the identity card and the lens legend can draw the harness's BRAND MARK
  *  without matching on a display label. A label is copy and may be rewritten;
- *  an adapter id is the launcher's contract. */
+ *  an adapter id is the launcher's contract. Its colour is not carried: the
+ *  lens reads it from the same declaration by this id (BUG-208). */
 export interface HeroBoardSource {
   adapterId: string;
   label: string;
-  color: string;
 }
 
 export interface HeroBoardZone {
@@ -125,11 +125,13 @@ export interface HeroBoardCapture {
    * is how vendor neutrality proves itself instead of being asserted: every
    * mark on the board is already running under one of these.
    *
-   * The COLOUR travels in the capture rather than being resolved at render
-   * time, because it comes from `contracts/agent-sources.json` through the
-   * launcher's own declarations and the resolver that reads them also reaches
-   * the demo fixture. Nothing in `capture-source.ts` may enter the browser
-   * bundle.
+   * The COLOUR does not travel in the capture (BUG-208). It used to, as a
+   * frozen copy of each harness's declared brand colour, which made the
+   * capture a second home for five values that `contracts/agent-sources.json`
+   * already owns and gave the theme-literal ratchet five raw colours to count.
+   * The lens resolves it at render time from the generated declarations by
+   * `adapterId`, which reaches no demo fixture, so nothing in
+   * `capture-source.ts` has to enter the browser bundle to do it.
    */
   sources: HeroBoardSource[];
   /** The highest per-Agent burn in the capture, so a lens can normalize

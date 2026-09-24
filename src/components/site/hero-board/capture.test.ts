@@ -2,8 +2,11 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { POPULATION_STATUS_ORDER } from '@/components/fleet/spatial/operations-board/population-dots';
+import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
+import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
 import { buildHeroBoardCapture } from './capture-source';
 import { HERO_STATUS_ORDER } from './capture-types';
+import { resolveHeroLens } from './hero-board-lens';
 
 const CAPTURE_PATH = join(import.meta.dirname, 'capture.ts');
 
@@ -75,10 +78,15 @@ describe('hero board capture', () => {
     expect(capture.sources.length).toBeGreaterThan(1);
     for (const source of capture.sources) {
       expect(source.label).toBeTruthy();
-      // The harness colour is the LAUNCHER's own, from
-      // `contracts/agent-sources.json`. A missing one would silently paint a
-      // whole harness in the fallback grey.
-      expect(source.color, source.label).toMatch(/^#[0-9a-fA-F]{6}$/u);
+      // The lens colours a harness by the LAUNCHER's own declaration, found
+      // by this id (BUG-208). An id the launcher does not declare would
+      // silently paint a whole harness in the muted fallback.
+      expect(
+        AGENT_SOURCE_DECLARATIONS.some(
+          entry => entry.adapterId === source.adapterId
+        ),
+        source.label
+      ).toBe(true);
     }
     for (const unit of capture.units) {
       expect(capture.sources[unit.source], unit.name).toBeTruthy();
@@ -191,5 +199,33 @@ describe('hero board capture', () => {
       expect(zone.label.trim().length).toBeGreaterThan(0);
       expect(zone.needsYou).toBeLessThanOrEqual(zone.agentCount);
     }
+  });
+});
+
+describe('the source lens', () => {
+  // BUG-208: the capture no longer carries harness colours; the lens reads
+  // each from the launcher's declaration, so the hero and `⌘T` cannot differ.
+  const theme = { unitMuted: 'muted' } as unknown as SpatialThemeSnapshot;
+
+  it('paints each harness in its declared colour', () => {
+    const lens = resolveHeroLens(buildHeroBoardCapture(), 'source', theme);
+    expect(lens.legend.length).toBeGreaterThan(1);
+    for (const channel of lens.legend) {
+      expect(channel.color, channel.label).toBe(
+        AGENT_SOURCE_DECLARATIONS.find(
+          entry => entry.adapterId === channel.adapterId
+        )?.color
+      );
+    }
+  });
+
+  it('lets a harness the launcher no longer declares recede instead of inventing a colour', () => {
+    const capture = {
+      ...buildHeroBoardCapture(),
+      sources: [{ adapterId: 'retired-harness', label: 'Retired' }],
+    };
+    expect(resolveHeroLens(capture, 'source', theme).legend[0]?.color).toBe(
+      'muted'
+    );
   });
 });

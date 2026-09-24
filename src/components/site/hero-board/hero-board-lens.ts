@@ -51,6 +51,7 @@ import {
   type SpatialThemeSnapshot,
 } from '@/components/fleet/spatial/spatial-theme';
 import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
+import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
 import type { HeroBoardCapture } from './capture-types';
 import { HERO_STATUS_ORDER } from './capture-types';
 
@@ -134,17 +135,27 @@ export function resolveHeroLens(
         capture.units[index]!.source
       );
     }
-    const colors = capture.sources.map(source => source.color);
+    // The harness's own declared colour, the one `⌘T` paints it in. A
+    // capture naming a harness the launcher no longer declares recedes into
+    // the muted unit paint rather than inventing a colour for it.
+    const colors = capture.sources.map(
+      source =>
+        AGENT_SOURCE_DECLARATIONS.find(
+          entry => entry.adapterId === source.adapterId
+        )?.color ?? theme.unitMuted
+    );
     return {
       id,
       active: true,
       channel,
       colors: padded(colors, theme.unitMuted),
-      legend: capture.sources.slice(0, HERO_LENS_CHANNELS).map(source => ({
-        label: source.label,
-        color: source.color,
-        adapterId: source.adapterId,
-      })),
+      legend: capture.sources
+        .slice(0, HERO_LENS_CHANNELS)
+        .map((source, index) => ({
+          label: source.label,
+          color: colors[index]!,
+          adapterId: source.adapterId,
+        })),
       legendKind: 'categorical',
       caption: 'Every mark, coloured by the harness running it.',
     };

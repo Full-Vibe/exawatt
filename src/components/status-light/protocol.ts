@@ -83,12 +83,19 @@ export function isUnreported(reading: StatusLightReading): boolean {
   return reading === 'unreported';
 }
 
+/**
+ * The unlit register's paint, held once because two readings wear it: `off`,
+ * and `unreported`, which shares it on purpose (see below). A second copy
+ * of the same two values was a second place for the lamp's unlit colour to
+ * drift, and the theme-literal ratchet counted it as new paint (BUG-208).
+ */
+const UNLIT_PAINT = { color: '#DCE5ED', sourceColor: '#FFFFFF' } as const;
+
 export const STATUS_LIGHT_META = {
   off: {
     label: 'Idle',
     protocolLabel: 'Off',
-    color: '#DCE5ED',
-    sourceColor: '#FFFFFF',
+    ...UNLIT_PAINT,
     description: 'Available, new, or quietly waiting.',
     priority: 0,
   },
@@ -135,8 +142,7 @@ export const STATUS_LIGHT_META = {
   unreported: {
     label: 'Not reported',
     protocolLabel: 'Unreported',
-    color: '#DCE5ED',
-    sourceColor: '#FFFFFF',
+    ...UNLIT_PAINT,
     description: 'The source has not reported a work state for this Agent.',
     priority: 0,
   },

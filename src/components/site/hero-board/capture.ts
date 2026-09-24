@@ -240,7 +240,7 @@ export const HERO_BOARD_CAPTURE: HeroBoardCapture = {
   source: {"workspace":"Voltaic Grid Systems","demo":true,"synthetic":true,"stamp":"Demo Workspace · synthetic scale tier"},
   bounds: {"x":-49.05,"y":-51.784,"width":97.62,"height":105.218},
   counts: {"agents":173,"projects":10,"units":173,"needsYou":25,"delegating":16,"delegated":23},
-  sources: [{"adapterId":"claude","label":"Claude Code","color":"#DD896F"},{"adapterId":"codex","label":"Codex","color":"#ECECEC"},{"adapterId":"opencode","label":"OpenCode","color":"#FAB283"},{"adapterId":"grok","label":"Grok Build","color":"#B79CE8"},{"adapterId":"openclaw","label":"OpenClaw","color":"#8BB9ED"}],
+  sources: [{"adapterId":"claude","label":"Claude Code"},{"adapterId":"codex","label":"Codex"},{"adapterId":"opencode","label":"OpenCode"},{"adapterId":"grok","label":"Grok Build"},{"adapterId":"openclaw","label":"OpenClaw"}],
   burnMax: 1,
   zones: ZONES,
   units: UNITS,

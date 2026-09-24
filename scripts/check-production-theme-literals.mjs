@@ -18,8 +18,9 @@ const NON_PRODUCTION_PREFIXES = [
  * `/hud-gallery` studies and specimens, and derivation rigs that run only in
  * tests. `hero-board/capture-source.ts` is the second kind — it is the hero
  * capture's DERIVATION, imported by `capture.test.ts` alone and documented as
- * never entering the browser bundle; its frozen output `capture.ts` is the
- * production artifact and is capped as an exception below instead (BUG-058).
+ * never entering the browser bundle (BUG-058). Its frozen output `capture.ts`
+ * ships and carries no colour at all since BUG-208: the lens reads each
+ * harness's colour from its declaration by id.
  */
 const NON_PRODUCTION_FILES = new Set([
   'src/components/hud/board-tile-study.tsx',
@@ -105,11 +106,6 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
   'src/components/workspace/project-colors.ts': {
     max: 10,
     reason: 'persisted Project identity palette',
-  },
-  'src/components/site/hero-board/capture.ts': {
-    max: 2,
-    reason:
-      'frozen hero capture: third-party Agent Source brand colours carried as data from the generated declarations',
   },
   'src/components/workspace/source-identity-mark.tsx': {
     max: 2,

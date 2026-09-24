@@ -60,6 +60,7 @@ import {
   useLatestRequest,
   type RequestTicket,
 } from '@/hooks/use-latest-request';
+import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import { OpenClawIcon } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
@@ -93,8 +94,9 @@ import {
   type ServerRow,
 } from './connect-source-model';
 
-/** OpenClaw's brand color, from `contracts/agent-sources.json`. */
-const OPENCLAW_COLOR = '#8BB9ED';
+/** OpenClaw's brand color, read from its declaration in
+ *  `contracts/agent-sources.json` rather than copied out of it (BUG-208). */
+const OPENCLAW_COLOR = agentSourceDeclaration('openclaw').color;
 
 export interface ConnectProjectOption {
   /** Opaque durable Project identity, never inferred from the display name. */
