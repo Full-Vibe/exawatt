@@ -25,6 +25,7 @@
 import {
   RemoteAgentSurface,
   type RemoteAgentBridge,
+  type WriteAccessAnswer,
 } from './remote-agent-surface';
 import {
   REMOTE_MISSING_COPY,
@@ -49,7 +50,9 @@ export interface RemoteAgentPaneProps {
   onActivate?: () => void;
   /** Injected in tests and previews; defaults to the Electron bridge. */
   bridge?: RemoteAgentBridge | null;
-  onRequestWriteAccess?: (sourceId: string) => void;
+  onRequestWriteAccess?: (
+    sourceId: string
+  ) => void | Promise<WriteAccessAnswer | null>;
   onReconnect?: (sourceId: string) => void;
 }
 

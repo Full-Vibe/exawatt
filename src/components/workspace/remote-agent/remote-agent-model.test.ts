@@ -19,6 +19,7 @@ import {
   SEND_REFUSALS,
   SEND_REFUSAL_COPY,
   WRITE_AUTHORITY_COPY,
+  APPROVE_SEND_ACCESS_COMMANDS,
   WRITE_AUTHORITY_STATES,
   applyConversationUpdate,
   boundTurns,
@@ -353,18 +354,31 @@ describe('honest composer states', () => {
     expect(view.composer.action).toBe(null);
   });
 
-  it('treats an approval waiting on the source as a waiting state', () => {
+  it('gives a pending request a way to complete (BUG-156)', () => {
     const view = describeRemoteAgent(
-      input({ authority: 'approval-pending', canRequestWriteAccess: true })
+      input({
+        authority: 'approval-pending',
+        canRequestWriteAccess: true,
+        sourceName: 'openclaw-a',
+      })
     );
     if (view.composer.kind !== 'withheld') throw new Error('unreachable');
     expect(view.composer.reason).toBe('write-access-awaiting-approval');
-    expect(view.composer.headline).toBe('Send access requested');
-    expect(view.composer.detail).toBe(
-      'Approve it on the machine that runs this Agent to finish.'
-    );
-    // Requesting again is not the next step; approving on the source is.
+    // The request stays pending until Exawatt asks again, so asking again is
+    // the step that completes it once the server has approved. A pending
+    // state with no action was a dead end that only a relaunch cleared.
+    expect(view.composer.action?.id).toBe('request-send-access');
+    // Access is granted per server, so the step names the server.
+    expect(view.composer.detail).toContain('openclaw-a');
+    // Finishing happens on the server; the pane says exactly what to run.
+    expect(view.composer.commands).toEqual(APPROVE_SEND_ACCESS_COMMANDS);
+  });
+
+  it('offers no way to ask again when the host cannot carry a request', () => {
+    const view = describeRemoteAgent(input({ authority: 'approval-pending' }));
+    if (view.composer.kind !== 'withheld') throw new Error('unreachable');
     expect(view.composer.action).toBe(null);
+    expect(view.composer.commands).toEqual(APPROVE_SEND_ACCESS_COMMANDS);
   });
 
   it('offers Reconnect when this device’s access has not been read', () => {

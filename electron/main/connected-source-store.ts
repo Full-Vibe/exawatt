@@ -172,7 +172,17 @@ export interface AddConnectedSourceInput {
 }
 
 export type AddConnectedSourceResult =
-  | { ok: true; record: ConnectedSourceRecord }
+  | {
+      ok: true;
+      record: ConnectedSourceRecord;
+      /**
+       * False when the server was already saved and the existing record came
+       * back. A caller that did not create a record must never release it:
+       * the Connect flow treated a returned record as its own draft and
+       * detached a working server on Cancel (BUG-155).
+       */
+      created: boolean;
+    }
   | { ok: false; issues: readonly string[] };
 
 export type DeviceCredentialWriteResult =
@@ -329,7 +339,7 @@ export class ConnectedSourceStore {
           )
         );
       }
-      return { ok: true, record: reused.record };
+      return { ok: true, record: reused.record, created: false };
     }
 
     if (existing.length >= MAX_SOURCES) {
@@ -351,7 +361,7 @@ export class ConnectedSourceStore {
     const parsed = parseConnectedSourceRecord(candidate);
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
     this.persist([...existing, parsed.record]);
-    return { ok: true, record: parsed.record };
+    return { ok: true, record: parsed.record, created: true };
   }
 
   rename(id: string, displayName: string): boolean {

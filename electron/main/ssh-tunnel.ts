@@ -165,9 +165,9 @@ const FAILURE_MESSAGES: Record<SshTunnelFailureClass, string> = {
  */
 const SPECIFIC_MESSAGES = {
   address_unresolved:
-    'That server address could not be found. Check the hostname or IP address you entered for the server.',
+    'That server address could not be found. Check the server’s hostname or IP address.',
   ssh_port_silent:
-    'Nothing answered on that SSH port. Check the SSH port you entered, and that the server is online.',
+    'Nothing answered on the server’s SSH port. Check that the server is online and that its SSH port is right.',
   identity_file_refused:
     'That key file was refused. Check that it is the private key for this login and that only you can read it.',
   host_key_changed:

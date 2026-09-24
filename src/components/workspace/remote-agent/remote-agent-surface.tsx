@@ -30,9 +30,11 @@ import {
   type ComponentType,
 } from 'react';
 import {
+  Check,
   ChevronRight,
   Clock,
   Cloud,
+  Copy,
   Monitor,
   RefreshCw,
   Send,
@@ -473,6 +475,12 @@ function WorkStackSection({
 /* The surface                                                                */
 /* -------------------------------------------------------------------------- */
 
+/** The source's answer to a send-access request, as far as the pane needs it. */
+export interface WriteAccessAnswer {
+  outcome: 'granted' | 'approval-required' | 'refused' | 'unchanged';
+  message: string;
+}
+
 export interface RemoteAgentSurfaceProps {
   agent: {
     id: string;
@@ -492,8 +500,12 @@ export interface RemoteAgentSurfaceProps {
   viewing?: { contextId: string; title: string } | null;
   /** Defaults to the Electron bridge; injected in tests and previews. */
   bridge?: RemoteAgentBridge | null;
-  /** Carries a send-access request to the source, when the host can. */
-  onRequestWriteAccess?: () => void;
+  /**
+   * Carries a send-access request to the source, when the host can. A host
+   * that returns the source's answer lets the pane say what a check found
+   * instead of looking as if the button did nothing (BUG-156).
+   */
+  onRequestWriteAccess?: () => void | Promise<WriteAccessAnswer | null>;
   /** Repairs observation. Never touches the remote Agent's work. */
   onReconnect?: () => void;
 }
@@ -530,6 +542,11 @@ export function RemoteAgentSurface({
   > | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const composerId = useId();
+  /** A send-access check in flight, and what the last one found. */
+  const [checkingAccess, setCheckingAccess] = useState(false);
+  const [accessNote, setAccessNote] = useState<string | null>(null);
+  const [copiedCommands, setCopiedCommands] = useState(false);
+  const commandsRef = useRef<HTMLPreElement>(null);
   /** The end of the transcript, scrolled to when a conversation opens. */
   const endRef = useRef<HTMLLIElement>(null);
   /** Which conversation the surface has already landed the operator in. */
@@ -562,7 +579,12 @@ export function RemoteAgentSurface({
           }
         : current.kind === 'absent'
           ? current
-          : { kind: 'unread', contextId: null, turns: [], olderAvailable: false };
+          : {
+              kind: 'unread',
+              contextId: null,
+              turns: [],
+              olderAvailable: false,
+            };
     let reply: ConversationReply;
     try {
       reply = await api.conversation(agent.id);
@@ -662,10 +684,12 @@ export function RemoteAgentSurface({
         viewing,
         canRequestWriteAccess: Boolean(onRequestWriteAccess),
         canReconnect: Boolean(onReconnect),
+        sourceName: agent.sourceName,
       }),
     [
       agent.id,
       agent.name,
+      agent.sourceName,
       authority,
       connection,
       load,
@@ -769,6 +793,43 @@ export function RemoteAgentSurface({
     if (typeof end?.scrollIntoView !== 'function') return;
     end.scrollIntoView({ block: 'end', behavior: 'auto' });
   }, [openedContextId]);
+
+  /**
+   * Ask the source for send access, or ask again once the server approved.
+   * A check that finds the request still waiting says so; a pane that stayed
+   * silent read as a button that did nothing.
+   */
+  const checkWriteAccess = useCallback(
+    async (reason: string) => {
+      if (!onRequestWriteAccess) return;
+      const wasPending = reason === 'write-access-awaiting-approval';
+      setCheckingAccess(true);
+      let answer: WriteAccessAnswer | null = null;
+      try {
+        answer = (await onRequestWriteAccess()) ?? null;
+      } catch {
+        answer = null;
+      } finally {
+        setCheckingAccess(false);
+      }
+      if (!wasPending || answer === null) {
+        setAccessNote(null);
+        return;
+      }
+      const at = new Date().toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+      setAccessNote(
+        answer.outcome === 'approval-required'
+          ? `Not approved yet · checked ${at}`
+          : answer.outcome === 'refused'
+            ? answer.message
+            : null
+      );
+    },
+    [onRequestWriteAccess]
+  );
 
   const { frontDoor, composer, freshness, sections, subordinateOpen } =
     presentation;
@@ -1022,20 +1083,78 @@ export function RemoteAgentSurface({
               {composer.detail}
             </p>
           ) : null}
+          {composer.commands ? (
+            <div className="flex w-full min-w-0 items-start gap-2">
+              <pre
+                className="min-w-0 flex-1 overflow-x-auto rounded border px-2.5 py-2 font-mono text-chrome-meta"
+                data-approve-commands
+                ref={commandsRef}
+                style={{
+                  borderColor: withThemeAlpha(HUD.textDim, 0.22),
+                  color: HUD.text,
+                }}
+              >
+                {composer.commands.join('\n')}
+              </pre>
+              <QuietButton
+                aria-label="Copy commands"
+                data-copy-commands
+                onClick={() => {
+                  const text = composer.commands?.join('\n') ?? '';
+                  const select = () => {
+                    const node = commandsRef.current;
+                    const selection = window.getSelection();
+                    if (!node || !selection) return;
+                    const range = document.createRange();
+                    range.selectNodeContents(node);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                  };
+                  try {
+                    void navigator.clipboard
+                      .writeText(text)
+                      .then(() => setCopiedCommands(true))
+                      .catch(select);
+                  } catch {
+                    select();
+                  }
+                }}
+              >
+                {copiedCommands ? <Check size={12} /> : <Copy size={12} />}
+                {copiedCommands ? 'Copied' : 'Copy'}
+              </QuietButton>
+            </div>
+          ) : null}
           {composer.action ? (
             <QuietButton
               data-composer-action={composer.action.id}
+              disabled={
+                composer.action.id === 'request-send-access' && checkingAccess
+              }
               emphasis="standard"
               onClick={
                 composer.action.id === 'request-send-access'
-                  ? onRequestWriteAccess
+                  ? () => void checkWriteAccess(composer.reason)
                   : composer.action.id === 'reconnect'
                     ? onReconnect
                     : () => void readConversation()
               }
             >
-              {composer.action.label}
+              {composer.action.id === 'request-send-access' && checkingAccess
+                ? 'Checking'
+                : composer.action.label}
             </QuietButton>
+          ) : null}
+          {accessNote &&
+          composer.reason === 'write-access-awaiting-approval' ? (
+            <p
+              className="text-chrome-meta"
+              data-access-note
+              role="status"
+              style={{ color: HUD.textDim }}
+            >
+              {accessNote}
+            </p>
           ) : null}
         </div>
       )}

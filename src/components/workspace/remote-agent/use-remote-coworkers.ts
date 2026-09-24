@@ -21,6 +21,7 @@ import {
   type RemoteCoworkerTile,
   type RemoteRoster,
 } from './remote-agent-roster';
+import type { WriteAccessAnswer } from './remote-agent-surface';
 
 function connectedSourcesApi() {
   if (typeof window === 'undefined') return null;
@@ -93,15 +94,20 @@ export function useRemoteCoworkers(enabled = true): RemoteCoworkers {
   }, [enabled, read]);
 
   const requestWriteAccess = useCallback(
-    (sourceId: string) => {
+    async (sourceId: string): Promise<WriteAccessAnswer | null> => {
       const api = connectedSourcesApi();
-      if (!api?.requestCommandAuthority) return;
+      if (!api?.requestCommandAuthority) return null;
       // The answer is the source's, including `approval-required`, so the
-      // roster is re-read rather than the outcome being assumed here.
-      void api
-        .requestCommandAuthority(sourceId)
-        .then(() => read())
-        .catch(() => undefined);
+      // roster is re-read rather than the outcome being assumed here. The
+      // answer also goes back to the pane, which says what a check found
+      // (BUG-156).
+      try {
+        const answer = await api.requestCommandAuthority(sourceId);
+        await read();
+        return { outcome: answer.outcome, message: answer.message };
+      } catch {
+        return null;
+      }
     },
     [read]
   );

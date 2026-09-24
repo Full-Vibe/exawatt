@@ -24,6 +24,7 @@ import type {
   SendReply,
 } from './remote-agent-surface';
 import {
+  APPROVE_SEND_ACCESS_COMMANDS,
   CONVERSATION_UNREAD_COPY,
   EMPTY_CONVERSATION_NOTE,
   NO_CONVERSATION_NOTE,
@@ -335,23 +336,35 @@ describe('the composer', () => {
     expect(request).toHaveBeenCalled();
   });
 
-  it('is absent, and says what completes it, while approval waits on the source', async () => {
+  it('gives a pending request a way to complete, and says what a check found (BUG-156)', async () => {
+    const check = vi.fn(async () => ({
+      outcome: 'approval-required' as const,
+      message: 'Approve the device on the source.',
+    }));
     const { container } = await renderSurface({
       authority: 'approval-pending',
-      onRequestWriteAccess: vi.fn(),
+      onRequestWriteAccess: check,
     });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(container.querySelector('[data-composer-withheld]')).toHaveAttribute(
       'data-composer-withheld',
       'write-access-awaiting-approval'
     );
-    expect(screen.getByText('Send access requested')).toBeInTheDocument();
+    // What to run on the server is on screen, not left to memory.
     expect(
-      screen.getByText(
-        'Approve it on the machine that runs this Agent to finish.'
-      )
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Request send access')).not.toBeInTheDocument();
+      container.querySelector('[data-approve-commands]')?.textContent
+    ).toBe(APPROVE_SEND_ACCESS_COMMANDS.join('\n'));
+    // Asking again is how a pending request completes once the server approved.
+    const action = container.querySelector(
+      '[data-composer-action="request-send-access"]'
+    );
+    expect(action).not.toBeNull();
+    fireEvent.click(action as Element);
+    await waitFor(() => expect(check).toHaveBeenCalledTimes(1));
+    // A check that finds the request still waiting says so.
+    await waitFor(() =>
+      expect(container.querySelector('[data-access-note]')).not.toBeNull()
+    );
   });
 
   it('is absent, and offers Reconnect, when access has not been read', async () => {

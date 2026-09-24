@@ -124,8 +124,12 @@ describe('Connect → mapping → roster → Team → Agent', () => {
       connection: CONNECTION,
     }));
 
+    // Stateful like main: nothing is saved until Connect adds it. A list that
+    // reported the source before it existed described a state the app cannot
+    // reach, and the server list now marks saved servers as connected.
+    let saved = false;
     const connectedSources = {
-      list: vi.fn(async () => [SOURCE]),
+      list: vi.fn(async () => (saved ? [SOURCE] : [])),
       sshAliases: vi.fn(async () => ({
         aliases: [
           {
@@ -138,7 +142,11 @@ describe('Connect → mapping → roster → Team → Agent', () => {
         configPresent: true,
         incompleteIncludes: false,
       })),
-      add: vi.fn(async () => ({ ok: true as const, source: SOURCE })),
+      add: vi.fn(async () => {
+        const created = !saved;
+        saved = true;
+        return { ok: true as const, source: SOURCE, created };
+      }),
       connect: vi.fn(async () => ({
         ok: true as const,
         sourceId: SOURCE.id,

@@ -187,6 +187,13 @@ export type ConnectStep =
   | {
       kind: 'choose-server';
       aliases: readonly SshHostAlias[];
+      /**
+       * Aliases that already have a saved source. They are shown as
+       * Connected and cannot start a second connect: re-running the flow on a
+       * saved server adopted its record, and Cancel then detached it
+       * (BUG-155).
+       */
+      connectedAliases: readonly string[];
       configPresent: boolean;
       incompleteIncludes: boolean;
       manual: boolean;
@@ -235,6 +242,11 @@ export interface ConnectFlowState {
   pendingSourceId: string | null;
   /** The server that record points at, so a retry reuses it. */
   pendingAlias: string | null;
+  /**
+   * True only when this flow created the pending record. Leaving releases a
+   * record the flow created and never one it was handed (BUG-155).
+   */
+  pendingOwned: boolean;
   /** True when the operator described the server rather than picking one. */
   operatorAuthored: boolean;
   /**
@@ -255,6 +267,7 @@ export type ConnectAction =
   | {
       type: 'aliases-loaded';
       aliases: readonly SshHostAlias[];
+      connectedAliases?: readonly string[];
       configPresent: boolean;
       incompleteIncludes: boolean;
     }
@@ -265,7 +278,15 @@ export type ConnectAction =
       alias: string;
       sourceId: string;
       operatorAuthored: boolean;
+      /** Whether this flow created the record the test runs against. */
+      owned: boolean;
     }
+  /**
+   * The pending record was released because the operator moved on to a
+   * different server. A failed attempt stays in Settings and keeps dialing
+   * otherwise (BUG-157).
+   */
+  | { type: 'pending-released' }
   | { type: 'test-stage'; stage: ConnectStage }
   | { type: 'test-failed'; failure: SourceFailureClass; message: string }
   | {
@@ -603,6 +624,7 @@ export function initialConnectFlowState(): ConnectFlowState {
     adapterId: null,
     pendingSourceId: null,
     pendingAlias: null,
+    pendingOwned: false,
     operatorAuthored: false,
     settled: false,
     issues: [],
@@ -676,7 +698,8 @@ export function cancelConnectFlow(state: ConnectFlowState): CancelOutcome {
     state.operatorAuthored || (draft !== null && draftHasContent(draft));
   return {
     savedSource: null,
-    releaseSourceId: state.settled ? null : state.pendingSourceId,
+    releaseSourceId:
+      state.settled || !state.pendingOwned ? null : state.pendingSourceId,
     retainedDraft: authored ? draft : null,
   };
 }
@@ -723,6 +746,7 @@ export function connectFlowReducer(
         step: {
           kind: 'choose-server',
           aliases: [],
+          connectedAliases: [],
           configPresent: false,
           incompleteIncludes: false,
           manual: false,
@@ -738,6 +762,7 @@ export function connectFlowReducer(
         step: {
           ...state.step,
           aliases: action.aliases,
+          connectedAliases: action.connectedAliases ?? [],
           configPresent: action.configPresent,
           incompleteIncludes: action.incompleteIncludes,
           // With no configuration to choose from, describing the server is the
@@ -779,11 +804,20 @@ export function connectFlowReducer(
         history,
         pendingSourceId: action.sourceId,
         pendingAlias: action.alias,
+        pendingOwned: action.owned,
         operatorAuthored: action.operatorAuthored,
         issues: [],
         step: { kind: 'testing', alias: action.alias, stage: 'tunnel' },
       };
     }
+
+    case 'pending-released':
+      return {
+        ...state,
+        pendingSourceId: null,
+        pendingAlias: null,
+        pendingOwned: false,
+      };
 
     case 'test-stage': {
       if (state.step.kind !== 'testing') return state;

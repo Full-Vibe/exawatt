@@ -153,9 +153,20 @@ export interface ConnectSourceBridge {
     transport: SourceTransport;
     credentialOwner: SourceCredentialOwner;
   }): Promise<
-    | { ok: true; source: { id: string } | null }
+    | {
+        ok: true;
+        source: { id: string } | null;
+        /** False when the server was already saved (BUG-155). */
+        created?: boolean;
+      }
     | { ok: false; issues: readonly string[] }
   >;
+  /**
+   * The sources already saved, so the server list can mark them. Optional:
+   * a bridge without it lists every alias as available, which is what the
+   * guard in `startTest` backs up.
+   */
+  list?(): Promise<readonly { alias: string | null }[]>;
   /** Bounded test plus read-only discovery. Answers once, at the end. */
   connect(sourceId: string): Promise<ConnectAttemptResult>;
   /** Persists the whole Exawatt-side projection decision atomically in main. */
@@ -205,6 +216,9 @@ function electronBridge(): ConnectSourceBridge | null {
   return {
     sshAliases: () => api.sshAliases(),
     add: input => api.add(input),
+    // Guarded like the change channel below: a bridge without it lists every
+    // alias as available, and the add-time guard still refuses a saved one.
+    list: typeof api.list === 'function' ? () => api.list() : undefined,
     connect: sourceId => api.connect(sourceId),
     mapAgents: (sourceId, mappings) => api.mapAgents(sourceId, [...mappings]),
     // Older bridges predate the channel. A dialog with no progress still
@@ -329,13 +343,18 @@ export function ConnectSourceDialog({
     if (!api) return;
     aliasesRequested.current = true;
     const token = attempt.current;
-    void api
-      .sshAliases()
-      .then(result => {
+    const saved = api.list
+      ? api.list().catch(() => [] as readonly { alias: string | null }[])
+      : Promise.resolve([] as readonly { alias: string | null }[]);
+    void Promise.all([api.sshAliases(), saved])
+      .then(([result, sources]) => {
         if (token !== attempt.current) return;
         dispatch({
           type: 'aliases-loaded',
           aliases: result.aliases,
+          connectedAliases: sources
+            .map(source => source.alias)
+            .filter((alias): alias is string => alias !== null),
           configPresent: result.configPresent,
           incompleteIncludes: result.incompleteIncludes,
         });
@@ -432,7 +451,22 @@ export function ConnectSourceDialog({
       setServerError(null);
       setBusy(true);
       const token = ++attempt.current;
+      // Moving on to a different server releases the attempt this flow made
+      // for the last one. Left in place, a server that failed stayed saved
+      // and was dialed in the background indefinitely (BUG-157).
+      if (
+        state.pendingSourceId &&
+        state.pendingOwned &&
+        !state.settled &&
+        state.pendingAlias !== input.alias
+      ) {
+        const released = state.pendingSourceId;
+        await api.detach(released).catch(() => undefined);
+        if (token !== attempt.current) return;
+        dispatch({ type: 'pending-released' });
+      }
       let sourceId = existingSourceIdForAlias(state, input.alias);
+      let owned = sourceId !== null && state.pendingOwned;
       if (!sourceId) {
         try {
           const added = await api.add({
@@ -444,6 +478,7 @@ export function ConnectSourceDialog({
           });
           if (token !== attempt.current) return;
           sourceId = added.ok && added.source ? added.source.id : null;
+          owned = added.ok && added.created !== false;
         } catch {
           sourceId = null;
         }
@@ -455,12 +490,23 @@ export function ConnectSourceDialog({
           setBusy(false);
           return;
         }
+        // A server that is already saved is not this flow's to test, map, or
+        // release. Adopting it let Cancel detach a working connection
+        // (BUG-155).
+        if (!owned) {
+          setServerError(
+            `${input.alias} is already connected. Manage it in Settings.`
+          );
+          setBusy(false);
+          return;
+        }
       }
       dispatch({
         type: 'test-started',
         alias: input.alias,
         sourceId,
         operatorAuthored: input.operatorAuthored,
+        owned,
       });
       await observe({ sourceId, placement, credentialOwner, token });
     },
@@ -478,6 +524,7 @@ export function ConnectSourceDialog({
       alias: step.alias,
       sourceId,
       operatorAuthored: state.operatorAuthored,
+      owned: state.pendingOwned,
     });
     void observe({
       sourceId,
@@ -487,7 +534,13 @@ export function ConnectSourceDialog({
         : 'source-owned-ssh',
       token,
     });
-  }, [observe, state.operatorAuthored, state.pendingSourceId, step]);
+  }, [
+    observe,
+    state.operatorAuthored,
+    state.pendingOwned,
+    state.pendingSourceId,
+    step,
+  ]);
 
   /**
    * Saving runs the machine's own decision rather than a second copy of it:
@@ -742,6 +795,7 @@ export function ConnectSourceDialog({
           {step.kind === 'choose-server' && (
             <ServerChooser
               aliases={step.aliases}
+              connectedAliases={step.connectedAliases}
               configPresent={step.configPresent}
               incompleteIncludes={step.incompleteIncludes}
               manual={step.manual}
@@ -910,6 +964,7 @@ function SourceChooser({
 
 function ServerChooser({
   aliases,
+  connectedAliases,
   configPresent,
   incompleteIncludes,
   manual,
@@ -922,6 +977,7 @@ function ServerChooser({
   onChooseAlias,
 }: {
   aliases: readonly SshHostAlias[];
+  connectedAliases: readonly string[];
   configPresent: boolean;
   incompleteIncludes: boolean;
   manual: boolean;
@@ -1025,44 +1081,65 @@ function ServerChooser({
               >
                 Choose a server
               </h3>
-              {aliases.map(alias => (
-                <button
-                  key={alias.alias}
-                  type="button"
-                  data-connect-server={alias.alias}
-                  disabled={busy}
-                  onClick={() => onChooseAlias(alias)}
-                  className="flex min-h-9 min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"
-                >
-                  <Server
-                    className="h-3.5 w-3.5 shrink-0"
-                    aria-hidden
-                    style={{ color: HUD.textDim }}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span
-                      className="block truncate text-sm"
-                      style={{ color: HUD.text }}
-                    >
-                      {alias.alias}
-                    </span>
-                    <span
-                      className="mt-0.5 flex flex-wrap gap-1.5 font-mono text-chrome-micro"
+              {aliases.map(alias => {
+                const connected = connectedAliases.includes(alias.alias);
+                return (
+                  <button
+                    key={alias.alias}
+                    type="button"
+                    data-connect-server={alias.alias}
+                    data-connected={connected || undefined}
+                    disabled={busy || connected}
+                    title={
+                      connected
+                        ? 'Already connected. Manage it in Settings.'
+                        : undefined
+                    }
+                    onClick={() => onChooseAlias(alias)}
+                    className="flex min-h-9 min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"
+                  >
+                    <Server
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden
                       style={{ color: HUD.textDim }}
-                    >
-                      {declaredKeywords(alias).map(keyword => (
-                        <span
-                          key={keyword}
-                          className="rounded border px-1.5 py-0.5"
-                          style={{ borderColor: HUD.strokeFaint }}
-                        >
-                          {keyword}
-                        </span>
-                      ))}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="block truncate text-sm"
+                        style={{ color: HUD.text }}
+                      >
+                        {alias.alias}
+                      </span>
+                      <span
+                        className="mt-0.5 flex flex-wrap gap-1.5 font-mono text-chrome-micro"
+                        style={{ color: HUD.textDim }}
+                      >
+                        {connected ? (
+                          <span
+                            className="rounded border px-1.5 py-0.5"
+                            data-connected-chip
+                            style={{
+                              borderColor: HUD.strokeSoft,
+                              color: HUD.text,
+                            }}
+                          >
+                            Connected
+                          </span>
+                        ) : null}
+                        {declaredKeywords(alias).map(keyword => (
+                          <span
+                            key={keyword}
+                            className="rounded border px-1.5 py-0.5"
+                            style={{ borderColor: HUD.strokeFaint }}
+                          >
+                            {keyword}
+                          </span>
+                        ))}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
           {incompleteIncludes && (

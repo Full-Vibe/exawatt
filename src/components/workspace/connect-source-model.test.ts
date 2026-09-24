@@ -116,6 +116,7 @@ const TO_TESTING: readonly ConnectAction[] = [
     alias: 'atlas-box',
     sourceId: 'source-1',
     operatorAuthored: false,
+    owned: true,
   },
 ];
 
@@ -315,6 +316,7 @@ describe('Connect flow: the bounded test', () => {
         alias: 'atlas-box',
         sourceId: 'source-1',
         operatorAuthored: false,
+        owned: true,
       },
     ]);
     expect(state.step.kind).toBe('testing');
@@ -426,6 +428,7 @@ describe('Connect flow: choosing Agents', () => {
         alias: 'atlas-box',
         sourceId: 'source-1',
         operatorAuthored: false,
+        owned: true,
       },
       { type: 'agents-discovered', agents: AGENTS, facts: FACTS },
     ]);
@@ -679,6 +682,7 @@ describe('Connect flow: going back', () => {
         alias: 'Studio box',
         sourceId: 'source-2',
         operatorAuthored: true,
+        owned: true,
       },
       { type: 'back' },
     ]);
@@ -796,5 +800,41 @@ describe('Connect flow: out of order actions', () => {
         patch: { nameOverride: 'Marcus' },
       })
     ).toBe(state);
+  });
+});
+
+describe('releasing on the way out (BUG-155)', () => {
+  it('never releases a record the flow did not create', () => {
+    let state = initialConnectFlowState();
+    state = connectFlowReducer(state, {
+      type: 'choose-adapter',
+      adapterId: 'openclaw',
+    });
+    state = connectFlowReducer(state, {
+      type: 'test-started',
+      alias: 'atlas-box',
+      sourceId: 'source-live',
+      operatorAuthored: false,
+      owned: false,
+    });
+    expect(cancelConnectFlow(state).releaseSourceId).toBe(null);
+  });
+
+  it('releases the record it created', () => {
+    let state = initialConnectFlowState();
+    state = connectFlowReducer(state, {
+      type: 'choose-adapter',
+      adapterId: 'openclaw',
+    });
+    state = connectFlowReducer(state, {
+      type: 'test-started',
+      alias: 'atlas-box',
+      sourceId: 'source-new',
+      operatorAuthored: false,
+      owned: true,
+    });
+    expect(cancelConnectFlow(state).releaseSourceId).toBe('source-new');
+    state = connectFlowReducer(state, { type: 'pending-released' });
+    expect(cancelConnectFlow(state).releaseSourceId).toBe(null);
   });
 });

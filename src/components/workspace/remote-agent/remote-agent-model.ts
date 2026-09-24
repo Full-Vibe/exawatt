@@ -182,6 +182,11 @@ export interface RemoteAgentInput {
   viewing?: { contextId: string; title: string } | null;
   /** True when the host can carry a send-access request to the source. */
   canRequestWriteAccess?: boolean;
+  /**
+   * The server this Agent runs on, as the operator named it. Send access is
+   * granted per server, so the approval step names the server, not the Agent.
+   */
+  sourceName?: string | null;
   /** True when the host can repair observation. */
   canReconnect?: boolean;
 }
@@ -214,6 +219,11 @@ export type ComposerState =
       headline: string;
       detail: string | null;
       action: ComposerAction | null;
+      /**
+       * Commands the operator runs on the server to complete this state, in
+       * order. Present only where finishing happens off Exawatt (BUG-156).
+       */
+      commands?: readonly string[];
     };
 
 export type FrontDoor =
@@ -312,7 +322,7 @@ export const WRITE_AUTHORITY_COPY: Readonly<
   },
   'approval-pending': {
     headline: 'Send access requested',
-    detail: 'Approve it on the machine that runs this Agent to finish.',
+    detail: 'Approve Exawatt’s request on the server, then check again.',
   },
   unobserved: {
     headline: 'Access not read yet',
@@ -349,6 +359,27 @@ const REQUEST_ACCESS_ACTION: ComposerAction = {
   id: 'request-send-access',
   label: 'Request send access',
 };
+
+/**
+ * Asking again is how a pending request completes (BUG-156). The runtime holds
+ * the request as pending until Exawatt asks again, and asking again after the
+ * server approved is what reissues this device at the wider scope. Without
+ * this action the pane had no way out of "requested" short of a relaunch.
+ */
+const CHECK_ACCESS_ACTION: ComposerAction = {
+  id: 'request-send-access',
+  label: 'Check again',
+};
+
+/**
+ * What the operator runs on the server. The request id is read from the
+ * device list: nothing Exawatt holds proves which pending entry is its own,
+ * and approving the wrong one would grant another device.
+ */
+export const APPROVE_SEND_ACCESS_COMMANDS: readonly string[] = [
+  'openclaw devices list',
+  'openclaw devices approve <request id>',
+];
 
 const RECONNECT_ACTION: ComposerAction = {
   id: 'reconnect',
@@ -668,8 +699,27 @@ function composerFor(
     let action: ComposerAction | null = null;
     if (input.authority === 'not-requested' && input.canRequestWriteAccess) {
       action = REQUEST_ACCESS_ACTION;
+    } else if (
+      input.authority === 'approval-pending' &&
+      input.canRequestWriteAccess
+    ) {
+      action = CHECK_ACCESS_ACTION;
     } else if (input.authority === 'unobserved' && input.canReconnect) {
       action = RECONNECT_ACTION;
+    }
+    if (input.authority === 'approval-pending') {
+      const server = input.sourceName?.trim();
+      return {
+        kind: 'withheld',
+        reason,
+        target,
+        headline: copy.headline,
+        detail: server
+          ? `Approve Exawatt’s request on ${server}, then check again.`
+          : copy.detail,
+        action,
+        commands: APPROVE_SEND_ACCESS_COMMANDS,
+      };
     }
     return {
       kind: 'withheld',

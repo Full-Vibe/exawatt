@@ -500,6 +500,58 @@ configuration, an unfiltered launcher, and a launch path through the connected
 source runtime. It belongs to the ENG-016 D54 flow pass and the ENG-033 H3
 pass, not to a packet here.
 
+## H2.4 Connect in one step, from ⌘T and ⌘N (direction set 2026-09-23)
+
+The 2026-09-23 audit walked the Connect flow end to end in the real app
+against two simulated Gateways reached through a stand-in `ssh`, recorded
+every click, screen, and SSH login, and had an independent reviewer score it:
+15 of 40 on Nielsen's heuristics. One server took six screens and five clicks
+plus a scroll; both servers took thirteen clicks, two scrolls, and a terminal
+session, and the flow ended on a send-access state that could not complete.
+The three behaviour defects it found are BUG-155 to BUG-157 (fixed as ENG-010
+C8); this section is the redesign.
+
+**Operator decisions, 2026-09-23.** Repair and redesign together. A connected
+coworker's default home is one special Project, named along the lines of
+"Remote" ("maybe we can call it a special project, like remote, or online, or
+cloud, or something for now"), with "the right to iterate on this over time".
+Connect is offered in two places: "why isn't this in Command-T instead of
+Command-N? I think even within a project I want to be able to connect to an
+open instance or something like that, a cloud instance. Maybe we can support
+both t under project and n under a generic Remote pseudoproject, for now,
+until we decide more clearly later."
+
+**What the audit says the shape needs**, as input to the gallery review, not
+a spec:
+
+- one Connect surface reachable from ⌘T (into the current Project), ⌘N (into
+  Remote), ⌘K, and Settings; skip the one-option source step while OpenClaw
+  is the only connectable adapter;
+- a server list with type-ahead, saved servers marked and routed to Settings,
+  and likely OpenClaw hosts and recent servers first; the chips that name
+  config keys rather than values go;
+- one confirm screen: Agents checked, inline rename, one Project choice for
+  the batch (default Remote), send access offered in place, diagnostics moved
+  to Settings, primary action "Connect N Agents";
+- land on the coworkers, not on whichever Agent sorts first.
+
+**Constraints.** ⌘T is ENG-016 D54's surface, the New Agent flow design pass
+the operator named for external design help, so the ⌘T entry is shaped with
+that pass rather than beside it. Send access in the confirm step depends on
+the open H2.2 decision (one-gesture approval over the operator's own SSH
+alias). The Remote pseudo-project is a folderless `manual` Project like the
+ones Connect creates today; making it a single, named, renameable home is a
+Project-registry change that must hold for signed-in, signed-out, and
+expired-session operators (see BUG-150 and the workspace-honesty work).
+Prototype in `/hud-gallery` for operator review before production, per the
+design system.
+
+**Evidence to keep.** The audit's walkthrough drove the real preload and IPC
+with a stand-in `ssh` on PATH forwarding to `ConnectedGatewayFixture`; it
+found BUG-155 and BUG-157, which no unit and no packaged gate had. H2.4 should
+turn it into a UI eval of the Connect flow so the redesign is measured the
+same way (clicks, screens, SSH logins) before and after.
+
 ## H1 acceptance criteria
 
 - The operator can connect both existing Gateways without entering an IP when
@@ -1539,3 +1591,31 @@ implies; ENG-009 owns credentials. No scope is shaped and H3 remains not
 active. Operator answer, same session: Exawatt should eventually give its
 own agents that identity on any harness ("in the future"). This is long-term
 direction, not the next build. [Source-side record](agent-source-architecture.md#2026-09-23--operator-direction-every-harness-type-first-class).
+
+### 2026-09-23 — the audit, and the flow repair it produced
+
+The operator said Connect felt "clunky, a little bit confusing, and has too
+many clicks". A real-app walkthrough confirmed all three and found three
+behaviour defects that no unit, eval, or packaged gate had seen, because each
+needs a sequence of ordinary operator acts to reach: Cancel after re-picking a
+connected server detached it (BUG-155); a pending send-access request had no
+way to complete (BUG-156); a failed attempt stayed saved and kept dialing
+(BUG-157). The failure copy also blamed a port an alias user never typed
+(BUG-158).
+
+The repair is ENG-010 C8. The store's add result now says whether it created
+the record, and the flow releases only what it created, refuses to test a
+server it was handed back, and marks saved servers Connected. It releases its
+own failed attempt before starting on another server. The send-access pending
+state names the server, shows the `openclaw devices` commands with Copy, and
+offers Check again, which reports "Not approved yet" with the time. The model
+test that pinned "no action while pending" had the premise backwards: the
+request only completes when Exawatt asks again, so that test was pinning the
+dead end.
+
+Evidence: unit and component tests for each defect, each shown to fail with
+its fix reverted; and a replay of the audit's failing scenarios in the real
+app against the fixed tree. Check again said "Not approved yet" before the
+server approved and opened the composer after; Cancel on the connected server
+left 1 source and 2 mappings; the dead server was dialed once, before the
+switch, and never after.

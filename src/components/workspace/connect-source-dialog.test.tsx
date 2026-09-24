@@ -868,3 +868,70 @@ describe('Connect existing Agent: the desktop bridge', () => {
     await screen.findByRole('heading', { name: 'Agents' });
   });
 });
+
+describe('Connect existing Agent: records the flow did not make', () => {
+  it('marks a server that is already connected and does not start a second connect (BUG-155)', async () => {
+    const bridge = makeBridge({
+      list: vi.fn(async () => [{ alias: 'atlas-box' }]),
+    });
+    renderDialog({ bridge });
+    await chooseOpenClaw();
+    const row = await screen.findByRole('button', { name: /atlas-box/ });
+    await waitFor(() => expect(row).toHaveAttribute('data-connected'));
+    expect(row).toBeDisabled();
+    fireEvent.click(row);
+    expect(bridge.add).not.toHaveBeenCalled();
+    expect(bridge.connect).not.toHaveBeenCalled();
+  });
+
+  it('never tests, maps, or releases a server it was handed back (BUG-155)', async () => {
+    // A bridge that cannot list sources, so the guard in the flow itself is
+    // what stands between Cancel and a working connection.
+    const bridge = makeBridge({
+      add: vi.fn(async () => ({
+        ok: true as const,
+        source: { id: 'source-live' },
+        created: false,
+      })),
+    });
+    renderDialog({ bridge });
+    await chooseAtlas();
+    await screen.findByText(/already connected/);
+    expect(bridge.connect).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    );
+    expect(bridge.detach).not.toHaveBeenCalled();
+  });
+
+  it('releases a failed attempt when the operator moves on to another server (BUG-157)', async () => {
+    let next = 0;
+    const bridge = makeBridge({
+      add: vi.fn(async () => ({
+        ok: true as const,
+        source: { id: `source-${++next}` },
+        created: true,
+      })),
+      connect: vi
+        .fn<ConnectSourceBridge['connect']>()
+        .mockResolvedValueOnce({
+          ok: false as const,
+          failure: 'host-unreachable',
+          message: 'Nothing answered.',
+        })
+        .mockResolvedValue({ ok: true, agents: AGENTS, observed: OBSERVED }),
+    });
+    renderDialog({ bridge });
+    await chooseAtlas();
+    await screen.findByText(CONNECT_FAILURE_COPY['host-unreachable'].headline);
+
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /beacon-box/ }));
+    await screen.findByRole('heading', { name: 'Agents' });
+
+    expect(bridge.detach).toHaveBeenCalledWith('source-1');
+    expect(bridge.detach).not.toHaveBeenCalledWith('source-2');
+  });
+});

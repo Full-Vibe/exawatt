@@ -39,14 +39,14 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-006 | Decision model                                   | planned      | Decision as a first-class scoped record with Approval scope and lifetime.                                                                                                              |
 | ENG-007 | Context Signals                                  | planned      | Many-to-many external inputs (PostHog, Slack, email, GitHub, calendar) as modeled sources.                                                                                             |
 | ENG-009 | Connections, secrets, and configuration          | planned      | UNSHAPED pending a design pass — vendor connections, buy-vs-build secrets, and a future credential-broker seam.                                                                        |
-| ENG-010 | Connected OpenClaw on customer infrastructure    | done         | C0–C7 landed: installed-app proof of the existing fleet; C6/C7 (2026-09-23) harden failure predicates and make every Connect act leave evidence. |
+| ENG-010 | Connected OpenClaw on customer infrastructure    | done         | C0–C8 landed: installed-app proof of the existing fleet; C6–C8 (2026-09-23) harden failure predicates, record Connect evidence, and repair the Connect flow. |
 | ENG-011 | Multi-source fleet management                    | planned      | Aggregate mixed-assurance sources from one agent to thousands.                                                                                                                         |
 | ENG-012 | Hosted Exawatt control plane                     | planned      | Hosted metadata, team governance, managed ceilings, fleet health, billing.                                                                                                             |
 | ENG-013 | Lead agent — the non-worker role                 | planned      | One non-worker role — intent custody, attention filtering, dispatch — at Project and Workspace scope.                                                                                  |
 | ENG-030 | Open-source readiness                            | active-build | Public repo is live; repair projection/history parity, exact-tree CI/security, and public Release provenance before the friend cohort. Contribution intake is trigger-deferred. |
 | ENG-031 | Website — vision communication and guides        | active-build | SHAPED 2026-08-14 — the overhaul IS the ENG-030 launch surface; altitude-ladder spine, band system, live board hero.                                                                   |
 | ENG-032 | Theming and visual identity                      | done         | T0–T5.3 LANDED — three presets share one app-global Manual/Auto contract with browser-paint and public-typography continuity gates.                                                    |
-| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped 2026-09-14 for pickup (work stack, one-gesture write approval, remote needs-you); managed placement and clone/move remain design work, no paid cloud. |
+| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction set 2026-09-23; managed placement and clone/move remain design work. |
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
@@ -1622,7 +1622,7 @@ Decision record:
 ### ENG-010 Connected OpenClaw on customer infrastructure
 
 Status: done — shaped 2026-08-16 from the operator's two live OpenClaw VPS
-installations. C0–C7 and H2 landed. Packaged evidence and the exact installed
+installations. C0–C8 and H2 landed. Packaged evidence and the exact installed
 official app proved the existing fleet through Agent/Team/Fleet and relaunch
 without widening source authority or mutating source state.
 
@@ -1708,6 +1708,12 @@ Milestones:
   reports, a non-conforming frame cannot escape as an unhandled rejection,
   and main records the ones that do. Unit fixtures fail without each fix;
   the live two-Gateway pass was not re-run.
+- C8 Connect flow repair — LANDED 2026-09-23 (BUG-155 to BUG-158): found by
+  a real-app audit of the flow. Cancel no longer detaches a server the flow
+  was handed back, and saved servers are marked Connected; a failed attempt
+  is released when the operator moves on; a pending send-access request shows
+  the commands to run and a Check again action that completes it; SSH failure
+  copy no longer blames a port the operator never typed.
 - C7 Connect leaves evidence — LANDED 2026-09-23 (BUG-154): every operator
   act on a source and every phase transition writes one allowlisted line to
   `logs/connected-sources.jsonl`, which bug reports now attach; the packaged
@@ -1819,6 +1825,21 @@ Milestones:
   cannot say which coworker is waiting on the operator. Map the read-scoped
   session and run subscriptions to `complete` and `blocked` with named evidence
   per state; states without evidence stay listed by name (the H2 rule).
+- H2.4 Connect in one step, from ⌘T and ⌘N — planned; direction set by the
+  operator 2026-09-23 after a real-app audit of the Connect flow scored it
+  15/40 (execution detail in the project doc's "H2.4" section). Operator
+  decisions: repair and redesign together; a connected coworker's default home
+  is one special Project named along the lines of "Remote" ("maybe we can call
+  it a special project, like remote, or online, or cloud, or something for
+  now"), with "the right to iterate on this over time"; and Connect is offered
+  in two places, "t under project and n under a generic Remote pseudoproject,
+  for now, until we decide more clearly later" (⌘T inside a Project connects a
+  remote coworker into that Project; ⌘N connects under Remote). The ⌘T entry
+  overlaps ENG-016 D54, the New Agent flow design pass, and must be shaped
+  with it rather than beside it. Open: send access, H2.2's one-gesture
+  approval (the operator asked what send access means; answered 2026-09-23,
+  decision pending). The UI shape goes through `/hud-gallery` for operator
+  review before production.
 - H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
   authorization pass for provisioning, credential custody, deletion, billing,
   and control-plane ownership before implementation begins.

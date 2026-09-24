@@ -310,7 +310,11 @@ export function registerConnectedSourcesIPC(): void {
       const view = sourceStore()
         .listViews()
         .find(candidate => candidate.id === result.record.id);
-      return { ok: true as const, source: view ?? null };
+      return {
+        ok: true as const,
+        source: view ?? null,
+        created: result.created,
+      };
     }
   );
 

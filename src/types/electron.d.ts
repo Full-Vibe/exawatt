@@ -1136,7 +1136,7 @@ export interface ElectronConnectedSourcesApi {
     transport: SourceTransport;
     credentialOwner: SourceCredentialOwner;
   }) => Promise<
-    | { ok: true; source: ConnectedSourceView | null }
+    | { ok: true; source: ConnectedSourceView | null; created: boolean }
     | { ok: false; issues: string[] }
   >;
   rename: (id: string, displayName: string) => Promise<{ ok: boolean }>;

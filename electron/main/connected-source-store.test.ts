@@ -155,6 +155,10 @@ describe('ConnectedSourceStore', () => {
       expect(second.ok).toBe(true);
       if (!first.ok || !second.ok) return;
       expect(second.record.id).toBe(first.record.id);
+      // Whoever gets a record back must be able to tell it did not make it,
+      // or it may release a working connection as its own draft (BUG-155).
+      expect(first.created).toBe(true);
+      expect(second.created).toBe(false);
       expect(target.list()).toHaveLength(1);
       // The name the operator just typed is taken; nothing the source granted
       // or paired is disturbed by re-configuring it.
