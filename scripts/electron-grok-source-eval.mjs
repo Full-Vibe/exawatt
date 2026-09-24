@@ -328,9 +328,12 @@ try {
           buffer.includes('<Verify the Grok Build launch adapter>'),
         buffer
       );
+      // `grok models` names a concrete default, so the composer shows it as
+      // the selection and the launch pins that id: the Agent runs the model on
+      // screen, and it is the model the CLI would pick on its own (BUG-039).
       check(
-        "an unchanged source default is left to the source, not pinned with -m",
-        !buffer.includes('<-m>'),
+        'the launch pins the source-reported default the composer names',
+        buffer.includes('<-m> <eval-grok-4.5>'),
         buffer
       );
       check(

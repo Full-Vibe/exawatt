@@ -59,6 +59,38 @@ describe('Agent composer · sources and policy', () => {
     expect(launcherAxis('Engine')).not.toHaveStyle({ color: '#ECECEC' });
   });
 
+  it('keeps the source-reported name when the catalog re-picks the selected engine (BUG-214)', async () => {
+    const onLaunch = vi.fn(async () => true);
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialSource="grok"
+        onLaunch={onLaunch}
+      />
+    );
+    await expectSelectedSetup(/Grok 4\.5/);
+
+    const catalog = screen.getByRole('button', {
+      name: 'All engines and models',
+    });
+    await settled(() => expect(catalog).not.toBeDisabled());
+    fireEvent.click(catalog);
+    fireEvent.click(
+      await settled(() =>
+        screen.getByRole('button', { name: /^Grok Build, Grok 4\.5,/ })
+      )
+    );
+
+    await expectSelectedSetup(/Grok 4\.5/);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await settled(() =>
+      expect(onLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({ harness: 'grok', model: 'grok-4.5' })
+      )
+    );
+  });
+
   it('shows model and effort together and scopes both overrides to this Agent', async () => {
     const onLaunch = vi.fn(async () => true);
     renderComposer(

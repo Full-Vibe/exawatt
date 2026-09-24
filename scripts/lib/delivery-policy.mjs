@@ -589,7 +589,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:grok-source',
     why: 'Grok Build is named, launched and resumed from what its own CLI reports',
-    quarantined: 'BUG-214',
     match: file =>
       file === 'electron/main/pty/harness-registry.ts' ||
       file === 'electron/main/pty/agent-models.ts' ||

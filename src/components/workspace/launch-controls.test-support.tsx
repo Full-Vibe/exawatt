@@ -265,12 +265,14 @@ export const OPENCODE_MODEL_CATALOG: AgentModelCatalog = {
 };
 
 /** Grok Build reports model IDs and a default, and enumerates NO effort
- *  options on any surface a PTY launch can read (ENG-003 S4). */
+ *  options on any surface a PTY launch can read (ENG-003 S4). The default is
+ *  a concrete id, so `parseGrokModelCatalog` calls it a harness
+ *  recommendation, never an account default (BUG-039). */
 export const GROK_MODEL_CATALOG: AgentModelCatalog = {
   harness: 'grok',
   effectiveModel: 'grok-4.5',
   effectiveModelLabel: 'Grok 4.5',
-  effectiveModelSource: 'account-default',
+  effectiveModelSource: 'harness-recommended',
   effectiveEffort: null,
   effectiveEffortLabel: 'Source default',
   effectiveEffortSource: 'unavailable',

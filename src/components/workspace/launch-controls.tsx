@@ -254,9 +254,8 @@ export function AgentComposer({
     ok: boolean;
     text: string;
   } | null>(null);
-  const [modelCatalog, setModelCatalog] = useState<AgentModelCatalog | null>(
-    null
-  );
+  const [loadedModelCatalog, setModelCatalog] =
+    useState<AgentModelCatalog | null>(null);
   const [model, setModel] = useState<string | null>(initialModel ?? null);
   const [effort, setEffort] = useState<string | null>(initialEffort ?? null);
   const [permissionMode, setPermissionMode] = useState(
@@ -377,6 +376,13 @@ export function AgentComposer({
     : (sourceOrder[0] ?? AGENT_SOURCE_ORDER[0]);
   const effectiveSourceRef = useRef(effectiveSource);
   effectiveSourceRef.current = effectiveSource;
+  // A catalog names its own harness, so whether it describes the selected
+  // source is derived, never reset by hand. Choosing the source that is
+  // already selected used to discard its loaded catalog while the load, keyed
+  // on the source, never ran again, so the composer named the raw model id
+  // and the launch lost the catalog's account-default rule (BUG-214).
+  const modelCatalog =
+    loadedModelCatalog?.harness === effectiveSource ? loadedModelCatalog : null;
   const sourceMeta =
     sourceSnapshots.find(source => source.harness === effectiveSource) ??
     fallbackAgentSourceRegistry('launch').sources.find(
@@ -673,7 +679,6 @@ export function AgentComposer({
           null)
         : null;
       setSource(nextSource);
-      setModelCatalog(null);
       setModel(nextModel);
       setEffort(nextEffort);
       onDraftChangeRef.current?.({
@@ -710,7 +715,6 @@ export function AgentComposer({
           : null;
         requestedSourceRef.current = next;
         setSource(next);
-        setModelCatalog(null);
         setModel(nextModel);
         setEffort(nextEffort);
         onDraftChangeRef.current?.({
