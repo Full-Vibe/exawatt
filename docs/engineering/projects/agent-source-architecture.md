@@ -847,3 +847,47 @@ Facts gathered for the S5 design pass:
 - Instinct's own email address is a possible channel that needs no Mac
   permission. Whether it acts on mail from anyone other than its owner is
   unknown, and is also its main safety question.
+
+### 2026-09-23 — S5 shape: we ship every source, each cheaper than the last
+
+Operator decisions from the design session:
+
+- Exawatt ships each harness plugin itself and makes adding one easier over
+  time. A user-facing "add any command" source is deferred until a user asks
+  for it.
+- Exawatt-provided identity for always-on agents (their own email, calendar
+  and files, on any harness) is future direction under ENG-033, not S5.
+- The Instinct bridge stays deferred.
+
+Agent decisions, reversible:
+
+- Gemini CLI and Qwen Code go first. Qwen Code is a Gemini CLI fork, so one
+  family proves the path twice and measures what the second source really
+  costs.
+- New coding harnesses keep the real terminal and take status from their own
+  hooks, the Claude Code pattern. ACP is used only where a harness has no
+  hooks.
+- OS permission requests share one guided step, built when the first source
+  needs a grant and reused by every later one.
+- A message between agents on different harnesses is drafted by the agent and
+  sent by the operator until ENG-006 Approvals exist.
+
+Milestones:
+
+- S5.1 One declaration per source. A source is named in about 38 non-test
+  files today. Derive the per-source lists (labels, icons, launch descriptors,
+  notification and shortcut tables, demo and test fixtures) from the existing
+  `contracts/agent-sources.json` declaration, keeping compile-time checks that
+  every source is complete. Kind-specific code (probe, model catalog, history,
+  usage parser) stays hand-written. Exit: the four shipped harnesses behave
+  identically, and a checklist names every file a new source still touches.
+- S5.2 Gemini CLI. First probe: can hooks be injected per launch without
+  writing to `~/.gemini`? Then launch, model catalog, exact resume, and
+  hook-reported turn and attention truth. Exit: a Gemini tab reads working,
+  needs you and done as truthfully as a Claude tab, or names what Gemini does
+  not report.
+- S5.3 Qwen Code. Same family. Exit: it lands with a measured file and line
+  count well under S4's, recorded here as the proof that S5.1 worked.
+- Later, each on its own trigger: Hermes and Kilo Code (demand rows), the
+  conversation kind and Instinct (the operator lifts the bridge deferral), and
+  user-added sources (a user asks).

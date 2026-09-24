@@ -1536,4 +1536,6 @@ the venue's replies. The operator wants to spin up one or more such agents and
 see them beside the Exawatt fleet, and says the same applies to every harness
 type. Recorded as demand for H3 managed placement and the per-agent identity it
 implies; ENG-009 owns credentials. No scope is shaped and H3 remains not
-active. [Source-side record](agent-source-architecture.md#2026-09-23--operator-direction-every-harness-type-first-class).
+active. Operator answer, same session: Exawatt should eventually give its
+own agents that identity on any harness ("in the future"). This is long-term
+direction, not the next build. [Source-side record](agent-source-architecture.md#2026-09-23--operator-direction-every-harness-type-first-class).
