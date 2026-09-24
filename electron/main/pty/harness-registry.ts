@@ -6,6 +6,12 @@ import {
   claudeHookEvent,
   claudeHookSettings,
 } from '../harness-events/claude-hooks';
+import {
+  qwenHookEvent,
+  qwenHookSessionId,
+  qwenHookSettings,
+} from '../harness-events/qwen-hooks';
+import { readQwenAdminDefaults } from './qwen-source';
 
 /**
  * How a source is wired to Exawatt's harness event channel (ENG-023).
@@ -23,6 +29,13 @@ export interface HarnessEventChannelBinding {
   invocation: (invocation: string, settingsPath: string) => string;
   /** Translate this source's payloads into the shared event vocabulary. */
   normalize: HarnessEventNormalizer;
+  /**
+   * The harness session a payload belongs to, for sources whose subscription
+   * travels in the launch environment. A process the Agent starts inherits
+   * that environment, so without this its posts would move the Session's own
+   * status. When present, a payload from any other session is dropped.
+   */
+  sessionIdOf?: (payload: unknown) => string | null;
 }
 
 /** A uniquely named source agent carrying one launch's model and policy. */
@@ -62,6 +75,9 @@ export interface HarnessLaunchDescriptor {
     authStatusArgs: readonly string[];
     authLoginArgs: readonly string[];
     authOwner: string;
+    /** Set when sign-in happens inside the source's own session rather than
+     *  through a login subcommand: the command to type there. */
+    authSessionCommand?: string;
   };
   /** Some CLIs require Exawatt to allocate identity before a fresh launch. */
   allocatesFreshSessionId: boolean;
@@ -279,13 +295,63 @@ const descriptors = {
         : mode === 'auto'
           ? '--permission-mode auto'
           : '--permission-mode bypassPermissions',
-    cwdInvocation: (invocation, cwd) => `${invocation} --cwd ${shellQuote(cwd)}`,
+    cwdInvocation: (invocation, cwd) =>
+      `${invocation} --cwd ${shellQuote(cwd)}`,
     modelInvocation: (invocation, quotedModel) =>
       `${invocation} -m ${quotedModel}`,
     effortInvocation: (invocation, effort) =>
       `${invocation} --reasoning-effort ${shellQuote(effort)}`,
     initialTaskInvocation: (invocation, quotedTask) =>
       `${invocation} ${quotedTask}`,
+    resumeInvocation: (invocation, sessionId) =>
+      `${invocation} --resume ${sessionId}`,
+    freshInvocation: (invocation, sessionId) =>
+      sessionId ? `${invocation} --session-id ${sessionId}` : invocation,
+  },
+  qwen: {
+    id: 'qwen',
+    source: {
+      ...agentSourceDeclaration('qwen'),
+      executable: 'qwen',
+      versionArgs: ['--version'],
+      // Qwen Code has no sign-in status or login subcommand: sign-in is
+      // `/auth` inside its own session, so the status is read from its
+      // settings and "Sign in" opens the CLI itself.
+      authStatusArgs: [],
+      authLoginArgs: [],
+      authOwner: 'Qwen Code',
+      authSessionCommand: '/auth',
+    },
+    // `--session-id <uuid>` is honored and echoed in every hook; reusing an
+    // existing id is refused, so a fresh launch always gets a fresh id.
+    allocatesFreshSessionId: true,
+    delegation: { observable: true, mechanism: 'settings-hooks' },
+    eventChannel: {
+      settings: (port, token) =>
+        qwenHookSettings(port, token, readQwenAdminDefaults()),
+      // The lowest-precedence settings layer: hooks concatenate across
+      // layers, so the user's own hooks keep firing and ~/.qwen is untouched.
+      invocation: (invocation, settingsPath) =>
+        `env QWEN_CODE_SYSTEM_DEFAULTS_PATH=${shellQuote(settingsPath)} ${invocation}`,
+      normalize: qwenHookEvent,
+      sessionIdOf: qwenHookSessionId,
+    },
+    // `auto` is Qwen Code's own classifier mode, the same contract as Claude
+    // Code's. An untrusted folder silently downgrades `yolo` to `default`.
+    permissionFlags: mode =>
+      mode === 'prompt'
+        ? '--approval-mode default'
+        : mode === 'auto'
+          ? '--approval-mode auto'
+          : '--approval-mode yolo',
+    modelInvocation: (invocation, quotedModel) =>
+      `${invocation} -m ${quotedModel}`,
+    // No effort flag exists; the declaration keeps effort source-owned.
+    effortInvocation: invocation => invocation,
+    // `-i` keeps the session interactive; a positional task runs headless
+    // and exits.
+    initialTaskInvocation: (invocation, quotedTask) =>
+      `${invocation} -i ${quotedTask}`,
     resumeInvocation: (invocation, sessionId) =>
       `${invocation} --resume ${sessionId}`,
     freshInvocation: (invocation, sessionId) =>

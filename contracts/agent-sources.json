@@ -14,7 +14,11 @@
         "exactResume": true,
         "modelSelection": "live-catalog",
         "effortSelection": "live-catalog",
-        "permissionModes": ["prompt", "auto", "unrestricted"],
+        "permissionModes": [
+          "prompt",
+          "auto",
+          "unrestricted"
+        ],
         "delegationObservation": "Source-reported lifecycle events",
         "enforcementOwner": "Claude Code"
       }
@@ -33,7 +37,11 @@
         "exactResume": true,
         "modelSelection": "live-catalog",
         "effortSelection": "live-catalog",
-        "permissionModes": ["prompt", "auto", "unrestricted"],
+        "permissionModes": [
+          "prompt",
+          "auto",
+          "unrestricted"
+        ],
         "delegationObservation": "Codex app-server parent/child lifecycle",
         "enforcementOwner": "Codex"
       }
@@ -52,7 +60,11 @@
         "exactResume": true,
         "modelSelection": "live-catalog",
         "effortSelection": "live-catalog",
-        "permissionModes": ["prompt", "auto", "unrestricted"],
+        "permissionModes": [
+          "prompt",
+          "auto",
+          "unrestricted"
+        ],
         "delegationObservation": "OpenCode PTY does not report delegated work",
         "enforcementOwner": "OpenCode"
       }
@@ -71,9 +83,36 @@
         "exactResume": true,
         "modelSelection": "live-catalog",
         "effortSelection": "source-owned",
-        "permissionModes": ["prompt", "auto", "unrestricted"],
+        "permissionModes": [
+          "prompt",
+          "auto",
+          "unrestricted"
+        ],
         "delegationObservation": "Grok Build reports delegated work only to hooks Exawatt cannot inject per launch",
         "enforcementOwner": "Grok Build"
+      }
+    },
+    {
+      "adapterId": "qwen",
+      "harness": "qwen",
+      "label": "Qwen Code",
+      "connectionName": "Local CLI",
+      "color": "#8A86F5",
+      "installationGuideUrl": "https://github.com/QwenLM/qwen-code#installation",
+      "description": "Use the locally installed Qwen Code CLI.",
+      "capabilities": {
+        "interactiveLaunch": true,
+        "initialTask": true,
+        "exactResume": true,
+        "modelSelection": "live-catalog",
+        "effortSelection": "source-owned",
+        "permissionModes": [
+          "prompt",
+          "auto",
+          "unrestricted"
+        ],
+        "delegationObservation": "Source-reported lifecycle events",
+        "enforcementOwner": "Qwen Code"
       }
     },
     {

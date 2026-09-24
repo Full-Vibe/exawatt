@@ -27,6 +27,12 @@ import {
   type DistributionEndpointRefV1,
 } from '@exawatt/core/distribution';
 import { agentSourceDeclaration } from './generated-agent-source-declarations';
+import {
+  parseQwenTranscriptHead,
+  qwenProjectDirname,
+  qwenRuntimeRoot,
+  type QwenTranscriptHead,
+} from './qwen-source';
 import { planLoginShell, shellQuote } from './login-shell';
 
 const execFileAsync = promisify(execFile);
@@ -1281,6 +1287,109 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
 }
 
 /** `GROK_HOME` is the harness's own override; Exawatt reads it, never sets it. */
+/**
+ * Qwen Code's retained history (ENG-003 S5.2): one JSONL transcript per
+ * session under `<runtime>/projects/<project>/chats/<sessionId>.jsonl`, where
+ * `<project>` is the launch directory with every character that is not a
+ * letter or digit replaced by `-`. Only each file's head is read: the title
+ * is the operator's first real prompt, and recency is the file's own mtime,
+ * so a long transcript costs one bounded read.
+ */
+export class QwenConversationAdapter implements ConversationCatalogAdapter {
+  readonly harnesses = ['qwen'] as const;
+
+  constructor(
+    private readonly runtimeRoot = qwenRuntimeRoot(),
+    private readonly maxSessions = 200
+  ) {}
+
+  async list(projectDir: string): Promise<ConversationDraft[]> {
+    const scope = await ProjectDirectoryScope.create(projectDir);
+    const directories = new Set(
+      [projectDir, ...scope.roots].map(root =>
+        path.join(
+          this.runtimeRoot,
+          'projects',
+          qwenProjectDirname(root),
+          'chats'
+        )
+      )
+    );
+    const rows: ConversationDraft[] = [];
+    for (const directory of directories) {
+      for (const head of await this.readHeads(directory)) {
+        const launchDirectory = await scope.launchDirectory(head.cwd);
+        if (!launchDirectory) continue;
+        rows.push({
+          id: head.id,
+          harness: 'qwen',
+          cwd: launchDirectory,
+          startedAt: head.startedAt,
+          updatedAt: head.updatedAt,
+          title: head.title
+            ? truncate(head.title, MAX_TITLE_CHARS)
+            : 'Qwen Code session',
+          description: null,
+          titleSource: head.title ? 'native' : 'fallback',
+          needsSummary: false,
+          providerSessionId: head.id,
+          continuation: { kind: 'provider' },
+          fingerprint: `qwen:${head.updatedAt}`,
+          summaryInput: [],
+          providerIdentity: head.id,
+          correlationKey: null,
+        });
+        if (rows.length >= this.maxSessions) return rows;
+      }
+    }
+    return rows;
+  }
+
+  private async readHeads(directory: string): Promise<QwenTranscriptHead[]> {
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(directory);
+    } catch {
+      return [];
+    }
+    const heads = await Promise.all(
+      entries
+        .filter(entry => entry.endsWith('.jsonl'))
+        .slice(0, this.maxSessions)
+        .map(async entry => {
+          const file = path.join(directory, entry);
+          try {
+            const [stat, head] = await Promise.all([
+              fs.promises.stat(file),
+              readHead(file, MAX_METADATA_BYTES),
+            ]);
+            return parseQwenTranscriptHead(
+              head,
+              entry.slice(0, -'.jsonl'.length),
+              stat.mtimeMs
+            );
+          } catch {
+            return null;
+          }
+        })
+    );
+    return heads
+      .filter((head): head is QwenTranscriptHead => head !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+  }
+}
+
+async function readHead(file: string, bytes: number): Promise<string> {
+  const handle = await fs.promises.open(file, 'r');
+  try {
+    const buffer = Buffer.alloc(bytes);
+    const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+    return buffer.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
 export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
   if (env.EXAWATT_GROK_SESSIONS_ROOT) return env.EXAWATT_GROK_SESSIONS_ROOT;
   if (env.GROK_HOME) return path.join(env.GROK_HOME, 'sessions');
@@ -1310,6 +1419,7 @@ const NATIVE_HISTORY_ADAPTERS: Record<
   opencode: ({ openCodeShell }) =>
     new OpenCodeConversationAdapter(openCodeShell),
   grok: () => new GrokConversationAdapter(),
+  qwen: () => new QwenConversationAdapter(),
 };
 
 export function nativeHistoryAdapter(

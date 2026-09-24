@@ -8,6 +8,7 @@ import {
   catalogCacheKey,
 } from './agent-model-catalog-cache';
 import { planLoginShell, shellQuote } from './login-shell';
+import { readQwenConfiguredModels, readQwenUserSettings } from './qwen-source';
 
 /**
  * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
@@ -677,6 +678,62 @@ export function parseGrokModelCatalog(raw: string): AgentModelCatalog {
   };
 }
 
+/**
+ * Qwen Code publishes no model list command. Its settings name the models it
+ * routes (`modelProviders`) and the configured default (`model.name`), which
+ * the operator wrote, so they are offered as configured values. With nothing
+ * configured the source chooses, and Exawatt pins no model.
+ */
+export function qwenModelCatalog(
+  settings: Record<string, unknown> | null
+): AgentModelCatalog {
+  const configured = readQwenConfiguredModels(settings);
+  const models: AgentModelOption[] = configured.models
+    .filter(model => isValidAgentModel(model.id))
+    .map(model => ({
+      id: model.id,
+      label:
+        model.label === model.id
+          ? formatAgentModelLabel(model.id)
+          : model.label,
+      description: `Configured in Qwen Code settings (${model.provider}).`,
+      defaultEffort: null,
+      efforts: [],
+    }));
+  const defaultModel =
+    configured.defaultModel && isValidAgentModel(configured.defaultModel)
+      ? configured.defaultModel
+      : null;
+  if (defaultModel && !models.some(model => model.id === defaultModel)) {
+    models.unshift({
+      id: defaultModel,
+      label: formatAgentModelLabel(defaultModel),
+      description: 'Configured as the default in Qwen Code settings.',
+      defaultEffort: null,
+      efforts: [],
+    });
+  }
+  const effective = models.find(model => model.id === defaultModel);
+  return {
+    harness: 'qwen',
+    effectiveModel: defaultModel,
+    effectiveModelLabel: effective?.label ?? 'Source default',
+    effectiveModelSource: defaultModel ? 'config' : 'account-default',
+    effectiveEffort: null,
+    effectiveEffortLabel: 'Source default',
+    effectiveEffortSource: 'unavailable',
+    effortLocked: false,
+    models,
+    catalogMode: models.length > 0 ? 'configured-values' : 'source-owned',
+    catalogProvenance:
+      models.length > 0
+        ? 'Qwen Code settings · modelProviders'
+        : 'Qwen Code chooses the model; none is configured',
+    observedAt: Date.now(),
+    selectionAction: null,
+  };
+}
+
 interface ClaudeSettings {
   model?: unknown;
   effortLevel?: unknown;
@@ -1294,6 +1351,7 @@ const MODEL_CATALOG_READERS: Record<
   opencode: ({ cwd, shell, environment, refresh }) =>
     listOpencodeModels(cwd, shell, environment, refresh),
   grok: ({ cwd, shell }) => readGrokModelCatalog(cwd, shell),
+  qwen: async () => qwenModelCatalog(readQwenUserSettings()),
 };
 
 async function probeAgentModels(

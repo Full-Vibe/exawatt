@@ -24,6 +24,12 @@ import {
 } from '@exawatt/core';
 import type { AgentSourceObservationStore } from './agent-source-observation-store';
 import { harnessDescriptor } from './harness-registry';
+import {
+  parseQwenVersion,
+  readQwenConfiguredModels,
+  readQwenSignIn,
+  readQwenUserSettings,
+} from './qwen-source';
 import { planLoginShell, shellQuote } from './login-shell';
 import {
   parseGrokAuthBanner,
@@ -1551,6 +1557,246 @@ function demoSource(): AgentSourceSnapshot {
 }
 
 /**
+ * A supported local harness whose CLI is not on the login-shell PATH. Shared
+ * so a new harness states only what differs: its name, its executable, and
+ * the version its adapter was verified against.
+ */
+function notInstalledSourceSnapshot(input: {
+  adapterId: AgentHarness;
+  label: string;
+  executable: string;
+  compatibilityDetail: string;
+  observedAt: number;
+}): AgentSourceSnapshot {
+  const commandEvidence = provenance(
+    'source-command',
+    `${input.label} CLI`,
+    input.observedAt
+  );
+  const declarationEvidence = provenance(
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
+  );
+  return {
+    ...agentSourceDeclaration(input.adapterId),
+    id: `${input.adapterId}-local`,
+    configured: true,
+    launchable: false,
+    state: 'not-installed',
+    stateLabel: 'Not installed',
+    summary: `${input.label} is supported here, but its CLI is not installed.`,
+    observedAt: input.observedAt,
+    unobservedProbes: [],
+    observation: LIVE_OBSERVATION,
+    facts: {
+      installation: fact(
+        'not-installed',
+        'Not installed',
+        `${input.executable} was not found in the login-shell PATH.`,
+        commandEvidence
+      ),
+      reachability: fact(
+        'unavailable',
+        'Unavailable',
+        'Local reachability requires the installed CLI.',
+        commandEvidence
+      ),
+      authentication: fact(
+        'unknown',
+        'Unknown',
+        `Sign-in remains owned by ${input.label}.`,
+        commandEvidence
+      ),
+      identity: fact(
+        'unknown',
+        'Unknown',
+        'No source identity was queried.',
+        commandEvidence
+      ),
+      compatibility: fact(
+        'unknown',
+        'Unknown',
+        input.compatibilityDetail,
+        declarationEvidence
+      ),
+      modelDiscovery: fact(
+        'unavailable',
+        'Unavailable',
+        'Model discovery requires the installed source.',
+        commandEvidence
+      ),
+    },
+    actions: {
+      recheck: true,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: true,
+    },
+  };
+}
+
+/**
+ * Qwen Code (ENG-003 S5.2). It has no sign-in status command and no model
+ * list command, so both facts come from its own settings file, read without
+ * running it: a configured credential is reported as configured, never as
+ * working, because only a model call could prove that.
+ */
+async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
+  const observedAt = Date.now();
+  const source = harnessDescriptor('qwen').source;
+  const declaration = agentSourceDeclaration('qwen');
+  const commandEvidence = provenance(
+    'source-command',
+    'Qwen Code CLI',
+    observedAt
+  );
+  const configEvidence = provenance(
+    'source-config',
+    'Qwen Code settings',
+    observedAt
+  );
+  const declarationEvidence = provenance(
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
+  );
+  const compatibilityDetail =
+    'The adapter contract was verified against Qwen Code 0.24.4.';
+  const installation = await resolveExecutable(shell, source.executable);
+  if (!installation.answered) {
+    return unobservedSourceSnapshot({
+      adapterId: 'qwen',
+      id: 'qwen-local',
+      label: 'Qwen Code',
+      observedAt,
+    });
+  }
+  const executablePath = installation.path;
+  if (!executablePath) {
+    return notInstalledSourceSnapshot({
+      adapterId: 'qwen',
+      label: 'Qwen Code',
+      executable: source.executable,
+      compatibilityDetail,
+      observedAt,
+    });
+  }
+  const versionResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.versionArgs),
+    8_000
+  );
+  const version = parseQwenVersion(
+    `${versionResult.stdout}\n${versionResult.stderr}`
+  );
+  const settings = readQwenUserSettings();
+  const signIn = readQwenSignIn(settings);
+  const catalog = readQwenConfiguredModels(settings);
+  const modelCount = catalog.models.length;
+  const versionProbe = probeOutcome(versionResult);
+  const state: AgentSourceState =
+    versionProbe === 'unanswered'
+      ? 'unknown'
+      : versionProbe === 'failed' || !version
+        ? 'degraded'
+        : !version.compatible
+          ? 'incompatible'
+          : signIn
+            ? 'ready'
+            : 'action-required';
+  return {
+    ...declaration,
+    id: 'qwen-local',
+    configured: true,
+    launchable: launchableAgentSourceState(state),
+    state,
+    stateLabel: stateLabel(state),
+    summary:
+      state === 'ready'
+        ? 'Exawatt can start and resume local Qwen Code Agents. Sign-in and execution remain with Qwen Code.'
+        : state === 'incompatible'
+          ? 'This Qwen Code version predates the adapter contract verified by Exawatt.'
+          : state === 'action-required'
+            ? 'Qwen Code is installed, but no sign-in is configured. Open it and run /auth.'
+            : state === 'unknown'
+              ? 'Qwen Code status is not known yet.'
+              : 'Qwen Code is installed, but its checks did not pass.',
+    observedAt,
+    unobservedProbes: versionProbe === 'unanswered' ? ['version'] : [],
+    observation: LIVE_OBSERVATION,
+    facts: {
+      installation: fact(
+        'ready',
+        version?.version || versionResult.stdout || 'Installed',
+        `Detected at ${executablePath}.`,
+        commandEvidence
+      ),
+      reachability: fact(
+        versionProbe === 'responded'
+          ? 'ready'
+          : versionProbe === 'failed'
+            ? 'degraded'
+            : 'unknown',
+        versionProbe === 'responded'
+          ? 'Local CLI responds'
+          : versionProbe === 'failed'
+            ? 'Version check failed'
+            : 'Unknown',
+        versionProbe === 'responded'
+          ? 'Observed through qwen --version.'
+          : versionProbe === 'failed'
+            ? 'The executable exists, and its version command returned an error.'
+            : 'The version command did not return before its deadline.',
+        commandEvidence
+      ),
+      authentication: fact(
+        signIn ? 'ready' : 'action-required',
+        signIn ? `Configured: ${signIn.authType}` : 'Sign-in required',
+        signIn
+          ? `Qwen Code is configured to sign in with ${signIn.authType}. Exawatt cannot confirm the credential works without a model call, and does not read or store it.`
+          : 'No credential is configured. Sign in inside Qwen Code with /auth.',
+        configEvidence
+      ),
+      identity: fact(
+        'unknown',
+        'Unknown',
+        'Qwen Code does not expose an account identity outside its session.',
+        configEvidence
+      ),
+      compatibility: fact(
+        version ? (version.compatible ? 'ready' : 'incompatible') : 'unknown',
+        version
+          ? version.compatible
+            ? 'Compatible'
+            : 'Upgrade required'
+          : 'Unknown',
+        compatibilityDetail,
+        version ? commandEvidence : declarationEvidence
+      ),
+      modelDiscovery: fact(
+        modelCount > 0 || catalog.defaultModel ? 'ready' : 'unknown',
+        modelCount > 0
+          ? `${modelCount} models configured`
+          : catalog.defaultModel
+            ? 'Default model configured'
+            : 'Source default',
+        modelCount > 0 || catalog.defaultModel
+          ? 'Read from Qwen Code settings. Qwen Code has no model list command.'
+          : 'No model is configured, so Qwen Code chooses one.',
+        configEvidence
+      ),
+    },
+    actions: {
+      recheck: true,
+      authenticate: !signIn,
+      chooseModel: false,
+      installGuide: true,
+    },
+  };
+}
+
+/**
  * How Exawatt observes each local harness. Exhaustive on purpose: a new
  * harness fails type-check here until it names the probe that reports its
  * installation, version, and sign-in as the six independent facts.
@@ -1563,6 +1809,7 @@ const LOCAL_HARNESS_INSPECTORS: Record<
   codex: shell => inspectStatusCommandHarness('codex', shell),
   opencode: inspectOpencode,
   grok: inspectGrok,
+  qwen: inspectQwen,
 };
 
 async function discoverAgentSources(
@@ -1886,7 +2133,9 @@ export async function launchSourceOwnedAction(
   const intro =
     action === 'choose-model'
       ? `printf '\\nChoose a model with /model inside ${descriptor.label}.\\n\\n'; `
-      : '';
+      : descriptor.authSessionCommand
+        ? `printf '\\nSign in with ${descriptor.authSessionCommand} inside ${descriptor.label}.\\n\\n'; `
+        : '';
   const script = [
     'tell application "Terminal"',
     'activate',

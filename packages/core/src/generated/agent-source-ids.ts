@@ -3,7 +3,13 @@
  * Edit contracts/agent-sources.json, then run pnpm agent-sources:generate. */
 
 /** Sources Exawatt runs as a local CLI in a terminal, in contract order. */
-export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'grok'] as const;
+export const AGENT_HARNESSES = [
+  'claude',
+  'codex',
+  'opencode',
+  'grok',
+  'qwen',
+] as const;
 
 /** Every declared Agent Source, in contract order. */
 export const AGENT_SOURCE_ADAPTER_IDS = [
@@ -11,6 +17,7 @@ export const AGENT_SOURCE_ADAPTER_IDS = [
   'codex',
   'opencode',
   'grok',
+  'qwen',
   'openclaw',
   'demo',
 ] as const;
@@ -21,6 +28,7 @@ export const AGENT_SOURCE_CATALOG_IDS = [
   'codex',
   'opencode',
   'grok',
+  'qwen',
   'openclaw',
   'demo',
   'custom',

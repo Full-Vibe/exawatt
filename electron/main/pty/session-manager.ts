@@ -238,19 +238,40 @@ export class PtySessionManager extends EventEmitter {
    */
   private async subscribeToEventChannel(
     id: string,
-    harness: PtyHarness
+    harness: PtyHarness,
+    harnessSessionId: string | null
   ): Promise<HarnessLaunchWiring> {
     if (harness === 'shell') return {};
     const descriptor = harnessDescriptor(harness);
     const channel = descriptor.eventChannel;
     if (!channel || !this.hookSettings) return {};
     if (!(await harnessEventChannel.start())) return {};
-    const registration = harnessEventChannel.register(id, channel.normalize);
-    if (!registration) return {};
-    const settingsPath = await this.hookSettings.write(
+    const { normalize, sessionIdOf } = channel;
+    const registration = harnessEventChannel.register(
       id,
-      channel.settings(registration.port, registration.token)
+      sessionIdOf && harnessSessionId
+        ? (payload, at) =>
+            sessionIdOf(payload) === harnessSessionId
+              ? normalize(payload, at)
+              : null
+        : normalize
     );
+    if (!registration) return {};
+    // A document that cannot be built launches the Agent unsubscribed, the
+    // same as a channel that failed to start: status then comes from the
+    // terminal, and the launch itself never fails over observation.
+    let document: string;
+    try {
+      document = channel.settings(registration.port, registration.token);
+    } catch (error) {
+      console.warn(
+        `[session-manager] ${harness} launches without its event channel:`,
+        error instanceof Error ? error.message : error
+      );
+      harnessEventChannel.release(id);
+      return {};
+    }
+    const settingsPath = await this.hookSettings.write(id, document);
     if (!settingsPath) {
       harnessEventChannel.release(id);
       return {};
@@ -405,7 +426,11 @@ export class PtySessionManager extends EventEmitter {
     const opencodeLaunchAgentName =
       options.harness === 'opencode' ? `exawatt-${randomUUID()}` : null;
     const wiring = {
-      ...(await this.subscribeToEventChannel(id, options.harness)),
+      ...(await this.subscribeToEventChannel(
+        id,
+        options.harness,
+        harnessSessionId
+      )),
       ...(opencodeLaunchAgentName
         ? { launchAgentName: opencodeLaunchAgentName }
         : {}),

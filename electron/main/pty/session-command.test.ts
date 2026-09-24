@@ -598,7 +598,9 @@ describe('buildHarnessCommand', () => {
           undefined,
           { eventChannelSettingsPath: '/tmp/exawatt/pty-1.json' }
         )
-      ).toBe(`grok --permission-mode bypassPermissions --session-id ${IDENTITY}`);
+      ).toBe(
+        `grok --permission-mode bypassPermissions --session-id ${IDENTITY}`
+      );
     });
 
     it('never receives or names a provider credential', () => {
@@ -627,6 +629,80 @@ describe('buildHarnessCommand', () => {
       expect(source.authLoginArgs).toEqual(['login']);
       expect(source.authStatusArgs).toEqual(['models']);
       expect(source.authOwner).toBe('Grok Build');
+    });
+  });
+  describe('Qwen Code (ENG-003 S5.2)', () => {
+    const IDENTITY = '55555555-5555-4555-8555-555555555555';
+
+    it('allocates identity for a fresh launch and resumes exactly', () => {
+      expect(buildHarnessCommand('qwen', IDENTITY, false)).toBe(
+        `qwen --approval-mode yolo --session-id ${IDENTITY}`
+      );
+      expect(buildHarnessCommand('qwen', IDENTITY, true)).toBe(
+        `qwen --approval-mode yolo --resume ${IDENTITY}`
+      );
+    });
+
+    it('keeps an initial task interactive with -i', () => {
+      // A positional task runs one-shot and exits (measured on 0.24.4).
+      expect(
+        buildHarnessCommand('qwen', IDENTITY, false, undefined, 'fix the build')
+      ).toBe(
+        `qwen --approval-mode yolo --session-id ${IDENTITY} -i 'fix the build'`
+      );
+    });
+
+    it('maps every permission mode onto a real Qwen approval mode', () => {
+      const descriptor = harnessDescriptor('qwen');
+      expect(descriptor.permissionFlags('prompt')).toBe(
+        '--approval-mode default'
+      );
+      expect(descriptor.permissionFlags('auto')).toBe('--approval-mode auto');
+      expect(descriptor.permissionFlags('unrestricted')).toBe(
+        '--approval-mode yolo'
+      );
+    });
+
+    it('pins a model and never invents an effort flag', () => {
+      expect(
+        buildHarnessCommand(
+          'qwen',
+          IDENTITY,
+          false,
+          undefined,
+          undefined,
+          'prompt',
+          'qwen3-coder-plus',
+          'high'
+        )
+      ).toBe(
+        `qwen --approval-mode default -m 'qwen3-coder-plus' --session-id ${IDENTITY}`
+      );
+    });
+
+    it('subscribes through the lowest settings layer, not the user config', () => {
+      expect(
+        buildHarnessCommand(
+          'qwen',
+          IDENTITY,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: '/tmp/exawatt hooks/qwen.json' }
+        )
+      ).toBe(
+        `env QWEN_CODE_SYSTEM_DEFAULTS_PATH='/tmp/exawatt hooks/qwen.json' ` +
+          `qwen --approval-mode yolo --session-id ${IDENTITY}`
+      );
+    });
+
+    it('guides an in-session sign-in instead of inventing a login command', () => {
+      const { source } = harnessDescriptor('qwen');
+      expect(source.authLoginArgs).toEqual([]);
+      expect(source.authSessionCommand).toBe('/auth');
     });
   });
 });
