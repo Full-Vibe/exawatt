@@ -127,3 +127,90 @@ describe('a cached not-installed is re-confirmed before it is served', () => {
     }
   });
 });
+
+describe('the pre-launch gate answers for the source it launches (BUG-210)', () => {
+  function installReadyClaude(): void {
+    install(
+      'claude',
+      [
+        'case "$1" in',
+        '  --version) echo "2.1.0 (Claude Code)" ;;',
+        '  auth) echo \'{"loggedIn":true,"email":"fixture@example.com"}\' ;;',
+        'esac',
+      ].join('\n')
+    );
+  }
+
+  function installSignedOutCodex(): void {
+    install(
+      'codex',
+      [
+        'case "$1" in',
+        '  --version) echo "codex-cli 0.63.0" ;;',
+        '  login) echo "Not logged in"; exit 1 ;;',
+        'esac',
+      ].join('\n')
+    );
+  }
+
+  it('starts a ready source with no probe while ANOTHER source is unsettled', async () => {
+    installReadyClaude();
+    installSignedOutCodex();
+    const registry = await freshRegistry();
+    const first = await registry.inspectAgentSources('/bin/sh', 'launch');
+    expect(first.sources.find(s => s.harness === 'claude')?.state).toBe(
+      'ready'
+    );
+    // The signed-out source holds the whole registry to the short window,
+    // which is the condition every Start used to pay a full probe for.
+    expect(first.sources.find(s => s.harness === 'codex')?.state).not.toBe(
+      'ready'
+    );
+    expect(registry.registryCacheWindowMs(first)).toBe(SHORT_WINDOW_MS);
+
+    clock += SHORT_WINDOW_MS + 1_000;
+    const gate = await registry.inspectAgentSources(
+      '/bin/sh',
+      'launch',
+      false,
+      'claude'
+    );
+    // Served from the observation already held: a re-probe would be stamped
+    // with the advanced clock.
+    expect(gate.observedAt).toBe(first.observedAt);
+    expect(registry.agentSourceLaunchReadiness(gate, 'claude')).toEqual({
+      known: true,
+      blocked: false,
+    });
+  });
+
+  it('re-probes when the launched source itself is the unsettled one', async () => {
+    installReadyClaude();
+    installSignedOutCodex();
+    const registry = await freshRegistry();
+    const first = await registry.inspectAgentSources('/bin/sh', 'launch');
+    clock += SHORT_WINDOW_MS + 1_000;
+    const gate = await registry.inspectAgentSources(
+      '/bin/sh',
+      'launch',
+      false,
+      'codex'
+    );
+    expect(gate.observedAt).toBeGreaterThan(first.observedAt);
+  });
+
+  it('re-probes a ready source once its fact is no longer fresh', async () => {
+    installReadyClaude();
+    installSignedOutCodex();
+    const registry = await freshRegistry();
+    const first = await registry.inspectAgentSources('/bin/sh', 'launch');
+    clock += 5 * 60_000 + 1_000;
+    const gate = await registry.inspectAgentSources(
+      '/bin/sh',
+      'launch',
+      false,
+      'claude'
+    );
+    expect(gate.observedAt).toBeGreaterThan(first.observedAt);
+  });
+});

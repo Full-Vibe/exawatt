@@ -320,7 +320,12 @@ export function registerPtyIPC(
     try {
       if (options.harness !== 'shell') {
         const shellPath = await defaultShell();
-        const registry = await inspectAgentSources(shellPath, 'launch', false);
+        const registry = await inspectAgentSources(
+          shellPath,
+          'launch',
+          false,
+          options.harness
+        );
         const readiness = agentSourceLaunchReadiness(registry, options.harness);
         const source = registry.sources.find(
           candidate => candidate.harness === options.harness

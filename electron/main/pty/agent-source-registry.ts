@@ -1893,6 +1893,42 @@ export function registryCacheWindowMs(
   return settled ? AGENT_SOURCE_FACT_FRESH_MS : REGISTRY_CACHE_MS;
 }
 
+/**
+ * Whether the pre-launch gate may answer for `harness` from `snapshot`
+ * without a probe (BUG-210).
+ *
+ * The gate asks one question about one source: may THIS harness start? The
+ * whole-registry window above answers a different one, and a single unsettled
+ * source anywhere keeps it at five seconds. On a machine with Qwen Code
+ * installed and signed out, that made every Start of Claude Code or Codex
+ * after the first five seconds wait for a full probe of every harness, six
+ * to ten seconds with a draft tab and no process, for a verdict about a
+ * source the launch never touches.
+ *
+ * So the launched source's OWN fact decides. A live, complete `ready`
+ * observation inside the fact-fresh window is served: its verdict can only
+ * be clear, and a source that broke since then speaks for itself in the pane,
+ * which is the BUG-063 rule for every unanswered question. Anything else,
+ * including `not-installed` (whose absence the serve path re-confirms,
+ * BUG-180), takes the whole-registry path unchanged.
+ */
+function launchedSourceIsFreshlyReady(
+  snapshot: AgentSourceRegistrySnapshot,
+  harness: AgentHarness,
+  age: number
+): boolean {
+  if (age >= AGENT_SOURCE_FACT_FRESH_MS) return false;
+  const source = snapshot.sources.find(
+    candidate => candidate.harness === harness
+  );
+  return (
+    source !== undefined &&
+    source.observation.origin === 'live' &&
+    source.unobservedProbes.length === 0 &&
+    source.state === 'ready'
+  );
+}
+
 interface RegistryCacheEntry {
   snapshot: AgentSourceRegistrySnapshot;
   cachedAt: number;
@@ -1962,13 +1998,21 @@ function confirmAbsences(
  */
 async function servableRegistry(
   shell: string,
-  scope: 'all' | 'launch'
+  scope: 'all' | 'launch',
+  launching?: AgentHarness
 ): Promise<AgentSourceRegistrySnapshot | null> {
   const cached = registryCache.get(scope);
   if (!cached) return null;
   const now = Date.now();
   const age = now - cached.cachedAt;
-  if (age < 0 || age >= registryCacheWindowMs(cached.snapshot)) return null;
+  if (age < 0) return null;
+  if (
+    launching &&
+    launchedSourceIsFreshlyReady(cached.snapshot, launching, age)
+  ) {
+    return cached.snapshot;
+  }
+  if (age >= registryCacheWindowMs(cached.snapshot)) return null;
   const sinceConfirmed = now - cached.absenceConfirmedAt;
   if (sinceConfirmed >= 0 && sinceConfirmed < REGISTRY_CACHE_MS) {
     return cached.snapshot;
@@ -2099,10 +2143,11 @@ export async function rememberedAgentSources(
 async function inspectAgentSourceDeclarations(
   shell: string,
   scope: 'all' | 'launch' = 'all',
-  refresh = false
+  refresh = false,
+  launching?: AgentHarness
 ): Promise<AgentSourceRegistrySnapshot> {
   if (!refresh) {
-    const served = await servableRegistry(shell, scope);
+    const served = await servableRegistry(shell, scope, launching);
     if (served) return served;
   }
   const existing = registryInFlight.get(scope);
@@ -2127,13 +2172,19 @@ async function inspectAgentSourceDeclarations(
   }
 }
 
+/**
+ * `launching` names the harness a pre-launch gate is about to start: its own
+ * fresh `ready` fact then answers without a probe, whatever the other sources
+ * are doing (BUG-210, `launchedSourceIsFreshlyReady`).
+ */
 export async function inspectAgentSources(
   shell: string,
   scope: 'all' | 'launch' = 'all',
-  refresh = false
+  refresh = false,
+  launching?: AgentHarness
 ): Promise<AgentSourceRegistrySnapshot> {
   return delegationObservations.project(
-    await inspectAgentSourceDeclarations(shell, scope, refresh)
+    await inspectAgentSourceDeclarations(shell, scope, refresh, launching)
   );
 }
 
