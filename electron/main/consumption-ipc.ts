@@ -13,6 +13,7 @@ import type {
   LiveConsumptionSnapshotRequest,
 } from '@exawatt/core';
 import { emptyLiveConsumptionSnapshot } from '@exawatt/core';
+import { handleBounded } from './ipc-arguments';
 import { handleTrusted } from './ipc-security';
 import { setClaudePlanWindowsEnabled } from './settings-store';
 import { broadcastToWindows } from './window-broadcast';
@@ -55,27 +56,15 @@ export function registerConsumptionIPC(
     // be constructed after the operator has switched the read off; the
     // service's own revision bump then pushes `consumption:updated`, and the
     // next pull serves absence.
-    handleTrusted(
-      'settings:set-claude-plan-windows',
-      (_event, enabled: boolean) => {
-        if (typeof enabled !== 'boolean')
-          throw new Error('Invalid Claude plan usage setting');
-        planAccount.setEnabled(enabled);
-        const settings = setClaudePlanWindowsEnabled(enabled);
-        broadcastToWindows(windows(), 'settings:changed', settings);
-        return settings;
-      }
-    );
+    handleBounded('settings:set-claude-plan-windows', (_event, enabled) => {
+      planAccount.setEnabled(enabled);
+      const settings = setClaudePlanWindowsEnabled(enabled);
+      broadcastToWindows(windows(), 'settings:changed', settings);
+      return settings;
+    });
   }
-  handleTrusted(
-    'consumption:snapshot',
-    (_event, request?: LiveConsumptionSnapshotRequest) => {
-      const sinceMs = request?.sinceMs;
-      if (sinceMs !== undefined && typeof sinceMs !== 'number') {
-        throw new Error('Invalid consumption snapshot request');
-      }
-      return scanner.snapshot(sinceMs === undefined ? undefined : { sinceMs });
-    }
+  handleBounded('consumption:snapshot', (_event, request) =>
+    scanner.snapshot(request)
   );
   handleTrusted('consumption:rescan', () => {
     scanner.rescan();

@@ -1,6 +1,7 @@
 import { createSessionPauser } from './pty/session-pause';
 import { readSessionCloneContext } from './pty/session-clone-context';
 import { BrowserWindow, Notification, app, nativeTheme, shell } from 'electron';
+import { handleBounded } from './ipc-arguments';
 import { handleTrusted } from './ipc-security';
 import { createSessionModelChanger } from './pty/session-model-change';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
@@ -74,12 +75,9 @@ import type {
   ClosedSessionEntry,
   DesktopBridgePush,
   DesktopBridgePushChannel,
-  GoalVisual,
-  PtyAttention,
   PtyCreateOptions,
   PtySessionInfo,
   PtySessionRecord,
-  ResumeIdentityHint,
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
 
@@ -318,7 +316,7 @@ export function registerPtyIPC(
 
   // structured result instead of a thrown error: IPC rejections arrive as
   // opaque "Error invoking remote method" strings — useless for UX
-  handleTrusted('pty:create', async (_event, options: PtyCreateOptions) => {
+  handleBounded('pty:create', async (_event, options) => {
     try {
       if (options.harness !== 'shell') {
         const shellPath = await defaultShell();
@@ -440,22 +438,10 @@ export function registerPtyIPC(
       }
     }
   );
-  handleTrusted(
+  handleBounded(
     'pty:list-agent-models',
-    async (_event, harness: unknown, cwd: string, refresh = false) => {
-      if (!isAgentHarness(harness)) {
-        throw new Error('Unsupported Agent Source');
-      }
-      if (typeof cwd !== 'string' || !cwd.trim() || cwd.includes('\0')) {
-        throw new Error('Invalid Project directory');
-      }
-      return listAgentModels(
-        harness,
-        cwd,
-        await defaultShell(),
-        refresh === true
-      );
-    }
+    async (_event, harness, cwd, refresh) =>
+      listAgentModels(harness, cwd, await defaultShell(), refresh)
   );
   handleTrusted(
     'pty:write',
@@ -480,31 +466,11 @@ export function registerPtyIPC(
     // the first human keystroke is work given — started truth (D22)
     attentionMonitor.noteEngaged(id);
   });
-  handleTrusted(
-    'pty:set-context-auth',
-    (_event, accessToken: string | null) => {
-      if (
-        accessToken !== null &&
-        (typeof accessToken !== 'string' || accessToken.length > 16_384)
-      ) {
-        throw new Error('Invalid context-label authentication');
-      }
-      contextSummarizer.setAccessToken(accessToken);
-    }
-  );
-  handleTrusted(
-    'pty:correct-context',
-    (_event, durableSessionId: string, label: string) => {
-      if (
-        typeof durableSessionId !== 'string' ||
-        !durableSessionId ||
-        durableSessionId.length > 240 ||
-        typeof label !== 'string'
-      ) {
-        throw new Error('Invalid context-label correction');
-      }
-      return contextSummarizer.correct(durableSessionId, label);
-    }
+  handleBounded('pty:set-context-auth', (_event, accessToken) => {
+    contextSummarizer.setAccessToken(accessToken);
+  });
+  handleBounded('pty:correct-context', (_event, durableSessionId, label) =>
+    contextSummarizer.correct(durableSessionId, label)
   );
   handleTrusted('pty:focus', (_event, id: string | null) => {
     attentionMonitor.setFocus(id);
@@ -616,28 +582,19 @@ export function registerPtyIPC(
     ...ptySessions.bufferSince(id, cursor),
     cursor: ptySessions.bufferCursor(id),
   }));
-  handleTrusted(
-    'pty:clone-context',
-    async (_event, durableSessionId: string) => {
-      if (
-        typeof durableSessionId !== 'string' ||
-        !/^[A-Za-z0-9._-]{1,200}$/.test(durableSessionId)
-      ) {
-        throw new Error('Invalid Session identity');
-      }
-      const runtime = ptySessions
-        .list()
+  handleBounded('pty:clone-context', async (_event, durableSessionId) => {
+    const runtime = ptySessions
+      .list()
+      .find(row => row.durableSessionId === durableSessionId);
+    const identity =
+      runtime ??
+      ptySessions
+        .listProviderIdentities()
         .find(row => row.durableSessionId === durableSessionId);
-      const identity =
-        runtime ??
-        ptySessions
-          .listProviderIdentities()
-          .find(row => row.durableSessionId === durableSessionId);
-      if (!identity || identity.harness === 'shell')
-        throw new Error('The original Agent Session is unavailable.');
-      return readSessionCloneContext(identity);
-    }
-  );
+    if (!identity || identity.harness === 'shell')
+      throw new Error('The original Agent Session is unavailable.');
+    return readSessionCloneContext(identity);
+  });
   // The paused-Agent record's read: O(1), no transcript (incident 0008).
   handleTrusted(
     'pty:retained-history-meta',
@@ -676,10 +633,7 @@ export function registerPtyIPC(
     }
     return { kind: payload.kind, path: payload.path };
   });
-  handleTrusted('pty:copy-text', (_event, text: string) => {
-    if (typeof text !== 'string' || text.length > 4_000_000) {
-      throw new Error('Invalid clipboard text');
-    }
+  handleBounded('pty:copy-text', (_event, text) => {
     writeClipboardText(text);
   });
   handleTrusted('pty:open-external', async (_event, rawUrl: string) => {
@@ -689,88 +643,48 @@ export function registerPtyIPC(
     }
     await shell.openExternal(url.toString());
   });
-  handleTrusted(
-    'pty:open-path',
-    async (
-      _event,
-      rawPath: string,
-      cwd: string,
-      options?: { contain?: boolean }
-    ) => {
-      if (!rawPath || rawPath.includes('\0') || rawPath.length > 4096) {
-        throw new Error('Invalid local path');
+  handleBounded('pty:open-path', async (_event, rawPath, cwd, options) => {
+    // `contain` = the path came from UNTRUSTED repo content (roadmap
+    // `Project doc:` bullets). Such a path must stay inside the project:
+    // no home expansion, no absolute paths, no `..` escape, and — after
+    // symlink resolution — the real target must sit under the real cwd.
+    // Otherwise a cloned repo could point a chip at ~/x.command and have
+    // the operator's click launch it. Terminal ⌘-click keeps its existing
+    // uncontained behavior (the operator clicked a literal path).
+    if (options?.contain) {
+      if (!isRepoRelativePath(rawPath)) {
+        throw new Error('Path must be inside the project');
       }
-      // `contain` = the path came from UNTRUSTED repo content (roadmap
-      // `Project doc:` bullets). Such a path must stay inside the project:
-      // no home expansion, no absolute paths, no `..` escape, and — after
-      // symlink resolution — the real target must sit under the real cwd.
-      // Otherwise a cloned repo could point a chip at ~/x.command and have
-      // the operator's click launch it. Terminal ⌘-click keeps its existing
-      // uncontained behavior (the operator clicked a literal path).
-      if (options?.contain) {
-        if (!isRepoRelativePath(rawPath)) {
-          throw new Error('Path must be inside the project');
-        }
-        const root = await fs.promises.realpath(cwd);
-        const realTarget = await fs.promises.realpath(
-          path.resolve(root, rawPath)
-        );
-        const resolved = resolveContainedPath(root, realTarget);
-        if (!resolved) throw new Error('Path escapes the project');
-        const stat = await fs.promises.stat(resolved);
-        if (!stat.isFile() && !stat.isDirectory())
-          throw new Error('Unsupported path');
-        const error = await shell.openPath(resolved);
-        if (error) throw new Error(error);
-        return;
-      }
-      const expanded = rawPath.startsWith('~/')
-        ? path.join(os.homedir(), rawPath.slice(2))
-        : rawPath;
-      const resolved = path.resolve(cwd, expanded);
+      const root = await fs.promises.realpath(cwd);
+      const realTarget = await fs.promises.realpath(
+        path.resolve(root, rawPath)
+      );
+      const resolved = resolveContainedPath(root, realTarget);
+      if (!resolved) throw new Error('Path escapes the project');
       const stat = await fs.promises.stat(resolved);
       if (!stat.isFile() && !stat.isDirectory())
         throw new Error('Unsupported path');
       const error = await shell.openPath(resolved);
       if (error) throw new Error(error);
+      return;
     }
-  );
+    const expanded = rawPath.startsWith('~/')
+      ? path.join(os.homedir(), rawPath.slice(2))
+      : rawPath;
+    const resolved = path.resolve(cwd, expanded);
+    const stat = await fs.promises.stat(resolved);
+    if (!stat.isFile() && !stat.isDirectory())
+      throw new Error('Unsupported path');
+    const error = await shell.openPath(resolved);
+    if (error) throw new Error(error);
+  });
   handleTrusted(
     'pty:list-resume-candidates',
     async (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
       listResumeCandidates(harness, cwd, undefined, await defaultShell())
   );
-  handleTrusted(
-    'pty:reconcile-resume-identities',
-    (_event, candidates: unknown) => {
-      if (!Array.isArray(candidates) || candidates.length > 200) {
-        throw new Error('Invalid Session identity reconciliation request');
-      }
-      const hints = candidates.map(candidate => {
-        if (!candidate || typeof candidate !== 'object') {
-          throw new Error('Invalid Session identity hint');
-        }
-        const hint = candidate as Partial<ResumeIdentityHint>;
-        if (
-          typeof hint.durableSessionId !== 'string' ||
-          !/^[A-Za-z0-9._-]{1,200}$/.test(hint.durableSessionId) ||
-          !isAgentHarness(hint.harness) ||
-          typeof hint.cwd !== 'string' ||
-          !hint.cwd ||
-          hint.cwd.includes('\0') ||
-          (hint.initialTask !== null &&
-            (typeof hint.initialTask !== 'string' ||
-              hint.initialTask.length > 8_000)) ||
-          (hint.harnessSessionId !== null &&
-            (typeof hint.harnessSessionId !== 'string' ||
-              !/^[A-Za-z0-9_-]{8,128}$/.test(hint.harnessSessionId)))
-        ) {
-          throw new Error('Invalid Session identity hint');
-        }
-        return hint as ResumeIdentityHint;
-      });
-      return ptySessions.reconcileResumeIdentities(hints);
-    }
+  handleBounded('pty:reconcile-resume-identities', (_event, hints) =>
+    ptySessions.reconcileResumeIdentities(hints)
   );
   handleTrusted('pty:list-recent-conversations', (_event, cwd: string) =>
     conversationCatalog.list(cwd)
@@ -782,22 +696,19 @@ export function registerPtyIPC(
   );
 
   // one-gesture worktrees: <repo>-wt/<branch> sibling container
-  handleTrusted(
-    'pty:worktree',
-    async (_event, repoDir: string, branch: string) => {
-      try {
-        return {
-          ok: true as const,
-          path: await createWorktree(repoDir, branch),
-        };
-      } catch (err) {
-        return {
-          ok: false as const,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
+  handleBounded('pty:worktree', async (_event, repoDir, branch) => {
+    try {
+      return {
+        ok: true as const,
+        path: await createWorktree(repoDir, branch),
+      };
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
-  );
+  });
 
   // workspace layout persistence (renderer-owned shape)
   handleTrusted('workspace:load', () => loadWorkspace());
@@ -832,19 +743,12 @@ export function registerPtyIPC(
     broadcast('settings:changed', settings);
     return settings;
   });
-  handleTrusted(
-    'settings:set-attention-notifications',
-    (_event, enabled: boolean) => {
-      if (typeof enabled !== 'boolean')
-        throw new Error('Invalid notification setting');
-      const settings = setAttentionNotifications(enabled);
-      broadcast('settings:changed', settings);
-      return settings;
-    }
-  );
-  handleTrusted('settings:set-dock-badge', (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean')
-      throw new Error('Invalid dock badge setting');
+  handleBounded('settings:set-attention-notifications', (_event, enabled) => {
+    const settings = setAttentionNotifications(enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
+  handleBounded('settings:set-dock-badge', (_event, enabled) => {
     const settings = setDockBadge(enabled);
     // apply immediately: turning the badge off must clear it right now, and
     // turning it on must reflect any attention already waiting
@@ -855,32 +759,23 @@ export function registerPtyIPC(
     broadcast('settings:changed', settings);
     return settings;
   });
-  handleTrusted(
-    'settings:set-hosted-context-labels',
-    (_event, enabled: boolean) => {
-      if (typeof enabled !== 'boolean')
-        throw new Error('Invalid context label setting');
-      const settings = setHostedContextLabels(enabled);
-      // Applied before the write is announced: no request may be constructed
-      // after the operator has switched the feature off.
-      contextSummarizer.setContextLabelsEnabled(enabled);
-      broadcast('settings:changed', settings);
-      return settings;
-    }
-  );
-  handleTrusted(
+  handleBounded('settings:set-hosted-context-labels', (_event, enabled) => {
+    const settings = setHostedContextLabels(enabled);
+    // Applied before the write is announced: no request may be constructed
+    // after the operator has switched the feature off.
+    contextSummarizer.setContextLabelsEnabled(enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
+  handleBounded(
     'settings:set-hosted-conversation-summaries',
-    (_event, enabled: boolean) => {
-      if (typeof enabled !== 'boolean')
-        throw new Error('Invalid conversation summary setting');
+    (_event, enabled) => {
       const settings = setHostedConversationSummaries(enabled);
       broadcast('settings:changed', settings);
       return settings;
     }
   );
-  handleTrusted('settings:set-goal-visuals', (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean')
-      throw new Error('Invalid goal visual setting');
+  handleBounded('settings:set-goal-visuals', (_event, enabled) => {
     const settings = setGoalVisualsEnabled(enabled);
     contextSummarizer.setGoalVisualsEnabled(enabled);
     broadcast('settings:changed', settings);
@@ -893,8 +788,7 @@ export function registerPtyIPC(
     'settings:set-keyboard-shortcuts',
     (_event, overrides: unknown) => setKeyboardShortcutOverrides(overrides)
   );
-  handleTrusted('settings:set-reentry-recap', (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean') throw new Error('Invalid recap setting');
+  handleBounded('settings:set-reentry-recap', (_event, enabled) => {
     const settings = setReentryRecapEnabled(enabled);
     // Applied before the write is announced: no scrollback may be read and no
     // recap process spawned after the operator has switched the recap off.
@@ -902,52 +796,20 @@ export function registerPtyIPC(
     broadcast('settings:changed', settings);
     return settings;
   });
-  handleTrusted(
-    'settings:set-operator-auto-publish',
-    (_event, enabled: boolean) => {
-      if (typeof enabled !== 'boolean')
-        throw new Error('Invalid publishing setting');
-      // No main-side enforcement point exists on purpose: uploads only ever
-      // leave from the renderer's sync path, which re-reads this preference
-      // at execution time (ENG-035; decision `0029`). Main persists the
-      // choice and announces it.
-      const settings = setOperatorAutoPublish(enabled);
-      broadcast('settings:changed', settings);
-      return settings;
-    }
-  );
-  handleTrusted(
-    'settings:record-operator-profile-state',
-    (_event, state: unknown) => {
-      if (!state || typeof state !== 'object' || Array.isArray(state)) {
-        throw new Error('Invalid Operator profile state');
-      }
-      const raw = state as Record<string, unknown>;
-      if (
-        Object.keys(raw).some(
-          key => !['startedAt', 'lastSyncedAt', 'profileEnabled'].includes(key)
-        ) ||
-        (raw.startedAt !== undefined && typeof raw.startedAt !== 'string') ||
-        (raw.lastSyncedAt !== undefined &&
-          typeof raw.lastSyncedAt !== 'string') ||
-        (raw.profileEnabled !== undefined &&
-          typeof raw.profileEnabled !== 'boolean')
-      ) {
-        throw new Error('Invalid Operator profile state');
-      }
-      const settings = recordOperatorProfilePublicationState({
-        ...(raw.startedAt === undefined ? {} : { startedAt: raw.startedAt }),
-        ...(raw.lastSyncedAt === undefined
-          ? {}
-          : { lastSyncedAt: raw.lastSyncedAt }),
-        ...(raw.profileEnabled === undefined
-          ? {}
-          : { profileEnabled: raw.profileEnabled }),
-      });
-      broadcast('settings:changed', settings);
-      return settings;
-    }
-  );
+  handleBounded('settings:set-operator-auto-publish', (_event, enabled) => {
+    // No main-side enforcement point exists on purpose: uploads only ever
+    // leave from the renderer's sync path, which re-reads this preference
+    // at execution time (ENG-035; decision `0029`). Main persists the
+    // choice and announces it.
+    const settings = setOperatorAutoPublish(enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
+  handleBounded('settings:record-operator-profile-state', (_event, state) => {
+    const settings = recordOperatorProfilePublicationState(state);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   handleTrusted(
     'settings:record-agent-source-use',
     (_event, projectDir: string, source: string, usedAt: number) => {
