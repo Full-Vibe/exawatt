@@ -47,6 +47,9 @@ export interface PublicOperatorProfile {
   links: string[];
   identityProvider: string;
   joinedAt: string;
+  /** When the owner's app last published, or null before BUG-164's
+   *  migration exposed it. A profile is only as current as this. */
+  updatedAt: string | null;
   days: PublicOperatorDay[];
   runs: PublicOperatorRun[];
 }
@@ -106,7 +109,11 @@ export async function readOperatorProfile(
     profile_handle: handle,
   });
   if (error) throw error;
-  return (data as PublicOperatorProfile | null) ?? null;
+  if (!data) return null;
+  const profile = data as Omit<PublicOperatorProfile, 'updatedAt'> & {
+    updatedAt?: string | null;
+  };
+  return { ...profile, updatedAt: profile.updatedAt ?? null };
 }
 
 export async function readRunReceipt(

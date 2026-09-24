@@ -339,6 +339,25 @@
   color: var(--exa-hud-amber, #ffb02e);
 }
 
+.syncStatus[data-sync-state='stopped'] {
+  color: var(--exa-hud-red, #ff1f4b);
+}
+
+.freshness {
+  margin-top: 0.5rem;
+  color: var(--exa-hud-text-dim, #8aa0be);
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-chrome-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.syncAge {
+  margin-top: 0.15rem;
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-chrome-meta);
+  font-variant-numeric: tabular-nums;
+}
+
 .syncStatus[data-sync-state='synced'] {
   color: var(--exa-hud-green, #6fe39f);
 }

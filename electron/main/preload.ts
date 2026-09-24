@@ -131,8 +131,10 @@ contextBridge.exposeInMainWorld('electron', {
     ),
   },
   operatorStats: {
-    scan: (since: string, timezone: string) =>
-      ipcRenderer.invoke('operator-stats:scan', since, timezone),
+    plan: (request: unknown) =>
+      ipcRenderer.invoke('operator-stats:plan', request),
+    record: (event: unknown) =>
+      ipcRenderer.invoke('operator-stats:record', event),
   },
   // BUG-016: the command engine's own state. Every other member of this bridge
   // is a service that only exists once bootstrap succeeded; this one reports

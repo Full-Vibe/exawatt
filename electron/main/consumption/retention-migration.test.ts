@@ -28,7 +28,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => electronState.userData },
 }));
 
-import { scanLocalOperatorStats } from '../operator-stats-ipc';
+import { planLocalOperatorStats } from '../operator-stats-ipc';
 import {
   loadSettings,
   recordOperatorProfilePublicationState,
@@ -241,15 +241,22 @@ describe('BUG-141 — first launch over a v0.1.10 auto-publishing profile', () =
       lastSyncedAt: new Date(now - 6 * 3_600_000).toISOString(),
       profileEnabled: true,
     });
-    const payload = await scanLocalOperatorStats(booted, joinedAt, 'UTC');
+    const plan = await planLocalOperatorStats(
+      booted,
+      { since: joinedAt, timezone: 'UTC', cursor: null },
+      now
+    );
+    const days = plan.publications.flatMap(publication => publication.days);
+    const runs = plan.publications.flatMap(publication => publication.runs);
 
     const expectedDays = CORPUS_DAYS_BACK.filter(d => d <= 60).map(d =>
       localDate(dayStart(d))
     );
-    expect(payload.days.map(day => day.localDate).sort()).toEqual(
+    expect(days.map(day => day.localDate).sort()).toEqual(
       [...expectedDays].sort()
     );
-    expect(payload.runs).toHaveLength(expectedDays.length);
+    expect(runs).toHaveLength(expectedDays.length);
+    expect(plan.coverage?.from).toBe(localDate(dayStart(60)));
   });
 
   it('converges on the anchor without a relaunch, and the log follows', async () => {
@@ -282,12 +289,28 @@ describe('BUG-141 — first launch over a v0.1.10 auto-publishing profile', () =
     // A relaunch resolves the same horizon at hydrate and serves the same
     // history to the next sync.
     const relaunched = makeService(sampleRetentionPolicy({ now: () => now }));
-    const sinceAnchor = await relaunched.settledSamplesSince(
+    const sinceAnchor = await relaunched.settledSampleView(
       Date.parse(joinedAt)
     );
-    expect(sinceAnchor).toHaveLength(
+    expect(sinceAnchor.samples).toHaveLength(
       samplesFor(CORPUS_DAYS_BACK.filter(d => d <= 60))
     );
+    // BUG-164: the prune line survives the compaction that erased what it
+    // dropped, and a publication never claims the dates behind it. Asked to
+    // publish from before the prune, the plan starts after it instead of
+    // replacing real hosted history with the absence of local samples.
+    const newestDropped = dayStart(77) + SAMPLE_OFFSETS_MS[1];
+    expect(sinceAnchor.completeSinceMs).toBe(newestDropped);
+    const plan = await planLocalOperatorStats(
+      relaunched,
+      {
+        since: new Date(dayStart(90)).toISOString(),
+        timezone: 'UTC',
+        cursor: null,
+      },
+      now
+    );
+    expect(plan.coverage?.from).toBe(localDate(newestDropped + DAY));
     expect((await relaunched.snapshot()).samples).toHaveLength(
       samplesFor(expected)
     );

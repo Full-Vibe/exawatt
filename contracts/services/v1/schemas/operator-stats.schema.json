@@ -71,7 +71,7 @@
           "minimum": 0,
           "maximum": 26784000000000
         },
-        "runCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "runCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
         "peakFleet": { "type": "integer", "minimum": 0, "maximum": 10000 },
         "longestHandsOffMs": {
           "type": "number",
@@ -169,27 +169,40 @@
         "outcome": { "enum": ["settled", "stopped", "faulted", "unknown"] }
       }
     },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The inclusive range of operator-local dates this body replaces, at most 31 days. A service deletes the caller's rows for exactly these dates before inserting the body's rows, every one of which falls inside it; a covered date with no row is a recorded zero and an uncovered date is untouched. Longer histories are sent as several bodies.",
+      "required": ["from", "through"],
+      "properties": {
+        "from": { "type": "string", "format": "date" },
+        "through": { "type": "string", "format": "date" }
+      }
+    },
     "publishRequest": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Body schema 2. Schema 1 replaced the caller's whole public history and is refused with 400 invalid_request.",
       "required": [
         "schemaVersion",
         "consentVersion",
         "enabled",
         "timezone",
+        "coverage",
         "identity",
         "days",
         "runs"
       ],
       "properties": {
-        "schemaVersion": { "const": 1 },
+        "schemaVersion": { "const": 2 },
         "consentVersion": { "const": 1 },
         "enabled": { "const": true },
         "timezone": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "coverage": { "$ref": "#/$defs/coverage" },
         "identity": { "$ref": "#/$defs/identity" },
         "days": {
           "type": "array",
-          "maxItems": 400,
+          "maxItems": 31,
           "items": { "$ref": "#/$defs/day" }
         },
         "runs": {
@@ -206,7 +219,7 @@
       "properties": {
         "schemaVersion": { "const": 1 },
         "handle": { "type": "string", "maxLength": 39 },
-        "days": { "type": "integer", "minimum": 0, "maximum": 400 },
+        "days": { "type": "integer", "minimum": 0, "maximum": 31 },
         "runs": { "type": "integer", "minimum": 0, "maximum": 500 }
       }
     },

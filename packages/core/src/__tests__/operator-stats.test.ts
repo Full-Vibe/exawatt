@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   activityGraphLevel,
+  addCalendarDays,
   deriveOperatorRun,
   deriveOperatorStatsSnapshot,
+  MAX_PUBLICATION_DAYS,
+  MAX_PUBLIC_RUN_MS,
+  OperatorStatsContractError,
   parseOperatorStatsPublishPayload,
   rankOperators,
   consumptionSamplesToRunFacts,
@@ -196,10 +200,11 @@ describe('leaderboard ordering', () => {
 
 describe('publish payload privacy boundary', () => {
   const valid: OperatorStatsPublishPayload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     consentVersion: 1,
     enabled: true,
     timezone: 'America/Los_Angeles',
+    coverage: { from: '2026-08-01', through: '2026-08-03' },
     identity: {
       provider: 'github',
       providerHandle: 'operator-fixture',
@@ -249,6 +254,44 @@ describe('publish payload privacy boundary', () => {
         runs: [{ ...valid.runs[0], peakActiveMembers: 1_000_000 }],
       })
     ).toThrow(/out of bounds/);
+  });
+
+  it('refuses the whole-history body it replaced', () => {
+    const { coverage: _coverage, ...legacy } = valid;
+    expect(() =>
+      parseOperatorStatsPublishPayload({ ...legacy, schemaVersion: 1 })
+    ).toThrow(OperatorStatsContractError);
+  });
+
+  it('refuses rows outside the dates the body claims to replace', () => {
+    expect(() =>
+      parseOperatorStatsPublishPayload({
+        ...valid,
+        runs: [{ ...valid.runs[0], localDate: '2026-08-04' }],
+      })
+    ).toThrow(/outside coverage/);
+  });
+
+  it('refuses a coverage wider than one publication may carry', () => {
+    expect(() =>
+      parseOperatorStatsPublishPayload({
+        ...valid,
+        coverage: {
+          from: '2026-08-01',
+          through: addCalendarDays('2026-08-01', MAX_PUBLICATION_DAYS),
+        },
+      })
+    ).toThrow(/too many days/);
+  });
+
+  it('refuses a date that is not on the calendar', () => {
+    expect(() =>
+      parseOperatorStatsPublishPayload({
+        ...valid,
+        coverage: { from: '2026-02-30', through: '2026-03-01' },
+        runs: [],
+      })
+    ).toThrow(/coverage.from/);
   });
 });
 
@@ -334,6 +377,92 @@ describe('timestamped consumption adapter', () => {
         .flatMap(value => value.activity)
         .some(value => value.assurance === 'reported')
     ).toBe(true);
+  });
+
+  // BUG-164: one Session resumed across seven weeks was one 47-day Run. It
+  // credited a week of work to the day the Session opened, and no
+  // publication could carry it.
+  it('splits a resumed Session into Runs credited to the days they ran', () => {
+    const facts = consumptionSamplesToRunFacts(
+      [
+        sample(iso(0)),
+        sample(iso(0.5)),
+        sample(iso(24 * 9 + 3)),
+        sample(iso(24 * 9 + 3.5)),
+      ],
+      { since: iso(0) }
+    );
+    const snapshot = deriveOperatorStatsSnapshot(facts, 'UTC', iso(24 * 10));
+    expect(snapshot.runs).toHaveLength(2);
+    expect(snapshot.days.map(day => day.localDate)).toEqual([
+      '2026-08-03',
+      '2026-08-12',
+    ]);
+    expect(Math.max(...snapshot.runs.map(run => run.elapsedMs))).toBeLessThan(
+      hour
+    );
+  });
+
+  it('counts exactly the same activity however a Session is split', () => {
+    const at = [0, 0.1, 0.2, 2, 2.05, 30, 30.1, 30.15, 80, 80.2];
+    const delegated = {
+      agentId: 'child',
+      parentSessionId: 'provider-secret',
+      agentType: null,
+      spawnDepth: 1,
+      skill: null,
+      background: true,
+      parentAgentId: null,
+    };
+    const samples = [
+      ...at.map(offset => sample(iso(offset))),
+      ...at.map(offset =>
+        sample(iso(offset + 0.05), {
+          idempotencyKey: `child-${offset}`,
+          source: 'claude-code',
+          providerSessionId: 'provider-secret',
+          delegation: delegated,
+        })
+      ),
+    ];
+    const agentMs = (facts: OperatorRunFacts[]) =>
+      deriveOperatorStatsSnapshot(facts, 'UTC', iso(100)).records.agentMs;
+    const whole = consumptionSamplesToRunFacts(samples, {
+      since: iso(0),
+      idleSplitMs: Number.POSITIVE_INFINITY,
+      maxRunMs: Number.POSITIVE_INFINITY,
+    });
+    const split = consumptionSamplesToRunFacts(samples, { since: iso(0) });
+    const tight = consumptionSamplesToRunFacts(samples, {
+      since: iso(0),
+      maxRunMs: 0.12 * hour,
+    });
+    expect(split.length).toBeGreaterThan(whole.length);
+    expect(tight.length).toBeGreaterThan(split.length);
+    expect(agentMs(split)).toBe(agentMs(whole));
+    expect(agentMs(tight)).toBe(agentMs(whole));
+  });
+
+  it('never derives a Run longer than one publication may carry', () => {
+    // Forty days of an Agent that never pauses for an hour.
+    const samples = Array.from({ length: 40 * 24 * 6 }, (_, index) =>
+      sample(iso(index / 6))
+    );
+    const facts = consumptionSamplesToRunFacts(samples, { since: iso(0) });
+    const runs = facts.map(deriveOperatorRun);
+    expect(runs.length).toBeGreaterThan(1);
+    expect(runs.every(run => run.elapsedMs <= MAX_PUBLIC_RUN_MS)).toBe(true);
+  });
+
+  it("keeps the first Run on the Session's own key so shared receipts resolve", () => {
+    const facts = consumptionSamplesToRunFacts(
+      [sample(iso(0)), sample(iso(0.5)), sample(iso(5)), sample(iso(5.5))],
+      { since: iso(0) }
+    );
+    expect(facts.map(fact => fact.localKey)).toEqual([
+      'codex:provider-secret',
+      `codex:provider-secret@${iso(5)}`,
+    ]);
   });
 
   it('keeps unobservable interventions unavailable instead of reporting zero', () => {

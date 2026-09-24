@@ -2,9 +2,11 @@ import type {
   AssuranceFacetName,
   ConsumptionSourceId,
 } from '../consumption/types';
-
-export const OPERATOR_STATS_SCHEMA_VERSION = 1 as const;
-export const OPERATOR_STATS_CONSENT_VERSION = 1 as const;
+import type {
+  OPERATOR_STATS_CONSENT_VERSION,
+  OPERATOR_STATS_DERIVATION_VERSION,
+  OPERATOR_STATS_SCHEMA_VERSION,
+} from './contract';
 
 export type OperatorStatsAssurance =
   | 'reported'
@@ -70,7 +72,7 @@ export interface OperatorDayAggregate {
 }
 
 export interface OperatorStatsSnapshot {
-  schemaVersion: typeof OPERATOR_STATS_SCHEMA_VERSION;
+  derivationVersion: typeof OPERATOR_STATS_DERIVATION_VERSION;
   timezone: string;
   generatedAt: string;
   runs: DerivedOperatorRun[];
@@ -101,14 +103,31 @@ export interface PublicRunUpload extends Omit<
   idempotencyKey: string;
 }
 
-export interface OperatorStatsPublishPayload {
+/**
+ * The inclusive range of operator-local calendar dates one publication
+ * replaces. Every day and Run in the body falls inside it, and the hosted
+ * write deletes exactly this range before inserting — a date inside it with
+ * no row is a recorded zero, a date outside it is untouched.
+ */
+export interface OperatorStatsCoverage {
+  from: string;
+  through: string;
+}
+
+/** One publication as the local planner produces it: everything but the
+ *  account identity, which the renderer adds and the service overwrites. */
+export interface OperatorStatsPublication {
   schemaVersion: typeof OPERATOR_STATS_SCHEMA_VERSION;
   consentVersion: typeof OPERATOR_STATS_CONSENT_VERSION;
   enabled: true;
   timezone: string;
-  identity: PublicOperatorIdentity;
+  coverage: OperatorStatsCoverage;
   days: OperatorDayAggregate[];
   runs: PublicRunUpload[];
+}
+
+export interface OperatorStatsPublishPayload extends OperatorStatsPublication {
+  identity: PublicOperatorIdentity;
 }
 
 /**

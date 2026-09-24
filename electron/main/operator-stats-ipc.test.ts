@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { localLogAssurance, type ConsumptionSample } from '@exawatt/core';
-import { scanLocalOperatorStats } from './operator-stats-ipc';
+import {
+  planLocalOperatorStats,
+  recordOperatorStatsSyncEvent,
+} from './operator-stats-ipc';
 
 // This suite runs in Node, so importing the real `electron` package would run
 // its installer shim: it reads `node_modules/electron/path.txt`, and when that
@@ -43,24 +46,104 @@ function sample(
   };
 }
 
-describe('Operator stats Consumption projection', () => {
-  it('requests the settled consent window and emits only V1 public sources', async () => {
-    const settledSamplesSince = vi.fn(async () => [
-      sample('2026-08-16T18:10:00.000Z', 'codex'),
-      sample('2026-08-16T18:20:00.000Z', 'codex'),
-      sample('2026-08-16T18:15:00.000Z', 'grok'),
-    ]);
+const NOW = Date.parse('2026-08-17T20:00:00.000Z');
 
-    const result = await scanLocalOperatorStats(
-      { settledSamplesSince },
-      SINCE,
-      'America/Los_Angeles'
+describe('Operator stats Consumption projection', () => {
+  it('plans the settled consent window and emits only V1 public sources', async () => {
+    const settledSampleView = vi.fn(async () => ({
+      samples: [
+        sample('2026-08-16T18:10:00.000Z', 'codex'),
+        sample('2026-08-16T18:20:00.000Z', 'codex'),
+        sample('2026-08-16T18:15:00.000Z', 'grok'),
+      ],
+      completeSinceMs: Number.NEGATIVE_INFINITY,
+    }));
+
+    const plan = await planLocalOperatorStats(
+      { settledSampleView },
+      { since: SINCE, timezone: 'America/Los_Angeles', cursor: null },
+      NOW
     );
 
-    expect(settledSamplesSince).toHaveBeenCalledWith(Date.parse(SINCE));
-    expect(result.days).toHaveLength(1);
-    expect(result.days[0].sources).toEqual(['codex']);
-    expect(result.runs).toHaveLength(1);
-    expect(JSON.stringify(result)).not.toMatch(/private|session|branch|jsonl/);
+    expect(settledSampleView).toHaveBeenCalledWith(Date.parse(SINCE));
+    const days = plan.publications.flatMap(value => value.days);
+    expect(days).toHaveLength(1);
+    expect(days[0].sources).toEqual(['codex']);
+    expect(plan.publications.flatMap(value => value.runs)).toHaveLength(1);
+    expect(plan.coverage).toEqual({
+      from: '2026-08-16',
+      through: '2026-08-17',
+    });
+    expect(JSON.stringify(plan)).not.toMatch(/private|session|branch|jsonl/);
+  });
+
+  it('never covers dates the local view has pruned', async () => {
+    const plan = await planLocalOperatorStats(
+      {
+        settledSampleView: async () => ({
+          samples: [],
+          completeSinceMs: Date.parse('2026-08-16T20:00:00.000Z'),
+        }),
+      },
+      { since: SINCE, timezone: 'America/Los_Angeles', cursor: null },
+      NOW
+    );
+    expect(plan.coverage?.from).toBe('2026-08-17');
+  });
+});
+
+describe('Operator stats sync record', () => {
+  it('logs a failure with its reason and persists it', () => {
+    const record = vi.fn();
+    const persist = vi.fn(() => ({}));
+    const event = {
+      kind: 'failed',
+      at: '2026-09-14T07:54:00.000Z',
+      failure: 'rejected',
+      retryable: false,
+      status: 400,
+      code: 'invalid_request',
+      detail: 'runs[128].elapsedMs is out of bounds',
+    };
+
+    recordOperatorStatsSyncEvent(event, record, persist);
+
+    expect(record).toHaveBeenCalledWith('operator-stats.sync-failed', {
+      failure: 'rejected',
+      retryable: false,
+      status: 400,
+      code: 'invalid_request',
+      detail: 'runs[128].elapsedMs is out of bounds',
+    });
+    expect(persist).toHaveBeenCalledWith(event);
+  });
+
+  it('persists a publication without logging it', () => {
+    const record = vi.fn();
+    const persist = vi.fn(() => ({}));
+
+    recordOperatorStatsSyncEvent(
+      {
+        kind: 'published',
+        at: '2026-09-24T01:00:00.000Z',
+        coverage: { from: '2026-09-17', through: '2026-09-23' },
+        derivation: 2,
+      },
+      record,
+      persist
+    );
+
+    expect(record).not.toHaveBeenCalled();
+    expect(persist).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a malformed event from the renderer', () => {
+    expect(() =>
+      recordOperatorStatsSyncEvent(
+        { kind: 'published', at: 'yesterday', coverage: null },
+        vi.fn(),
+        vi.fn(() => ({}))
+      )
+    ).toThrow(/Invalid operator stats sync event/);
   });
 });

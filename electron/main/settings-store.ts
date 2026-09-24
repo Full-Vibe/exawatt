@@ -19,9 +19,13 @@ import {
   saveNamedLaunchConfiguration as saveNamedConfiguration,
   setLaunchConfigurationPinned as setConfigurationPinned,
   parseKeyboardShortcutOverrides,
+  isCalendarDate,
+  parseOperatorStatsSyncFailureRecord,
   type AgentLaunchConfigurationInput,
   type KeyboardShortcutOverridesV1,
   type LaunchConfigurationPoolV1,
+  type OperatorStatsSyncEvent,
+  type OperatorStatsSyncFailureRecord,
 } from '@exawatt/core';
 
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
@@ -114,6 +118,14 @@ export interface ExawattSettings {
     /** Cached hosted truth for an honest status surface across relaunches. */
     lastSyncedAt?: string;
     profileEnabled?: boolean;
+    /** The publication cursor (BUG-164): the last operator-local date a
+     *  successful publication covered, and the Run derivation the hosted
+     *  history reflects. Absent or stale means republish since consent. */
+    publishedThrough?: string;
+    publishedDerivation?: number;
+    /** The last failed sync, until a sync succeeds. Survives relaunch so a
+     *  profile that stopped updating says so instead of reading as idle. */
+    lastFailure?: OperatorStatsSyncFailureRecord;
   };
   agentSources?: {
     projectLastUsed: Record<string, string>;
@@ -471,6 +483,9 @@ const SETTINGS_SCHEMA: {
       startedAt?: unknown;
       lastSyncedAt?: unknown;
       profileEnabled?: unknown;
+      publishedThrough?: unknown;
+      publishedDerivation?: unknown;
+      lastFailure?: unknown;
     };
     if (typeof candidate.autoPublish !== 'boolean') return undefined;
     const parsed: NonNullable<ExawattSettings['operatorProfile']> = {
@@ -483,6 +498,19 @@ const SETTINGS_SCHEMA: {
     if (typeof candidate.profileEnabled === 'boolean') {
       parsed.profileEnabled = candidate.profileEnabled;
     }
+    if (isCalendarDate(candidate.publishedThrough)) {
+      parsed.publishedThrough = candidate.publishedThrough;
+    }
+    if (
+      Number.isInteger(candidate.publishedDerivation) &&
+      Number(candidate.publishedDerivation) > 0
+    ) {
+      parsed.publishedDerivation = Number(candidate.publishedDerivation);
+    }
+    const lastFailure = parseOperatorStatsSyncFailureRecord(
+      candidate.lastFailure
+    );
+    if (lastFailure) parsed.lastFailure = lastFailure;
     return parsed;
   },
   agentSources: raw => {
@@ -626,6 +654,9 @@ function validStoredSettings(value: unknown): boolean {
       'startedAt',
       'lastSyncedAt',
       'profileEnabled',
+      'publishedThrough',
+      'publishedDerivation',
+      'lastFailure',
     ],
   };
   for (const key of SETTINGS_KEYS) {
@@ -969,6 +1000,46 @@ export function recordOperatorProfilePublicationState(
       ? { profileEnabled: raw.profileEnabled }
       : {}),
   };
+  writeSettings(settings);
+  return settings;
+}
+
+/**
+ * Folds one sync step into the local publication record. A publication moves
+ * the cursor and clears any failure; the derivation is recorded only by the
+ * last publication of a plan, so an interrupted republish starts over rather
+ * than claiming history it never replaced. A failure is remembered until the
+ * next success, and never moves the cursor.
+ */
+export function recordOperatorStatsSync(
+  event: OperatorStatsSyncEvent
+): ExawattSettings {
+  const settings = loadSettings();
+  const current = settings.operatorProfile;
+  if (!current) throw new Error('Publishing preference is unavailable');
+  if (event.kind === 'published') {
+    const next = {
+      ...current,
+      lastSyncedAt: event.at,
+      profileEnabled: true,
+      publishedThrough: event.coverage.through,
+      ...(event.derivation === undefined
+        ? {}
+        : { publishedDerivation: event.derivation }),
+    };
+    delete next.lastFailure;
+    settings.operatorProfile = next;
+  } else {
+    settings.operatorProfile = {
+      ...current,
+      lastFailure: {
+        at: event.at,
+        failure: event.failure,
+        retryable: event.retryable,
+        code: event.code,
+      },
+    };
+  }
   writeSettings(settings);
   return settings;
 }

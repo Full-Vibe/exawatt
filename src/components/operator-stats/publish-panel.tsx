@@ -24,6 +24,7 @@ import {
   LINK_SUCCESS_MESSAGES,
 } from '@/components/auth/callback-failures';
 import { isOperatorAutoPublishEnabled } from '@/lib/hosted-features/contract';
+import { isTerminalSyncFailure } from '@exawatt/core';
 import {
   hydrateOperatorStatsSyncState,
   readOperatorStatsSyncState,
@@ -32,7 +33,12 @@ import {
   type OperatorStatsSyncFailure,
   type OperatorStatsSyncState,
 } from '@/lib/operator-stats/auto-sync';
-import { formatAgentHoursLong, formatSyncedAt, formatTokens } from './format';
+import {
+  formatAgentHoursLong,
+  formatElapsedSince,
+  formatSyncedAt,
+  formatTokens,
+} from './format';
 import styles from './operator-stats.module.css';
 
 /**
@@ -56,14 +62,20 @@ const SERVER_SYNC_STATE: OperatorStatsSyncState = {
   lastSnapshot: null,
 };
 
+// A retry is promised only where one can succeed. A refused update repeats
+// identically until the app changes, and the old line ("Sync will retry
+// automatically") sat above a profile that stayed frozen for nine days
+// (BUG-164).
 const SYNC_FAILURE_COPY: Record<OperatorStatsSyncFailure, string> = {
   'local-scan': 'Local usage scan failed. Sync will retry automatically.',
   'local-state':
     'Publishing state could not be saved. Restart Exawatt to retry.',
+  'local-contract':
+    'Publishing stopped. Exawatt needs an update to publish again.',
   network: 'Offline. Sync will retry automatically.',
   unauthorized: 'Sign in again to resume publishing.',
   identity: 'Relink GitHub to resume publishing.',
-  rejected: 'Usage could not be published. Sync will retry automatically.',
+  rejected: 'Publishing stopped. Exawatt needs an update to publish again.',
   service: 'Publishing service unavailable. Sync will retry automatically.',
 };
 
@@ -454,13 +466,15 @@ export function PublishPanel() {
   }
 
   const syncing = sync.phase === 'syncing';
+  const failing = sync.lastOutcome === 'failed';
+  const stopped = failing && isTerminalSyncFailure(sync.lastFailure);
   const statusLine = !autoPublish
     ? published
       ? 'Paused. Your profile stays visible and stops updating.'
       : null
     : syncing
       ? 'Syncing…'
-      : sync.lastOutcome === 'failed'
+      : failing
         ? sync.lastFailure
           ? SYNC_FAILURE_COPY[sync.lastFailure]
           : 'Sync failed. Sync will retry automatically.'
@@ -471,11 +485,19 @@ export function PublishPanel() {
     ? 'paused'
     : syncing
       ? 'syncing'
-      : sync.lastOutcome === 'failed'
-        ? 'failed'
-        : sync.lastSyncedAt
-          ? 'synced'
-          : 'waiting';
+      : stopped
+        ? 'stopped'
+        : failing
+          ? 'failed'
+          : sync.lastSyncedAt
+            ? 'synced'
+            : 'waiting';
+  // Whenever the public profile is not current, say how old it is: the age
+  // is the one number that tells an owner whether the board still shows him.
+  const staleSince =
+    published && sync.lastSyncedAt && (failing || !autoPublish)
+      ? sync.lastSyncedAt
+      : null;
 
   return (
     <aside className={styles.publishPanel}>
@@ -486,8 +508,23 @@ export function PublishPanel() {
             : 'Publish your operator profile'}
         </h2>
         {statusLine && (
-          <p className={styles.syncStatus} data-sync-state={syncState}>
+          <p
+            className={styles.syncStatus}
+            data-sync-state={syncState}
+            aria-live="polite"
+          >
             {statusLine}
+          </p>
+        )}
+        {staleSince && (
+          <p className={styles.syncAge}>
+            Last published{' '}
+            <time
+              dateTime={new Date(staleSince).toISOString()}
+              title={formatSyncedAt(staleSince)}
+            >
+              {formatElapsedSince(staleSince)}
+            </time>
           </p>
         )}
         {autoPublish && sync.lastSnapshot && (

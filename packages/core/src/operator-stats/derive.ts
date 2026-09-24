@@ -6,9 +6,7 @@ import type {
   OperatorStatsAssurance,
   OperatorStatsSnapshot,
 } from './types';
-import { OPERATOR_STATS_SCHEMA_VERSION } from './types';
-
-const DAY_MS = 86_400_000;
+import { OPERATOR_STATS_DERIVATION_VERSION } from './contract';
 
 function instant(value: string, label: string): number {
   const parsed = Date.parse(value);
@@ -134,13 +132,22 @@ export function deriveOperatorRun(facts: OperatorRunFacts): DerivedOperatorRun {
   };
 }
 
-function localDate(at: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(at));
+const LOCAL_DATE_FORMATS = new Map<string, Intl.DateTimeFormat>();
+
+/** The operator-local calendar date of an instant, as `YYYY-MM-DD`. Throws
+ *  for an invalid IANA zone instead of silently falling back. */
+export function operatorLocalDate(at: string | number, timezone: string) {
+  let format = LOCAL_DATE_FORMATS.get(timezone);
+  if (!format) {
+    format = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    LOCAL_DATE_FORMATS.set(timezone, format);
+  }
+  const parts = format.formatToParts(new Date(at));
   const read = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find(part => part.type === type)?.value;
   return `${read('year')}-${read('month')}-${read('day')}`;
@@ -150,12 +157,13 @@ export function aggregateOperatorDays(
   runs: readonly DerivedOperatorRun[],
   timezone: string
 ): OperatorDayAggregate[] {
-  // V1 assigns a Run to its local start day. Splitting agent-time exactly over
-  // DST boundaries requires source intervals in the public payload and is a
-  // deliberate future schema revision; assignment is deterministic today.
+  // A Run belongs to its local start day. Runs split on idle gaps, so one
+  // rarely crosses midnight; splitting agent-time exactly across a boundary
+  // would need source intervals in the public payload, a deliberate future
+  // schema revision. Assignment is deterministic today.
   const buckets = new Map<string, OperatorDayAggregate>();
   for (const run of runs) {
-    const date = localDate(run.startedAt, timezone);
+    const date = operatorLocalDate(run.startedAt, timezone);
     const bucket = buckets.get(date) ?? {
       localDate: date,
       agentMs: 0,
@@ -185,40 +193,60 @@ export function aggregateOperatorDays(
   );
 }
 
-function peakConcurrentMembers(
-  facts: readonly OperatorRunFacts[],
-  window?: { started: number; ended: number }
-): number {
-  const events: SweepEvent[] = [];
-  for (const run of facts) {
-    const started = Math.max(
-      instant(run.startedAt, 'run start'),
-      window?.started ?? Number.NEGATIVE_INFINITY
-    );
-    const ended = Math.min(
-      instant(run.endedAt, 'run end'),
-      window?.ended ?? Number.POSITIVE_INFINITY
-    );
-    if (ended <= started) continue;
-    for (const interval of clippedIntervals(run.activity, started, ended)) {
-      events.push({ at: interval.startMs, delta: interval.activeMembers });
-      events.push({ at: interval.endMs, delta: -interval.activeMembers });
+/**
+ * Every activity interval of every Run on one timeline, answered as "how many
+ * members were active at once between these instants". Built once per
+ * snapshot: the former per-Run sweep re-sorted every interval of every Run for
+ * each Run, which on the operator's corpus held Electron main for two seconds
+ * every six hours.
+ */
+class ConcurrencyTimeline {
+  private readonly times: number[] = [];
+  /** Members active from `times[i]` until `times[i + 1]`. */
+  private readonly levels: number[] = [];
+
+  constructor(facts: readonly OperatorRunFacts[]) {
+    const sweep: SweepEvent[] = [];
+    for (const run of facts) {
+      const started = instant(run.startedAt, 'run start');
+      const ended = instant(run.endedAt, 'run end');
+      if (ended <= started) continue;
+      for (const interval of clippedIntervals(run.activity, started, ended)) {
+        sweep.push({ at: interval.startMs, delta: interval.activeMembers });
+        sweep.push({ at: interval.endMs, delta: -interval.activeMembers });
+      }
+    }
+    sweep.sort((left, right) => left.at - right.at || left.delta - right.delta);
+    let active = 0;
+    for (let index = 0; index < sweep.length; ) {
+      const at = sweep[index].at;
+      while (index < sweep.length && sweep[index].at === at) {
+        active += sweep[index].delta;
+        index += 1;
+      }
+      this.times.push(at);
+      this.levels.push(active);
     }
   }
-  events.sort((left, right) => left.at - right.at || left.delta - right.delta);
-  let active = 0;
-  let peak = 0;
-  for (let index = 0; index < events.length; ) {
-    const at = events[index].at;
-    let delta = 0;
-    while (index < events.length && events[index].at === at) {
-      delta += events[index].delta;
-      index += 1;
+
+  /** Peak members active at any instant in `[started, ended)`. */
+  peak(started = Number.NEGATIVE_INFINITY, ended = Number.POSITIVE_INFINITY) {
+    if (ended <= started) return 0;
+    // The level in force at `started` comes from the last step at or before it.
+    let low = 0;
+    let high = this.times.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (this.times[middle] <= started) low = middle + 1;
+      else high = middle;
     }
-    active += delta;
-    peak = Math.max(peak, active);
+    let peak = low > 0 ? this.levels[low - 1] : 0;
+    for (let index = low; index < this.times.length; index += 1) {
+      if (this.times[index] >= ended) break;
+      peak = Math.max(peak, this.levels[index]);
+    }
+    return peak;
   }
-  return peak;
 }
 
 export function deriveOperatorStatsSnapshot(
@@ -227,27 +255,24 @@ export function deriveOperatorStatsSnapshot(
   generatedAt = new Date().toISOString()
 ): OperatorStatsSnapshot {
   // Throws for invalid IANA zones instead of silently falling back.
-  new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
+  operatorLocalDate(0, timezone);
+  const timeline = new ConcurrencyTimeline(facts);
   const runs = facts
     .map(run => ({
       ...deriveOperatorRun(run),
       // A public Run reports the whole fleet Exawatt was commanding while it
       // was live, including other concurrent top-level Sessions.
-      peakActiveMembers: peakConcurrentMembers(facts, {
-        started: instant(run.startedAt, 'run start'),
-        ended: instant(run.endedAt, 'run end'),
-      }),
+      peakActiveMembers: timeline.peak(
+        instant(run.startedAt, 'run start'),
+        instant(run.endedAt, 'run end')
+      ),
     }))
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  // A day's fleet is the largest fleet any of its Runs commanded, which is the
+  // same whole-fleet reading each Run already reports.
   const days = aggregateOperatorDays(runs, timezone);
-  for (const day of days) {
-    const dayFacts = facts.filter(
-      run => localDate(run.startedAt, timezone) === day.localDate
-    );
-    day.peakFleet = peakConcurrentMembers(dayFacts);
-  }
   return {
-    schemaVersion: OPERATOR_STATS_SCHEMA_VERSION,
+    derivationVersion: OPERATOR_STATS_DERIVATION_VERSION,
     timezone,
     generatedAt,
     runs,
@@ -258,7 +283,7 @@ export function deriveOperatorStatsSnapshot(
         (longest, run) => Math.max(longest, run.longestHandsOffMs),
         0
       ),
-      peakFleet: peakConcurrentMembers(facts),
+      peakFleet: timeline.peak(),
       normalizedTokens: runs.reduce(
         (sum, run) => sum + run.normalizedTokens,
         0
@@ -276,5 +301,3 @@ export function activityGraphLevel(agentMs: number): 0 | 1 | 2 | 3 | 4 | 5 {
   if (hours < 24) return 4;
   return 5;
 }
-
-export const MAX_PUBLIC_RUN_MS = 31 * DAY_MS;

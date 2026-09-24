@@ -14,6 +14,7 @@ import {
   CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES,
   loadSettings,
   recordOperatorProfilePublicationState,
+  recordOperatorStatsSync,
   setAppearancePreferences,
   setHostedContextLabels,
   setOperatorAutoPublish,
@@ -174,6 +175,55 @@ describe('appearance settings persistence', () => {
       startedAt: '2026-08-03T18:00:00.000Z',
       lastSyncedAt: '2026-08-16T19:00:00.000Z',
       profileEnabled: true,
+    });
+  });
+
+  // BUG-164: the cursor lets a sync resume where it stopped; the failure
+  // record lets a relaunch say publishing stopped instead of looking idle.
+  it('moves the publication cursor on success and remembers failure until then', () => {
+    setOperatorAutoPublish(true, () => Date.parse('2026-08-03T18:00:00.000Z'));
+    recordOperatorStatsSync({
+      kind: 'published',
+      at: '2026-09-14T01:08:53.000Z',
+      coverage: { from: '2026-08-03', through: '2026-09-13' },
+      derivation: 2,
+    });
+    recordOperatorStatsSync({
+      kind: 'failed',
+      at: '2026-09-14T07:54:27.000Z',
+      failure: 'rejected',
+      retryable: false,
+      status: 400,
+      code: 'invalid_request',
+      detail: 'runs[128].elapsedMs is out of bounds',
+    });
+
+    const failing = loadSettings().operatorProfile;
+    expect(failing).toMatchObject({
+      lastSyncedAt: '2026-09-14T01:08:53.000Z',
+      publishedThrough: '2026-09-13',
+      publishedDerivation: 2,
+      lastFailure: {
+        at: '2026-09-14T07:54:27.000Z',
+        failure: 'rejected',
+        retryable: false,
+        code: 'invalid_request',
+      },
+    });
+    // The reason is logged, never stored.
+    expect(JSON.stringify(failing)).not.toContain('elapsedMs');
+
+    recordOperatorStatsSync({
+      kind: 'published',
+      at: '2026-09-24T02:00:00.000Z',
+      coverage: { from: '2026-09-17', through: '2026-09-23' },
+    });
+    const recovered = loadSettings().operatorProfile;
+    expect(recovered?.lastFailure).toBeUndefined();
+    expect(recovered).toMatchObject({
+      publishedThrough: '2026-09-23',
+      publishedDerivation: 2,
+      startedAt: '2026-08-03T18:00:00.000Z',
     });
   });
 

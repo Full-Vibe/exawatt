@@ -5,8 +5,9 @@
  * off means the 14-day default; on with a known first-consent anchor means
  * wide enough to cover everything since that anchor; on with the anchor still
  * unknown means the ceiling, because the renderer's first sync will recover
- * the hosted `joined_at` minutes after boot and then publish everything since
- * it, replacing the hosted aggregate wholesale.
+ * the hosted `joined_at` minutes after boot and may republish everything since
+ * it. (Since BUG-164 a publication never covers dates this horizon pruned, so
+ * a narrow horizon costs republishing reach, not hosted history.)
  *
  * It is a LIVE read rather than a boot-time value on purpose. `main.ts` used
  * to snapshot `resolveSampleHorizonMs(...)` once while constructing the

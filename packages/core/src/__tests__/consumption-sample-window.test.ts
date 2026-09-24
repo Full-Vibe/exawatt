@@ -57,6 +57,21 @@ describe('ConsumptionSampleWindow', () => {
     expect(window.evictedCount).toBe(256);
   });
 
+  // BUG-164: a consumer that REPLACES hosted history with this view needs to
+  // know where the view stops being complete.
+  it('remembers the newest instant it ever dropped, even after widening', () => {
+    const window = new ConsumptionSampleWindow({ now: () => WALL });
+    expect(window.prunedThroughMs).toBe(Number.NEGATIVE_INFINITY);
+    for (let day = 30; day >= 0; day -= 1) {
+      window.add(sample(`day-${day}`, day));
+    }
+    expect(window.prunedThroughMs).toBe(NEWEST - 15 * DAY);
+
+    window.setHorizonMs(CONSUMPTION_SAMPLE_MAX_HORIZON_MS);
+    window.add(sample('late-arrival', 20));
+    expect(window.prunedThroughMs).toBe(NEWEST - 15 * DAY);
+  });
+
   it('anchors on the newest sample, never on wall time', () => {
     const window = new ConsumptionSampleWindow();
     // An entire corpus that is a year old still retains its own last 14 days.

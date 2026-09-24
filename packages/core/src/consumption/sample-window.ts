@@ -22,13 +22,13 @@
  *
  * The horizon is a policy input rather than a constant because one consumer's
  * window is not fixed by this module. Rendered surfaces read a 7-day window
- * (`LIVE_WINDOW_DAYS`); the Operator-profile publication (ENG-035) rescans
- * everything since its opt-in anchor and REPLACES the hosted aggregate, so
- * silently pruning under it would truncate a published profile. Main widens
- * the horizon to cover an active publication anchor and clamps it at
- * `CONSUMPTION_SAMPLE_MAX_HORIZON_MS`, which is the hosted contract's own
- * 400-day `days` cap — past that the payload is rejected anyway, so retaining
- * the samples behind it buys nothing.
+ * (`LIVE_WINDOW_DAYS`); the Operator-profile publication (ENG-035) can
+ * republish everything since its opt-in anchor (a new Run derivation, a long
+ * outage), so main widens the horizon to cover an active publication anchor
+ * and clamps it at `CONSUMPTION_SAMPLE_MAX_HORIZON_MS`. Since BUG-164 a
+ * publication replaces only the dates it covers and never covers a date at or
+ * before this window's prune line (`prunedThroughMs`), so a narrower horizon
+ * limits what can be republished but can no longer erase hosted history.
  *
  * The anchor is a fact the renderer's first sync WRITES, minutes after boot
  * (`operatorProfile.startedAt`, added 2026-08-16; a profile from before then
@@ -45,8 +45,9 @@ import type { ConsumptionSample } from './types';
 export const CONSUMPTION_SAMPLE_HORIZON_MS = 14 * 24 * 3_600_000;
 
 /**
- * Hard ceiling on any widened horizon. `sync_operator_stats` refuses a payload
- * with more than 400 `days`, so nothing can consume a sample older than this.
+ * Hard ceiling on any widened horizon: how far back a publication can ever be
+ * re-derived. A bound on log size, not a hosted limit (BUG-164 removed the
+ * whole-history payload that made 400 days one).
  */
 export const CONSUMPTION_SAMPLE_MAX_HORIZON_MS = 400 * 24 * 3_600_000;
 
@@ -89,6 +90,7 @@ export class ConsumptionSampleWindow {
   private readonly instants = new Map<string, number>();
   private newestMs = Number.NEGATIVE_INFINITY;
   private evicted = 0;
+  private prunedThrough = Number.NEGATIVE_INFINITY;
   /** Prune is amortized: only after this many admissions past the last sweep. */
   private admissionsSinceSweep = 0;
 
@@ -140,6 +142,27 @@ export class ConsumptionSampleWindow {
     return this.evicted;
   }
 
+  /**
+   * The newest instant this window has ever refused or dropped for age, or
+   * negative infinity when it never has. Everything strictly after it is
+   * complete. A consumer that REPLACES something with this view — the
+   * Operator-profile publication — must not claim a range at or before it,
+   * because there the absence of a sample is retention, not inactivity.
+   * Widening the horizon does not move it back: what was dropped stays gone.
+   */
+  get prunedThroughMs(): number {
+    // Sweeps are amortized; the line must describe the set `since()` serves.
+    this.sweep();
+    return this.prunedThrough;
+  }
+
+  /** Restores the prune line a persisted owner recorded before a relaunch. */
+  notePrunedThrough(instantMs: number): void {
+    if (Number.isFinite(instantMs)) {
+      this.prunedThrough = Math.max(this.prunedThrough, instantMs);
+    }
+  }
+
   get size(): number {
     this.sweep();
     return this.samples.size;
@@ -161,6 +184,7 @@ export class ConsumptionSampleWindow {
       instant < this.anchorMs - this.horizonMs
     ) {
       this.evicted += 1;
+      this.notePrunedThrough(instant);
       return null;
     }
     if (Number.isFinite(instant)) {
@@ -227,6 +251,7 @@ export class ConsumptionSampleWindow {
       if (instant >= cutoff) continue;
       this.instants.delete(key);
       this.samples.delete(key);
+      this.notePrunedThrough(instant);
       dropped += 1;
     }
     this.evicted += dropped;

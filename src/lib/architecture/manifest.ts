@@ -684,7 +684,7 @@ export const architectureManifest = {
           id: 'operator-stats-projection',
           label: 'Operator Stats Projection',
           summary:
-            'Pure Run/day/rank derivation over the shared incremental Consumption service, durable consent and sync state, versioned aggregate-only payload validation, explicit evidence assurance, and distribution-gated GET/POST/DELETE whose absent state schedules and sends nothing.',
+            'Pure Run/day/rank derivation over the shared incremental Consumption service, one contract module every limit reads from, a planner that cuts contract-valid date-windowed publications and quarantines refused rows, durable consent/cursor/failure state with diagnostics, explicit evidence assurance, and distribution-gated GET/POST/DELETE whose absent state schedules and sends nothing.',
           layer: 'coordination',
           status: 'implemented',
           x: 870,

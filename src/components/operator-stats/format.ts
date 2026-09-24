@@ -46,6 +46,22 @@ export function formatSyncedAt(at: number, now: number = Date.now()): string {
   }).format(then);
 }
 
+const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+/**
+ * How long ago an instant was, at the coarsest unit that is still honest:
+ * "just now", "12 minutes ago", "5 hours ago", "9 days ago". Staleness is
+ * read at a glance, so it never renders a date the reader has to subtract.
+ */
+export function formatElapsedSince(at: number, now: number = Date.now()) {
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return RELATIVE.format(-minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return RELATIVE.format(-hours, 'hour');
+  return RELATIVE.format(-Math.floor(hours / 24), 'day');
+}
+
 export function formatTokens(tokens: number): string {
   return new Intl.NumberFormat('en', {
     notation: tokens >= 10_000 ? 'compact' : 'standard',

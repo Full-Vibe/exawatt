@@ -575,9 +575,7 @@ describe('publishing paused (the off state)', () => {
     await mount();
 
     expect(
-      screen.getByText(
-        'Paused. Your profile stays visible and stops updating.'
-      )
+      screen.getByText('Paused. Your profile stays visible and stops updating.')
     ).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Remove public profile' })
@@ -672,6 +670,53 @@ describe('honest sync status while publishing is on', () => {
         'Local usage scan failed. Sync will retry automatically.'
       )
     ).toBeTruthy();
+  });
+
+  // BUG-164: "will retry automatically" sat above a profile that stayed
+  // frozen for nine days. A refusal says it stopped, and how stale it is.
+  it('says publishing stopped, and how old the profile is, when updates are refused', async () => {
+    electronPanel({ autoPublish: true, published: true });
+    const lastSyncedAt = Date.now() - 9 * 24 * 3_600_000;
+
+    await mount();
+    act(() =>
+      syncStore.set({
+        phase: 'idle',
+        lastOutcome: 'failed',
+        lastFailure: 'rejected',
+        lastSyncedAt,
+      })
+    );
+
+    expect(
+      document.querySelector('[data-sync-state="stopped"]')
+    ).not.toBeNull();
+    expect(
+      document
+        .querySelector('[data-sync-state="stopped"]')
+        ?.textContent?.includes('retry automatically')
+    ).toBe(false);
+    expect(document.querySelector('time')?.getAttribute('dateTime')).toBe(
+      new Date(lastSyncedAt).toISOString()
+    );
+  });
+
+  it('keeps a transient failure retrying and still shows the profile age', async () => {
+    electronPanel({ autoPublish: true, published: true });
+    const lastSyncedAt = Date.now() - 2 * 3_600_000;
+
+    await mount();
+    act(() =>
+      syncStore.set({
+        phase: 'idle',
+        lastOutcome: 'failed',
+        lastFailure: 'network',
+        lastSyncedAt,
+      })
+    );
+
+    expect(document.querySelector('[data-sync-state="failed"]')).not.toBeNull();
+    expect(document.querySelector('time')).not.toBeNull();
   });
 
   it('lets impatience trigger the same coalesced sync', async () => {

@@ -30,7 +30,12 @@ import type {
   SourceTransport,
   SshHostAlias,
 } from '@exawatt/core';
-import type { OperatorStatsPublishPayload } from '@exawatt/core';
+import type {
+  OperatorStatsPublicationCursor,
+  OperatorStatsPublicationPlan,
+  OperatorStatsSyncEvent,
+  OperatorStatsSyncFailureRecord,
+} from '@exawatt/core';
 import type {
   ConsumptionUpdatedEvent,
   LiveConsumptionSnapshot,
@@ -718,6 +723,12 @@ export interface ExawattSettings {
     startedAt?: string;
     lastSyncedAt?: string;
     profileEnabled?: boolean;
+    /** BUG-164 publication cursor: last covered local date, and the Run
+     *  derivation the hosted history reflects. */
+    publishedThrough?: string;
+    publishedDerivation?: number;
+    /** The last failed sync, until one succeeds. */
+    lastFailure?: OperatorStatsSyncFailureRecord;
   };
   agentSources?: {
     projectLastUsed: Record<string, string>;
@@ -1354,20 +1365,16 @@ declare global {
       agentSources?: ElectronAgentSourcesApi;
       connectedSources?: ElectronConnectedSourcesApi;
       operatorStats?: {
-        scan: (
-          since: string,
-          timezone: string
-        ) => Promise<
-          Pick<
-            OperatorStatsPublishPayload,
-            | 'schemaVersion'
-            | 'consentVersion'
-            | 'enabled'
-            | 'timezone'
-            | 'days'
-            | 'runs'
-          >
-        >;
+        /** Plans the publications a sync sends (BUG-164): the local
+         *  derivation since consent, cut to the hosted contract. */
+        plan: (request: {
+          since: string;
+          timezone: string;
+          cursor: OperatorStatsPublicationCursor | null;
+        }) => Promise<OperatorStatsPublicationPlan>;
+        /** Folds one sync step into the durable publication record; a
+         *  failure is also written to the diagnostics log. */
+        record: (event: OperatorStatsSyncEvent) => Promise<ExawattSettings>;
       };
       commandEngine?: ElectronCommandEngineApi;
       consumption?: ElectronConsumptionApi;

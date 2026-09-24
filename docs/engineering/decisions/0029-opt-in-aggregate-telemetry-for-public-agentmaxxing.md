@@ -218,3 +218,34 @@ The semantic privacy decision does not change: publishing is still off by
 default; the switch-on remains the consent act; nothing pre-consent is
 uploaded; every outgoing aggregate field and forbidden field remains exactly
 as decided above; `consentVersion` remains 1.
+
+## Amended 2026-09-24 — publications cover date windows (BUG-164)
+
+Every sync used to replace the operator's entire public history, so each
+request carried every day and Run since consent. Its bounds (400 days, 500
+Runs, 31-day Runs) were therefore ceilings the history itself would cross,
+and one out-of-bounds row refused the whole request. On 2026-09-14 one
+provider Session resumed across seven weeks became a single 47.8-day Run; every
+sync after it was refused for nine days while the status line promised a retry.
+
+What changes:
+
+- A Run derived from Consumption samples ends after an hour with no activity
+  from any member and never spans more than 31 days. Activity is counted
+  exactly as before; only its boundaries and the day it is credited to change,
+  and those are `derived` evidence as they always were.
+- A publication body (schema 2) names the operator-local dates it covers, at
+  most 31, and the hosted write replaces exactly those dates. A longer history
+  is sent as several bodies. A day aggregate always carries its true Run count;
+  at most 500 Run receipts ride in one body, the largest kept when a single day
+  has more.
+- The public profile response adds its last sync time, so a stale profile reads
+  as stale. This is a timestamp the service already held, not a new upload.
+- The planner never covers a date at or before the local sample window's prune
+  line, so retention can shorten what is republished but cannot replace hosted
+  history with an absence of local samples.
+
+Unchanged: the switch-on consent act, the no-pre-consent rule, every allowed
+and forbidden field, recursive unknown-field rejection, `consentVersion` 1, and
+the anonymous read boundary.
+

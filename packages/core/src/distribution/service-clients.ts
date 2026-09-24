@@ -1,3 +1,7 @@
+import {
+  MAX_PUBLICATION_DAYS,
+  MAX_PUBLICATION_RUNS,
+} from '../operator-stats/contract';
 import type { OperatorStatsPublishPayload } from '../operator-stats';
 import type { DistributionEndpointRefV1 } from './contract';
 import {
@@ -278,10 +282,10 @@ function decodeOperatorStatsPublish(
     input.handle.length > 39 ||
     !Number.isInteger(input.days) ||
     Number(input.days) < 0 ||
-    Number(input.days) > 400 ||
+    Number(input.days) > MAX_PUBLICATION_DAYS ||
     !Number.isInteger(input.runs) ||
     Number(input.runs) < 0 ||
-    Number(input.runs) > 500
+    Number(input.runs) > MAX_PUBLICATION_RUNS
   ) {
     throw new TypeError('operator-stats publish response is invalid');
   }

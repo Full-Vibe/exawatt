@@ -1,8 +1,12 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "consentVersion": 1,
   "enabled": true,
   "timezone": "America/Los_Angeles",
+  "coverage": {
+    "from": "2026-08-16",
+    "through": "2026-08-16"
+  },
   "identity": {
     "provider": "github",
     "providerHandle": "example-operator",

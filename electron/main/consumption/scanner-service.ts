@@ -260,9 +260,14 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
    *
    * The shared incremental service remains the only reader of harness logs.
    * We wait for an initial or stale pass so a hosted replacement payload can
-   * never erase newer activity with a partial snapshot.
+   * never erase newer activity with a partial snapshot, and report the prune
+   * line so it can never erase OLDER activity either: before
+   * `completeSinceMs` the view is missing what retention dropped.
    */
-  async settledSamplesSince(sinceMs: number): Promise<ConsumptionSample[]> {
+  async settledSampleView(sinceMs: number): Promise<{
+    samples: ConsumptionSample[];
+    completeSinceMs: number;
+  }> {
     if (!Number.isFinite(sinceMs) || sinceMs < 0) {
       throw new Error('Invalid consumption sample window');
     }
@@ -273,7 +278,10 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     if (!this.firstScanComplete) {
       throw new Error('Local usage scan is incomplete');
     }
-    return this.samples.since(sinceMs);
+    return {
+      samples: this.samples.since(sinceMs),
+      completeSinceMs: this.samples.prunedThroughMs,
+    };
   }
 
   rescan(): void {
@@ -657,6 +665,9 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
       diagnostics: { ...this.diagnostics },
       planWindows: [...this.latestWindows.values()],
       emptySources: [...this.emptySources],
+      prunedThroughMs: Number.isFinite(this.samples.prunedThroughMs)
+        ? this.samples.prunedThroughMs
+        : null,
     };
   }
 

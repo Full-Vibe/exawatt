@@ -77,13 +77,23 @@ const GITHUB = {
   identity_data: { user_name: 'operator', full_name: 'The Operator' },
 };
 
-const PREVIEW = {
-  schemaVersion: 1,
-  consentVersion: 1,
-  enabled: true,
-  timezone: 'America/Los_Angeles',
-  days: [],
-  runs: [],
+const PLAN = {
+  derivation: 2,
+  coverage: { from: '2026-08-10', through: '2026-08-16' },
+  publications: [
+    {
+      schemaVersion: 2,
+      consentVersion: 1,
+      enabled: true,
+      timezone: 'America/Los_Angeles',
+      coverage: { from: '2026-08-10', through: '2026-08-16' },
+      days: [],
+      runs: [],
+    },
+  ],
+  excluded: [],
+  receiptsOmitted: 0,
+  totals: { runs: 0, agentMs: 0, normalizedTokens: 0 },
 };
 
 function serviceResponse(body: unknown, status = 200): Response {
@@ -115,11 +125,36 @@ function installBridge(
           },
         };
   const listeners = new Set<(next: unknown) => void>();
-  const scan = vi.fn(async () => PREVIEW);
+  const plan = vi.fn(async () => PLAN);
+  const record = vi.fn(async (event: Record<string, unknown>) => {
+    const current = (settings.operatorProfile as object | undefined) ?? {};
+    settings = {
+      ...settings,
+      operatorProfile:
+        event.kind === 'published'
+          ? {
+              ...current,
+              lastSyncedAt: event.at,
+              profileEnabled: true,
+              publishedThrough: (event.coverage as { through: string }).through,
+            }
+          : {
+              ...current,
+              lastFailure: {
+                at: event.at,
+                failure: event.failure,
+                retryable: event.retryable,
+                code: event.code,
+              },
+            },
+    };
+    for (const listener of listeners) listener(settings);
+    return settings;
+  });
   const bridge = {
     isElectron: true,
     platform: 'darwin',
-    operatorStats: { scan },
+    operatorStats: { plan, record },
     settings: {
       get: vi.fn(async () => settings),
       onChanged: vi.fn((handler: (next: unknown) => void) => {
@@ -147,7 +182,8 @@ function installBridge(
     value: bridge,
   });
   return {
-    scan,
+    plan,
+    record,
     settings: bridge.settings,
     emit(next: Record<string, unknown>) {
       settings = next;
@@ -183,8 +219,8 @@ afterEach(() => {
 });
 
 describe('runOperatorStatsSync', () => {
-  it('coalesces overlapping triggers into exactly one scan and one post', async () => {
-    const { scan } = installBridge({ autoPublish: true });
+  it('coalesces overlapping triggers into exactly one plan and one post', async () => {
+    const { plan } = installBridge({ autoPublish: true });
     installSupabase();
     const fetchSpy = vi.fn<typeof fetch>(async () =>
       serviceResponse(PUBLISH_RESPONSE)
@@ -199,7 +235,7 @@ describe('runOperatorStatsSync', () => {
     const [a, b] = await Promise.all([first, second]);
     expect(a.outcome).toBe('synced');
     expect(b).toBe(a);
-    expect(scan).toHaveBeenCalledTimes(1);
+    expect(plan).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
       OPERATOR_STATS_URL,
@@ -217,8 +253,53 @@ describe('runOperatorStatsSync', () => {
     expect(state.lastSyncedAt).not.toBeNull();
   });
 
+  // BUG-164: the refusal is remembered where the next launch reads it.
+  it('records a refused publication durably and surfaces it as the status', async () => {
+    const { record } = installBridge({ autoPublish: true });
+    installSupabase();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          {
+            type: 'about:blank',
+            title: 'Invalid request',
+            status: 400,
+            code: 'invalid_request',
+            detail: 'coverage spans too many days',
+            retryable: false,
+            schemaVersion: 1,
+          },
+          {
+            status: 400,
+            headers: {
+              'Exawatt-Service-Version': '1',
+              'Content-Type': 'application/problem+json',
+            },
+          }
+        )
+      )
+    );
+
+    const result = await runOperatorStatsSync();
+
+    expect(result).toMatchObject({ outcome: 'failed', failure: 'rejected' });
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'failed',
+        failure: 'rejected',
+        retryable: false,
+        detail: 'coverage spans too many days',
+      })
+    );
+    expect(readOperatorStatsSyncState()).toMatchObject({
+      lastOutcome: 'failed',
+      lastFailure: 'rejected',
+    });
+  });
+
   it('is a paused no-op end to end when the preference is absent', async () => {
-    const { scan } = installBridge(); // no operatorProfile key at all
+    const { plan } = installBridge(); // no operatorProfile key at all
     installSupabase();
     const fetchSpy = vi.fn(async () => serviceResponse(PUBLISH_RESPONSE));
     vi.stubGlobal('fetch', fetchSpy);
@@ -226,7 +307,7 @@ describe('runOperatorStatsSync', () => {
     const result = await runOperatorStatsSync();
 
     expect(result.outcome).toBe('paused');
-    expect(scan).not.toHaveBeenCalled();
+    expect(plan).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -235,9 +316,9 @@ describe('runOperatorStatsSync', () => {
     expect(result.outcome).toBe('unavailable');
   });
 
-  it('is unavailable before account auth, local scan, or fetch when the service is null', async () => {
+  it('is unavailable before account auth, local plan, or fetch when the service is null', async () => {
     distributionState.current = distribution(null);
-    const { scan } = installBridge({ autoPublish: true });
+    const { plan } = installBridge({ autoPublish: true });
     const client = installSupabase();
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
@@ -248,12 +329,12 @@ describe('runOperatorStatsSync', () => {
     expect(createOptionalClient).not.toHaveBeenCalled();
     expect(client.auth.getSession).not.toHaveBeenCalled();
     expect(client.auth.getUserIdentities).not.toHaveBeenCalled();
-    expect(scan).not.toHaveBeenCalled();
+    expect(plan).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('runs again after a finished sync rather than reusing the settled promise', async () => {
-    const { scan } = installBridge({ autoPublish: true });
+    const { plan } = installBridge({ autoPublish: true });
     installSupabase();
     const fetchSpy = vi.fn(async () => serviceResponse(PUBLISH_RESPONSE));
     vi.stubGlobal('fetch', fetchSpy);
@@ -261,7 +342,7 @@ describe('runOperatorStatsSync', () => {
     await runOperatorStatsSync();
     await runOperatorStatsSync();
 
-    expect(scan).toHaveBeenCalledTimes(2);
+    expect(plan).toHaveBeenCalledTimes(2);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 

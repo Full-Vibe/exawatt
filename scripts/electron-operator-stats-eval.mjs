@@ -28,10 +28,14 @@ try {
     const api = window.electron?.operatorStats;
     if (!api) throw new Error('Operator Stats IPC is unavailable');
     const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const preview = await api.scan(since, 'America/Los_Angeles');
+    const plan = await api.plan({
+      since,
+      timezone: 'America/Los_Angeles',
+      cursor: null,
+    });
     return {
-      preview,
-      serialized: JSON.stringify(preview),
+      plan,
+      serialized: JSON.stringify(plan),
     };
   });
 
@@ -47,20 +51,44 @@ try {
   ];
   for (const field of forbidden) {
     if (result.serialized.includes(field)) {
-      throw new Error(`Renderer preview leaked forbidden field: ${field}`);
+      throw new Error(`Renderer plan leaked forbidden field: ${field}`);
     }
   }
-  if (
-    result.preview.schemaVersion !== 1 ||
-    result.preview.consentVersion !== 1 ||
-    result.preview.enabled !== true ||
-    result.preview.timezone !== 'America/Los_Angeles'
-  ) {
-    throw new Error('Operator Stats preview contract was malformed');
+  const { plan } = result;
+  const DAY_MS = 86_400_000;
+  for (const publication of plan.publications) {
+    const span =
+      (Date.parse(publication.coverage.through) -
+        Date.parse(publication.coverage.from)) /
+        DAY_MS +
+      1;
+    if (
+      publication.schemaVersion !== 2 ||
+      publication.consentVersion !== 1 ||
+      publication.enabled !== true ||
+      publication.timezone !== 'America/Los_Angeles' ||
+      span < 1 ||
+      span > 31 ||
+      publication.runs.length > 500 ||
+      [...publication.days, ...publication.runs].some(
+        row =>
+          row.localDate < publication.coverage.from ||
+          row.localDate > publication.coverage.through
+      )
+    ) {
+      throw new Error('Operator Stats publication contract was malformed');
+    }
+  }
+  if (plan.excluded.length > 0) {
+    throw new Error(
+      `Operator Stats quarantined rows: ${JSON.stringify(plan.excluded)}`
+    );
   }
 
+  const runs = plan.publications.reduce((n, p) => n + p.runs.length, 0);
+  const days = plan.publications.reduce((n, p) => n + p.days.length, 0);
   console.log(
-    `PASS Electron operator stats: ${result.preview.runs.length} sanitized Runs, ${result.preview.days.length} days`
+    `PASS Electron operator stats: ${plan.publications.length} publications, ${runs} sanitized Runs, ${days} days`
   );
 } finally {
   await app.close();

@@ -332,10 +332,10 @@ describe('first scan', () => {
 
   it('serves a settled samples-only projection without assembling window history', async () => {
     const service = makeService();
-    const all = await service.settledSamplesSince(0);
-    const recent = await service.settledSamplesSince(
-      Date.parse('2026-08-10T08:30:00.000Z')
-    );
+    const all = (await service.settledSampleView(0)).samples;
+    const recent = (
+      await service.settledSampleView(Date.parse('2026-08-10T08:30:00.000Z'))
+    ).samples;
 
     expect(all.length).toBeGreaterThan(recent.length);
     expect(recent.length).toBeGreaterThan(0);

@@ -113,6 +113,12 @@ delegated descendant the source reports beneath that turn.
 Independent top-level Sessions remain independent Runs even while they overlap.
 Fleet metrics aggregate overlapping Runs across the operator.
 
+Derived from Consumption samples, where no turn events exist (amended
+2026-09-24, BUG-164): a provider Session splits into a new Run after an hour
+with no activity from any of its members, and no Run spans more than 31 days.
+A Session is resumed across days and weeks; reading it as one Run credited a
+week's work to the day it was first opened.
+
 ### Public metrics
 
 There is no opaque Exawatt score. One table ranks four transparent axes:
@@ -459,6 +465,19 @@ Exit criteria:
 
 ## Findings log
 
+- 2026-09-24 (operator report: "I don't see any usage this week"): **one
+  resumed Session refused every sync for nine days.** Production had last
+  synced 2026-09-14 01:08 UTC; every later `POST` was a `400`. Replaying the
+  installed app's persisted Consumption log through the core derivation
+  reproduced `runs[128].elapsedMs is out of bounds`: a Claude Code Session
+  resumed across 47.8 days was one Run, past the 31-day bound, and the
+  whole-history payload let that one row refuse everything. Behind it, a
+  resumed Session's work was credited to the day it was first opened (the
+  operator's 2026-09-23 reads 12.7 agent hours under the old derivation and
+  28.2 under the new). The reason reached no log, and the panel said "Sync
+  will retry automatically." Incident `0027` carries the evidence and method;
+  BUG-164 the fix, summarized in the milestone log below.
+
 - 2026-08-16 (operator report: the last week of usage is absent): **the public
   profile was frozen because its local sync path failed before POST.** The
   production profile contained 51 agent-hours entirely on 2026-08-03 and zero
@@ -606,6 +625,44 @@ Exit criteria:
   to public web surfaces, not just the app.
 
 ## Roadmap milestone log
+
+### 2026-09-24 — BUG-164 publications are bounded date windows
+
+The measurement contract changes in one place: **a Run derived from
+Consumption samples ends after an hour with no activity from any member
+(`RUN_IDLE_SPLIT_MS`) and never spans more than 31 days.** A provider Session
+is resumed across days and weeks; a Run is one stretch of work. Activity is
+counted exactly as before (intervals are computed over the whole Session, then
+clipped into its Runs, and a Run after an idle split starts where its first
+sample's interval starts), so all-time agent hours do not move; what moves is
+which day that time is credited to, and Run counts and durations. The first
+Run of a Session keeps the Session's key, so receipts shared before the change
+still resolve. A day's peak fleet is now the largest whole-fleet reading of
+any of its Runs, computed from one global concurrency timeline.
+
+The upload contract changes shape, not content. A publication body is schema
+2: it declares the operator-local dates it covers (at most 31), and the hosted
+write replaces exactly those dates. Every limit lives in
+`packages/core/src/operator-stats/contract.ts`; the validator, the service
+client, the public JSON Schema, and the Supabase CHECKs read or are
+parity-tested against it. `planOperatorStatsPublication` cuts the derived
+history into publications that each pass the service's parser, quarantines
+any row that fails its bounds (a day's date is then left uncovered, so hosted
+history for it stands), keeps the 500 largest receipts when one day has more
+(its aggregate still counts every Run), and never covers a date at or before
+the sample window's persisted prune line. A routine sync covers the trailing
+week after the durable cursor (`publishedThrough`, `publishedDerivation`); a
+new derivation republishes everything retained since consent, oldest first.
+
+Detection: main records every sync outcome (`operator-stats:record`) in the
+settings store and every failure in `logs/main.jsonl`
+(`operator-stats.sync-failed`, with the field-level reason); quarantined rows
+log as `operator-stats.row-excluded`. The route logs every refusal's reason
+and answers a database refusal as a final `400`. The panel distinguishes
+"publishing stopped" from "will retry", shows how old the public profile is
+whenever it is not current, and hydrates the last failure on launch. The
+public profile shows its last sync time. "This week" is each operator's own
+last seven local days.
 
 ### 2026-09-16 — BUG-141 the sync's anchor recovery no longer races the scanner's retention
 

@@ -15,8 +15,9 @@
  * main never talks to an analytics host). A main-side timer could only ever
  * nudge the renderer to do all of that anyway, over a new IPC channel carrying
  * no information this module cannot read from the settings bridge it already
- * subscribes to. Main keeps what is genuinely its own: the trusted local scan
- * (`operator-stats:scan`) and the persisted preference.
+ * subscribes to. Main keeps what is genuinely its own: the trusted local
+ * plan (`operator-stats:plan`), the durable publication record and its
+ * diagnostics line (`operator-stats:record`), and the persisted preference.
  *
  * The hard rule, enforced structurally: NO upload may happen while the switch
  * is off or absent. Every trigger — launch delay, interval, flip-on, the
@@ -28,7 +29,16 @@
  */
 
 import type { Session, UserIdentity } from '@supabase/supabase-js';
-import type { OperatorStatsPublishPayload } from '@exawatt/core';
+import type {
+  OperatorStatsPublication,
+  OperatorStatsPublicationCursor,
+  OperatorStatsPublicationPlan,
+  OperatorStatsPublishPayload,
+  OperatorStatsSyncEvent,
+  OperatorStatsSyncFailure,
+  OperatorStatsSyncFailureRecord,
+} from '@exawatt/core';
+import { isTerminalSyncFailure } from '@exawatt/core';
 import {
   getOperatorStatsProfile,
   isCompatibleServiceProblemError,
@@ -45,14 +55,11 @@ import { createOptionalClient } from '@/lib/supabase/client';
 import { isOperatorAutoPublishEnabled } from '@/lib/hosted-features/contract';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 
+export type { OperatorStatsSyncFailure } from '@exawatt/core';
+
 /** Well past startup so a sync never competes with launch work. */
 export const OPERATOR_STATS_LAUNCH_SYNC_DELAY_MS = 2 * 60_000;
 export const OPERATOR_STATS_SYNC_INTERVAL_MS = 6 * 60 * 60_000;
-
-export type LocalOperatorStatsPreview = Pick<
-  OperatorStatsPublishPayload,
-  'schemaVersion' | 'consentVersion' | 'enabled' | 'timezone' | 'days' | 'runs'
->;
 
 export type OperatorStatsSyncOutcome =
   /** The switch is off or absent. Nothing was read and nothing left. */
@@ -66,19 +73,13 @@ export type OperatorStatsSyncOutcome =
   | 'synced'
   | 'failed';
 
-export type OperatorStatsSyncFailure =
-  | 'local-scan'
-  | 'local-state'
-  | 'network'
-  | 'unauthorized'
-  | 'identity'
-  | 'rejected'
-  | 'service';
-
 export interface OperatorProfilePublicationState {
   startedAt?: string;
   lastSyncedAt?: string;
   profileEnabled?: boolean;
+  publishedThrough?: string;
+  publishedDerivation?: number;
+  lastFailure?: OperatorStatsSyncFailureRecord;
 }
 
 export interface HostedOperatorProfileState {
@@ -99,6 +100,12 @@ export interface OperatorStatsSyncResult {
   failure: OperatorStatsSyncFailure | null;
 }
 
+export interface OperatorStatsPlanRequest {
+  since: string;
+  timezone: string;
+  cursor: OperatorStatsPublicationCursor | null;
+}
+
 export interface OperatorStatsSyncDeps {
   isAutoPublishEnabled: () => Promise<boolean>;
   getSession: () => Promise<Session | null>;
@@ -112,11 +119,15 @@ export interface OperatorStatsSyncDeps {
   recordPublicationState: (
     state: OperatorProfilePublicationState
   ) => Promise<void>;
-  scan: (since: string, timezone: string) => Promise<LocalOperatorStatsPreview>;
+  plan: (
+    request: OperatorStatsPlanRequest
+  ) => Promise<OperatorStatsPublicationPlan>;
   post: (
     body: string,
     accessToken: string
   ) => Promise<{ ok: boolean; status: number }>;
+  /** Folds one step into the durable record (and main's diagnostics log). */
+  recordSync: (event: OperatorStatsSyncEvent) => Promise<void>;
   captureFailure: (failure: HostedFailure, statusCode: number | null) => void;
   now: () => number;
   timezone: () => string;
@@ -126,16 +137,16 @@ function findGithub(identities: UserIdentity[] | null | undefined) {
   return identities?.find(identity => identity.provider === 'github') ?? null;
 }
 
-/** The exact upload the old publish action made — decision `0029`'s
- *  allowlisted aggregate plus the GitHub-seeded identity, nothing else. */
+/** One publication as it is sent — decision `0029`'s allowlisted aggregate
+ *  for the dates it covers, plus the GitHub-seeded identity, nothing else. */
 export function buildPublishBody(
-  preview: LocalOperatorStatsPreview,
+  publication: OperatorStatsPublication,
   github: UserIdentity
 ): string {
   const data = github.identity_data ?? {};
   const handle = String(data.user_name ?? data.preferred_username ?? '');
-  return JSON.stringify({
-    ...preview,
+  const payload: OperatorStatsPublishPayload = {
+    ...publication,
     identity: {
       provider: 'github',
       providerHandle: handle,
@@ -144,12 +155,77 @@ export function buildPublishBody(
       avatarUrl: typeof data.avatar_url === 'string' ? data.avatar_url : null,
       links: [`https://github.com/${handle}`],
     },
-  });
+  };
+  return JSON.stringify(payload);
+}
+
+interface SyncFailure {
+  failure: OperatorStatsSyncFailure;
+  retryable: boolean;
+  status: number | null;
+  code: string | null;
+  detail: string | null;
+}
+
+function syncFailureForStatus(status: number): OperatorStatsSyncFailure {
+  if (status === 401 || status === 403) return 'unauthorized';
+  if (status === 409) return 'identity';
+  if (status >= 400 && status < 500) return 'rejected';
+  return 'service';
+}
+
+/** Classifies a hosted call that threw, and counts it (decision `0034`). */
+function hostedFailure(
+  cause: unknown,
+  deps: OperatorStatsSyncDeps
+): SyncFailure {
+  if (isCompatibleServiceProblemError(cause)) {
+    deps.captureFailure(hostedFailureForStatus(cause.status), cause.status);
+    return {
+      failure: syncFailureForStatus(cause.status),
+      retryable: cause.retryable,
+      status: cause.status,
+      code: cause.code,
+      detail: cause.problem.detail ?? null,
+    };
+  }
+  const protocolFailure = isCompatibleServiceProtocolError(cause);
+  deps.captureFailure(protocolFailure ? 'invalid_response' : 'network', null);
+  return {
+    failure: protocolFailure ? 'service' : 'network',
+    retryable: !protocolFailure,
+    status: null,
+    code: null,
+    detail: null,
+  };
+}
+
+function statusFailure(status: number, deps: OperatorStatsSyncDeps) {
+  deps.captureFailure(hostedFailureForStatus(status), status);
+  const failure = syncFailureForStatus(status);
+  return {
+    failure,
+    retryable: !isTerminalSyncFailure(failure),
+    status,
+    code: null,
+    detail: null,
+  } satisfies SyncFailure;
+}
+
+function detailOf(cause: unknown): string | null {
+  return cause instanceof Error ? cause.message.slice(0, 300) : null;
 }
 
 /**
  * One sync attempt, gates first. Pure orchestration over injected deps so the
  * never-when-paused/signed-out/unlinked contract is unit-testable.
+ *
+ * Main plans; this sends. The plan is a sequence of publications that each
+ * fit the hosted contract and each replace only the dates they cover
+ * (BUG-164), sent oldest first. Every publication that lands moves the
+ * durable cursor, so an interrupted backlog resumes instead of restarting;
+ * every failure is recorded durably and in main's diagnostics log, so a
+ * profile that stops updating says why.
  */
 export async function performOperatorStatsSync(
   deps: OperatorStatsSyncDeps
@@ -162,11 +238,32 @@ export async function performOperatorStatsSync(
   const github = await deps.getGithubIdentity();
   if (!github) return { outcome: 'unlinked', snapshot: null, failure: null };
 
+  const failed = async (
+    failure: SyncFailure
+  ): Promise<OperatorStatsSyncResult> => {
+    try {
+      await deps.recordSync({
+        kind: 'failed',
+        at: new Date(deps.now()).toISOString(),
+        ...failure,
+      });
+    } catch {
+      // The record is the status line's memory, not the sync's outcome.
+    }
+    return { outcome: 'failed', snapshot: null, failure: failure.failure };
+  };
+
   let publication: OperatorProfilePublicationState;
   try {
     publication = await deps.getPublicationState();
-  } catch {
-    return { outcome: 'failed', snapshot: null, failure: 'local-state' };
+  } catch (cause) {
+    return failed({
+      failure: 'local-state',
+      retryable: true,
+      status: null,
+      code: null,
+      detail: detailOf(cause),
+    });
   }
 
   let since = publication.startedAt ?? null;
@@ -177,33 +274,9 @@ export async function performOperatorStatsSync(
     try {
       hosted = await deps.getHostedProfileState(session.access_token);
     } catch (cause) {
-      if (isCompatibleServiceProblemError(cause)) {
-        deps.captureFailure(hostedFailureForStatus(cause.status), cause.status);
-        return {
-          outcome: 'failed',
-          snapshot: null,
-          failure: syncFailureForStatus(cause.status),
-        };
-      }
-      const protocolFailure = isCompatibleServiceProtocolError(cause);
-      deps.captureFailure(
-        protocolFailure ? 'invalid_response' : 'network',
-        null
-      );
-      return {
-        outcome: 'failed',
-        snapshot: null,
-        failure: protocolFailure ? 'service' : 'network',
-      };
+      return failed(hostedFailure(cause, deps));
     }
-    if (!hosted.ok) {
-      deps.captureFailure(hostedFailureForStatus(hosted.status), hosted.status);
-      return {
-        outcome: 'failed',
-        snapshot: null,
-        failure: syncFailureForStatus(hosted.status),
-      };
-    }
+    if (!hosted.ok) return failed(statusFailure(hosted.status, deps));
     // Existing profiles prove an earlier consent boundary. New profiles start
     // exactly now. Persist before scanning so a renderer-port change can never
     // move this anchor or silently backfill pre-consent history.
@@ -218,89 +291,75 @@ export async function performOperatorStatsSync(
             }
           : { profileEnabled: false }),
       });
-    } catch {
-      return { outcome: 'failed', snapshot: null, failure: 'local-state' };
+    } catch (cause) {
+      return failed({
+        failure: 'local-state',
+        retryable: true,
+        status: null,
+        code: null,
+        detail: detailOf(cause),
+      });
     }
   }
 
-  let preview: LocalOperatorStatsPreview;
+  const cursor =
+    publication.publishedThrough && publication.publishedDerivation
+      ? {
+          publishedThrough: publication.publishedThrough,
+          derivation: publication.publishedDerivation,
+        }
+      : null;
+  let plan: OperatorStatsPublicationPlan;
   try {
-    preview = await deps.scan(since, deps.timezone());
-  } catch {
-    // A local read failure is not a hosted call; nothing to count.
-    return { outcome: 'failed', snapshot: null, failure: 'local-scan' };
-  }
-
-  // The switch may have flipped during the scan. Once it is off, nothing
-  // leaves — re-check at the last moment before the only network write.
-  if (!(await deps.isAutoPublishEnabled())) {
-    return { outcome: 'paused', snapshot: null, failure: null };
-  }
-
-  try {
-    const response = await deps.post(
-      buildPublishBody(preview, github),
-      session.access_token
-    );
-    if (!response.ok) {
-      deps.captureFailure(
-        hostedFailureForStatus(response.status),
-        response.status
-      );
-      return {
-        outcome: 'failed',
-        snapshot: null,
-        failure: syncFailureForStatus(response.status),
-      };
-    }
+    plan = await deps.plan({ since, timezone: deps.timezone(), cursor });
   } catch (cause) {
-    if (isCompatibleServiceProblemError(cause)) {
-      deps.captureFailure(hostedFailureForStatus(cause.status), cause.status);
-      return {
-        outcome: 'failed',
-        snapshot: null,
-        failure: syncFailureForStatus(cause.status),
-      };
-    }
-    const protocolFailure = isCompatibleServiceProtocolError(cause);
-    deps.captureFailure(protocolFailure ? 'invalid_response' : 'network', null);
-    return {
-      outcome: 'failed',
-      snapshot: null,
-      failure: protocolFailure ? 'service' : 'network',
-    };
+    // A local read failure is not a hosted call; nothing to count. A planner
+    // that produced something the contract refuses is a defect, not a
+    // transient: it says so instead of promising a retry.
+    const contract = /OperatorStatsContractError/.test(String(cause));
+    return failed({
+      failure: contract ? 'local-contract' : 'local-scan',
+      retryable: !contract,
+      status: null,
+      code: null,
+      detail: detailOf(cause),
+    });
   }
 
-  const syncedAt = deps.now();
-  try {
-    await deps.recordPublicationState({
-      startedAt: since,
-      lastSyncedAt: new Date(syncedAt).toISOString(),
-      profileEnabled: true,
-    });
-  } catch {
-    // Hosted truth already advanced. Keep the successful outcome honest and
-    // let the next sync rehydrate the local cache from the owner-only GET.
+  const last = plan.publications.length - 1;
+  for (const [index, next] of plan.publications.entries()) {
+    // The switch may have flipped while planning or sending. Once it is off,
+    // nothing more leaves — re-check before every network write.
+    if (!(await deps.isAutoPublishEnabled())) {
+      return { outcome: 'paused', snapshot: null, failure: null };
+    }
+    try {
+      const response = await deps.post(
+        buildPublishBody(next, github),
+        session.access_token
+      );
+      if (!response.ok) return failed(statusFailure(response.status, deps));
+    } catch (cause) {
+      return failed(hostedFailure(cause, deps));
+    }
+    try {
+      await deps.recordSync({
+        kind: 'published',
+        at: new Date(deps.now()).toISOString(),
+        coverage: next.coverage,
+        ...(index === last ? { derivation: plan.derivation } : {}),
+      });
+    } catch {
+      // Hosted truth already advanced. A lost cursor only means the next sync
+      // republishes these dates, which replaces them with the same rows.
+    }
   }
+
   return {
     outcome: 'synced',
     failure: null,
-    snapshot: {
-      runs: preview.runs.length,
-      agentMs: preview.days.reduce((sum, day) => sum + day.agentMs, 0),
-      normalizedTokens: preview.days.reduce(
-        (sum, day) => sum + day.normalizedTokens,
-        0
-      ),
-    },
+    snapshot: { ...plan.totals },
   };
-}
-
-function syncFailureForStatus(status: number): OperatorStatsSyncFailure {
-  if (status === 401 || status === 403) return 'unauthorized';
-  if (status === 409) return 'identity';
-  if (status >= 400 && status < 500) return 'rejected';
-  return 'service';
 }
 
 /* ------------------------------------------------------------------ *
@@ -336,15 +395,35 @@ export function readOperatorStatsSyncState(): OperatorStatsSyncState {
   return state;
 }
 
+/**
+ * Adopts the durable publication record. Main writes it after every attempt
+ * that got past the gates, so it is the latest truth about publishing even
+ * across relaunches: a profile that stopped updating last week still says so
+ * on today's first render, instead of reading as quietly up to date.
+ */
 export function hydrateOperatorStatsSyncState(
   publication: OperatorProfilePublicationState | undefined
 ): void {
   const parsed = publication?.lastSyncedAt
     ? Date.parse(publication.lastSyncedAt)
     : NaN;
-  if (Number.isFinite(parsed) && parsed !== state.lastSyncedAt) {
-    setState({ lastSyncedAt: parsed });
+  const lastSyncedAt = Number.isFinite(parsed) ? parsed : state.lastSyncedAt;
+  const patch: Partial<OperatorStatsSyncState> = {};
+  if (lastSyncedAt !== state.lastSyncedAt) patch.lastSyncedAt = lastSyncedAt;
+  if (publication?.lastFailure) {
+    if (
+      state.lastOutcome !== 'failed' ||
+      state.lastFailure !== publication.lastFailure.failure
+    ) {
+      patch.lastOutcome = 'failed';
+      patch.lastFailure = publication.lastFailure.failure;
+    }
+  } else if (state.lastOutcome === 'failed' && Number.isFinite(parsed)) {
+    // A later success anywhere cleared the durable failure.
+    patch.lastOutcome = 'synced';
+    patch.lastFailure = null;
   }
+  if (Object.keys(patch).length > 0) setState(patch);
 }
 
 export function subscribeOperatorStatsSync(listener: () => void): () => void {
@@ -363,8 +442,8 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
   // Service absence is checked before the desktop bridge, settings, account
   // session, local scan, or fetch. Community is a true no-op, not signed out.
   if (!endpoint) return null;
-  const scanApi = window.electron?.operatorStats;
-  if (!scanApi) return null;
+  const localApi = window.electron?.operatorStats;
+  if (!localApi) return null;
   const settingsBridge = window.electron?.settings;
   const supabase = createOptionalClient(distribution);
   return {
@@ -410,7 +489,7 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
         await settingsBridge.recordOperatorProfileState(publication);
       hydrateOperatorStatsSyncState(settings.operatorProfile);
     },
-    scan: (since, timezone) => scanApi.scan(since, timezone),
+    plan: request => localApi.plan(request),
     post: async (body, accessToken) => {
       await publishOperatorStats(
         endpoint,
@@ -418,6 +497,10 @@ function defaultDeps(): OperatorStatsSyncDeps | null {
         JSON.parse(body) as OperatorStatsPublishPayload
       );
       return { ok: true, status: 200 };
+    },
+    recordSync: async event => {
+      const settings = await localApi.record(event);
+      hydrateOperatorStatsSyncState(settings.operatorProfile);
     },
     captureFailure: (failure, statusCode) => {
       captureAnalyticsEvent({

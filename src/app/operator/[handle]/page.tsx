@@ -8,6 +8,7 @@ import {
   formatAgentHours,
   formatAgentHoursLong,
   formatDuration,
+  formatElapsedSince,
   formatTokens,
 } from '@/components/operator-stats/format';
 import styles from '@/components/operator-stats/operator-stats.module.css';
@@ -93,6 +94,7 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
     ),
   };
   const publicLinks = profile.links.filter(link => link.startsWith('https://'));
+  const updatedMs = profile.updatedAt ? Date.parse(profile.updatedAt) : NaN;
 
   return (
     <main className={styles.surface}>
@@ -117,6 +119,16 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
                 </span>
               ))}
             </p>
+            {/* A profile is a record of the last sync, not a live feed; its
+                age is what lets a reader tell a quiet week from a stale one. */}
+            {Number.isFinite(updatedMs) ? (
+              <p className={styles.freshness}>
+                Updated{' '}
+                <time dateTime={new Date(updatedMs).toISOString()}>
+                  {formatElapsedSince(updatedMs)}
+                </time>
+              </p>
+            ) : null}
           </div>
         </header>
 

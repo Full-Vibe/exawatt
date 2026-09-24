@@ -1502,17 +1502,20 @@ async function bootstrapCommandSurface(): Promise<void> {
     stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
     identities: () => ptySessions.listProviderIdentities(),
     // BUG-032: samples are a bounded collection. The default horizon is 14
-    // days; an ACTIVE Operator-profile publication widens it, because that
-    // sync rescans everything since its opt-in anchor and replaces the hosted
-    // aggregate wholesale — pruning under it would truncate a published
-    // profile. The read is LIVE, not a boot-time snapshot: the anchor is
-    // written by the renderer's first sync minutes from now, and a value
-    // captured here before that pruned the history that sync then published
-    // (BUG-141). `sampleRetentionPolicy` is the one owner both hydrate and
-    // compaction consult.
+    // days; an ACTIVE Operator-profile publication widens it to its opt-in
+    // anchor, so a republish (a new Run derivation, a long outage) can still
+    // cover everything since consent. Publication can no longer be HARMED
+    // by a narrower horizon — it never claims dates at or before the prune
+    // line (BUG-164) — but it can only republish what is retained. The read
+    // is LIVE, not a boot-time snapshot: the anchor is written by the
+    // renderer's first sync minutes from now (BUG-141).
+    // `sampleRetentionPolicy` is the one owner both hydrate and compaction
+    // consult.
     sampleHorizonMs: sampleRetentionPolicy(),
   });
-  registerOperatorStatsIPC(consumptionScanner);
+  registerOperatorStatsIPC(consumptionScanner, (event, fields) =>
+    mainDiagnostics(event, fields)
+  );
   // ENG-038: the credentialed Claude plan-account read — a SIBLING of the
   // scanner (the local parse stays credential- and network-free), merged
   // behind the same IPC seam by the composite.

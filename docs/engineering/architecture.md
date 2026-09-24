@@ -352,12 +352,18 @@ a complete deterministic Team tile.
 ENG-035 adds an opt-in public projection over existing Session and Consumption
 facts; it does not add `Agentmaxxing` as a canonical object or make the hosted
 leaderboard the source of local truth. `@exawatt/core` owns source-neutral Run
-facts, deterministic Run/day derivation, Command/Endurance/Fleet/Energy rank
-semantics, activity-graph levels, and a strict versioned publish allowlist.
-Source adapters may improve their evidence over time without changing the
-public contract. The initial historical adapter derives conservative activity
-intervals from timestamped Claude Code and Codex Consumption samples and keeps
-reported, observed, derived, and unavailable assurance explicit.
+facts, deterministic Run/day derivation, agent-hours/hands-off/peak-fleet/tokens
+rank semantics, activity-graph levels, and a strict versioned publish allowlist.
+Every limit of that allowlist is defined once, in
+`packages/core/src/operator-stats/contract.ts`, and the producer, the validator,
+the service client, the public JSON Schema, and the Supabase CHECK constraints
+read or are parity-tested against it (BUG-164). Source adapters may improve
+their evidence over time without changing the public contract. The initial
+historical adapter derives conservative activity intervals from timestamped
+Claude Code and Codex Consumption samples, splits each provider Session into
+Runs at an hour of inactivity and at the 31-day Run ceiling (a Session is
+resumed across days and weeks; a Run is not), and keeps reported, observed,
+derived, and unavailable assurance explicit.
 
 The desktop privilege boundary remains narrow and preference-governed. Electron
 main's incremental Consumption service is the only reader of machine-local
@@ -365,13 +371,23 @@ harness logs; Operator stats requests a settled, samples-only projection from
 that service and never starts a second corpus scan or assembles unrelated plan-
 window history. The renderer schedules the scan only while the durable, off-by-
 default `operatorProfile.autoPublish` preference is on, then receives only
-sanitized daily and Run aggregates. Local source identifiers are hashed before
+sanitized daily and Run aggregates, already cut by the core planner into
+publications that each fit the hosted contract (`operator-stats:plan`). The
+planner quarantines any row that fails its bounds, with the reason written to
+the diagnostics log, rather than letting one row refuse the rest, and it never
+covers a date at or before the sample window's persisted prune line, so a
+narrower retention horizon can shorten what is republished but can never
+replace hosted history with the absence of local samples. Local source
+identifiers are hashed before
 they become public idempotency keys and public Run ids; prompts, responses,
 code, repositories, Projects, branches, paths, filenames, diffs, and raw
 Session ids are absent from the IPC and network schemas.
 
-The consent boundary, last successful sync, and cached hosted visibility live
-beside that preference in Electron's settings store, not renderer
+The consent boundary, last successful sync, cached hosted visibility, the
+publication cursor (last covered local date and the Run derivation the hosted
+history reflects), and the last failed sync live beside that preference in
+Electron's settings store, written by main through `operator-stats:record`,
+which also logs every failure to `logs/main.jsonl`. They are not in renderer
 `localStorage`: packaged Electron serves each launch from a different localhost
 port, so origin-scoped storage is not durable application state. An owner-only
 authenticated metadata read recovers the original hosted `joined_at` boundary
@@ -386,8 +402,16 @@ Pausing stops future writes, while disabling public visibility also pauses and
 does not delete or mutate local history.
 
 The hosted boundary accepts only the versioned allowlist after authenticated
-GitHub identity resolution. A server RPC atomically replaces that operator's
-bounded day and Run projection so retries cannot inflate totals. The underlying
+GitHub identity resolution. Each publication body (schema 2) declares the
+operator-local dates it covers, at most 31, and a server RPC atomically
+replaces that operator's rows for exactly those dates, so a request stays
+bounded however long the history grows and retries cannot inflate totals. A
+routine sync republishes the trailing week after its cursor; a new derivation
+republishes everything retained since consent, oldest first. The route logs
+the field-level reason for every refusal and answers a database refusal as a
+final `400`, never a retryable outage. "This week" on the public board is each
+operator's own last seven local days, and the public profile carries its last
+sync time. The underlying
 Supabase profile, day, and Run tables remain row-owned and unavailable to
 anonymous callers. Anonymous leaderboard, profile, and Run reads go through
 allowlisted security-definer functions that filter on the profile's enabled

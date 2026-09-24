@@ -1,22 +1,48 @@
-import { MAX_PUBLIC_RUN_MS } from './derive';
+import { calendarDaysBetween, isCalendarDate } from './calendar';
 import {
+  MAX_AGENT_MS,
+  MAX_DAY_RUN_COUNT,
+  MAX_FLEET,
+  MAX_INTERVENTIONS,
+  MAX_PUBLICATION_DAYS,
+  MAX_PUBLICATION_RUNS,
+  MAX_PUBLIC_RUN_MS,
+  MAX_TOKEN_VALUE,
   OPERATOR_STATS_CONSENT_VERSION,
   OPERATOR_STATS_SCHEMA_VERSION,
-  type OperatorStatsPublishPayload,
+} from './contract';
+import type {
+  OperatorDayAggregate,
+  OperatorStatsCoverage,
+  OperatorStatsPublication,
+  OperatorStatsPublishPayload,
+  PublicOperatorIdentity,
+  PublicRunUpload,
 } from './types';
 
-const MAX_DAYS = 400;
-const MAX_RUNS = 500;
-const MAX_TOKEN_VALUE = 1_000_000_000_000;
-const MAX_FLEET = 10_000;
 const HANDLE = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PUBLIC_ID = /^[a-zA-Z0-9_-]{12,80}$/;
 const HASH = /^[a-f0-9]{64}$/;
 
+/**
+ * A value that does not fit the publication contract. The message names the
+ * exact field, is safe to log and to return to the client (it never carries a
+ * value), and is what the hosted route answers as `detail`.
+ */
+export class OperatorStatsContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OperatorStatsContractError';
+  }
+}
+
+function fail(message: string): never {
+  throw new OperatorStatsContractError(message);
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
+    fail(`${label} must be an object`);
   }
   return value as Record<string, unknown>;
 }
@@ -32,7 +58,7 @@ function exactKeys(
     expected.length !== actual.length ||
     expected.some((key, i) => key !== actual[i])
   ) {
-    throw new Error(`${label} contains unknown or missing fields`);
+    fail(`${label} contains unknown or missing fields`);
   }
 }
 
@@ -47,27 +73,27 @@ function boundedNumber(
     value < 0 ||
     value > max
   ) {
-    throw new Error(`${label} is out of bounds`);
+    fail(`${label} is out of bounds`);
   }
   return value;
 }
 
 function boundedInteger(value: unknown, label: string, max: number): number {
   const parsed = boundedNumber(value, label, max);
-  if (!Number.isInteger(parsed)) throw new Error(`${label} must be an integer`);
+  if (!Number.isInteger(parsed)) fail(`${label} must be an integer`);
   return parsed;
 }
 
 function shortString(value: unknown, label: string, max = 200): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > max) {
-    throw new Error(`${label} is invalid`);
+    fail(`${label} is invalid`);
   }
   return value;
 }
 
 function stringArray(value: unknown, label: string, maxItems = 8): string[] {
   if (!Array.isArray(value) || value.length > maxItems) {
-    throw new Error(`${label} is invalid`);
+    fail(`${label} is invalid`);
   }
   return value.map((item, index) =>
     shortString(item, `${label}[${index}]`, 80)
@@ -81,41 +107,171 @@ function enumArray<T extends string>(
 ): T[] {
   const parsed = stringArray(value, label);
   if (parsed.some(item => !allowed.includes(item as T))) {
-    throw new Error(`${label} contains an unsupported value`);
+    fail(`${label} contains an unsupported value`);
   }
   return parsed as T[];
 }
 
+function calendarDate(value: unknown, label: string): string {
+  if (!isCalendarDate(value)) fail(`${label} is invalid`);
+  return value;
+}
+
 const SOURCES = ['claude-code', 'codex'] as const;
 const ASSURANCE = ['reported', 'observed', 'derived', 'unavailable'] as const;
+const OUTCOMES = ['settled', 'stopped', 'faulted', 'unknown'] as const;
 
-/** Strict allowlist validator. Unknown fields fail closed at every level. */
-export function parseOperatorStatsPublishPayload(
-  input: unknown
-): OperatorStatsPublishPayload {
-  const root = record(input, 'payload');
+/** One day aggregate, validated on its own so a planner can quarantine it. */
+export function parseOperatorDayAggregate(
+  input: unknown,
+  label = 'day'
+): OperatorDayAggregate {
+  const day = record(input, label);
   exactKeys(
-    root,
+    day,
     [
-      'schemaVersion',
-      'consentVersion',
-      'enabled',
-      'timezone',
-      'identity',
-      'days',
-      'runs',
+      'localDate',
+      'agentMs',
+      'runCount',
+      'peakFleet',
+      'longestHandsOffMs',
+      'rawTokens',
+      'normalizedTokens',
+      'sources',
+      'assurance',
     ],
-    'payload'
+    label
   );
-  if (root.schemaVersion !== OPERATOR_STATS_SCHEMA_VERSION)
-    throw new Error('Unsupported schemaVersion');
-  if (root.consentVersion !== OPERATOR_STATS_CONSENT_VERSION)
-    throw new Error('Unsupported consentVersion');
-  if (root.enabled !== true) throw new Error('enabled must be true');
-  const timezone = shortString(root.timezone, 'timezone', 80);
-  new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
+  return {
+    localDate: calendarDate(day.localDate, `${label}.localDate`),
+    agentMs: boundedNumber(day.agentMs, `${label}.agentMs`, MAX_AGENT_MS),
+    runCount: boundedInteger(
+      day.runCount,
+      `${label}.runCount`,
+      MAX_DAY_RUN_COUNT
+    ),
+    peakFleet: boundedInteger(day.peakFleet, `${label}.peakFleet`, MAX_FLEET),
+    longestHandsOffMs: boundedNumber(
+      day.longestHandsOffMs,
+      `${label}.longestHandsOffMs`,
+      MAX_PUBLIC_RUN_MS
+    ),
+    rawTokens: boundedNumber(
+      day.rawTokens,
+      `${label}.rawTokens`,
+      MAX_TOKEN_VALUE
+    ),
+    normalizedTokens: boundedNumber(
+      day.normalizedTokens,
+      `${label}.normalizedTokens`,
+      MAX_TOKEN_VALUE
+    ),
+    sources: enumArray(day.sources, `${label}.sources`, SOURCES),
+    assurance: enumArray(day.assurance, `${label}.assurance`, ASSURANCE),
+  };
+}
 
-  const identity = record(root.identity, 'identity');
+/** One Run receipt, validated on its own so a planner can quarantine it. */
+export function parsePublicRunUpload(
+  input: unknown,
+  label = 'run'
+): PublicRunUpload {
+  const run = record(input, label);
+  exactKeys(
+    run,
+    [
+      'publicId',
+      'localDate',
+      'idempotencyKey',
+      'elapsedMs',
+      'activeMs',
+      'longestHandsOffMs',
+      'interventionCount',
+      'peakActiveMembers',
+      'agentMs',
+      'rawTokens',
+      'normalizedTokens',
+      'sources',
+      'assurance',
+      'outcome',
+    ],
+    label
+  );
+  const publicId = shortString(run.publicId, `${label}.publicId`, 80);
+  const idempotencyKey = shortString(
+    run.idempotencyKey,
+    `${label}.idempotencyKey`,
+    64
+  );
+  if (!PUBLIC_ID.test(publicId) || !HASH.test(idempotencyKey)) {
+    fail(`${label} identifier is invalid`);
+  }
+  const outcome = shortString(run.outcome, `${label}.outcome`, 16);
+  if (!OUTCOMES.includes(outcome as (typeof OUTCOMES)[number])) {
+    fail(`${label}.outcome is invalid`);
+  }
+  return {
+    publicId,
+    localDate: calendarDate(run.localDate, `${label}.localDate`),
+    idempotencyKey,
+    elapsedMs: boundedNumber(
+      run.elapsedMs,
+      `${label}.elapsedMs`,
+      MAX_PUBLIC_RUN_MS
+    ),
+    activeMs: boundedNumber(
+      run.activeMs,
+      `${label}.activeMs`,
+      MAX_PUBLIC_RUN_MS
+    ),
+    longestHandsOffMs: boundedNumber(
+      run.longestHandsOffMs,
+      `${label}.longestHandsOffMs`,
+      MAX_PUBLIC_RUN_MS
+    ),
+    interventionCount:
+      run.interventionCount === null
+        ? null
+        : boundedInteger(
+            run.interventionCount,
+            `${label}.interventionCount`,
+            MAX_INTERVENTIONS
+          ),
+    peakActiveMembers: boundedInteger(
+      run.peakActiveMembers,
+      `${label}.peakActiveMembers`,
+      MAX_FLEET
+    ),
+    agentMs: boundedNumber(run.agentMs, `${label}.agentMs`, MAX_AGENT_MS),
+    rawTokens: boundedNumber(
+      run.rawTokens,
+      `${label}.rawTokens`,
+      MAX_TOKEN_VALUE
+    ),
+    normalizedTokens: boundedNumber(
+      run.normalizedTokens,
+      `${label}.normalizedTokens`,
+      MAX_TOKEN_VALUE
+    ),
+    sources: enumArray(run.sources, `${label}.sources`, SOURCES),
+    assurance: enumArray(run.assurance, `${label}.assurance`, ASSURANCE),
+    outcome: outcome as PublicRunUpload['outcome'],
+  };
+}
+
+function parseCoverage(input: unknown): OperatorStatsCoverage {
+  const coverage = record(input, 'coverage');
+  exactKeys(coverage, ['from', 'through'], 'coverage');
+  const from = calendarDate(coverage.from, 'coverage.from');
+  const through = calendarDate(coverage.through, 'coverage.through');
+  const span = calendarDaysBetween(from, through) + 1;
+  if (span < 1) fail('coverage.through precedes coverage.from');
+  if (span > MAX_PUBLICATION_DAYS) fail('coverage spans too many days');
+  return { from, through };
+}
+
+function parseIdentity(input: unknown): PublicOperatorIdentity {
+  const identity = record(input, 'identity');
   exactKeys(
     identity,
     [
@@ -129,189 +285,84 @@ export function parseOperatorStatsPublishPayload(
     'identity'
   );
   const handle = shortString(identity.handle, 'identity.handle', 39);
-  const providerHandle = shortString(
-    identity.providerHandle,
-    'identity.providerHandle',
-    80
-  );
-  if (!HANDLE.test(handle)) throw new Error('identity.handle is invalid');
+  if (!HANDLE.test(handle)) fail('identity.handle is invalid');
   const avatarUrl =
     identity.avatarUrl === null
       ? null
       : shortString(identity.avatarUrl, 'identity.avatarUrl', 500);
   if (avatarUrl !== null && !avatarUrl.startsWith('https://'))
-    throw new Error('identity.avatarUrl must use https');
+    fail('identity.avatarUrl must use https');
   const links = stringArray(identity.links, 'identity.links', 4);
   if (links.some(link => !link.startsWith('https://')))
-    throw new Error('identity.links must use https');
+    fail('identity.links must use https');
+  return {
+    provider: shortString(identity.provider, 'identity.provider', 40),
+    providerHandle: shortString(
+      identity.providerHandle,
+      'identity.providerHandle',
+      80
+    ),
+    handle,
+    displayName: shortString(identity.displayName, 'identity.displayName', 100),
+    avatarUrl,
+    links,
+  };
+}
 
-  if (!Array.isArray(root.days) || root.days.length > MAX_DAYS)
-    throw new Error('days is invalid');
-  const days = root.days.map((inputDay, index) => {
-    const day = record(inputDay, `days[${index}]`);
-    exactKeys(
-      day,
-      [
-        'localDate',
-        'agentMs',
-        'runCount',
-        'peakFleet',
-        'longestHandsOffMs',
-        'rawTokens',
-        'normalizedTokens',
-        'sources',
-        'assurance',
-      ],
-      `days[${index}]`
-    );
-    const localDate = shortString(
-      day.localDate,
-      `days[${index}].localDate`,
-      10
-    );
-    if (!DATE.test(localDate))
-      throw new Error(`days[${index}].localDate is invalid`);
-    return {
-      localDate,
-      agentMs: boundedNumber(
-        day.agentMs,
-        `days[${index}].agentMs`,
-        MAX_PUBLIC_RUN_MS * MAX_FLEET
-      ),
-      runCount: boundedInteger(
-        day.runCount,
-        `days[${index}].runCount`,
-        MAX_RUNS
-      ),
-      peakFleet: boundedInteger(
-        day.peakFleet,
-        `days[${index}].peakFleet`,
-        MAX_FLEET
-      ),
-      longestHandsOffMs: boundedNumber(
-        day.longestHandsOffMs,
-        `days[${index}].longestHandsOffMs`,
-        MAX_PUBLIC_RUN_MS
-      ),
-      rawTokens: boundedNumber(
-        day.rawTokens,
-        `days[${index}].rawTokens`,
-        MAX_TOKEN_VALUE
-      ),
-      normalizedTokens: boundedNumber(
-        day.normalizedTokens,
-        `days[${index}].normalizedTokens`,
-        MAX_TOKEN_VALUE
-      ),
-      sources: enumArray(day.sources, `days[${index}].sources`, SOURCES),
-      assurance: enumArray(
-        day.assurance,
-        `days[${index}].assurance`,
-        ASSURANCE
-      ),
-    };
+const PUBLICATION_KEYS = [
+  'schemaVersion',
+  'consentVersion',
+  'enabled',
+  'timezone',
+  'coverage',
+  'days',
+  'runs',
+] as const;
+
+function parsePublicationFields(
+  root: Record<string, unknown>
+): OperatorStatsPublication {
+  if (root.schemaVersion !== OPERATOR_STATS_SCHEMA_VERSION)
+    fail('Unsupported schemaVersion');
+  if (root.consentVersion !== OPERATOR_STATS_CONSENT_VERSION)
+    fail('Unsupported consentVersion');
+  if (root.enabled !== true) fail('enabled must be true');
+  const timezone = shortString(root.timezone, 'timezone', 80);
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
+  } catch {
+    fail('timezone is invalid');
+  }
+  const coverage = parseCoverage(root.coverage);
+  const inCoverage = (date: string) =>
+    date >= coverage.from && date <= coverage.through;
+
+  if (
+    !Array.isArray(root.days) ||
+    root.days.length > calendarDaysBetween(coverage.from, coverage.through) + 1
+  )
+    fail('days is invalid');
+  const seenDates = new Set<string>();
+  const days = root.days.map((input, index) => {
+    const day = parseOperatorDayAggregate(input, `days[${index}]`);
+    if (!inCoverage(day.localDate)) fail(`days[${index}] is outside coverage`);
+    if (seenDates.has(day.localDate)) fail(`days[${index}] repeats a date`);
+    seenDates.add(day.localDate);
+    return day;
   });
 
-  if (!Array.isArray(root.runs) || root.runs.length > MAX_RUNS)
-    throw new Error('runs is invalid');
-  const runs = root.runs.map((inputRun, index) => {
-    const run = record(inputRun, `runs[${index}]`);
-    exactKeys(
-      run,
-      [
-        'publicId',
-        'localDate',
-        'idempotencyKey',
-        'elapsedMs',
-        'activeMs',
-        'longestHandsOffMs',
-        'interventionCount',
-        'peakActiveMembers',
-        'agentMs',
-        'rawTokens',
-        'normalizedTokens',
-        'sources',
-        'assurance',
-        'outcome',
-      ],
-      `runs[${index}]`
-    );
-    const publicId = shortString(run.publicId, `runs[${index}].publicId`, 80);
-    const idempotencyKey = shortString(
-      run.idempotencyKey,
-      `runs[${index}].idempotencyKey`,
-      64
-    );
-    const localDate = shortString(
-      run.localDate,
-      `runs[${index}].localDate`,
-      10
-    );
-    if (
-      !PUBLIC_ID.test(publicId) ||
-      !HASH.test(idempotencyKey) ||
-      !DATE.test(localDate)
-    )
-      throw new Error(`runs[${index}] identifier is invalid`);
-    const outcome = shortString(run.outcome, `runs[${index}].outcome`, 16);
-    if (!['settled', 'stopped', 'faulted', 'unknown'].includes(outcome))
-      throw new Error(`runs[${index}].outcome is invalid`);
-    return {
-      publicId,
-      localDate,
-      idempotencyKey,
-      elapsedMs: boundedNumber(
-        run.elapsedMs,
-        `runs[${index}].elapsedMs`,
-        MAX_PUBLIC_RUN_MS
-      ),
-      activeMs: boundedNumber(
-        run.activeMs,
-        `runs[${index}].activeMs`,
-        MAX_PUBLIC_RUN_MS
-      ),
-      longestHandsOffMs: boundedNumber(
-        run.longestHandsOffMs,
-        `runs[${index}].longestHandsOffMs`,
-        MAX_PUBLIC_RUN_MS
-      ),
-      interventionCount:
-        run.interventionCount === null
-          ? null
-          : boundedInteger(
-              run.interventionCount,
-              `runs[${index}].interventionCount`,
-              100_000
-            ),
-      peakActiveMembers: boundedInteger(
-        run.peakActiveMembers,
-        `runs[${index}].peakActiveMembers`,
-        MAX_FLEET
-      ),
-      agentMs: boundedNumber(
-        run.agentMs,
-        `runs[${index}].agentMs`,
-        MAX_PUBLIC_RUN_MS * MAX_FLEET
-      ),
-      rawTokens: boundedNumber(
-        run.rawTokens,
-        `runs[${index}].rawTokens`,
-        MAX_TOKEN_VALUE
-      ),
-      normalizedTokens: boundedNumber(
-        run.normalizedTokens,
-        `runs[${index}].normalizedTokens`,
-        MAX_TOKEN_VALUE
-      ),
-      sources: enumArray(run.sources, `runs[${index}].sources`, SOURCES),
-      assurance: enumArray(
-        run.assurance,
-        `runs[${index}].assurance`,
-        ASSURANCE
-      ),
-      outcome:
-        outcome as OperatorStatsPublishPayload['runs'][number]['outcome'],
-    };
+  if (!Array.isArray(root.runs) || root.runs.length > MAX_PUBLICATION_RUNS)
+    fail('runs is invalid');
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const runs = root.runs.map((input, index) => {
+    const run = parsePublicRunUpload(input, `runs[${index}]`);
+    if (!inCoverage(run.localDate)) fail(`runs[${index}] is outside coverage`);
+    if (seenIds.has(run.publicId) || seenKeys.has(run.idempotencyKey))
+      fail(`runs[${index}] repeats an identifier`);
+    seenIds.add(run.publicId);
+    seenKeys.add(run.idempotencyKey);
+    return run;
   });
 
   return {
@@ -319,19 +370,28 @@ export function parseOperatorStatsPublishPayload(
     consentVersion: OPERATOR_STATS_CONSENT_VERSION,
     enabled: true,
     timezone,
-    identity: {
-      provider: shortString(identity.provider, 'identity.provider', 40),
-      providerHandle,
-      handle,
-      displayName: shortString(
-        identity.displayName,
-        'identity.displayName',
-        100
-      ),
-      avatarUrl,
-      links,
-    },
+    coverage,
     days,
     runs,
   };
+}
+
+/** A local publication before the account identity is attached. The planner
+ *  runs every publication it emits through this, as a tripwire. */
+export function parseOperatorStatsPublication(
+  input: unknown
+): OperatorStatsPublication {
+  const root = record(input, 'publication');
+  exactKeys(root, PUBLICATION_KEYS, 'publication');
+  return parsePublicationFields(root);
+}
+
+/** Strict allowlist validator. Unknown fields fail closed at every level. */
+export function parseOperatorStatsPublishPayload(
+  input: unknown
+): OperatorStatsPublishPayload {
+  const root = record(input, 'payload');
+  exactKeys(root, [...PUBLICATION_KEYS, 'identity'], 'payload');
+  const publication = parsePublicationFields(root);
+  return { ...publication, identity: parseIdentity(root.identity) };
 }

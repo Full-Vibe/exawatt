@@ -86,6 +86,21 @@ hosted route together. `electron/main/pty/context-summarizer.ts` now derives the
 key locally and `docs/engineering/outbound-data.md` section 4 is the account of
 what leaves a machine.
 
+## Operator-stat publication windows
+
+An operator-stat publish body carries its own `schemaVersion`, separate from
+the `Exawatt-Service-Version` protocol. Body schema 2 declares `coverage`, the
+inclusive operator-local dates it replaces (at most 31), and every day and Run
+in it falls inside that range. A service deletes the caller's rows for exactly
+those dates, then inserts the body's rows: a covered date with no row is a
+recorded zero, and an uncovered date is left alone. A client with a longer
+history sends several bodies, oldest first.
+
+Body schema 1 replaced the caller's entire public history on every request, so
+each request grew with the history until it crossed a bound. It is refused with
+`400 invalid_request`, as is any body schema a service does not implement.
+BUG-164 records the change.
+
 Exawatt's reference service is tested against these public envelopes and
 headers without importing its private implementation into the Apache-licensed
 contract package.

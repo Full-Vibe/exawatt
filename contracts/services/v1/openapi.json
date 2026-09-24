@@ -211,7 +211,7 @@
         },
         "responses": {
           "200": {
-            "description": "The authenticated operator aggregate was replaced atomically",
+            "description": "The authenticated operator's rows for the covered dates were replaced atomically",
             "headers": {
               "Exawatt-Service-Version": {
                 "$ref": "#/components/headers/serviceVersion"

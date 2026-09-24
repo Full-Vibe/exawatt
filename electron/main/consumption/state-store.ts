@@ -77,6 +77,13 @@ export interface ConsumptionScanMetaV1 {
   emptySources: ConsumptionSourceId[];
   /** Log size at the last compaction (or first write), for the bloat bound. */
   compactedBytes: number;
+  /**
+   * The sample window's prune line (`ConsumptionSampleWindow.prunedThroughMs`)
+   * as epoch ms, or null when nothing has been pruned. A compacted log no
+   * longer holds what was dropped, so the line has to outlive it (BUG-164).
+   * Absent in state written before it existed, which reads as never pruned.
+   */
+  prunedThroughMs: number | null;
 }
 
 export interface LoadedConsumptionState {
@@ -214,6 +221,7 @@ export function emptyConsumptionMeta(): ConsumptionScanMetaV1 {
     planWindows: [],
     emptySources: [],
     compactedBytes: 0,
+    prunedThroughMs: null,
   };
 }
 
@@ -293,6 +301,11 @@ export class ConsumptionStateStore {
                   value === 'claude-code' || value === 'codex'
               )
             : [],
+          prunedThroughMs:
+            typeof parsed.prunedThroughMs === 'number' &&
+            Number.isFinite(parsed.prunedThroughMs)
+              ? parsed.prunedThroughMs
+              : null,
         };
       }
     } catch {
@@ -301,6 +314,9 @@ export class ConsumptionStateStore {
     }
     if (!meta) return out;
     out.meta = meta;
+    if (meta.prunedThroughMs !== null) {
+      out.samples.notePrunedThrough(meta.prunedThroughMs);
+    }
     this.compactedBytes = meta.compactedBytes;
 
     let stream: fs.ReadStream;
