@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { QuickCaptureBar } from '@/components/feedback/quick-capture-bar';
-import type { DiagnosticsReport } from '@/types/electron';
 import type { QuickFeedbackKind } from '@/components/feedback/quick-feedback-events';
+import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-025 F5 quick-capture study.

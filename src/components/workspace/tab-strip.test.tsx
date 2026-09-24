@@ -27,8 +27,8 @@ import {
   delegationCopy,
 } from './session-status';
 import type { Project, SessionTab } from './use-workspace-state';
-import type { SessionDelegation } from '@/types/electron';
 import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 /**
  * Turn-state legibility (ENG-016 D22): the strip must answer "who's
@@ -688,6 +688,7 @@ describe('TabStrip delegated work (ENG-023)', () => {
     Array.from({ length: count }, (_, index) => ({
       id: `a${index}`,
       agentType: kind,
+      description: null,
       startedAt: index,
     }));
   const delegating = (count: number, kind?: string): SessionDelegation => ({

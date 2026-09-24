@@ -19,8 +19,8 @@ import {
   type OutboundControlId,
 } from '@/lib/hosted-features/contract';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
-import type { ExawattSettings } from '@/types/electron';
 import { PrivacySettings } from './privacy-settings';
+import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 
 /**
  * BUG-060: the Claude plan read is the first control on this surface gated by

@@ -21,7 +21,6 @@ import {
   type ProjectLibraryEntry,
   type WorkspaceProjectSummary,
 } from './project-library';
-import type { ProjectImportCandidate } from '@/types/electron';
 import {
   ArrowLeft,
   Cable,
@@ -34,6 +33,7 @@ import {
   ConnectSourceDialog,
   type ConnectSourceResult,
 } from './connect-source-dialog';
+import type { ProjectImportCandidate } from '@exawatt/core/desktop-bridge';
 
 type ProjectOpenerRoute = 'projects' | 'connect';
 

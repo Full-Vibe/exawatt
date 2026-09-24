@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ClosedSessionEntry } from '@/types/electron';
+import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
 interface ClosedSessionCountApi {
   closedSessions: () => Promise<ClosedSessionEntry[]>;

@@ -6,16 +6,16 @@ import {
   screen,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-  RemoteAgentView,
-  SourceCommandAuthorityView,
-} from '@/types/electron';
 import { RemoteAgentPane } from './remote-agent-pane';
 import type { RemoteRoster } from './remote-agent-roster';
 import type {
   ConversationReply,
   RemoteAgentBridge,
 } from './remote-agent-surface';
+import type {
+  RemoteAgentView,
+  SourceCommandAuthorityView,
+} from '@exawatt/core/desktop-bridge';
 
 afterEach(cleanup);
 

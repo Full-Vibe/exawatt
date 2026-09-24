@@ -681,4 +681,4 @@ import {
   statusLightWord,
   type StatusLightState,
 } from '@/components/status-light/protocol';
-import type { SessionDelegation } from '@/types/electron';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';

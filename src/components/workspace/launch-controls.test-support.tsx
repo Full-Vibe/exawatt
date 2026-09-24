@@ -7,7 +7,7 @@ import {
 } from './agent-sources';
 import { AgentComposer } from './launch-controls';
 import { FOCUS_AGENT_COMPOSER_EVENT } from './session-jump';
-import type { AgentModelCatalog } from '@/types/electron';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 export { AgentComposer, FOCUS_AGENT_COMPOSER_EVENT };
 

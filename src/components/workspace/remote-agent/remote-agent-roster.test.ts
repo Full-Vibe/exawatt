@@ -4,7 +4,7 @@ import {
   statusLightWord,
 } from '@/components/status-light/protocol';
 import { projectCoworkers, type RemoteRoster } from './remote-agent-roster';
-import type { RemoteAgentView } from '@/types/electron';
+import type { RemoteAgentView } from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-010: what the roster is allowed to say about a coworker.

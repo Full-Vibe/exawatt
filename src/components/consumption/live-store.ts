@@ -32,11 +32,6 @@
  * state: the bridge is here, nothing was read, and nothing will be until the
  * engine starts.
  */
-import type {
-  ClosedSessionEntry,
-  PtyHarness,
-  PtySessionInfo,
-} from '@/types/electron';
 import {
   HARNESS_ORDER,
   isDefaultHarnessTitle,
@@ -58,6 +53,11 @@ import {
   type LiveScanView,
   type LiveSessionIdentity,
 } from './live-source';
+import type { PtyHarness } from '@exawatt/core';
+import type {
+  ClosedSessionEntry,
+  PtySessionInfo,
+} from '@exawatt/core/desktop-bridge';
 
 const DAY_MS = 24 * 3_600_000;
 const REPIN_MS = 60_000;
@@ -216,10 +216,13 @@ function assembleIdentities(
   const meta = new Map<string, DurableMeta>();
   // Oldest truth first so fresher records override: ledger → layout → live.
   for (const entry of closed) {
+    // BUG-209: the ledger is a file, and main admits any harness string it
+    // finds there; identity assembly has always assumed a known harness.
+    const harness = entry.harness as PtyHarness;
     meta.set(entry.durableSessionId, {
       title: entry.title,
-      titleKind: titleKindOf(entry.titleKind, entry.harness, entry.title),
-      harness: entry.harness,
+      titleKind: titleKindOf(entry.titleKind, harness, entry.title),
+      harness,
       lifecycle: 'stopped-clean',
       // The ledger's `goal` IS the durable context label the workspace
       // restores as this Session's summary.

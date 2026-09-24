@@ -117,7 +117,10 @@ describe('sessionStatusLightState', () => {
 describe('delegated work', () => {
   const busyChild = {
     ownTurn: 'available' as const,
-    children: [{ id: 'a1', agentType: 'Explore', startedAt: 1 }],
+    blockedOn: null,
+    children: [
+      { id: 'a1', agentType: 'Explore', description: null, startedAt: 1 },
+    ],
   };
 
   it('reads as working while children run, even with the parent quiet', () => {
@@ -190,10 +193,16 @@ describe('delegated work', () => {
     expect(one).toContain('Explore');
     const three = delegationCopy({
       ownTurn: 'available',
+      blockedOn: null,
       children: [
-        { id: 'a', agentType: 'Explore', startedAt: 1 },
-        { id: 'b', agentType: 'Explore', startedAt: 2 },
-        { id: 'c', agentType: 'general-purpose', startedAt: 3 },
+        { id: 'a', agentType: 'Explore', description: null, startedAt: 1 },
+        { id: 'b', agentType: 'Explore', description: null, startedAt: 2 },
+        {
+          id: 'c',
+          agentType: 'general-purpose',
+          description: null,
+          startedAt: 3,
+        },
       ],
     })!;
     expect(three).toMatch(/^3 delegated agents working\b/);
@@ -205,7 +214,10 @@ describe('delegated work', () => {
     expect(
       delegationCopy({
         ownTurn: 'available',
-        children: [{ id: 'a', agentType: null, startedAt: 1 }],
+        blockedOn: null,
+        children: [
+          { id: 'a', agentType: null, description: null, startedAt: 1 },
+        ],
       })
     ).toBe('1 delegated agent working');
     expect(delegationCopy(null)).toBeNull();

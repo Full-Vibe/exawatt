@@ -8,13 +8,6 @@
  * the shipped surface.
  */
 
-import type {
-  AgentHarness,
-  AgentModelCatalog,
-  AgentSourceRegistrySnapshot,
-  AgentSourceSnapshot,
-  PtyHarness,
-} from '@/types/electron';
 import {
   agentSourceFactAge,
   agentSourceFactFreshness,
@@ -22,6 +15,13 @@ import {
   type AgentSourceFactFreshness,
   type AgentSourceLaunchVerdict,
 } from '@exawatt/core';
+import type {
+  AgentHarness,
+  AgentSourceRegistrySnapshot,
+  AgentSourceSnapshot,
+  PtyHarness,
+} from '@exawatt/core';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 /**
  * What kind of worker this is, as opposed to which engine runs it. Only

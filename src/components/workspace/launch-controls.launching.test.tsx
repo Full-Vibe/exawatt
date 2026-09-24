@@ -1,7 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ExawattSettings } from '@/types/electron';
 import {
   AgentComposer,
   chooseLauncherAxis,
@@ -15,6 +14,7 @@ import {
   setupDrawerHandle,
   startButton,
 } from './launch-controls.test-support';
+import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 
 describe('Agent composer · launching', () => {
   const { recordAgentSourceUse, setAgentPermissionMode } =

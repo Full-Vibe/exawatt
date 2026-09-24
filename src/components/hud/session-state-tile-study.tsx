@@ -9,7 +9,8 @@ import {
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from '@/components/workspace/status-glyphs';
-import type { PtyHarness, SessionDelegation } from '@/types/electron';
+import type { PtyHarness } from '@exawatt/core';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 type FixtureMode = 'populated' | 'loading' | 'empty' | 'error';
 type Filter = 'all' | 'attention' | 'working';

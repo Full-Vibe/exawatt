@@ -21,9 +21,12 @@ import {
   servesOwnLegalPages,
 } from '@/lib/hosted-features/distribution-availability';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
-import type { ElectronSettingsApi, ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
 import { DiagnosticsSettings } from './diagnostics-settings';
+import type {
+  DesktopSettingsApi,
+  ExawattSettings,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-030 OS1.5 — the one place that says what Exawatt sends.
@@ -112,7 +115,7 @@ function OutboundControlRow({
 /** Local settings, read once and kept current. No network, so this resolves
  *  offline and signed out (ENG-016 D18). */
 function useHostedFeatureSettings() {
-  const [api, setApi] = useState<ElectronSettingsApi | null>(null);
+  const [api, setApi] = useState<DesktopSettingsApi | null>(null);
   const [settings, setSettings] = useState<ExawattSettings | null>(null);
 
   useEffect(() => {

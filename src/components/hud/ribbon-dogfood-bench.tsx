@@ -36,7 +36,7 @@ import {
   type SessionAttentionSignal,
 } from '@/components/workspace/session-status';
 import type { CloneSessionTarget } from '@/components/workspace/session-clone';
-import type { SessionDelegation } from '@/types/electron';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 const COLORS = [
   '#66A3FF',

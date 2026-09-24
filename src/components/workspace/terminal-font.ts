@@ -1,4 +1,4 @@
-import type { ExawattSettings } from '@/types/electron';
+import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 
 /**
  * Terminal font resolution (ENG-015 S3): defaults + the user's

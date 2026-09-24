@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
+import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 
 /*
  * Data sharing is not a notification setting (ENG-030 OS1.5). Conversation

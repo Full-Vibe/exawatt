@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { PtySessionInfo } from '@/types/electron';
 import {
   attachLiveSessionBurn,
   extractLocalWorkspaceProjects,
   mergeLocalWorkspaceSessions,
 } from './local-workspace-sessions';
+import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 
 const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   id: 'pty-1',
@@ -21,6 +21,13 @@ const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   exitCode: null,
   lastDataAt: 100,
   harnessSessionId: 'provider-1',
+  exitSignal: null,
+  contextSummary: null,
+  goalVisual: null,
+  attention: null,
+  engaged: false,
+  working: false,
+  delegation: null,
   ...over,
 });
 

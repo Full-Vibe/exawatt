@@ -8,10 +8,10 @@
  * Handlers consume the pending slot when they act on the live event, so a
  * request is never applied twice.
  */
-import type { PtyHarness } from '@/types/electron';
 import { personalTenantActive } from '@/lib/tenancy/active-tenant';
 import type { AgentSourceId } from './agent-sources';
 import type { CloneSessionTarget } from './session-clone';
+import type { PtyHarness } from '@exawatt/core';
 
 /**
  * Exact composer selection carried across route changes. This intentionally

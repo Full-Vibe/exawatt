@@ -37,7 +37,7 @@ import type {
   SessionAttentionSignal,
   SessionGlyphState,
 } from './session-status';
-import type { SessionDelegation } from '@/types/electron';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 // Keep the established import surface for existing renderers while the
 // state model itself stays usable from render-free mapping code.

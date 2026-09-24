@@ -1,6 +1,5 @@
 // Named as a DOM suite because web preferences use storage and window events.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ElectronSettingsApi } from '@/types/electron';
 import {
   CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
   DEFAULT_APPEARANCE_PREFERENCES,
@@ -10,6 +9,7 @@ import {
   createAppearancePreferenceSource,
   readAppearanceMirror,
 } from './preference-source';
+import type { DesktopSettingsApi } from '@exawatt/core/desktop-bridge';
 
 const defaults = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
 const classic = structuredClone(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES);
@@ -72,7 +72,7 @@ describe('appearance preference sources', () => {
       get: vi.fn().mockResolvedValue({ appearance: classic }),
       setAppearance: vi.fn().mockResolvedValue({ appearance: classic }),
       onChanged,
-    } as unknown as ElectronSettingsApi;
+    } as unknown as DesktopSettingsApi;
     window.electron = {
       isElectron: true,
       platform: 'darwin',

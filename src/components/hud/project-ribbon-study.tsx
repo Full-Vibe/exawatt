@@ -11,7 +11,7 @@ import type {
   Project,
   SessionTab,
 } from '@/components/workspace/use-workspace-state';
-import type { SessionDelegation } from '@/types/electron';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 const COLORS = [
   '#19E6FF',
@@ -126,8 +126,18 @@ export function ProjectRibbonStudy() {
         [delegatedSession]: {
           ownTurn: 'available', blockedOn: null,
           children: [
-            { id: 'study-child-a', agentType: 'Explore', startedAt: 1 },
-            { id: 'study-child-b', agentType: 'general-purpose', startedAt: 2 },
+            {
+              id: 'study-child-a',
+              agentType: 'Explore',
+              description: null,
+              startedAt: 1,
+            },
+            {
+              id: 'study-child-b',
+              agentType: 'general-purpose',
+              description: null,
+              startedAt: 2,
+            },
           ],
         },
       }

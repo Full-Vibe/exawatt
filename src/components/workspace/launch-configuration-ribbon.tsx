@@ -10,10 +10,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import type { PtyHarness } from '@/types/electron';
 import { HarnessGlyph } from './harness-icons';
 import { HARNESS_META } from './harnesses';
 import { SourceIdentityMark } from './source-identity-mark';
+import type { PtyHarness } from '@exawatt/core';
 
 export interface LaunchConfigurationRibbonItem {
   id: string;

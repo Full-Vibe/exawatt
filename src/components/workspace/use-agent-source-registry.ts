@@ -22,16 +22,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  AgentSourceRegistryLoadResult,
-  AgentSourceRegistrySnapshot,
-} from '@/types/electron';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   checkingAgentSourceRegistry,
   loadAgentSourceRegistry,
   readRememberedAgentSourceRegistry,
 } from './agent-sources';
+import type {
+  AgentSourceRegistryLoadResult,
+  AgentSourceRegistrySnapshot,
+} from '@exawatt/core';
 
 type AgentSourceRegistryReadStatus =
   | 'checking'

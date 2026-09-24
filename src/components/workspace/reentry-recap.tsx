@@ -2,11 +2,11 @@
 
 import { useEffect } from 'react';
 import { History } from 'lucide-react';
-import type { PtyReentryRecap } from '@/types/electron';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
 } from './workspace-theme';
+import type { PtyReentryRecap } from '@exawatt/core/desktop-bridge';
 
 /** How long the ambient recap line stays before yielding back to the
  *  ordinary micro-context summary. */

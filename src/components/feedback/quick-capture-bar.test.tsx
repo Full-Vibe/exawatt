@@ -4,7 +4,7 @@ import {
   QuickCaptureBar,
   type QuickCaptureBarProps,
 } from './quick-capture-bar';
-import type { DiagnosticsReport } from '@/types/electron';
+import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 const SHOT = 'data:image/png;base64,iVBORw0KGgo=';
 

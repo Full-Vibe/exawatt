@@ -34,11 +34,6 @@ import {
   type AgentSourceId,
 } from './agent-sources';
 import type { LaunchOptions, WorkspaceDraftPatch } from './use-workspace-state';
-import type {
-  AgentModelCatalog,
-  AgentPermissionMode,
-  RecentConversation,
-} from '@/types/electron';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import { useAgentSourceRegistry } from './use-agent-source-registry';
 import {
@@ -101,6 +96,11 @@ import {
   type LauncherStatusLine,
 } from './launcher/launcher-model';
 import type { DetailAxis, DetailAxisOption } from './launcher/setup-detail';
+import type { AgentPermissionMode } from '@exawatt/core';
+import type {
+  AgentModelCatalog,
+  RecentConversation,
+} from '@exawatt/core/desktop-bridge';
 
 function effortChoiceKey(source: AgentSourceId, model: string): string {
   return `${source}:${model}`;

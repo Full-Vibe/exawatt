@@ -1,4 +1,4 @@
-import type { AgentModelCatalog } from '@/types/electron';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 /** Demo data only: no provider availability claims and no live commands. */
 export async function demoModelCatalog(): Promise<AgentModelCatalog> {

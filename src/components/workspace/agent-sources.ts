@@ -1,6 +1,10 @@
+import { AGENT_HARNESSES, agentSourceLaunchVerdict } from '@exawatt/core';
+import {
+  agentSourceDeclaration,
+  FUTURE_AGENT_SOURCE_CATALOG,
+} from '@/generated/agent-source-declarations';
 import type {
   AgentHarness,
-  AgentModelCatalog,
   AgentPermissionMode,
   AgentSourceAction,
   AgentSourceActionResult,
@@ -9,12 +13,8 @@ import type {
   AgentSourceRegistryLoadResult,
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
-} from '@/types/electron';
-import { AGENT_HARNESSES, agentSourceLaunchVerdict } from '@exawatt/core';
-import {
-  agentSourceDeclaration,
-  FUTURE_AGENT_SOURCE_CATALOG,
-} from '@/generated/agent-source-declarations';
+} from '@exawatt/core';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 export type AgentSourceId = AgentHarness;
 

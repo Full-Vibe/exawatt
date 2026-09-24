@@ -1,4 +1,4 @@
-import type { ElectronSettingsApi } from '@/types/electron';
+import type { DesktopSettingsApi } from '@exawatt/core/desktop-bridge';
 
 export const GOAL_VISUAL_PREFERENCE_STORAGE_KEY =
   'exawatt.goal-visuals.enabled.v1';
@@ -34,7 +34,7 @@ function writeWebPreference(
 }
 
 function electronSource(
-  settings: ElectronSettingsApi
+  settings: DesktopSettingsApi
 ): GoalVisualPreferenceSource {
   return {
     kind: 'electron',

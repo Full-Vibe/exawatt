@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { RefreshCw, X } from 'lucide-react';
-import type { ProductUpdateStatus } from '@/types/electron';
+import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
 
 export function UpdateReadyNotice() {
   const [productName, setProductName] = useState('Exawatt');

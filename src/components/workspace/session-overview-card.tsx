@@ -18,7 +18,8 @@ import {
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from './status-glyphs';
-import type { PtyHarness, SessionDelegation } from '@/types/electron';
+import type { PtyHarness } from '@exawatt/core';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 /**
  * Per-Session consumption readout (ENG-008): raw tokens this Session

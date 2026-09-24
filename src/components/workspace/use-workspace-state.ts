@@ -94,17 +94,17 @@ import {
   reorderProjects as registryReorderProjects,
   setProjectColor as registrySetProjectColor,
 } from '@/lib/projects/registry';
+import type { AgentPermissionMode, PtyHarness } from '@exawatt/core';
 import type {
-  AgentPermissionMode,
-  PtyAttention,
-  SessionDelegation,
-  PtyHarness,
-  PtyReentryRecap,
-  PtySessionInfo,
   ClosedSessionEntry,
   GoalVisual,
   GoalVisualRef,
-} from '@/types/electron';
+  PtyAttention,
+  PtyReentryRecap,
+  PtySessionRecord,
+  SessionDelegation,
+  SessionModelChange,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * The layout's share of a goal visual: its identity, never its pixels
@@ -402,7 +402,7 @@ export function tabNeedsReconnection(tab: WorkspaceTab): boolean {
 /** Re-adopt a main-process PTY without overstating its lifecycle. This also
  * reconstructs a stopped tab when persistence lagged behind process exit. */
 export function tabFromPtySession(
-  session: PtySessionInfo,
+  session: PtySessionRecord,
   id: string,
   roadmapItemId: string | null = null,
   initialTask: string | null = null
@@ -1181,7 +1181,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    */
   const addSession = useCallback(
     (
-      s: PtySessionInfo,
+      s: PtySessionRecord,
       tabId?: string,
       roadmapItemId?: string | null,
       initialTask?: string | null
@@ -2640,25 +2640,29 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         : operatorPosition.claimHere();
       const entry = await api.reopenSession(durableSessionId);
       if (!entry) return false;
+      // BUG-209: the ledger is a file, and main admits any harness string it
+      // finds there; this path has always assumed a harness this build knows.
+      const harness = entry.harness as PtyHarness;
       const repairsLegacyCatalogTitle =
         entry.titleKind === undefined &&
         isLegacyCatalogTitleLeak({
           ...entry,
+          harness,
           semanticSummary: entry.goal,
         });
       const tab: SessionTab = {
         kind: 'session',
         id: reuseTabId ?? newTabId(),
         durableSessionId: entry.durableSessionId,
-        harness: entry.harness,
+        harness,
         title: repairsLegacyCatalogTitle
-          ? HARNESS_META[entry.harness].label
+          ? HARNESS_META[harness].label
           : entry.title,
         titleKind: repairsLegacyCatalogTitle
           ? 'default'
           : entry.titleKind === 'default' || entry.titleKind === 'operator'
             ? entry.titleKind
-            : isDefaultHarnessTitle(entry.harness, entry.title)
+            : isDefaultHarnessTitle(harness, entry.title)
               ? 'default'
               : 'operator',
         cwd: entry.cwd,
@@ -2753,7 +2757,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** A replacement belongs to the retained Session, never to whichever tab
    * happens to be selected when the process responds. Close wins over adoption. */
   const adoptSessionRuntime = useCallback(
-    async (tab: SessionTab, session: PtySessionInfo): Promise<boolean> => {
+    async (tab: SessionTab, session: PtySessionRecord): Promise<boolean> => {
       const retained = stateRef.current.projects
         .flatMap(project => project.tabs)
         .find(candidate => candidate.id === tab.id);
@@ -2897,10 +2901,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   );
 
   const changeSessionModel = useCallback(
-    async (
-      tabId: string,
-      choice: import('@/types/electron').SessionModelChange
-    ) => {
+    async (tabId: string, choice: SessionModelChange) => {
       const api = window.electron?.pty;
       const tab = stateRef.current.projects
         .flatMap(project => project.tabs)

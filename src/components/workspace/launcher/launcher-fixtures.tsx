@@ -16,7 +16,6 @@ import {
   type LaunchRecommendationAvailability,
   type LaunchTarget,
 } from '@exawatt/core';
-import type { PtyHarness } from '@/types/electron';
 import { AGENT_SOURCE_ORDER, type AgentSourceId } from '../agent-sources';
 import { HARNESS_META } from '../harnesses';
 import {
@@ -28,6 +27,7 @@ import {
 import { ExternalLink } from 'lucide-react';
 import { EngineGlyph } from './setup-chip';
 import type { DetailAxis, DetailAxisOption } from './setup-detail';
+import type { PtyHarness } from '@exawatt/core';
 
 export const BENCH_PROJECT = '/Users/example/Code/Projects/exawatt';
 const DAY = 24 * 60 * 60 * 1000;

@@ -69,9 +69,9 @@ import {
 } from '@exawatt/core';
 import type {
   ConnectedSourceStatusView,
-  ElectronConnectedSourcesApi,
+  DesktopConnectedSourcesApi,
   ObservedSourceFact,
-} from '@/types/electron';
+} from '@exawatt/core/desktop-bridge';
 
 /* ------------------------------------------------------------------ */
 /* Bridge                                                              */
@@ -94,7 +94,7 @@ export type ObservedFact = ObservedSourceFact;
  * caller degrades rather than failing: Settings must render with the bridge
  * absent, and an absent bridge is not a claim about anyone's server.
  */
-function connectedSourcesBridge(): ElectronConnectedSourcesApi | null {
+function connectedSourcesBridge(): DesktopConnectedSourcesApi | null {
   if (typeof window === 'undefined') return null;
   return window.electron?.connectedSources ?? null;
 }

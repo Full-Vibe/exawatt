@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { OptionMenu } from '@/components/ui/option-menu';
-import type { AgentModelCatalog, SessionModelChange } from '@/types/electron';
+import type {
+  AgentModelCatalog,
+  SessionModelChange,
+} from '@exawatt/core/desktop-bridge';
 
 /** One list of exact model/effort choices over live and Demo source ports. */
 export function SessionModelControl({

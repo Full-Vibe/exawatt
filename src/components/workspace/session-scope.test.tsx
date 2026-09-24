@@ -23,7 +23,7 @@ import type {
   PtyAttention,
   PtySessionInfo,
   SessionDelegation,
-} from '@/types/electron';
+} from '@exawatt/core/desktop-bridge';
 
 vi.mock('@/lib/projects/registry', () => ({
   openRepositoryProject: vi.fn(() => Promise.reject(new Error('offline'))),
@@ -45,8 +45,11 @@ const GOAL_VISUAL: GoalVisual = {
 };
 const ATTENTION: PtyAttention = { kind: 'turn-end', since: 1 };
 const DELEGATION: SessionDelegation = {
-  children: [{ id: 'child-1', agentType: 'claude', startedAt: 1 }],
+  children: [
+    { id: 'child-1', agentType: 'claude', description: null, startedAt: 1 },
+  ],
   ownTurn: 'generating',
+  blockedOn: null,
 };
 
 function liveSession(
@@ -69,6 +72,13 @@ function liveSession(
     exitCode: null,
     lastDataAt: 1,
     harnessSessionId: null,
+    exitSignal: null,
+    contextSummary: null,
+    goalVisual: null,
+    attention: null,
+    engaged: false,
+    working: false,
+    delegation: null,
     ...overrides,
   };
 }

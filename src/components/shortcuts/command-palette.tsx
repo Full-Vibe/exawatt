@@ -137,7 +137,6 @@ import {
   getWorkspaceFixedFamily,
 } from '@/lib/shortcuts/fixed-families';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
-import type { ClosedSessionEntry } from '@/types/electron';
 import type { CloneSessionTarget } from '@/components/workspace/session-clone';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -169,6 +168,7 @@ import {
   commandPaletteLaunchConfigurations,
   type CommandPaletteLaunchConfiguration,
 } from './command-palette-launch-configurations';
+import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
 /** Shared live-status language with palette-specific HUD colors. */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
@@ -450,7 +450,7 @@ export function CommandPalette({
         window.electron?.workspace?.load() ?? Promise.resolve(null),
       ]);
       if (cancelled) return;
-      setSessions(buildSessionRows(list, layout, Date.now()));
+      setSessions(buildSessionRows(list, layout));
       setRecents(extractRecentProjects(layout));
       const closed = (await pty.closedSessions?.()) ?? [];
       if (!cancelled) setClosedSessions(closed.slice(0, 8));

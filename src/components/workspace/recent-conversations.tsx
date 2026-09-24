@@ -15,10 +15,10 @@ import { ArrowRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
-import type { RecentConversation } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
+import type { RecentConversation } from '@exawatt/core/desktop-bridge';
 
 const FILTER_THRESHOLD = 8;
 

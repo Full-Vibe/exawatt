@@ -32,13 +32,13 @@ import { Body, Caption, Data, MicroLabel } from '@/app/usage/chrome';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { AGENT_SOURCE_META } from '@/components/workspace/agent-sources';
-import type { PtyHarness } from '@/types/electron';
 import {
   STATE_WORD,
   type RowState,
   type SourceRow,
   type WindowRow,
 } from './model';
+import type { PtyHarness } from '@exawatt/core';
 
 export const ATTENTION = 'var(--exa-hud-amber)';
 

@@ -18,15 +18,14 @@ import {
   useConnectedSources,
   type ConnectedSourceObservation,
 } from './connected-sources-section';
+import type { DesktopAgentSourcesApi } from '@exawatt/core/desktop-bridge';
 
 describe('Agent Source Settings', () => {
   it('replaces declared delegation with observed coverage and clears it on source exit', async () => {
     const registry = fallbackAgentSourceRegistry('all');
     const source = registry.sources[0];
     let update!: Parameters<
-      NonNullable<
-        import('@/types/electron').ElectronAgentSourcesApi['onDelegation']
-      >
+      NonNullable<DesktopAgentSourcesApi['onDelegation']>
     >[0];
     const unsubscribe = vi.fn();
     Object.defineProperty(window, 'electron', {

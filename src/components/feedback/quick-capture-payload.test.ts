@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_FEEDBACK_CONTEXT_BYTES } from '@/lib/feedback/contract';
-import type { DiagnosticsReport } from '@/types/electron';
 import {
   resolveQuickDiagnostics,
   withDiagnostics,
 } from './quick-capture-payload';
+import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 const REPORT: DiagnosticsReport = {
   reportVersion: 1,

@@ -34,6 +34,7 @@ import {
   PERSONAL_WORKSPACE_ID,
 } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
+import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
@@ -87,10 +88,10 @@ vi.mock('@/lib/tenancy/tenancy-provider', () => ({
   }),
 }));
 
-const LIVE_SESSION = {
+const LIVE_SESSION: PtySessionInfo = {
   id: 'pty-1',
   durableSessionId: 'dur-1',
-  harness: 'claude' as const,
+  harness: 'claude',
   title: 'Wire telemetry export',
   cwd: '/Users/example/Code/exawatt',
   projectDir: '/Users/example/Code/exawatt',
@@ -102,9 +103,16 @@ const LIVE_SESSION = {
   exitCode: null,
   lastDataAt: 1,
   harnessSessionId: null,
+  exitSignal: null,
+  contextSummary: null,
+  goalVisual: null,
+  attention: null,
+  engaged: false,
+  working: false,
+  delegation: null,
 };
 
-let sessions: (typeof LIVE_SESSION)[] = [];
+let sessions: PtySessionInfo[] = [];
 
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 

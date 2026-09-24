@@ -21,14 +21,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ConnectedSourceView } from '@exawatt/core';
-import type {
-  ConnectedAgentMappingInput,
-  RemoteAgentView,
-} from '@/types/electron';
 import { ConnectSourceDialog } from './connect-source-dialog';
 import { ExposeOverlay } from './expose-overlay';
 import { RemoteAgentPane, useRemoteCoworkers } from './remote-agent';
 import { NO_FLEET_ATTENTION } from './session-status';
+import type {
+  AgentMappingInput,
+  RemoteAgentView,
+} from '@exawatt/core/desktop-bridge';
 
 vi.mock('@/lib/goal-visuals/preference-source', () => ({
   createGoalVisualPreferenceSource: () => ({
@@ -59,7 +59,7 @@ const CONNECTION = {
   failure: null,
 };
 
-function projectedAgent(mapping: ConnectedAgentMappingInput): RemoteAgentView {
+function projectedAgent(mapping: AgentMappingInput): RemoteAgentView {
   return {
     id: `projected:${SOURCE.id}:${mapping.nativeAgentId}`,
     displayName: mapping.displayNameOverride ?? 'social-poster',
@@ -106,7 +106,7 @@ describe('Connect → mapping → roster → Team → Agent', () => {
       | ((result: { ok: true; mapped: number }) => void)
       | undefined;
     const mapAgents = vi.fn(
-      async (_sourceId: string, mappings: ConnectedAgentMappingInput[]) =>
+      async (_sourceId: string, mappings: AgentMappingInput[]) =>
         new Promise<{ ok: true; mapped: number }>(resolve => {
           agents = mappings.map(projectedAgent);
           settleMapping = resolve;

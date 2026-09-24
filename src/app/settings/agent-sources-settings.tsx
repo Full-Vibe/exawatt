@@ -43,7 +43,7 @@ import type {
   AgentSourceFact,
   AgentSourceSnapshot,
   AgentSourceState,
-} from '@/types/electron';
+} from '@exawatt/core';
 
 export const SOURCE_AUTH_RECHECK_DELAYS_MS = [
   1_200, 2_500, 4_000, 6_000,

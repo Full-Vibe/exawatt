@@ -7,11 +7,11 @@ import {
   sessionLifecyclePresentation,
 } from '@exawatt/ui-model';
 import { Button } from '@/components/ui/button';
-import type { HarnessResumeCandidate } from '@/types/electron';
 import type { SessionTab } from './use-workspace-state';
 import { HARNESS_META } from './harnesses';
 import { lifecycleToneColor } from './session-lifecycle-tone';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
+import type { HarnessResumeCandidate } from '@exawatt/core/desktop-bridge';
 
 /**
  * The bar over an ended Session: the lifecycle word, the one line saying how

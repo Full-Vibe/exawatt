@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SessionDelegation } from '@/types/electron';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 import { deriveProjectRibbonSignal } from './project-ribbon-signal';
 import { fleetAttention, mergeFleetAttention } from './session-status';
 import type { Project, SessionTab } from './use-workspace-state';
@@ -138,7 +138,14 @@ describe('deriveProjectRibbonSignal', () => {
         delegation: {
           'session-parent': {
             ownTurn: 'available', blockedOn: null,
-            children: [{ id: 'child-1', agentType: 'explorer', startedAt: 1 }],
+            children: [
+              {
+                id: 'child-1',
+                agentType: 'explorer',
+                description: null,
+                startedAt: 1,
+              },
+            ],
           },
         },
       })

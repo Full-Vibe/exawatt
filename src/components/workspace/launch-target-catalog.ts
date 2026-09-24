@@ -16,7 +16,6 @@
  * source registry snapshot and the per-source model catalogs.
  */
 
-import type { AgentModelCatalog, AgentSourceSnapshot } from '@/types/electron';
 import type { AgentSourceId } from './agent-sources';
 import {
   agentSourceLaunchVerdict,
@@ -24,6 +23,8 @@ import {
   type AgentLaunchConfiguration,
   type LaunchTarget,
 } from '@exawatt/core';
+import type { AgentSourceSnapshot } from '@exawatt/core';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 /** A source that can actually host an interactive launch. */
 export type LaunchSourceSnapshot = AgentSourceSnapshot & {

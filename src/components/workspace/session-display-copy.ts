@@ -2,12 +2,12 @@ import {
   isSessionLifecyclePhase,
   sessionLifecyclePresentation,
 } from '@exawatt/ui-model';
-import type { PtyHarness } from '@/types/electron';
 import {
   attentionNeedsOperator,
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from './session-status';
+import type { PtyHarness } from '@exawatt/core';
 
 export const NEW_AGENT_TITLE = 'New agent';
 

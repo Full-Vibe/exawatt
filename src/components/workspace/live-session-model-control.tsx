@@ -2,7 +2,7 @@
 import { useCallback } from 'react';
 import { SessionModelControl } from './session-model-control';
 import type { SessionTab } from './use-workspace-state';
-import type { SessionModelChange } from '@/types/electron';
+import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
 
 export function LiveSessionModelControl({
   tab,

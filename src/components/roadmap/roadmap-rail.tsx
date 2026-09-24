@@ -33,11 +33,6 @@ import type {
   RoadmapLensView,
   RoadmapSessionChip,
 } from '@exawatt/ui-model';
-import type {
-  RoadmapUndoResult,
-  RoadmapWriteAction,
-  RoadmapWriteResult,
-} from '@/types/electron';
 import { Button } from '@/components/ui/button';
 import { buildRoadmapStrip } from '@exawatt/ui-model';
 import { RoadmapItemCard } from './roadmap-item-card';
@@ -48,6 +43,11 @@ import {
   RoadmapNoRoadmap,
   RoadmapReadError,
 } from './roadmap-empty-queue';
+import type {
+  RoadmapUndoResult,
+  RoadmapWriteAction,
+  RoadmapWriteResult,
+} from '@exawatt/core/desktop-bridge';
 
 export type RoadmapRailMode = 'strip' | 'open';
 

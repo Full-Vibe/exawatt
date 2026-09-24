@@ -28,7 +28,6 @@ import {
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { runConfiguredService } from '@/lib/distribution/service-client';
-import type { DiagnosticsReport } from '@/types/electron';
 import type {
   FeedbackKind,
   ProductFeedbackRequest,
@@ -74,6 +73,7 @@ import {
   type QuickFeedbackDetail,
   type QuickFeedbackKind,
 } from './quick-feedback-events';
+import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 interface ContextRating {
   durableSessionId: string;

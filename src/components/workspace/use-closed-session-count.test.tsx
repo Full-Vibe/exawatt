@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ClosedSessionEntry } from '@/types/electron';
 import { useClosedSessionCount } from './use-closed-session-count';
+import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
 function entry(id: string): ClosedSessionEntry {
   return {

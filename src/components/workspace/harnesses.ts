@@ -5,8 +5,8 @@
  * the capability registry in agent-sources.ts; shell remains a Project tool.
  * Main-process command resolution lives in electron/main/pty/session-manager.ts.
  */
-import type { PtyHarness } from '@/types/electron';
 import { AGENT_SOURCE_META, mapAgentSources } from './agent-sources';
+import type { PtyHarness } from '@exawatt/core';
 
 export interface HarnessMeta {
   /** tab title + picker label */

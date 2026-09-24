@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import type { GoalVisual } from '@/types/electron';
 import styles from './goal-visual-backdrop.module.css';
 import { withThemeAlpha } from './workspace-theme';
+import type { GoalVisual } from '@exawatt/core/desktop-bridge';
 
 /**
  * Source-agnostic Team-tile projection. Live Mode may fill `dataUrl` through

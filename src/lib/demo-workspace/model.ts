@@ -39,8 +39,9 @@ import type {
   SessionRow,
   SessionRowStatus,
 } from '@/components/workspace/switcher-rows';
-import type { PtyHarness, SessionDelegation } from '@/types/electron';
 import { computeAgentBurn, type AgentBurnEntry } from '@exawatt/ui-model';
+import type { PtyHarness } from '@exawatt/core';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 /** One stable "now" per app load: the whole demo tenant reads one clock. */
 const DEMO_SHELL_NOW_MS = Date.now();
@@ -249,6 +250,7 @@ export function demoShellDelegation(): Record<string, SessionDelegation> {
     if (agent.delegated.length === 0) continue;
     out[agent.id] = {
       ownTurn: agent.status === 'working' ? 'generating' : 'available',
+      blockedOn: null,
       children: agent.delegated.map(run => ({
         id: run.agentId,
         agentType: run.agentType,

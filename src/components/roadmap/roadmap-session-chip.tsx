@@ -11,10 +11,10 @@ import {
   withThemeAlpha as withAlpha,
 } from '@/components/workspace/workspace-theme';
 import { HarnessGlyph } from '../workspace/harness-icons';
-import type { PtyHarness } from '@/types/electron';
 import type { RoadmapSessionChip as ChipModel } from '@exawatt/ui-model';
 import { StatusLight } from '@/components/status-light/status-light';
 import { useEffect, useState } from 'react';
+import type { PtyHarness } from '@exawatt/core';
 
 export function chipTooltip(chip: ChipModel): string {
   const method = chip.method === 'declared' ? 'declared at launch' : 'inferred';

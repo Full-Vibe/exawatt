@@ -3,7 +3,6 @@ import {
   type StatusLightState,
 } from '@/components/status-light/protocol';
 import { STATUS_THEME_COLOR } from '@/components/status-light/status-light';
-import type { SessionDelegation } from '@/types/electron';
 import {
   sessionGlyphState,
   sessionStatusLightState,
@@ -12,6 +11,7 @@ import {
 import { tabIsLive, type Project } from './use-workspace-state';
 import type { FleetAttentionSignals } from './status-glyphs';
 import { withThemeAlpha } from './workspace-theme';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 export type ProjectRibbonSignal =
   | 'fault'

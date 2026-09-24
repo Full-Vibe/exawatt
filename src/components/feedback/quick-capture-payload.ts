@@ -1,6 +1,6 @@
 import { MAX_FEEDBACK_CONTEXT_BYTES } from '@/lib/feedback/contract';
-import type { DiagnosticsReport } from '@/types/electron';
 import type { QuickFeedbackKind } from './quick-feedback-events';
+import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 /**
  * What actually rides along with a quick-capture submission (ENG-025 F5).

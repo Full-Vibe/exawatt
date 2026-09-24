@@ -1,5 +1,5 @@
 import type { LocalSessionSnapshot, ProjectCatalogEntry } from '@exawatt/core';
-import type { PtySessionInfo } from '@/types/electron';
+import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 
 export interface LiveBurnFigures {
   rawTokens: number;

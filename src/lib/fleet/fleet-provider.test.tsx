@@ -5,7 +5,10 @@ import {
   remoteAgentToExawattAgent,
   useFleet,
 } from './fleet-provider';
-import type { ConnectedSourceChange, RemoteAgentView } from '@/types/electron';
+import type {
+  ConnectedSourceChange,
+  RemoteAgentView,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-010 C2: remote coworkers stand BESIDE local Agents.

@@ -1,7 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AgentModelCatalog } from '@/types/electron';
 import {
   AgentComposer,
   chooseLauncherAxis,
@@ -15,6 +14,7 @@ import {
   settled,
   setupDrawerHandle,
 } from './launch-controls.test-support';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 describe('Agent composer · interactions and drafts', () => {
   installComposerTestHarness();

@@ -37,7 +37,7 @@ import {
 } from '@/components/consumption/live-store';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
-import type { RemoteAgentView } from '@/types/electron';
+import type { RemoteAgentView } from '@exawatt/core/desktop-bridge';
 
 // --- Context ---
 

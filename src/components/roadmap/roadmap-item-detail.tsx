@@ -16,10 +16,6 @@ import type {
   RoadmapItemView,
   RoadmapLensSessionInput,
 } from '@exawatt/ui-model';
-import type {
-  RoadmapWritableStatus,
-  RoadmapWriteAction,
-} from '@/types/electron';
 import {
   ROADMAP_STATUS_COLOR,
   RoadmapBlockedBadge,
@@ -31,6 +27,10 @@ import {
   milestoneFractionSentence,
   statusNoteProse,
 } from './roadmap-format';
+import type {
+  RoadmapWritableStatus,
+  RoadmapWriteAction,
+} from '@exawatt/core/desktop-bridge';
 
 function deMarkdown(text: string): string {
   return text

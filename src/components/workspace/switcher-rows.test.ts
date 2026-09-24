@@ -6,7 +6,7 @@ import {
   extractRoadmapItemIds,
   buildSessionRows,
 } from './switcher-rows';
-import type { PtySessionInfo } from '@/types/electron';
+import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 
 const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   id: 'pty-1',
@@ -23,6 +23,13 @@ const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   exitCode: null,
   lastDataAt: 0,
   harnessSessionId: '11111111-1111-4111-8111-111111111111',
+  exitSignal: null,
+  contextSummary: null,
+  goalVisual: null,
+  attention: null,
+  engaged: false,
+  working: false,
+  delegation: null,
   ...over,
 });
 
@@ -35,8 +42,7 @@ describe('sessionRowStatus', () => {
           exited: true,
           attention: { kind: 'bell', since: NOW },
           working: true,
-        }),
-        NOW
+        })
       )
     ).toBe('exited');
     expect(
@@ -44,8 +50,7 @@ describe('sessionRowStatus', () => {
         session({
           attention: { kind: 'bell', since: NOW },
           working: true,
-        }),
-        NOW
+        })
       )
     ).toBe('needs-you');
     expect(
@@ -53,65 +58,46 @@ describe('sessionRowStatus', () => {
         session({
           attention: { kind: 'turn-end', since: NOW },
           working: false,
-        }),
-        NOW
+        })
       )
     ).toBe('done');
-    expect(sessionRowStatus(session({ working: true }), NOW)).toBe('working');
-    expect(
-      sessionRowStatus(session({ working: false, engaged: true }), NOW)
-    ).toBe('done');
+    expect(sessionRowStatus(session({ working: true }))).toBe('working');
+    expect(sessionRowStatus(session({ working: false, engaged: true }))).toBe(
+      'done'
+    );
     expect(
       sessionRowStatus(
-        session({ working: false, contextSummary: 'Finished auth tests' }),
-        NOW
+        session({ working: false, contextSummary: 'Finished auth tests' })
       )
     ).toBe('done');
-    expect(sessionRowStatus(session({ working: false }), NOW)).toBe('fresh');
+    expect(sessionRowStatus(session({ working: false }))).toBe('fresh');
     expect(
       sessionRowStatus(
-        session({ harness: 'shell', working: false, engaged: true }),
-        NOW
+        session({ harness: 'shell', working: false, engaged: true })
       )
     ).toBe('quiet');
   });
 
   it('trusts an explicit false working bit even when output is recent', () => {
     expect(
-      sessionRowStatus(session({ working: false, lastDataAt: NOW - 1 }), NOW)
+      sessionRowStatus(session({ working: false, lastDataAt: NOW - 1 }))
     ).toBe('fresh');
   });
 
-  it('uses the monitor-equivalent 3s window only for legacy mocks', () => {
-    expect(sessionRowStatus(session({ lastDataAt: NOW - 2_999 }), NOW)).toBe(
+  it('working still outranks shell quiet in the shared model', () => {
+    expect(sessionRowStatus(session({ harness: 'shell', working: true }))).toBe(
       'working'
     );
-    expect(sessionRowStatus(session({ lastDataAt: NOW - 3_000 }), NOW)).toBe(
-      'fresh'
-    );
-    expect(
-      sessionRowStatus(session({ engaged: true, lastDataAt: NOW - 3_000 }), NOW)
-    ).toBe('done');
-  });
-
-  it('working still outranks shell quiet in the shared model', () => {
-    expect(
-      sessionRowStatus(session({ harness: 'shell', working: true }), NOW)
-    ).toBe('working');
   });
 
   it('exited wins over a stale attention flag', () => {
     expect(
       sessionRowStatus(
-        session({ exited: true, attention: { kind: 'bell', since: 1 } }),
-        NOW
+        session({ exited: true, attention: { kind: 'bell', since: 1 } })
       )
     ).toBe('exited');
     expect(
-      sessionRowStatus(
-        session({ exited: true, exitCode: 1, attention: null }),
-        NOW
-      )
+      sessionRowStatus(session({ exited: true, exitCode: 1, attention: null }))
     ).toBe('fault');
   });
 });
@@ -165,8 +151,7 @@ describe('buildSessionRows', () => {
           working: false,
         }),
       ],
-      null,
-      NOW
+      null
     );
     expect(rows.map(r => r.id)).toEqual([
       'flag-new',
@@ -190,28 +175,24 @@ describe('buildSessionRows', () => {
           attention: { kind: 'bell', since: NOW - 30_000 },
         }),
       ],
-      null,
-      NOW
+      null
     );
     expect(rows.map(r => r.id)).toEqual(['dead-flagged-recent', 'dead-old']);
   });
 
   it('uses the layout color for the project, hash fallback otherwise', () => {
-    const rows = buildSessionRows(
-      [session({ id: 'a', projectDir: '/p/a' })],
-      { projects: [{ dir: '/p/a', color: '#ABCDEF' }] },
-      NOW
-    );
+    const rows = buildSessionRows([session({ id: 'a', projectDir: '/p/a' })], {
+      projects: [{ dir: '/p/a', color: '#ABCDEF' }],
+    });
     expect(rows[0].color).toBe('#ABCDEF');
-    const fallback = buildSessionRows([session({ id: 'b' })], null, NOW);
+    const fallback = buildSessionRows([session({ id: 'b' })], null);
     expect(fallback[0].color).toMatch(/^#|^rgb|^hsl/);
   });
 
   it('search value carries title, project, and micro-context', () => {
     const [row] = buildSessionRows(
       [session({ contextSummary: 'fixing auth tests' })],
-      null,
-      NOW
+      null
     );
     expect(row.searchValue).toBe('Claude Code alpha fixing auth tests');
     expect(row.subtitle).toBe('fixing auth tests');
@@ -281,7 +262,7 @@ describe('extractRoadmapItemIds', () => {
         },
       ],
     };
-    const rows = buildSessionRows([session()], layout, 100_000);
+    const rows = buildSessionRows([session()], layout);
     expect(rows[0].roadmapItemId).toBe('APP-018');
     expect(rows[0].searchValue).toContain('APP-018');
   });
@@ -296,14 +277,16 @@ describe('sessionRowStatus with delegated work', () => {
   const NOW = 100_000;
   const delegating = {
     ownTurn: 'available' as const,
-    children: [{ id: 'a1', agentType: 'Explore', startedAt: 1 }],
+    blockedOn: null,
+    children: [
+      { id: 'a1', agentType: 'Explore', description: null, startedAt: 1 },
+    ],
   };
 
   it('reads as working rather than done while children run', () => {
     expect(
       sessionRowStatus(
-        session({ working: false, engaged: true, attention: null }),
-        NOW
+        session({ working: false, engaged: true, attention: null })
       )
     ).toBe('done');
     expect(
@@ -313,8 +296,7 @@ describe('sessionRowStatus with delegated work', () => {
           engaged: true,
           attention: null,
           delegation: delegating,
-        }),
-        NOW
+        })
       )
     ).toBe('working');
   });
@@ -322,8 +304,7 @@ describe('sessionRowStatus with delegated work', () => {
   it('overrides a turn-end result raised before the children finished', () => {
     expect(
       sessionRowStatus(
-        session({ attention: { kind: 'turn-end', since: 1 }, working: false }),
-        NOW
+        session({ attention: { kind: 'turn-end', since: 1 }, working: false })
       )
     ).toBe('done');
     expect(
@@ -332,8 +313,7 @@ describe('sessionRowStatus with delegated work', () => {
           attention: { kind: 'turn-end', since: 1 },
           working: false,
           delegation: delegating,
-        }),
-        NOW
+        })
       )
     ).toBe('working');
   });
@@ -344,8 +324,7 @@ describe('sessionRowStatus with delegated work', () => {
         session({
           attention: { kind: 'bell', since: 1 },
           delegation: delegating,
-        }),
-        NOW
+        })
       )
     ).toBe('needs-you');
   });
@@ -353,8 +332,7 @@ describe('sessionRowStatus with delegated work', () => {
   it('leaves an exited Session exited', () => {
     expect(
       sessionRowStatus(
-        session({ exited: true, exitCode: 1, delegation: delegating }),
-        NOW
+        session({ exited: true, exitCode: 1, delegation: delegating })
       )
     ).toBe('fault');
   });
@@ -373,14 +351,12 @@ describe('sessionRowStatus agrees with the strip on a settled Session', () => {
     // switcher said "done" while the strip said "working" for the same tab.
     expect(
       sessionRowStatus(
-        session({ working: true, engaged: true, delegation: null }),
-        NOW
+        session({ working: true, engaged: true, delegation: null })
       )
     ).toBe('working');
     expect(
       sessionRowStatus(
-        session({ working: false, engaged: true, delegation: null }),
-        NOW
+        session({ working: false, engaged: true, delegation: null })
       )
     ).toBe('done');
   });
@@ -392,8 +368,7 @@ describe('sessionRowStatus agrees with the strip on a settled Session', () => {
           working: false,
           engaged: true,
           delegation: { ownTurn: 'generating', blockedOn: null, children: [] },
-        }),
-        NOW
+        })
       )
     ).toBe('working');
   });

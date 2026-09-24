@@ -29,7 +29,7 @@ import type {
   RoadmapUndoResult,
   RoadmapWriteAction,
   RoadmapWriteResult,
-} from '@/types/electron';
+} from '@exawatt/core/desktop-bridge';
 
 /** What the workspace knows about a live session in the focused Project. */
 export interface RoadmapSessionDescriptor {

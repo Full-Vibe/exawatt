@@ -22,13 +22,13 @@ import {
   type AgentSourceSnapshot,
   type AgentSourceState,
 } from '@exawatt/core';
-import type { AgentModelCatalog } from '@/types/electron';
 import { agentSourceLaunchReadiness } from '../../../electron/main/pty/agent-source-registry';
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import { recommendLaunchableAgentSource } from './agent-sources';
 import { launchTargetAvailability } from './launch-target-catalog';
 import { launcherReadiness } from './launcher/launcher-model';
 import { cloneTargetSourceReady } from './session-clone';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 const NOW = 1_800_000_000_000;
 const MODEL = 'fixture-model';

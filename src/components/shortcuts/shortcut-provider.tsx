@@ -78,7 +78,6 @@ import {
   commandPaletteLaunchConfigurationCatalog,
   type CommandPaletteLaunchConfiguration,
 } from './command-palette-launch-configurations';
-import type { PtyHarness } from '@/types/electron';
 import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import {
   runTopDialogPrimaryAction,
@@ -87,6 +86,7 @@ import {
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
+import type { PtyHarness } from '@exawatt/core';
 
 /**
  * The registry's projection of the manifest for ONE build: every rebindable

@@ -71,8 +71,6 @@ import {
 } from './use-workspace-state';
 import type { RingAnchor } from './tab-ring';
 import type { Project } from './use-workspace-state';
-import type { PtyHarness, SessionDelegation } from '@/types/electron';
-import type { AgentSourcePlacement } from '@exawatt/core';
 import type { RemoteCoworkerTile } from './remote-agent/remote-agent-roster';
 import {
   StatusLight,
@@ -91,6 +89,8 @@ import {
   type RoadmapReadSource,
   type RoadmapSessionDescriptor,
 } from '@/components/roadmap/use-project-roadmap';
+import type { AgentSourcePlacement, PtyHarness } from '@exawatt/core';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 interface Tile {
   /** null when the tab has no process (restored, not resumed) */

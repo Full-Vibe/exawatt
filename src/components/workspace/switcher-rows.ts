@@ -5,12 +5,12 @@
  * ranking and status rules are unit-tested without a palette.
  */
 import { projectColor } from './project-colors';
-import type { PtySessionInfo } from '@/types/electron';
 import {
   sessionDelegationBusy,
   sessionGlyphState,
   sessionReportedBlocked,
 } from './session-status';
+import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 
 /**
  * Row vocabulary. Spelled out rather than derived from `SessionGlyphState`
@@ -42,11 +42,6 @@ export interface SessionRow {
   searchValue: string;
 }
 
-/** Compatibility only: older mocks predate the main-owned `working` bit.
- *  Match AttentionMonitor's 3s transition boundary until those callers are
- *  upgraded; production pty:list responses never use this heuristic. */
-const LEGACY_WORKING_FALLBACK_MS = 3_000;
-
 export function sessionRowStatus(
   s: Pick<
     PtySessionInfo,
@@ -55,20 +50,17 @@ export function sessionRowStatus(
     | 'exitSignal'
     | 'attention'
     | 'working'
-    | 'lastDataAt'
     | 'harness'
     | 'engaged'
     | 'contextSummary'
     | 'delegation'
-  >,
-  now: number
+  >
 ): SessionRowStatus {
   if (s.exited)
     return s.exitSignal || (s.exitCode != null && s.exitCode !== 0)
       ? 'fault'
       : 'exited';
   const delegatedBusy = sessionDelegationBusy(s.delegation);
-  const working = s.working ?? now - s.lastDataAt < LEGACY_WORKING_FALLBACK_MS;
   // Turn state FIRST, attention second. This used to run the other way, and
   // an attention signal could therefore answer for a Session it disagreed
   // with — reporting `done` while the harness said the turn was still open.
@@ -76,7 +68,7 @@ export function sessionRowStatus(
   // gates, so letting it speak first is what keeps this row and the tab strip
   // from producing two different answers for one Session.
   const glyph = sessionGlyphState({
-    working,
+    working: s.working,
     agent: s.harness !== 'shell',
     started: !!s.engaged || !!s.contextSummary?.trim(),
     delegatedBusy,
@@ -188,15 +180,14 @@ const STATUS_RANK: Record<SessionRowStatus, number> = {
  * within the same state retain output-recency ordering. */
 export function buildSessionRows(
   sessions: PtySessionInfo[],
-  layout: unknown,
-  now: number
+  layout: unknown
 ): SessionRow[] {
   const colors = extractProjectColors(layout);
   const itemIds = extractRoadmapItemIds(layout);
   return sessions
     .map(s => {
       const subtitle = s.contextSummary?.trim() || null;
-      const status = sessionRowStatus(s, now);
+      const status = sessionRowStatus(s);
       const roadmapItemId = itemIds[s.id] ?? null;
       const row: SessionRow = {
         id: s.id,

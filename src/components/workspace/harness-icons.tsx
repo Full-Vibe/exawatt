@@ -20,8 +20,11 @@
  * file records the deviation and the remedy.
  */
 import type { ComponentType, ReactNode } from 'react';
-import type { AgentSourceCatalogId } from '@exawatt/core';
-import type { AgentSourceAdapterId, PtyHarness } from '@/types/electron';
+import type {
+  AgentSourceAdapterId,
+  AgentSourceCatalogId,
+  PtyHarness,
+} from '@exawatt/core';
 
 function ClaudeIcon({ size = 12 }: { size?: number }) {
   return (

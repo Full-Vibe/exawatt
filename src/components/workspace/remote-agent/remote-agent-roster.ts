@@ -23,16 +23,16 @@ import type {
   SourceConnectionState,
   SourceFailureClass,
 } from '@exawatt/core';
-import type {
-  RemoteAgentView,
-  SourceCommandAuthorityView,
-} from '@/types/electron';
 import {
   NO_SEND_ACCESS_SETUP,
   type RemoteConnectionView,
   type SendAccessSetup,
   type WriteAuthority,
 } from './remote-agent-model';
+import type {
+  RemoteAgentView,
+  SourceCommandAuthorityView,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * One connected coworker, projected for the surfaces that paint it.

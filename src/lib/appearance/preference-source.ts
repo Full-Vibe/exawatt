@@ -1,10 +1,10 @@
-import type { ElectronSettingsApi } from '@/types/electron';
 import {
   CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
   DEFAULT_APPEARANCE_PREFERENCES,
 } from './resolve-appearance';
 import { parseProductionAppearancePreferences } from './preferences';
 import type { AppearancePreferencesV1 } from './types';
+import type { DesktopSettingsApi } from '@exawatt/core/desktop-bridge';
 
 export const APPEARANCE_MIRROR_STORAGE_KEY = 'exawatt.appearance.v1';
 const APPEARANCE_MIRROR_EVENT = 'exawatt:appearance-mirror-changed';
@@ -95,7 +95,7 @@ export function writeAppearanceMirror(
 }
 
 function electronSource(
-  settings: ElectronSettingsApi
+  settings: DesktopSettingsApi
 ): AppearancePreferenceSource {
   return {
     kind: 'electron',

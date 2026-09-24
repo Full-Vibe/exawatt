@@ -17,7 +17,6 @@
  */
 import { SessionModelControl } from '@/components/workspace/session-model-control';
 import { demoModelCatalog } from './model-choice-source';
-import type { SessionModelChange } from '@/types/electron';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FolderOpen, SquareTerminal, Target } from 'lucide-react';
@@ -97,6 +96,7 @@ import {
   demoTab,
 } from './model';
 import { DemoSessionPane } from './demo-session-pane';
+import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
 
 /** The Session a walk-up demo opens first: the hero transcript. */
 const DEFAULT_SESSION_ID = 'vg-home-onboard';

@@ -1,7 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AgentModelCatalog } from '@/types/electron';
 import {
   AgentComposer,
   chooseLauncherAxis,
@@ -18,6 +17,10 @@ import {
   renderComposer,
   settled,
 } from './launch-controls.test-support';
+import type {
+  AgentModelCatalog,
+  DesktopAgentSourcesApi,
+} from '@exawatt/core/desktop-bridge';
 
 describe('Agent composer · sources and policy', () => {
   installComposerTestHarness();
@@ -270,7 +273,7 @@ describe('Agent composer · sources and policy', () => {
     window.electron!.agentSources = {
       list: vi.fn(async () => readyAgentSourceRegistry()),
       act: sourceAction,
-    };
+    } as unknown as DesktopAgentSourcesApi;
     const sourceOwnedClaude: AgentModelCatalog = {
       ...CLAUDE_MODEL_CATALOG,
       effectiveModel: null,

@@ -32,7 +32,6 @@ import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { lifecycleToneColor } from './session-lifecycle-tone';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import type { SessionDelegation } from '@/types/electron';
 import type { AgentSourceId } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
 import {
@@ -111,6 +110,7 @@ import {
   tabCanResumeAsAgent,
   type Project,
 } from './use-workspace-state';
+import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 interface Editing {
   kind: 'group' | 'tab';

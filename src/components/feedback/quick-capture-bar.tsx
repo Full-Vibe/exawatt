@@ -3,8 +3,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { Check, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { DiagnosticsReport } from '@/types/electron';
 import type { QuickFeedbackKind } from './quick-feedback-events';
+import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 const KINDS: Array<{ kind: QuickFeedbackKind; label: string; hint: string }> = [
   { kind: 'general', label: 'General', hint: '⌘1' },

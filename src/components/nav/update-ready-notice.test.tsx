@@ -1,12 +1,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProductUpdateStatus } from '@/types/electron';
 import {
   COMMUNITY_DISTRIBUTION,
   COMMUNITY_IDENTITY,
   resolveDistributionIdentity,
 } from '@exawatt/core/distribution';
 import { UpdateReadyNotice } from './update-ready-notice';
+import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
 
 let emitStatus: ((status: ProductUpdateStatus) => void) | undefined;
 const UPDATE_DISTRIBUTION = {
@@ -96,7 +96,7 @@ function installApi(productUpdates = true) {
       onShutdownStatus: () => () => undefined,
       onUpdateReady: () => () => undefined,
     },
-  };
+  } as unknown as NonNullable<Window['electron']>;
   return restartUpdate;
 }
 

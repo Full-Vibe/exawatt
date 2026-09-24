@@ -1,4 +1,3 @@
-import type { AgentSourceRegistrySnapshot } from '@/types/electron';
 import type { AgentSourceId } from './agent-sources';
 import { AGENT_SOURCE_META, launchSourceSnapshots } from './agent-sources';
 import {
@@ -10,6 +9,7 @@ import {
 } from './launch-target-catalog';
 import type { WorkspaceTab } from './use-workspace-state';
 import { agentSourceLaunchVerdict, type LaunchTarget } from '@exawatt/core';
+import type { AgentSourceRegistrySnapshot } from '@exawatt/core';
 
 const MAX_HANDOFF_CHARS = 20_000;
 const MAX_FIELD_CHARS = 1_000;
