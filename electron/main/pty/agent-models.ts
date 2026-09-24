@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { PtyHarness } from './session-manager';
+import type { AgentHarness } from './session-manager';
 import {
   AgentModelCatalogCache,
   catalogCacheKey,
@@ -113,7 +113,7 @@ export interface AgentModelOption {
 }
 
 export interface AgentModelCatalog {
-  harness: Exclude<PtyHarness, 'shell'>;
+  harness: AgentHarness;
   /** The model Exawatt will pin for a new Agent unless the operator changes it. */
   effectiveModel: string | null;
   effectiveModelLabel: string;
@@ -1269,23 +1269,41 @@ export async function readGrokModelCatalog(
   return parseGrokModelCatalog(stdout);
 }
 
+interface ModelCatalogProbe {
+  cwd: string;
+  shell: string;
+  /** The login shell's model-relevant environment, resolved once per probe. */
+  environment: NodeJS.ProcessEnv;
+  /** Bypass a settled provider-local cache. */
+  refresh: boolean;
+}
+
+/**
+ * Where each harness's model catalog comes from. Exhaustive on purpose: a new
+ * harness fails type-check here until it names the reader that observes its
+ * own catalog, with provenance and without inventing rows.
+ */
+const MODEL_CATALOG_READERS: Record<
+  AgentHarness,
+  (probe: ModelCatalogProbe) => Promise<AgentModelCatalog>
+> = {
+  claude: ({ cwd, shell, environment, refresh }) =>
+    listClaudeModels(cwd, shell, environment, refresh),
+  codex: ({ cwd, shell, environment }) =>
+    listCodexModels(cwd, shell, environment),
+  opencode: ({ cwd, shell, environment, refresh }) =>
+    listOpencodeModels(cwd, shell, environment, refresh),
+  grok: ({ cwd, shell }) => readGrokModelCatalog(cwd, shell),
+};
+
 async function probeAgentModels(
-  harness: Exclude<PtyHarness, 'shell'>,
+  harness: AgentHarness,
   cwd: string,
   shell: string,
   refresh = false
 ): Promise<AgentModelCatalog> {
   const environment = await loginModelEnvironment(shell, cwd);
-  if (harness === 'codex') {
-    return listCodexModels(cwd, shell, environment);
-  }
-  if (harness === 'opencode') {
-    return listOpencodeModels(cwd, shell, environment, refresh);
-  }
-  if (harness === 'grok') {
-    return readGrokModelCatalog(cwd, shell);
-  }
-  return listClaudeModels(cwd, shell, environment, refresh);
+  return MODEL_CATALOG_READERS[harness]({ cwd, shell, environment, refresh });
 }
 
 let catalogCache: AgentModelCatalogCache | null = null;
@@ -1321,7 +1339,7 @@ export class AgentModelObservationCoordinator {
 const modelObservations = new AgentModelObservationCoordinator();
 
 function observeAgentModels(
-  harness: Exclude<PtyHarness, 'shell'>,
+  harness: AgentHarness,
   cwd: string,
   shell: string,
   cache: AgentModelCatalogCache | null,
@@ -1347,7 +1365,7 @@ function observeAgentModels(
  * waits for it — that is what the engine menu's Refresh action calls.
  */
 export async function listAgentModels(
-  harness: Exclude<PtyHarness, 'shell'>,
+  harness: AgentHarness,
   cwd: string,
   shell: string,
   refresh = false

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  AGENT_HARNESSES,
   AGENT_SOURCE_FACT_FRESH_MS,
   agentSourceLaunchVerdict,
   launchableAgentSourceState,
@@ -87,7 +88,10 @@ async function loginShellCommand(
   // Test-only telemetry: the one chokepoint every registry probe passes
   // through, so a probe can count login shells per gesture instead of
   // guessing (BUG-062's second number).
-  if (process.env.EXAWATT_TEST === '1' && process.env.EXAWATT_TEST_LOGIN_SHELL_LOG) {
+  if (
+    process.env.EXAWATT_TEST === '1' &&
+    process.env.EXAWATT_TEST_LOGIN_SHELL_LOG
+  ) {
     try {
       fs.appendFileSync(
         process.env.EXAWATT_TEST_LOGIN_SHELL_LOG,
@@ -392,12 +396,63 @@ function unobservedSourceSnapshot(input: {
   };
 }
 
-async function inspectLocalHarness(
-  harness: AgentHarness,
+/** What one source's own sign-in status command said. */
+interface SignInReading {
+  /** The command answered in a shape this reader understands. */
+  known: boolean;
+  authenticated: boolean;
+  identity: string;
+  /** The authentication detail painted while signed in. */
+  signedInDetail: string;
+}
+
+/**
+ * Sources whose sign-in is one status command with a parseable answer share
+ * `inspectStatusCommandHarness`; each reads its own answer here.
+ */
+interface StatusCommandSource {
+  readSignIn: (result: CommandResult) => SignInReading;
+  /** Settings offers the source's own model selector once signed in. */
+  modelChooser: boolean;
+}
+
+const STATUS_COMMAND_SOURCES = {
+  claude: {
+    readSignIn: result => {
+      const status = parseClaudeAuthStatus(result.stdout);
+      return {
+        known: status !== null,
+        authenticated: status?.authenticated === true,
+        identity: status?.identity ?? 'Unknown',
+        signedInDetail: status?.detail ?? 'Signed in through Claude Code.',
+      };
+    },
+    modelChooser: true,
+  },
+  codex: {
+    readSignIn: result => {
+      const status = parseCodexAuthStatus(
+        `${result.stdout}\n${result.stderr}`.trim(),
+        result.ok
+      );
+      const authenticated = status?.authenticated === true;
+      return {
+        known: status !== null,
+        authenticated,
+        identity: authenticated
+          ? (status?.identity ?? 'Codex account')
+          : 'Not signed in',
+        signedInDetail: 'Codex reports an active source-owned login.',
+      };
+    },
+    modelChooser: false,
+  },
+} satisfies Partial<Record<AgentHarness, StatusCommandSource>>;
+
+async function inspectStatusCommandHarness(
+  harness: keyof typeof STATUS_COMMAND_SOURCES,
   shell: string
 ): Promise<AgentSourceSnapshot> {
-  if (harness === 'opencode') return inspectOpencode(shell);
-  if (harness === 'grok') return inspectGrok(shell);
   const observedAt = Date.now();
   const descriptor = harnessDescriptor(harness);
   const source = descriptor.source;
@@ -504,27 +559,10 @@ async function inspectLocalHarness(
     ),
   ]);
   const version = versionResult.stdout || 'Installed';
-  const claudeIdentity =
-    harness === 'claude' ? parseClaudeAuthStatus(authResult.stdout) : null;
-  const codexIdentity =
-    harness === 'codex'
-      ? parseCodexAuthStatus(
-          `${authResult.stdout}\n${authResult.stderr}`.trim(),
-          authResult.ok
-        )
-      : null;
-  const authenticated =
-    harness === 'claude'
-      ? claudeIdentity?.authenticated === true
-      : codexIdentity?.authenticated === true;
-  const authKnown =
-    harness === 'claude' ? claudeIdentity !== null : codexIdentity !== null;
-  const identity =
-    harness === 'claude'
-      ? (claudeIdentity?.identity ?? 'Unknown')
-      : authenticated
-        ? (codexIdentity?.identity ?? 'Codex account')
-        : 'Not signed in';
+  const statusSource: StatusCommandSource = STATUS_COMMAND_SOURCES[harness];
+  const signIn = statusSource.readSignIn(authResult);
+  const { authenticated, identity } = signIn;
+  const authKnown = signIn.known;
   const versionProbe = probeOutcome(versionResult);
   const state = localSourceState({
     installationObserved: true,
@@ -589,9 +627,7 @@ async function inspectLocalHarness(
             ? 'Sign-in required'
             : 'Unknown',
         authenticated
-          ? harness === 'claude'
-            ? (claudeIdentity?.detail ?? 'Signed in through Claude Code.')
-            : 'Codex reports an active source-owned login.'
+          ? signIn.signedInDetail
           : `Exawatt does not receive or store the ${source.authOwner} credential.`,
         commandEvidence
       ),
@@ -623,7 +659,7 @@ async function inspectLocalHarness(
     actions: {
       recheck: true,
       authenticate: !authenticated,
-      chooseModel: harness === 'claude' && authenticated,
+      chooseModel: statusSource.modelChooser && authenticated,
       installGuide: true,
     },
   };
@@ -1514,17 +1550,29 @@ function demoSource(): AgentSourceSnapshot {
   };
 }
 
+/**
+ * How Exawatt observes each local harness. Exhaustive on purpose: a new
+ * harness fails type-check here until it names the probe that reports its
+ * installation, version, and sign-in as the six independent facts.
+ */
+const LOCAL_HARNESS_INSPECTORS: Record<
+  AgentHarness,
+  (shell: string) => Promise<AgentSourceSnapshot>
+> = {
+  claude: shell => inspectStatusCommandHarness('claude', shell),
+  codex: shell => inspectStatusCommandHarness('codex', shell),
+  opencode: inspectOpencode,
+  grok: inspectGrok,
+};
+
 async function discoverAgentSources(
   shell: string,
   scope: 'all' | 'launch' = 'all'
 ): Promise<AgentSourceRegistrySnapshot> {
   const observedAt = Date.now();
-  const local = await Promise.all([
-    inspectLocalHarness('claude', shell),
-    inspectLocalHarness('codex', shell),
-    inspectLocalHarness('opencode', shell),
-    inspectLocalHarness('grok', shell),
-  ]);
+  const local = await Promise.all(
+    AGENT_HARNESSES.map(harness => LOCAL_HARNESS_INSPECTORS[harness](shell))
+  );
   const sources =
     scope === 'launch'
       ? local
@@ -1648,10 +1696,7 @@ async function withRememberedObservations(
   const remembered = await store.read(shell);
   const attemptedAt = snapshot.observedAt;
   const sources = snapshot.sources.map(source => {
-    if (
-      source.unobservedProbes.length === 0 &&
-      source.state !== 'unknown'
-    ) {
+    if (source.unobservedProbes.length === 0 && source.state !== 'unknown') {
       void store.remember(shell, source);
       return source;
     }
@@ -1684,9 +1729,7 @@ export async function rememberedAgentSources(
   if (!store) return null;
   const remembered = await store.read(shell);
   const adapters: readonly AgentSourceAdapterId[] =
-    scope === 'launch'
-      ? ['claude', 'codex', 'opencode', 'grok']
-      : ['claude', 'codex', 'opencode', 'grok', 'openclaw'];
+    scope === 'launch' ? AGENT_HARNESSES : [...AGENT_HARNESSES, 'openclaw'];
   const sources = adapters
     .map(adapterId => remembered.get(adapterId))
     .filter((source): source is AgentSourceSnapshot => source !== undefined)

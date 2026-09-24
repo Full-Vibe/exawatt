@@ -3,11 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { PtyHarness } from './session-manager';
+import type { AgentHarness, PtyHarness } from './session-manager';
 import {
-  CodexConversationAdapter,
-  GrokConversationAdapter,
   RecentConversationCatalog,
+  nativeHistoryAdapter,
   parseOpencodeSessionList,
 } from './conversation-catalog';
 import { planLoginShell, shellQuote } from './login-shell';
@@ -162,24 +161,18 @@ export async function opencodeSessionAgent(
 }
 
 function catalogFor(
-  harness: Exclude<PtyHarness, 'shell'>,
+  harness: AgentHarness,
   sessionsRoot = path.join(os.homedir(), '.codex', 'sessions')
 ): RecentConversationCatalog {
   const key = harness === 'codex' ? sessionsRoot : `default:${harness}`;
   let catalog = catalogs.get(key);
   if (!catalog) {
-    catalog =
-      harness === 'codex'
-        ? new RecentConversationCatalog({
-            adapters: [new CodexConversationAdapter(sessionsRoot)],
-          })
-        : harness === 'grok'
-          ? // Grok Build reads its own session directories; no other adapter
-            // needs to run to answer a Grok resume question.
-            new RecentConversationCatalog({
-              adapters: [new GrokConversationAdapter()],
-            })
-          : new RecentConversationCatalog();
+    // Only this harness's own reader runs to answer its resume question.
+    catalog = new RecentConversationCatalog({
+      adapters: [
+        nativeHistoryAdapter(harness, { codexSessionsRoot: sessionsRoot }),
+      ],
+    });
     catalogs.set(key, catalog);
   }
   return catalog;

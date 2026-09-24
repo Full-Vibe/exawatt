@@ -13,12 +13,13 @@ import {
   redactHostedSummaryText,
   type ConversationCatalogAdapter,
   type ConversationDraft,
+  nativeHistoryAdapter,
 } from './conversation-catalog';
 import {
   __resetMainAnalyticsForTests,
   drainMainAnalyticsEvents,
 } from '../analytics-bridge';
-import { encodeGrokCwdDirname } from '@exawatt/core';
+import { AGENT_HARNESSES, encodeGrokCwdDirname } from '@exawatt/core';
 import {
   COMMUNITY_DISTRIBUTION,
   type DistributionContractV2,
@@ -82,6 +83,14 @@ async function temporaryRoot(name: string) {
   roots.push(root);
   return root;
 }
+
+describe('native history readers (ENG-003 S5.1)', () => {
+  it('give every declared harness a reader that serves exactly that harness', () => {
+    for (const harness of AGENT_HARNESSES) {
+      expect(nativeHistoryAdapter(harness).harnesses).toEqual([harness]);
+    }
+  });
+});
 
 describe('RecentConversationCatalog', () => {
   it('filters Codex envelopes and keeps exact IDs with useful short text', async () => {

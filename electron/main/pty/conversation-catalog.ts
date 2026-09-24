@@ -12,9 +12,11 @@ import {
   recordHostedCallTransportFailure,
 } from '../analytics-bridge';
 import {
+  AGENT_HARNESSES,
   GROK_SESSION_FILES,
   decodeGrokCwdDirname,
   encodeGrokCwdDirname,
+  isAgentHarness,
 } from '@exawatt/core';
 import {
   COMMUNITY_DISTRIBUTION,
@@ -24,6 +26,7 @@ import {
   type DistributionContractV2,
   type DistributionEndpointRefV1,
 } from '@exawatt/core/distribution';
+import { agentSourceDeclaration } from './generated-agent-source-declarations';
 import { planLoginShell, shellQuote } from './login-shell';
 
 const execFileAsync = promisify(execFile);
@@ -266,13 +269,7 @@ function truncate(text: string, maxChars: number): string {
 function fallbackTitle(turns: string[], harness: ConversationHarness): string {
   const first = turns[0]?.replace(/^\[Image\]\s*/i, '').trim();
   if (first) return truncate(first, MAX_TITLE_CHARS);
-  const names: Record<ConversationHarness, string> = {
-    claude: 'Claude Code',
-    codex: 'Codex',
-    opencode: 'OpenCode',
-    grok: 'Grok Build',
-  };
-  return `${names[harness]} conversation`;
+  return `${agentSourceDeclaration(harness).label} conversation`;
 }
 
 function summaryTurns(turns: string[]): string[] {
@@ -930,7 +927,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
  * when known so the catalog can reconcile both records without duplication.
  */
 export class ProjectSessionConversationAdapter implements ConversationCatalogAdapter {
-  readonly harnesses = ['claude', 'codex', 'opencode', 'grok'] as const;
+  readonly harnesses = AGENT_HARNESSES;
 
   constructor(private readonly listSessions: () => ClosedSessionEntry[]) {}
 
@@ -938,14 +935,7 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
     const scope = await ProjectDirectoryScope.create(projectDir);
     const rows: ConversationDraft[] = [];
     for (const entry of this.listSessions()) {
-      if (
-        entry.harness !== 'claude' &&
-        entry.harness !== 'codex' &&
-        entry.harness !== 'opencode' &&
-        entry.harness !== 'grok'
-      ) {
-        continue;
-      }
+      if (!isAgentHarness(entry.harness)) continue;
       const launchDirectory = await scope.launchDirectory(entry.cwd);
       if (!launchDirectory) continue;
       const initialTask = meaningfulOperatorText(entry.initialTask ?? '');
@@ -1297,6 +1287,38 @@ export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(os.homedir(), '.grok', 'sessions');
 }
 
+/** What a harness's own retained-history reader may need from its caller. */
+export interface NativeHistoryOptions {
+  /** OpenCode lists its sessions through the operator's login shell. */
+  openCodeShell?: () => Promise<string>;
+  /** Legacy Codex fixture seam; omitted means Codex's own default root. */
+  codexSessionsRoot?: string;
+}
+
+/**
+ * Each harness's own retained-history reader. Exhaustive on purpose: a new
+ * harness fails type-check here until it names the adapter that reads its
+ * native session records, which is also what answers its resume candidates.
+ */
+const NATIVE_HISTORY_ADAPTERS: Record<
+  ConversationHarness,
+  (options: NativeHistoryOptions) => ConversationCatalogAdapter
+> = {
+  claude: () => new ClaudeConversationAdapter(),
+  codex: ({ codexSessionsRoot }) =>
+    new CodexConversationAdapter(codexSessionsRoot),
+  opencode: ({ openCodeShell }) =>
+    new OpenCodeConversationAdapter(openCodeShell),
+  grok: () => new GrokConversationAdapter(),
+};
+
+export function nativeHistoryAdapter(
+  harness: ConversationHarness,
+  options: NativeHistoryOptions = {}
+): ConversationCatalogAdapter {
+  return NATIVE_HISTORY_ADAPTERS[harness](options);
+}
+
 export interface ConversationCatalogOptions {
   distribution?: DistributionContractV2;
   adapters?: ConversationCatalogAdapter[];
@@ -1331,10 +1353,9 @@ export class RecentConversationCatalog {
   constructor(options: ConversationCatalogOptions = {}) {
     const distribution = options.distribution ?? COMMUNITY_DISTRIBUTION;
     this.adapters = options.adapters ?? [
-      new ClaudeConversationAdapter(),
-      new CodexConversationAdapter(),
-      new OpenCodeConversationAdapter(options.openCodeShell),
-      new GrokConversationAdapter(),
+      ...AGENT_HARNESSES.map(harness =>
+        nativeHistoryAdapter(harness, { openCodeShell: options.openCodeShell })
+      ),
       ...(options.projectSessions
         ? [new ProjectSessionConversationAdapter(options.projectSessions)]
         : []),
