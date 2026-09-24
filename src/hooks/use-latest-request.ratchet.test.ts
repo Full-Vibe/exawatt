@@ -88,9 +88,6 @@ const KNOWN_GUARDS: Record<string, { why: string; count?: number }> = {
   'components/workspace/use-closed-session-count.ts:cancelled': {
     why: 'also gates the ledger subscription',
   },
-  'components/workspace/use-workspace-state.ts:cancelled': {
-    why: 'one hydration read per mount',
-  },
   'components/workspace/workspace-client.tsx:cancelled': {
     why: 'one read per mount; four surface gates own this file',
   },

@@ -64,6 +64,7 @@ import {
 } from './session-status';
 import { loadTerminalFont } from './terminal-font';
 import { useClosedSessionCount } from './use-closed-session-count';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
@@ -506,11 +507,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   );
 
   // ---- mount: adopt live sessions, restore ended layout without spawning ----
+  /** One hydration read per mount (or per retry); a newer one, or unmount,
+   *  supersedes it. */
+  const hydrationRequests = useLatestRequest();
   useEffect(() => {
     const api = window.electron?.pty;
     const ws = window.electron?.workspace;
     if (!api) return;
-    let cancelled = false;
+    const hydration = hydrationRequests.begin();
     // flags cleared by events BETWEEN the pty:list snapshot resolving and
     // the seed merge must stay cleared — main won't re-broadcast for them
     const clearedBeforeSeed = new Set<string>();
@@ -542,7 +546,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           readConfiguredSourceIds(),
           loadTerminalFont(),
         ]);
-      if (cancelled) return;
+      if (!hydration.current) return;
       const decoded = parsePersisted(persistedRaw);
       if (persistedRaw !== null && persistedRaw !== undefined && !decoded) {
         throw new Error('Saved workspace format is not supported');
@@ -553,7 +557,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (hints.some(tab => !tab.harnessSessionId)) {
           try {
             const reconciled = await api.reconcileResumeIdentities(hints);
-            if (cancelled) return;
+            if (!hydration.current) return;
             persisted = withReconciledIdentities(persisted, reconciled);
           } catch (cause) {
             console.warn('Session identity reconciliation failed', cause);
@@ -581,7 +585,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               )
             )
           : persistedSummaries;
-        if (cancelled) return;
+        if (!hydration.current) return;
         const persistedGoalVisuals = persistedGoalVisualRefs(persisted);
         const restoreGoalVisual = api.restoreGoalVisual;
         restoredGoalVisuals = restoreGoalVisual
@@ -598,7 +602,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               ([durableSessionId, visual]) =>
                 [durableSessionId, unresolvedGoalVisual(visual)] as const
             );
-        if (cancelled) return;
+        if (!hydration.current) return;
       }
       const seeds = seedSessionStores(
         live,
@@ -663,7 +667,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // link the group to its registry row for future syncs.
       void listProjects()
         .then(registry => {
-          if (cancelled || registry.length === 0) return;
+          if (!hydration.current || registry.length === 0) return;
           // A rename/recolor made during this async window must win over
           // the now-stale registry snapshot: link the row but keep the
           // local edit (it's pushed up below so it still syncs). Otherwise
@@ -690,7 +694,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // Failed reads are not first launch. Keep every save/checkpoint gated
       // behind readiness until the operator can load the preserved layout.
       const recovery = await ws?.storageRecovery?.().catch(() => undefined);
-      if (cancelled) return;
+      if (!hydration.current) return;
       setWorkspaceLoadFailure(recovery ?? { required: false });
     });
 
@@ -787,7 +791,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       });
     });
     return () => {
-      cancelled = true;
+      hydrationRequests.invalidate();
       offExit();
       offIdentity?.();
       offContext?.();
