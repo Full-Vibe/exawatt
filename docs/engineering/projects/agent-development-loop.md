@@ -301,6 +301,34 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-201: the second change turns the public latch from a
+  death into a wait. 11 of the 38 September deaths were the latch, 10 on one
+  night and 6 of those after a complete re-check, because the head met the
+  latch inside its final critical section, after rebasing and re-running its
+  floor, and failed with something its owner could not fix. The head now asks
+  `checkPublicLatch` before any rebase: no public remote costs nothing,
+  otherwise inside the delivery lock it honours a maintenance hold or repairs
+  the pending catch-up of the integrated tip. A latch holds the head in
+  `holdWhilePublicLatched` (`scripts/lib/queue-hold.mjs`), classified by
+  BUG-197's `publicLatch` record rather than re-derived: a transient latch is
+  retried on a doubling backoff, and a deterministic one is not re-projected
+  on a timer but re-checked when the source lock, the maintenance hold, or
+  `origin/master` moves, with a ten-minute backstop. The hold is bounded
+  (120 minutes, `0` fails at once as before) and visible: `HOLD` with the full
+  diagnosis, `STATUS held=public-latch:<m>` lines, a `hold` record on the
+  ticket, and every waiter printing that the head is holding. Past the bound
+  the ticket fails with `STATUS failed=public-latch` naming the commit, path,
+  check and recovery, and its terminal result and `queue_terminal` metric carry
+  the record. `scripts/queue-hold.test.mjs` pins the policy with a fake clock
+  and drives two real queues with a public remote: a transient latch holds
+  ticket 3 while ticket 4 reports it and keeps its place, and both integrate
+  once the remote recovers, with no failed or resubmitted ticket; the
+  2026-09-24 unrenderable-commit shape fails only past a 0.6-second bound with
+  the latch in its terminal record, then, landed again, holds until the
+  operator enables a maintenance hold and integrates with `public=held`. The
+  four existing public-delivery tests that pin what a latch refuses run with a
+  zero bound. Eight mutations, all killed.
+
 - 2026-09-24, BUG-197: **a latched landing now names the commit that latched
   it, whether a retry can clear it, and the exact recovery.** Tickets 452 to
   456 were refused with "pending public projection catch-up did not publish;

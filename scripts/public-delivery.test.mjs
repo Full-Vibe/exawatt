@@ -103,6 +103,18 @@ async function seedPublicRemote(fixture, remote) {
   return projection;
 }
 
+/**
+ * A latched head fails at once instead of holding (BUG-201), so these tests
+ * can pin what a latch refuses and how it is reported. `queue-hold.test.mjs`
+ * proves the hold itself.
+ */
+function failFast(fixture) {
+  return {
+    ...writeFastPnpm(fixture.parent),
+    EXAWATT_PUBLIC_LATCH_HOLD_MINUTES: '0',
+  };
+}
+
 function rejectPushes(remote) {
   const hook = path.join(remote, 'hooks', 'pre-receive');
   writeFileSync(hook, '#!/bin/sh\necho "public remote is down" >&2\nexit 1\n');
@@ -224,7 +236,7 @@ test('a stale maintenance hold refuses private integration', async () => {
       'src/b.ts': 'export const b = 2;\n',
     });
     await assert.rejects(
-      land(worktree, writeFastPnpm(fixture.parent)),
+      land(worktree, failFast(fixture)),
       /held public tip moved/u
     );
     assert.equal(git(fixture.origin, ['rev-parse', 'master']), privateBefore);
@@ -483,7 +495,7 @@ test('a deterministic public preflight refusal leaves private master untouched',
       'src/b.ts': 'export const b = 2;\n',
     });
     await assert.rejects(
-      land(worktree, writeFastPnpm(fixture.parent)),
+      land(worktree, failFast(fixture)),
       /refusing a non-fast-forward projection/u
     );
     assert.equal(
@@ -542,7 +554,7 @@ test('a pending public split is retried before the next private landing', async 
     const second = fixture.agentWorktree('agent/pending-second', {
       'src/c.ts': 'export const c = 3;\n',
     });
-    await assert.rejects(land(second, writeFastPnpm(fixture.parent)), error => {
+    await assert.rejects(land(second, failFast(fixture)), error => {
       const said = `${error.stdout ?? ''}${error.stderr ?? ''}`;
       assert.match(said, /pending public projection catch-up did not publish/u);
       // A push the remote refused can clear on a retry, so the latch says so
@@ -614,7 +626,7 @@ test('a deterministic catch-up refusal names the commit, the check, and the exac
       `pnpm open-source:catchup -- --source ${privateMaster} ` +
       `--expected-public-sha ${publicTip}`;
     await assert.rejects(
-      land(candidate, writeFastPnpm(fixture.parent)),
+      land(candidate, failFast(fixture)),
       error => {
         const said = `${error.stdout ?? ''}${error.stderr ?? ''}`;
         assert.match(said, /refused deterministically/u);

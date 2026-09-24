@@ -2,7 +2,7 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,7 @@ import {
   markTicketHead,
   queueHead,
   readTicket,
+  setTicketHold,
   updateAttempt,
 } from './lib/delivery-queue.mjs';
 import {
@@ -42,6 +43,11 @@ import {
   openDocsCheckout,
   syncInvokingCheckout,
 } from './lib/docs-lane.mjs';
+import {
+  describePublicLatch,
+  holdWhilePublicLatched,
+  publicLatchHoldPolicy,
+} from './lib/queue-hold.mjs';
 
 const execFileAsync = promisify(execFile);
 const HEARTBEAT_INTERVAL_MS = 5_000;
@@ -304,6 +310,76 @@ async function preparePublicHold(root, integratedSha) {
   return publicDelivery.preparePublicMaintenanceHold(root, { integratedSha });
 }
 
+/**
+ * Whether public publication lets a private landing proceed now (BUG-201).
+ * Null means it may: no public remote, a clean or repaired catch-up, or a
+ * deliberate maintenance hold that lets verified private repair through.
+ * Otherwise the latch, described for the queue. The catch-up may publish, so
+ * it runs inside the delivery lock that serializes every public push.
+ */
+async function checkPublicLatch(root) {
+  const [publicDelivery, maintenance] = await Promise.all([
+    import('./lib/public-delivery.mjs'),
+    import('./lib/public-maintenance-hold.mjs'),
+  ]);
+  try {
+    if (
+      !(await publicDelivery.resolvePublicRemote(root)) &&
+      !(await maintenance.readPublicMaintenanceHold(root))
+    ) {
+      return null;
+    }
+  } catch (error) {
+    return describePublicLatch(error);
+  }
+  const lock = await acquireDeliveryLock(root);
+  try {
+    const master = await git(root, 'rev-parse', 'origin/master');
+    if (await preparePublicHold(root, master)) return null;
+    await repairPublic(root, master);
+    return null;
+  } catch (error) {
+    return describePublicLatch(error);
+  } finally {
+    await lock.release();
+  }
+}
+
+/**
+ * A cheap fingerprint of what an operator's recovery of a deterministic latch
+ * changes: the source lock, the maintenance hold, and `origin/master`. A read
+ * that fails for any reason but absence is unique, so it forces a re-check
+ * rather than reading as "nothing moved".
+ */
+async function publicLatchSignature(root) {
+  const [{ sourceLockPath }, { publicMaintenanceHoldPath }] = await Promise.all(
+    [
+      import('./lib/public-source-lock.mjs'),
+      import('./lib/public-maintenance-hold.mjs'),
+    ]
+  );
+  const stamp = async file => {
+    try {
+      const entry = await stat(file);
+      return `${entry.size}:${entry.mtimeMs}`;
+    } catch (error) {
+      return error?.code === 'ENOENT'
+        ? 'absent'
+        : `unreadable:${error?.code}:${randomUUID()}`;
+    }
+  };
+  return [
+    await stamp(await sourceLockPath(root)),
+    await stamp(await publicMaintenanceHoldPath(root)),
+    await git(root, 'rev-parse', 'origin/master').catch(() => randomUUID()),
+  ].join('|');
+}
+
+function minutes(milliseconds) {
+  const value = milliseconds / 60_000;
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)}m`;
+}
+
 async function directLand(root, branch, options) {
   if (process.env.EXAWATT_AGENT_LAND_ALLOW_DIRECT !== '1') {
     throw new Error(
@@ -561,8 +637,11 @@ async function landThroughQueue({
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
+  const latchPolicy = publicLatchHoldPolicy();
+  let publicHeldMs = 0;
   try {
     const announcedStaleHeads = new Set();
+    let announcedHold = null;
     while (true) {
       const head = await queueHead(root);
       if (!head)
@@ -570,6 +649,13 @@ async function landThroughQueue({
           `Ticket ${ticket.id} disappeared from the active queue.`
         );
       if (head.id === ticket.id) break;
+      const holdKey = head.hold ? `${head.id}:${head.hold.summary}` : null;
+      if (holdKey && holdKey !== announcedHold) {
+        console.log(
+          `[agent-land] queue head ${head.number} is holding, not failing: public publication is latched (${head.hold.summary}). Ticket ${ticket.number} keeps its place.`
+        );
+      }
+      announcedHold = holdKey;
       if (!processExists(head.owner?.pid)) await reconcileDeadHead(root, head);
       else {
         const heartbeatAgeMs =
@@ -591,6 +677,7 @@ async function landThroughQueue({
 
     ticket = await markTicketHead(root, await readTicket(root, ticket.id));
 
+    let latchedInLock = 0;
     while (true) {
       ticket = await heartbeatTicket(
         root,
@@ -598,6 +685,85 @@ async function landThroughQueue({
         'integrating'
       );
       await run('git', ['fetch', 'origin', 'master'], root);
+      // BUG-201: publication is checked BEFORE the rebase and re-check, and a
+      // latch holds the head instead of failing it. September's latch deaths
+      // were found after the head had rebased and re-run its floor, and
+      // nothing the owner could do would have cleared them.
+      const hold = await holdWhilePublicLatched({
+        check: () => checkPublicLatch(root),
+        signature: () => publicLatchSignature(root),
+        policy: latchPolicy,
+        report: async (event, latch, heldMs) => {
+          if (event !== 'status') {
+            console.warn(
+              `[agent-land] HOLD ticket ${ticket.number}: public publication is latched, so the queue head waits here instead of failing (bound ${minutes(latchPolicy.holdMs)}).\n${latch.message}`
+            );
+            ticket = await setTicketHold(
+              root,
+              await readTicket(root, ticket.id),
+              {
+                kind: 'public-latch',
+                since: new Date(Date.now() - heldMs).toISOString(),
+                failure: latch.failure,
+                summary: latch.summary,
+              }
+            );
+            await appendDeliveryMetric(root, 'queue_hold', {
+              ticketId: ticket.id,
+              kind: 'public-latch',
+              failure: latch.failure,
+              publicLatch: latch.record,
+            });
+          }
+          console.log(
+            `[agent-land] STATUS held=public-latch:${minutes(heldMs)} bound=${minutes(latchPolicy.holdMs)} ${latch.summary}`
+          );
+        },
+      });
+      if (hold.outcome !== 'clear') {
+        ticket = await setTicketHold(
+          root,
+          await readTicket(root, ticket.id),
+          null
+        );
+        await appendDeliveryMetric(root, 'queue_hold_released', {
+          ticketId: ticket.id,
+          kind: 'public-latch',
+          outcome: hold.outcome,
+          heldMs: hold.heldMs,
+        });
+      }
+      if (hold.outcome === 'expired') {
+        const record = hold.latch.record;
+        console.log(
+          `[agent-land] STATUS failed=public-latch held=${minutes(hold.heldMs)} failure=${hold.latch.failure}` +
+            (record?.privateSha
+              ? ` private=${record.privateSha.slice(0, 12)}`
+              : '') +
+            (record?.path ? ` path=${record.path}` : '') +
+            (record?.check ? ` check=${record.check}` : '') +
+            (record?.recovery?.preview
+              ? ` recovery="${record.recovery.preview}"`
+              : '')
+        );
+        const error = new Error(
+          `public publication stayed latched for ${minutes(hold.heldMs)} (bound ${minutes(latchPolicy.holdMs)}), so ticket ${ticket.number} leaves the queue and its attempt is preserved.\n${hold.latch.message}`
+        );
+        error.publicLatch = record ?? {
+          failure: hold.latch.failure,
+          reason: hold.latch.message,
+        };
+        error.queueHold = { heldMs: hold.heldMs, outcome: 'expired' };
+        throw error;
+      }
+      if (hold.outcome === 'released') {
+        publicHeldMs += hold.heldMs;
+        console.log(
+          `[agent-land] HOLD released after ${minutes(hold.heldMs)}: public publication is clear; ticket ${ticket.number} continues.`
+        );
+        // Master may have moved while the queue held (a --direct repair).
+        continue;
+      }
       const remoteBase = await git(root, 'rev-parse', 'origin/master');
       if (!(await isAncestor(root, remoteBase, 'HEAD'))) {
         await appendDeliveryMetric(root, 'stale_stop', {
@@ -653,13 +819,25 @@ async function landThroughQueue({
         // A previous transient public push is repaired for the exact private
         // master that already integrated before this candidate may widen the
         // source/public split. A deterministic refusal stays latched for the
-        // explicit reviewed recovery path.
-        preparedPublic = await preparePublicHold(root, integrationSha);
-        if (!preparedPublic) {
-          await repairPublic(
-            root,
-            await git(root, 'rev-parse', 'origin/master')
+        // explicit reviewed recovery path. The head checked this before its
+        // rebase; a latch that appeared since returns it to the hold rather
+        // than failing it (BUG-201).
+        try {
+          preparedPublic = await preparePublicHold(root, integrationSha);
+          if (!preparedPublic) {
+            await repairPublic(
+              root,
+              await git(root, 'rev-parse', 'origin/master')
+            );
+          }
+          latchedInLock = 0;
+        } catch (error) {
+          latchedInLock += 1;
+          if (latchedInLock > 3) throw error;
+          console.warn(
+            '[agent-land] public publication latched after the head checked it; returning to the hold.'
           );
+          continue;
         }
         // Once a public remote exists, a deterministic projection failure is
         // discovered BEFORE private master moves. A transient push can still
@@ -716,6 +894,7 @@ async function landThroughQueue({
             queueWaitMs:
               new Date(ticket.headAt).getTime() -
               new Date(ticket.admittedAt).getTime(),
+            ...(publicHeldMs > 0 ? { publicLatchHeldMs: publicHeldMs } : {}),
             ...(publicProjection.state === 'inert'
               ? {}
               : {
@@ -748,6 +927,10 @@ async function landThroughQueue({
       ticket = await finishTicket(root, current, 'failed', {
         reason: error.message,
         preservedAttemptRef: current.attemptRef,
+        // BUG-197's structured latch, so the terminal metric names the
+        // commit, file, check and recovery rather than only a sentence.
+        ...(error.publicLatch ? { publicLatch: error.publicLatch } : {}),
+        ...(error.queueHold ? { queueHold: error.queueHold } : {}),
       }).catch(() => current);
     }
     throw error;
@@ -836,8 +1019,10 @@ async function landThroughQueue({
           )
           .join(',')}`;
   const laneState = lane.kind === 'docs' ? ' lane=docs' : '';
+  const heldState =
+    publicHeldMs > 0 ? ` held=public-latch:${minutes(publicHeldMs)}` : '';
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${laneState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {

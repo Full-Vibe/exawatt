@@ -2383,6 +2383,20 @@ refuses every push to origin's `master` that is not `agent:land`'s own.
 Proven in `scripts/docs-lane.test.mjs` against a real local queue.
 [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-201 A latched publication failed queue heads nobody could fix
+
+Status: done · ENG-022 · measured 2026-09-24 over September's 89 tickets; resolved 2026-09-24.
+
+11 of September's 38 ticket deaths were the public latch, 10 on one night, 6
+after a full re-check, and no owner could clear any of them. The head now
+checks publication before its rebase and, while latched, holds instead of
+failing: bounded (`EXAWATT_PUBLIC_LATCH_HOLD_MINUTES`, 120), with BUG-197's
+diagnosis on its `STATUS` line, in its ticket, and in every waiter's output.
+A transient latch is retried on a backoff; a deterministic one waits for the
+operator's recovery, and enabling the maintenance hold releases the queue. The
+ENG-030 guarantee is unchanged. Proven in `scripts/queue-hold.test.mjs`.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
@@ -2586,3 +2600,4 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | ENG-035's whole-history publication (every sync replaced the operator's entire public aggregate) and one Run per provider Session | BUG-164, 2026-09-24 | A publication (body schema 2) replaces only the local dates it declares, at most 31, and a long history is several publications; Runs split at an hour of inactivity and at 31 days. Every limit is defined once in `operator-stats/contract.ts`. Retention (BUG-032/BUG-141) bounds what can be republished but can no longer erase hosted history. Decision `0029` amended. |
 | BUG-044's claim that keyboard overrides persist in `userData/settings.json` | BUG-142, 2026-09-16 | They were written there and never read back; `parseSettings` lacked the field. The settings schema is now one table both parse and write derive from, with a typed round-trip test over every field. |
 | BUG-195's docs push guard, which let a docs push reach `master` once `docs:check` passed, and AGENTS.md's in-place docs path that pushed directly | BUG-200, 2026-09-24 | Only `agent:land` moves `master`. The pre-push hook refuses every other push to it, and documentation lands through `pnpm agent:land -- --docs`: no worktree, the docs checks only, a queue ticket like any other. |
+| ENG-030's latch policy as applied by `agent:land`: a latched publication failed the queue head, after its rebase and re-check | BUG-201, 2026-09-24 | The head checks publication before rebasing and holds, bounded and visible, instead of failing; a transient latch is retried, a deterministic one waits for the operator's recovery. Private `master` still never moves past unpublished work. |

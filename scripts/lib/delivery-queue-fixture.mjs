@@ -140,7 +140,7 @@ export function createQueueFixture(prefix = 'exawatt-queue-') {
  * Runs `agent-land.mjs` in its own process group and streams its output, so
  * a test can watch a landing wait, hold, or fail while it is still running.
  */
-function startLanding(cwd, args, env) {
+export function startLanding(cwd, args, env) {
   let output = '';
   const ownsProcessGroup = process.platform !== 'win32';
   const child = spawn(process.execPath, [LAND_SCRIPT, ...args], {
@@ -167,6 +167,7 @@ function startLanding(cwd, args, env) {
   });
   return {
     output: () => output,
+    done: () => settled,
     exit,
     /** Resolves with the output of a successful landing; rejects otherwise. */
     get completion() {
@@ -188,4 +189,56 @@ function startLanding(cwd, args, env) {
       await exit.catch(() => {});
     },
   };
+}
+
+/** A landing that has printed nothing for this long is stuck, not slow. */
+const NO_PROGRESS_MS = 60_000;
+
+/**
+ * Waits until the landing's output satisfies `predicate`, bounded by the
+ * landing's progress rather than by elapsed time (BUG-057): it fails when the
+ * landing exits without printing it, or goes silent.
+ */
+export async function waitForOutput(landing, predicate) {
+  let exited = false;
+  landing.exit.then(
+    () => {
+      exited = true;
+    },
+    () => {
+      exited = true;
+    }
+  );
+  let seen = landing.output().length;
+  let progressedAt = Date.now();
+  while (!predicate(landing.output())) {
+    if (exited) {
+      if (predicate(landing.output())) return;
+      throw new Error(
+        `The landing exited before it printed what the test waited for:\n${landing.output()}`
+      );
+    }
+    const output = landing.output();
+    // Not a budget on the code under test: this watchdog separates a stuck
+    // child from a slow one, and it measures SILENCE rather than work done.
+    const silentForMs = Date.now() - progressedAt;
+    if (output.length !== seen) {
+      seen = output.length;
+      progressedAt = Date.now();
+    } else if (silentForMs > NO_PROGRESS_MS) {
+      throw new Error(
+        `The landing printed nothing for ${NO_PROGRESS_MS}ms and never reached what the test waited for:\n${output}`
+      );
+    }
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
+
+/**
+ * The landing's result once it exits, under the same silence watchdog, so a
+ * landing that should finish in seconds cannot hang a test instead.
+ */
+export async function finished(landing) {
+  await waitForOutput(landing, () => landing.done());
+  return landing.exit;
 }

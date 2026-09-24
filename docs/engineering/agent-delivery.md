@@ -283,11 +283,16 @@ Normal states are:
 
 ```text
 queued → integrating → integrated
-                    ↘ failed
+             ↓ ↑    ↘ failed
+       holding (public latch; bounded)
 
 dead owner → recovering → integrated (attempt already reached master)
                        ↘ failed (attempt ref preserved)
 ```
+
+`holding` is not a separate status: the head stays `integrating`, its ticket
+carries a `hold` record (`kind`, `since`, `failure`, `summary`) while it waits,
+and the record is removed when the hold ends. See "Head-of-queue integration".
 
 Every owner writes a heartbeat while its process is alive. A waiter may claim
 the head only when the recorded PID is dead. Claiming increments the ownership
@@ -310,6 +315,12 @@ result:
 
 When its ticket becomes head, the author process fetches `origin/master`.
 
+- It first asks whether public publication lets a private landing proceed
+  (BUG-201), BEFORE any rebase or re-check. With no public remote this costs
+  nothing. Otherwise, inside the delivery lock, it honours a maintenance hold
+  or repairs a pending catch-up of the already-integrated private tip. If
+  that is latched, the head **holds**; it does not fail. See "The public
+  latch holds the queue" below.
 - If the remote base is already an ancestor of `HEAD`, candidate evidence is
   evidence for the exact attempted tree.
 - If not, the process rebases its own bootstrapped worktree. A conflict is
@@ -322,6 +333,42 @@ When its ticket becomes head, the author process fetches `origin/master`.
   a conversational retry cycle.
 - If push output is ambiguous, the process fetches and checks attempt
   reachability before choosing a terminal result.
+
+### The public latch holds the queue
+
+ENG-030 keeps private `master` behind unpublished work: while the catch-up of
+the integrated private tip cannot publish, no new private commit integrates.
+That guarantee is unchanged. What changed is who pays for it. Before BUG-201
+the head found the latch only after its rebase and full re-check, failed, and
+sent its owner around again; the latch was 11 of September's 38 ticket
+deaths, 10 of them on one night and 6 of those after a complete re-check, and
+no owner could clear it.
+
+Now the head holds, bounded and visible:
+
+- It prints `HOLD ticket <n>` with the latch's own diagnosis (BUG-197's
+  `publicLatch`: the private commit, file and check, the failure class, and
+  for a deterministic latch the exact `open-source:catchup` preview), then a
+  `STATUS held=public-latch:<m> bound=<m> <summary>` line every five minutes.
+- Its ticket records the hold, and every waiter prints `queue head <n> is
+  holding, not failing` with the same summary. Waiters keep their places.
+- A `transient` latch (a push or network failure) is retried by the head on a
+  doubling backoff from `EXAWATT_PUBLIC_LATCH_RETRY_SECONDS` (30) to five
+  minutes. A `deterministic` latch (an unrenderable commit, a non-fast-forward,
+  a stale maintenance hold, a reseed intent) is not re-run on a timer: the head
+  re-checks when the source lock, the maintenance hold, or `origin/master`
+  moves, which is what the operator's recovery changes, and every ten minutes
+  as a backstop. Enabling the maintenance hold for a reviewed catch-up releases
+  the queue at once, with `public=held`.
+- On release it continues from the fetch and reports
+  `held=public-latch:<m>` on its success line.
+- Past `EXAWATT_PUBLIC_LATCH_HOLD_MINUTES` (120) it fails as it did before,
+  printing `STATUS failed=public-latch` with the failure class, private commit,
+  path, check and recovery preview, and the ticket's terminal result and
+  `queue_terminal` metric carry the `publicLatch` record. `0` fails at once.
+
+A latch that appears after the check, inside the final critical section,
+returns the head to the hold instead of failing it.
 
 The delivery lock is a directory under the operating system's temporary
 directory, keyed by a hash of the Git common directory. It is final-push mutual
@@ -342,7 +389,9 @@ Success output distinguishes:
   files ran alone. Absent when nothing flaked, so a clean landing reads exactly
   as it did before the rerun existed;
 - `public=published|pending|refused`: what the public projection did. The field
-  is absent entirely when no public remote is configured, which is the default.
+  is absent entirely when no public remote is configured, which is the default;
+- `held=public-latch:<m>`: how long the head held on a latched publication
+  before it continued. Absent when it did not hold.
 
 ## Batched hosted CI
 
@@ -485,6 +534,7 @@ contributor's own commit is what the projector publishes.
 | `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                                                                                                                                                      |
 | `public_projection`                                                                                           | projection state, private/public SHA pair, duration, and when it did not publish the failure class (`deterministic`/`transient`) and the unrenderable private commit, file and check                         |
 | `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
+| `queue_hold` / `queue_hold_released`                                                                          | the head held on a latched publication: ticket, `failure` class and the `publicLatch` record; on release the `outcome` (`released`/`expired`) and `heldMs`. A failed ticket's `queue_terminal` carries `publicLatch` and `queueHold` |
 
 `summarizeDeliveryMetrics` computes integrated and failed counts, queue p50/p95,
 lock p95, stale-stop and floor-failure counts, suspected-flake counts with a
@@ -522,7 +572,8 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | A landing reports `flaked=<check>:<n>`                           | Nothing blocking. The named files failed in a large selection and passed alone, which is contention. Read the file names: if `summarizeDeliveryMetrics`' per-file tally shows the SAME file flaking across landings, that is a defect to chase, not machine load. |
 | A landing reports `public=pending`                               | Nothing. The private landing is integrated; the next landing's projection fast-forwards past both. Investigate only if it repeats, and read the reason in the source lock.                                                                                        |
 | A landing reports `public=refused`                               | The projection no longer descends from public `master`. Diagnose classification/rendering first; use reviewed catch-up for a stale unrenderable backlog. Reserve reseed for separately reviewed historical erasure. Never force the public remote by hand.                                                         |
-| A landing is refused: `public catch-up refused deterministically` | Do not retry; every retry refuses the same way. The refusal names the private commit, the file and the check that refused it, and prints the exact `pnpm open-source:catchup -- --source <sha> --expected-public-sha <sha>` preview. Run the preview; executing it is the operator-only step in "Reviewed public catch-up" below. A refusal marked `failure: transient` clears on a later landing; the same reason twice means it is not transient. |
+| The queue head prints `HOLD` / `STATUS held=public-latch` and waiters say it is holding | Nothing is failing; do not resubmit or cancel. A `transient` latch clears when the head's retry publishes. A `deterministic` latch is the operator's: start the reviewed recovery below; enabling its maintenance hold releases the queue at once, and the catch-up then publishes what is owed. The hold ends by itself after `EXAWATT_PUBLIC_LATCH_HOLD_MINUTES`. |
+| A landing is refused: `public catch-up refused deterministically` | This is a head that held to its bound (`STATUS failed=public-latch`), or ran with `EXAWATT_PUBLIC_LATCH_HOLD_MINUTES=0`. Do not retry; every retry refuses the same way. The refusal names the private commit, the file and the check that refused it, and prints the exact `pnpm open-source:catchup -- --source <sha> --expected-public-sha <sha>` preview. Run the preview; executing it is the operator-only step in "Reviewed public catch-up" below. A refusal marked `failure: transient` clears on a later landing; the same reason twice means it is not transient. |
 
 Do not hand-edit `next-ticket.json`, ticket files, ownership epochs, terminal
 results, or request state during ordinary recovery. These are durable machine
@@ -548,7 +599,9 @@ verification, or a live owner's ticket.
 - `scripts/agent-land.mjs`: end-to-end candidate, queue wait, rebase, integrate,
   status, and post request orchestration.
 - `scripts/lib/delivery-queue.mjs`: ticket allocation, atomic transitions,
-  ownership fencing, terminal results, and dead-owner claims.
+  ownership fencing, terminal results, hold records, and dead-owner claims.
+- `scripts/lib/queue-hold.mjs`: the head's bounded hold on a latched public
+  publication, its failure classes, and its knobs.
 - `scripts/lib/delivery-policy.mjs`: changed-path floor and check evidence.
 - `scripts/lib/delivery-state.mjs`: common-dir paths, atomic JSON, metrics, and
   rollup calculations.
@@ -575,8 +628,9 @@ verification, or a live owner's ticket.
   `scripts/delivery-queue.test.mjs`, `scripts/delivery-policy.test.mjs`,
   `scripts/dogfood-queue.test.mjs`, `scripts/dogfood-delivery.test.mjs`,
   `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
-  `scripts/docs-check.test.mjs`, and `scripts/docs-lane.test.mjs` (with
-  `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
+  `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`, and
+  `scripts/queue-hold.test.mjs` (with `scripts/lib/delivery-queue-fixture.mjs`,
+  a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.
   <!-- exawatt:public-omit-begin the company delivery queue owns public-repository maintenance -->

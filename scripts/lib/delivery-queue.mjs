@@ -191,6 +191,24 @@ export async function markTicketHead(root, ticket) {
   );
 }
 
+/**
+ * Records why the head is holding instead of integrating (BUG-201), or clears
+ * it with `null`, so every waiter can say what the queue is waiting on.
+ */
+export async function setTicketHold(root, ticket, hold) {
+  return mutateTicket(
+    root,
+    ticket.id,
+    { ownerToken: ticket.owner.token, ownerEpoch: ticket.owner.epoch },
+    current => {
+      if (hold) current.hold = hold;
+      else delete current.hold;
+      current.owner.heartbeatAt = new Date().toISOString();
+      return current;
+    }
+  );
+}
+
 export async function updateAttempt(root, ticket, attempt) {
   return mutateTicket(
     root,
