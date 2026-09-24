@@ -22,8 +22,8 @@ import { classifyDocsChecks } from './delivery-policy.mjs';
 
 const execFileAsync = promisify(execFile);
 
-export const PUSH_GUARD_REMOTE = 'origin';
-export const PUSH_GUARD_REF = 'refs/heads/master';
+const PUSH_GUARD_REMOTE = 'origin';
+const PUSH_GUARD_REF = 'refs/heads/master';
 
 /**
  * Set by `agent:land` on its final push to the SHA its floor just verified.
@@ -45,7 +45,7 @@ const REPOSITORY_LOCATORS = [
   'GIT_PREFIX',
 ];
 
-export function isDocsPath(file) {
+function isDocsPath(file) {
   return file.endsWith('.md') || file.startsWith('docs/');
 }
 
