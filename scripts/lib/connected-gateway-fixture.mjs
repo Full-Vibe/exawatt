@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
 const FIXTURE_NOW = 1_787_000_000_000;
@@ -79,6 +79,11 @@ export class ConnectedGatewayFixture {
     this.receivedMessages = [];
     this.authenticationModes = [];
     this.writeApproved = false;
+    /**
+     * Requests standing for the operator's approval, newest first, in the
+     * shape `openclaw devices list --json` reports them (OpenClaw 2026.7.1-2).
+     */
+    this.pending = [];
     this.server = null;
     this.port = null;
     this.runCounter = 0;
@@ -121,6 +126,30 @@ export class ConnectedGatewayFixture {
 
   approveWrite() {
     this.writeApproved = true;
+  }
+
+  /** What `openclaw devices list --json` would answer on this source. */
+  pairingList() {
+    return {
+      pending: this.pending.map(entry => ({ ...entry })),
+      paired: [...this.devices.keys()].map(deviceId => ({ deviceId })),
+    };
+  }
+
+  /** Another device's request, standing beside Exawatt's. */
+  addPendingRequest(entry) {
+    this.pending.push({ requestId: randomUUID(), ts: Date.now(), ...entry });
+  }
+
+  /** `openclaw devices approve <requestId>`: approves that request alone. */
+  approveRequest(requestId) {
+    const index = this.pending.findIndex(
+      entry => entry.requestId === requestId
+    );
+    if (index < 0) return null;
+    const [request] = this.pending.splice(index, 1);
+    if (request.scopes.includes('operator.write')) this.writeApproved = true;
+    return request;
   }
 
   async goAway() {
@@ -215,6 +244,18 @@ export class ConnectedGatewayFixture {
 
     const asksWrite = scopes.includes('operator.write');
     if (asksWrite && !this.writeApproved) {
+      // A refused ask for wider scopes leaves a request standing, superseding
+      // this device's earlier one, the way a real Gateway does.
+      this.pending = this.pending.filter(entry => entry.deviceId !== deviceId);
+      this.pending.unshift({
+        requestId: randomUUID(),
+        deviceId,
+        publicKey: params.device?.publicKey,
+        scopes,
+        role: 'operator',
+        roles: ['operator'],
+        ts: Date.now(),
+      });
       refusal(
         socket,
         request,

@@ -441,6 +441,7 @@ export function WorkspaceClient() {
     coworkers,
     refresh: refreshRemoteRoster,
     requestWriteAccess: requestSourceWriteAccess,
+    approveWriteAccess: approveSourceWriteAccess,
     reconnect: reconnectSource,
   } = useRemoteCoworkers(inElectron);
   const [cloneTargets, setCloneTargets] = useState<CloneSessionTarget[]>([]);
@@ -2289,6 +2290,7 @@ export function WorkspaceClient() {
                                 ? () => selectTab(dir, tab.id)
                                 : undefined
                             }
+                            onApproveWriteAccess={approveSourceWriteAccess}
                             onReconnect={reconnectSource}
                             onRequestWriteAccess={requestSourceWriteAccess}
                             roster={remoteRoster}

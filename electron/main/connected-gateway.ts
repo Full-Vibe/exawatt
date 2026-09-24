@@ -1,5 +1,6 @@
 import {
   adaptOpenClawTopology,
+  deriveDeviceId,
   gatewayAnswered,
   generateDeviceKeypair,
   readGrantedAuthority,
@@ -40,6 +41,7 @@ import type { ConnectedSourceStore } from './connected-source-store';
 import type {
   GatewayBootstrapFacts,
   RemoteExec,
+  RemoteExecResult,
   resolveGatewayCredential,
 } from './gateway-bootstrap';
 import {
@@ -49,6 +51,13 @@ import {
   type GatewayIdentity,
   type GatewayIdentityDrift,
 } from './gateway-identity';
+import {
+  LIST_DEVICES_ARGV,
+  approveDeviceArgv,
+  findOwnPendingRequest,
+  sshDestinationOf,
+  type OwnPendingRequest,
+} from './source-device-approval';
 import type { openSshTunnel, SshTunnel, SshTunnelTarget } from './ssh-tunnel';
 import {
   MAX_ID_LENGTH,
@@ -892,6 +901,107 @@ export class ConnectedGatewaySession {
         this.handleDrop('gateway-down');
       }
     }
+  }
+
+  /**
+   * Exawatt's own standing write request on the source (ENG-033 H2.4 P3).
+   *
+   * One bounded read of the source's own pairing list, over the SSH login the
+   * operator configured. It is how both send-access paths name the exact
+   * request: the one click approves it, and the copy path prints the command
+   * that does. A source reached without an SSH login has no list to read.
+   */
+  async findOwnPendingRequest(): Promise<OwnPendingRequest> {
+    const destination = sshDestinationOf(this.record.transport);
+    const keypair = this.clientConfig?.deviceKeypair;
+    if (destination === null || !keypair) return { kind: 'unreadable' };
+    let run: RemoteExecResult;
+    try {
+      run = await this.deps.remoteExec(destination, LIST_DEVICES_ARGV);
+    } catch {
+      return { kind: 'unreadable' };
+    }
+    if (run.code !== 0 || typeof run.stdout !== 'string') {
+      return { kind: 'unreadable' };
+    }
+    return findOwnPendingRequest(run.stdout, {
+      deviceId: await deriveDeviceId(keypair.publicKey),
+      publicKey: keypair.publicKey,
+    });
+  }
+
+  /**
+   * Send access in one click (ENG-033 H2.4 P3; decision `0037`, amended
+   * 2026-09-24).
+   *
+   * Asks exactly as `requestWriteAuthority` does, which leaves a request
+   * standing on the source; finds that request by Exawatt's own device in the
+   * source's pairing list; runs the source's own approval for that request id
+   * alone, over the operator's own SSH login; and asks again, which is what
+   * reissues this device at the wider scope. Exawatt holds no pairing or admin
+   * authority at any point: the approval is the source's own command, run as
+   * the operator, and a request Exawatt cannot prove is its own is never
+   * approved. Every early stop leaves the request standing, so the copy path
+   * and Check again still finish it.
+   */
+  async approveOwnWriteRequest(): Promise<AuthorityRequestResult> {
+    if (this.grantedAuthority === 'write') {
+      return {
+        outcome: 'unchanged',
+        authority: 'write',
+        message: 'This source has already granted Exawatt write authority.',
+      };
+    }
+    const destination = sshDestinationOf(this.record.transport);
+    if (destination === null) {
+      return {
+        outcome: 'refused',
+        authority: this.grantedAuthority,
+        message:
+          'Exawatt approves only on servers it reaches over SSH. Approve the request on the server, then check again.',
+      };
+    }
+
+    const asked = await this.requestWriteAuthority();
+    if (asked.outcome !== 'approval-required') {
+      return { ...asked, approvalStep: 'asked' };
+    }
+
+    const own = await this.findOwnPendingRequest();
+    if (own.kind !== 'found') {
+      return {
+        ...asked,
+        approvalStep: own.kind === 'none' ? 'not-found' : 'unreadable',
+        message:
+          own.kind === 'none'
+            ? 'Exawatt could not find its own request on the server, so it approved nothing. Run the commands there instead.'
+            : 'Exawatt could not read the server’s pending requests, so it approved nothing. Run the commands there instead.',
+      };
+    }
+
+    let approved: RemoteExecResult | null;
+    try {
+      approved = await this.deps.remoteExec(
+        destination,
+        approveDeviceArgv(own.requestId)
+      );
+    } catch {
+      approved = null;
+    }
+    if (approved?.code !== 0) {
+      return {
+        ...asked,
+        pendingRequestId: own.requestId,
+        approvalStep: 'approve-refused',
+        message:
+          'The server did not approve the request. Run the commands there instead, then check again.',
+      };
+    }
+
+    const answer = await this.requestWriteAuthority();
+    return answer.outcome === 'approval-required'
+      ? { ...answer, pendingRequestId: own.requestId, approvalStep: 'approved' }
+      : { ...answer, approvalStep: 'approved' };
   }
 
   /**

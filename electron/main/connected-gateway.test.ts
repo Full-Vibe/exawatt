@@ -34,6 +34,7 @@ import {
 import type { GatewayIdentity } from './gateway-identity';
 import type {
   GatewayBootstrapFailure,
+  RemoteExec,
   resolveGatewayCredential,
 } from './gateway-bootstrap';
 import type {
@@ -150,6 +151,22 @@ class FakeGateway {
   private readonly tokenOwners = new Map<string, string>();
   /** Errors to answer the next handshakes with, consumed one per attempt. */
   private readonly handshakeErrors: string[] = [];
+  /**
+   * Requests standing for the operator's approval, newest first, in the shape
+   * `openclaw devices list --json` reports them (OpenClaw 2026.7.1-2, read on
+   * the operator's servers 2026-09-24). A refused ask for wider scopes leaves
+   * one; asking again supersedes it with a new id, which is the strict case:
+   * an approval must name the request the LATEST ask left.
+   */
+  readonly pending: {
+    requestId: string;
+    deviceId: string;
+    publicKey?: string;
+    scopes: string[];
+    role: string;
+    roles: string[];
+  }[] = [];
+  private requestSeq = 0;
 
   /**
    * The server half of pairing, modelled on a live Gateway probed 2026-08-18.
@@ -164,7 +181,8 @@ class FakeGateway {
   pair(
     requested: readonly string[],
     deviceToken: string | null,
-    deviceId: string
+    deviceId: string,
+    publicKey?: string
   ): { ok: true } | { ok: false; message: string } {
     this.handshakes.push([...requested]);
     this.deviceIds.push(deviceId);
@@ -188,6 +206,7 @@ class FakeGateway {
     }
     const approved = new Set(this.approvedScopes);
     if (requested.every(scope => approved.has(scope))) return { ok: true };
+    this.standRequest(deviceId, publicKey, requested);
     return {
       ok: false,
       message:
@@ -198,6 +217,37 @@ class FakeGateway {
   /** The operator approving the Exawatt device on the source itself. */
   approve(scopes: readonly string[]): void {
     this.approvedScopes = [...scopes];
+  }
+
+  private standRequest(
+    deviceId: string,
+    publicKey: string | undefined,
+    scopes: readonly string[]
+  ): void {
+    const superseded = this.pending.findIndex(
+      entry => entry.deviceId === deviceId
+    );
+    if (superseded >= 0) this.pending.splice(superseded, 1);
+    this.requestSeq += 1;
+    this.pending.unshift({
+      requestId: `4f1c2a7e-0000-4000-8000-00000000000${this.requestSeq}`,
+      deviceId,
+      ...(publicKey === undefined ? {} : { publicKey }),
+      scopes: [...scopes],
+      role: 'operator',
+      roles: ['operator'],
+    });
+  }
+
+  /** `openclaw devices approve <id>`: grants exactly what that request asked. */
+  approveRequest(requestId: string): boolean {
+    const index = this.pending.findIndex(
+      entry => entry.requestId === requestId
+    );
+    if (index < 0) return false;
+    const [request] = this.pending.splice(index, 1);
+    this.approvedScopes = [...request!.scopes];
+    return true;
   }
 
   /** A scoped token, bound to the device it was issued to. */
@@ -353,7 +403,8 @@ class FakeGatewayClient {
     const paired = this.gateway.pair(
       requested,
       this.deviceToken,
-      this.deviceKey
+      this.deviceKey,
+      this.deviceKeypair.publicKey
     );
     if (!paired.ok) {
       this.status = 'error';
@@ -678,7 +729,11 @@ function createHarness(options: HarnessOptions = {}) {
     };
   });
 
-  const remoteExec = vi.fn(async () => ({ code: 0, stdout: '', stderr: '' }));
+  const remoteExec = vi.fn<RemoteExec>(async () => ({
+    code: 0,
+    stdout: '',
+    stderr: '',
+  }));
 
   const deps: ConnectedGatewaySessionDeps = {
     store,
@@ -2192,8 +2247,9 @@ describe('ConnectedGatewaySession — granted authority', () => {
     const result = await harness.session.connect();
 
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.outcome === 'failed' && result.failure)
-      .toBe('gateway-down');
+    expect(
+      result.ok === false && result.outcome === 'failed' && result.failure
+    ).toBe('gateway-down');
     expect(harness.session.authority).toBe('write');
     expect(harness.store.authorities).toEqual([]);
     // Nothing reached the Gateway, so nothing was asked for at read scope.
@@ -2424,6 +2480,208 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
     expect(describeConnectionStatus(harness.session.status())).not.toMatch(
       STOPPED_WORK_WORDS
     );
+  });
+});
+
+/**
+ * The source's own device CLI, as `openclaw devices` answers over SSH. Other
+ * devices' requests ride along in the list, because telling them apart is the
+ * whole point of the one click.
+ */
+function sourceDeviceCli(
+  gateway: FakeGateway,
+  others: readonly Record<string, unknown>[] = []
+): RemoteExec {
+  return async (_destination, argv) => {
+    const command = argv.join(' ');
+    if (command === 'openclaw devices list --json') {
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          pending: [...gateway.pending, ...others],
+          paired: [],
+        }),
+        stderr: '',
+      };
+    }
+    if (argv.length === 4 && command.startsWith('openclaw devices approve ')) {
+      return gateway.approveRequest(argv[3]!)
+        ? { code: 0, stdout: '{}', stderr: '' }
+        : { code: 1, stdout: '', stderr: 'unknown requestId' };
+    }
+    return { code: 127, stdout: '', stderr: 'openclaw: command not found' };
+  };
+}
+
+/** Another device's request, standing on the same source. */
+const OTHER_DEVICE_REQUEST = {
+  requestId: '9b2d6e10-0000-4000-8000-000000000001',
+  deviceId: 'a'.repeat(64),
+  publicKey: 'another-device-public-key',
+  scopes: ['operator.read', 'operator.write'],
+  role: 'operator',
+  roles: ['operator'],
+};
+
+function approveCalls(harness: ReturnType<typeof createHarness>): string[][] {
+  return harness.remoteExec.mock.calls
+    .map(([, argv]) => [...argv])
+    .filter(argv => argv[2] === 'approve');
+}
+
+describe('ConnectedGatewaySession — approving its own write request on the source', () => {
+  it('approves its own request and no other, then holds write authority', async () => {
+    const harness = createHarness();
+    harness.remoteExec.mockImplementation(
+      sourceDeviceCli(harness.gateway, [OTHER_DEVICE_REQUEST])
+    );
+    await harness.session.connect();
+
+    const result = await harness.session.approveOwnWriteRequest();
+
+    expect(result).toMatchObject({
+      outcome: 'granted',
+      authority: 'write',
+      approvalStep: 'approved',
+    });
+    expect(harness.session.authority).toBe('write');
+    expect(harness.store.authorities).toEqual([
+      { id: SOURCE_ID, authority: 'write' },
+    ]);
+    // Exactly one approval, of the request Exawatt's own ask left, over the
+    // configured login. The other device's request is still waiting.
+    expect(approveCalls(harness)).toEqual([
+      [
+        'openclaw',
+        'devices',
+        'approve',
+        '4f1c2a7e-0000-4000-8000-000000000001',
+      ],
+    ]);
+    expect(
+      harness.remoteExec.mock.calls.every(
+        ([destination]) =>
+          destination.kind === 'ssh-alias' && destination.alias === ALIAS
+      )
+    ).toBe(true);
+    // The approval consumed Exawatt's own request and nothing else.
+    expect(harness.gateway.pending).toEqual([]);
+    await harness.session.write('chat.send', { message: 'hello' });
+  });
+
+  it('approves nothing when the source lists no request of its own', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    // The source answers with only another device's request.
+    harness.remoteExec.mockImplementation(async (_destination, argv) =>
+      argv[2] === 'list'
+        ? {
+            code: 0,
+            stdout: JSON.stringify({
+              pending: [OTHER_DEVICE_REQUEST],
+              paired: [],
+            }),
+            stderr: '',
+          }
+        : { code: 0, stdout: '{}', stderr: '' }
+    );
+
+    const result = await harness.session.approveOwnWriteRequest();
+
+    expect(result).toMatchObject({
+      outcome: 'approval-required',
+      authority: 'read',
+      approvalStep: 'not-found',
+    });
+    expect(result.message).toMatch(/approved nothing/iu);
+    expect(approveCalls(harness)).toEqual([]);
+    expect(harness.session.authority).toBe('read');
+    expect(harness.session.phase).toBe('connected');
+  });
+
+  it('says it could not read the list rather than that nothing was pending', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    harness.remoteExec.mockResolvedValue({
+      code: 1,
+      stdout: '',
+      stderr: 'gateway closed',
+    });
+
+    const result = await harness.session.approveOwnWriteRequest();
+
+    expect(result.approvalStep).toBe('unreadable');
+    expect(result.message).toMatch(/could not read/iu);
+    expect(approveCalls(harness)).toEqual([]);
+  });
+
+  it('leaves its request standing, named, when the server refuses the approval', async () => {
+    const harness = createHarness();
+    await harness.session.connect();
+    const cli = sourceDeviceCli(harness.gateway);
+    harness.remoteExec.mockImplementation(async (destination, argv) =>
+      argv[2] === 'approve'
+        ? { code: 1, stdout: '', stderr: 'pairing scope required' }
+        : cli(destination, argv)
+    );
+
+    const result = await harness.session.approveOwnWriteRequest();
+
+    expect(result).toMatchObject({
+      outcome: 'approval-required',
+      authority: 'read',
+      approvalStep: 'approve-refused',
+      pendingRequestId: '4f1c2a7e-0000-4000-8000-000000000001',
+    });
+    expect(harness.gateway.pending).toHaveLength(1);
+    expect(harness.session.authority).toBe('read');
+    await expect(harness.session.read('health')).resolves.toEqual({ ok: true });
+  });
+
+  it('names its own request for the copy path without approving it', async () => {
+    const harness = createHarness();
+    harness.remoteExec.mockImplementation(
+      sourceDeviceCli(harness.gateway, [OTHER_DEVICE_REQUEST])
+    );
+    await harness.session.connect();
+    await harness.session.requestWriteAuthority();
+
+    const own = await harness.session.findOwnPendingRequest();
+
+    expect(own).toEqual({
+      kind: 'found',
+      requestId: '4f1c2a7e-0000-4000-8000-000000000001',
+    });
+    expect(approveCalls(harness)).toEqual([]);
+    expect(harness.gateway.pending).toHaveLength(1);
+  });
+
+  it('runs nothing on a source reached without an SSH login', async () => {
+    const harness = createHarness({ record: loopbackRecord() });
+    await harness.session.connect();
+    const handshakes = harness.gateway.handshakes.length;
+
+    const result = await harness.session.approveOwnWriteRequest();
+
+    expect(result.outcome).toBe('refused');
+    expect(result.message).toMatch(/over SSH/u);
+    expect(harness.remoteExec).not.toHaveBeenCalled();
+    expect(harness.gateway.handshakes).toHaveLength(handshakes);
+    expect(await harness.session.findOwnPendingRequest()).toEqual({
+      kind: 'unreadable',
+    });
+  });
+
+  it('asks the source nothing when write authority is already held', async () => {
+    const harness = writeGrantedHarness();
+    await harness.session.connect();
+    const handshakes = harness.gateway.handshakes.length;
+
+    const result = await harness.session.approveOwnWriteRequest();
+
+    expect(result.outcome).toBe('unchanged');
+    expect(harness.remoteExec).not.toHaveBeenCalled();
+    expect(harness.gateway.handshakes).toHaveLength(handshakes);
   });
 });
 

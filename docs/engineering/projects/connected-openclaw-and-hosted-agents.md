@@ -570,7 +570,8 @@ queue with the connected-fleet gate.
   "Connect N Agents"; skip the source step while OpenClaw is the only
   connectable adapter; land on the Project with the new coworker marked; a
   ⌘K row and a permanent Settings entry.
-- **P3 Send access as server setup.** One click runs `openclaw devices
+- **P3 Send access as server setup.** LANDED 2026-09-24 (log entry of that
+  date). One click runs `openclaw devices
   approve <id>` for Exawatt's OWN pending request over the source's SSH
   destination; the copy path shows the same exact command; Check again
   completes both. Feasibility checked 2026-09-24 against OpenClaw's own
@@ -578,9 +579,11 @@ queue with the connected-fleet gate.
   on main): every pending request carries `requestId`, `deviceId`, and
   `publicKey`, and `devices list --json` writes the pairing list unchanged, so
   Exawatt matches its own request by device id and public key and approves
-  only that one. Confirm the same shape on the operator's Gateway version
-  before shipping; if a Gateway's list does not identify the device, the
-  one-click path refuses rather than approving a guessed entry. Alias and
+  only that one. Confirmed 2026-09-24 on the operator's servers (OpenClaw
+  2026.7.1-2): the installed build constructs every pending request with
+  `requestId`, `deviceId`, and `publicKey`, and the CLI is on the
+  non-interactive SSH PATH. If a Gateway's list does not identify the device,
+  the one-click path refuses rather than approving a guessed entry. Alias and
   manual transports only; a shared-token source has no SSH identity to act
   with.
 - **P4 ⌘T.** Connected coworkers become launch setups ("Send to Scout"; the
@@ -1669,9 +1672,46 @@ switch, and never after.
 ### 2026-09-24 — direction accepted, send access decided
 
 The operator reviewed the `/hud-gallery/connect-flow` study and accepted the
-direction. He decided send access as a per-server setup step with two paths,
-one click or copy-and-run, which amends decision `0037` §4: Exawatt may run
-the approval of its own pending request through the operator's own SSH login,
-on an explicit gesture. It still holds no pairing or admin authority of its
-own. The study was revised to show that step, and H2.4 is split into packets
+direction. The operator decided send access as a per-server setup step with
+two paths, one click or copy-and-run, which amends decision `0037` §4:
+Exawatt may run the approval of its own pending request through the
+operator's own SSH login, on an explicit gesture. It still holds no pairing or
+admin authority of its own. The study was revised to show that step, and H2.4 is split into packets
 P1 to P5 above.
+
+### 2026-09-24 — send access in one click (H2.4 P3)
+
+A read-only coworker's pane now offers "Approve on <server>" beside "Show
+commands". The one click asks for write access exactly as before, which leaves
+a request standing; reads the server's own pairing list with `openclaw devices
+list --json`; takes the request whose device id (and public key) is Exawatt's;
+runs `openclaw devices approve <that id>` over the operator's own SSH login;
+and asks again, which reissues the device at the wider scope. The copy path
+asks, names the same request, and shows `ssh <server>` then `openclaw devices
+approve <id>` with a Copy button; Check again finishes it. A list that cannot
+be read, a request that cannot be found, or an approval the server refuses
+approves nothing, leaves the request standing, and says which one happened.
+
+What keeps it narrow: the matcher approves only a request carrying Exawatt's
+own device id, never one whose listed public key differs, never one asking for
+more than `operator.read` and `operator.write` or for a role other than
+operator, and never an id outside a letters, digits, dash, and underscore
+grammar before it reaches a remote shell. Each of those four checks has a test
+that fails when the check is removed. A source reached without an SSH login
+keeps the ask-and-wait path, and the diagnostics log records how far a one
+click got (`step`) and never the request id.
+
+Evidence: the gateway fake now keeps pending requests the way the live build
+does (a refused wider ask leaves one, a new ask supersedes it with a new id),
+and `ConnectedGatewayFixture` does the same for real-app runs. A throwaway
+real-app run through the preload, IPC, and a stand-in `ssh` connected two
+servers, each with another device's request waiting: the one click granted
+write in about 1.2 seconds and approved only Exawatt's request; the copy path
+showed the exact id, the by-hand approval plus Check again opened the
+composer, and both other devices' requests were still pending at the end.
+
+Cost to carry into P5: the one click is six SSH logins (credential read twice
+at two logins each, the list, the approval). Reusing the first credential read
+for the second ask would make it four; measure it in P5's eval before
+changing it.
+

@@ -342,9 +342,70 @@ describe('honest composer states', () => {
     expect(view.composer.headline).toBe(
       WRITE_AUTHORITY_COPY['not-requested'].headline
     );
-    expect(view.composer.action).toEqual({
+    expect(view.composer.action).toMatchObject({
       id: 'request-send-access',
       label: 'Request send access',
+    });
+  });
+
+  it('offers the one click on the server, and the commands beside it (H2.4 P3)', () => {
+    const view = describeRemoteAgent(
+      input({
+        authority: 'not-requested',
+        canRequestWriteAccess: true,
+        canApproveOnServer: true,
+        sourceName: 'north-box',
+      })
+    );
+    if (view.composer.kind !== 'withheld') throw new Error('unreachable');
+    // One approval covers the server, so the step is named for it.
+    expect(view.composer.action).toMatchObject({
+      id: 'approve-send-access',
+      label: 'Approve on north-box',
+    });
+    expect(view.composer.detail).toContain('every Agent on north-box');
+    // The copy path asks first, so there is a request for the commands to name.
+    expect(view.composer.secondaryAction).toMatchObject({
+      id: 'request-send-access',
+      label: 'Show commands',
+    });
+    expect(view.composer.commands).toBeUndefined();
+  });
+
+  it('offers no one click when the host cannot ask at all', () => {
+    const view = describeRemoteAgent(
+      input({ authority: 'not-requested', canApproveOnServer: true })
+    );
+    if (view.composer.kind !== 'withheld') throw new Error('unreachable');
+    expect(view.composer.action).toBe(null);
+    expect(view.composer.secondaryAction ?? null).toBe(null);
+  });
+
+  it('shows the exact commands for a standing request, with both ways to finish', () => {
+    const exact = [
+      'ssh north-box',
+      'openclaw devices approve 4f1c2a7e-9d3b-4c11-8f00-2b6a1c9e0d42',
+    ];
+    const view = describeRemoteAgent(
+      input({
+        authority: 'approval-pending',
+        canRequestWriteAccess: true,
+        canApproveOnServer: true,
+        approveCommands: exact,
+        sourceName: 'north-box',
+      })
+    );
+    if (view.composer.kind !== 'withheld') throw new Error('unreachable');
+    expect(view.composer.commands).toEqual(exact);
+    expect(view.composer.detail).toBe(
+      'Run these in Terminal, then check again.'
+    );
+    // Whoever chose the commands finishes with Check again; the one click
+    // stays beside it.
+    expect(view.composer.action?.label).toBe('Check again');
+    expect(view.composer.secondaryAction).toMatchObject({
+      id: 'approve-send-access',
+      label: 'Approve on north-box',
     });
   });
 

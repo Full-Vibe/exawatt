@@ -102,7 +102,10 @@ export function describeMapAgents(
       };
 }
 
-/** The outcome and the authority held afterwards; never the sentence. */
+/**
+ * The outcome, the authority held afterwards, and how far a one-click
+ * approval got; never the sentence and never the request id.
+ */
 export function describeAuthorityRequest(
   sourceId: string,
   result: AuthorityRequestResult
@@ -111,6 +114,7 @@ export function describeAuthorityRequest(
     sourceId: safeSourceId(sourceId),
     outcome: result.outcome,
     authority: result.authority,
+    ...(result.approvalStep === undefined ? {} : { step: result.approvalStep }),
   };
 }
 

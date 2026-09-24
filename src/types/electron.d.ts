@@ -1113,9 +1113,13 @@ export interface SourceCommandAuthorityView {
   authority: SourceAuthority;
   /**
    * A write request is standing, waiting for someone to approve the Exawatt
-   * device on the source itself. Exawatt cannot approve its own scope.
+   * device on the source itself.
    */
   awaitingApproval: boolean;
+  /** Exawatt can run the source's own approval over the SSH login. */
+  canApproveOnSource: boolean;
+  /** What to run by hand, in order, while a request is standing. */
+  approveCommands: readonly string[] | null;
 }
 
 /** What an authority request came back with. `approval-required` is an answer. */
@@ -1171,6 +1175,11 @@ export interface ElectronConnectedSourcesApi {
   commandAuthority: () => Promise<SourceCommandAuthorityView[]>;
   /** Asks the source to raise Exawatt from observation to conversation. */
   requestCommandAuthority: (id: string) => Promise<AuthorityRequestResult>;
+  /**
+   * Asks, then runs the source's own approval of Exawatt's own request over
+   * the SSH login, then asks again (ENG-033 H2.4 P3).
+   */
+  approveCommandAuthority: (id: string) => Promise<AuthorityRequestResult>;
   /** Hands write access back; observation continues. */
   relinquishCommandAuthority: (id: string) => Promise<AuthorityRequestResult>;
   /** One coworker's primary conversation, bounded. A read, not a command. */

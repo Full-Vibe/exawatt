@@ -367,6 +367,114 @@ describe('the composer', () => {
     );
   });
 
+  it('approves on the server in one click, and says where a stop short left it (H2.4 P3)', async () => {
+    let finish: (answer: {
+      outcome: 'approval-required';
+      message: string;
+    }) => void = () => undefined;
+    const approve = vi.fn(
+      () =>
+        new Promise<{ outcome: 'approval-required'; message: string }>(
+          resolve => {
+            finish = resolve;
+          }
+        )
+    );
+    const request = vi.fn();
+    const { container } = await renderSurface({
+      authority: 'not-requested',
+      onRequestWriteAccess: request,
+      onApproveWriteAccess: approve,
+      sendAccess: { canApproveOnServer: true, commands: null },
+    });
+    const primary = container.querySelector(
+      '[data-composer-action="approve-send-access"]'
+    ) as HTMLButtonElement;
+    const secondary = container.querySelector(
+      '[data-composer-action-rank="secondary"]'
+    ) as HTMLButtonElement;
+    expect(primary).toHaveAttribute('data-composer-action-rank', 'primary');
+    expect(secondary).toHaveTextContent('Show commands');
+
+    fireEvent.click(primary);
+    await waitFor(() => expect(primary).toHaveTextContent('Approving'));
+    // One action at a time: the copy path cannot start under the one click.
+    expect(secondary).toBeDisabled();
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finish({
+        outcome: 'approval-required',
+        message: 'The server did not approve the request.',
+      });
+    });
+    expect(container.querySelector('[data-access-note]')).toHaveTextContent(
+      'The server did not approve the request.'
+    );
+  });
+
+  it('asks without approving when the operator will run the commands', async () => {
+    const approve = vi.fn(async () => null);
+    const request = vi.fn(async () => ({
+      outcome: 'approval-required' as const,
+      message: 'Approve the device on the source.',
+    }));
+    const { container } = await renderSurface({
+      authority: 'not-requested',
+      onRequestWriteAccess: request,
+      onApproveWriteAccess: approve,
+      sendAccess: { canApproveOnServer: true, commands: null },
+    });
+    fireEvent.click(screen.getByText('Show commands'));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    expect(approve).not.toHaveBeenCalled();
+    // The pending state that follows carries the commands; asking said nothing.
+    expect(container.querySelector('[data-access-note]')).toBeNull();
+  });
+
+  it('offers no one click on a server Exawatt cannot approve on', async () => {
+    const { container } = await renderSurface({
+      authority: 'not-requested',
+      onRequestWriteAccess: vi.fn(),
+      onApproveWriteAccess: vi.fn(async () => null),
+      sendAccess: { canApproveOnServer: false, commands: null },
+    });
+    expect(
+      container.querySelector('[data-composer-action="approve-send-access"]')
+    ).toBeNull();
+    expect(screen.getByText('Request send access')).toBeInTheDocument();
+  });
+
+  it('shows new commands as not yet copied', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const { rerender, resolved } = await renderSurface({
+      authority: 'approval-pending',
+      onRequestWriteAccess: vi.fn(),
+      sendAccess: { canApproveOnServer: true, commands: null },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy commands' }));
+    await waitFor(() => expect(screen.getByText('Copied')).toBeInTheDocument());
+
+    rerender(
+      <RemoteAgentSurface
+        {...resolved}
+        sendAccess={{
+          canApproveOnServer: true,
+          commands: ['ssh north-box', 'openclaw devices approve abc'],
+        }}
+      />
+    );
+    expect(screen.queryByText('Copied')).not.toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(
+      APPROVE_SEND_ACCESS_COMMANDS.join('\n')
+    );
+  });
+
   it('is absent, and offers Reconnect, when access has not been read', async () => {
     const reconnect = vi.fn();
     const { container } = await renderSurface({

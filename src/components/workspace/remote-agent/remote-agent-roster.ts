@@ -27,9 +27,11 @@ import type {
   RemoteAgentView,
   SourceCommandAuthorityView,
 } from '@/types/electron';
-import type {
-  RemoteConnectionView,
-  WriteAuthority,
+import {
+  NO_SEND_ACCESS_SETUP,
+  type RemoteConnectionView,
+  type SendAccessSetup,
+  type WriteAuthority,
 } from './remote-agent-model';
 
 /**
@@ -61,6 +63,8 @@ export interface RemoteCoworkerTile {
   connection: RemoteConnectionView;
   /** What the source says this device may do. Read, never assumed. */
   authority: WriteAuthority;
+  /** How send access is finished on this coworker's server. */
+  sendAccess: SendAccessSetup;
 }
 
 /** Everything the workspace has read about connected sources right now. */
@@ -101,6 +105,19 @@ export function writeAuthorityFor(
   return row.awaitingApproval ? 'approval-pending' : 'not-requested';
 }
 
+/** How send access is finished on one server, as the main process read it. */
+function sendAccessSetupFor(
+  sourceId: string,
+  authorities: readonly SourceCommandAuthorityView[]
+): SendAccessSetup {
+  const row = authorities.find(entry => entry.sourceId === sourceId);
+  if (!row) return NO_SEND_ACCESS_SETUP;
+  return {
+    canApproveOnServer: row.canApproveOnSource,
+    commands: row.approveCommands,
+  };
+}
+
 function connectionViewOf(agent: RemoteAgentView): RemoteConnectionView {
   return {
     state: agent.connection.state as SourceConnectionState,
@@ -130,6 +147,7 @@ export function projectCoworkers(roster: RemoteRoster): RemoteCoworkerTile[] {
       workState: workStateReading(agent.workState),
       connection: connectionViewOf(agent),
       authority: writeAuthorityFor(agent.source.id, roster.authorities),
+      sendAccess: sendAccessSetupFor(agent.source.id, roster.authorities),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

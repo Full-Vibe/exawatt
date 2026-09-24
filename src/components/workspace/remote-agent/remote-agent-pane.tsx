@@ -53,6 +53,10 @@ export interface RemoteAgentPaneProps {
   onRequestWriteAccess?: (
     sourceId: string
   ) => void | Promise<WriteAccessAnswer | null>;
+  /** Runs the server's own approval of Exawatt's own request, then asks. */
+  onApproveWriteAccess?: (
+    sourceId: string
+  ) => Promise<WriteAccessAnswer | null>;
   onReconnect?: (sourceId: string) => void;
 }
 
@@ -63,6 +67,7 @@ export function RemoteAgentPane({
   onActivate,
   bridge,
   onRequestWriteAccess,
+  onApproveWriteAccess,
   onReconnect,
 }: RemoteAgentPaneProps) {
   return (
@@ -79,6 +84,7 @@ export function RemoteAgentPane({
       <div className="absolute inset-0 min-h-0">
         <RemoteAgentPaneBody
           bridge={bridge}
+          onApproveWriteAccess={onApproveWriteAccess}
           onReconnect={onReconnect}
           onRequestWriteAccess={onRequestWriteAccess}
           roster={roster}
@@ -94,6 +100,7 @@ function RemoteAgentPaneBody({
   roster,
   bridge,
   onRequestWriteAccess,
+  onApproveWriteAccess,
   onReconnect,
 }: Omit<RemoteAgentPaneProps, 'layout' | 'onActivate'>) {
   const resolution = resolveRemoteAgentTab(tab, roster);
@@ -120,11 +127,17 @@ function RemoteAgentPaneBody({
           onReconnect={
             onReconnect ? () => onReconnect(agent.sourceId) : undefined
           }
+          onApproveWriteAccess={
+            onApproveWriteAccess
+              ? () => onApproveWriteAccess(agent.sourceId)
+              : undefined
+          }
           onRequestWriteAccess={
             onRequestWriteAccess
               ? () => onRequestWriteAccess(agent.sourceId)
               : undefined
           }
+          sendAccess={agent.sendAccess}
         />
       </div>
     );

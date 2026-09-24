@@ -1,4 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   RemoteAgentView,
@@ -63,6 +69,8 @@ const WRITE: SourceCommandAuthorityView = {
   displayName: 'Workshop box',
   authority: 'write',
   awaitingApproval: false,
+  canApproveOnSource: true,
+  approveCommands: null,
 };
 
 const ROSTER: RemoteRoster = {
@@ -108,12 +116,7 @@ describe('a coworker pane on the workspace stage', () => {
 
     // ⌘2: another tab takes the stage, this pane goes hidden.
     view.rerender(
-      <RemoteAgentPane
-        bridge={api}
-        layout="hidden"
-        roster={ROSTER}
-        tab={TAB}
-      />
+      <RemoteAgentPane bridge={api} layout="hidden" roster={ROSTER} tab={TAB} />
     );
     await act(async () => {});
     const hidden = document.querySelector('[data-pane="hidden"]');

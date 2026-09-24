@@ -169,6 +169,23 @@ export interface RemoteAgentIdentity {
   name: string;
 }
 
+/**
+ * How the operator finishes send access for one server (ENG-033 H2.4 P3),
+ * as the main process reported it. Per server, not per Agent: one approval
+ * covers every Agent there.
+ */
+export interface SendAccessSetup {
+  /** Exawatt can run the server's own approval over the SSH login. */
+  canApproveOnServer: boolean;
+  /** What to run by hand while a request is standing, in order. */
+  commands: readonly string[] | null;
+}
+
+export const NO_SEND_ACCESS_SETUP: SendAccessSetup = {
+  canApproveOnServer: false,
+  commands: null,
+};
+
 export interface RemoteAgentInput {
   agent: RemoteAgentIdentity;
   connection: RemoteConnectionView;
@@ -182,6 +199,17 @@ export interface RemoteAgentInput {
   viewing?: { contextId: string; title: string } | null;
   /** True when the host can carry a send-access request to the source. */
   canRequestWriteAccess?: boolean;
+  /**
+   * True when the host can run the server's own approval of Exawatt's own
+   * request over the operator's SSH login (ENG-033 H2.4 P3).
+   */
+  canApproveOnServer?: boolean;
+  /**
+   * What the operator runs by hand while a request is standing, in order,
+   * exactly as the main process read them from the source. Null falls back
+   * to the generic list-then-approve pair.
+   */
+  approveCommands?: readonly string[] | null;
   /**
    * The server this Agent runs on, as the operator named it. Send access is
    * granted per server, so the approval step names the server, not the Agent.
@@ -205,8 +233,14 @@ export interface ComposerTarget {
 }
 
 export interface ComposerAction {
-  id: 'request-send-access' | 'reconnect' | 'read-again';
+  id:
+    | 'request-send-access'
+    | 'approve-send-access'
+    | 'reconnect'
+    | 'read-again';
   label: string;
+  /** What the control says while its request is in flight. */
+  busyLabel?: string;
 }
 
 export type ComposerState =
@@ -219,6 +253,8 @@ export type ComposerState =
       headline: string;
       detail: string | null;
       action: ComposerAction | null;
+      /** The other way to finish, beside the primary action. */
+      secondaryAction?: ComposerAction | null;
       /**
        * Commands the operator runs on the server to complete this state, in
        * order. Present only where finishing happens off Exawatt (BUG-156).
@@ -358,7 +394,30 @@ export const SEND_REFUSAL_COPY: Readonly<
 const REQUEST_ACCESS_ACTION: ComposerAction = {
   id: 'request-send-access',
   label: 'Request send access',
+  busyLabel: 'Requesting',
 };
+
+/**
+ * The copy path (ENG-033 H2.4 P3): ask, so a request is standing, and show
+ * the exact commands that approve it. The block's own Copy button copies.
+ */
+const SHOW_COMMANDS_ACTION: ComposerAction = {
+  id: 'request-send-access',
+  label: 'Show commands',
+  busyLabel: 'Requesting',
+};
+
+/**
+ * The one click (ENG-033 H2.4 P3; decision `0037`, amended 2026-09-24).
+ * Named for the server because one approval covers every Agent on it.
+ */
+function approveOnServerAction(server: string | undefined): ComposerAction {
+  return {
+    id: 'approve-send-access',
+    label: server ? `Approve on ${server}` : 'Approve on the server',
+    busyLabel: 'Approving',
+  };
+}
 
 /**
  * Asking again is how a pending request completes (BUG-156). The runtime holds
@@ -369,6 +428,7 @@ const REQUEST_ACCESS_ACTION: ComposerAction = {
 const CHECK_ACCESS_ACTION: ComposerAction = {
   id: 'request-send-access',
   label: 'Check again',
+  busyLabel: 'Checking',
 };
 
 /**
@@ -707,18 +767,39 @@ function composerFor(
     } else if (input.authority === 'unobserved' && input.canReconnect) {
       action = RECONNECT_ACTION;
     }
+    const server = input.sourceName?.trim() || undefined;
+    const oneClick =
+      Boolean(input.canApproveOnServer) && Boolean(input.canRequestWriteAccess);
     if (input.authority === 'approval-pending') {
-      const server = input.sourceName?.trim();
+      const exact = input.approveCommands ?? null;
+      return {
+        kind: 'withheld',
+        reason,
+        target,
+        headline: copy.headline,
+        // Exact commands start with the login, so they run in a terminal
+        // here; the generic pair runs on the server itself.
+        detail: exact
+          ? 'Run these in Terminal, then check again.'
+          : server
+            ? `Approve Exawatt’s request on ${server}, then check again.`
+            : copy.detail,
+        action,
+        secondaryAction: oneClick ? approveOnServerAction(server) : null,
+        commands: exact ?? APPROVE_SEND_ACCESS_COMMANDS,
+      };
+    }
+    if (input.authority === 'not-requested' && oneClick) {
       return {
         kind: 'withheld',
         reason,
         target,
         headline: copy.headline,
         detail: server
-          ? `Approve Exawatt’s request on ${server}, then check again.`
-          : copy.detail,
-        action,
-        commands: APPROVE_SEND_ACCESS_COMMANDS,
+          ? `Send access covers every Agent on ${server}.`
+          : 'Send access covers every Agent on this server.',
+        action: approveOnServerAction(server),
+        secondaryAction: SHOW_COMMANDS_ACTION,
       };
     }
     return {

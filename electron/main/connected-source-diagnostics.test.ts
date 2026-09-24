@@ -146,6 +146,23 @@ describe('connected-source diagnostics carry facts, never infrastructure', () =>
     expect(leaks(fields)).toEqual([]);
   });
 
+  it('records how far a one-click approval got, never the request id', () => {
+    const fields = describeAuthorityRequest(sourceId, {
+      outcome: 'approval-required',
+      authority: 'read',
+      message: SENTENCE,
+      pendingRequestId: '4f1c2a7e-9d3b-4c11-8f00-2b6a1c9e0d42',
+      approvalStep: 'approve-refused',
+    });
+    expect(fields).toEqual({
+      sourceId,
+      outcome: 'approval-required',
+      authority: 'read',
+      step: 'approve-refused',
+    });
+    expect(JSON.stringify(fields)).not.toContain('4f1c2a7e');
+  });
+
   it('records a thrown handler by class name alone', () => {
     const plain = describeThrown(new Error(SENTENCE));
     expect(plain).toEqual({ outcome: 'threw', errorName: 'Error' });

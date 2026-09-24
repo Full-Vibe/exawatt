@@ -403,6 +403,24 @@ export function registerConnectedSourcesIPC(): void {
     }
   );
 
+  /**
+   * Send access in one click (ENG-033 H2.4 P3): Exawatt runs the source's own
+   * approval of its own pending request over the operator's SSH login, then
+   * asks again. The log records how far it got, never the request id.
+   */
+  handleTrusted(
+    'connected-sources:approve-command-authority',
+    async (_event, id: unknown) => {
+      const sourceId = assertString(id, 'source id');
+      return recorded(
+        'connected-sources.authority-approve',
+        { sourceId: safeSourceId(sourceId) },
+        () => sourceRuntime().approveCommandAuthority(sourceId),
+        result => describeAuthorityRequest(sourceId, result)
+      );
+    }
+  );
+
   /** Hand write access back and keep observing. */
   handleTrusted(
     'connected-sources:relinquish-command-authority',

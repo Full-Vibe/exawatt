@@ -46,7 +46,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-030 | Open-source readiness                            | active-build | Public repo is live; repair projection/history parity, exact-tree CI/security, and public Release provenance before the friend cohort. Contribution intake is trigger-deferred. |
 | ENG-031 | Website — vision communication and guides        | active-build | SHAPED 2026-08-14 — the overhaul IS the ENG-030 launch surface; altitude-ladder spine, band system, live board hero.                                                                   |
 | ENG-032 | Theming and visual identity                      | done         | T0–T5.3 LANDED — three presets share one app-global Manual/Auto contract with browser-paint and public-typography continuity gates.                                                    |
-| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction set 2026-09-23; managed placement and clone/move remain design work. |
+| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. |
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
@@ -1847,6 +1847,13 @@ Milestones:
   user copy and run it themselves". One approval covers every Agent on the
   server. Execution is split into packets P1 to P5 in the project doc's H2.4
   section; P3 amends decision `0037` §4 (amendment chain).
+  P3 LANDED 2026-09-24: the coworker pane offers "Approve on <server>" and
+  "Show commands"; the one click approves only Exawatt's own pending request,
+  and the copy path shows the exact `ssh` and `openclaw devices approve <id>`
+  lines. Verified in the real app against the Gateway fixture and against the
+  pending-request shape of OpenClaw 2026.7.1-2 on the operator's servers.
+  Next: P2 (one-step Connect), then P1 once the workspace-honesty registry
+  work lands, then P4 with D54, with P5's eval gating P2 to P4.
 - H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
   authorization pass for provisioning, credential custody, deletion, billing,
   and control-plane ownership before implementation begins.

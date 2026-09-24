@@ -32,7 +32,9 @@ export interface RemoteCoworkers {
   roster: RemoteRoster;
   coworkers: RemoteCoworkerTile[];
   /** Ask a source to raise this device from observation to conversation. */
-  requestWriteAccess: (sourceId: string) => void;
+  requestWriteAccess: (sourceId: string) => Promise<WriteAccessAnswer | null>;
+  /** Approve Exawatt's own request on the server in one click, then ask. */
+  approveWriteAccess: (sourceId: string) => Promise<WriteAccessAnswer | null>;
   /** Repair observation. Never touches the remote Agent's work. */
   reconnect: (sourceId: string) => void;
   /** Re-read and return the exact roster snapshot committed to React. */
@@ -112,6 +114,21 @@ export function useRemoteCoworkers(enabled = true): RemoteCoworkers {
     [read]
   );
 
+  const approveWriteAccess = useCallback(
+    async (sourceId: string): Promise<WriteAccessAnswer | null> => {
+      const api = connectedSourcesApi();
+      if (!api?.approveCommandAuthority) return null;
+      try {
+        const answer = await api.approveCommandAuthority(sourceId);
+        await read();
+        return { outcome: answer.outcome, message: answer.message };
+      } catch {
+        return null;
+      }
+    },
+    [read]
+  );
+
   const reconnect = useCallback(
     (sourceId: string) => {
       const api = connectedSourcesApi();
@@ -130,6 +147,7 @@ export function useRemoteCoworkers(enabled = true): RemoteCoworkers {
     roster,
     coworkers,
     requestWriteAccess,
+    approveWriteAccess,
     reconnect,
     refresh: read,
   };

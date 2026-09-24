@@ -53,6 +53,7 @@ import {
   EMPTY_OUTBOX,
   EMPTY_WORK_STACK,
   LAST_KNOWN_BADGE,
+  NO_SEND_ACCESS_SETUP,
   SEND_REFUSAL_COPY,
   applyConversationUpdate,
   describeRemoteAgent,
@@ -61,12 +62,14 @@ import {
   normalizeSendRefusal,
   outboxReducer,
   sendRefusalAction,
+  type ComposerAction,
   type ConversationLoad,
   type ConversationTurn,
   type ConversationUpdate,
   type OutboundMessage,
   type RemoteConnectionView,
   type RemoteWorkStack,
+  type SendAccessSetup,
   type WorkSection,
   type WriteAuthority,
 } from './remote-agent-model';
@@ -506,6 +509,14 @@ export interface RemoteAgentSurfaceProps {
    * instead of looking as if the button did nothing (BUG-156).
    */
   onRequestWriteAccess?: () => void | Promise<WriteAccessAnswer | null>;
+  /**
+   * Runs the server's own approval of Exawatt's own request over the SSH
+   * login, then asks again (ENG-033 H2.4 P3). Offered only where `sendAccess`
+   * says the server can take it.
+   */
+  onApproveWriteAccess?: () => Promise<WriteAccessAnswer | null>;
+  /** How send access is finished on this Agent's server. */
+  sendAccess?: SendAccessSetup;
   /** Repairs observation. Never touches the remote Agent's work. */
   onReconnect?: () => void;
 }
@@ -524,6 +535,8 @@ export function RemoteAgentSurface({
   viewing = null,
   bridge,
   onRequestWriteAccess,
+  onApproveWriteAccess,
+  sendAccess = NO_SEND_ACCESS_SETUP,
   onReconnect,
 }: RemoteAgentSurfaceProps) {
   const resolvedBridge = useMemo(
@@ -542,10 +555,13 @@ export function RemoteAgentSurface({
   > | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const composerId = useId();
-  /** A send-access check in flight, and what the last one found. */
-  const [checkingAccess, setCheckingAccess] = useState(false);
+  /** The send-access action in flight, and what the last one found. */
+  const [accessBusy, setAccessBusy] = useState<ComposerAction['id'] | null>(
+    null
+  );
   const [accessNote, setAccessNote] = useState<string | null>(null);
-  const [copiedCommands, setCopiedCommands] = useState(false);
+  /** The commands last copied. New commands on screen read as not copied. */
+  const [copiedCommands, setCopiedCommands] = useState<string | null>(null);
   const commandsRef = useRef<HTMLPreElement>(null);
   /** The end of the transcript, scrolled to when a conversation opens. */
   const endRef = useRef<HTMLLIElement>(null);
@@ -683,6 +699,9 @@ export function RemoteAgentSurface({
         work,
         viewing,
         canRequestWriteAccess: Boolean(onRequestWriteAccess),
+        canApproveOnServer:
+          Boolean(onApproveWriteAccess) && sendAccess.canApproveOnServer,
+        approveCommands: sendAccess.commands,
         canReconnect: Boolean(onReconnect),
         sourceName: agent.sourceName,
       }),
@@ -693,8 +712,10 @@ export function RemoteAgentSurface({
       authority,
       connection,
       load,
+      onApproveWriteAccess,
       onReconnect,
       onRequestWriteAccess,
+      sendAccess,
       viewing,
       work,
     ]
@@ -795,24 +816,35 @@ export function RemoteAgentSurface({
   }, [openedContextId]);
 
   /**
-   * Ask the source for send access, or ask again once the server approved.
-   * A check that finds the request still waiting says so; a pane that stayed
-   * silent read as a button that did nothing.
+   * Ask the source for send access, ask again once the server approved, or
+   * approve on the server in one click. A check that finds the request still
+   * waiting says so, and a one click that stops short says where; a pane that
+   * stayed silent read as a button that did nothing.
    */
-  const checkWriteAccess = useCallback(
-    async (reason: string) => {
-      if (!onRequestWriteAccess) return;
+  const runAccessAction = useCallback(
+    async (action: ComposerAction, reason: string) => {
+      const approving = action.id === 'approve-send-access';
+      const run = approving ? onApproveWriteAccess : onRequestWriteAccess;
+      if (!run) return;
       const wasPending = reason === 'write-access-awaiting-approval';
-      setCheckingAccess(true);
+      setAccessBusy(action.id);
       let answer: WriteAccessAnswer | null = null;
       try {
-        answer = (await onRequestWriteAccess()) ?? null;
+        answer = (await run()) ?? null;
       } catch {
         answer = null;
       } finally {
-        setCheckingAccess(false);
+        setAccessBusy(null);
       }
-      if (!wasPending || answer === null) {
+      if (answer === null || answer.outcome === 'granted') {
+        setAccessNote(null);
+        return;
+      }
+      if (approving) {
+        setAccessNote(answer.outcome === 'unchanged' ? null : answer.message);
+        return;
+      }
+      if (!wasPending) {
         setAccessNote(null);
         return;
       }
@@ -828,7 +860,7 @@ export function RemoteAgentSurface({
             : null
       );
     },
-    [onRequestWriteAccess]
+    [onApproveWriteAccess, onRequestWriteAccess]
   );
 
   const { frontDoor, composer, freshness, sections, subordinateOpen } =
@@ -1113,40 +1145,61 @@ export function RemoteAgentSurface({
                   try {
                     void navigator.clipboard
                       .writeText(text)
-                      .then(() => setCopiedCommands(true))
+                      .then(() => setCopiedCommands(text))
                       .catch(select);
                   } catch {
                     select();
                   }
                 }}
               >
-                {copiedCommands ? <Check size={12} /> : <Copy size={12} />}
-                {copiedCommands ? 'Copied' : 'Copy'}
+                {copiedCommands === composer.commands.join('\n') ? (
+                  <Check size={12} />
+                ) : (
+                  <Copy size={12} />
+                )}
+                {copiedCommands === composer.commands.join('\n')
+                  ? 'Copied'
+                  : 'Copy'}
               </QuietButton>
             </div>
           ) : null}
-          {composer.action ? (
-            <QuietButton
-              data-composer-action={composer.action.id}
-              disabled={
-                composer.action.id === 'request-send-access' && checkingAccess
-              }
-              emphasis="standard"
-              onClick={
-                composer.action.id === 'request-send-access'
-                  ? () => void checkWriteAccess(composer.reason)
-                  : composer.action.id === 'reconnect'
-                    ? onReconnect
-                    : () => void readConversation()
-              }
-            >
-              {composer.action.id === 'request-send-access' && checkingAccess
-                ? 'Checking'
-                : composer.action.label}
-            </QuietButton>
+          {composer.action || composer.secondaryAction ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {[composer.action, composer.secondaryAction].map(
+                (action, index) => {
+                  if (!action) return null;
+                  const access =
+                    action.id === 'request-send-access' ||
+                    action.id === 'approve-send-access';
+                  return (
+                    <QuietButton
+                      data-composer-action={action.id}
+                      data-composer-action-rank={
+                        index === 0 ? 'primary' : 'secondary'
+                      }
+                      disabled={access && accessBusy !== null}
+                      emphasis={index === 0 ? 'standard' : undefined}
+                      key={`${action.id}:${action.label}`}
+                      onClick={
+                        access
+                          ? () => void runAccessAction(action, composer.reason)
+                          : action.id === 'reconnect'
+                            ? onReconnect
+                            : () => void readConversation()
+                      }
+                    >
+                      {accessBusy !== null && access && accessBusy === action.id
+                        ? (action.busyLabel ?? action.label)
+                        : action.label}
+                    </QuietButton>
+                  );
+                }
+              )}
+            </div>
           ) : null}
           {accessNote &&
-          composer.reason === 'write-access-awaiting-approval' ? (
+          (composer.reason === 'write-access-awaiting-approval' ||
+            composer.reason === 'write-access-not-requested') ? (
             <p
               className="text-chrome-meta"
               data-access-note

@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld('electron', {
     /** Asks the source to raise Exawatt from observation to conversation. */
     requestCommandAuthority: (id: string) =>
       ipcRenderer.invoke('connected-sources:request-command-authority', id),
+    approveCommandAuthority: (id: string) =>
+      ipcRenderer.invoke('connected-sources:approve-command-authority', id),
     /** Hands write access back; observation continues. */
     relinquishCommandAuthority: (id: string) =>
       ipcRenderer.invoke('connected-sources:relinquish-command-authority', id),

@@ -148,6 +148,18 @@ export const AUTHORITY_REQUEST_OUTCOMES = [
 export type AuthorityRequestOutcome =
   (typeof AUTHORITY_REQUEST_OUTCOMES)[number];
 
+/**
+ * How far a one-click approval got (ENG-033 H2.4 P3): asked the source, found
+ * Exawatt's own request or could not, and ran the source's approval or was
+ * refused it. Diagnostic evidence, never operator copy.
+ */
+type OwnApprovalStep =
+  | 'asked'
+  | 'not-found'
+  | 'unreadable'
+  | 'approve-refused'
+  | 'approved';
+
 export interface AuthorityRequestResult {
   outcome: AuthorityRequestOutcome;
   /**
@@ -158,4 +170,11 @@ export interface AuthorityRequestResult {
   authority: SourceAuthority;
   /** One operator-facing sentence: what happened, and what to do about it. */
   message: string;
+  /**
+   * Exawatt's own standing request on the source, when the source's pairing
+   * list named it. Present only beside `approval-required`.
+   */
+  pendingRequestId?: string;
+  /** How far a one-click approval got, when this answers one. */
+  approvalStep?: OwnApprovalStep;
 }

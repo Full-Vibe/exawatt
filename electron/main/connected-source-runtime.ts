@@ -39,6 +39,7 @@ import {
   type ConversationTurnView,
 } from './connected-conversation';
 import { SCOPES_FOR_AUTHORITY } from './connected-gateway-authority';
+import { approveCommandsFor, sshDestinationOf } from './source-device-approval';
 import type { AuthorityRequestResult } from './connected-gateway-authority';
 import {
   evidenceBasisForAdapter,
@@ -284,9 +285,21 @@ export interface SourceCommandAuthorityView {
   authority: SourceAuthority;
   /**
    * A write request is standing, waiting for someone to approve the Exawatt
-   * device on the source itself. Exawatt cannot approve its own scope.
+   * device on the source itself.
    */
   awaitingApproval: boolean;
+  /**
+   * Exawatt can run the source's own approval of its own request over the
+   * operator's SSH login (ENG-033 H2.4 P3). False for a source reached
+   * without one, which keeps the ask-and-wait path.
+   */
+  canApproveOnSource: boolean;
+  /**
+   * What the operator runs by hand to approve the standing request, in order,
+   * from this machine. Names the exact request when the source's pairing list
+   * did; null when no request is standing.
+   */
+  approveCommands: readonly string[] | null;
 }
 
 export type ConnectSourceResult =
@@ -490,6 +503,8 @@ export type ConnectedSourceSession = Pick<
   | 'read'
   | 'write'
   | 'requestWriteAuthority'
+  | 'approveOwnWriteRequest'
+  | 'findOwnPendingRequest'
   | 'relinquishWriteAuthority'
   | 'status'
   | 'disconnect'
@@ -581,11 +596,12 @@ export class ConnectedSourceRuntime {
   >();
   /**
    * Sources whose last authority request came back "a person must approve
-   * this on the server". In memory by design: it records a request Exawatt
+   * this on the server", with Exawatt's own request id when the source's
+   * pairing list named it. In memory by design: it records a request Exawatt
    * made, not something the source granted, and the source's own record stays
    * the only place granted authority is read from.
    */
-  private readonly awaitingApproval = new Set<string>();
+  private readonly awaitingApproval = new Map<string, string | null>();
   /** Process-local update order. Never persisted, never a transport sequence. */
   private updateOrdinal = 0;
   private resumeStarted = false;
@@ -722,6 +738,13 @@ export class ConnectedSourceRuntime {
       displayName: record.displayName,
       authority: record.grantedAuthority,
       awaitingApproval: this.awaitingApproval.has(record.id),
+      canApproveOnSource: sshDestinationOf(record.transport) !== null,
+      approveCommands: this.awaitingApproval.has(record.id)
+        ? approveCommandsFor(
+            record.transport,
+            this.awaitingApproval.get(record.id) ?? null
+          )
+        : null,
     }));
   }
 
@@ -937,8 +960,56 @@ export class ConnectedSourceRuntime {
     }
     const result = await entry.session.requestWriteAuthority();
     if (result.outcome === 'approval-required') {
-      this.awaitingApproval.add(sourceId);
+      // Name the request the operator will approve, so the commands on screen
+      // are exact. A list that cannot be read costs the exactness, not the
+      // answer: the commands then start by listing.
+      const own = await entry.session.findOwnPendingRequest();
+      this.awaitingApproval.set(
+        sourceId,
+        own.kind === 'found' ? own.requestId : null
+      );
     } else {
+      this.awaitingApproval.delete(sourceId);
+    }
+    entry.record = this.deps.store.get(sourceId) ?? entry.record;
+    this.emit(entry);
+    return result;
+  }
+
+  /**
+   * Send access in one click (ENG-033 H2.4 P3): ask, then run the source's
+   * own approval of Exawatt's own request over the operator's SSH login, then
+   * ask again. Any stop short of the grant leaves the request standing and
+   * named where the source named it, so the copy path finishes it.
+   */
+  async approveCommandAuthority(
+    sourceId: string
+  ): Promise<AuthorityRequestResult> {
+    const record = this.deps.store.get(sourceId);
+    if (!record) {
+      return {
+        outcome: 'refused',
+        authority: 'read',
+        message: 'That source is no longer configured.',
+      };
+    }
+    const entry = this.sessions.get(sourceId);
+    if (!entry) {
+      return {
+        outcome: 'refused',
+        authority: record.grantedAuthority,
+        message: `Exawatt is not observing ${record.displayName} right now, so there is nothing to approve.`,
+      };
+    }
+    const result = await entry.session.approveOwnWriteRequest();
+    if (result.outcome === 'approval-required') {
+      this.awaitingApproval.set(sourceId, result.pendingRequestId ?? null);
+    } else if (
+      result.authority === 'write' ||
+      result.approvalStep !== undefined
+    ) {
+      // Granted, or the source itself answered the ask. A refusal before
+      // anything was asked leaves a standing request exactly as it was.
       this.awaitingApproval.delete(sourceId);
     }
     entry.record = this.deps.store.get(sourceId) ?? entry.record;

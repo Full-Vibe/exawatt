@@ -29,6 +29,7 @@ import {
   type SendToAgentOptions,
 } from './connected-source-runtime';
 import type { AuthorityRequestResult } from './connected-gateway-authority';
+import type { OwnPendingRequest } from './source-device-approval';
 import type {
   ConnectedGatewayPhase,
   ObservedGatewayFacts,
@@ -243,6 +244,10 @@ interface SessionScript {
   sendError?: Error;
   /** What the source says when asked to raise Exawatt's authority. */
   authorityResult?: AuthorityRequestResult;
+  /** What the source's pairing list names as Exawatt's own request. */
+  ownPendingRequest?: OwnPendingRequest;
+  /** How a one-click approval ends. */
+  approvalResult?: AuthorityRequestResult;
   /** The version the source reports as part of its installation identity. */
   version?: string;
   /** Scheduled jobs the source reported on the last discovery. */
@@ -384,6 +389,21 @@ class FakeSession implements ConnectedSourceSession {
         outcome: 'granted',
         authority: 'write',
         message: 'This source granted Exawatt write authority.',
+      }
+  );
+
+  findOwnPendingRequest = vi.fn(
+    async (): Promise<OwnPendingRequest> =>
+      this.script.ownPendingRequest ?? { kind: 'unreadable' }
+  );
+
+  approveOwnWriteRequest = vi.fn(
+    async (): Promise<AuthorityRequestResult> =>
+      this.script.approvalResult ?? {
+        outcome: 'granted',
+        authority: 'write',
+        message: 'This source granted Exawatt write authority.',
+        approvalStep: 'approved',
       }
   );
 
@@ -2075,6 +2095,14 @@ interface TalkFixture {
 }
 
 /** A connected source, one mapped coworker, and a place for its updates. */
+const OWN_REQUEST_ID = '4f1c2a7e-9d3b-4c11-8f00-2b6a1c9e0d42';
+
+const APPROVAL_REQUIRED: AuthorityRequestResult = {
+  outcome: 'approval-required',
+  authority: 'read',
+  message: 'This source needs its own operator to approve the device.',
+};
+
 async function talkingTo(
   specs: readonly AgentSpec[] = [
     { nativeAgentId: 'scout', displayName: 'scout', helpers: 1 },
@@ -2363,6 +2391,12 @@ describe('ConnectedSourceRuntime — sending to the primary conversation', () =>
         displayName: 'Source alpha',
         authority: 'read',
         awaitingApproval: true,
+        canApproveOnSource: true,
+        approveCommands: [
+          'ssh alias-alpha',
+          'openclaw devices list',
+          'openclaw devices approve <request id>',
+        ],
       },
     ]);
 
@@ -2391,6 +2425,105 @@ describe('ConnectedSourceRuntime — sending to the primary conversation', () =>
     expect(runtime.commandAuthority()[0].awaitingApproval).toBe(false);
     const result = await runtime.send(agentId, 'hello');
     expect(result.ok ? null : result.outcome).toBe('read-only-source');
+  });
+
+  it('names the standing request so the commands on screen are exact', async () => {
+    const { runtime, session } = await talkingTo(
+      undefined,
+      {
+        authorityResult: APPROVAL_REQUIRED,
+        ownPendingRequest: { kind: 'found', requestId: OWN_REQUEST_ID },
+      },
+      'read'
+    );
+
+    await runtime.requestCommandAuthority('alpha');
+
+    expect(session.findOwnPendingRequest).toHaveBeenCalledTimes(1);
+    expect(session.approveOwnWriteRequest).not.toHaveBeenCalled();
+    expect(runtime.commandAuthority()[0]).toMatchObject({
+      awaitingApproval: true,
+      approveCommands: [
+        'ssh alias-alpha',
+        `openclaw devices approve ${OWN_REQUEST_ID}`,
+      ],
+    });
+  });
+
+  it('offers no commands and reads no list while nothing is standing', async () => {
+    const { runtime, session } = await talkingTo(undefined, {}, 'read');
+
+    expect(runtime.commandAuthority()[0]).toMatchObject({
+      awaitingApproval: false,
+      canApproveOnSource: true,
+      approveCommands: null,
+    });
+    expect(session.findOwnPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('opens sending in one click and stops waiting', async () => {
+    const { runtime, agentId } = await talkingTo(
+      undefined,
+      { authorityResult: APPROVAL_REQUIRED },
+      'read'
+    );
+    await runtime.requestCommandAuthority('alpha');
+
+    const result = await runtime.approveCommandAuthority('alpha');
+
+    expect(result.outcome).toBe('granted');
+    expect(runtime.commandAuthority()[0]).toMatchObject({
+      awaitingApproval: false,
+      approveCommands: null,
+    });
+    const before = await runtime.send(agentId, 'hello');
+    expect(before.ok ? null : before.outcome).not.toBe('approval-pending');
+  });
+
+  it('keeps the named request standing when the one click stops short', async () => {
+    const { runtime } = await talkingTo(
+      undefined,
+      {
+        approvalResult: {
+          ...APPROVAL_REQUIRED,
+          pendingRequestId: OWN_REQUEST_ID,
+          approvalStep: 'approve-refused',
+        },
+      },
+      'read'
+    );
+
+    const result = await runtime.approveCommandAuthority('alpha');
+
+    expect(result.approvalStep).toBe('approve-refused');
+    expect(runtime.commandAuthority()[0]).toMatchObject({
+      awaitingApproval: true,
+      approveCommands: [
+        'ssh alias-alpha',
+        `openclaw devices approve ${OWN_REQUEST_ID}`,
+      ],
+    });
+  });
+
+  it('leaves a standing request alone when the one click was refused before asking', async () => {
+    const { runtime } = await talkingTo(
+      undefined,
+      {
+        authorityResult: APPROVAL_REQUIRED,
+        ownPendingRequest: { kind: 'found', requestId: OWN_REQUEST_ID },
+        approvalResult: {
+          outcome: 'refused',
+          authority: 'read',
+          message: 'No Gateway connection is open for this source.',
+        },
+      },
+      'read'
+    );
+    await runtime.requestCommandAuthority('alpha');
+
+    await runtime.approveCommandAuthority('alpha');
+
+    expect(runtime.commandAuthority()[0].awaitingApproval).toBe(true);
   });
 
   it('refuses a coworker with no conversation, an unknown one, and a closed source distinctly', async () => {

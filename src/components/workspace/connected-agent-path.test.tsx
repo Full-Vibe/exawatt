@@ -184,6 +184,8 @@ describe('Connect → mapping → roster → Team → Agent', () => {
           displayName: SOURCE.displayName,
           authority: 'write' as const,
           awaitingApproval: false,
+          canApproveOnSource: true,
+          approveCommands: null,
         },
       ]),
       onChanged: vi.fn(() => () => undefined),
