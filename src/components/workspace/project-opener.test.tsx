@@ -383,6 +383,66 @@ describe('Project opener', () => {
     expect(await screen.findByText('Local Projects')).toBeVisible();
   });
 
+  it('says the registry is not syncing when it could not be read, not that it is local', async () => {
+    // BUG-190: a session auth-js could not refresh is not signed out, and the
+    // registry refuses instead of answering with the local namespace.
+    listProjects.mockRejectedValue(new Error('Projects are not syncing.'));
+    projectRegistryScope.mockRejectedValue(
+      new Error('Projects are not syncing.')
+    );
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+    expect(await screen.findByText('Not syncing')).toBeVisible();
+    expect(screen.queryByText('Local Projects')).toBeNull();
+  });
+
+  it('marks a Project kept on this machine beside the account ones', async () => {
+    // BUG-191: Projects made while signed out stay local after sign-in.
+    projectRegistryScope.mockResolvedValue('hosted');
+    listProjects.mockResolvedValue([
+      {
+        id: 'hosted-1',
+        user_id: 'user-1',
+        name: 'Nebula',
+        kind: 'manual',
+        root_path: null,
+        git_remote: null,
+        color: null,
+        sort_order: 0,
+        last_opened_at: null,
+        archived_at: null,
+        created_at: '',
+        updated_at: '',
+      },
+      {
+        id: 'local-1',
+        user_id: 'local',
+        name: 'Tyler',
+        kind: 'manual',
+        root_path: null,
+        git_remote: null,
+        color: null,
+        sort_order: 1,
+        last_opened_at: null,
+        archived_at: null,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+    const local = await screen.findByRole('button', { name: /Tyler/ });
+    const hosted = screen.getByRole('button', { name: /Nebula/ });
+    expect(local.textContent).toMatch(/Local/);
+    expect(hosted.textContent).not.toMatch(/Local/);
+  });
+
   it('carries no sync label in a Community build, which has nothing to sync', async () => {
     renderControlledProjectOpener({
       workspaceProjects: [],

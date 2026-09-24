@@ -12,7 +12,11 @@
 import { resolveDistributionIdentity } from '@exawatt/core/distribution';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
-import type { Project, ProjectInsert } from './contract';
+import {
+  LOCAL_PROJECT_OWNER,
+  type Project,
+  type ProjectInsert,
+} from './contract';
 
 export type { Project };
 
@@ -73,38 +77,81 @@ function optionalProjectClient() {
   return createOptionalClient(resolvedDistribution());
 }
 
-type HostedProjectClient = NonNullable<ReturnType<typeof optionalProjectClient>>;
+type HostedProjectClient = NonNullable<
+  ReturnType<typeof optionalProjectClient>
+>;
 
 type ProjectStore =
-  | { kind: 'local'; reason: 'no-account' | 'signed-out' }
+  | { kind: 'local'; reason: 'no-account' | 'signed-out' | 'local-project' }
   | { kind: 'hosted'; supabase: HostedProjectClient; userId: string };
+
+/**
+ * The account registry cannot be reached, and neither can the answer to
+ * whether the operator is signed in.
+ *
+ * Callers must not read this as "signed out". Signed out has a registry, the
+ * local one; this position has none it may safely write to, so a read or a
+ * new Project refuses and the chooser says the registry is not syncing.
+ */
+export class ProjectRegistryUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('Projects are not syncing right now.', { cause });
+    this.name = 'ProjectRegistryUnavailableError';
+  }
+}
 
 /**
  * Where the registry serves from, decided per call.
  *
- * The hosted registry is the signed-in operator's. Every other position is
- * the local namespace: a Community build, and an account build whose
- * operator has not signed in. Agents, Projects, and Demo Mode work without
- * an account, and Connect maps an Agent into a durable Project before its
- * dialog closes, so the mapping step needs a registry to write to whether or
- * not the operator ever signs in (BUG-150). Before this, "the build declares
- * an account" was read as "there is a user", and a signed-out operator
- * reached Connect's last step with a registry that threw on Save.
+ * The hosted registry is the signed-in operator's. The local namespace serves
+ * a Community build and an account build whose operator has not signed in:
+ * Agents, Projects, and Demo Mode work without an account, and Connect maps
+ * an Agent into a durable Project before its dialog closes, so the mapping
+ * step needs a registry to write to whether or not the operator ever signs in
+ * (BUG-150).
+ *
+ * Signed out is "no session and no error", and nothing else (BUG-190). An
+ * access token that expired while the machine was offline comes back from
+ * auth-js as `{ session: null, error }`: the operator is signed in, and his
+ * session could not be refreshed. Reading that as signed out wrote his next
+ * Projects into the local registry, where they stayed after he reconnected.
+ * It refuses instead, which is what the registry did before BUG-150.
  */
 async function projectStore(): Promise<ProjectStore> {
   const supabase = optionalProjectClient();
   if (!supabase) return { kind: 'local', reason: 'no-account' };
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  let read: Awaited<ReturnType<HostedProjectClient['auth']['getSession']>>;
+  try {
+    read = await supabase.auth.getSession();
+  } catch (cause) {
+    throw new ProjectRegistryUnavailableError(cause);
+  }
+  if (read.error) throw new ProjectRegistryUnavailableError(read.error);
+  const { session } = read.data;
   if (!session) return { kind: 'local', reason: 'signed-out' };
   return { kind: 'hosted', supabase, userId: session.user.id };
+}
+
+/**
+ * The registry that holds an existing Project.
+ *
+ * A Project made in the local registry stays there: it does not migrate into
+ * the account on a later sign-in (BUG-191), so every verb on it writes
+ * locally whatever the session says now. Anything else goes wherever the
+ * session points.
+ */
+async function projectStoreHolding(id: string): Promise<ProjectStore> {
+  if (readLocalProjects().some(project => project.id === id)) {
+    return { kind: 'local', reason: 'local-project' };
+  }
+  return projectStore();
 }
 
 type ProjectRegistryScope = 'hosted' | 'local' | 'signed-out';
 
 /** Which registry a caller is about to read or write. `signed-out` is the
- *  local registry in a build that could sync once the operator signs in. */
+ *  local registry in a build that could sync once the operator signs in.
+ *  Throws `ProjectRegistryUnavailableError` when that cannot be known. */
 export async function projectRegistryScope(): Promise<ProjectRegistryScope> {
   const store = await projectStore();
   if (store.kind === 'hosted') return 'hosted';
@@ -123,10 +170,37 @@ function sortedLiveProjects(projects: readonly Project[]): Project[] {
     });
 }
 
+/**
+ * A signed-in listing: the account's Projects, plus the ones this machine's
+ * local registry holds that the account does not.
+ *
+ * Projects made while signed out are local Projects. They are not migrated on
+ * sign-in, and they are not dropped from the list either (BUG-191): Connect
+ * mints one manual Project per Agent by default, the Agent's mapping names
+ * that Project's id, and hiding the Project hid where the Agent belongs. A
+ * local repository Project whose folder the account already has gives way
+ * to the account's, which is the one opening that folder now uses.
+ */
+function withLocalProjects(hosted: readonly Project[]): Project[] {
+  const hostedIds = new Set(hosted.map(project => project.id));
+  const hostedPaths = new Set(
+    hosted.flatMap(project =>
+      project.root_path === null ? [] : [project.root_path]
+    )
+  );
+  const local = readLocalProjects().filter(
+    project =>
+      !hostedIds.has(project.id) &&
+      (project.root_path === null || !hostedPaths.has(project.root_path))
+  );
+  if (local.length === 0) return [...hosted];
+  return sortedLiveProjects([...hosted, ...local]);
+}
+
 function newLocalProject(ref: RepositoryProjectRef, nowIso: string): Project {
   return {
     id: crypto.randomUUID(),
-    user_id: 'local',
+    user_id: LOCAL_PROJECT_OWNER,
     name: ref.name,
     color: null,
     kind: 'repository',
@@ -150,7 +224,7 @@ export interface ManualProjectRef {
 function newLocalManualProject(ref: ManualProjectRef, nowIso: string): Project {
   return {
     id: ref.id,
-    user_id: 'local',
+    user_id: LOCAL_PROJECT_OWNER,
     name: ref.name,
     color: null,
     kind: 'manual',
@@ -215,10 +289,11 @@ async function requireUserId(supabase: HostedProjectClient): Promise<string> {
 }
 
 /** Live (non-archived) Projects in display order: operator sort_order first,
- *  then most-recently-opened. Signed out serves the local registry. A session
- *  that cannot be validated still throws (ENG-016 D8): RLS would otherwise
- *  return zero rows as a success, and callers could not tell "no Projects"
- *  from "not syncing". */
+ *  then most-recently-opened. Signed out serves the local registry; signed in
+ *  serves the account's Projects and this machine's local ones. A session
+ *  that cannot be read or validated throws (ENG-016 D8, BUG-190): RLS would
+ *  otherwise return zero rows as a success, and callers could not tell "no
+ *  Projects" from "not syncing". */
 export async function listProjects(): Promise<Project[]> {
   const store = await projectStore();
   if (store.kind === 'local') return sortedLiveProjects(readLocalProjects());
@@ -231,7 +306,7 @@ export async function listProjects(): Promise<Project[]> {
     .order('sort_order', { ascending: true })
     .order('last_opened_at', { ascending: false, nullsFirst: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as Project[];
+  return withLocalProjects((data ?? []) as Project[]);
 }
 
 /** Ensure a repository Project exists for this root path and mark it opened.
@@ -314,7 +389,7 @@ export async function openManualProject(
   if (!ref.id.trim() || !trimmed) {
     throw new Error('A manual Project needs an identity and name.');
   }
-  const store = await projectStore();
+  const store = await projectStoreHolding(ref.id);
   if (store.kind === 'local') {
     const projects = readLocalProjects();
     const nowIso = new Date().toISOString();
@@ -390,7 +465,7 @@ export async function openManualProject(
 export async function renameProject(id: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;
-  const store = await projectStore();
+  const store = await projectStoreHolding(id);
   if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
@@ -410,7 +485,7 @@ export async function setProjectColor(
   id: string,
   color: string
 ): Promise<void> {
-  const store = await projectStore();
+  const store = await projectStoreHolding(id);
   if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
@@ -434,7 +509,7 @@ export async function rebindProjectPath(
   id: string,
   rootPath: string
 ): Promise<void> {
-  const store = await projectStore();
+  const store = await projectStoreHolding(id);
   if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
@@ -454,7 +529,7 @@ export async function rebindProjectPath(
 /** Soft-remove: archived Projects drop out of the registry but keep their row
  *  (and any future history) instead of a destructive delete. */
 export async function archiveProject(id: string): Promise<void> {
-  const store = await projectStore();
+  const store = await projectStoreHolding(id);
   if (store.kind === 'local') {
     updateLocalProject(id, (project, nowIso) => ({
       ...project,
@@ -470,25 +545,35 @@ export async function archiveProject(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Persist a new manual ordering (drag-to-reorder in the Projects surface). */
+/** Persist a new manual ordering (drag-to-reorder in the Projects surface).
+ *  A signed-in list mixes account and local Projects, so each side keeps its
+ *  own rows' positions in the one combined order. */
 export async function reorderProjects(orderedIds: string[]): Promise<void> {
-  const store = await projectStore();
-  if (store.kind === 'local') {
-    const order = new Map(orderedIds.map((id, index) => [id, index]));
+  const order = new Map(orderedIds.map((id, index) => [id, index]));
+  const local = readLocalProjects();
+  const localIds = new Set(local.map(project => project.id));
+  if (orderedIds.some(id => localIds.has(id))) {
     const nowIso = new Date().toISOString();
     writeLocalProjects(
-      readLocalProjects().map(project => {
+      local.map(project => {
         const sortOrder = order.get(project.id);
         return sortOrder === undefined
           ? project
           : { ...project, sort_order: sortOrder, updated_at: nowIso };
       })
     );
-    return;
   }
+  const hostedIds = orderedIds.filter(id => !localIds.has(id));
+  if (hostedIds.length === 0) return;
+  const store = await projectStore();
+  // Signed out, nothing but the local registry is the operator's to order.
+  if (store.kind === 'local') return;
   const results = await Promise.all(
-    orderedIds.map((id, i) =>
-      store.supabase.from('projects').update({ sort_order: i }).eq('id', id)
+    hostedIds.map(id =>
+      store.supabase
+        .from('projects')
+        .update({ sort_order: order.get(id)! })
+        .eq('id', id)
     )
   );
   // surface a failed reorder like every sibling accessor does, rather than

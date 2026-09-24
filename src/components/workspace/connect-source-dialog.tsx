@@ -51,7 +51,11 @@ import {
 import { OpenClawIcon } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
-import { archiveProject, openManualProject } from '@/lib/projects/registry';
+import {
+  archiveProject,
+  openManualProject,
+  ProjectRegistryUnavailableError,
+} from '@/lib/projects/registry';
 import {
   CONNECT_FAILURE_COPY,
   CONNECT_STAGES,
@@ -643,7 +647,7 @@ export function ConnectSourceDialog({
         agents,
       });
       onOpenChange(false);
-    } catch {
+    } catch (cause) {
       if (!mapAttempted) {
         await Promise.allSettled(createdProjectIds.map(archiveProject));
       } else {
@@ -651,8 +655,12 @@ export function ConnectSourceDialog({
       }
       // Once mapAgents has been invoked, losing its acknowledgement is not
       // proof that main failed to commit, so durable Projects stay intact.
+      // A registry that refused because it could not tell whether the
+      // operator is signed in says so; nothing was written (BUG-190).
       setMappingError(
-        'Exawatt could not save these Agent mappings. Try again.'
+        cause instanceof ProjectRegistryUnavailableError
+          ? `${cause.message} Try again.`
+          : 'Exawatt could not save these Agent mappings. Try again.'
       );
     } finally {
       setBusy(false);

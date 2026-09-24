@@ -187,6 +187,10 @@ import {
   resetWorkspaceCommandAvailability,
   type WorkspaceContextCommand,
 } from './workspace-command-availability';
+import {
+  openRosterCoworker,
+  type RosterCoworkerOpener,
+} from './open-roster-coworker';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
  *  like the spatial map's bottom legend — normal case, dim, always there */
@@ -492,44 +496,30 @@ export function WorkspaceClient() {
   const coworkersRef = useRef(coworkers);
   coworkersRef.current = coworkers;
 
+  /** The roster reads the two open-by-roster gestures below share. They
+   *  claim the operator's position before the read, in the helper. */
+  const rosterOpener = useMemo<RosterCoworkerOpener>(
+    () => ({
+      known: () => coworkersRef.current,
+      refresh: refreshRemoteRoster,
+      open: openRemoteAgent,
+    }),
+    [openRemoteAgent, refreshRemoteRoster]
+  );
+
   const finishConnectedSource = useCallback(
     async (result: { sourceId: string; openNativeAgentId: string | null }) => {
-      if (!result.openNativeAgentId) return;
-      const refreshed = await refreshRemoteRoster();
-      const agent = refreshed?.agents.find(
-        candidate =>
-          candidate.source.id === result.sourceId &&
-          candidate.nativeAgentId === result.openNativeAgentId
-      );
-      if (agent) {
-        await openRemoteAgent({
-          agentId: agent.id,
-          nativeAgentId: agent.nativeAgentId,
-          sourceId: agent.source.id,
-          displayName: agent.displayName,
-          projectId: agent.projectId,
-          projectLabel: agent.projectLabel,
-        });
-        return;
-      }
-      // A failed read is not "not there". The last-known roster may already
-      // name the Agent, because the source's own change tick read it first.
-      const known = coworkersRef.current.find(
+      const nativeAgentId = result.openNativeAgentId;
+      if (!nativeAgentId) return;
+      await openRosterCoworker(
         candidate =>
           candidate.sourceId === result.sourceId &&
-          candidate.nativeAgentId === result.openNativeAgentId
+          candidate.nativeAgentId === nativeAgentId,
+        rosterOpener,
+        { preferKnown: false }
       );
-      if (!known) return;
-      await openRemoteAgent({
-        agentId: known.agentId,
-        nativeAgentId: known.nativeAgentId,
-        sourceId: known.sourceId,
-        displayName: known.name,
-        projectId: known.projectId,
-        projectLabel: known.projectLabel,
-      });
     },
-    [openRemoteAgent, refreshRemoteRoster]
+    [rosterOpener]
   );
 
   useEffect(() => {
@@ -538,65 +528,25 @@ export function WorkspaceClient() {
     // the tab this effect opens.
     if (!ready) return;
     let mounted = true;
-    const openById = async (agentId: string) => {
-      const known = coworkersRef.current.find(
-        candidate => candidate.agentId === agentId
+    const openById = (agentId: string) =>
+      void openRosterCoworker(
+        candidate => candidate.agentId === agentId,
+        rosterOpener,
+        { preferKnown: true, stillWanted: () => mounted }
       );
-      if (known) {
-        await openRemoteAgent({
-          agentId: known.agentId,
-          nativeAgentId: known.nativeAgentId,
-          sourceId: known.sourceId,
-          displayName: known.name,
-          projectId: known.projectId,
-          projectLabel: known.projectLabel,
-        });
-        return;
-      }
-      const refreshed = await refreshRemoteRoster();
-      if (!mounted) return;
-      const agent = refreshed?.agents.find(
-        candidate => candidate.id === agentId
-      );
-      if (agent) {
-        await openRemoteAgent({
-          agentId: agent.id,
-          nativeAgentId: agent.nativeAgentId,
-          sourceId: agent.source.id,
-          displayName: agent.displayName,
-          projectId: agent.projectId,
-          projectLabel: agent.projectLabel,
-        });
-        return;
-      }
-      // A failed read is not "not there": a change tick's read may have
-      // landed the Agent in the roster while this one was in flight.
-      const landed = coworkersRef.current.find(
-        candidate => candidate.agentId === agentId
-      );
-      if (!landed) return;
-      await openRemoteAgent({
-        agentId: landed.agentId,
-        nativeAgentId: landed.nativeAgentId,
-        sourceId: landed.sourceId,
-        displayName: landed.name,
-        projectId: landed.projectId,
-        projectLabel: landed.projectLabel,
-      });
-    };
     const handle = (event: Event) => {
       const agentId = (event as CustomEvent<string>).detail;
       consumePendingRemoteAgentOpen();
-      if (typeof agentId === 'string') void openById(agentId);
+      if (typeof agentId === 'string') openById(agentId);
     };
     window.addEventListener(REMOTE_AGENT_OPEN_EVENT, handle);
     const pending = consumePendingRemoteAgentOpen();
-    if (pending) void openById(pending);
+    if (pending) openById(pending);
     return () => {
       mounted = false;
       window.removeEventListener(REMOTE_AGENT_OPEN_EVENT, handle);
     };
-  }, [openRemoteAgent, ready, refreshRemoteRoster]);
+  }, [ready, rosterOpener]);
 
   useEffect(() => {
     const activeCloneable =
@@ -1246,14 +1196,17 @@ export function WorkspaceClient() {
       );
       if (!agent) return;
       const claim = operatorPosition.claimHere();
-      await openRemoteAgent({
-        agentId: agent.agentId,
-        nativeAgentId: agent.nativeAgentId,
-        sourceId: agent.sourceId,
-        displayName: agent.name,
-        projectId: agent.projectId,
-        projectLabel: agent.projectLabel,
-      });
+      await openRemoteAgent(
+        {
+          agentId: agent.agentId,
+          nativeAgentId: agent.nativeAgentId,
+          sourceId: agent.sourceId,
+          displayName: agent.name,
+          projectId: agent.projectId,
+          projectLabel: agent.projectLabel,
+        },
+        claim
+      );
       if (claim.stillCurrent()) closeOverview();
     },
     [closeOverview, openRemoteAgent]
@@ -1297,6 +1250,10 @@ export function WorkspaceClient() {
       );
       const label = item.declaredId ?? item.title;
       const ok = await launch({
+        // The launch selects its new Session when it lands. That move is
+        // this gesture's too, so it rides the claim taken before the
+        // preference and registry reads, not one taken after them (BUG-193).
+        focusClaim: claim,
         harness: source,
         dir,
         permissionMode,
@@ -1340,6 +1297,7 @@ export function WorkspaceClient() {
           : DEFAULT_AGENT_PERMISSION_MODE
       );
       const ok = await launch({
+        focusClaim: claim,
         harness: source,
         dir,
         permissionMode,

@@ -20,6 +20,18 @@ export interface Project {
   updated_at: string;
 }
 
+/**
+ * The owner a Project in this machine's local registry carries: every
+ * Community Project, and every Project an account build made while its
+ * operator was signed out. Such a Project stays local after sign-in rather
+ * than migrating into the account (BUG-191).
+ */
+export const LOCAL_PROJECT_OWNER = 'local';
+
+export function isLocalProject(project: Pick<Project, 'user_id'>): boolean {
+  return project.user_id === LOCAL_PROJECT_OWNER;
+}
+
 export interface ProjectInsert {
   id?: string;
   user_id: string;

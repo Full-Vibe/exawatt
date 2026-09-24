@@ -37,6 +37,20 @@ import {
 
 type ProjectOpenerRoute = 'projects' | 'connect';
 
+/** Where the listed Projects came from, as the registry answered. */
+type RegistryPosition =
+  | Awaited<ReturnType<typeof projectRegistryScope>>
+  | 'unavailable';
+
+/** Community has nothing to sync and carries no label; neither does a
+ *  registry that is syncing. */
+const REGISTRY_LABEL: Record<RegistryPosition, string | null> = {
+  hosted: null,
+  local: null,
+  'signed-out': 'Local Projects',
+  unavailable: 'Not syncing',
+};
+
 /**
  * The chooser's position in the workspace, as ONE value: closed, or the
  * route it is on.
@@ -113,7 +127,7 @@ export function ProjectOpener({
   >([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [syncUnavailable, setSyncUnavailable] = useState(false);
+  const [registry, setRegistry] = useState<RegistryPosition>('local');
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ProjectImportCandidate[] | null>(
     null
@@ -144,7 +158,7 @@ export function ProjectOpener({
     let cancelled = false;
     let syncFailed = false;
     setLoading(true);
-    setSyncUnavailable(false);
+    setRegistry('local');
     setConnectSupported(Boolean(window.electron?.connectedSources));
     void Promise.all([
       listProjects().catch(() => {
@@ -152,16 +166,16 @@ export function ProjectOpener({
         return [];
       }),
       window.electron?.workspace?.load() ?? Promise.resolve(null),
-      projectRegistryScope().catch(() => 'local' as const),
+      projectRegistryScope().catch(() => 'unavailable' as const),
     ]).then(([projects, layout, scope]) => {
       if (cancelled) return;
       setSynced(projects);
       setRecents(extractRecentProjects(layout));
-      // "Local Projects" is the registry's own answer: a signed-out account
-      // build serves the local registry (BUG-150), and a hosted read that
-      // failed is not syncing either. Community has nothing to sync and
-      // carries no label.
-      setSyncUnavailable(syncFailed || scope === 'signed-out');
+      // The label is the registry's own answer. A read that failed is not
+      // "signed out" and not "Community": it is not syncing, and saying
+      // "Local Projects" there told the operator his Projects lived on this
+      // machine when they were in an account nobody could reach (BUG-190).
+      setRegistry(syncFailed ? 'unavailable' : scope);
       setLoading(false);
     });
     return () => {
@@ -600,6 +614,9 @@ export function ProjectOpener({
                           style={{ color: HUD.textDim }}
                         >
                           {project.rootPath ?? 'No folder'}
+                          {/* Beside an account's Projects, one kept on this
+                            machine says so: it does not sync (BUG-191). */}
+                          {registry === 'hosted' && project.local && ' · Local'}
                         </span>
                       </button>
                     ))}
@@ -669,12 +686,12 @@ export function ProjectOpener({
                     Desktop app only
                   </span>
                 )}
-                {syncUnavailable && (
+                {REGISTRY_LABEL[registry] && (
                   <span
                     className="ml-auto font-mono text-chrome-micro"
                     style={{ color: HUD.textDim }}
                   >
-                    Local Projects
+                    {REGISTRY_LABEL[registry]}
                   </span>
                 )}
               </div>

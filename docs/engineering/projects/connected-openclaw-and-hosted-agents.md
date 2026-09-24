@@ -1538,7 +1538,12 @@ Projects" label for the signed-out case. What is NOT done: Projects made
 locally while signed out do not migrate into the hosted registry on a later
 sign-in. Repository Projects re-link by path on the next registry sync;
 manual ones keep their local identity and keep working as local Projects.
-That is recorded on the roadmap entry as the residual.
+That is recorded on the roadmap entry as the residual. (2026-09-23: the
+residual was worse than written. Signed in, the registry listed only the
+account's rows, so the local manual Projects did not keep working: they left
+the chooser. They now stay listed and stay local, BUG-191; and a session
+that could not be refreshed no longer counts as signed out, BUG-190. See the
+2026-09-23 entry below.)
 
 **A failed first read looked like a slow one (BUG-152).** The surface's catch
 left `loading` standing when it had nothing last-known, and a refused read's
@@ -1627,6 +1632,71 @@ now also proves the real IPC writes those lines and names no source.
 
 Next is unchanged and still the operator's: connect both Gateways on a build
 that carries this, and let the log say what happens.
+
+### 2026-09-23 — an expired session was read as signed out, and signed-out Projects left on sign-in
+
+**The registry now tells signed out from unknown, and keeps local Projects
+local and listed.** A second read-only release-candidate review found two
+defects in BUG-150's own fix, both shipped in 0.1.14's candidate.
+
+**An expired session wrote the operator's work locally (BUG-190).** The
+registry decided hosted-vs-local from `getSession()`'s session alone. In
+auth-js 2.86.0, an access token that expired while the machine was offline
+comes back as `{ session: null, error }` (`GoTrueClient.__loadSession`: the
+refresh fails, the session is withheld, the error is returned). The error was
+ignored, so an operator signed in but offline for an hour was treated as
+signed out: opening a folder wrote a local-only Project and the workspace
+adopted its local id, Connect saved each Agent's Project locally, and the
+chooser said "Local Projects" instead of saying it was not syncing. 0.1.13
+threw here. The repair restores that behaviour and names it: signed out is
+"no session and no error" and nothing else. An error, or a session read that
+throws, is `ProjectRegistryUnavailableError`. `listProjects`, `openRepositoryProject`
+and `openManualProject` refuse, nothing is written anywhere, the chooser says
+"Not syncing", and Connect's Save says Projects are not syncing and to try
+again. This is the absence-is-not-an-answer rule again: a failed read
+returned the same value as a successful read of nobody.
+
+**Projects made signed out left the chooser on sign-in (BUG-191).** The
+BUG-150 entry above recorded the intent: no migration; repository Projects
+re-link by path; manual Projects keep their local identity and keep working
+as local Projects. The code did not honour the second half. Signed in,
+`listProjects` served only the account's rows, so every local manual Project
+dropped out, and Connect mints one manual Project per Agent by default, so
+this was every coworker connected while signed out. The Agent's mapping in
+main still named the local id, which no longer resolved to anything the
+chooser showed. The intent stands and is now implemented rather than
+extended. The decision is **keep them visible as local, do not migrate**:
+
+- Signed in, the list is the account's Projects plus the local registry's
+  Projects the account does not hold. A local repository Project whose folder
+  the account already has gives way to the account's row, and the workspace
+  re-links to it by path as before.
+- A Project in the local registry is written locally whatever the session
+  says now (`projectStoreHolding`): rename, color, rebind, archive, a
+  Connect re-save, and its share of a reorder. Before, a hosted
+  `update().eq('id', localId)` matched no row and reported success.
+- The chooser marks a local Project "Local" beside the account's.
+
+Migration was rejected rather than deferred. It would move data one way into
+whichever account signs in next on this machine, and a repository Project
+would collide with the account's `(user_id, root_path)` row and have to
+change id, breaking the mapping that names it. Keeping the local id keeps
+every mapping true.
+
+The case that exercises both: an expired token, Connect two coworkers, then
+back online. Save refuses with the not-syncing message and
+nothing is minted; the same Save succeeds once the session refreshes and
+creates account Projects. Connecting while truly signed out mints two local
+manual Projects, which are listed, marked "Local", and still named by the
+mapping after sign-in.
+
+Evidence: `registry-signed-out.dom.test.ts` (the refresh-failed answer
+refuses and writes nothing, the signed-in list keeps the Connect-minted
+Projects, local writes never reach the account, the combined reorder) and
+`project-opener.test.tsx` (not syncing is not "Local Projects"; the local
+mark). Each was run against the pre-fix shape by mutation first: dropping
+the error check, dropping the local merge, and routing writes by session
+each fail their tests.
 
 ### 2026-09-23 — Instinct as the packaging bar for an always-on coworker
 

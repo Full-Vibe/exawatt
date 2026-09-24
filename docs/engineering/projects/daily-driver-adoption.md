@@ -7316,3 +7316,44 @@ the screenshot caught it before the test did, which is the reason the
 screenshot rule exists. The publish panel's "Operator publishing unavailable"
 heading and the em-dash strings in the usage page, meter, publish panel and
 hosted-features disclosure moved in the same landing.
+
+### 2026-09-23 — Roadmap milestone log: opening a coworker claimed the operator's position after the roster read
+
+**Every roster-driven open now claims before it waits.** Found by the
+0.1.14 release-candidate review; the D56 rule (BUG-018) was broken in the
+coworker path.
+
+**Finishing Connect, or opening a coworker the roster did not know yet,
+pulled the operator back (BUG-192).** Both gestures in `workspace-client`
+awaited `refreshRemoteRoster()` and only then called `openRemoteAgent`,
+which took its claim at its own start. The claim therefore recorded wherever
+the operator had gone during the read. If he pressed ⌘1 while the refresh
+was out, the claim was taken on the tab he had moved to, it stayed current,
+and the coworker tab opened and took selection. The Connect branch did this
+in 0.1.13; the delta added the open-by-id branch and its two roster
+fall-backs, and made a superseded read wait on the newer one, so the window
+got longer. The repair has one owner: `open-roster-coworker.ts` takes the
+claim before the read and hands it to `openRemoteAgent`, which now accepts
+a caller's claim the way `launch` accepts `focusClaim`. A stale claim still
+opens the tab, quietly, in its mapped Project. The four near-copies of the
+lookup (refreshed roster, then last-known roster, in two gestures) are one
+function now. Team's `openCoworker` already claimed first; it passes that
+claim through too, so the move and the altitude drop answer to the same one.
+
+**The two roadmap launchers had the same shape (BUG-193).** `startRoadmapAgent`
+and `startRoadmapRemediation` claimed before reading preferences and the
+source registry, and used that claim for the altitude drop, but called
+`launch` without it, so `launch` claimed again after those reads and could
+select the new Session on a tab the operator reached while they were out.
+Both now pass `focusClaim`. The file has no other mover that claims after an
+await: `openCoworker` claims first, closing is exempt by the D56 contract,
+and the notification click selects synchronously on the event.
+
+Evidence: `open-roster-coworker.test.tsx`, in `launch-focus.test.tsx`'s
+style over the real `useWorkspaceState` and position authority. For both
+gestures it holds the roster read open, switches tabs, lands the read, and
+asserts the coworker tab exists and selection did not move; the control
+asserts he is taken there when he stayed. Moving the claim after the read,
+master's shape, fails both "quietly" cases. BUG-193 rides the existing
+`focusClaim` test; its call sites live in `workspace-client`, which has no
+unit harness.

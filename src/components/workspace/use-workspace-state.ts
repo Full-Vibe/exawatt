@@ -3085,15 +3085,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * Opening reaches nothing. No Gateway call, no command, no state change on
    * the source: the tab is a view, and the surface it renders is what reads
    * the conversation.
+   *
+   * A caller that awaited anything before asking (a roster read, most often)
+   * passes the claim it took BEFORE that await (BUG-192). Without one, the
+   * claim is taken here, which is only right for a synchronous gesture.
    */
   const openRemoteAgent = useCallback(
-    (ref: RemoteAgentOpenRef): Promise<string> => {
+    (
+      ref: RemoteAgentOpenRef,
+      focusClaim?: OperatorMoveClaim
+    ): Promise<string> => {
       const inFlight = remoteAgentOpenInFlightRef.current.find(
         entry => entry.agentId === ref.agentId
       );
       if (inFlight) return inFlight.task;
+      const claim = focusClaim ?? operatorPosition.claimHere();
       const task = (async () => {
-        const claim = operatorPosition.claimHere();
         const registryProject = await listProjects()
           .then(
             rows => rows.find(project => project.id === ref.projectId) ?? null
