@@ -24,6 +24,9 @@ const distribution = await resolvePackagedApp();
 // menu and this eval together; only a menu that drops the item fails it.
 const { getCommandVerb } = createRequire(import.meta.url)('@exawatt/core');
 const productName = distribution.identity.productName;
+/** A surface's document title, by the metadata template in `src/app/layout.tsx`
+ *  (BUG-207 moved its separator off the em dash). */
+const surfaceTitle = surface => `${surface} · ${productName}`;
 const feedbackEnabled = distribution.contract.services.productFeedback !== null;
 
 const failures = [];
@@ -461,8 +464,8 @@ await withElectronApp(
 
   // per-surface titles via the metadata template
   check(
-    `workspace title is Agent — ${productName}`,
-    (await page.title()) === `Agent — ${productName}`
+    `workspace title is ${surfaceTitle('Agent')}`,
+    (await page.title()) === surfaceTitle('Agent')
   );
 
   // registry-resolved workspace verb still fires: ⌘E opens the rename editor.
@@ -587,8 +590,8 @@ await withElectronApp(
   await page.waitForURL('**/fleet/spatial**');
   await page.waitForTimeout(600);
   check(
-    `fleet title is Fleet — ${productName}`,
-    (await page.title()) === `Fleet — ${productName}`
+    `fleet title is ${surfaceTitle('Fleet')}`,
+    (await page.title()) === surfaceTitle('Fleet')
   );
 
   // D10: the rename cycle must not produce nested-interactive markup warnings
