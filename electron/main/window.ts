@@ -133,6 +133,11 @@ export interface MainWindowDependencies {
   onCheckpointOwnerLost: (webContentsId: number) => void;
   onLaunchScreenLoaded: () => void;
   onWorkspaceLoaded: (url: string) => void;
+  /** The window's renderer died underneath it (BUG-223). */
+  onRenderProcessGone: (
+    win: BrowserWindow,
+    details: { reason: string; exitCode: number }
+  ) => void;
 }
 
 interface MainWindowController {
@@ -140,6 +145,9 @@ interface MainWindowController {
   /** The window when it can still parent a native dialog. */
   live(): BrowserWindow | null;
   open(initialUrl: string, appearance: NativeAppearanceResolution): void;
+  /** Reloads `focused` when it is a web window, else the main window. It
+   *  never depends on the renderer being alive to receive focus (BUG-223). */
+  reload(focused: unknown, options: { ignoringCache: boolean }): void;
 }
 
 export function createMainWindowController(
@@ -226,6 +234,12 @@ export function createMainWindowController(
       }
     );
     win.webContents.on('destroyed', clearCheckpointOwner);
+    // A dead renderer owns nothing: a quit must not wait on it to checkpoint.
+    // Recovery runs after ownership is released, never before.
+    win.webContents.on('render-process-gone', (_event, details) => {
+      clearCheckpointOwner();
+      deps.onRenderProcessGone(win, details);
+    });
 
     void win.loadURL(initialUrl);
 
@@ -275,5 +289,14 @@ export function createMainWindowController(
     current: () => mainWindow,
     live: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
     open: createWindow,
+    reload(focused, { ignoringCache }) {
+      const target =
+        focused && typeof focused === 'object' && 'webContents' in focused
+          ? (focused as BrowserWindow)
+          : mainWindow;
+      if (!target || target.isDestroyed()) return;
+      if (ignoringCache) target.webContents.reloadIgnoringCache();
+      else target.webContents.reload();
+    },
   };
 }

@@ -21,6 +21,7 @@ function flatten(
 function harness() {
   const installed: MenuItemConstructorOptions[][] = [];
   const sent: unknown[][] = [];
+  const reloads: unknown[][] = [];
   const controller = createMenuController({
     context: () => ({
       appName: 'Exawatt',
@@ -29,6 +30,7 @@ function harness() {
       isDev: false,
       capabilities: commandVerbCapabilities(COMMUNITY_DISTRIBUTION),
       onWindowManagementHelp: () => {},
+      onReloadWindow: (window, options) => reloads.push([window, options]),
     }),
     install: template => installed.push(template),
     commandTarget: () => ({
@@ -42,7 +44,7 @@ function harness() {
       EVENT,
       ...args
     );
-  return { controller, installed, sent, item, call };
+  return { controller, installed, sent, reloads, latest, item, call };
 }
 
 const gated = availabilityMenuCommands()[0];
@@ -55,6 +57,35 @@ describe('createMenuController', () => {
 
     expect(item(gated)?.enabled).toBe(false);
     expect(item(bound)?.accelerator).toBe(boundAccelerator);
+  });
+
+  it('reloads the clicked window, never a focused web contents a dead renderer cannot be', () => {
+    // BUG-223: Electron's `reload` role resolves its target through the
+    // focused web contents, so ⌘R did nothing once the renderer had died.
+    const { controller, reloads, latest } = harness();
+    controller.rebuild();
+    const reloadItems = latest().filter(entry =>
+      ['CmdOrCtrl+R', 'Shift+CmdOrCtrl+R'].includes(String(entry.accelerator))
+    );
+    expect(reloadItems).toHaveLength(2);
+    expect(latest().some(entry => /reload/i.test(String(entry.role)))).toBe(
+      false
+    );
+
+    const window = { id: 1 };
+    for (const entry of reloadItems) {
+      (entry.click as (item: unknown, window: unknown) => void)({}, window);
+    }
+    (reloadItems[0].click as (item: unknown, window: unknown) => void)(
+      {},
+      undefined
+    );
+
+    expect(reloads).toEqual([
+      [window, { ignoringCache: false }],
+      [window, { ignoringCache: true }],
+      [undefined, { ignoringCache: false }],
+    ]);
   });
 
   it('routes a menu click to the focused renderer as a named command', () => {

@@ -62,6 +62,58 @@ function harness(
   };
 }
 
+describe('system sleep (BUG-223)', () => {
+  // Every clock Node exposes on macOS counts through sleep, so a closed lid
+  // reads as lateness. On 2026-09-24 that lateness was recorded as
+  // fifteen-minute stalls until it spent the run's budget and switched the
+  // trace off.
+  it('records nothing for lateness that arrives while the system sleeps', () => {
+    const h = harness();
+    h.trace.suspend();
+    h.advance(15 * 60_000);
+    h.trace.sample();
+    h.trace.resume();
+    h.advance(500);
+    h.trace.sample();
+    expect(h.events).toEqual([]);
+  });
+
+  it('measures from the wake when the wake is heard before the late sample', () => {
+    const h = harness();
+    h.trace.suspend();
+    h.advance(15 * 60_000);
+    h.trace.resume();
+    h.advance(500);
+    h.trace.sample();
+    expect(h.events).toEqual([]);
+  });
+
+  it('still records a real stall after the system wakes', () => {
+    const h = harness();
+    h.trace.suspend();
+    h.advance(15 * 60_000);
+    h.trace.resume();
+    h.advance(500 + 4_000);
+    h.trace.sample();
+    expect(h.events.map(e => e.event)).toEqual(['main.stall']);
+    expect(h.events[0].fields.stallMs).toBe(4_000);
+  });
+
+  it('does not spend the run budget on sleeps', () => {
+    const h = harness({ maxRecordsPerRun: 2 });
+    for (let i = 0; i < 10; i += 1) {
+      h.trace.suspend();
+      h.advance(60_000);
+      h.trace.sample();
+      h.trace.resume();
+    }
+    h.advance(500 + 2_000);
+    h.trace.sample();
+    expect(h.events.map(e => e.event)).toEqual(['main.stall']);
+    expect(h.trace.isDisabled).toBe(false);
+  });
+});
+
 describe('detection', () => {
   it('records nothing while the loop is serviced on time', () => {
     const h = harness();

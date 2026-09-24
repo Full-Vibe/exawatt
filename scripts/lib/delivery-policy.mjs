@@ -611,6 +611,13 @@ export const SURFACE_GATES = [
       file === 'scripts/electron-offline-eval.mjs',
   },
   {
+    gate: 'eval:electron:helper-death',
+    why: 'a window whose renderer, GPU and network helpers are killed must come back by itself with every death recorded (BUG-223)',
+    match: file =>
+      file === 'electron/main/process-recovery.ts' ||
+      file === 'scripts/electron-helper-death-eval.mjs',
+  },
+  {
     gate: 'eval:electron:delegation',
     why: 'delegated runs must be observed from source-reported lifecycle events and drawn where the operator reads them',
     match: file =>
@@ -1304,6 +1311,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:spatial:pointer': GATE,
   'qa:browser:smoke': GATE,
   'eval:electron:offline': GATE,
+  'eval:electron:helper-death': GATE,
   'eval:electron:delegation': GATE,
   'eval:electron:turn-truth': GATE,
   'eval:electron:tenancy': GATE,

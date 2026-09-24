@@ -17,7 +17,11 @@ import type { RendererPortPolicy } from './renderer-port';
  * main. This module is its one owner. It starts the child, reports the origin
  * it serves, stops it during shutdown, and prunes versions it no longer runs.
  * The child also carries a lifeline to main, so it ends with main however main
- * ends, including the endings where main runs no shutdown code at all.
+ * ends, including the endings where main runs no shutdown code at all. The
+ * reverse ending is reported rather than handled here: when the child dies
+ * while main lives (killed from outside, BUG-223), `onUnexpectedExit` says so
+ * and `restart` brings it back on the same port, so the origin, and the
+ * storage Chromium keeps under it, survive.
  *
  * Every process boundary is an argument (`spawn`, the archive extractor, port
  * allocation, the readiness probe, the clock), so the lifecycle is exercised
@@ -62,6 +66,11 @@ export interface RendererServerDependencies {
   writeStdout?: (data: unknown) => void;
   writeStderr?: (data: unknown) => void;
   warn?: (message: string, error: unknown) => void;
+  /** The serving child ended without `stop()` asking it to (BUG-223). */
+  onUnexpectedExit?: (details: {
+    code: number | null;
+    signal: string | null;
+  }) => void;
 }
 
 interface RendererServer {
@@ -69,6 +78,8 @@ interface RendererServer {
   start(): Promise<string>;
   /** Stops the child; a rejection keeps it owned so a retry can stop it. */
   stop(): Promise<void>;
+  /** Starts the child again on the port it was serving, same origin. */
+  restart(): Promise<string>;
   /** The origin being served, or null before the first successful start. */
   readonly origin: string | null;
   /** Whether this version is already unpacked, so start can run pre-ready. */
@@ -162,6 +173,10 @@ export function createRendererServer(
   let rendererServer: ChildProcess | null = null;
   let rendererOrigin: string | null = null;
   let activeRendererCacheKey: string | null = null;
+  /** What the serving child was launched from, for a same-port restart. */
+  let served: { standaloneRoot: string; port: number } | null = null;
+  /** Set once `stop()` is asked: every exit after that is expected. */
+  let stopping = false;
 
   const cacheRoot = () =>
     path.join(deps.userDataPath(), 'renderer-cache', deps.cacheNamespace);
@@ -171,9 +186,11 @@ export function createRendererServer(
     while (clock.now() < deadline) {
       const ready = await probe(url);
       if (ready) return;
-      if (rendererServer?.exitCode !== null) {
+      // A child killed by a signal has a null exit code and a signal code.
+      const child = rendererServer;
+      if (!child || child.exitCode !== null || child.signalCode !== null) {
         throw new Error(
-          `Packaged renderer exited with ${rendererServer?.exitCode}`
+          `Packaged renderer exited with ${child?.exitCode ?? child?.signalCode}`
         );
       }
       await clock.sleep(40);
@@ -206,9 +223,16 @@ export function createRendererServer(
         await fs.promises.rm(staging, { recursive: true, force: true });
       });
     }
+    const origin = await serve(standaloneRoot, port);
+    await deps.ports.serving(port);
+    return origin;
+  }
+
+  /** Spawns the server child on `port` and resolves once it answers. */
+  async function serve(standaloneRoot: string, port: number): Promise<string> {
     const serverEntry = path.join(standaloneRoot, 'server.js');
     const launch = rendererServerLaunch(serverEntry);
-    rendererServer = spawn(execPath, launch.args, {
+    const child = spawn(execPath, launch.args, {
       cwd: standaloneRoot,
       env: {
         ...deps.childEnvironment(),
@@ -219,15 +243,35 @@ export function createRendererServer(
       },
       stdio: launch.stdio,
     });
-    rendererServer.stdout?.on('data', data => {
+    rendererServer = child;
+    // A child that dies while starting is reported by the start that launched
+    // it, so only an exit after it answered is unexpected.
+    let answered = false;
+    const reportExit = (code: number | null, signal: string | null) => {
+      if (!answered || stopping || rendererServer !== child) return;
+      deps.onUnexpectedExit?.({ code, signal });
+    };
+    child.once('exit', reportExit);
+    child.stdout?.on('data', data => {
       if (deps.forwardStdout) writeStdout(data);
     });
-    rendererServer.stderr?.on('data', data => writeStderr(data));
+    child.stderr?.on('data', data => writeStderr(data));
     const origin = `http://127.0.0.1:${port}`;
     await waitForRenderer(`${origin}/workspace`);
     rendererOrigin = origin;
-    await deps.ports.serving(port);
+    served = { standaloneRoot, port };
+    answered = true;
+    // The exit may have landed during the last readiness probe.
+    if (child.exitCode !== null || child.signalCode !== null) {
+      reportExit(child.exitCode, child.signalCode);
+    }
     return origin;
+  }
+
+  async function restartRendererServer(): Promise<string> {
+    if (!served) throw new Error('The packaged renderer has not served yet');
+    if (stopping) throw new Error('The packaged renderer is stopping');
+    return await serve(served.standaloneRoot, served.port);
   }
 
   function pruneRendererCache(): void {
@@ -272,6 +316,7 @@ export function createRendererServer(
   }
 
   async function stopRendererServer(): Promise<void> {
+    stopping = true;
     const server = rendererServer;
     if (!server) return;
     await stopChildProcess(server, {
@@ -287,6 +332,7 @@ export function createRendererServer(
   return {
     start: startPackagedRenderer,
     stop: stopRendererServer,
+    restart: restartRendererServer,
     get origin() {
       return rendererOrigin;
     },

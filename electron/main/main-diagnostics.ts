@@ -72,12 +72,17 @@ function watchShellStartupArtifacts(
 /** The standing instrumentation, installed once Electron is ready. */
 export function installMainInstrumentation(
   userDataPath: string,
-  record: DiagnosticRecorder
+  record: DiagnosticRecorder,
+  power: { on(event: 'suspend' | 'resume', listener: () => void): unknown }
 ): void {
   configureJsonStoreDiagnostics(record);
   // Standing main-thread instrumentation: the next beachball records itself.
   // Started before the window so a stall during startup is captured too.
-  installMainThreadStallTrace(new MainThreadStallTrace({ record }));
+  const stallTrace = installMainThreadStallTrace(
+    new MainThreadStallTrace({ record })
+  );
+  power.on('suspend', () => stallTrace.suspend());
+  power.on('resume', () => stallTrace.resume());
   // A rejection nobody awaited used to end as a console line the packaged
   // app does not keep (BUG-129 main half, BUG-146). Bounded and rate-limited
   // like the stall trace; it records, it never recovers.

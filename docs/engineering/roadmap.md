@@ -2561,6 +2561,22 @@ concurrently, and the product keeps the first report of a gate: a
 Claude posts sequentially. The fake now handles one command at a time, in
 order. [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-223 A killed renderer left the window black, and ⌘R could not revive it
+
+Status: done · ENG-016 · found 2026-09-24, operator screenshot; resolved 2026-09-24.
+
+A stray machine-wide `pkill` killed every Chromium helper on the machine at
+once. Chromium restarted Exawatt's GPU and network helpers; nothing restarted
+its renderer, and View ▸ Reload did nothing because Electron's `reload` role
+targets the focused web contents, which a crashed renderer can never be. Now
+`electron/main/process-recovery.ts` reloads a dead renderer by itself (three a
+minute, then asks), restarts a dead renderer server on its own port, and
+records every renderer, helper and server death to `logs/main.jsonl`; Reload
+targets the focused window; a dead renderer releases checkpoint ownership; and
+the stall trace no longer records system sleep as stalls (which had exhausted
+its budget). Gate: `eval:electron:helper-death`, mutation-checked.
+[Incident `0028`](incidents/0028-stray-pkill-killed-every-chromium-helper.md).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

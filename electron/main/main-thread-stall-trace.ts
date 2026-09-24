@@ -18,6 +18,13 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  * serviced, the callback runs late by exactly the amount the loop was blocked.
  * Lateness beyond `thresholdMs` is a stall.
  *
+ * Except when the whole machine slept. Every clock Node exposes on macOS keeps
+ * counting through system sleep, so a closed lid used to read as a
+ * fifteen-minute main-thread stall, and a day of sleeps spent the run's record
+ * budget, which then switched the trace off for real stalls (BUG-223). The
+ * system's `suspend` and `resume` notifications bracket the sleep; lateness
+ * that arrives between them is the machine's, not the loop's.
+ *
  * ## How it knows what was running
  *
  * `handleTrusted` is already the single door every renderer→main IPC call goes
@@ -120,6 +127,8 @@ export class MainThreadStallTrace {
   private windowCount = 0;
   private runCount = 0;
   private suppressionNoted = false;
+  /** Between the system's `suspend` and `resume`, including dark wakes. */
+  private asleep = false;
 
   constructor(options: StallTraceOptions) {
     this.opts = {
@@ -164,6 +173,17 @@ export class MainThreadStallTrace {
     this.timer = null;
   }
 
+  /** The system is going to sleep: nothing late from here is a stall. */
+  suspend(): void {
+    this.asleep = true;
+  }
+
+  /** The system woke: measure from now, not from before the sleep. */
+  resume(): void {
+    this.asleep = false;
+    if (!this.disabled) this.lastTickAt = this.opts.now();
+  }
+
   /**
    * Open an activity. Returns a token to pass to `end`, or 0 when the trace is
    * off — callers must treat 0 as "nothing to close" rather than branching.
@@ -196,7 +216,7 @@ export class MainThreadStallTrace {
     const stallMs = now - expected;
     const windowStart = this.lastTickAt;
     this.lastTickAt = now;
-    if (stallMs < this.opts.thresholdMs) return;
+    if (stallMs < this.opts.thresholdMs || this.asleep) return;
     try {
       this.recordStall(stallMs, windowStart, now);
     } catch {

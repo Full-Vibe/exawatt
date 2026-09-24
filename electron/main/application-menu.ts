@@ -1,4 +1,4 @@
-import type { MenuItemConstructorOptions } from 'electron';
+import type { BaseWindow, MenuItemConstructorOptions } from 'electron';
 import {
   CONSUMPTION_SURFACE_NAME,
   FIXED_SESSION_MENU_COMMANDS,
@@ -106,6 +106,16 @@ export interface ApplicationMenuContext {
   onCommand: (command: string) => void;
   onCheckForUpdates?: () => void;
   onWindowManagementHelp: () => void;
+  /**
+   * Reloads the window a menu click came from, or the main window when none
+   * is focused. Electron's `reload` role targets the focused web contents
+   * instead, and a crashed renderer has no view to hold focus, so the role
+   * did nothing in exactly the moment it was needed (BUG-223).
+   */
+  onReloadWindow: (
+    window: BaseWindow | undefined,
+    options: { ignoringCache: boolean }
+  ) => void;
 }
 
 function commandItem(
@@ -217,8 +227,18 @@ export function buildApplicationMenuTemplate(
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: (_item, window) =>
+            context.onReloadWindow(window, { ignoringCache: false }),
+        },
+        {
+          label: 'Force Reload',
+          accelerator: 'Shift+CmdOrCtrl+R',
+          click: (_item, window) =>
+            context.onReloadWindow(window, { ignoringCache: true }),
+        },
         separator(),
         { role: 'resetZoom' },
         { role: 'zoomIn' },

@@ -119,6 +119,7 @@
     "eval:electron:startup": "node scripts/electron-startup-eval.mjs",
     "eval:electron:appearance": "node scripts/electron-appearance-eval.mjs",
     "eval:electron:offline": "node scripts/electron-offline-eval.mjs",
+    "eval:electron:helper-death": "node scripts/electron-helper-death-eval.mjs",
     "eval:electron:session-parity": "node scripts/electron-session-spatial-parity-eval.mjs",
     "eval:electron:interaction-performance": "node scripts/electron-interaction-performance-eval.mjs",
     "eval:context-labels": "vitest run src/lib/context-labels/contract.test.ts src/lib/context-labels/gold-evaluator.test.ts electron/main/pty/context-summarizer.test.ts --maxWorkers=25%",

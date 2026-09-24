@@ -117,6 +117,7 @@ function flattenMenu(
     onCommand: () => {},
     onCheckForUpdates: () => {},
     onWindowManagementHelp: () => {},
+    onReloadWindow: () => {},
   });
   return template.flatMap(menu => {
     if (!Array.isArray(menu.submenu)) return [];

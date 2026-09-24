@@ -51,8 +51,11 @@ complete. The child also ends with main however main ends, through a stdin
 lifeline main never closes (BUG-070), and an install keeps one loopback port,
 so the renderer origin and everything Chromium stores per origin survive a
 relaunch; a launch that finds the port taken serves one launch from another
-(BUG-022). This is a presentation boundary, not a second application or
-alternate data source.
+(BUG-022). The reverse ending is supervised: a renderer server that dies while
+main lives restarts on the port it was serving, keeping the origin, and a
+renderer process that dies reloads itself, because Sessions, their PTYs and
+their history all live in main (BUG-223, incident `0028`). This is a
+presentation boundary, not a second application or alternate data source.
 
 Electron main is a composition root (ENG-039 M1): `main.ts` reads the launch
 environment and wires single-owner modules together, each taking its
@@ -1053,7 +1056,20 @@ Built:
   trusted-IPC door names the work that was open, or that started and finished,
   inside the blocked window. It records to a bounded, rotated, rate-limited
   local JSONL that rides along in a diagnostics bundle, and it fails closed —
-  instrumentation may never become the reason the app is slow;
+  instrumentation may never become the reason the app is slow. Lateness
+  between the system's `suspend` and `resume` is sleep, not a stall, since
+  every clock Node exposes on macOS counts through sleep (BUG-223);
+- one owner for process-death recovery
+  (`electron/main/process-recovery.ts`). Everything main depends on can be
+  killed underneath it (incident `0028`: a stray machine-wide `pkill` took
+  every Chromium helper on the machine). Every renderer, helper and
+  renderer-server death is recorded to `logs/main.jsonl` with Chromium's
+  reason and exit code through one bounded recorder; a dead renderer reloads
+  itself; a dead renderer server restarts on its own port; automatic attempts
+  are budgeted per minute, past which the renderer asks the operator and the
+  server stays down on the record; nothing restarts once shutdown owns the
+  processes. View ▸ Reload targets the focused window, not the focused web
+  contents a crashed renderer can never be;
 - deep terminal fundamentals and opt-in native attention notifications;
   immediate measured startup feedback backed by real bootstrap milestones,
   deferred command-module loading, warm renderer prestart, and bounded renderer

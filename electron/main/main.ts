@@ -6,6 +6,7 @@ import {
   Menu,
   nativeTheme,
   net as electronNet,
+  powerMonitor,
   screen,
   session as electronSession,
   shell,
@@ -46,7 +47,14 @@ import {
   installMainInstrumentation,
   openMainDiagnostics,
 } from './main-diagnostics';
+import { boundDiagnosticRecorder } from './diagnostics-log';
 import { createMenuController } from './menu-controller';
+import {
+  createRendererRecovery,
+  createRendererServerSupervisor,
+  recordChildProcessGone,
+  rendererRecoveryPrompt,
+} from './process-recovery';
 import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import { loadSettings } from './settings-store';
@@ -110,6 +118,17 @@ if (!isDev) assertPackagedRendererComposition(process.resourcesPath, buildInfo);
 
 const runtime = new CommandRuntime();
 const mainDiagnostics = openMainDiagnostics(userDataPath());
+// Process deaths share one bounded recorder: a helper stuck in a crash loop
+// must not be able to fill the diagnostics log (BUG-223).
+const processDiagnostics = boundDiagnosticRecorder(mainDiagnostics, {
+  perMinute: 20,
+  perRun: 200,
+});
+/** Past confirmation, shutdown owns every process: nothing restarts. */
+const isShuttingDown = () => {
+  const phase = runtime.shutdownCoordinator?.phase ?? 'idle';
+  return phase !== 'idle' && phase !== 'confirming';
+};
 
 const rendererServer = createRendererServer({
   userDataPath,
@@ -118,6 +137,7 @@ const rendererServer = createRendererServer({
   childEnvironment: () => distributionChildEnvironment(distribution, env),
   forwardStdout: env.EXAWATT_RENDERER_LOGS === '1',
   ports: createRendererPortPolicy({ userDataPath, record: mainDiagnostics }),
+  onUnexpectedExit: details => rendererServerSupervisor.exited(details),
 });
 // A cached renderer uses only Node APIs and can boot before Electron's ready
 // event, overlapping its server start with Chromium initialization. A cold
@@ -137,6 +157,19 @@ const workspace = createWorkspaceTarget({
   rendererOrigin: () => rendererServer.origin,
 });
 const checkpoints = createCheckpointBroker({ randomUUID });
+const rendererRecovery = createRendererRecovery({
+  record: processDiagnostics,
+  isQuitting: isShuttingDown,
+  askToReload: async win => {
+    const prompt = rendererRecoveryPrompt(identity.productName);
+    const { response } = await dialog.showMessageBox(
+      win as BrowserWindow,
+      prompt.options
+    );
+    return prompt.choice(response);
+  },
+  quit: () => app.quit(),
+});
 const mainWindow = createMainWindowController({
   createBrowserWindow: options => new BrowserWindow(options),
   preloadPath: path.join(__dirname, 'preload.js'),
@@ -153,6 +186,19 @@ const mainWindow = createMainWindowController({
   onCheckpointOwnerLost: id => checkpoints.release(id),
   onLaunchScreenLoaded: () => startupScreen.repaint(),
   onWorkspaceLoaded: url => deepLinks.deliverPending(url),
+  onRenderProcessGone: (win, details) =>
+    rendererRecovery.rendererGone(win, details),
+});
+const rendererServerSupervisor = createRendererServerSupervisor({
+  record: processDiagnostics,
+  isQuitting: isShuttingDown,
+  restart: () => rendererServer.restart(),
+  reloadWorkspace: () => {
+    const win = mainWindow.live();
+    if (win && workspace.isTarget(win.webContents.getURL())) {
+      win.webContents.reload();
+    }
+  },
 });
 const startupScreen = createStartupScreen(() => mainWindow.current());
 
@@ -213,6 +259,7 @@ const menu = createMenuController({
         : undefined,
     onWindowManagementHelp: () =>
       void shutdownSequence.promptWindowManagementRestart(),
+    onReloadWindow: (focused, options) => mainWindow.reload(focused, options),
   }),
   install: template =>
     Menu.setApplicationMenu(Menu.buildFromTemplate(template)),
@@ -295,7 +342,7 @@ function openMainWindow(workspaceReady: boolean): void {
 }
 
 app.whenReady().then(() => {
-  installMainInstrumentation(userDataPath(), mainDiagnostics);
+  installMainInstrumentation(userDataPath(), mainDiagnostics, powerMonitor);
   // Registered BEFORE bootstrap so it survives bootstrap failing: this is the
   // channel that reports exactly that (BUG-016).
   registerCommandEngineIPC(() => BrowserWindow.getAllWindows());
@@ -322,6 +369,11 @@ app.whenReady().then(() => {
 });
 
 installCrashAnalytics(app, process);
+// Chromium restarts its own GPU, network and utility helpers; the record is
+// what says one died. The renderer's death is recorded by its recovery.
+app.on('child-process-gone', (_event, details) =>
+  recordChildProcessGone(processDiagnostics, details)
+);
 
 app.on(
   'before-quit',

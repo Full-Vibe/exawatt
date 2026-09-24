@@ -28,7 +28,10 @@ class FakeWebContents extends EventEmitter {
     null;
   devTools: unknown[] = [];
   executed: string[] = [];
+  reloads: string[] = [];
   getURL = () => this.url;
+  reload = () => this.reloads.push('reload');
+  reloadIgnoringCache = () => this.reloads.push('ignoring-cache');
   executeJavaScript = async (code: string) => {
     this.executed.push(code);
   };
@@ -91,6 +94,8 @@ function harness(overrides: Partial<MainWindowDependencies> = {}) {
     onCheckpointOwnerLost: id => log.push(`owner-lost:${id}`),
     onLaunchScreenLoaded: () => log.push('launch-screen'),
     onWorkspaceLoaded: url => log.push(`workspace:${url}`),
+    onRenderProcessGone: (_win, details) =>
+      log.push(`renderer-gone:${details.reason}`),
     ...overrides,
   };
   const controller = createMainWindowController(deps);
@@ -209,14 +214,47 @@ describe('createMainWindowController', () => {
       true
     );
     contents.emit('did-start-loading');
-    contents.emit('render-process-gone');
     contents.emit('destroyed');
-    expect(log).toEqual([
-      'owner-lost:7',
-      'menu-reset',
-      'menu-reset',
-      'owner-lost:7',
-    ]);
+    expect(log).toEqual(['owner-lost:7', 'menu-reset', 'owner-lost:7']);
+  });
+
+  it('hands a dead renderer to recovery only after it stops owning workspace state', () => {
+    // BUG-223: a quit must never wait on a renderer that is gone to
+    // checkpoint, and recovery must never reload a renderer still counted as
+    // the owner.
+    const { controller, windows, log } = harness();
+    controller.open(WORKSPACE, appearance);
+    log.length = 0;
+
+    windows[0].webContents.emit(
+      'render-process-gone',
+      {},
+      { reason: 'killed', exitCode: 9 }
+    );
+
+    expect(log).toEqual(['menu-reset', 'owner-lost:7', 'renderer-gone:killed']);
+  });
+
+  it('reloads without needing a live renderer to hold focus', () => {
+    // Electron's `reload` role targets the focused web contents, which a
+    // crashed renderer can never be (BUG-223). The menu passes the focused
+    // window instead, and nothing at all when no window is focused.
+    const { controller, windows } = harness();
+    controller.open(WORKSPACE, appearance);
+    const contents = windows[0].webContents;
+
+    controller.reload(undefined, { ignoringCache: false });
+    controller.reload({ id: 3 }, { ignoringCache: true });
+    expect(contents.reloads).toEqual(['reload', 'ignoring-cache']);
+
+    const other = new FakeWindow({});
+    controller.reload(other, { ignoringCache: false });
+    expect(other.webContents.reloads).toEqual(['reload']);
+    expect(contents.reloads).toHaveLength(2);
+
+    windows[0].destroyed = true;
+    controller.reload(undefined, { ignoringCache: false });
+    expect(contents.reloads).toHaveLength(2);
   });
 
   it('repaints the launch screen, or delivers held work, when a document finishes loading', () => {

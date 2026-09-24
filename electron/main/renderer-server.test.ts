@@ -246,6 +246,90 @@ describe('createRendererServer', () => {
     server.pruneCache();
     expect(fs.existsSync(stale)).toBe(true);
   });
+
+  describe('when the child dies while main lives (BUG-223)', () => {
+    it('reports a serving child killed from outside, once', async () => {
+      const exits: unknown[] = [];
+      const { server, spawned } = harness({
+        onUnexpectedExit: details => exits.push(details),
+      });
+      await server.start();
+
+      spawned[0].child.exit(null, 'SIGKILL');
+
+      expect(exits).toEqual([{ code: null, signal: 'SIGKILL' }]);
+    });
+
+    it('does not report the exit a stop asked for', async () => {
+      const exits: unknown[] = [];
+      const { server } = harness({
+        onUnexpectedExit: details => exits.push(details),
+      });
+      await server.start();
+
+      await server.stop();
+
+      expect(exits).toEqual([]);
+    });
+
+    it('leaves a child that dies while starting to the start that launched it', async () => {
+      const exits: unknown[] = [];
+      const { server, spawned, answerAfter } = harness({
+        onUnexpectedExit: details => exits.push(details),
+      });
+      answerAfter(Number.POSITIVE_INFINITY);
+      const started = server.start();
+      await vi.waitFor(() => expect(spawned).toHaveLength(1));
+      spawned[0].child.exit(null, 'SIGKILL');
+
+      // A signal leaves no exit code; the start must still fail at once.
+      await expect(started).rejects.toThrow(
+        'Packaged renderer exited with SIGKILL'
+      );
+      expect(exits).toEqual([]);
+    });
+
+    it('restarts on the port it was serving, so the origin and its storage survive', async () => {
+      let allocations = 0;
+      const exits: unknown[] = [];
+      const { server, spawned, served } = harness({
+        ports: {
+          // A second allocation would hand out a different port.
+          allocate: async () => (++allocations === 1 ? 34567 : 45678),
+          serving: async port => {
+            served.push(port);
+          },
+        },
+        onUnexpectedExit: details => exits.push(details),
+      });
+      const origin = await server.start();
+      spawned[0].child.exit(null, 'SIGKILL');
+
+      const restarted = await server.restart();
+
+      expect(restarted).toBe(origin);
+      expect(server.origin).toBe(origin);
+      expect(allocations).toBe(1);
+      expect(spawned).toHaveLength(2);
+      expect(spawned[1].options.env).toMatchObject({ PORT: '34567' });
+      expect(spawned[1].options.cwd).toBe(spawned[0].options.cwd);
+
+      // The restarted child is supervised the same way.
+      spawned[1].child.exit(null, 'SIGTERM');
+      expect(exits).toEqual([
+        { code: null, signal: 'SIGKILL' },
+        { code: null, signal: 'SIGTERM' },
+      ]);
+    });
+
+    it('refuses to restart a server that never served, or one being stopped', async () => {
+      const { server } = harness();
+      await expect(server.restart()).rejects.toThrow('has not served yet');
+      await server.start();
+      await server.stop();
+      await expect(server.restart()).rejects.toThrow('stopping');
+    });
+  });
 });
 
 /**
@@ -353,5 +437,57 @@ setInterval(() => {}, 60000);`;
       timeout: 10_000,
       interval: 20,
     });
+  });
+
+  it('brings a server killed from outside back on the same origin (BUG-223)', async () => {
+    // A stand-in for Next's server that answers with its own pid, so the test
+    // can kill exactly it and tell the restarted process apart.
+    const standalone = path.join(versionRoot(), 'dist-renderer');
+    fs.mkdirSync(standalone, { recursive: true });
+    fs.writeFileSync(
+      path.join(standalone, 'server.js'),
+      `require('http').createServer((req, res) => res.end(String(process.pid)))
+  .listen(Number(process.env.PORT), process.env.HOSTNAME);`
+    );
+    const port = await new Promise<number>(resolve => {
+      const probe = net.createServer().listen(0, '127.0.0.1', () => {
+        const { port: free } = probe.address() as net.AddressInfo;
+        probe.close(() => resolve(free));
+      });
+    });
+    const pidAt = async (origin: string) =>
+      Number(await (await fetch(`${origin}/workspace`)).text());
+    const exits: unknown[] = [];
+    const server = createRendererServer({
+      resourcesPath,
+      userDataPath: () => userData,
+      cacheNamespace: 'community',
+      execPath: process.execPath,
+      isTest: true,
+      childEnvironment: () => ({ PATH: process.env.PATH }),
+      forwardStdout: false,
+      ports: { allocate: async () => port, serving: async () => {} },
+      writeStderr: () => {},
+      onUnexpectedExit: details => exits.push(details),
+    });
+    try {
+      const origin = await server.start();
+      const firstPid = await pidAt(origin);
+      started.push(firstPid);
+
+      process.kill(firstPid, 'SIGKILL');
+      await vi.waitFor(
+        () => expect(exits).toEqual([{ code: null, signal: 'SIGKILL' }]),
+        { timeout: 10_000, interval: 20 }
+      );
+
+      expect(await server.restart()).toBe(origin);
+      const secondPid = await pidAt(origin);
+      started.push(secondPid);
+      expect(secondPid).not.toBe(firstPid);
+    } finally {
+      await server.stop();
+    }
+    expect(exits).toHaveLength(1);
   });
 });
