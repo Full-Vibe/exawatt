@@ -765,3 +765,51 @@ and official interfaces first, then assess launch, identity, retained context,
 resume and event truth against existing source contracts. Neither support nor
 a plugin runtime is promised by this intake. Marketing demand is recorded in
 `docs/product/marketing.md`; claims require demonstrated integration evidence.
+
+### 2026-09-23 — Instinct verdict: reachable only as a text thread
+
+Research for feedback `0283d334` (the Instinct half). Instinct, from Spear
+Street Technology and invite-only since summer 2026, publishes no API, SDK,
+MCP server, webhook or other developer interface. People reach it by iMessage,
+WhatsApp or phone, and it works on a vendor-hosted persistent computer with
+stored credentials. A Mac app that reads and sends iMessages was in beta on
+2026-08-29. Against the existing source contracts:
+
+| Contract         | Instinct                                                                  |
+| ---------------- | ------------------------------------------------------------------------- |
+| Launch           | None. One continuous thread the vendor owns.                              |
+| Identity         | Exact: the Messages thread for Instinct's handle.                         |
+| Retained context | Local Messages history, read-only.                                        |
+| Resume           | Not applicable; it is always the same thread.                             |
+| Event truth      | Messages only. Working, idle, cost, delegation and approvals are unknown. |
+| Command          | Send a message as the operator.                                           |
+
+Instinct is not adapter-shaped. It becomes reachable only through a general
+conversation kind: an Agent whose whole interface is a message thread. The
+nearest existing code is the connected OpenClaw coworker path (history, live
+updates, send, the remote-agent pane), which is OpenClaw-specific today. A
+conversation kind generalizes it behind a transport, with the OpenClaw Gateway
+as the first transport and macOS Messages as the second; Instinct is then
+configuration, the Messages transport plus its handle.
+
+That kind does nothing for the coding-harness demand recorded above (Hermes,
+Kilo Code, Gemini CLI), which all ship terminal CLIs and ACP servers. The
+prerequisite both share is making the source list data. Grok (S4) cost about
+60 file changes and 3.2k lines, and 38 non-test files name it, because every
+source is hand-wired into typed unions and per-source records.
+
+Boundaries if built:
+
+- Reading `~/Library/Messages/chat.db` requires Full Disk Access, the broadest
+  macOS grant. It is opt-in and requested only by the Messages transport.
+- Thread content is excluded from hosted conversation summaries and context
+  labels, which are on by default when signed in (see `outbound-data.md`).
+- Instinct's messages are displayed, never executed as fleet commands. Email
+  prompt injection against it was demonstrated publicly in August 2026.
+- An unread inbound message raises attention. Whether it is a question or a
+  result, and anything about Instinct's work between messages, is not claimed.
+
+Muse (Meta, launched 2026-09-08) ships as its own app with no third-party
+interface found, so no integration path exists today. Sources: Vellum's
+Instinct breakdown, TechCrunch (2026-08-24), Runtime Wire on the Mac app beta,
+and the Kilo, Hermes and Gemini CLI ACP documentation.
