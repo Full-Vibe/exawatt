@@ -301,6 +301,25 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-23, H18 follow-up (BUG-160): the first thing the delivery-script
+  pins caught once BUG-136 put them in CI was a fixture more capable on the
+  operator's machine than on the runner. A test committed in a clone of its
+  fixture repository; the clone had no local identity, and git used the
+  operator's global one or guessed his name from the account record. The
+  runner has neither. The obvious local reproduction, an empty `HOME` with
+  `GIT_CONFIG_GLOBAL=/dev/null`, still passed, because git's guess needs no
+  config file. Only `user.useConfigOnly=true` reproduced it, and under that
+  setting the unmodified suite failed exactly the one test CI failed. Identity
+  was only the first case. Every test fixture could equally have depended on
+  the host's default branch, signing, hooks path, push defaults, or global
+  excludes. The repair is at the boundary rather than in the test: one
+  helper, `scripts/lib/hermetic-git.mjs`, is the only way test code runs git.
+  It reads no host config and never guesses an identity. A tripwire in
+  `suite-environment.test.mjs` refuses a direct `git` spawn in any test or
+  fixture module. Mutation-verified: restoring the original test file turns
+  the tripwire red and names it, and dropping `useConfigOnly` or the global
+  isolation from the helper turns its contract test red.
+
 - 2026-09-13, H18: an audit of the checks every other change is judged by
   found five defects of one shape: the check reads as coverage and is not.
   The batch CI red since 2026-09-11 read as a content scanner that died

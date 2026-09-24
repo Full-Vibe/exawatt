@@ -325,6 +325,16 @@ reader, not the process (incident `0022`).
 `gh api repos/<owner>/<repo>/actions/jobs/<job-id>` names the failed step and
 its duration, and `…/jobs/<job-id>/logs` is the complete log.
 
+The runner has no global git configuration and its account has no name, so a
+delivery-script fixture that leans on the operator's identity or git config
+fails only there. Test code runs git through `scripts/lib/hermetic-git.mjs`,
+which reads no host configuration and never guesses an identity, and
+`suite-environment.test.mjs` refuses a direct `git` spawn (BUG-160). To
+reproduce the runner locally, add `GIT_CONFIG_GLOBAL=/dev/null
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly
+GIT_CONFIG_VALUE_0=true` to the command. An empty `HOME` alone does not
+reproduce it: git still guesses a name from the macOS account.
+
 The request is removed only after the batch ref is current. A failed push emits
 `ci_batch_failed` and leaves the request recoverable; the next normal landing
 starts another worker. The guarded `--direct` recovery path intentionally
