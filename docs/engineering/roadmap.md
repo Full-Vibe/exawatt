@@ -2165,6 +2165,8 @@ Status: planned — accepted 2026-08-04 from the unit-test throughput pass. The 
 
 2026-09-24 M1 slice: the desktop bridge is one typed contract. `@exawatt/core/desktop-bridge` declares all 116 request channels, the synchronous first-paint read and 30 pushes with the values that cross them, and refuses at compile time any value that could hold a function. Main's handlers, tables and pushes are typed by it, preload's `window.electron` `satisfies` it, the renderer's 1,475-line hand-written `electron.d.ts` is 15 lines that import it, and 39 test files install one double built from it, the only code lint lets write `window.electron`. Consequential renderer input is read at the boundary by per-channel readers typed by the contract. It surfaced BUG-209. Narrative in the [milestone log](projects/module-topology.md#2026-09-24--m1-slice-the-desktop-bridge-is-one-typed-contract).
 
+2026-09-24 bounded application: the renderer's workspace state is a composition root. `use-workspace-state.ts`, the least reviewable file in the renderer, went from 3,718 lines to 518 over 16 single-concern modules in `src/components/workspace/workspace-state/`: seven pure (the workspace model, the persisted layout, restore, serialize, Project-list transitions, recency, in-flight Session operations) with 69 new unit tests, and nine focused hooks. Its exported API and behaviour are unchanged. [Milestone log](projects/module-topology.md#2026-09-24--the-renderers-workspace-state-is-a-composition-root).
+
 Scope:
 
 - discover module seams from runtime responsibility, dependency direction, change/test co-occurrence, and existing package boundaries; do not impose a big-bang folder taxonomy

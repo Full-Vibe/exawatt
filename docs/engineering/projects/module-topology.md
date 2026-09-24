@@ -5,6 +5,85 @@ this doc holds the narrative of each seam as it is adopted.
 
 ## Roadmap milestone log
 
+### 2026-09-24 — the renderer's workspace state is a composition root
+
+**`use-workspace-state.ts` went from 3,718 lines to 518 and now composes 16
+single-concern modules under `src/components/workspace/workspace-state/`,
+with its exported API and its behaviour unchanged.** It owns the renderer's
+workspace (tabs, Sessions, launch, Recently closed, persistence), every
+landing that touched workspace behaviour edited it, and its rules could only
+be reached by mounting the whole hook.
+
+| Module | Lines | Owns |
+| --- | --- | --- |
+| `workspace-model.ts` | 542 | tab and Project types, lifecycle predicates, id minting, the draft, reopened and PTY-adopted tab constructors, the runtime-adoption patch |
+| `persisted-layout.ts` | 424 | every on-disk layout shape (v1 to v7) and the one upgrading reader |
+| `layout-restore.ts` | 424 | a saved layout matched to live PTYs, the Session-keyed store seeds and the events that raced them, provider-identity reconciliation |
+| `layout-serialize.ts` | 209 | the v7 record, the shutdown checkpoint's parked set, late provider identities |
+| `project-list.ts` | 429 | every Project-list transition as `(projects, ...) => projects` |
+| `recent-projects.ts` | 92 | Project recency and the one ledger that holds it |
+| `session-operations.ts` | 77 | resume, model change and pause in flight, and the exits that beat their replies |
+| `use-workspace-hydration.ts` | 391 | the mount effect: load, restore, seed, the PTY event stream, load-failure retry |
+| `use-workspace-persistence.ts` | 139 | the debounced save, the unmount flush, the shutdown checkpoint |
+| `use-workspace-projects.ts` | 404 | opening, importing and closing Project groups; registry identity |
+| `use-session-launch.ts` | 522 | the ⌘T draft, launch, launch-here, Clone |
+| `use-recently-closed.ts` | 304 | the close grammar and both halves of the soft-close ledger |
+| `use-session-runtime.ts` | 311 | resume (one, a Project, all), model change, Project pause |
+| `use-workspace-navigation.ts` | 248 | selection through `moveOperator`, the ring, ordinals, the split pin, arrangement |
+| `use-workspace-requests.ts` | 111 | ⌘K requests and their replay once the layout loads |
+| `use-attention-focus.ts` | 60 | the attention focus contract (S1) |
+
+The first seven are pure and unit-tested directly: 69 new tests. The
+restore suite was mutation-checked (a claimed PTY left unclaimed, a race
+guard dropped, the interrupted-run test inverted each fail it). The hooks are
+the effectful half; the entry point declares the state and the Session-keyed
+stores, calls the hooks, and returns the same object it always did.
+
+**How "no behaviour change" is held.**
+
+- Moves are verbatim. A script compared every moved `useCallback` body with
+  master's; the only differences are the ledger's four calls and dependency
+  arrays that now name the stable values passed in.
+- Effect order is unchanged. Each hook is called where its effects were
+  declared, so passive and layout effects run in the original order.
+- No effect subscribes more often. Everything passed between hooks is a
+  setter, a ref, or a callback over them, so each identity is stable, as it
+  was when they shared one closure.
+- The API is identical. A type-level check asserted the hook's return type,
+  its parameters, its value exports and all 18 exported types equal master's.
+
+**Explicit values, not shared refs.** A hook reads the layout and the stores
+through read-only `Latest<T>` views. The only writable refs passed are to
+their one writer: observed identities to hydration, shutdown targets to
+persistence. Two refs written from three places, the busy tabs and the exits
+that raced a reply, became the `SessionOperations` ledger. Project recency,
+written by the load, every save and a Project close, became `RecentProjects`.
+
+**Guards that moved with it.** Hydration's hand-rolled `let cancelled` is a
+`useLatestRequest` ticket and its ratchet entry is gone. BUG-037's
+declaration guard in `session-scope.test.tsx` now reflects over every module
+under `workspace-state/`, not only the hook; a raw `useRef(new Map())` in one
+of them fails it.
+
+**Evidence in the real app**, headless on the worktree's dev server through
+`withElectronApp`: a throwaway probe opened three Agent tabs (two through
+⌘T), closed one into Recently closed, reopened it with ⌘⇧T as a stopped tab
+on the same durable Session, restarted the app, and found all three tabs
+restored in order with the operator's position and nothing spawned, then
+launched from ⌘T again (12 checks). `eval:electron:project-agent`,
+`eval:electron:recents`, `eval:electron:project-pause`,
+`eval:electron:model-change`, `eval:electron:clone-context`,
+`eval:workspace:split` and `eval:workspace:draft` pass. The last two each
+failed once under a load average near 37 and passed on rerun, as they did
+with master's hook swapped back in: the split eval presses ⌘⌥T as soon as
+the stage mounts rather than once the layout is ready, and the draft eval
+counts a paste in a shell whose line editor can redraw it.
+
+**Not done.** `use-workspace-state.ts` and `workspace-state/` route to no
+surface gate in `SURFACE_GATES`, so a change to hydration, persistence, or
+the close and reopen path still owes no Electron eval. That map is being
+reworked on its own branch; the evals above are the ones it should name.
+
 ### 2026-09-24 — the stale-async ratchet finds guards by shape (BUG-206)
 
 **The ratchet that keeps the M0 `useLatestRequest` seam from eroding now
