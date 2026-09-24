@@ -194,11 +194,15 @@ describe('Settings → Privacy', () => {
     removeBridgeDouble();
   });
 
-  it('renders every outbound control with its full disclosure', async () => {
-    installSettingsBridge();
-    await renderPrivacy();
+  // One test per control (BUG-218): each visibility check resolves styles up
+  // the whole ancestor chain, so a loop over every control spent the
+  // contract's full length inside one timeout, and the list grows with it.
+  it.each(Object.values(OUTBOUND_CONTROLS))(
+    'renders the $id control with its full disclosure',
+    async control => {
+      installSettingsBridge();
+      await renderPrivacy();
 
-    for (const control of Object.values(OUTBOUND_CONTROLS)) {
       const row = within(rowFor(control.id));
       expect(row.getByRole('switch', { name: control.label })).toBeVisible();
       expect(row.getByText(control.purpose)).toBeVisible();
@@ -206,7 +210,7 @@ describe('Settings → Privacy', () => {
       expect(row.getByText(control.destination)).toBeVisible();
       expect(row.getByText(control.cost)).toBeVisible();
     }
-  });
+  );
 
   it('shows every control at its disclosed default before any settings load', async () => {
     installSettingsBridge({}, { pendingRead: true });

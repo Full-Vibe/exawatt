@@ -759,19 +759,27 @@ describe('Connect: Agents, names, and the Project', () => {
   });
 });
 
+// One test per screen (BUG-218): the dialog costs hundreds of milliseconds to
+// open and walk in jsdom, and a single test that walked all eight screens sat
+// at a quarter of its timeout alone.
 describe('Connect: voice', () => {
-  it('never uses an em dash, and never says remote work changed', async () => {
-    const seen: string[] = [];
-    const record = () => seen.push(document.body.textContent ?? '');
+  function expectOperatorVoice() {
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('—');
+    expect(text).not.toMatch(/\bstopped\b|\bpaused\b|\blost\b/i);
+  }
 
+  it('never uses an em dash, and never says remote work changed', async () => {
     renderDialog({ bridge: makeBridge() });
     await screen.findByRole('button', { name: /atlas-box/ });
-    record();
+    expectOperatorVoice();
     await reachReady();
-    record();
-    cleanup();
+    expectOperatorVoice();
+  });
 
-    for (const failure of SOURCE_FAILURE_CLASSES) {
+  it.each(SOURCE_FAILURE_CLASSES)(
+    'keeps that voice when a test fails as %s',
+    async failure => {
       renderDialog({
         bridge: makeBridge({
           connect: vi.fn(async () => ({
@@ -785,10 +793,11 @@ describe('Connect: voice', () => {
       await screen.findByText(
         new RegExp(CONNECT_FAILURE_COPY[failure].headline)
       );
-      record();
-      cleanup();
+      expectOperatorVoice();
     }
+  );
 
+  it('keeps that voice on the manual path', async () => {
     renderDialog({
       bridge: makeBridge({
         sshAliases: vi.fn(async () => ({
@@ -799,13 +808,7 @@ describe('Connect: voice', () => {
       }),
     });
     await screen.findByLabelText('Address');
-    record();
-
-    expect(seen).not.toHaveLength(0);
-    for (const text of seen) {
-      expect(text).not.toContain('—');
-      expect(text).not.toMatch(/\bstopped\b|\bpaused\b|\blost\b/i);
-    }
+    expectOperatorVoice();
   });
 });
 
