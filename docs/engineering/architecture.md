@@ -47,8 +47,21 @@ until the launch frame exists so disk work cannot delay visible acknowledgement.
 The same window then navigates to the trusted loopback renderer. Shutdown owns
 that renderer child process as part of the verified lifecycle: it waits for the
 server to close (with bounded force-stop escalation) before declaring cleanup
-complete. This is a presentation boundary, not a second application or
+complete. The child also ends with main however main ends, through a stdin
+lifeline main never closes (BUG-070), and an install keeps one loopback port,
+so the renderer origin and everything Chromium stores per origin survive a
+relaunch; a launch that finds the port taken serves one launch from another
+(BUG-022). This is a presentation boundary, not a second application or
 alternate data source.
+
+Electron main is a composition root (ENG-039 M1): `main.ts` reads the launch
+environment and wires single-owner modules together, each taking its
+process boundaries as arguments so it is tested without Electron. The renderer
+server and its port policy, deep links, the window, the menu's runtime state,
+main's IPC channel tables, the shutdown sequence, and the command-surface
+bootstrap are separate modules. IPC registration is data: module registrars
+are rows in one ordered table and main's own channels are records keyed by
+channel name, all registered through `handleTrusted`.
 
 The desktop artifact's **runtime payload is a declaration, not a copy**
 (BUG-030). electron-builder ships `dist-electron/**/*` and excludes

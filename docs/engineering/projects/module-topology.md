@@ -5,6 +5,60 @@ this doc holds the narrative of each seam as it is adopted.
 
 ## Roadmap milestone log
 
+### 2026-09-23 — M1 first slice: Electron main is a composition root
+
+**`main.ts` went from 1,761 lines to 339 and now only wires modules; three
+bugs in that code were fixed by the split.** It had 25 module-level `let`s,
+ran `app.whenReady()` on import, and no test could load it, so every change to
+one of its five responsibilities meant reading all of them.
+
+| Module | Owns | Suite |
+| --- | --- | --- |
+| `renderer-server.ts` | unpacking, spawning, readiness, stop, cache pruning, the child's lifeline | fake child process, plus real processes for the lifeline (10) |
+| `renderer-port.ts` | the port the renderer origin carries (BUG-022) | temp `userData`, fake port availability (11) |
+| `deep-link.ts` | protocol registration, vetting, held links | fake window (12) |
+| `window.ts` | construction over `window-shape.ts`, navigation boundary, startup stage, trusted origin | fake BrowserWindow (15) |
+| `menu-controller.ts` | the menu's runtime state and its three channels | real template, fake install (6) |
+| `app-ipc.ts` | main's own channel tables and their composer | per table, plus the composer (17) |
+| `ipc-table.ts` | registration as data, keyed by channel name through `handleTrusted` | (5) |
+| `shutdown-sequence.ts` | every step of quit, restart and update-restart; `before-quit` | the real coordinator over fakes (17) |
+| `command-surface.ts` | bootstrap and the `CommandRuntime` it fills | injected runtime modules (8) |
+| `build-identity.ts`, `main-diagnostics.ts`, `installed-build.ts` | what the process is; instrumentation; the update-ready watch | (8), (3), (2) |
+
+Registration is a table in both directions: module registrars are rows in one
+ordered list, and main's own channels are records keyed by channel name. The
+table declares no channel names and no payload types, so the typed
+desktop-bridge contract can adopt it unchanged.
+
+What this does not yet do: M1's mechanical enforcement (deep-import and cycle
+refusal, declared runtime environments). The modules exist and are tested in
+isolation; nothing yet stops the next change from importing across them.
+
+The three fixes that fell out:
+
+- **BUG-070.** The renderer server was stopped only from `before-quit`, which a
+  SIGKILL, crash or Force Quit never runs. Its launch now runs a four-line
+  `-e` prelude that exits on end of file from stdin, a pipe whose only writer
+  is main; the kernel closes that writer however main ends. Rejected:
+  `utilityProcess` (needs the ready event, and the warm renderer starts before
+  it) and a ppid poll (a second of latency for the same signal).
+- **BUG-022.** An install keeps one port in `renderer-port.json`: kept when
+  free, an OS port for one launch when taken (empty storage that does not
+  carry over, the kept origin untouched), a new home after three taken
+  launches or an unreadable record. Chosen over moving each `localStorage`
+  store because it repairs the class, covers IndexedDB and sessionStorage, and
+  stops a dead origin accumulating per launch. What it cannot do on a fallback
+  launch is BUG-171.
+- **BUG-050.** The eval inferred "a native modal is up" from "did not close in
+  2.5 s". Every shutdown dialog now names itself on main's console first, the
+  eval fails on that line, and the product half (no dialog on a non-workspace
+  quit with only stopped Sessions) is a unit test.
+
+Falsified along the way: the lifecycle gate was not red on a quiet machine
+(baseline `origin/master` passed it end to end before any change), and its
+record's premise that the last launch "supplies no dialog responses" was
+stale; every launch passes `confirm`.
+
 ### 2026-09-13 — M0 first seam: the Agent Source readiness fact model
 
 **One fact model replaced four local fixes, and ⌘T paints from memory.**
