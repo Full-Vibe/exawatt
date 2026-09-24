@@ -1397,7 +1397,7 @@ export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** What a harness's own retained-history reader may need from its caller. */
-export interface NativeHistoryOptions {
+interface NativeHistoryOptions {
   /** OpenCode lists its sessions through the operator's login shell. */
   openCodeShell?: () => Promise<string>;
   /** Legacy Codex fixture seam; omitted means Codex's own default root. */

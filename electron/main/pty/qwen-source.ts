@@ -14,9 +14,9 @@ import path from 'path';
 import { QWEN_ADMIN_DEFAULTS_PATH } from '../harness-events/qwen-hooks';
 
 /** The oldest version whose launch, identity and hook contract was verified. */
-export const QWEN_MIN_VERSION = [0, 24, 0] as const;
+const QWEN_MIN_VERSION = [0, 24, 0] as const;
 
-export interface QwenVersion {
+interface QwenVersion {
   version: string;
   compatible: boolean;
 }
@@ -109,7 +109,7 @@ export function qwenProjectDirname(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/g, '-');
 }
 
-export interface QwenSignIn {
+interface QwenSignIn {
   /** Qwen Code's own name for the configured credential, e.g. `openai`. */
   authType: string;
 }
@@ -122,7 +122,7 @@ export function readQwenSignIn(
   return typeof authType === 'string' && authType ? { authType } : null;
 }
 
-export interface QwenConfiguredModel {
+interface QwenConfiguredModel {
   id: string;
   label: string;
   provider: string;
