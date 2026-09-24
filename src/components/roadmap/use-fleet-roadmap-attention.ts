@@ -20,7 +20,7 @@
  * Nothing here runs per render, per PTY tick, or per Session: there is no
  * per-Session git evidence, deliberately (see `roadmap-attention.ts`).
  *
- * A read that FAILS is not a Project with no roadmap (BUG-160). It used to
+ * A read that FAILS is not a Project with no roadmap (BUG-162). It used to
  * write the same `absent` a successful read of nothing writes, so a roadmap
  * over the reader's byte limit made the strip, the Project dot and ⌘J read
  * every Session in that Project as quiet while the rail showed the error.

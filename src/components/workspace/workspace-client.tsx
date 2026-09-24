@@ -975,7 +975,7 @@ export function WorkspaceClient() {
   // Attention sources compose. A quiet harness result must never mask an
   // independent roadmap block for the same Session. The roadmap producer
   // declares itself blind to the Sessions of a Project whose roadmap it
-  // could not read (BUG-160), so the merge is sealed HERE, explicitly, with
+  // could not read (BUG-162), so the merge is sealed HERE, explicitly, with
   // those Sessions named in `unseen` rather than read as quiet.
   const sealedAttention = useMemo(
     () =>

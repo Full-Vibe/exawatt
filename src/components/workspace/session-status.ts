@@ -194,7 +194,7 @@ export function mergeFleetAttention(
 
 /**
  * What the fleet-wide surfaces get from a merge that may be PARTIAL, said
- * out loud (BUG-160). A producer that could not look at some Sessions (the
+ * out loud (BUG-162). A producer that could not look at some Sessions (the
  * roadmap producer whose read failed) narrows the merged view; the tab
  * strip, the Project dot and the ⌘J queue index a record and have no
  * vocabulary yet for "unwatched", so the record they receive carries the

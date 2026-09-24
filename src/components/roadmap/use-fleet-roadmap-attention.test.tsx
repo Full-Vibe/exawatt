@@ -117,7 +117,7 @@ describe('useFleetRoadmapAttention', () => {
     expect(result.current.signals.sb.since).toBe(since);
   });
 
-  // BUG-160. The roadmap reader refuses a file over its byte limit with
+  // BUG-162. The roadmap reader refuses a file over its byte limit with
   // `status: 'error'`; this hook wrote the same `absent` a Project with no
   // roadmap gets, so the strip, the Project dot and ⌘J read every Session in
   // that Project as quiet while the rail showed the error.
