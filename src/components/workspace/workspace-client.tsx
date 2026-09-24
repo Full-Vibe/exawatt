@@ -71,7 +71,10 @@ import { SessionRestorePanel } from './session-restore-panel';
 import { RemoteAgentPane, useRemoteCoworkers } from './remote-agent';
 import { ResumeRecoveryBar } from './resume-recovery-bar';
 import { PausedAgentRecord } from './paused-agent-record';
-import { sessionLifecyclePresentation } from '@exawatt/ui-model';
+import {
+  SESSION_RESUME_UNAVAILABLE,
+  sessionLifecyclePresentation,
+} from '@exawatt/ui-model';
 
 /** Where the lifecycle bar sits over an ended Session's retained terminal:
  *  the top edge of whichever pane region the terminal occupies. */
@@ -1687,15 +1690,15 @@ export function WorkspaceClient() {
         if (!resumeActiveAgentNow()) {
           announceWorkspace(
             activeTab
-              ? 'This Agent is not parked'
-              : 'Select a parked Agent to resume'
+              ? SESSION_RESUME_UNAVAILABLE.agent
+              : SESSION_RESUME_UNAVAILABLE.noSelection
           );
         }
         return true;
       },
       resumeParkedScope: () => {
         if (!resumeParkedScopeNow()) {
-          announceWorkspace('No parked Agents to resume');
+          announceWorkspace(SESSION_RESUME_UNAVAILABLE.scope);
         }
         return true;
       },

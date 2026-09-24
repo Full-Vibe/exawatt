@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 import type { WorkspaceContextCommand } from '@exawatt/core';
+import { SESSION_RESUME_UNAVAILABLE } from '@exawatt/ui-model';
 
 /**
  * Workspace command truth shared by passive hints, the command palette, and
@@ -185,11 +186,11 @@ export function deriveWorkspaceCommandAvailability({
           : unavailable('No running local Agents in this Project'),
       'resume-agent': activeTabCanResume
         ? available()
-        : unavailable('This Agent is not parked'),
+        : unavailable(SESSION_RESUME_UNAVAILABLE.agent),
       'resume-scope':
         resumeScope !== null
           ? available()
-          : unavailable('No parked Agents to resume'),
+          : unavailable(SESSION_RESUME_UNAVAILABLE.scope),
     },
   };
 }

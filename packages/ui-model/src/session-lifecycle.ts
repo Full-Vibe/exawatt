@@ -125,6 +125,14 @@ export function pausedAgentsNoun(count: number): string {
   return `${count} ${PAUSED} ${count === 1 ? 'Agent' : 'Agents'}`;
 }
 
+/** Why a resume verb has nothing to act on: a disabled reason, or what a
+ *  chord announces instead of silently doing nothing. */
+export const SESSION_RESUME_UNAVAILABLE = {
+  agent: `This Agent is not ${PAUSED}`,
+  noSelection: `Select a ${PAUSED} Agent to resume`,
+  scope: `No ${PAUSED} Agents to resume`,
+} as const;
+
 /** "1 Agent needs reconnection" / "2 Agents need reconnection" */
 export function reconnectAgentsCopy(count: number): string {
   return `${agentsNoun(count)} need${count === 1 ? 's' : ''} reconnection`;

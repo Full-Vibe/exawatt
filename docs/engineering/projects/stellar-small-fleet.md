@@ -662,10 +662,12 @@ Implementation record (landed 2026-07-10):
   import `@exawatt/ui-model`, so the words moved one layer down to
   `SESSION_LIFECYCLE_WORD` (`packages/core/src/session-lifecycle-words.ts`,
   the `surface-names.ts` precedent); the owner assigns them, the manifest
-  composes "Resume Paused Agents" from the table, and ⌘K counts with the
-  owner's `pausedAgentsNoun`. `session-lifecycle-vocabulary.test.tsx` pins
-  the menu label, the shortcut-sheet label and the resume description to the
-  word the paused Session's tab prints; the ⌘K ranking test and
+  composes "Resume Paused Agents" from the table, ⌘K counts with the
+  owner's `pausedAgentsNoun`, and the resume verbs' disabled reasons and
+  chord announcements ("No parked Agents to resume") read the owner's
+  `SESSION_RESUME_UNAVAILABLE`. ⌘K keeps "parked" only as a search keyword. `session-lifecycle-vocabulary.test.tsx` pins
+  the menu label, the shortcut-sheet label, the resume description and the
+  unavailable reasons to the word the paused Session's tab prints; the ⌘K ranking test and
   `eval:navigation:spine` derive their expected labels from the owner and
   the compiled manifest. Open for the operator, not changed here: the set
   the bar and ⌘K count as paused also holds Interrupted, nonzero-Exited and

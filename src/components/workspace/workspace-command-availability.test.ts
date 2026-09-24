@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SESSION_RESUME_UNAVAILABLE } from '@exawatt/ui-model';
 import {
   EMPTY_WORKSPACE_COMMAND_AVAILABILITY,
   deriveWorkspaceCommandAvailability,
@@ -169,11 +170,11 @@ describe('workspace command availability', () => {
       expect(state.resumeScope).toBeNull();
       expect(state.commands['resume-scope']).toEqual({
         available: false,
-        reason: 'No parked Agents to resume',
+        reason: SESSION_RESUME_UNAVAILABLE.scope,
       });
       expect(state.commands['resume-agent']).toEqual({
         available: false,
-        reason: 'This Agent is not parked',
+        reason: SESSION_RESUME_UNAVAILABLE.agent,
       });
     });
 

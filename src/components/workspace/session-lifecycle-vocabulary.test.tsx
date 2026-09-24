@@ -29,6 +29,7 @@ import {
   pausedAgentsCopy,
   pausedAgentsNoun,
   SESSION_LIFECYCLE_VERB_LABEL,
+  SESSION_RESUME_UNAVAILABLE,
   SESSION_RESUME_SCOPE_LABEL,
   sessionLifecyclePresentation,
 } from '@exawatt/ui-model';
@@ -203,8 +204,12 @@ describe('one Session, one lifecycle vocabulary', () => {
       getCommandVerb('workspace-resume-agent').description.toLowerCase()
     ).toContain(word);
     // ⌘K's scope row counts with this noun (command-palette-ranking.test.tsx
-    // pins that the row prints it).
+    // pins that the row prints it), and a chord or a disabled row with
+    // nothing to resume says why with the same word.
     expect(pausedAgentsNoun(2).toLowerCase()).toContain(word);
+    for (const reason of Object.values(SESSION_RESUME_UNAVAILABLE)) {
+      expect(reason.toLowerCase()).toContain(word);
+    }
   });
 
   it('the Team tile prints the shared word and the shared line', () => {

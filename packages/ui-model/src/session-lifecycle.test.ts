@@ -7,6 +7,7 @@ import {
   resumingAgentsCopy,
   SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_SCOPE_LABEL,
+  SESSION_RESUME_UNAVAILABLE,
   sessionLifecyclePresentation,
   type SessionLifecycleFacts,
   type SessionLifecyclePhase,
@@ -123,6 +124,7 @@ describe('sessionLifecyclePresentation', () => {
       ...Object.values(SESSION_RESUME_SCOPE_LABEL),
       pausedAgentsCopy(2),
       pausedAgentsNoun(2),
+      ...Object.values(SESSION_RESUME_UNAVAILABLE),
       reconnectAgentsCopy(1),
       resumingAgentsCopy(1, 2),
       ...PHASES.flatMap(lifecycle => {
