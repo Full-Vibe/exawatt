@@ -43,7 +43,7 @@ import {
   queueMainAnalyticsEvent,
 } from './analytics-bridge';
 import { randomUUID } from 'crypto';
-import { launchScreenUrl, type StartupStage } from './launch-screen';
+import { launchScreenUrl } from './launch-screen';
 import {
   registerCommandEngineIPC,
   setCommandEnginePhase,
@@ -70,6 +70,12 @@ import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
 import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
+import {
+  createMainWindowController,
+  createStartupScreen,
+  createWorkspaceTarget,
+  testWindowPosition,
+} from './window';
 import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import {
@@ -84,7 +90,6 @@ import {
   rendererAppearanceBootstrapSnapshot,
   type NativeAppearanceResolution,
 } from './appearance';
-import { AX_TILEABLE_WINDOW_SHAPE } from './window-shape';
 import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
@@ -152,7 +157,6 @@ const testQuitResponses =
     : [];
 const safeThemeLaunch = process.argv.includes('--safe-theme');
 
-let mainWindow: BrowserWindow | null = null;
 let rendererReadyPromise: Promise<string> | null = null;
 let rendererWasWarmAtLaunch = false;
 let bootstrapExitInProgress = false;
@@ -243,12 +247,6 @@ let safeElectronAuthError: (error: unknown) => {
  */
 let isElectronAuthLinkOutcome: ((value: unknown) => boolean) | null = null;
 let startupComplete = false;
-let inactiveLaunchPromoted = false;
-let startupStage: StartupStage = {
-  progress: 0.08,
-  label: 'Opening command surface',
-  detail: 'Preparing the local agent interface',
-};
 const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
 const workspaceCheckpointOwners = new Set<number>();
 const openDirectoryPicker = createDirectoryPicker({
@@ -355,15 +353,48 @@ if (rendererWasWarmAtLaunch) {
   void rendererReadyPromise.catch(() => {});
 }
 
+const workspace = createWorkspaceTarget({
+  isDev,
+  devUrl: DEV_URL,
+  rendererOrigin: () => rendererServer.origin,
+});
+const mainWindow = createMainWindowController({
+  createBrowserWindow: options => new BrowserWindow(options),
+  preloadPath: path.join(__dirname, 'preload.js'),
+  launchMode: windowLaunchMode,
+  productUpdatesEnabled,
+  openDevTools: isDev && process.env.EXAWATT_DEVTOOLS === '1',
+  position: () => testWindowPosition(process.env, screen),
+  isWorkspaceTarget: target => workspace.isTarget(target),
+  openExternal: url => shell.openExternal(url),
+  promoteToRegularApp: () => {
+    if (process.platform === 'darwin') app.setActivationPolicy('regular');
+  },
+  onNavigationReset: () => resetMenuAvailability(),
+  onCheckpointOwnerLost: id => workspaceCheckpointOwners.delete(id),
+  onLaunchScreenLoaded: () => startupScreen.repaint(),
+  onWorkspaceLoaded: url => deepLinks.deliverPending(url),
+});
+const startupScreen = createStartupScreen(() => mainWindow.current(), {
+  progress: 0.08,
+  label: 'Opening command surface',
+  detail: 'Preparing the local agent interface',
+});
+/** The main window when it can still parent a native dialog. */
+function liveMainWindow(): BrowserWindow | null {
+  const win = mainWindow.current();
+  return win && !win.isDestroyed() ? win : null;
+}
+
 // Any local process can invoke `exawatt://`; the router vets a link before it
 // reaches the renderer and holds one that arrives before the workspace loads.
 const deepLinks = createDeepLinkRouter({
   protocolScheme,
-  window: () => mainWindow,
+  window: () => mainWindow.current(),
   authCoordinator: () => authCoordinator,
   isLinkOutcome: () => isElectronAuthLinkOutcome,
   safeAuthError: error => safeElectronAuthError(error),
-  isWorkspaceTarget: target => isWorkspaceTarget(target),
+  isWorkspaceTarget: target => workspace.isTarget(target),
   record: (event, fields) => recordAuthDiagnostic(event, fields),
 });
 // Must be registered before app.whenReady() to also catch links during startup.
@@ -372,56 +403,6 @@ registerDeepLinkProtocol(app, protocolScheme, deepLinks, {
   execPath: process.execPath,
   argv: process.argv,
 });
-
-function workspaceUrl(): string {
-  return isDev ? DEV_URL : `${rendererServer.origin}/workspace`;
-}
-
-function isWorkspaceTarget(target: string): boolean {
-  try {
-    return new URL(target).origin === new URL(workspaceUrl()).origin;
-  } catch {
-    return false;
-  }
-}
-
-function updateStartupScreen(stage: StartupStage): void {
-  if (!stage.failed && stage.progress < startupStage.progress) return;
-  startupStage = stage;
-  const win = mainWindow;
-  if (
-    !win ||
-    win.isDestroyed() ||
-    !win.webContents.getURL().startsWith('data:text/html')
-  ) {
-    return;
-  }
-  const serialized = JSON.stringify(stage);
-  void win.webContents
-    .executeJavaScript(`window.exawattSetStartupStage?.(${serialized})`)
-    .catch(() => {});
-}
-
-/** Explicitly visible harness runs open on a NON-primary display when one
- *  exists. Normal automated runs are hidden; this remains useful with
- *  EXAWATT_WINDOW_MODE=inactive|foreground. */
-function testWindowPosition(): { x: number; y: number } | undefined {
-  if (process.env.EXAWATT_TEST !== '1') return undefined;
-  if (process.env.EXAWATT_TEST_SCREEN === 'primary') return undefined;
-  try {
-    const primary = screen.getPrimaryDisplay();
-    const secondary = screen
-      .getAllDisplays()
-      .find(display => display.id !== primary.id);
-    if (!secondary) return undefined;
-    return {
-      x: secondary.workArea.x + 40,
-      y: secondary.workArea.y + 40,
-    };
-  } catch {
-    return undefined;
-  }
-}
 
 function applyNativeAppearance(): NativeAppearanceResolution {
   const testOsAppearance = isTest
@@ -440,128 +421,6 @@ function applyNativeAppearance(): NativeAppearanceResolution {
             : undefined,
     }
   );
-}
-
-function createWindow(
-  initialUrl: string,
-  appearance: NativeAppearanceResolution
-): void {
-  const showAtCreation =
-    windowLaunchMode === 'foreground' || inactiveLaunchPromoted;
-  mainWindow = new BrowserWindow({
-    ...(testWindowPosition() ?? {}),
-    show: showAtCreation,
-    width: 1400,
-    height: 900,
-    // Every option an Accessibility-API window manager (Divvy, Rectangle, …)
-    // depends on, as one named contract with a test behind it. Do not inline a
-    // replacement here; amend `window-shape.ts` so the reason travels with the
-    // value (BUG-002, incidents `0001`).
-    ...AX_TILEABLE_WINDOW_SHAPE,
-    trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: appearance.bootstrap.background,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      additionalArguments: productUpdatesEnabled
-        ? ['--exawatt-capability-updates']
-        : [],
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      webSecurity: true,
-      // Hidden eval windows still need deterministic timers, PTY rendering,
-      // screenshots, and WebGL frames while Playwright drives them.
-      backgroundThrottling: windowLaunchMode !== 'hidden',
-    },
-  });
-  // Renderer-owned command truth is invalid as soon as a document starts
-  // loading or its process is gone. The main-frame navigation boundary below
-  // repeats this idempotently alongside checkpoint ownership.
-  mainWindow.webContents.on('did-start-loading', resetMenuAvailability);
-  mainWindow.webContents.on('render-process-gone', resetMenuAvailability);
-
-  if (!showAtCreation && windowLaunchMode === 'inactive') {
-    const inactiveWindow = mainWindow;
-    inactiveWindow.once('ready-to-show', () => {
-      if (!inactiveWindow.isDestroyed()) inactiveWindow.showInactive();
-    });
-    inactiveWindow.once('focus', () => {
-      inactiveLaunchPromoted = true;
-      if (process.platform === 'darwin') app.setActivationPolicy('regular');
-    });
-  }
-
-  const webContentsId = mainWindow.webContents.id;
-  const clearCheckpointOwner = () =>
-    workspaceCheckpointOwners.delete(webContentsId);
-  mainWindow.webContents.on(
-    'did-start-navigation',
-    (_event, _target, isInPlace, isMainFrame) => {
-      if (isMainFrame && !isInPlace) {
-        clearCheckpointOwner();
-        // Disable first; the restored workspace republishes after hydration
-        // instead of leaving stale native actions clickable during reload.
-        resetMenuAvailability();
-      }
-    }
-  );
-  mainWindow.webContents.on(
-    'did-navigate-in-page',
-    (_event, target, isMainFrame) => {
-      if (!isMainFrame) return;
-      try {
-        if (new URL(target).pathname !== '/workspace') clearCheckpointOwner();
-      } catch {
-        clearCheckpointOwner();
-      }
-    }
-  );
-  mainWindow.webContents.on('destroyed', clearCheckpointOwner);
-
-  void mainWindow.loadURL(initialUrl);
-
-  mainWindow.webContents.on('will-navigate', (event, target) => {
-    if (!isWorkspaceTarget(target)) {
-      event.preventDefault();
-      if (target.startsWith('https://')) void shell.openExternal(target);
-    }
-  });
-  mainWindow.webContents.on('will-attach-webview', event =>
-    event.preventDefault()
-  );
-  mainWindow.webContents.session.setPermissionRequestHandler(
-    (_webContents, _permission, callback) => callback(false)
-  );
-
-  // Deliver any queued deep link once the page is loaded
-  mainWindow.webContents.on('did-finish-load', () => {
-    const currentUrl = mainWindow?.webContents.getURL() ?? '';
-    if (currentUrl.startsWith('data:text/html')) {
-      updateStartupScreen(startupStage);
-    } else {
-      deepLinks.deliverPending(currentUrl);
-    }
-  });
-
-  // Open external links in default browser
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) {
-      shell.openExternal(url);
-    }
-    return { action: 'deny' };
-  });
-
-  // opt-in only (EXAWATT_DEVTOOLS=1): auto-opened devtools occlude the
-  // workspace; toggle manually anytime with Opt+Cmd+I
-  if (isDev && process.env.EXAWATT_DEVTOOLS === '1') {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-  }
-
-  mainWindow.on('closed', () => {
-    resetMenuAvailability();
-    clearCheckpointOwner();
-    mainWindow = null;
-  });
 }
 
 /** Send a named command to the focused renderer. Menu items are the
@@ -944,10 +803,9 @@ async function confirmShutdown(
     cancelId: 0,
     noLink: true,
   };
-  const result =
-    mainWindow && !mainWindow.isDestroyed()
-      ? await dialog.showMessageBox(mainWindow, options)
-      : await dialog.showMessageBox(options);
+  const result = liveMainWindow()
+    ? await dialog.showMessageBox(liveMainWindow()!, options)
+    : await dialog.showMessageBox(options);
   return result.response === 1;
 }
 
@@ -973,10 +831,9 @@ async function promptWindowManagementRestart(): Promise<void> {
     cancelId: 0,
     noLink: true,
   };
-  const result =
-    mainWindow && !mainWindow.isDestroyed()
-      ? await dialog.showMessageBox(mainWindow, options)
-      : await dialog.showMessageBox(options);
+  const result = liveMainWindow()
+    ? await dialog.showMessageBox(liveMainWindow()!, options)
+    : await dialog.showMessageBox(options);
   if (result.response === 1) await shutdownCoordinator?.request('restart');
 }
 
@@ -999,10 +856,9 @@ async function confirmWithoutCheckpoint(
     cancelId: 0,
     noLink: true,
   };
-  const result =
-    mainWindow && !mainWindow.isDestroyed()
-      ? await dialog.showMessageBox(mainWindow, options)
-      : await dialog.showMessageBox(options);
+  const result = liveMainWindow()
+    ? await dialog.showMessageBox(liveMainWindow()!, options)
+    : await dialog.showMessageBox(options);
   return result.response === 1;
 }
 
@@ -1038,7 +894,7 @@ async function checkpointRenderer(
   stage: 'pre-stop' | 'stopped'
 ): Promise<boolean> {
   if (stage === 'pre-stop') await ptySessions.settleProviderIdentities();
-  const win = mainWindow;
+  const win = mainWindow.current();
   // Workspace state is mutable only while the workspace hook is mounted;
   // otherwise the store on disk holds the layout and main lands the settled
   // harness identities itself.
@@ -1083,8 +939,9 @@ async function reportShutdownFailure(error: unknown): Promise<void> {
     buttons: ['OK'],
     noLink: true,
   };
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    await dialog.showMessageBox(mainWindow, options);
+  const parent = liveMainWindow();
+  if (parent) {
+    await dialog.showMessageBox(parent, options);
   } else {
     await dialog.showMessageBox(options);
   }
@@ -1101,7 +958,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     // engine-state channel — the one surface whose whole job is to report a
     // failed bootstrap — would have rejected its own renderer (BUG-016).
     setTrustedRendererOrigin(url);
-    updateStartupScreen({
+    startupScreen.update({
       progress: 0.62,
       label: 'Renderer online',
       detail: 'Local command surface is accepting connections',
@@ -1137,7 +994,7 @@ async function bootstrapCommandSurface(): Promise<void> {
       authDiagnostics,
       connectedSourcesIpc,
     ]) => {
-      updateStartupScreen({
+      startupScreen.update({
         progress: 0.36,
         label: 'Command engine loaded',
         detail: 'Agent and Session services are initializing',
@@ -1224,7 +1081,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     ),
     runStateStore.begin(),
   ]);
-  updateStartupScreen({
+  startupScreen.update({
     progress: 0.78,
     label: 'Session index restored',
     detail: 'Durable local state is ready',
@@ -1328,7 +1185,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     );
   }
   createMenu();
-  updateStartupScreen({
+  startupScreen.update({
     progress: 0.94,
     label: 'Entering workspace',
     detail: 'Command services are ready',
@@ -1336,8 +1193,8 @@ async function bootstrapCommandSurface(): Promise<void> {
 
   setCommandEnginePhase('ready');
 
-  const win = mainWindow;
-  if (win && !win.isDestroyed()) await win.loadURL(workspaceUrl());
+  const win = mainWindow.current();
+  if (win && !win.isDestroyed()) await win.loadURL(workspace.url());
   startupComplete = true;
   watchInstalledBuild();
   if (productUpdatesEnabled) {
@@ -1417,7 +1274,7 @@ app.whenReady().then(() => {
     ? bootstrapCommandSurface()
     : null;
   const appearance = applyNativeAppearance();
-  createWindow(
+  mainWindow.open(
     launchScreenUrl(appearance.bootstrap, distributionIdentity.productName),
     appearance
   );
@@ -1427,9 +1284,9 @@ app.whenReady().then(() => {
     if (shutdownCoordinator?.phase !== 'idle') return;
     if (BrowserWindow.getAllWindows().length === 0) {
       const nextAppearance = applyNativeAppearance();
-      createWindow(
+      mainWindow.open(
         startupComplete
-          ? workspaceUrl()
+          ? workspace.url()
           : launchScreenUrl(
               nextAppearance.bootstrap,
               distributionIdentity.productName
@@ -1445,8 +1302,8 @@ app.whenReady().then(() => {
     // renderer that reaches a product surface anyway shows a complete, zeroed
     // local read (BUG-016).
     setCommandEnginePhase('paused');
-    updateStartupScreen({
-      progress: startupStage.progress,
+    startupScreen.update({
+      progress: startupScreen.stage().progress,
       label: 'Command engine paused',
       detail: `${distributionIdentity.productName} could not start its local command services`,
       failed: true,

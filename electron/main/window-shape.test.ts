@@ -49,14 +49,16 @@ describe('the window an AX window manager can tile', () => {
   });
 });
 
-describe('the window main.ts actually builds', () => {
+describe('the window window.ts actually builds', () => {
   it('takes its AX-relevant options from the contract, not inline literals', () => {
     // The regression this guards is a chrome change that reintroduces one of
     // these as a literal in `createWindow` and drifts from the contract.
-    const source = fs.readFileSync(path.join(__dirname, 'main.ts'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, 'window.ts'), 'utf8');
+    const start = source.indexOf('mainWindow = deps.createBrowserWindow({');
+    expect(start).toBeGreaterThan(-1);
     const construction = source.slice(
-      source.indexOf('mainWindow = new BrowserWindow({'),
-      source.indexOf('webPreferences: {')
+      start,
+      source.indexOf('webPreferences: {', start)
     );
     expect(construction).toContain('...AX_TILEABLE_WINDOW_SHAPE');
     for (const option of Object.keys(AX_TILEABLE_WINDOW_SHAPE)) {
