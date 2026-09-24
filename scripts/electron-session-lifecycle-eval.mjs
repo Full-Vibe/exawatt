@@ -455,7 +455,14 @@ try {
     ]);
   }
   if (!process.env.EXAWATT_KEEP_EVAL) {
-    rmSync(root, { recursive: true, force: true });
+    // A throw from `finally` replaces the step's own error, and a SIGKILLed
+    // app's helpers can still be writing `userData` here (ENOTEMPTY). The
+    // removal reports its own failure instead of hiding why the run failed.
+    try {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5 });
+    } catch (error) {
+      console.error(`[eng-018] could not remove fixture ${root}: ${error}`);
+    }
   } else if (existsSync(root)) {
     console.log(`[eng-018] retained fixture: ${root}`);
   }
