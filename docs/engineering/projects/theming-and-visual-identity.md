@@ -999,3 +999,38 @@ selection, committed radio selection, keyboard traversal, focus restoration,
 and visible hit-testable last items at 1312×700 and 420×480. The strengthened
 `eval:workspace:chrome` passes and is required by delivery policy for shared
 dropdown or account-menu changes. Nine existing account-menu tests also pass.
+
+### 2026-09-24 — `theme:check` red again, and routed this time (BUG-208)
+
+BUG-059 turned the gate green on 2026-08-17. It was red again the next day,
+at `f4de31cb`, and by 2026-09-24 it carried 18 raw colours over their caps,
+because nothing ran it: no landing check, no CI step, no package test. Each
+file was diagnosed rather than capped.
+
+- `status-light/protocol.ts`, 12 against a cap of 10. The `unreported`
+  reading shares `off`'s paint on purpose (its word and mark carry the
+  distinction, so it survives colour being switched off) and carried a
+  second copy of both values. One `UNLIT_PAINT` now feeds both readings, back
+  to ten: five signals, each a colour and a source colour.
+- `site/hero-board/capture.ts`, 5 against 2. BUG-059 capped it at two because
+  the frozen capture carried each harness's declared brand colour as data and
+  the demo fixture had two harnesses. W13 widened the fixture to five, so the
+  cap would have followed the fixture forever. The capture now carries each
+  harness's id and label only, and the `source` lens reads the colour from the
+  generated declarations by `adapterId`, which reaches no demo fixture; a
+  harness the launcher no longer declares recedes into the muted unit paint.
+  The exception is deleted. Two new tests pin the lens to the declarations.
+  The homepage now bundles the generated declarations (about 5 KB of source).
+- `workspace/connect-source-dialog.tsx`, 1 with no exception: a hand copy of
+  OpenClaw's declared colour, now read from its declaration. The filing's
+  count of 17 missed this file.
+
+`theme:check` now runs on the landing floor for any change under `src/`,
+`themes/` or `packages/ui-model/`, or to the generator or the ratchet (about
+two seconds), and in CI; `check-production-theme-literals.test.mjs` joins
+`test:agent-delivery`. This project's two continuity gates had rotted the same
+way: `eval:typography-stability` and `eval:navigation-paint` had failed at
+their first step since ENG-031 W6 moved Architecture from the header to the
+footer, and neither was routed. Both follow the footer link now;
+typography-stability is an enforced gate, and navigation-paint is quarantined
+against BUG-212 for the light header frame it then found.

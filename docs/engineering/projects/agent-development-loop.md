@@ -301,6 +301,96 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-208, BUG-210, BUG-211 (H20): **every verification
+  command has a route, and a test says so.** `theme:check` was repaired on
+  2026-08-17 (BUG-059) and red again on 2026-08-18 (`f4de31cb`), and it stayed
+  red for five weeks because no landing check, gate or CI step ran it. The same
+  day found `eval:electron:project-agent`, `eval:navigation:spine` and the
+  stale-async ratchet red on master for the same reason. An audit of all 110
+  verification commands in `package.json` (`lint`, `type-check*`, `test*`,
+  `eval:*`, `verify:*`, `qa:*`, `security:*`, `*:check|audit|scan|proof`),
+  deriving what runs each from the floor over every tracked path, the gate map,
+  the pre-push hook and `ci.yml` (including what those run in turn, a Node test
+  list inside a larger one, and a Vitest subset of the suite `test:ci` runs
+  whole), found 46 run by nothing. Dispositions:
+  - Floor, by changed path: `theme:check` (anything under `src/`, `themes/`,
+    `packages/ui-model/`, the generator or the ratchet; about two seconds),
+    `agent-sources:check` and `icon:check` (their one editable source, the
+    generator or an output), `company:proof` (`company/` or the composition
+    scripts; thirteen seconds). Into `test:agent-delivery`:
+    `check-production-theme-literals.test.mjs` (0.7 s) and the private
+    `public-repository-security.test.mjs` (0.04 s). Nothing was added to the
+    unconditional floor. `icon:check` was already enforced indirectly, since
+    `app-icon.test.mjs` calls it at import; routing it by path keeps the
+    derivation honest.
+  - CI: `security:secrets`, the pinned gitleaks over the whole history
+    (`fetch-depth: 0`, seven seconds). `gitleaks.yml` runs only where the
+    repository is public, so nothing had scanned the private history.
+    `theme:check`, `agent-sources:check` and `icon:check` run in CI too.
+  - Enforced gates, each run green on master first: `eval:hero-board`,
+    `eval:typography-stability`, `eval:spatial`, `eval:spatial:pointer`,
+    `qa:browser:smoke`, `eval:electron:offline`, `eval:electron:delegation`,
+    `eval:electron:turn-truth`, `eval:electron:tenancy`,
+    `eval:community:network` (builds its own package, like
+    `eval:electron:packaged`). `eval:typography-stability` and
+    `eval:navigation-paint` had failed at their first step since ENG-031 W6
+    moved Architecture to the footer; both now click the footer link.
+  - Quarantined gates, red on master: `eval:navigation-paint` (BUG-212, a
+    real light header frame once the eval could run), `eval:navigation:electron`
+    (BUG-213), `eval:electron:grok-source` (BUG-214),
+    `eval:electron:appearance` (BUG-215), `eval:electron:context-labels`
+    (BUG-216), and `eval:electron:resume`, `eval:electron:chrome` and
+    `eval:electron:session-parity`, which cannot build the package they need
+    (BUG-217).
+  - Manual, 21, each with its reason in the table: production accounts and
+    paid APIs, signed builds and live feeds, real signed-in CLIs, real
+    customer Gateways, the operator's real corpus, host-load timing probes,
+    and `eval:electron:terminal` and `eval:workspace:draft`, which overwrite
+    the operator's system clipboard on every run.
+
+  The table is `VERIFICATION_ROUTES` in `delivery-policy.mjs`, beside
+  `SURFACE_GATES`. `delivery-policy.test.mjs` fails on an unclassified command,
+  a stale entry, a route that does not run the command (the first of landing,
+  gate, CI that does is its route), a manual entry without a reason, and a
+  Vitest subset naming a file no project includes. That last check found
+  `eval:context-labels` naming `src/app/api/context-labels/route.test.ts`,
+  which moved to the company overlay on 2026-08-17; Vitest ignored the stale
+  filter and ran three of the four files. Eight mutations, all killed:
+  an unclassified command, `theme:check` unrouted from the floor, a stale
+  entry, the spine gate without `src/app/layout.tsx`, the rail gate without
+  its own script, a manual entry with no reason, a false gate claim, and a
+  Vitest subset naming a moved file. The projected public tree omits
+  company-only commands, so it keeps only the classification check.
+
+  **The spine gate after `7f29f131`.** Not waived: that landing's only waiver
+  was `eval:roadmap:rail`. The gate asserts the `Agent` and `Fleet` document
+  titles, whose template lives in `src/app/layout.tsx`, and its
+  match set did not name that file, so the landing was never asked for it.
+  That is the fourth instance of the BUG-058 pattern (a gate's map is written
+  from the surface it is about; its script asserts more). Two parts are now
+  mechanical: a gate owns its own script (ten did not), and a gate owns every
+  repository source file its script names (`d5549be8` had written
+  `src/app/layout.tsx` into the spine eval's comment; Grok's
+  `grok-paths.ts` was named by the agent-sources eval). The titles' owners
+  `src/app/workspace/page.tsx` and `src/app/fleet/spatial/layout.tsx` joined
+  too.
+
+  **BUG-210, `eval:roadmap:rail`.** Product, not eval. Reproduced on a
+  detached `origin/master` worktree, then timed: after Start the declared tab
+  stayed `draft` for about ten seconds inside the eval against half a second
+  in a fresh app, and a declared link exists only for a live tab. `pty:create`
+  reads the launch-scope registry, served for five minutes only while every
+  source is settled; Qwen Code (landed that morning) is installed and signed
+  out on the operator's machine, so the window stayed at five seconds and
+  every Start after that paid a full probe of all five harnesses (5.7 to
+  6.6 s measured, more under load). The gate had passed at 01:56 UTC that day,
+  before Qwen landed, and was then waived by hand. The gate now answers for
+  the launched source from its own fresh live `ready` fact; anything else takes
+  the whole-registry path unchanged. The unchanged eval passed twice at load
+  23 and 65, then the eval was changed to wait for the live Session instead of
+  1.5 s, and passed twice more. Its surface gains the launcher's roadmap
+  control, the declared-link projection and its script.
+
 - 2026-09-24, BUG-205: the stacked landing, ticket 466 (`516dccb9`),
   showed that a head rebase re-ran the repository floor and never a declared
   surface gate, so gate evidence could describe a tree that never integrated.
