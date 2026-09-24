@@ -5,7 +5,7 @@
 This inventory records the declared distribution basis for 829 third-party
 package versions in the current macOS pnpm dependency graph. Platform binary
 families use a `<platform>` placeholder so the same policy is checkable on Linux.
-Lockfile SHA-256: `b7a3b445fef188e2bedd56132da2946441577b8b74d4483edacd0150a8440062`.
+Lockfile SHA-256: `0a872c42a05eb84b5464212cefd57c730cee5a4860bbecb778aa21107427d66e`.
 
 Regenerate it on macOS
 with `pnpm licenses:generate`; `pnpm licenses:check` fails when the graph,
@@ -50,11 +50,11 @@ license texts that need special handling are preserved under
 
 | Package                                  | Version       | Declared license        |
 | ---------------------------------------- | ------------- | ----------------------- |
-| @acemir/cssom                            | 0.9.24        | MIT                     |
+| @acemir/cssom                            | 0.9.31        | MIT                     |
 | @adobe/css-tools                         | 4.4.4         | MIT                     |
 | @alloc/quick-lru                         | 5.2.0         | MIT                     |
-| @asamuzakjp/css-color                    | 4.1.0         | MIT                     |
-| @asamuzakjp/dom-selector                 | 6.7.5         | MIT                     |
+| @asamuzakjp/css-color                    | 4.1.2         | MIT                     |
+| @asamuzakjp/dom-selector                 | 6.8.1         | MIT                     |
 | @asamuzakjp/nwsapi                       | 2.3.9         | MIT                     |
 | @babel/code-frame                        | 7.27.1        | MIT                     |
 | @babel/code-frame                        | 7.29.7        | MIT                     |
@@ -81,12 +81,12 @@ license texts that need special handling are preserved under
 | @babel/traverse                          | 7.29.8        | MIT                     |
 | @babel/types                             | 7.28.5        | MIT                     |
 | @babel/types                             | 7.29.8        | MIT                     |
-| @csstools/color-helpers                  | 5.1.0         | MIT-0                   |
-| @csstools/css-calc                       | 2.1.4         | MIT                     |
-| @csstools/css-color-parser               | 3.1.0         | MIT                     |
-| @csstools/css-parser-algorithms          | 3.0.5         | MIT                     |
-| @csstools/css-syntax-patches-for-csstree | 1.0.20        | MIT-0                   |
-| @csstools/css-tokenizer                  | 3.0.4         | MIT                     |
+| @csstools/color-helpers                  | 6.1.1         | MIT-0                   |
+| @csstools/css-calc                       | 3.4.0         | MIT                     |
+| @csstools/css-color-parser               | 4.2.3         | MIT                     |
+| @csstools/css-parser-algorithms          | 4.0.0         | MIT                     |
+| @csstools/css-syntax-patches-for-csstree | 1.1.14        | MIT-0                   |
+| @csstools/css-tokenizer                  | 4.0.1         | MIT                     |
 | @dimforge/rapier3d-compat                | 0.12.0        | Apache-2.0              |
 | @electron-internal/extract-zip           | 1.0.4         | BSD-2-Clause            |
 | @electron/asar                           | 3.4.1         | MIT                     |
@@ -109,6 +109,7 @@ license texts that need special handling are preserved under
 | @eslint/js                               | 9.39.1        | MIT                     |
 | @eslint/object-schema                    | 2.1.7         | Apache-2.0              |
 | @eslint/plugin-kit                       | 0.4.1         | Apache-2.0              |
+| @exodus/bytes                            | 1.16.0        | MIT                     |
 | @floating-ui/core                        | 1.8.0         | MIT                     |
 | @floating-ui/dom                         | 1.8.0         | MIT                     |
 | @floating-ui/react-dom                   | 2.1.9         | MIT                     |
@@ -315,6 +316,7 @@ license texts that need special handling are preserved under
 | base64-js                                | 1.5.1         | MIT                     |
 | baseline-browser-mapping                 | 2.11.0        | Apache-2.0              |
 | bidi-js                                  | 1.0.3         | MIT                     |
+| bidi-js                                  | 1.1.0         | MIT                     |
 | bluebird                                 | 3.7.2         | MIT                     |
 | boolean                                  | 3.2.0         | MIT                     |
 | brace-expansion                          | 1.1.18        | MIT                     |
@@ -362,12 +364,12 @@ license texts that need special handling are preserved under
 | cross-dirname                            | 0.1.0         | MIT                     |
 | cross-env                                | 7.0.3         | MIT                     |
 | cross-spawn                              | 7.0.6         | MIT                     |
-| css-tree                                 | 3.1.0         | MIT                     |
+| css-tree                                 | 3.2.1         | MIT                     |
 | css.escape                               | 1.5.1         | MIT                     |
-| cssstyle                                 | 5.3.3         | MIT                     |
+| cssstyle                                 | 5.3.7         | MIT                     |
 | csstype                                  | 3.2.3         | MIT                     |
 | damerau-levenshtein                      | 1.0.8         | BSD-2-Clause            |
-| data-urls                                | 6.0.0         | MIT                     |
+| data-urls                                | 6.0.1         | MIT                     |
 | data-view-buffer                         | 1.0.2         | MIT                     |
 | data-view-byte-length                    | 1.0.2         | MIT                     |
 | data-view-byte-offset                    | 1.0.1         | MIT                     |
@@ -408,7 +410,7 @@ license texts that need special handling are preserved under
 | emoji-regex                              | 9.2.2         | MIT                     |
 | end-of-stream                            | 1.4.5         | MIT                     |
 | enhanced-resolve                         | 5.18.3        | MIT                     |
-| entities                                 | 6.0.1         | BSD-2-Clause            |
+| entities                                 | 8.1.0         | BSD-2-Clause            |
 | env-paths                                | 2.2.1         | MIT                     |
 | env-paths                                | 3.0.0         | MIT                     |
 | err-code                                 | 2.0.3         | MIT                     |
@@ -509,13 +511,12 @@ license texts that need special handling are preserved under
 | hermes-parser                            | 0.25.1        | MIT                     |
 | hls.js                                   | 1.6.16        | Apache-2.0              |
 | hosted-git-info                          | 4.1.0         | ISC                     |
-| html-encoding-sniffer                    | 4.0.0         | MIT                     |
+| html-encoding-sniffer                    | 6.0.0         | MIT                     |
 | http-cache-semantics                     | 4.2.0         | BSD-2-Clause            |
 | http-proxy-agent                         | 7.0.2         | MIT                     |
 | http2-wrapper                            | 1.0.3         | MIT                     |
 | https-proxy-agent                        | 7.0.6         | MIT                     |
 | iceberg-js                               | 0.8.0         | MIT                     |
-| iconv-lite                               | 0.6.3         | MIT                     |
 | ieee754                                  | 1.2.1         | BSD-3-Clause            |
 | ignore                                   | 5.3.2         | MIT                     |
 | ignore                                   | 7.0.5         | MIT                     |
@@ -570,7 +571,7 @@ license texts that need special handling are preserved under
 | js-yaml                                  | 4.1.1         | MIT                     |
 | js-yaml                                  | 4.3.1         | MIT                     |
 | js-yaml                                  | 4.3.2         | MIT                     |
-| jsdom                                    | 27.2.0        | MIT                     |
+| jsdom                                    | 27.4.0        | MIT                     |
 | jsesc                                    | 3.1.0         | MIT                     |
 | json-buffer                              | 3.0.1         | MIT                     |
 | json-schema-traverse                     | 0.4.1         | MIT                     |
@@ -597,7 +598,7 @@ license texts that need special handling are preserved under
 | lodash.merge                             | 4.6.2         | MIT                     |
 | loose-envify                             | 1.4.0         | MIT                     |
 | lowercase-keys                           | 2.0.0         | MIT                     |
-| lru-cache                                | 11.2.4        | BlueOak-1.0.0           |
+| lru-cache                                | 11.5.3        | BlueOak-1.0.0           |
 | lru-cache                                | 5.1.1         | ISC                     |
 | lru-cache                                | 6.0.0         | ISC                     |
 | lucide-react                             | 0.555.0       | ISC                     |
@@ -606,7 +607,7 @@ license texts that need special handling are preserved under
 | magic-string                             | 0.30.21       | MIT                     |
 | matcher                                  | 3.0.0         | MIT                     |
 | math-intrinsics                          | 1.1.0         | MIT                     |
-| mdn-data                                 | 2.12.2        | CC0-1.0                 |
+| mdn-data                                 | 2.27.1        | CC0-1.0                 |
 | merge2                                   | 1.4.1         | MIT                     |
 | meshline                                 | 3.3.1         | MIT                     |
 | meshoptimizer                            | 1.1.1         | MIT                     |
@@ -657,7 +658,7 @@ license texts that need special handling are preserved under
 | p-limit                                  | 3.1.0         | MIT                     |
 | p-locate                                 | 5.0.0         | MIT                     |
 | parent-module                            | 1.0.1         | MIT                     |
-| parse5                                   | 8.0.0         | MIT                     |
+| parse5                                   | 8.0.1         | MIT                     |
 | path-exists                              | 4.0.0         | MIT                     |
 | path-is-absolute                         | 1.0.1         | MIT                     |
 | path-key                                 | 3.1.1         | MIT                     |
@@ -728,7 +729,6 @@ license texts that need special handling are preserved under
 | safe-buffer                              | 5.1.2         | MIT                     |
 | safe-push-apply                          | 1.0.0         | MIT                     |
 | safe-regex-test                          | 1.1.0         | MIT                     |
-| safer-buffer                             | 2.1.2         | MIT                     |
 | sanitize-filename                        | 1.6.3         | WTFPL OR ISC            |
 | sax                                      | 1.4.4         | BlueOak-1.0.0           |
 | saxes                                    | 6.0.0         | ISC                     |
@@ -800,12 +800,12 @@ license texts that need special handling are preserved under
 | tinyglobby                               | 0.2.15        | MIT                     |
 | tinyrainbow                              | 3.0.3         | MIT                     |
 | tinyrainbow                              | 3.1.1         | MIT                     |
-| tldts                                    | 7.0.19        | MIT                     |
-| tldts-core                               | 7.0.19        | MIT                     |
+| tldts                                    | 7.4.15        | MIT                     |
+| tldts-core                               | 7.4.15        | MIT                     |
 | tmp                                      | 0.2.5         | MIT                     |
 | tmp-promise                              | 3.0.3         | MIT                     |
 | to-regex-range                           | 5.0.1         | MIT                     |
-| tough-cookie                             | 6.0.0         | BSD-3-Clause            |
+| tough-cookie                             | 6.0.2         | BSD-3-Clause            |
 | tr46                                     | 6.0.0         | MIT                     |
 | troika-three-text                        | 0.52.4        | MIT                     |
 | troika-three-utils                       | 0.52.4        | MIT                     |
@@ -848,9 +848,9 @@ license texts that need special handling are preserved under
 | webcrypto-core                           | 1.9.2         | MIT                     |
 | webgl-constants                          | 1.1.1         | MIT                     |
 | webgl-sdf-generator                      | 1.1.1         | MIT                     |
-| webidl-conversions                       | 8.0.0         | BSD-2-Clause            |
-| whatwg-encoding                          | 3.1.1         | MIT                     |
+| webidl-conversions                       | 8.0.1         | BSD-2-Clause            |
 | whatwg-mimetype                          | 4.0.0         | MIT                     |
+| whatwg-mimetype                          | 5.0.0         | MIT                     |
 | whatwg-url                               | 15.1.0        | MIT                     |
 | which                                    | 2.0.2         | ISC                     |
 | which                                    | 5.0.0         | ISC                     |
