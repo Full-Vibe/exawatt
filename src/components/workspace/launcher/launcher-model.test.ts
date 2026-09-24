@@ -282,7 +282,7 @@ describe('launcher readiness chain', () => {
       expect(claude(aged).freshness).toBe('stale');
     });
 
-    // Incident 0018: an answered `loggedIn:false` was wrong, and one normal
+    // Incident 0021: an answered `loggedIn:false` was wrong, and one normal
     // Claude request repaired it. Sign-in informs; it never blocks Start.
     it('names a sign-in negative without blocking, and dates it when stale', () => {
       const signedOut = (observedAt: number) =>

@@ -540,7 +540,7 @@ async function inspectLocalHarness(
     ...declaration,
     id: `${harness}-local`,
     configured: true,
-    // Sign-in does not gate the spawn (incident `0018`): the source refreshes
+    // Sign-in does not gate the spawn (incident `0021`): the source refreshes
     // or asks for its own account in the pane, which no Exawatt sentence can.
     launchable: launchableAgentSourceState(state),
     state,
@@ -1677,7 +1677,9 @@ export async function rememberedAgentSources(
   scope: 'all' | 'launch' = 'all'
 ): Promise<AgentSourceRegistrySnapshot | null> {
   const cached = registryCache.get(scope);
-  if (cached) return cached.snapshot;
+  // The delegation fact is this process's live observation (ENG-023), so
+  // the remembered read carries it exactly as the live read does.
+  if (cached) return delegationObservations.project(cached.snapshot);
   const store = observationStore;
   if (!store) return null;
   const remembered = await store.read(shell);
@@ -1691,7 +1693,7 @@ export async function rememberedAgentSources(
     .map(source => rememberedView(source, null));
   if (sources.length === 0) return null;
   if (scope === 'all') sources.push(demoSource());
-  return {
+  return delegationObservations.project({
     sources,
     available: sources.map(source => ({
       adapterId: source.adapterId,
@@ -1706,7 +1708,7 @@ export async function rememberedAgentSources(
     })),
     comingSoon: scope === 'all' ? [...FUTURE_AGENT_SOURCE_CATALOG] : [],
     observedAt: Math.max(...sources.map(source => source.observedAt)),
-  };
+  });
 }
 
 /** Short-lived, coalesced observations keep a ribbon full of draft composers
@@ -1773,7 +1775,7 @@ export async function inspectAgentSources(
  * Two facts never refuse (readiness fact model, 2026-09-13). A REMEMBERED
  * negative is a fact with an age: this process asked and got no answer, so
  * the memory is painted but is not a present verdict. And a sign-in negative
- * is the source's own to refresh (incident `0018`: an answered
+ * is the source's own to refresh (incident `0021`: an answered
  * `loggedIn:false` was wrong, and one ordinary Claude request repaired it);
  * the launch proceeds and the source runs its own sign-in in the pane.
  */

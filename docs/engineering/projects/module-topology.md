@@ -8,7 +8,7 @@ this doc holds the narrative of each seam as it is adopted.
 ### 2026-09-13 — M0 first seam: the Agent Source readiness fact model
 
 **One fact model replaced four local fixes, and ⌘T paints from memory.**
-Landed for BUG-062, BUG-082 and incident `0018`; the rule is decision `0040`.
+Landed for BUG-062, BUG-082 and incident `0021`; the rule is decision `0043`.
 
 The seam is the readiness chain: saved preferences → source registry → row.
 Before, it lived inline in `launch-controls.tsx` as six pieces of state and a
@@ -72,7 +72,7 @@ Falsified along the way, so the next agent does not re-diagnose:
 The same class surfaced once more before this landed, in the fleet roadmap
 producer: a roadmap read that failed wrote the same `absent` a Project with
 no roadmap gets, so a roadmap over the reader's byte limit read as quiet on
-the strip, the Project dot and ⌘J. BUG-135 gives it the fact model's answer
+the strip, the Project dot and ⌘J. BUG-160 gives it the fact model's answer
 (`failed` is unknown, the last good parse stands as a fact with an age, the
 producer declares itself blind, and one Project's reads share a
 `createLatestRequest` channel so an older read cannot land after a newer

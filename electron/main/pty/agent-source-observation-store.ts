@@ -41,7 +41,7 @@ export const OBSERVATION_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
 const STORE_FILE = 'agent-source-observations.json';
 const SCHEMA_VERSION = 1;
 
-export interface ObservationRow {
+interface ObservationRow {
   /** The login shell the facts were read through. */
   shell: string;
   observedAt: number;

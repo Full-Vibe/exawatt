@@ -391,7 +391,7 @@ describe('Agent Source registry truth', () => {
     ).toEqual({ known: true, blocked: false });
   });
 
-  // Incident 0018: `claude auth status` answered `loggedIn:false`, Exawatt
+  // Incident 0021: `claude auth status` answered `loggedIn:false`, Exawatt
   // vetoed the launch, and one ordinary Claude request refreshed the
   // credential. Sign-in is the source's own to refresh, so an answered
   // sign-in negative informs and never refuses; the source runs its sign-in

@@ -54,7 +54,7 @@ export interface RoadmapAttentionSession {
 
 /** One Project's roadmap as the producer sees it. `pending` is the honest
  *  third state: the read has not answered yet, so this Project's Sessions are
- *  neither blocked nor cleared. `failed` is the fourth (BUG-135): the read
+ *  neither blocked nor cleared. `failed` is the fourth (BUG-160): the read
  *  ran and could not answer (the file is over the reader's limit, the IPC
  *  rejected), which is not the same fact as a Project with no roadmap. A
  *  failed read is never evidence about the roadmap, so the producer's view
@@ -79,7 +79,7 @@ export interface FleetRoadmapAttention {
   /** Sessions whose Project has not answered yet — unknown, not clear */
   pending: string[];
   /** Sessions whose Project's roadmap could not be read — unknown, not clear
-   *  (BUG-135). Together with `pending`, the Sessions this producer must
+   *  (BUG-160). Together with `pending`, the Sessions this producer must
    *  declare itself blind to rather than let read as quiet. */
   unread: string[];
 }

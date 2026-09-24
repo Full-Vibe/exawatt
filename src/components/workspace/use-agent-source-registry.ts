@@ -33,15 +33,15 @@ import {
   readRememberedAgentSourceRegistry,
 } from './agent-sources';
 
-export type AgentSourceRegistryReadStatus =
+type AgentSourceRegistryReadStatus =
   | 'checking'
   | 'live'
   | 'stale'
   | 'unavailable';
 
-export type AgentSourceRegistryPaint = 'none' | 'remembered' | 'live';
+type AgentSourceRegistryPaint = 'none' | 'remembered' | 'live';
 
-export interface AgentSourceRegistryRead {
+interface AgentSourceRegistryRead {
   registry: AgentSourceRegistrySnapshot;
   status: AgentSourceRegistryReadStatus;
   painted: AgentSourceRegistryPaint;

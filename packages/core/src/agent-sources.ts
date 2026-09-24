@@ -140,7 +140,7 @@ export type AgentSourceProbeName =
  *   snapshot is the adapter's declaration (the web fallback with no bridge).
  *
  * The main-process launch gate refuses only a `live` negative: a remembered
- * negative is a fact with an age, not a present verdict (incident `0018`).
+ * negative is a fact with an age, not a present verdict (incident `0021`).
  */
 export type AgentSourceObservation =
   | { origin: 'live' }
@@ -158,7 +158,7 @@ export interface AgentSourceSnapshot extends AgentSourceDeclaration {
   configured: boolean;
   /**
    * Exawatt would spawn this source: its CLI is present and its version
-   * answered. Sign-in is NOT part of this (incident `0018`): a source that
+   * answered. Sign-in is NOT part of this (incident `0021`): a source that
    * reports no account still launches, and runs its own sign-in in the pane.
    */
   launchable: boolean;
@@ -284,7 +284,7 @@ export function agentSourceFactFreshness(input: {
  *
  * - `blocked` names a fact the source cannot repair by running: no CLI, a
  *   version Exawatt does not support, or checks that failed.
- * - `notice` is the sign-in fact (incident `0018`): the source reports no
+ * - `notice` is the sign-in fact (incident `0021`): the source reports no
  *   account, and running it is how it refreshes or asks. It never blocks.
  * - `unproven`: coverage incomplete or state unknown; the attempt is the
  *   probe (BUG-063).

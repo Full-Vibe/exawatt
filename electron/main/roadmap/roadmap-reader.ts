@@ -23,10 +23,10 @@ export const ROADMAP_DISCOVERY_ORDER = [
  * limit a real document reaches is a cliff, not a bound. 8 MiB is beyond any
  * honest roadmap for a year and a parse the renderer can still afford.
  * Crossing it is an `error` result that every consumer surfaces as a failed
- * read (unknown, never quiet: BUG-135), so the cliff is visible if it ever
+ * read (unknown, never quiet: BUG-160), so the cliff is visible if it ever
  * arrives.
  */
-export const MAX_ROADMAP_BYTES = 8 * 1024 * 1024;
+const MAX_ROADMAP_BYTES = 8 * 1024 * 1024;
 
 export type RoadmapReadResult =
   | { status: 'ok'; file: string; text: string; mtimeMs: number }

@@ -1,7 +1,7 @@
-# 0040 A source fact carries its age, and a sign-in negative never vetoes a launch
+# 0043 A source fact carries its age, and a sign-in negative never vetoes a launch
 
 Date: 2026-09-13
-Status: accepted; first execution is BUG-062, BUG-082, incident `0018` (ENG-039 M0 seam)
+Status: accepted; first execution is BUG-062, BUG-082, incident `0021` (ENG-039 M0 seam)
 
 ## Context
 
@@ -23,7 +23,7 @@ then treated it as a present verdict.
   the fact model `known: false` for a probe that never answered, but there
   was no `checking` distinct from `unknown` and no `stale` distinct from
   `failed`.
-- **Incident `0018`.** `claude auth status` answered `loggedIn: false`, exit 1.
+- **Incident `0021`.** `claude auth status` answered `loggedIn: false`, exit 1.
   Exawatt vetoed every launch. One ordinary `claude -p` request refreshed the
   credential and the next status read signed in. An answered negative that
   was wrong, and every veto Exawatt had for it prevented the one action that
@@ -95,7 +95,7 @@ things.**
 ## Open
 
 - Nothing observes a source's successful use outside Exawatt (the Terminal
-  use in incident `0018`), so an aged negative is dated but not superseded
+  use in incident `0021`), so an aged negative is dated but not superseded
   by that evidence. Exawatt's own successful launches are recorded in
   `sourceRecency`; a later pass may let a launch newer than a remembered
   negative present it as superseded rather than merely stale.

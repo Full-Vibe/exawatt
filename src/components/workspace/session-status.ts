@@ -194,7 +194,7 @@ export function mergeFleetAttention(
 
 /**
  * What the fleet-wide surfaces get from a merge that may be PARTIAL, said
- * out loud (BUG-135). A producer that could not look at some Sessions (the
+ * out loud (BUG-160). A producer that could not look at some Sessions (the
  * roadmap producer whose read failed) narrows the merged view; the tab
  * strip, the Project dot and the ⌘J queue index a record and have no
  * vocabulary yet for "unwatched", so the record they receive carries the
@@ -203,7 +203,7 @@ export function mergeFleetAttention(
  * a surface that gains the vocabulary reads `unseen` and says so. This is
  * the one place that decision is made, instead of a cast at each consumer.
  */
-export interface SealedAttention {
+interface SealedAttention {
   readonly signals: FleetAttentionSignals;
   /** Session id → the producers that never looked at it. Empty when the
    *  merge is complete, which is the common case. */

@@ -112,7 +112,7 @@ describe('deriveFleetRoadmapBlocked', () => {
     expect(fleet.blocked).toEqual([]);
   });
 
-  // BUG-135: a read that did not answer is not a Project with no roadmap.
+  // BUG-160: a read that did not answer is not a Project with no roadmap.
   // Its Sessions are neither blocked nor cleared; they are unread, and the
   // producer must say so instead of letting the merge read them as quiet.
   it('reports a Project whose roadmap could not be read as unread, never clear', () => {

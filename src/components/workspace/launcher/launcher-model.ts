@@ -255,7 +255,7 @@ export function setupAccessibleLabel(setup: LauncherSetup): string {
  */
 
 /** The registry as the composer sees it (see `useAgentSourceRegistry`). */
-export interface LauncherRegistryInput {
+interface LauncherRegistryInput {
   snapshot: AgentSourceRegistrySnapshot;
   /** The live read is in flight (initial probe or a recheck). */
   checking: boolean;
@@ -271,7 +271,7 @@ export interface LauncherReadinessInput {
 }
 
 /** One source's fact: how fresh it is and what it says about launching. */
-export interface LauncherSourceFact {
+interface LauncherSourceFact {
   harness: AgentHarness;
   label: string;
   freshness: AgentSourceFactFreshness;
@@ -283,14 +283,14 @@ export interface LauncherSourceFact {
   snapshot: AgentSourceSnapshot;
 }
 
-export interface LauncherReadiness {
+interface LauncherReadiness {
   phase: LauncherRowState;
   facts: LauncherSourceFact[];
   /** A live read is running while something on the row is not yet `known`. */
   checking: boolean;
 }
 
-export function launcherSourceFact(
+function launcherSourceFact(
   snapshot: AgentSourceSnapshot & { harness: AgentHarness },
   input: { checking: boolean; now: number }
 ): LauncherSourceFact {

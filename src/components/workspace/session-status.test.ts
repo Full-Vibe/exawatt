@@ -441,10 +441,10 @@ describe('attention eligibility is one rule (BUG-009)', () => {
 // was fleet-wide, roadmap attention was the active Project's lens only, and
 // the merge could not express the difference — so a Session blocked in
 // another Project came back from the map indistinguishable from a quiet one.
-// BUG-135: the fleet surfaces index a record and have no vocabulary for
+// BUG-160: the fleet surfaces index a record and have no vocabulary for
 // "unwatched" yet, so the seal over a partial merge is explicit and carries
 // the blind spots beside the signals instead of hiding them in a cast.
-describe('sealAttentionView (BUG-135)', () => {
+describe('sealAttentionView (BUG-160)', () => {
   it('names, per Session, the producers that never looked', () => {
     const narrow = scopedAttention('roadmap', {}, ['b1']);
     const sealed = sealAttentionView(

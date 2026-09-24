@@ -31,7 +31,7 @@ export const FIXTURE_CODEX_VERSION = 'codex-cli 9.9.9-fixture';
 /** The SHAPE `parseClaudeAuthStatus` actually parses. An unparseable answer
  *  reads as an unanswered authentication probe (`unknown`); a parseable
  *  `loggedIn:false` reads as a sign-in notice that informs but never blocks
- *  (incident 0018). Either way the fixture should answer the real shape so
+ *  (incident 0021). Either way the fixture should answer the real shape so
  *  the eval exercises a `ready` source. */
 export const FIXTURE_CLAUDE_AUTH_JSON = JSON.stringify({
   loggedIn: true,

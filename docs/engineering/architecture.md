@@ -528,7 +528,7 @@ surface. Every snapshot declares its `observation` (`live`, `remembered`,
 (`agentSourceLaunchVerdict`) names the fact that blocks a launch: only a live
 negative the source cannot repair by running refuses (not installed,
 incompatible, failed checks); a remembered negative and a sign-in negative
-inform and never veto (decision `0040`). Surfaces render `checking`,
+inform and never veto (decision `0043`). Surfaces render `checking`,
 `known`, `stale` and `unobserved` as different things, by age. The separate OpenClaw live transport uses an opaque, owner-bound
 Electron-main capability rather than returning config or credentials to the
 renderer. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local records. Local

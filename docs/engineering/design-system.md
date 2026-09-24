@@ -406,7 +406,7 @@ snapshot, never an intermediate layout storm.
   `eval:workspace:split` 10/10, and the before/after captures described in
   ENG-015's findings log (S6.4).
 - 2026-09-13 — **Readiness freshness vocabulary and the reserved status line**
-  (decision `0040`; BUG-062, BUG-082). A fact about an Agent Source now
+  (decision `0043`; BUG-062, BUG-082). A fact about an Agent Source now
   renders `checking`, `known`, `stale` and `unobserved` as four different
   things, never one word: Settings paints `Checking` (dim tone, the spinning
   glyph the Connecting state already owns) for a source whose first probe of

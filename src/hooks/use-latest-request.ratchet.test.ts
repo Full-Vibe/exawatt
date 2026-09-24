@@ -29,6 +29,8 @@ const SRC = path.resolve(__dirname, '..');
 const REMAINING_GENERATION_REFS: Record<string, number> = {
   'app/settings/connected-sources-section.tsx': 2,
   'components/workspace/connect-source-dialog.tsx': 1,
+  // Owned by the connected-source rescue (2026-09-23); migrate with it.
+  'components/workspace/remote-agent/use-remote-coworkers.ts': 1,
   'components/workspace/launcher/use-composer-clipboard.ts': 1,
   'components/workspace/launcher/setup-detail.tsx': 1,
 };
@@ -41,6 +43,7 @@ const REMAINING_CANCELLED_EFFECTS: Record<string, number> = {
   'components/workspace/paused-agent-record.tsx': 1,
   'components/workspace/project-opener.tsx': 1,
   'components/workspace/recent-conversations.tsx': 2,
+  'components/workspace/remote-agent/use-remote-coworkers.ts': 1,
   'components/workspace/use-closed-session-count.ts': 1,
   'components/workspace/use-workspace-state.ts': 1,
   'components/workspace/workspace-client.tsx': 1,

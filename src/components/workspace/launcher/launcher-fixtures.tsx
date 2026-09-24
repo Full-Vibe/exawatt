@@ -335,7 +335,7 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
   {
     id: 'signed-out',
     title: 'Not signed in',
-    note: 'The engine reports no account. That fact informs and never blocks (incident 0018): Start stays live and the engine runs its own sign-in in the pane.',
+    note: 'The engine reports no account. That fact informs and never blocks (incident 0021): Start stays live and the engine runs its own sign-in in the pane.',
     state: 'ready',
     setups: buildSetups(TRAINED_HISTORY),
     selectedIndex: 0,

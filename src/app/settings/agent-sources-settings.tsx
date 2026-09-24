@@ -745,26 +745,51 @@ export function AgentSourcesSettings({
   // the first probe runs with nothing remembered every source reads
   // `Checking`, as a state of its own (BUG-082). Newest-wins is the hook's.
   const registryRead = useAgentSourceRegistry('all');
+  // Delegation observation is pushed live from main (ENG-023) on every
+  // change, so the latest push per adapter is at least as new as any
+  // registry read, whichever lands first. It is layered over the registry
+  // the hook paints, the same way a Connecting sign-in is.
+  const [delegationPushes, setDelegationPushes] = useState<
+    ReadonlyMap<string, AgentSourceFact | null>
+  >(() => new Map());
+  useEffect(
+    () =>
+      window.electron?.agentSources?.onDelegation?.(({ adapterId, fact }) => {
+        setDelegationPushes(current => new Map(current).set(adapterId, fact));
+      }),
+    []
+  );
   // A sign-in the operator just opened shows as Connecting on its source
   // until the reconciliation loop sees it ready or gives up. That is
   // Settings' own transient, layered over the fact, never written into it.
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const registry = useMemo(() => {
-    if (!connectingId) return registryRead.registry;
+    if (!connectingId && delegationPushes.size === 0) {
+      return registryRead.registry;
+    }
     return {
       ...registryRead.registry,
-      sources: registryRead.registry.sources.map(source =>
-        source.id === connectingId
-          ? {
-              ...source,
-              state: 'connecting' as const,
-              stateLabel: 'Connecting',
-              summary: `${source.label} sign-in is open. Exawatt will recheck the source-owned session.`,
-            }
-          : source
-      ),
+      sources: registryRead.registry.sources.map(source => {
+        let next = source;
+        if (delegationPushes.has(source.adapterId)) {
+          const fact = delegationPushes.get(source.adapterId);
+          const facts = { ...next.facts };
+          if (fact) facts.delegation = fact;
+          else delete facts.delegation;
+          next = { ...next, facts };
+        }
+        if (next.id === connectingId) {
+          next = {
+            ...next,
+            state: 'connecting' as const,
+            stateLabel: 'Connecting',
+            summary: `${next.label} sign-in is open. Exawatt will recheck the source-owned session.`,
+          };
+        }
+        return next;
+      }),
     };
-  }, [connectingId, registryRead.registry]);
+  }, [connectingId, delegationPushes, registryRead.registry]);
   const registryStatus = registryRead.status;
   const [selectedId, setSelectedId] = useState(
     () => registryRead.registry.sources[0]?.id ?? ''
@@ -836,24 +861,6 @@ export function AgentSourcesSettings({
     }
   }, [recheckRegistry]);
 
-  useEffect(
-    () =>
-      window.electron?.agentSources?.onDelegation?.(({ adapterId, fact }) => {
-        const project = (snapshot: typeof registry) => ({
-          ...snapshot,
-          sources: snapshot.sources.map(source => {
-            if (source.adapterId !== adapterId) return source;
-            const facts = { ...source.facts };
-            if (fact) facts.delegation = fact;
-            else delete facts.delegation;
-            return { ...source, facts };
-          }),
-        });
-        latestRegistry.current = project(latestRegistry.current);
-        setRegistry(project);
-      }),
-    []
-  );
 
   const selected = useMemo(
     () => registry.sources.find(source => source.id === selectedId) ?? null,

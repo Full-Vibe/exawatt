@@ -6973,7 +6973,7 @@ is exactly the condition the operator hits between Sessions; the one 1,474 ms
 sample above was that cache expiring once. With the cache expired on every
 press, `scripts/composer-registry-cold-probe.mjs` measured 4.3 to 5.1 s of
 placeholder cards per ⌘T. BUG-062 is closed by the readiness fact model
-(decision `0040`); the narrative is in
+(decision `0043`); the narrative is in
 [module-topology](module-topology.md#2026-09-13--m0-first-seam-the-agent-source-readiness-fact-model).
 
 Reproduce from a clean, bootstrapped checkout, recording the renderer SHA at
