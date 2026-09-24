@@ -1,11 +1,28 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from 'vitest';
 import { PublishPanel } from './publish-panel';
 import {
   GENERIC_LINK_FAILURE,
   LINK_FAILURE_MESSAGES,
   LINK_SUCCESS_MESSAGES,
 } from '@/components/auth/callback-failures';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
+import type {
+  DesktopAuthApi,
+  ExawattSettings,
+  OperatorProfileStateUpdate,
+} from '@exawatt/core/desktop-bridge';
 
 const { client, distributionState, createOptionalClient } = vi.hoisted(() => ({
   client: { current: null as ReturnType<typeof buildClient> | null },
@@ -158,14 +175,14 @@ function buildClient(
   };
 }
 
-function electronAuth(linkGithub: ReturnType<typeof vi.fn>) {
+function electronAuth(linkGithub: Mock<DesktopAuthApi['linkGithub']>) {
   const handlers: {
     complete?: () => void;
     error?: (error: { name: string; message: string }) => void;
     linkOutcome?: (outcome: string) => void;
   } = {};
   const auth = {
-    startGoogle: vi.fn(),
+    startGoogle: vi.fn(async () => undefined),
     linkGithub,
     onComplete: vi.fn((handler: () => void) => {
       handlers.complete = handler;
@@ -182,11 +199,7 @@ function electronAuth(linkGithub: ReturnType<typeof vi.fn>) {
       return () => {};
     }),
   };
-  Object.defineProperty(window, 'electron', {
-    value: { isElectron: true, auth },
-    configurable: true,
-    writable: true,
-  });
+  installBridgeDouble({ auth });
   return { auth, handlers };
 }
 
@@ -205,63 +218,54 @@ function electronPanel(
   options: { autoPublish?: boolean; published?: boolean } = {}
 ) {
   client.current = buildClient({ identities: [GITHUB_IDENTITY] });
-  let settings: Record<string, unknown> =
+  let settings: ExawattSettings =
     options.autoPublish === undefined && options.published === undefined
       ? {}
       : {
           operatorProfile: {
-            ...(options.autoPublish === undefined
-              ? {}
-              : { autoPublish: options.autoPublish }),
+            autoPublish: options.autoPublish ?? false,
             ...(options.published === undefined
               ? {}
               : { profileEnabled: options.published }),
           },
         };
-  const settingsListeners = new Set<(next: unknown) => void>();
+  const settingsListeners = new Set<(next: ExawattSettings) => void>();
   const bridge = {
     get: vi.fn(async () => settings),
-    onChanged: vi.fn((handler: (next: unknown) => void) => {
+    onChanged: vi.fn((handler: (next: ExawattSettings) => void) => {
       settingsListeners.add(handler);
       return () => settingsListeners.delete(handler);
     }),
     setOperatorAutoPublish: vi.fn(async (enabled: boolean) => {
       settings = {
         ...settings,
-        operatorProfile: {
-          ...((settings.operatorProfile as object | undefined) ?? {}),
-          autoPublish: enabled,
-        },
+        operatorProfile: { ...settings.operatorProfile, autoPublish: enabled },
       };
       for (const listener of settingsListeners) listener(settings);
       return settings;
     }),
     recordOperatorProfileState: vi.fn(
-      async (state: Record<string, unknown>) => {
+      async (state: OperatorProfileStateUpdate) => {
+        // Main refuses this write when no preference was ever recorded.
+        if (!settings.operatorProfile) {
+          throw new Error('Publishing preference is unavailable');
+        }
         settings = {
           ...settings,
-          operatorProfile: {
-            ...((settings.operatorProfile as object | undefined) ?? {}),
-            ...state,
-          },
+          operatorProfile: { ...settings.operatorProfile, ...state },
         };
         for (const listener of settingsListeners) listener(settings);
         return settings;
       }
     ),
   };
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: {
-      isElectron: true,
-      auth: {
-        onComplete: vi.fn(() => () => {}),
-        onError: vi.fn(() => () => {}),
-        onLinkOutcome: vi.fn(() => () => {}),
-      },
-      settings: bridge,
+  installBridgeDouble({
+    auth: {
+      onComplete: vi.fn(() => () => {}),
+      onError: vi.fn(() => () => {}),
+      onLinkOutcome: vi.fn(() => () => {}),
     },
+    settings: bridge,
   });
   return { settingsBridge: bridge };
 }
@@ -273,11 +277,7 @@ beforeEach(() => {
   at('/leaderboard');
   syncStore.reset();
   runSync.mockClear();
-  Object.defineProperty(window, 'electron', {
-    value: undefined,
-    configurable: true,
-    writable: true,
-  });
+  removeBridgeDouble();
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co';
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-anon-key';
   vi.spyOn(console, 'error').mockImplementation(() => {});

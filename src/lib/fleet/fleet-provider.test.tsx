@@ -9,6 +9,11 @@ import type {
   ConnectedSourceChange,
   RemoteAgentView,
 } from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  ptySessionInfo,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 /**
  * ENG-010 C2: remote coworkers stand BESIDE local Agents.
@@ -52,17 +57,15 @@ function remoteAgent(
 }
 
 function localSession(id: string) {
-  return {
+  return ptySessionInfo({
     id,
-    harness: 'claude',
+    durableSessionId: `durable-${id}`,
     title: 'claude',
     cwd: '/w/atlas',
     projectDir: '/w/atlas',
     projectName: 'Atlas',
     startedAt: 1_000,
-    exited: false,
-    exitCode: null,
-  };
+  });
 }
 
 interface BridgeOptions {
@@ -77,8 +80,7 @@ function installBridge(options: BridgeOptions) {
       ? await options.agents()
       : (options.agents ?? [])
   );
-  const bridge = {
-    isElectron: true,
+  installBridgeDouble({
     platform: 'darwin',
     pty: {
       list: async () => options.sessions ?? [],
@@ -92,8 +94,7 @@ function installBridge(options: BridgeOptions) {
         return () => listeners.delete(handler);
       },
     },
-  };
-  (window as unknown as { electron: unknown }).electron = bridge;
+  });
   return {
     agents,
     emit: (change: ConnectedSourceChange) => {
@@ -120,7 +121,7 @@ function Probe() {
 }
 
 afterEach(() => {
-  delete (window as unknown as { electron?: unknown }).electron;
+  removeBridgeDouble();
   vi.restoreAllMocks();
 });
 

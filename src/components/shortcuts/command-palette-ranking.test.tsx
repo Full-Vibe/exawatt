@@ -44,6 +44,11 @@ import {
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
 import type { CommandPaletteLaunchConfiguration } from './command-palette-launch-configurations';
+import {
+  installBridgeDouble,
+  ptySessionInfo,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const navigateCommandSurface = vi.fn();
 const activateCommandAltitude = vi.fn();
@@ -346,10 +351,10 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
   // A Session whose title merely CONTAINS the query, in the group authored
   // above Projects — the `lumen-agent` fixture's collision.
   const PTY_SESSIONS = [
-    {
+    ptySessionInfo({
       id: 'pty-1',
       durableSessionId: 'dur-1',
-      harness: 'claude' as const,
+      harness: 'claude',
       title: 'Wire lumen-agent telemetry export',
       cwd: '/Users/example/Code/other',
       projectDir: '/Users/example/Code/other',
@@ -361,7 +366,7 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
       exitCode: null,
       lastDataAt: 1,
       harnessSessionId: null,
-    },
+    }),
   ];
 
   const LAUNCH_CONFIGURATIONS: CommandPaletteLaunchConfiguration[] = [
@@ -381,23 +386,17 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
   beforeEach(() => {
     activeWorkspaceId = 'personal';
     projectFixtures = PROJECTS;
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        pty: {
-          list: vi.fn(async () => PTY_SESSIONS),
-          closedSessions: vi.fn(async () => []),
-        },
-        workspace: { load: vi.fn(async () => null) },
+    installBridgeDouble({
+      pty: {
+        list: vi.fn(async () => PTY_SESSIONS),
+        closedSessions: vi.fn(async () => []),
       },
+      workspace: { load: vi.fn(async () => null) },
     });
   });
 
   afterEach(() => {
-    Reflect.deleteProperty(
-      window as unknown as Record<string, unknown>,
-      'electron'
-    );
+    removeBridgeDouble();
   });
 
   function renderPersonalPalette() {
@@ -449,10 +448,10 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   // renders in the Sessions group ABOVE Workspace — the collision the bands
   // exist to settle.
   const PTY_SESSIONS = [
-    {
+    ptySessionInfo({
       id: 'pty-parked',
       durableSessionId: 'dur-parked',
-      harness: 'claude' as const,
+      harness: 'claude',
       title: 'Rebuild the consumer metrics',
       cwd: '/Users/example/Code/exawatt',
       projectDir: '/Users/example/Code/exawatt',
@@ -464,7 +463,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
       exitCode: null,
       lastDataAt: 1,
       harnessSessionId: null,
-    },
+    }),
   ];
 
   const agents = (count: number): ResumableAgents => ({
@@ -495,15 +494,12 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     for (const definition of defaultShortcuts) {
       shortcutRegistry.register({ ...definition, action: vi.fn() });
     }
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        pty: {
-          list: vi.fn(async () => PTY_SESSIONS),
-          closedSessions: vi.fn(async () => []),
-        },
-        workspace: { load: vi.fn(async () => null) },
+    installBridgeDouble({
+      pty: {
+        list: vi.fn(async () => PTY_SESSIONS),
+        closedSessions: vi.fn(async () => []),
       },
+      workspace: { load: vi.fn(async () => null) },
     });
   });
 
@@ -513,10 +509,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
       shortcutRegistry.unregister(definition.id);
     }
     window.history.replaceState({}, '', '/');
-    Reflect.deleteProperty(
-      window as unknown as Record<string, unknown>,
-      'electron'
-    );
+    removeBridgeDouble();
   });
 
   function renderWorkspacePalette() {

@@ -7,6 +7,10 @@ import {
 } from '@exawatt/core/distribution';
 import { UpdateReadyNotice } from './update-ready-notice';
 import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 let emitStatus: ((status: ProductUpdateStatus) => void) | undefined;
 const UPDATE_DISTRIBUTION = {
@@ -23,14 +27,13 @@ const UPDATE_DISTRIBUTION = {
 const UPDATE_IDENTITY = resolveDistributionIdentity(UPDATE_DISTRIBUTION);
 
 afterEach(() => {
-  delete window.electron;
+  removeBridgeDouble();
   emitStatus = undefined;
 });
 
 function installApi(productUpdates = true) {
   const restartUpdate = vi.fn(async () => undefined);
-  window.electron = {
-    isElectron: true,
+  installBridgeDouble({
     platform: 'darwin',
     app: {
       getBuildInfo: async () => ({
@@ -96,7 +99,7 @@ function installApi(productUpdates = true) {
       onShutdownStatus: () => () => undefined,
       onUpdateReady: () => () => undefined,
     },
-  } as unknown as NonNullable<Window['electron']>;
+  });
   return restartUpdate;
 }
 

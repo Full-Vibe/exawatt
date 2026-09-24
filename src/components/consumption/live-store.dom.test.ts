@@ -18,6 +18,15 @@ import {
   resetLiveConsumptionForTests,
   subscribeLiveConsumption,
 } from './live-store';
+import {
+  installBridgeDouble,
+  ptySessionInfo,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
+import type {
+  ClosedSessionEntry,
+  PtySessionInfo,
+} from '@exawatt/core/desktop-bridge';
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
@@ -87,8 +96,7 @@ function installFakeBridge(snapshot: LiveConsumptionSnapshot): FakeBridge {
   fake.pushUpdate = event => {
     for (const h of handlers) h(event);
   };
-  (window as unknown as { electron: unknown }).electron = {
-    isElectron: true,
+  installBridgeDouble({
     consumption: {
       snapshot: async () => {
         fake.snapshotCalls += 1;
@@ -103,7 +111,7 @@ function installFakeBridge(snapshot: LiveConsumptionSnapshot): FakeBridge {
     },
     pty: {
       list: async () => [
-        {
+        ptySessionInfo({
           id: 'pty-1',
           durableSessionId: 'durable-1',
           harness: 'codex',
@@ -111,14 +119,10 @@ function installFakeBridge(snapshot: LiveConsumptionSnapshot): FakeBridge {
           cwd: '/Users/op/Code/exawatt',
           projectDir: '/Users/op/Code/exawatt',
           projectName: 'exawatt',
-          cols: 80,
-          rows: 24,
           startedAt: NOW - 3 * HOUR,
-          exited: false,
-          exitCode: null,
           lastDataAt: NOW,
           harnessSessionId: 'prov-1',
-        },
+        }),
       ],
       closedSessions: async () => [],
     },
@@ -135,13 +139,13 @@ function installFakeBridge(snapshot: LiveConsumptionSnapshot): FakeBridge {
       }),
       onChanged: () => () => {},
     },
-  };
+  });
   return fake;
 }
 
 afterEach(() => {
   resetLiveConsumptionForTests();
-  delete (window as unknown as { electron?: unknown }).electron;
+  removeBridgeDouble();
 });
 
 describe('live store', () => {
@@ -313,16 +317,15 @@ describe('a command engine that is not running', () => {
 /* ------------------------------------------------------------------ */
 
 interface NamingFleet {
-  ptys?: unknown[];
-  closed?: unknown[];
+  ptys?: PtySessionInfo[];
+  closed?: ClosedSessionEntry[];
   layout?: unknown;
 }
 
 /** The same bridge, with the fleet records the naming path actually reads. */
 function installNamingBridge(fleet: NamingFleet): void {
   const snapshot = readySnapshot();
-  (window as unknown as { electron: unknown }).electron = {
-    isElectron: true,
+  installBridgeDouble({
     consumption: {
       snapshot: async () => snapshot,
       rescan: async () => {},
@@ -337,7 +340,7 @@ function installNamingBridge(fleet: NamingFleet): void {
       load: async () => fleet.layout ?? { projects: [] },
       onChanged: () => () => {},
     },
-  };
+  });
 }
 
 async function readyTitle(): Promise<string> {
@@ -349,23 +352,20 @@ async function readyTitle(): Promise<string> {
   return rows[0].title;
 }
 
-const livePty = (over: Record<string, unknown> = {}) => ({
-  id: 'pty-1',
-  durableSessionId: 'durable-1',
-  harness: 'codex',
-  title: 'Codex',
-  cwd: '/Users/op/Code/exawatt',
-  projectDir: '/Users/op/Code/exawatt',
-  projectName: 'exawatt',
-  cols: 80,
-  rows: 24,
-  startedAt: NOW - 3 * HOUR,
-  exited: false,
-  exitCode: null,
-  lastDataAt: NOW,
-  harnessSessionId: 'prov-1',
-  ...over,
-});
+const livePty = (over: Partial<PtySessionInfo> = {}) =>
+  ptySessionInfo({
+    id: 'pty-1',
+    durableSessionId: 'durable-1',
+    harness: 'codex',
+    title: 'Codex',
+    cwd: '/Users/op/Code/exawatt',
+    projectDir: '/Users/op/Code/exawatt',
+    projectName: 'exawatt',
+    startedAt: NOW - 3 * HOUR,
+    lastDataAt: NOW,
+    harnessSessionId: 'prov-1',
+    ...over,
+  });
 
 describe('session naming', () => {
   it('prefers the context summary over an unrenamed harness title', async () => {
@@ -469,8 +469,7 @@ describe('provider plan accounts cross the bridge (D1/D2)', () => {
         },
       },
     ];
-    (window as unknown as { electron: unknown }).electron = {
-      isElectron: true,
+    installBridgeDouble({
       consumption: {
         snapshot: async () => snapshot,
         rescan: async () => {},
@@ -479,7 +478,7 @@ describe('provider plan accounts cross the bridge (D1/D2)', () => {
       },
       pty: { list: async () => [], closedSessions: async () => [] },
       workspace: { load: async () => ({ projects: [] }), onChanged: () => () => {} },
-    };
+    });
     const off = subscribeLiveConsumption(() => {});
     await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
     const view = getLiveConsumption().view!;

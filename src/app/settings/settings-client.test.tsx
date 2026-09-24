@@ -12,6 +12,10 @@ import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { SettingsClient } from './settings-client';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 vi.mock('@/lib/goal-visuals/preference-source', () => ({
   createGoalVisualPreferenceSource: () => ({
@@ -94,10 +98,7 @@ function editShortcut(label: string): HTMLElement {
 
 describe('shortcut settings policy', () => {
   beforeEach(() => {
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: { platform: 'darwin' },
-    });
+    installBridgeDouble({ platform: 'darwin' });
     for (const definition of defaultShortcuts) {
       shortcutRegistry.register({ ...definition, action: vi.fn() });
     }
@@ -110,7 +111,7 @@ describe('shortcut settings policy', () => {
     for (const definition of defaultShortcuts) {
       shortcutRegistry.unregister(definition.id);
     }
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   it('rejects a bare universal binding and accepts a Command binding', async () => {
@@ -154,12 +155,9 @@ describe('shortcut settings policy', () => {
   it('blocks a combo the machine VERIFIABLY reserves, with the System Settings pointer', async () => {
     // Electron reports untouched prefs ({}), so Apple defaults are the
     // machine truth: ⇧⌘4 really is area-screenshot and can never fire here.
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        platform: 'darwin',
-        shortcuts: { systemHotkeys: vi.fn(async () => ({})) },
-      },
+    installBridgeDouble({
+      platform: 'darwin',
+      shortcuts: { systemHotkeys: vi.fn(async () => ({})) },
     });
     await renderSettings();
     await waitFor(() =>
@@ -174,28 +172,26 @@ describe('shortcut settings policy', () => {
       metaKey: true,
       shiftKey: true,
     });
-    expect(
-      screen.getByText(/Save picture of selected area/)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/System Settings/)).toBeInTheDocument();
+    // A real desktop also names System Settings in the Files and Folders
+    // note, so the pointer is read from the conflict message itself.
+    expect(screen.getByText(/Save picture of selected area/)).toHaveTextContent(
+      /System Settings/
+    );
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
   it('allows a system combo the user has freed in System Settings', async () => {
     // The operator scenario: area-screenshot (id 30) disabled in sysprefs —
     // ⇧⌘4 is genuinely free on this machine and must be bindable.
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        platform: 'darwin',
-        shortcuts: {
-          systemHotkeys: vi.fn(async () => ({
-            AppleSymbolicHotKeys: {
-              '30': { enabled: false },
-              '31': { enabled: false },
-            },
-          })),
-        },
+    installBridgeDouble({
+      platform: 'darwin',
+      shortcuts: {
+        systemHotkeys: vi.fn(async () => ({
+          AppleSymbolicHotKeys: {
+            '30': { enabled: false },
+            '31': { enabled: false },
+          },
+        })),
       },
     });
     await renderSettings();
@@ -238,17 +234,13 @@ describe('shortcut settings policy', () => {
   });
 
   it('gives data sharing its own section instead of a Preferences corner', async () => {
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        isElectron: true,
-        platform: 'darwin',
-        settings: {
-          get: vi.fn(async () => ({})),
-          onChanged: vi.fn(() => () => undefined),
-          setHostedConversationSummaries: vi.fn(async () => ({})),
-          setHostedContextLabels: vi.fn(async () => ({})),
-        },
+    installBridgeDouble({
+      platform: 'darwin',
+      settings: {
+        get: vi.fn(async () => ({})),
+        onChanged: vi.fn(() => () => undefined),
+        setHostedConversationSummaries: vi.fn(async () => ({})),
+        setHostedContextLabels: vi.fn(async () => ({})),
       },
     });
     await renderSettings();
@@ -294,15 +286,12 @@ describe('shortcut settings policy', () => {
 
 describe('Settings: the Connect route', () => {
   beforeEach(() => {
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: { platform: 'darwin' },
-    });
+    installBridgeDouble({ platform: 'darwin' });
   });
 
   afterEach(() => {
     cleanup();
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   /*

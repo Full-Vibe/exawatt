@@ -32,6 +32,7 @@ import {
   type TenantWorkspace,
 } from '@/lib/tenancy/workspace-scope';
 import { WorkspaceScopeGate } from '@/lib/tenancy/workspace-scope-gate';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 const nav = vi.hoisted(() => ({
   pathname: '/workspace',
@@ -89,10 +90,7 @@ beforeEach(() => {
   nav.replace.mockClear();
   nav.push.mockClear();
   resetInitialCommandSurfaceRestoreForTests();
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    value: { isElectron: true },
-  });
+  installBridgeDouble({});
 });
 
 afterEach(() => {

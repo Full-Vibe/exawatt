@@ -20,6 +20,7 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 import { RecentConversations } from './recent-conversations';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 const LOCAL_CONVERSATION = {
   id: 'provider-session-id',
@@ -60,8 +61,7 @@ describe('Recent Conversations distribution boundary', () => {
     mocks.createOptionalClient.mockReset().mockReturnValue({
       auth: { getSession: mocks.getSession },
     });
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: { get: vi.fn().mockResolvedValue({}) },
       pty: {
@@ -77,7 +77,7 @@ describe('Recent Conversations distribution boundary', () => {
           },
         ]),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
   });
 
   it('renders the local catalog without auth or enrichment in community builds', async () => {

@@ -11,6 +11,10 @@ import {
   type DistributionContractV2,
 } from '@exawatt/core/distribution';
 import ForgotPasswordPage from './page';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const CONFIGURED_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
@@ -48,7 +52,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  delete (window as { electron?: unknown }).electron;
+  removeBridgeDouble();
 });
 
 describe('password reset request', () => {
@@ -91,10 +95,9 @@ describe('password reset request', () => {
 
   it('hands the desktop app off to the configured recovery origin', async () => {
     const openExternal = vi.fn(async () => undefined);
-    (window as { electron?: unknown }).electron = {
-      isElectron: true,
+    installBridgeDouble({
       pty: { openExternal },
-    };
+    });
 
     await mount();
 
@@ -112,10 +115,9 @@ describe('password reset request', () => {
     const openExternal = vi.fn(async () => undefined);
     distributionState.current = COMMUNITY_DISTRIBUTION;
     createOptionalClient.mockReturnValue(null);
-    (window as { electron?: unknown }).electron = {
-      isElectron: true,
+    installBridgeDouble({
       pty: { openExternal },
-    };
+    });
 
     await mount();
 

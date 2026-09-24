@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useProjectRoadmap } from './use-project-roadmap';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -21,7 +25,7 @@ exawatt-roadmap: v2
 
 describe('useProjectRoadmap activity scope', () => {
   afterEach(() => {
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   it('ignores an older Project activity response after switching Projects', async () => {
@@ -29,8 +33,7 @@ describe('useProjectRoadmap activity scope', () => {
       deferred<Array<{ hash: string; subject: string; committedAt: number }>>();
     const activityB =
       deferred<Array<{ hash: string; subject: string; committedAt: number }>>();
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       roadmap: {
         read: vi.fn().mockResolvedValue({
@@ -46,7 +49,7 @@ describe('useProjectRoadmap activity scope', () => {
         unwatch: vi.fn().mockResolvedValue(undefined),
         onFileChanged: vi.fn().mockReturnValue(() => {}),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const { result, rerender } = renderHook(
       ({ projectDir }) => useProjectRoadmap(projectDir),

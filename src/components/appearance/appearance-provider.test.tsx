@@ -12,6 +12,10 @@ import {
   EXTERNAL_APPEARANCE_SETTLE_MS,
   useAppearance,
 } from './appearance-provider';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const { appliedThemes } = vi.hoisted(() => ({
   appliedThemes: vi.fn(),
@@ -49,7 +53,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  delete window.electron;
+  removeBridgeDouble();
   window.localStorage.clear();
   document.documentElement.removeAttribute('style');
 });
@@ -61,8 +65,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe('AppearanceProvider', () => {
   it('hydrates from Electron authority and publishes Classic root state', async () => {
     const setAppearance = vi.fn().mockResolvedValue({ appearance: classic });
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: {
         get: vi.fn().mockResolvedValue({ appearance: classic }),
@@ -79,7 +82,7 @@ describe('AppearanceProvider', () => {
         }),
         onAppearanceChanged: vi.fn(() => vi.fn()),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const view = renderHook(() => useAppearance(), { wrapper });
     await waitFor(() => expect(view.result.current.ready).toBe(true));
@@ -128,8 +131,7 @@ describe('AppearanceProvider', () => {
       APPEARANCE_MIRROR_STORAGE_KEY,
       JSON.stringify(automatic)
     );
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: {
         get: vi.fn().mockResolvedValue({ appearance: automatic }),
@@ -142,10 +144,10 @@ describe('AppearanceProvider', () => {
           dark: true,
           safeTheme: true,
         },
-        appearance: vi.fn(() => new Promise(() => undefined)),
+        appearance: vi.fn(() => new Promise<never>(() => undefined)),
         onAppearanceChanged: vi.fn(() => vi.fn()),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const view = renderHook(() => useAppearance(), { wrapper });
     expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
@@ -156,8 +158,7 @@ describe('AppearanceProvider', () => {
 
   it('hydrates Auto from Electron dark authority before native async state resolves', async () => {
     const automatic = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: {
         get: vi.fn().mockResolvedValue({ appearance: automatic }),
@@ -170,10 +171,10 @@ describe('AppearanceProvider', () => {
           dark: true,
           safeTheme: false,
         },
-        appearance: vi.fn(() => new Promise(() => undefined)),
+        appearance: vi.fn(() => new Promise<never>(() => undefined)),
         onAppearanceChanged: vi.fn(() => vi.fn()),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const view = renderHook(() => useAppearance(), { wrapper });
 
@@ -193,8 +194,7 @@ describe('AppearanceProvider', () => {
       | undefined;
     const air = selectManualTheme(classic, 'exawatt-air-light');
     const night = selectManualTheme(classic, 'exawatt-night-dark');
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: {
         get: vi.fn().mockResolvedValue({ appearance: classic }),
@@ -210,10 +210,10 @@ describe('AppearanceProvider', () => {
           dark: true,
           safeTheme: false,
         },
-        appearance: vi.fn(() => new Promise(() => undefined)),
+        appearance: vi.fn(() => new Promise<never>(() => undefined)),
         onAppearanceChanged: vi.fn(() => vi.fn()),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const view = renderHook(() => useAppearance(), { wrapper });
     await waitFor(() => expect(view.result.current.ready).toBe(true));

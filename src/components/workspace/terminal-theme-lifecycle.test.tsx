@@ -8,6 +8,7 @@ import {
 import type { ResolvedAppearance } from '@/lib/appearance/types';
 import { TerminalPane } from './terminal-pane';
 import { resolveTerminalFont } from './terminal-font';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 const xterm = vi.hoisted(() => {
   const state = {
@@ -138,18 +139,15 @@ beforeEach(() => {
   const pty = {
     onData: vi.fn(() => vi.fn()),
     bufferSnapshot: vi.fn(async () => ({ text: 'live history', cursor: 1 })),
-    bufferSince: vi.fn(async () => ({ text: '', cursor: 1 })),
+    bufferSince: vi.fn(async () => ({ text: '', cursor: 1, truncated: false })),
     resize: vi.fn(async () => undefined),
     write: vi.fn(async () => undefined),
     openExternal: vi.fn(async () => undefined),
     openPath: vi.fn(async () => undefined),
     copyText: vi.fn(async () => undefined),
-    pasteClipboard: vi.fn(async () => undefined),
+    pasteClipboard: vi.fn(async () => ({ kind: 'empty' as const })),
   };
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    value: { pty },
-  });
+  installBridgeDouble({ pty });
 });
 
 afterEach(() => {

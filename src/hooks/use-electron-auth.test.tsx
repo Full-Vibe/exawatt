@@ -31,20 +31,16 @@ vi.mock('@/lib/analytics', () => ({
 }));
 
 import { useElectronAuth } from './use-electron-auth';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 function installElectronAuth() {
   const startGoogle = vi.fn(async () => undefined);
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: {
-      isElectron: true,
-      auth: {
-        startGoogle,
-        linkGithub: vi.fn(),
-        onComplete: vi.fn(() => () => {}),
-        onError: vi.fn(() => () => {}),
-      },
+  installBridgeDouble({
+    auth: {
+      startGoogle,
+      linkGithub: vi.fn(),
+      onComplete: vi.fn(() => () => {}),
+      onError: vi.fn(() => () => {}),
     },
   });
   return startGoogle;

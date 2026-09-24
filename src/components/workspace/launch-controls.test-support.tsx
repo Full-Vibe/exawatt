@@ -8,6 +8,7 @@ import {
 import { AgentComposer } from './launch-controls';
 import { FOCUS_AGENT_COMPOSER_EVENT } from './session-jump';
 import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 export { AgentComposer, FOCUS_AGENT_COMPOSER_EVENT };
 
@@ -343,8 +344,7 @@ export function installComposerTestHarness() {
     };
     recordAgentSourceUse.mockReset().mockResolvedValue({});
     setAgentPermissionMode.mockReset().mockResolvedValue({});
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: {
         get: vi.fn().mockResolvedValue({}),
@@ -367,7 +367,7 @@ export function installComposerTestHarness() {
           message: 'Source action opened.',
         })),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
   });
 
   return { recordAgentSourceUse, setAgentPermissionMode };

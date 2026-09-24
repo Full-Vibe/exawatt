@@ -5,10 +5,14 @@ import {
   loadAgentSourceRegistry,
   recommendLaunchableAgentSource,
 } from './agent-sources';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 describe('renderer Agent Source boundary', () => {
   afterEach(() => {
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   it('fails closed when the Electron observation bridge is unavailable', async () => {
@@ -24,14 +28,13 @@ describe('renderer Agent Source boundary', () => {
   it('retains a last observation as visibly stale without making it live', async () => {
     const previous = fallbackAgentSourceRegistry('launch');
     previous.sources[0] = { ...previous.sources[0], launchable: true };
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       agentSources: {
         list: vi.fn().mockRejectedValue(new Error('main unavailable')),
         act: vi.fn(),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
     const result = await loadAgentSourceRegistry('launch', true, previous);
     expect(result.status).toBe('stale');
     expect(result.snapshot).toBe(previous);

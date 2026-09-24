@@ -7,6 +7,7 @@ import {
 
 import { SessionRestorePanel } from './session-restore-panel';
 import type { SessionTab } from './use-workspace-state';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 const stoppedTab = (
   harnessSessionId: string | null = 'provider-one'
@@ -32,11 +33,10 @@ describe('SessionRestorePanel', () => {
 
   beforeEach(() => {
     listResumeCandidates.mockReset().mockResolvedValue([]);
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       pty: { listResumeCandidates },
-    } as unknown as NonNullable<Window['electron']>;
+    });
   });
 
   it('prints the shared lifecycle word and line, and the individual resume verb', () => {

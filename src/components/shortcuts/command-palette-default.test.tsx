@@ -35,6 +35,10 @@ import {
 } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
 import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
@@ -148,24 +152,18 @@ beforeEach(() => {
   sessions = [];
   distribution = COMMUNITY_DISTRIBUTION;
   feedbackAuthenticated = false;
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    value: {
-      pty: {
-        list: vi.fn(async () => sessions),
-        closedSessions: vi.fn(async () => []),
-      },
-      workspace: { load: vi.fn(async () => null) },
+  installBridgeDouble({
+    pty: {
+      list: vi.fn(async () => sessions),
+      closedSessions: vi.fn(async () => []),
     },
+    workspace: { load: vi.fn(async () => null) },
   });
 });
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(
-    window as unknown as Record<string, unknown>,
-    'electron'
-  );
+  removeBridgeDouble();
 });
 
 function renderPalette() {

@@ -9,14 +9,17 @@ import {
   createAppearancePreferenceSource,
   readAppearanceMirror,
 } from './preference-source';
-import type { DesktopSettingsApi } from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const defaults = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
 const classic = structuredClone(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES);
 
 afterEach(() => {
   window.localStorage.clear();
-  delete window.electron;
+  removeBridgeDouble();
 });
 
 describe('appearance preference sources', () => {
@@ -51,15 +54,14 @@ describe('appearance preference sources', () => {
       .fn()
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ appearance: { schemaVersion: 1 } });
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       settings: {
         get,
         setAppearance: vi.fn(),
         onChanged: vi.fn(() => vi.fn()),
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const source = createAppearancePreferenceSource();
     await expect(source.load()).resolves.toEqual(defaults);
@@ -72,12 +74,11 @@ describe('appearance preference sources', () => {
       get: vi.fn().mockResolvedValue({ appearance: classic }),
       setAppearance: vi.fn().mockResolvedValue({ appearance: classic }),
       onChanged,
-    } as unknown as DesktopSettingsApi;
-    window.electron = {
-      isElectron: true,
+    };
+    installBridgeDouble({
       platform: 'darwin',
       settings,
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     const source = createAppearancePreferenceSource();
     expect(source.kind).toBe('electron');

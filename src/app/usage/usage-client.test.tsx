@@ -3,13 +3,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { CONSUMPTION_CHROME, FLUX_CSS } from '@/components/consumption/flux';
 import { resetLiveConsumptionForTests } from '@/components/consumption/live-store';
 import { UsageClient } from './usage-client';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 afterEach(() => {
   document.documentElement.style.removeProperty('--exa-foundation-canvas');
   document.documentElement.style.removeProperty('--exa-consumption-panel');
   document.documentElement.style.removeProperty('--exa-consumption-unknown');
   resetLiveConsumptionForTests();
-  delete (window as unknown as { electron?: unknown }).electron;
+  removeBridgeDouble();
 });
 
 describe('Usage theme percolation', () => {
@@ -69,8 +73,8 @@ function installBridge(options: {
   phase?: 'starting' | 'ready' | 'paused';
   snapshotRejects?: boolean;
 }): void {
-  (window as unknown as { electron: unknown }).electron = {
-    isElectron: true,
+  const { phase } = options;
+  installBridgeDouble({
     consumption: {
       snapshot: async () => {
         if (options.snapshotRejects) {
@@ -83,17 +87,17 @@ function installBridge(options: {
       cancelScan: async () => {},
       onUpdated: () => () => {},
     },
-    ...(options.phase
+    ...(phase
       ? {
           commandEngine: {
-            phase: async () => options.phase,
+            phase: async () => phase,
             onChanged: () => () => {},
           },
         }
       : {}),
     pty: { list: async () => [], closedSessions: async () => [] },
     workspace: { load: async () => ({ projects: [] }), onChanged: () => () => {} },
-  };
+  });
 }
 
 describe('Usage tells the three read states apart', () => {

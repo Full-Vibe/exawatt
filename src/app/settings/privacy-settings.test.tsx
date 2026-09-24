@@ -7,7 +7,15 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from 'vitest';
 import {
   COMMUNITY_DISTRIBUTION,
   type DistributionContractV2,
@@ -20,7 +28,14 @@ import {
 } from '@/lib/hosted-features/contract';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { PrivacySettings } from './privacy-settings';
-import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
+import type {
+  DesktopSettingsApi,
+  ExawattSettings,
+} from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 /**
  * BUG-060: the Claude plan read is the first control on this surface gated by
@@ -84,13 +99,14 @@ vi.mock('@/lib/goal-visuals/preference-source', () => ({
 }));
 
 type SettingsBridge = {
-  get: ReturnType<typeof vi.fn>;
-  onChanged: ReturnType<typeof vi.fn>;
-  setHostedConversationSummaries: ReturnType<typeof vi.fn>;
-  setHostedContextLabels: ReturnType<typeof vi.fn>;
-  setReentryRecap: ReturnType<typeof vi.fn>;
-  setClaudePlanWindows: ReturnType<typeof vi.fn>;
-  setOperatorAutoPublish: ReturnType<typeof vi.fn>;
+  [K in
+    | 'get'
+    | 'onChanged'
+    | 'setHostedConversationSummaries'
+    | 'setHostedContextLabels'
+    | 'setReentryRecap'
+    | 'setClaudePlanWindows'
+    | 'setOperatorAutoPublish']: Mock<DesktopSettingsApi[K]>;
 };
 
 /** The desktop settings store, as this surface sees it: a local read, a live
@@ -137,10 +153,7 @@ function installSettingsBridge(
     ),
   };
 
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    value: { isElectron: true, platform: 'darwin', settings: bridge },
-  });
+  installBridgeDouble({ platform: 'darwin', settings: bridge });
   return bridge;
 }
 
@@ -178,7 +191,7 @@ describe('Settings → Privacy', () => {
 
   afterEach(() => {
     cleanup();
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   it('renders every outbound control with its full disclosure', async () => {

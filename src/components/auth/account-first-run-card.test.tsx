@@ -11,6 +11,10 @@ import {
   AccountFirstRunCard,
   ACCOUNT_FIRST_RUN_STORAGE_KEY,
 } from './account-first-run-card';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const { pathname, session, accountAvailable, authObserver } = vi.hoisted(
   () => ({
@@ -84,7 +88,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  delete (window as { electron?: unknown }).electron;
+  removeBridgeDouble();
 });
 
 describe('AccountFirstRunCard', () => {
@@ -212,10 +216,9 @@ describe('AccountFirstRunCard', () => {
   });
 
   it('stays out of the deterministic Electron evaluator', async () => {
-    (window as { electron?: unknown }).electron = {
-      isElectron: true,
+    installBridgeDouble({
       feedback: { testMode: true },
-    };
+    });
 
     await mount();
 

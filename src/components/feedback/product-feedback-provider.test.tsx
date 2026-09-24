@@ -5,6 +5,10 @@ import {
   ProductFeedbackProvider,
   useProductFeedback,
 } from './product-feedback-provider';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const { distributionState, clientState, createOptionalClient } = vi.hoisted(
   () => ({
@@ -104,11 +108,7 @@ beforeEach(() => {
   feedback = null;
   createOptionalClient.mockClear();
   clientState.current = client();
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: undefined,
-  });
+  removeBridgeDouble();
 });
 
 afterEach(() => {
@@ -130,10 +130,10 @@ describe('ProductFeedbackProvider distribution boundary', () => {
     );
     clientState.current!.auth.getSession.mockReturnValue(staleRead);
     const setContextAuth = vi.fn();
-    window.electron = {
+    installBridgeDouble({
       pty: { setContextAuth },
       feedback: { setAuthenticated: vi.fn() },
-    } as unknown as typeof window.electron;
+    });
     render(
       <ProductFeedbackProvider>
         <Probe />

@@ -9,6 +9,7 @@ import {
 import { type ComponentProps, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOpener, useProjectOpenerState } from './project-opener';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 const { listProjects, projectRegistryScope, rebindProjectPath } = vi.hoisted(
   () => ({
@@ -93,8 +94,12 @@ describe('Project opener', () => {
     listProjects.mockReset().mockResolvedValue([]);
     projectRegistryScope.mockReset().mockResolvedValue('local');
     rebindProjectPath.mockReset().mockResolvedValue(undefined);
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble(openerBridge());
+  });
+
+  /** The desktop surfaces the opener reads. */
+  function openerBridge() {
+    return {
       platform: 'darwin',
       workspace: {
         load: vi.fn().mockResolvedValue(null),
@@ -114,8 +119,8 @@ describe('Project opener', () => {
         })),
         scanDirectory: vi.fn(),
       },
-    } as unknown as NonNullable<Window['electron']>;
-  });
+    };
+  }
 
   it('opens a curated Project without creating a Session', async () => {
     const onOpenProject = vi.fn(async () => true);
@@ -454,7 +459,8 @@ describe('Project opener', () => {
   });
 
   it('says so when connecting has no desktop process to run in', async () => {
-    delete (window.electron as { connectedSources?: unknown }).connectedSources;
+    const { connectedSources: _connected, ...desktop } = openerBridge();
+    installBridgeDouble(desktop);
     renderControlledProjectOpener({
       workspaceProjects: [],
       onOpenProject: vi.fn(async () => true),

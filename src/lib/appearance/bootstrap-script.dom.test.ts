@@ -6,6 +6,10 @@ import {
   CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
   DEFAULT_APPEARANCE_PREFERENCES,
 } from './resolve-appearance';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -18,7 +22,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete window.electron;
+  removeBridgeDouble();
   window.localStorage.clear();
 });
 
@@ -103,8 +107,7 @@ describe('appearance first-paint bootstrap', () => {
       APPEARANCE_MIRROR_STORAGE_KEY,
       JSON.stringify(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES)
     );
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       app: {
         bootstrapAppearance: {
@@ -113,7 +116,7 @@ describe('appearance first-paint bootstrap', () => {
           safeTheme: false,
         },
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     bootstrap();
 
@@ -126,8 +129,7 @@ describe('appearance first-paint bootstrap', () => {
   });
 
   it('uses Electron dark authority when renderer media state is stale', () => {
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       app: {
         bootstrapAppearance: {
@@ -136,7 +138,7 @@ describe('appearance first-paint bootstrap', () => {
           safeTheme: false,
         },
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     bootstrap();
 
@@ -153,8 +155,7 @@ describe('appearance first-paint bootstrap', () => {
       APPEARANCE_MIRROR_STORAGE_KEY,
       JSON.stringify(DEFAULT_APPEARANCE_PREFERENCES)
     );
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       app: {
         bootstrapAppearance: {
@@ -163,7 +164,7 @@ describe('appearance first-paint bootstrap', () => {
           safeTheme: true,
         },
       },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     bootstrap();
 

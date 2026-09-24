@@ -2,6 +2,14 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { useWorkspaceState } from './use-workspace-state';
+import {
+  installBridgeDouble,
+  ptySessionRecord,
+} from '@/test-support/desktop-bridge-double';
+import type {
+  PtyCreateResult,
+  PtySessionRecord,
+} from '@exawatt/core/desktop-bridge';
 
 vi.mock('@/lib/projects/registry', () => ({
   // Signed out / offline is the registry's normal failure and the launch path
@@ -69,34 +77,30 @@ function persistedLayout() {
 /** `pty.create` held open, the way a cold provider or a fresh worktree holds
  *  a real launch open — the whole condition BUG-018 lives in. */
 function pendingCreate() {
-  let settle: ((value: unknown) => void) | null = null;
+  let settle: ((value: PtyCreateResult) => void) | null = null;
   const create = vi.fn(
     () =>
-      new Promise(resolve => {
+      new Promise<PtyCreateResult>(resolve => {
         settle = resolve;
       })
   );
   return {
     create,
-    land(session: Record<string, unknown>) {
+    land(session: PtySessionRecord) {
       settle?.({ ok: true, session });
     },
   };
 }
 
 function session(durableSessionId: string) {
-  return {
+  return ptySessionRecord({
     id: `pty-${durableSessionId}`,
     durableSessionId,
-    harness: 'claude',
-    title: 'Claude Code',
     cwd: REPO,
     projectDir: REPO,
     projectName: 'repo',
-    harnessSessionId: null,
-    exited: false,
     startedAt: Date.now(),
-  };
+  });
 }
 
 function installElectron(create: ReturnType<typeof pendingCreate>['create']) {
@@ -114,11 +118,7 @@ function installElectron(create: ReturnType<typeof pendingCreate>['create']) {
     recovery: vi.fn(() => Promise.resolve({ previousRunInterrupted: false })),
     save: vi.fn(() => Promise.resolve()),
   };
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: { pty, workspace },
-  });
+  installBridgeDouble({ pty, workspace });
   return { pty, workspace };
 }
 

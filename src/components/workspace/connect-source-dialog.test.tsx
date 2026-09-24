@@ -16,7 +16,11 @@ import {
 } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SOURCE_FAILURE_CLASSES, type SshHostAlias } from '@exawatt/core';
+import {
+  SOURCE_FAILURE_CLASSES,
+  type ConnectedSourceView,
+  type SshHostAlias,
+} from '@exawatt/core';
 import {
   ConnectSourceDialog,
   DEFAULT_REMOTE_PROJECT_NAME,
@@ -31,6 +35,57 @@ import {
   type DiscoveredAgent,
 } from './connect-source-model';
 import { listProjects } from '@/lib/projects/registry';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
+import type {
+  ConnectedSourceChange,
+  ConnectedSourceStatusView,
+  ConnectSourceResult as BridgeConnectResult,
+} from '@exawatt/core/desktop-bridge';
+
+/** What main answers an add with: a view of the saved record. */
+const SAVED_SOURCE: ConnectedSourceView = {
+  id: 'source-1',
+  adapterId: 'openclaw',
+  placement: 'customer-hosted',
+  displayName: 'prod-gateway',
+  transportKind: 'ssh-alias',
+  alias: 'prod-gateway',
+  credentialOwner: 'source-owned-ssh',
+  hasDeviceCredential: false,
+};
+
+/** Main's change tick for that source, as the preload relays it. */
+const LIVE_CHANGE: ConnectedSourceChange = {
+  sourceId: 'source-1',
+  phase: 'opening-tunnel',
+  connection: {
+    state: 'live',
+    label: 'Live',
+    detail: 'Observing now.',
+    observationAgeMs: 0,
+    stalePresentation: false,
+    failure: null,
+  },
+  snapshotRevision: 1,
+};
+
+const CONNECTED_STATUS: ConnectedSourceStatusView = {
+  sourceId: 'source-1',
+  displayName: 'prod-gateway',
+  adapterId: 'openclaw',
+  placement: 'customer-hosted',
+  placementLabel: 'Remote',
+  observing: true,
+  phase: 'connected',
+  connection: LIVE_CHANGE.connection,
+  version: null,
+  capabilities: [],
+  identityDrift: false,
+  snapshotRevision: 1,
+};
 
 const ALIASES: readonly SshHostAlias[] = [
   {
@@ -761,22 +816,26 @@ describe('Connect: voice', () => {
  */
 describe('Connect: the desktop bridge', () => {
   afterEach(() => {
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   it('carries the connection phase from the preload to the row', async () => {
-    const handlers = new Set<(change: ConnectSourceProgress) => void>();
-    let settle: ((result: ConnectAttemptResult) => void) | undefined;
+    const handlers = new Set<(change: ConnectedSourceChange) => void>();
+    let settle: ((result: BridgeConnectResult) => void) | undefined;
     const connectedSources = {
       sshAliases: vi.fn(async () => ({
         aliases: ALIASES,
         configPresent: true,
         incompleteIncludes: false,
       })),
-      add: vi.fn(async () => ({ ok: true, source: { id: 'source-1' } })),
+      add: vi.fn(async () => ({
+        ok: true as const,
+        source: SAVED_SOURCE,
+        created: true,
+      })),
       connect: vi.fn(
         () =>
-          new Promise<ConnectAttemptResult>(resolve => {
+          new Promise<BridgeConnectResult>(resolve => {
             settle = resolve;
           })
       ),
@@ -784,7 +843,7 @@ describe('Connect: the desktop bridge', () => {
         ok: true as const,
         mapped: mappings.length,
       })),
-      onChanged: (handler: (change: ConnectSourceProgress) => void) => {
+      onChanged: (handler: (change: ConnectedSourceChange) => void) => {
         handlers.add(handler);
         return () => {
           handlers.delete(handler);
@@ -792,10 +851,7 @@ describe('Connect: the desktop bridge', () => {
       },
       detach: vi.fn(async () => ({ ok: true })),
     };
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: { isElectron: true, platform: 'darwin', connectedSources },
-    });
+    installBridgeDouble({ platform: 'darwin', connectedSources });
 
     function Harness() {
       const [open, setOpen] = useState(true);
@@ -813,13 +869,19 @@ describe('Connect: the desktop bridge', () => {
 
     act(() => {
       for (const handler of [...handlers]) {
-        handler({ sourceId: 'source-1', phase: 'discovering' });
+        handler({ ...LIVE_CHANGE, phase: 'discovering' });
       }
     });
     expect(row('atlas-box')).toHaveTextContent(CONNECT_STAGE_COPY.discovery);
 
     await act(async () => {
-      settle?.({ ok: true, agents: AGENTS, observed: OBSERVED });
+      settle?.({
+        ok: true,
+        sourceId: 'source-1',
+        agents: AGENTS.map(agent => ({ ...agent, mapping: null })),
+        status: CONNECTED_STATUS,
+        observed: OBSERVED,
+      });
     });
     await screen.findByRole('heading', { name: 'Agents on atlas-box' });
   });

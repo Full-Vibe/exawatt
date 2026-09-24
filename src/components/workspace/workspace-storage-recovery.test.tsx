@@ -9,6 +9,10 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceState } from './use-workspace-state';
 import { WorkspaceStorageRecovery } from './workspace-storage-recovery';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 vi.mock('@/lib/projects/registry', () => ({
   listProjects: vi.fn(async () => []),
@@ -28,24 +32,20 @@ function bridge() {
     save: vi.fn(async () => {}),
   };
   const offExit = vi.fn();
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: {
-      workspace,
-      pty: {
-        list: vi.fn(async () => []),
-        closedSessions: vi.fn(async () => []),
-        onExit: vi.fn(() => offExit),
-        focus: vi.fn(async () => {}),
-      },
+  installBridgeDouble({
+    workspace,
+    pty: {
+      list: vi.fn(async () => []),
+      closedSessions: vi.fn(async () => []),
+      onExit: vi.fn(() => offExit),
+      focus: vi.fn(async () => {}),
     },
   });
   return { workspace, offExit };
 }
 
 afterEach(() => {
-  delete window.electron;
+  removeBridgeDouble();
 });
 
 describe('workspace storage recovery', () => {

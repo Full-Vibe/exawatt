@@ -7,6 +7,7 @@ import {
   type RosterCoworkerOptions,
 } from './open-roster-coworker';
 import { isRemoteAgentTab, useWorkspaceState } from './use-workspace-state';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 vi.mock('@/lib/projects/registry', () => ({
   openRepositoryProject: vi.fn(() => Promise.reject(new Error('offline'))),
@@ -35,41 +36,35 @@ function sessionTab(id: string) {
 }
 
 function installElectron() {
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: {
-      pty: {
-        list: vi.fn(() => Promise.resolve([])),
-        create: vi.fn(),
-        closedSessions: vi.fn(() => Promise.resolve([])),
-        reopenSession: vi.fn(() => Promise.resolve(null)),
-        onExit: vi.fn(() => () => {}),
-        focus: vi.fn(() => Promise.resolve()),
-        openPath: vi.fn(() => Promise.resolve()),
-      },
-      workspace: {
-        load: vi.fn(() =>
-          Promise.resolve({
-            v: 6,
-            activeDir: REPO,
-            lastUsedDir: REPO,
-            projects: [
-              {
-                dir: REPO,
-                name: 'repo',
-                color: '#19E6FF',
-                activeTabId: 'tab-asked',
-                tabs: [sessionTab('tab-asked'), sessionTab('tab-other')],
-              },
-            ],
-          })
-        ),
-        recovery: vi.fn(() =>
-          Promise.resolve({ previousRunInterrupted: false })
-        ),
-        save: vi.fn(() => Promise.resolve()),
-      },
+  installBridgeDouble({
+    pty: {
+      list: vi.fn(() => Promise.resolve([])),
+      create: vi.fn(),
+      closedSessions: vi.fn(() => Promise.resolve([])),
+      reopenSession: vi.fn(() => Promise.resolve(null)),
+      onExit: vi.fn(() => () => {}),
+      focus: vi.fn(() => Promise.resolve()),
+      openPath: vi.fn(() => Promise.resolve()),
+    },
+    workspace: {
+      load: vi.fn(() =>
+        Promise.resolve({
+          v: 6,
+          activeDir: REPO,
+          lastUsedDir: REPO,
+          projects: [
+            {
+              dir: REPO,
+              name: 'repo',
+              color: '#19E6FF',
+              activeTabId: 'tab-asked',
+              tabs: [sessionTab('tab-asked'), sessionTab('tab-other')],
+            },
+          ],
+        })
+      ),
+      recovery: vi.fn(() => Promise.resolve({ previousRunInterrupted: false })),
+      save: vi.fn(() => Promise.resolve()),
     },
   });
 }

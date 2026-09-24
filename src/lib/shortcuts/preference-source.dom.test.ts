@@ -5,8 +5,13 @@ import {
   COMMUNITY_DISTRIBUTION,
   resolveDistributionIdentity,
 } from '@exawatt/core/distribution';
+import type { KeyboardShortcutOverridesV1 } from '@exawatt/core';
 import type { ShortcutOverride } from '@/types/shortcuts';
 import { resetResolvedDistributionForTest } from '@/lib/distribution/resolved';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 /**
  * The harm BUG-044 actually caused was not the 500 in the console; it was that
@@ -61,7 +66,7 @@ function useContract(json?: string) {
 
 beforeEach(() => {
   window.localStorage.clear();
-  delete (window as { electron?: unknown }).electron;
+  removeBridgeDouble();
   vi.clearAllMocks();
   useContract(undefined);
 });
@@ -153,16 +158,16 @@ describe('the packaged desktop', () => {
     // The packaged renderer's origin carries its port. An install keeps one
     // (BUG-022), but a launch that finds it taken serves another origin with
     // an empty store, so the desktop path must not depend on the port.
-    let stored: unknown;
-    (window as { electron?: unknown }).electron = {
+    let stored: KeyboardShortcutOverridesV1 | undefined;
+    installBridgeDouble({
       settings: {
         get: async () => ({ keyboardShortcuts: stored }),
-        setKeyboardShortcuts: async (value: unknown) => {
+        setKeyboardShortcuts: async value => {
           stored = value;
           return {};
         },
       },
-    };
+    });
 
     const { saveShortcutOverrides, loadShortcutOverrides } = await store();
     await saveShortcutOverrides(REBIND);

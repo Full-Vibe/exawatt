@@ -19,11 +19,15 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceState } from './use-workspace-state';
 import type {
+  ClosedSessionEntry,
   GoalVisual,
+  PtyExitEvent,
+  PtyReentryRecap,
   PtyAttention,
   PtySessionInfo,
   SessionDelegation,
 } from '@exawatt/core/desktop-bridge';
+import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 vi.mock('@/lib/projects/registry', () => ({
   openRepositoryProject: vi.fn(() => Promise.reject(new Error('offline'))),
@@ -105,17 +109,15 @@ function electronStub(sessions: PtySessionInfo[]) {
     pauseSessions: vi.fn(),
     closeSession: vi.fn(() => Promise.resolve(true)),
     archiveSession: vi.fn(
-      (entry: Record<string, unknown>): Promise<Record<string, unknown>> =>
+      (
+        entry: Omit<ClosedSessionEntry, 'closedAt'>
+      ): Promise<ClosedSessionEntry> =>
         Promise.resolve({ ...entry, closedAt: 1 })
     ),
     closedSessions: vi.fn(() => Promise.resolve([])),
     reopenSession: vi.fn(() => Promise.resolve(null)),
     focus: vi.fn(() => Promise.resolve()),
-    onExit: channel<{
-      id: string;
-      durableSessionId: string;
-      exitCode: number;
-    }>('exit'),
+    onExit: channel<PtyExitEvent>('exit'),
     onIdentity: channel<{
       id: string;
       durableSessionId: string;
@@ -127,7 +129,7 @@ function electronStub(sessions: PtySessionInfo[]) {
     onGoalVisual: channel<{ durableSessionId: string; visual: GoalVisual }>(
       'goal-visual'
     ),
-    onRecap: channel('recap'),
+    onRecap: channel<PtyReentryRecap>('recap'),
     onAttention: channel<{ id: string; attention: PtyAttention | null }>(
       'attention'
     ),
@@ -143,11 +145,7 @@ function electronStub(sessions: PtySessionInfo[]) {
     recovery: vi.fn(() => Promise.resolve({ previousRunInterrupted: false })),
     save: vi.fn(() => Promise.resolve()),
   };
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: { pty, workspace },
-  });
+  installBridgeDouble({ pty, workspace });
   return { pty, workspace, emit };
 }
 
@@ -245,7 +243,12 @@ describe('a forgotten Session leaves nothing behind in the renderer', () => {
 
     // A PTY exit is not a Session ending: the tab stays, its PTY id does not.
     await act(async () => {
-      emit('exit', { id: PTY, durableSessionId: DURABLE, exitCode: 0 });
+      emit('exit', {
+        id: PTY,
+        durableSessionId: DURABLE,
+        exitCode: 0,
+        exitSignal: null,
+      });
     });
 
     expect(sessionIdentityResidue(view.result.current, [PTY])).toEqual([]);
@@ -282,6 +285,7 @@ describe('a forgotten Session leaves nothing behind in the renderer', () => {
         id: 'pty-other',
         durableSessionId: other,
         exitCode: 0,
+        exitSignal: null,
       });
     });
 
@@ -297,8 +301,8 @@ describe('a forgotten Session leaves nothing behind in the renderer', () => {
     describeSession(emit, DURABLE, PTY);
     const tabId = view.result.current.projects[0].tabs[0].id;
 
-    let archived: Record<string, unknown> | null = null;
-    pty.archiveSession.mockImplementation((entry: Record<string, unknown>) => {
+    let archived: ClosedSessionEntry | null = null;
+    pty.archiveSession.mockImplementation(entry => {
       archived = { ...entry, closedAt: 1 };
       return Promise.resolve(archived);
     });
@@ -330,7 +334,12 @@ describe('retained Session operation ownership', () => {
       liveSession(DURABLE, PTY, { harnessSessionId: 'exact-conversation' }),
     ]);
     await act(async () =>
-      emit('exit', { id: PTY, durableSessionId: DURABLE, exitCode: 0 })
+      emit('exit', {
+        id: PTY,
+        durableSessionId: DURABLE,
+        exitCode: 0,
+        exitSignal: null,
+      })
     );
     let release!: (settings: object) => void;
     Object.assign(window.electron!, {
@@ -384,7 +393,12 @@ describe('retained Session operation ownership', () => {
       );
     });
     await act(async () =>
-      emit('exit', { id: PTY, durableSessionId: DURABLE, exitCode: 0 })
+      emit('exit', {
+        id: PTY,
+        durableSessionId: DURABLE,
+        exitCode: 0,
+        exitSignal: null,
+      })
     );
     expect(view.result.current.projects[0].tabs[0]).toMatchObject({
       sessionId: 'replacement',
@@ -395,6 +409,7 @@ describe('retained Session operation ownership', () => {
         id: 'replacement',
         durableSessionId: DURABLE,
         exitCode: 0,
+        exitSignal: null,
       })
     );
     expect(view.result.current.projects[0].tabs[0]).toMatchObject({
@@ -420,6 +435,7 @@ describe('retained Session operation ownership', () => {
             id: 'replacement',
             durableSessionId: DURABLE,
             exitCode: 7,
+            exitSignal: null,
           });
         return { ok: true, session: replacement };
       });

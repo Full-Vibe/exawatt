@@ -1,9 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import RouteError from './error';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 afterEach(() => {
-  delete window.electron;
+  removeBridgeDouble();
   vi.restoreAllMocks();
 });
 
@@ -29,10 +33,9 @@ describe('RouteError', () => {
 
   it('reports the caught error to the Electron bridge when present', () => {
     const reportRenderError = vi.fn(async () => undefined);
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       app: { reportRenderError },
-    } as unknown as typeof window.electron;
+    });
 
     const error = crashError();
     error.digest = 'abc123';
@@ -48,14 +51,13 @@ describe('RouteError', () => {
   });
 
   it('never throws when the bridge call itself rejects', () => {
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       app: {
         reportRenderError: vi.fn(async () => {
           throw new Error('ipc unavailable');
         }),
       },
-    } as unknown as typeof window.electron;
+    });
 
     expect(() =>
       render(<RouteError error={crashError()} reset={() => {}} />)

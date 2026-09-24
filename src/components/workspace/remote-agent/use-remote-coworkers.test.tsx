@@ -1,6 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useRemoteCoworkers } from './use-remote-coworkers';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 /**
  * Two reads overlap whenever Connect finishes: the dialog's refresh and the
@@ -17,7 +21,7 @@ function deferred<T>() {
 }
 
 afterEach(() => {
-  delete (window as { electron?: unknown }).electron;
+  removeBridgeDouble();
 });
 
 describe('useRemoteCoworkers', () => {
@@ -28,14 +32,11 @@ describe('useRemoteCoworkers', () => {
       .fn()
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise);
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        connectedSources: {
-          list,
-          agents: vi.fn(async () => []),
-          commandAuthority: vi.fn(async () => []),
-        },
+    installBridgeDouble({
+      connectedSources: {
+        list,
+        agents: vi.fn(async () => []),
+        commandAuthority: vi.fn(async () => []),
       },
     });
     const { result } = renderHook(() => useRemoteCoworkers(false));
@@ -61,16 +62,13 @@ describe('useRemoteCoworkers', () => {
   });
 
   it('still answers null for a read that failed', async () => {
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        connectedSources: {
-          list: vi.fn(async () => {
-            throw new Error('tunnel dropped');
-          }),
-          agents: vi.fn(async () => []),
-          commandAuthority: vi.fn(async () => []),
-        },
+    installBridgeDouble({
+      connectedSources: {
+        list: vi.fn(async () => {
+          throw new Error('tunnel dropped');
+        }),
+        agents: vi.fn(async () => []),
+        commandAuthority: vi.fn(async () => []),
       },
     });
     const { result } = renderHook(() => useRemoteCoworkers(false));

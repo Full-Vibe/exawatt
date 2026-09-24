@@ -15,6 +15,18 @@ import {
   runOperatorStatsSync,
   startOperatorStatsAutoSync,
 } from './auto-sync';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
+import type {
+  OperatorStatsPublicationPlan,
+  OperatorStatsSyncEvent,
+} from '@exawatt/core';
+import type {
+  ExawattSettings,
+  OperatorProfileStateUpdate,
+} from '@exawatt/core/desktop-bridge';
 
 const { supabaseClient, distributionState, createOptionalClient } = vi.hoisted(
   () => ({
@@ -77,7 +89,7 @@ const GITHUB = {
   identity_data: { user_name: 'operator', full_name: 'The Operator' },
 };
 
-const PLAN = {
+const PLAN: OperatorStatsPublicationPlan = {
   derivation: 2,
   coverage: { from: '2026-08-10', through: '2026-08-16' },
   publications: [
@@ -113,7 +125,7 @@ const PUBLISH_RESPONSE = {
 function installBridge(
   options: { autoPublish?: boolean; startedAt?: boolean } = {}
 ) {
-  let settings: Record<string, unknown> =
+  let settings: ExawattSettings =
     options.autoPublish === undefined
       ? {}
       : {
@@ -124,10 +136,10 @@ function installBridge(
               : {}),
           },
         };
-  const listeners = new Set<(next: unknown) => void>();
+  const listeners = new Set<(next: ExawattSettings) => void>();
   const plan = vi.fn(async () => PLAN);
-  const record = vi.fn(async (event: Record<string, unknown>) => {
-    const current = (settings.operatorProfile as object | undefined) ?? {};
+  const record = vi.fn(async (event: OperatorStatsSyncEvent) => {
+    const current = settings.operatorProfile ?? { autoPublish: false };
     settings = {
       ...settings,
       operatorProfile:
@@ -136,7 +148,7 @@ function installBridge(
               ...current,
               lastSyncedAt: event.at,
               profileEnabled: true,
-              publishedThrough: (event.coverage as { through: string }).through,
+              publishedThrough: event.coverage.through,
             }
           : {
               ...current,
@@ -152,23 +164,23 @@ function installBridge(
     return settings;
   });
   const bridge = {
-    isElectron: true,
     platform: 'darwin',
     operatorStats: { plan, record },
     settings: {
       get: vi.fn(async () => settings),
-      onChanged: vi.fn((handler: (next: unknown) => void) => {
+      onChanged: vi.fn((handler: (next: ExawattSettings) => void) => {
         listeners.add(handler);
         return () => listeners.delete(handler);
       }),
       recordOperatorProfileState: vi.fn(
-        async (state: Record<string, unknown>) => {
+        async (state: OperatorProfileStateUpdate) => {
+          // Main refuses this write when no preference was ever recorded.
+          if (!settings.operatorProfile) {
+            throw new Error('Publishing preference is unavailable');
+          }
           settings = {
             ...settings,
-            operatorProfile: {
-              ...((settings.operatorProfile as object | undefined) ?? {}),
-              ...state,
-            },
+            operatorProfile: { ...settings.operatorProfile, ...state },
           };
           for (const listener of listeners) listener(settings);
           return settings;
@@ -176,16 +188,12 @@ function installBridge(
       ),
     },
   };
-  Object.defineProperty(window, 'electron', {
-    configurable: true,
-    writable: true,
-    value: bridge,
-  });
+  installBridgeDouble(bridge);
   return {
     plan,
     record,
     settings: bridge.settings,
-    emit(next: Record<string, unknown>) {
+    emit(next: ExawattSettings) {
       settings = next;
       for (const listener of listeners) listener(next);
     },
@@ -214,7 +222,7 @@ beforeEach(() => {
 afterEach(() => {
   __resetOperatorStatsSyncForTests();
   supabaseClient.current = null;
-  Reflect.deleteProperty(window, 'electron');
+  removeBridgeDouble();
   vi.unstubAllGlobals();
 });
 

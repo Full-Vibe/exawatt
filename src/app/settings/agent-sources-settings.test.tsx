@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import type { ConnectedSourceView } from '@exawatt/core';
@@ -18,7 +18,15 @@ import {
   useConnectedSources,
   type ConnectedSourceObservation,
 } from './connected-sources-section';
-import type { DesktopAgentSourcesApi } from '@exawatt/core/desktop-bridge';
+import type {
+  ConnectedSourceChange,
+  DesktopAgentSourcesApi,
+  DesktopConnectedSourcesApi,
+} from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 describe('Agent Source Settings', () => {
   it('replaces declared delegation with observed coverage and clears it on source exit', async () => {
@@ -28,17 +36,13 @@ describe('Agent Source Settings', () => {
       NonNullable<DesktopAgentSourcesApi['onDelegation']>
     >[0];
     const unsubscribe = vi.fn();
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        isElectron: true,
-        platform: 'darwin',
-        agentSources: {
-          list: vi.fn(async () => registry),
-          onDelegation: (callback: typeof update) => {
-            update = callback;
-            return unsubscribe;
-          },
+    installBridgeDouble({
+      platform: 'darwin',
+      agentSources: {
+        list: vi.fn(async () => registry),
+        onDelegation: (callback: typeof update) => {
+          update = callback;
+          return unsubscribe;
         },
       },
     });
@@ -65,7 +69,7 @@ describe('Agent Source Settings', () => {
 
   afterEach(() => {
     cleanup();
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
     vi.useRealTimers();
   });
 
@@ -114,13 +118,9 @@ describe('Agent Source Settings', () => {
       ok: true,
       message: 'Claude Code sign-in opened in Terminal.',
     }));
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        isElectron: true,
-        platform: 'darwin',
-        agentSources: { list, act },
-      },
+    installBridgeDouble({
+      platform: 'darwin',
+      agentSources: { list, act },
     });
 
     render(<AgentSourcesSettings />);
@@ -198,11 +198,10 @@ describe('Agent Source Settings', () => {
       .mockResolvedValueOnce(actionRequired)
       .mockResolvedValueOnce(ready);
     const act = vi.fn(async () => ({ ok: true, message: 'Sign-in opened.' }));
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       agentSources: { list, act },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     render(<AgentSourcesSettings />);
     await reactAct(async () => Promise.resolve());
@@ -245,11 +244,10 @@ describe('Agent Source Settings', () => {
       ok: true,
       message: 'Claude Code installation guide opened.',
     }));
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       agentSources: { list: vi.fn(async () => missing), act },
-    } as unknown as NonNullable<Window['electron']>;
+    });
 
     render(<AgentSourcesSettings />);
     const button = await screen.findByRole('button', {
@@ -289,9 +287,9 @@ describe('Agent Source Settings', () => {
         finish = resolve;
       });
       const act = vi.fn(() => pending);
-      window.electron = {
+      installBridgeDouble({
         agentSources: { list: vi.fn(async () => registry), act },
-      } as unknown as NonNullable<Window['electron']>;
+      });
       render(<AgentSourcesSettings />);
       const claude = registry.sources.find(
         source => source.adapterId === 'claude'
@@ -340,12 +338,23 @@ describe('Connected sources in Agent Source Settings', () => {
   afterEach(() => {
     cleanup();
     changeTick = null;
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
     vi.useRealTimers();
   });
 
   /** The most recent handler the bridge's `onChanged` was given, if any. */
-  let changeTick: ((change: { sourceId: string }) => void) | null = null;
+  let changeTick: ((change: ConnectedSourceChange) => void) | null = null;
+
+  /** One tick as main broadcasts it: which source moved, never a payload. */
+  function tick(sourceId: string): ConnectedSourceChange {
+    const status = observation({ id: sourceId });
+    return {
+      sourceId,
+      phase: status.phase,
+      connection: status.connection,
+      snapshotRevision: status.snapshotRevision,
+    };
+  }
 
   function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -377,8 +386,8 @@ describe('Connected sources in Agent Source Settings', () => {
       .mockResolvedValueOnce([latest]);
 
     await reactAct(async () => {
-      changeTick?.({ sourceId: 'a' });
-      changeTick?.({ sourceId: 'a' });
+      changeTick?.(tick('a'));
+      changeTick?.(tick('a'));
     });
     expect(result.current.observations.get('a')).toBe(latest);
     await reactAct(async () => older.resolve([initial]));
@@ -401,8 +410,8 @@ describe('Connected sources in Agent Source Settings', () => {
         .mockImplementationOnce(() => older.promise)
         .mockResolvedValueOnce(latest);
       await reactAct(async () => {
-        changeTick?.({ sourceId: 'b' });
-        changeTick?.({ sourceId: 'b' });
+        changeTick?.(tick('b'));
+        changeTick?.(tick('b'));
       });
       expect(result.current.sources).toEqual(latest);
       await reactAct(async () => {
@@ -470,9 +479,9 @@ describe('Connected sources in Agent Source Settings', () => {
   function mountBridge(options: {
     sources: ConnectedSourceView[];
     statuses?: ConnectedSourceObservation[];
-    rename?: ReturnType<typeof vi.fn>;
-    detach?: ReturnType<typeof vi.fn>;
-    connect?: ReturnType<typeof vi.fn>;
+    rename?: Mock<DesktopConnectedSourcesApi['rename']>;
+    detach?: Mock<DesktopConnectedSourcesApi['detach']>;
+    connect?: Mock<DesktopConnectedSourcesApi['connect']>;
   }) {
     let current = options.sources;
     const rename =
@@ -496,29 +505,40 @@ describe('Connected sources in Agent Source Settings', () => {
         configPresent: false,
         incompleteIncludes: false,
       })),
-      add: vi.fn(async () => ({ ok: true as const, source: null })),
+      add: vi.fn(async () => ({
+        ok: true as const,
+        source: null,
+        created: true,
+      })),
       rename,
       detach,
       status: vi.fn(async () => options.statuses ?? []),
-      connect: options.connect ?? vi.fn(async () => ({ ok: true })),
+      connect:
+        options.connect ??
+        vi.fn(async (id: string) => ({
+          ok: true as const,
+          sourceId: id,
+          agents: [],
+          status: observation({ id }),
+          observed: null,
+        })),
       // The bridge's change tick. Every connected test therefore exercises
       // the subscribe/unsubscribe path, not only the interval fallback.
-      onChanged: vi.fn((handler: (change: { sourceId: string }) => void) => {
+      onChanged: vi.fn((handler: (change: ConnectedSourceChange) => void) => {
         changeTick = handler;
         return () => {
           changeTick = null;
         };
       }),
     };
-    window.electron = {
-      isElectron: true,
+    installBridgeDouble({
       platform: 'darwin',
       agentSources: {
         list: vi.fn(async () => fallbackAgentSourceRegistry('all')),
         act: vi.fn(async () => ({ ok: true, message: 'Done.' })),
       },
       connectedSources,
-    } as unknown as NonNullable<Window['electron']>;
+    });
     return connectedSources;
   }
 
@@ -801,7 +821,7 @@ describe('Connected sources in Agent Source Settings', () => {
     // rather than waiting for the drift interval.
     expect(changeTick).not.toBeNull();
     await reactAct(async () => {
-      changeTick?.({ sourceId: 'a' });
+      changeTick?.(tick('a'));
     });
     await waitFor(() => expect(bridge.status).toHaveBeenCalledTimes(3));
     // A source already in the rail moved, so freshness is the only re-read:
@@ -883,7 +903,7 @@ describe('Connected sources in Agent Source Settings', () => {
     ]);
     bridge.status.mockImplementation(async () => [observation({ id: 'new' })]);
     await reactAct(async () => {
-      changeTick?.({ sourceId: 'new' });
+      changeTick?.(tick('new'));
     });
 
     expect(

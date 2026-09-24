@@ -6,6 +6,10 @@ import {
   mergeAttention,
 } from '@/components/workspace/session-status';
 import { useFleetRoadmapAttention } from './use-fleet-roadmap-attention';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const BLOCKED = `## Now
 
@@ -49,17 +53,16 @@ function electron(overrides: Record<string, unknown> = {}) {
     onFileChanged: vi.fn().mockReturnValue(() => {}),
     ...overrides,
   };
-  window.electron = {
-    isElectron: true,
+  installBridgeDouble({
     platform: 'darwin',
     roadmap: api,
-  } as unknown as NonNullable<Window['electron']>;
+  });
   return api;
 }
 
 describe('useFleetRoadmapAttention', () => {
   afterEach(() => {
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
     vi.restoreAllMocks();
   });
 

@@ -1,6 +1,33 @@
 import nextVitals from "eslint-config-next/core-web-vitals";
 import prettier from "eslint-config-prettier";
 
+const BRIDGE_DOUBLE_MESSAGE =
+  "Install a desktop bridge double with installBridgeDouble() from src/test-support/desktop-bridge-double.ts: it is built from the bridge contract, so it cannot carry what preload does not (ENG-039).";
+
+/** Writes to `window.electron`, however they are spelled. */
+const BRIDGE_DOUBLE_SELECTORS = [
+  {
+    selector:
+      "CallExpression[callee.object.name='Object'][callee.property.name='defineProperty'][arguments.1.value='electron']",
+    message: BRIDGE_DOUBLE_MESSAGE,
+  },
+  {
+    selector:
+      "AssignmentExpression > MemberExpression.left[property.name='electron']",
+    message: BRIDGE_DOUBLE_MESSAGE,
+  },
+  {
+    selector:
+      "CallExpression[callee.object.name='Object'][callee.property.name='assign'] > MemberExpression.arguments:first-child[property.name='electron']",
+    message: BRIDGE_DOUBLE_MESSAGE,
+  },
+  {
+    selector:
+      "CallExpression[callee.object.name='vi'][callee.property.name='stubGlobal'][arguments.0.value='electron']",
+    message: BRIDGE_DOUBLE_MESSAGE,
+  },
+];
+
 const eslintConfig = [
   ...nextVitals,
   prettier,
@@ -11,6 +38,26 @@ const eslintConfig = [
       "react-hooks/purity": "off",
       "react-hooks/refs": "off",
       "react-hooks/set-state-in-effect": "off",
+    },
+  },
+  {
+    // One double for the desktop bridge (ENG-039). `window.electron` is
+    // written by preload in the app and by `src/test-support/
+    // desktop-bridge-double.ts` in tests, and nowhere else. A hand-built
+    // double honours whatever its author believed about the bridge; the
+    // shared one is built from the contract preload is checked against.
+    files: ['**/*.{ts,tsx,mts,mjs}'],
+    ignores: [
+      'src/test-support/desktop-bridge-double.ts',
+      // Stubs injected into a real browser page or a bare jsdom by eval
+      // scripts. They run outside Vitest and cannot import the factory; they
+      // are named here so a new one is still refused.
+      'scripts/command-altitude-eval.mjs',
+      'scripts/renderer-session-lifecycle-leak-probe.mjs',
+      'scripts/workspace-chrome-layout-eval.mjs',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', ...BRIDGE_DOUBLE_SELECTORS],
     },
   },
   {
@@ -33,6 +80,7 @@ const eslintConfig = [
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...BRIDGE_DOUBLE_SELECTORS,
         {
           selector:
             'BinaryExpression[operator="-"][left.callee.property.name="now"][right.type="Identifier"]',

@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SiteHeaderNav } from './site-header-nav';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 /**
  * ENG-030 OS0.1. In the desktop app the account menu renders whether or not
@@ -69,12 +73,12 @@ function openAccountMenu() {
 }
 
 beforeEach(() => {
-  (window as { electron?: unknown }).electron = { isElectron: true };
+  installBridgeDouble({});
 });
 
 afterEach(() => {
   cleanup();
-  delete (window as { electron?: unknown }).electron;
+  removeBridgeDouble();
 });
 
 describe('SiteHeaderNav account menu', () => {

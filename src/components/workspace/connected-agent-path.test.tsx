@@ -29,6 +29,10 @@ import type {
   AgentMappingInput,
   RemoteAgentView,
 } from '@exawatt/core/desktop-bridge';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 vi.mock('@/lib/goal-visuals/preference-source', () => ({
   createGoalVisualPreferenceSource: () => ({
@@ -96,7 +100,7 @@ describe('Connect → mapping → roster → Team → Agent', () => {
   });
 
   afterEach(() => {
-    delete (window as unknown as { electron?: unknown }).electron;
+    removeBridgeDouble();
     window.localStorage.clear();
   });
 
@@ -192,12 +196,21 @@ describe('Connect → mapping → roster → Team → Agent', () => {
       detach: vi.fn(async () => ({ ok: true })),
       requestCommandAuthority: vi.fn(),
       conversation,
-      send: vi.fn(async () => ({ ok: true as const })),
+      send: vi.fn(async (agentId: string) => ({
+        ok: true as const,
+        agentId,
+        sourceId: SOURCE.id,
+        contextId: 'agent:social-poster:main',
+        runId: null,
+        status: 'sent' as const,
+        idempotencyKey: 'send-1',
+        at: 1,
+      })),
       onConversationUpdate: vi.fn(() => () => undefined),
     };
-    (window as unknown as { electron: unknown }).electron = {
+    installBridgeDouble({
       connectedSources,
-    };
+    });
 
     function Harness() {
       const [connectOpen, setConnectOpen] = useState(true);

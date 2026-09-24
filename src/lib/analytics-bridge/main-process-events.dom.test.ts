@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startMainProcessAnalyticsBridge } from './main-process-events';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 async function flush() {
   await Promise.resolve();
@@ -9,7 +13,7 @@ async function flush() {
 
 describe('startMainProcessAnalyticsBridge', () => {
   afterEach(() => {
-    Reflect.deleteProperty(window, 'electron');
+    removeBridgeDouble();
   });
 
   it('is inert on web surfaces, where no bridge exists', () => {
@@ -17,19 +21,15 @@ describe('startMainProcessAnalyticsBridge', () => {
   });
 
   it('drains once at startup and again on every nudge from main', async () => {
-    let nudge: (() => void) | undefined;
+    let nudge: ((payload: null) => void) | undefined;
     const drainMainProcessEvents = vi.fn(async () => []);
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        isElectron: true,
-        platform: 'darwin',
-        analytics: {
-          drainMainProcessEvents,
-          onMainProcessEvents: (handler: () => void) => {
-            nudge = handler;
-            return () => undefined;
-          },
+    installBridgeDouble({
+      platform: 'darwin',
+      analytics: {
+        drainMainProcessEvents,
+        onMainProcessEvents: (handler: (payload: null) => void) => {
+          nudge = handler;
+          return () => undefined;
         },
       },
     });
@@ -39,13 +39,13 @@ describe('startMainProcessAnalyticsBridge', () => {
     // The startup drain empties whatever main queued before this page existed.
     expect(drainMainProcessEvents).toHaveBeenCalledTimes(1);
 
-    nudge?.();
+    nudge?.(null);
     await flush();
     expect(drainMainProcessEvents).toHaveBeenCalledTimes(2);
   });
 
   it('serializes overlapping nudges and drains once more afterwards', async () => {
-    let nudge: (() => void) | undefined;
+    let nudge: ((payload: null) => void) | undefined;
     let release!: (value: unknown[]) => void;
     const drainMainProcessEvents = vi
       .fn<() => Promise<unknown[]>>()
@@ -56,17 +56,13 @@ describe('startMainProcessAnalyticsBridge', () => {
           })
       )
       .mockResolvedValue([]);
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: {
-        isElectron: true,
-        platform: 'darwin',
-        analytics: {
-          drainMainProcessEvents,
-          onMainProcessEvents: (handler: () => void) => {
-            nudge = handler;
-            return () => undefined;
-          },
+    installBridgeDouble({
+      platform: 'darwin',
+      analytics: {
+        drainMainProcessEvents,
+        onMainProcessEvents: (handler: (payload: null) => void) => {
+          nudge = handler;
+          return () => undefined;
         },
       },
     });
@@ -77,8 +73,8 @@ describe('startMainProcessAnalyticsBridge', () => {
 
     // Nudges while the first drain is still in flight coalesce into ONE
     // follow-up drain, so an event queued mid-drain is not stranded.
-    nudge?.();
-    nudge?.();
+    nudge?.(null);
+    nudge?.(null);
     await flush();
     expect(drainMainProcessEvents).toHaveBeenCalledTimes(1);
 

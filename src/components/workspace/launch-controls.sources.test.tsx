@@ -17,10 +17,7 @@ import {
   renderComposer,
   settled,
 } from './launch-controls.test-support';
-import type {
-  AgentModelCatalog,
-  DesktopAgentSourcesApi,
-} from '@exawatt/core/desktop-bridge';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 describe('Agent composer · sources and policy', () => {
   installComposerTestHarness();
@@ -270,10 +267,10 @@ describe('Agent composer · sources and policy', () => {
       ok: true,
       message: 'Claude Code opened in Terminal.',
     }));
-    window.electron!.agentSources = {
-      list: vi.fn(async () => readyAgentSourceRegistry()),
-      act: sourceAction,
-    } as unknown as DesktopAgentSourcesApi;
+    window.electron!.agentSources.list = vi.fn(async () =>
+      readyAgentSourceRegistry()
+    );
+    window.electron!.agentSources.act = sourceAction;
     const sourceOwnedClaude: AgentModelCatalog = {
       ...CLAUDE_MODEL_CATALOG,
       effectiveModel: null,

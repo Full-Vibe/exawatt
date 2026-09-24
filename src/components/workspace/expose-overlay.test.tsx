@@ -18,6 +18,10 @@ import {
   sessionStateWord,
 } from './session-status';
 import type { Project, SessionTab } from './use-workspace-state';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 const { loadGoalVisualPreference, saveGoalVisualPreference } = vi.hoisted(
   () => ({
@@ -825,9 +829,9 @@ describe('Sessions overview', () => {
         'SESSION_PREVIEW_MUST_STAY_IN_TERMINAL',
       ].join('\n')
     );
-    (window as unknown as { electron: unknown }).electron = {
+    installBridgeDouble({
       pty: { buffer },
-    };
+    });
     try {
       render(
         <ExposeOverlay
@@ -845,7 +849,7 @@ describe('Sessions overview', () => {
       ).not.toBeInTheDocument();
       expect(screen.getAllByText('Shell is idle').length).toBeGreaterThan(0);
     } finally {
-      delete (window as unknown as { electron?: unknown }).electron;
+      removeBridgeDouble();
     }
   });
 
