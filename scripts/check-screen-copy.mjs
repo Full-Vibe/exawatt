@@ -36,7 +36,7 @@ const OVERLAY_MANIFEST = 'company/overlay-manifest.json';
  * Strings that must keep an em dash, capped per file. Removing one is always
  * legal; adding one, or a new file, needs a reason here.
  */
-export const SCREEN_COPY_DASH_EXCEPTIONS = {
+const SCREEN_COPY_DASH_EXCEPTIONS = {
   'src/components/workspace/workspace-client.tsx': {
     max: 1,
     reason:
@@ -210,7 +210,7 @@ async function overlayTargets(root) {
   return manifest.entries.filter(entry => /\.tsx?$/.test(entry.source));
 }
 
-export async function checkScreenCopy(root = ROOT) {
+async function checkScreenCopy(root = ROOT) {
   const sources = new Map();
   const composed = new Map();
   for (const scanned of SCANNED_ROOTS) {
