@@ -3,10 +3,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { PassThrough } from 'stream';
-import type { ChildProcess, SpawnOptions } from 'child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
+import net from 'net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createRendererServer,
+  rendererServerLaunch,
   type RendererServerDependencies,
 } from './renderer-server';
 
@@ -234,5 +236,113 @@ describe('createRendererServer', () => {
 
     server.pruneCache();
     expect(fs.existsSync(stale)).toBe(true);
+  });
+});
+
+/**
+ * BUG-070, against real processes: a killed or crashed Electron main used to
+ * leave its renderer server reparented to launchd, holding its port and a
+ * Dock icon. The server entry here is a stand-in for Next's `server.js` that
+ * listens on loopback and reports `<pid> <port>`.
+ */
+describe('rendererServerLaunch', () => {
+  const ENTRY = `require('net').createServer().listen(0, '127.0.0.1', function () {
+  process.stdout.write(process.pid + ' ' + this.address().port + '\\n');
+});`;
+
+  // Whatever a failing assertion leaves running is ended here, by pid, so a
+  // red run cannot become the orphan this suite exists to prevent.
+  const started: number[] = [];
+  afterEach(() => {
+    for (const pid of started.splice(0)) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
+  });
+
+  function writeEntry(): string {
+    const entry = path.join(root, 'server.js');
+    fs.writeFileSync(entry, ENTRY);
+    return entry;
+  }
+
+  function firstLine(stream: NodeJS.ReadableStream): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let buffered = '';
+      stream.on('data', chunk => {
+        buffered += String(chunk);
+        const end = buffered.indexOf('\n');
+        if (end >= 0) resolve(buffered.slice(0, end));
+      });
+      stream.once('end', () =>
+        reject(new Error(`stream ended before a line: ${buffered}`))
+      );
+    });
+  }
+
+  function alive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function connects(port: number): Promise<boolean> {
+    return new Promise(resolve => {
+      const socket = net.connect(port, '127.0.0.1');
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once('error', () => resolve(false));
+    });
+  }
+
+  it('runs the entry and keeps serving until its parent lets go of stdin', async () => {
+    const launch = rendererServerLaunch(writeEntry());
+    const child = spawn(process.execPath, launch.args, {
+      stdio: launch.stdio,
+    });
+    started.push(child.pid!);
+    const exited = new Promise<number | null>(resolve =>
+      child.once('exit', code => resolve(code))
+    );
+    const [, port] = (await firstLine(child.stdout!)).split(' ').map(Number);
+
+    expect(await connects(port)).toBe(true);
+    child.stdin!.end();
+    expect(await exited).toBe(0);
+  });
+
+  it('ends the server when its parent is killed outright', async () => {
+    const launch = rendererServerLaunch(writeEntry());
+    const parentSource = `const { spawn } = require('child_process');
+const launch = JSON.parse(process.argv[1]);
+const child = spawn(process.execPath, launch.args, { stdio: launch.stdio });
+child.stdout.pipe(process.stdout);
+setInterval(() => {}, 60000);`;
+    const parent = spawn(
+      process.execPath,
+      ['-e', parentSource, JSON.stringify(launch)],
+      { stdio: ['ignore', 'pipe', 'inherit'] }
+    );
+    started.push(parent.pid!);
+    const [serverPid, port] = (await firstLine(parent.stdout!))
+      .split(' ')
+      .map(Number);
+    started.push(serverPid);
+    expect(await connects(port)).toBe(true);
+
+    parent.kill('SIGKILL');
+
+    await vi.waitFor(() => expect(alive(serverPid)).toBe(false), {
+      timeout: 10_000,
+      interval: 20,
+    });
   });
 });

@@ -103,15 +103,54 @@ const expectedVersion = JSON.parse(
   readFileSync(resolve('package.json'), 'utf8')
 ).version;
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-packaged-smoke-'));
-const app = await electron.launch({
-  executablePath: executable,
-  env: {
-    ...process.env,
-    EXAWATT_TEST: '1',
-    EXAWATT_USER_DATA: userData,
-    EXAWATT_RENDERER_LOGS: '1',
-  },
-});
+function launchPackaged() {
+  return electron.launch({
+    executablePath: executable,
+    env: {
+      ...process.env,
+      EXAWATT_TEST: '1',
+      EXAWATT_USER_DATA: userData,
+      EXAWATT_RENDERER_LOGS: '1',
+    },
+  });
+}
+
+/** The pid listening on a loopback port, or null when nothing is. */
+function listenerOn(port) {
+  try {
+    const pid = execFileSync(
+      'lsof',
+      ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
+      { encoding: 'utf8' }
+    )
+      .trim()
+      .split('\n')[0];
+    return pid ? Number(pid) : null;
+  } catch {
+    // lsof exits 1 when no process matches.
+    return null;
+  }
+}
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitUntil(condition, failure, deadlineMs = 10_000) {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`${failure} (TIMED OUT after ${deadlineMs / 1000}s)`);
+}
+
+let app = await launchPackaged();
 
 try {
   const page = await app.firstWindow({ timeout: 45_000 });
@@ -327,12 +366,35 @@ try {
   if (errors.length > 0) {
     throw new Error(`Packaged Electron errors: ${errors.join(' | ')}`);
   }
+
+  // BUG-070: the renderer server ends with Electron main however main ends.
+  // SIGKILL runs no shutdown code at all, so only the child's own lifeline to
+  // main can end it; before that lifeline the server reparented to launchd and
+  // kept its port, its memory, and a Dock icon of its own.
+  const rendererPort = Number(new URL(page.url()).port);
+  const serverPid = listenerOn(rendererPort);
+  if (!serverPid) {
+    throw new Error(
+      `Nothing is listening on the renderer port ${rendererPort}`
+    );
+  }
+  const mainExited = new Promise(resolve =>
+    app.process().once('exit', resolve)
+  );
+  app.process().kill('SIGKILL');
+  await mainExited;
+  app = null;
+  await waitUntil(
+    () => !isAlive(serverPid) && listenerOn(rendererPort) === null,
+    `The renderer server (pid ${serverPid}) outlived a SIGKILLed Electron main and still holds port ${rendererPort}`
+  );
+
   console.log(
     `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
       'local renderer + capability-shaped preload/menu/diagnostics + PTY round trip + contract-declared updater ' +
-      `${productUpdatesEnabled ? 'present' : 'absent'}`
+      `${productUpdatesEnabled ? 'present' : 'absent'} + renderer server ends with a killed main`
   );
 } finally {
-  await app.close();
+  if (app) await app.close();
   rmSync(userData, { recursive: true, force: true });
 }

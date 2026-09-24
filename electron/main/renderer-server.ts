@@ -10,6 +10,8 @@ import { stopChildProcess } from './child-process-lifecycle';
  * versioned cache under `userData` and run as a loopback child of Electron
  * main. This module is its one owner. It starts the child, reports the origin
  * it serves, stops it during shutdown, and prunes versions it no longer runs.
+ * The child also carries a lifeline to main, so it ends with main however main
+ * ends, including the endings where main runs no shutdown code at all.
  *
  * Every process boundary is an argument (`spawn`, the archive extractor, port
  * allocation, the readiness probe, the clock), so the lifecycle is exercised
@@ -68,7 +70,7 @@ export interface RendererServer {
   pruneCache(): void;
 }
 
-export async function availableLoopbackPort(): Promise<number> {
+async function availableLoopbackPort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = nodeNet.createServer();
     server.once('error', reject);
@@ -85,7 +87,7 @@ export async function availableLoopbackPort(): Promise<number> {
 }
 
 /** One readiness probe: any non-5xx answer means the server is serving. */
-export async function probeRenderer(url: string): Promise<boolean> {
+async function probeRenderer(url: string): Promise<boolean> {
   return await new Promise<boolean>(resolve => {
     const request = http.get(url, response => {
       response.resume();
@@ -97,6 +99,40 @@ export async function probeRenderer(url: string): Promise<boolean> {
       resolve(false);
     });
   });
+}
+
+/**
+ * The first thing the renderer server child runs, before Next's `server.js`
+ * (BUG-070). It is passed as `-e` source, so what the child executes is
+ * exactly this text.
+ *
+ * The child's stdin is a pipe whose only writer is Electron main, and main
+ * never writes to it or closes it. However main ends (quit, crash, SIGKILL,
+ * Force Quit) the kernel closes that writer, and the child reads end of file.
+ * That is the one signal that still arrives when the parent is in no state to
+ * cooperate, and without it the server reparented to launchd and kept its
+ * port, its memory, and a Dock icon of its own. A normal quit still stops
+ * the child first through `stop()`; this is what makes every other ending
+ * behave the same way.
+ */
+const RENDERER_SERVER_LIFELINE = [
+  "process.stdin.once('end', () => process.exit(0));",
+  "process.stdin.once('error', () => process.exit(0));",
+  'process.stdin.resume();',
+  'require(process.argv[1]);',
+].join('\n');
+
+/** How the renderer server child is launched: the lifeline, then the entry. */
+export function rendererServerLaunch(serverEntry: string): {
+  args: string[];
+  stdio: ['pipe', 'pipe', 'pipe'];
+} {
+  return {
+    args: ['-e', RENDERER_SERVER_LIFELINE, serverEntry],
+    // stdin MUST be a pipe held by main: 'ignore' would hand the child
+    // /dev/null, which reads as end of file at once and ends the server.
+    stdio: ['pipe', 'pipe', 'pipe'],
+  };
 }
 
 const realClock: RendererServerClock = {
@@ -165,7 +201,8 @@ export function createRendererServer(
       });
     }
     const serverEntry = path.join(standaloneRoot, 'server.js');
-    rendererServer = deps.spawn(deps.execPath, [serverEntry], {
+    const launch = rendererServerLaunch(serverEntry);
+    rendererServer = deps.spawn(deps.execPath, launch.args, {
       cwd: standaloneRoot,
       env: {
         ...deps.childEnvironment(),
@@ -174,7 +211,7 @@ export function createRendererServer(
         PORT: String(port),
         NODE_ENV: 'production',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: launch.stdio,
     });
     rendererServer.stdout?.on('data', data => {
       if (deps.forwardStdout) writeStdout(data);

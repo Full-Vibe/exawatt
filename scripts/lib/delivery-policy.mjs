@@ -241,7 +241,11 @@ export const SURFACE_GATES = [
       // BUG-043: the gate resolves the bundle and the capabilities it owes from
       // the distribution contract. A change to that resolution changes what
       // every packaged eval launches.
-      file === 'scripts/lib/packaged-app.mjs',
+      file === 'scripts/lib/packaged-app.mjs' ||
+      // ENG-039 M1: the one owner of starting, stopping and outliving the
+      // standalone renderer. The gate asserts the server serves and that it
+      // ends with a SIGKILLed main (BUG-070).
+      file === 'electron/main/renderer-server.ts',
   },
   {
     gate: 'eval:spatial:viewport',
