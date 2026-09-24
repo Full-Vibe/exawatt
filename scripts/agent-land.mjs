@@ -923,6 +923,7 @@ async function landThroughQueue({
         const rebaseChecks = lane.checksFor(rebasedFiles);
         const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
+          queueHead: true,
           onResult: recordFloorCheck({
             ticketId: ticket.id,
             candidateSha: rebasedSha,

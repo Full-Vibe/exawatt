@@ -56,6 +56,15 @@ failure or a 20-minute wait proceeds UNSLOTTED with a warning naming the
 holders, dead holders are reclaimed by PID, and `EXAWATT_MACHINE_SLOTS=0`
 disables the pool on a machine.
 
+One more slot is reserved for the queue head (BUG-204). Every ticket behind
+the head waits on its rebase re-check, and in September the head waited for a
+slot in 9 of 36 rebases, 30 minutes in total, behind candidates' first
+checks. The head's re-check may take the reserved slot or any pool slot;
+nothing else may take the reserved one, and there is only one head, so the
+reserve adds at most one concurrent check. Each `floor_check` records the
+run's `slotMode` and `slotWaitMs`, so slot queues are measured, not
+inferred.
+
 ## A known intermittent
 
 `pnpm test:run` has exited non-zero three times across 2026-08-07..13 with
@@ -600,7 +609,7 @@ contributor's own commit is what the projector publishes.
 
 | Event                                                                                                         | Important fields                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
+| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
 | `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                                                                                                                                                            |
 | `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                                                                                                                                                         |
 | `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                                                                                                                                                            |
@@ -716,7 +725,7 @@ verification, or a live owner's ticket.
   `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
   `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
   `scripts/queue-hold.test.mjs`, `scripts/conflict-probe.test.mjs`, and
-  `scripts/append-merge.test.mjs` (with
+  `scripts/append-merge.test.mjs`, and `scripts/queue-head-slot.test.mjs` (with
   `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.

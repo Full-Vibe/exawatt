@@ -153,3 +153,45 @@ test('release is idempotent and only the owner can free its slot', async t => {
   );
   assert.equal(contender.mode, 'unslotted');
 });
+
+test('the queue head has a reserved slot that nothing else may take (BUG-204)', async t => {
+  const arena = await slotArena();
+  t.after(() => rm(arena, { recursive: true, force: true }));
+
+  // A candidate's first check holds the only pool slot.
+  const candidate = await acquireMachineSlot(
+    options(arena, { slotCount: 1, env: {} })
+  );
+  assert.equal(candidate.mode, 'acquired');
+  const waiting = await acquireMachineSlot(
+    options(arena, { slotCount: 1, env: {} })
+  );
+  assert.equal(waiting.mode, 'unslotted', 'another candidate still waits');
+
+  const head = await acquireMachineSlot(
+    options(arena, { slotCount: 1, env: {}, queueHead: true })
+  );
+  assert.equal(
+    head.mode,
+    'acquired',
+    'the head never waits behind a candidate'
+  );
+
+  // The reserve is one slot: a second head-priority request while it is held
+  // and the pool is full waits like anyone else.
+  const second = await acquireMachineSlot(
+    options(arena, { slotCount: 1, env: {}, queueHead: true })
+  );
+  assert.equal(second.mode, 'unslotted');
+
+  await head.release();
+  const after = await acquireMachineSlot(
+    options(arena, { slotCount: 1, env: {} })
+  );
+  assert.equal(
+    after.mode,
+    'unslotted',
+    'a freed reserve is still not available to non-head work'
+  );
+  await candidate.release();
+});

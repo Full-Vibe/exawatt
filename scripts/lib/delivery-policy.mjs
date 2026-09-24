@@ -991,7 +991,7 @@ async function runOneCheck(root, check) {
 export async function runDeliveryChecks(
   root,
   checks,
-  { phase = 'candidate', onResult = async () => {} } = {}
+  { phase = 'candidate', onResult = async () => {}, queueHead = false } = {}
 ) {
   const evidence = [];
   // One machine slot bounds this floor run's compute: a dozen concurrent
@@ -1000,9 +1000,14 @@ export async function runDeliveryChecks(
   // from 9 seconds alone to 46 minutes under that load (ENG-022 H15). The
   // failed-check throw below leaves through the finally, so a red floor can
   // never leak its slot.
+  //
+  // The queue head's re-check may also take the one slot reserved for it
+  // (BUG-204): everyone behind the head waits on this run, so it never
+  // queues behind a candidate's first check.
   const slot = await acquireMachineSlot({
     root,
     label: `agent-land floor (${phase})`,
+    queueHead,
   });
   try {
     for (const check of checks) {
@@ -1022,6 +1027,10 @@ export async function runDeliveryChecks(
         status: outcome.status,
         durationMs: Date.now() - startedAt,
         completedAt: new Date().toISOString(),
+        // How long this floor run waited for its machine slot, and what it
+        // got, so a slot queue is measurable rather than inferred.
+        slotMode: slot.mode,
+        slotWaitMs: slot.waitedMs,
         ...(outcome.detail ?? {}),
       };
       if (outcome.status === 'failed') {

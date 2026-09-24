@@ -12,6 +12,13 @@
  * slotted parent's child commands never wait on a second slot, and a
  * deadline that proceeds UNSLOTTED with a loud warning rather than failing
  * the work — a leaked slot must never be able to stop the fleet.
+ *
+ * One more slot is reserved for the delivery queue's head (BUG-204). The head
+ * re-checks a rebased tree while every ticket behind it waits on that result,
+ * and in September it waited for a slot in 9 of 36 rebases, 30 minutes in all,
+ * behind candidates' first checks. `queueHead` acquisitions may take the
+ * reserved slot or any pool slot; nothing else may take the reserved one.
+ * There is only ever one head, so the reserve adds at most one check.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -37,23 +44,28 @@ export function defaultSlotCount(env = process.env) {
   return Math.max(1, Math.min(3, Math.floor(availableParallelism() / 4)));
 }
 
+const HEAD_SLOT = 'head';
+
 export async function machineSlotPaths({
   root = process.cwd(),
   slotCount,
   baseDir,
+  queueHead = false,
 } = {}) {
   const count = slotCount ?? defaultSlotCount();
+  const names = [
+    ...(queueHead ? [HEAD_SLOT] : []),
+    ...Array.from({ length: count }, (_, i) => String(i)),
+  ];
   if (baseDir) {
-    return Array.from({ length: count }, (_, i) =>
-      path.join(baseDir, `slot-${i}.lock`)
-    );
+    return names.map(name => path.join(baseDir, `slot-${name}.lock`));
   }
   const repositoryKey = createHash('sha256')
     .update(await commonGitDirectory(root))
     .digest('hex')
     .slice(0, 16);
-  return Array.from({ length: count }, (_, i) =>
-    path.join(tmpdir(), `exawatt-machine-slot-${repositoryKey}-${i}.lock`)
+  return names.map(name =>
+    path.join(tmpdir(), `exawatt-machine-slot-${repositoryKey}-${name}.lock`)
   );
 }
 
@@ -119,6 +131,7 @@ async function describeHolders(slotPaths) {
  *               inherited, so this work is already budgeted.
  * 'unslotted' — the deadline passed; the work proceeds anyway, loudly.
  * release() is idempotent and safe in every mode.
+ * `queueHead` (BUG-204) tries the head's reserved slot first, then the pool.
  */
 export async function acquireMachineSlot({
   root = process.cwd(),
@@ -129,6 +142,7 @@ export async function acquireMachineSlot({
   baseDir,
   pollMs = 500,
   deadlineMs = 20 * 60_000,
+  queueHead = false,
 } = {}) {
   const count = slotCount ?? defaultSlotCount(env);
   if (count === 0) {
@@ -143,7 +157,12 @@ export async function acquireMachineSlot({
   // The same posture as the Electron eval lock: never let locking fail a run.
   let slotPaths;
   try {
-    slotPaths = await machineSlotPaths({ root, slotCount: count, baseDir });
+    slotPaths = await machineSlotPaths({
+      root,
+      slotCount: count,
+      baseDir,
+      queueHead,
+    });
   } catch (error) {
     log(
       `[machine-slots] slot pool unavailable (${error?.message ?? error}) — ` +
@@ -198,7 +217,7 @@ export async function acquireMachineSlot({
     if (Date.now() - startedAt >= deadlineMs) {
       log(
         `[machine-slots] waited ${Math.round((Date.now() - startedAt) / 1000)}s ` +
-          `for a slot for ${label}; all ${count} held (${await describeHolders(slotPaths)}) — ` +
+          `for a slot for ${label}; all ${slotPaths.length} held (${await describeHolders(slotPaths)}) — ` +
           'proceeding UNSLOTTED'
       );
       return {
@@ -209,7 +228,7 @@ export async function acquireMachineSlot({
     }
     if (!announcedWait) {
       log(
-        `[machine-slots] all ${count} machine slots busy — ${label} is waiting ` +
+        `[machine-slots] all ${slotPaths.length} machine slots busy — ${label} is waiting ` +
           `(holders: ${await describeHolders(slotPaths)})`
       );
       announcedWait = true;

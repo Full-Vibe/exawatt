@@ -2090,7 +2090,7 @@ Sequencing: after ENG-008 and ENG-011.
 
 ### ENG-022 Agent development-loop hardening
 
-Status: active-build — H1–H6 landed through 2026-08-03; H12, H13, and H15 landed 2026-08-19; H16–H17 landed 2026-08-20; H18 landed 2026-09-13. REOPENED 2026-08-03 after the delivery-log audit measured 90 stale-base stops against 182 successful landings, non-FIFO lock acquisition in all 20 stress trials, dogfood builds inside the integration critical section, and an 89% red post-merge CI signal. Decision `0030` (as amended same day) adopts a contention-first delivery queue: dogfood leaves the lock first, a FIFO ticket with head-of-queue self-integration replaces the elected coordinator, the exact-tree gate narrows to a cheap changed-path floor rerun only when the base moved, and the full sequencer is held as a measured contingency triggered by the H11 verdict or by remote writers.
+Status: active-build — H1–H6 landed through 2026-08-03; H12, H13, and H15 landed 2026-08-19; H16–H17 landed 2026-08-20; H18 landed 2026-09-13; H19 landed 2026-09-24. REOPENED 2026-08-03 after the delivery-log audit measured 90 stale-base stops against 182 successful landings, non-FIFO lock acquisition in all 20 stress trials, dogfood builds inside the integration critical section, and an 89% red post-merge CI signal. Decision `0030` (as amended same day) adopts a contention-first delivery queue: dogfood leaves the lock first, a FIFO ticket with head-of-queue self-integration replaces the elected coordinator, the exact-tree gate narrows to a cheap changed-path floor rerun only when the base moved, and the full sequencer is held as a measured contingency triggered by the H11 verdict or by remote writers.
 
 Scope:
 
@@ -2132,6 +2132,7 @@ Milestones:
 - H16 Official dogfood custody continuity (landed 2026-08-20): `electron:install-dogfood` declares and resolves the official profile through the shared distribution-input boundary before selecting package identity, and local custody bootstraps from the exact sealed contract in the already-installed Developer-ID-signed Exawatt app rather than trying to read a deliberately non-readable Vercel SENSITIVE row; code identity, packaged digest, official brand/update capability, atomic mode-0600 replacement, and mismatch refusal are executable contracts, with the live installer proven on the operator app.
 - H17 Fresh dogfood snapshot bootstrap (landed 2026-08-20): the shared dogfood build creates `@exawatt/core`'s runtime before asking that runtime to resolve the distribution contract, so a detached immutable checkout works after plain `pnpm install`; the ordering lives in the build entrypoint for manual/detached parity and is regression-pinned.
 - H18 Substrate honesty (landed 2026-09-13): the checks every other change is judged by were audited for reading as coverage they do not provide. BUG-135: the whole-tree publication gate no longer echoes 1,558 paths into one 67 KB log line that `gh run view --log` cannot read past, every gate reports its verdict, and both scripts refuse a silent non-zero exit (incident `0022`). BUG-136: lint runs on every landing and the delivery-script pins run in every CI batch. BUG-137: `pnpm exports:check` holds the consumer-less export count where it is. Four dependencies with no importer (`date-fns`, `wait-on`, `concurrently`, `@eslint/eslintrc`) removed; `node-abi` and `electron-builder-squirrel-windows` kept, because the direct `node-abi` pin is how `@electron/rebuild` (`^4.2.0`) resolves an ABI table that knows Electron 43 and `app-builder-lib` declares squirrel-windows as a required peer. Incident `0018` was two records; the later one is `0021`. The direct-to-`master` docs commits of 2026-09-13 are BUG-131; the recovery runbook now records that nothing client-side refuses such a push.
+- H19 Queue deaths, not queue compute (landed 2026-09-24): September's 89 tickets spent 67% of landing wall time on tickets that then failed, and re-checks were only 18% of check time, so the lever is deaths. Five changes: every `master` push goes through the queue, with a fast docs lane (BUG-200); a latched publication holds the head instead of failing it (BUG-201); a waiting ticket is probed for conflicts each time `master` moves (BUG-202); same-anchor log insertions merge and ids come from `pnpm id:next` (BUG-203); the head has a reserved machine slot (BUG-204). A merge train, scoped re-checks, splitting the roadmap and admission control were ruled out on the same evidence; a scoped `test:agent-delivery` stays open.
 
 Sequencing: independent; extend as new agent-loop friction is diagnosed.
 
@@ -2426,6 +2427,17 @@ rebase and the probes; `pnpm hooks:install` installs it. `pnpm id:next
 BUG|D|incident|decision` allocates ids atomically past origin's master and the
 queue. Replayed over September's 20: 7 merge, the 4 duplicate-id cases and all
 7 real overlaps still conflict. Proven in `scripts/append-merge.test.mjs`.
+[Findings](projects/agent-development-loop.md#findings-log).
+
+### BUG-204 The queue head waited for a machine slot behind candidates
+
+Status: done · ENG-022 · measured 2026-09-24 over September's 89 tickets; resolved 2026-09-24.
+
+The head waited for a machine slot in 9 of September's 36 rebases, 30 minutes
+in total, behind candidates' first checks, while every ticket behind it
+waited on the head. One slot is now reserved for the head's rebase re-check;
+nothing else may take it, and each floor check records its slot wait. Proven
+in `scripts/queue-head-slot.test.mjs` and `scripts/machine-slots.test.mjs`.
 [Findings](projects/agent-development-loop.md#findings-log).
 
 ## Amendment chain

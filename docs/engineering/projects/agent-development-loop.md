@@ -301,6 +301,24 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-204: the fifth change reserves one machine slot for the
+  queue head. Everyone behind the head waits on its rebase re-check, and in
+  September the head waited for a slot in 9 of 36 rebases, 30 minutes in
+  total, behind candidates' first checks. `acquireMachineSlot({ queueHead })`
+  tries a reserved `-head` slot first and then the pool; no other caller can
+  take the reserve, and with one head it adds at most one concurrent check.
+  `runDeliveryChecks` passes it only for the head's rebase phase and now
+  records `slotMode` and `slotWaitMs` on every `floor_check`, so the next
+  measurement reads slot queues directly. `scripts/machine-slots.test.mjs`
+  pins the reserve (a candidate waits, the head does not, a second head-priority
+  request waits, a freed reserve stays closed to non-head work), and
+  `scripts/queue-head-slot.test.mjs` drives a real queue with one pool slot
+  held by a candidate's first check: the head rebases, re-checks with
+  `slotMode: acquired` and integrates while a new candidate's floor is still
+  waiting for the pool. Four mutations, all killed. Together the five changes
+  close H19; `test:agent-delivery`, 52% of all check time, is the open lever
+  if check time is ever what dominates.
+
 - 2026-09-24, BUG-203: the fourth change makes the commonest conflict merge
   and the duplicate-id half impossible to create. 13 of the 20 September
   conflict deaths were two pure insertions at one spot in a log, and in 4 of
