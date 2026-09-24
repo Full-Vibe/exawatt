@@ -928,3 +928,74 @@ Qwen Code installed and signed in on the operator's Mac.
 Ground rules: each code lane works in its own `agent/s5-*` worktree and lands
 through `pnpm agent:land`. Lanes keep exported names stable so they compose,
 and Boy Scout fixes stay inside the lane's own files.
+
+### 2026-09-23 — S5.2 probe verdict: Gemini CLI is amber, Qwen Code looks closer
+
+Measured against the installed CLI, which updated itself from 0.45.0 to 0.61.0
+during the probe (`enableAutoUpdate` is on by default, so the adapter must
+expect version drift). Live turns ran through the CLI's offline
+`--fake-responses-non-strict` seam with a scratch `GEMINI_CLI_HOME`.
+
+| Contract | Gemini CLI 0.61.0 |
+| --- | --- |
+| Launch | Yes: `-m`, `-i "<task>"`, `--approval-mode default\|auto_edit\|yolo\|plan`. No cwd flag; the PTY pins it. |
+| Fresh identity | Yes: `--session-id <uuid>`, echoed in every hook; a reused id is refused. Exawatt can allocate identity as it does for Claude and Grok. |
+| Exact resume | Yes: `--resume <uuid>`, although `--help` documents only latest/index. |
+| Native history | Read files: `~/.gemini/tmp/<slug>/chats/session-<ts>-<id8>.jsonl`; the slug comes from `~/.gemini/projects.json`. `--list-sessions` makes a model call, so it is not a free read. |
+| Usage | Per-message tokens and model in the transcript; records repeat, so dedupe by message id. Router and summarizer calls are not recorded. |
+| Signed-in check | Partial: no status command. Settings and credential files show that a credential exists, not that it works. |
+| Model catalog | No list command; the honest fallback is the configured model or "auto (account default)". |
+| Per-launch hooks | 0.45 merged hooks from `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` with the user's; 0.61 refuses any defaults or system file not owned by root. Command hooks only, no HTTP type. |
+| Turn and attention events | `BeforeAgent`/`AfterAgent` and `Notification` (`ToolPermission`). A cancel fires no `AfterAgent`, and a rejected tool gets no release event. |
+| Delegation | Partial: subagents run through the `invoke_agent` tool, bracketed by BeforeTool/AfterTool with no child id at start. |
+| ACP | Yes: `--acp`. Not chosen, because it gives up the real terminal. |
+
+Blockers found:
+
+- The operator's Google account cannot run Gemini CLI: it fails with
+  `IneligibleTierError UNSUPPORTED_CLIENT` and a pointer to migrate to
+  Antigravity. Dogfooding needs an API key, Vertex, or a paid Code Assist
+  tier. The operator has Antigravity CLI installed and used it in June 2026.
+- Status truth needs hooks, and 0.61 accepts them only from a root-owned
+  file. The shape that fits: a one-time, admin-approved install of a static
+  hooks document (for example under `/Library/Application Support/Exawatt/`),
+  referenced per launch through `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, with
+  command hooks that read the channel port and token from the launch
+  environment and exit silently without them. That is the guided
+  OS-permission step S5 already requires. Until then, Gemini launches without
+  hooks and infers status, as OpenCode does.
+- Hooks run only in trusted folders. `--skip-trust` would also enable a
+  workspace's own `.gemini/` settings, so Exawatt must not pass it.
+
+Qwen Code (0.24.4, read from its package source, not run) shares Gemini's
+launch flags, `--session-id`/`--resume`, settings layers and ACP. Its hooks
+are Claude Code-shaped (`UserPromptSubmit`, `Stop`, `SubagentStart`,
+`SubagentStop`, `PermissionRequest`, `permission_prompt`), include an `http`
+hook type that allows loopback, and it has no root-ownership check. It could
+reuse Claude's event normalizer with per-launch injection today, which makes
+it the likelier first harness to reach full status truth. History lives at
+`~/.qwen/projects/<sanitized-cwd>/chats/<sessionId>.jsonl`. One adapter family
+shares launch and identity, not events or history.
+
+Probe hygiene: one real-account run wrote a scratch project into `~/.gemini`
+(`projects.json`, `tmp/work`, `history/work`); those entries were removed the
+same night. Future probes point the harness's home directory at a scratch
+path before the first run and disable self-update.
+
+### 2026-09-23 — S5 resequenced: Qwen Code, then Antigravity CLI
+
+Operator decisions after the probe verdict: Qwen Code goes next (installed on
+the operator's Mac the same night), and the Google harness is "whatever the
+current equivalent of Claude Code by Google is." That is Antigravity CLI
+(`agy`): Google moved Gemini CLI's consumer users to it in May 2026, and free
+Gemini Code Assist serving for Gemini CLI ended on 2026-06-18. The operator
+has it installed and used it in June.
+
+- S5.2 Qwen Code: launch and identity follow the Gemini family flags; status
+  comes from Qwen's Claude Code-shaped `http` hooks, injected per launch and
+  normalized by the existing Claude event normalizer where the payloads match.
+  First step is a sandboxed live probe of injection, event order and history.
+- S5.3 Antigravity CLI: capability probe first, against the same contracts,
+  with the harness home pointed at a scratch path.
+- Gemini CLI: parked with the evidence above. Revisit if the operator gets an
+  eligible credential or a user asks for it.

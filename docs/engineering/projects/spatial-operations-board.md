@@ -2660,3 +2660,15 @@ placement. Signed Brave browser doctor/smoke and `eval:spatial:pointer` passed;
 related inspector/surface tests passed 12/12, and delivery policy tests passed
 39/39. Desktop and mobile screenshots were visually checked for nonblank
 rendering, clipping, and control readability.
+
+### 2026-09-24 — Spatial attention keyboard request (BUG-163)
+
+Operator feedback `1f51081a-6983-41a3-b713-57fc9969741f` asks for `⌘J` to
+focus an Agent from Fleet view, then Enter to open its Session in Agent view.
+The existing global `⌘J` queue is owned by the Workspace shortcut layer;
+Spatial has its own arrow-selection and inspector handoff paths. Keep the
+existing attention eligibility/order and handoff owners. The execution pass
+should settle how Fleet selection enters follow mode and how keyboard focus is
+returned, while preserving empty-queue behavior and editable/modal ownership.
+This is a bounded ENG-004 keyboard interaction request, queued for execution;
+no new command family or separate attention model is implied.
