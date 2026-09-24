@@ -62,7 +62,7 @@ async function check(args) {
   const failed = results.filter(result => result.status !== 'passed');
   process.stdout.write(formatDocsCheckReport(results));
   process.stdout.write(
-    `[docs:check] ${failed.length === 0 ? 'passed' : 'FAILED'}: ${paths.length} changed path(s) since ${base.slice(0, 12)}, ${((Date.now() - startedAt) / 1000).toFixed(1)}s\n`
+    `[docs:check] ${failed.length === 0 ? 'passed' : 'FAILED'}: ${paths.length} changed path(s) since ${/^[0-9a-f]{40}$/u.test(base) ? base.slice(0, 12) : base}, ${((Date.now() - startedAt) / 1000).toFixed(1)}s\n`
   );
   if (failed.length > 0) process.exitCode = 1;
 }
