@@ -152,7 +152,16 @@ setInterval(() => {
       ' \u00b7 ' + elapsed + 's'
   );
 }, 1000).unref();
-process.stdin.on('data', async chunk => {
+// One command at a time, in arrival order. A real harness posts its hooks
+// one after another; concurrent async handlers let a later command's post
+// overtake an earlier one's, and the first report of a gate wins, so
+// \`permission\` landing before \`ask\` read as a permission gate and
+// turn-truth waited for a question that never came (BUG-222).
+let inbox = Promise.resolve();
+process.stdin.on('data', chunk => {
+  inbox = inbox.then(() => handle(chunk));
+});
+async function handle(chunk) {
   buffer += chunk.toString();
   let index;
   while ((index = buffer.search(/[\\r\\n]/)) !== -1) {
@@ -213,7 +222,7 @@ process.stdin.on('data', async chunk => {
     else if (command === 'bell') process.stdout.write('\\x07');
     else if (command === 'say') process.stdout.write(rest + '\\n');
   }
-});
+}
 setInterval(() => {}, 1 << 30);
 `
   );
