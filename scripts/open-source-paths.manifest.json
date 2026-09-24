@@ -5,6 +5,7 @@
       "id": "root-public-toolchain",
       "classification": "PUBLIC",
       "include": [
+        ".gitattributes",
         ".gitignore",
         ".impeccable.md",
         ".npmrc",
@@ -178,7 +179,10 @@
         "scripts/generate-app-icon.mjs",
         "scripts/generate-themes.mjs",
         "scripts/gitleaks.toml",
+        "scripts/hooks-install.mjs",
+        "scripts/id-next.mjs",
         "scripts/macos-atomic-swap.c",
+        "scripts/merge-append-docs.mjs",
         "scripts/open-source-paths.mjs",
         "scripts/open-source-reseed.mjs",
         "scripts/pace-opportunity-shot.mjs",

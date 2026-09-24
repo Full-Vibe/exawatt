@@ -7,6 +7,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
+import { appendMergeGitArgs } from './lib/append-merge.mjs';
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 import {
   allocateTicket,
@@ -58,6 +59,15 @@ const execFileAsync = promisify(execFile);
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const QUEUE_POLL_MS = 250;
 const PROBE_SECONDS_ENV = 'EXAWATT_AGENT_LAND_PROBE_SECONDS';
+
+/**
+ * The probe asks the head's exact question: the same merge driver (BUG-203),
+ * with attributes read from the master it replays onto, which is what the
+ * head's rebase checks out before it applies anything.
+ */
+function probeGitArgs(onto) {
+  return [`--attr-source=${onto}`, ...appendMergeGitArgs()];
+}
 
 /** How often a waiting ticket looks for a moved master (BUG-202); 0 = never. */
 function probeIntervalMs(env = process.env) {
@@ -615,6 +625,7 @@ async function landThroughQueue({
     const upfront = await probeRebase(root, {
       sha: candidateSha,
       onto: masterNow,
+      gitArgs: probeGitArgs(masterNow),
     }).catch(error => {
       console.warn(
         `[agent-land] conflict probe failed (${error.message.split('\n')[0]}); the head's rebase still decides.`
@@ -712,7 +723,11 @@ async function landThroughQueue({
     if (await isAncestor(root, onto, attemptSha)) return;
     let verdict;
     try {
-      verdict = await probeRebase(root, { sha: attemptSha, onto });
+      verdict = await probeRebase(root, {
+        sha: attemptSha,
+        onto,
+        gitArgs: probeGitArgs(onto),
+      });
     } catch (error) {
       console.warn(
         `[agent-land] conflict probe failed against ${onto.slice(0, 12)} (${error.message.split('\n')[0]}); the head's rebase still decides.`
@@ -886,7 +901,14 @@ async function landThroughQueue({
           `[agent-land] ticket ${ticket.number}: rebase onto ${remoteBase.slice(0, 12)}`
         );
         try {
-          await run('git', ['rebase', 'origin/master'], root);
+          // The append-only docs driver (BUG-203) is passed explicitly, so the
+          // head resolves same-anchor log insertions whatever the common
+          // config holds; `.gitattributes` decides which files it may touch.
+          await run(
+            'git',
+            [...appendMergeGitArgs(), 'rebase', 'origin/master'],
+            root
+          );
         } catch (error) {
           await run('git', ['rebase', '--abort'], root).catch(() => {});
           throw new Error(

@@ -2411,6 +2411,23 @@ September's 20, it reaches the head's verdict on all of them and returns 2.2
 of the 2.3 hours. Proven in `scripts/conflict-probe.test.mjs`.
 [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-203 Same-anchor log entries conflicted, and sometimes shared an id
+
+Status: done · ENG-022 · measured 2026-09-24 over September's 89 tickets; resolved 2026-09-24.
+
+13 of September's 20 conflict deaths were two pure insertions at the same spot
+in an engineering log, and in 4 both sides had taken the same BUG, D,
+incident or decision number (incidents `0023` still collide). The
+`exawatt-append` merge driver, scoped by `.gitattributes` to the roadmap,
+project docs and incidents index, keeps both insertions (master's first) only
+when both are pure insertions at one anchor and neither introduces an id the
+other does; anything else stays a conflict. `agent:land` passes it on the head
+rebase and the probes; `pnpm hooks:install` installs it. `pnpm id:next
+BUG|D|incident|decision` allocates ids atomically past origin's master and the
+queue. Replayed over September's 20: 7 merge, the 4 duplicate-id cases and all
+7 real overlaps still conflict. Proven in `scripts/append-merge.test.mjs`.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

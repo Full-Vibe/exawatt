@@ -63,6 +63,7 @@ human-facing package command:
 | `dogfood-worker.mjs`                 | detached dogfood queue worker                             |
 | `gitleaks.toml`                      | public-repository secret-scan workflow configuration      |
 | `macos-atomic-swap.c`                | native helper compiled by `lib/macos-atomic-swap.mjs`     |
+| `merge-append-docs.mjs`             | git merge driver `exawatt-append` (`.gitattributes`)      |
 | `open-source-paths.manifest.json`    | fail-closed publication path classifier                   |
 | `production-audit-baseline.json`     | production dependency audit input                         |
 | `sign-renderer-archive.cjs`          | dogfood Electron Builder hook                             |

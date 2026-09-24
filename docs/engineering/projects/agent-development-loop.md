@@ -301,6 +301,44 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-203: the fourth change makes the commonest conflict merge
+  and the duplicate-id half impossible to create. 13 of the 20 September
+  conflict deaths were two pure insertions at one spot in a log, and in 4 of
+  them both sides had also taken the same id. The `exawatt-append` driver
+  (`scripts/merge-append-docs.mjs` over `scripts/lib/append-merge.mjs`) lets
+  `git merge-file` decide first and only acts on its conflicts: it takes each
+  side's hunks from git's own `-U0` diff headers (content from the side's
+  text, never the diff body), groups hunks that overlap or touch as git does,
+  and resolves a group only when it is one pure insertion from each side at
+  the same base position, master's first, and only when no BUG, FIX, D,
+  incident or decision id is introduced by both sides anywhere in the file.
+  Everything else keeps git's markers byte for byte and says why on stderr; a
+  driver that fails falls back to `git merge-file`. `.gitattributes` scopes it
+  to the roadmap, `docs/engineering/projects/*.md` and the incidents index.
+  `agent:land` passes it by absolute path with `git -c` on the head rebase
+  and on both probes, which read attributes from the target master with
+  `--attr-source`; `pnpm hooks:install` (now `scripts/hooks-install.mjs`,
+  run by `worktree:setup`) writes a relative form into the common config that
+  falls back to `git merge-file` in a tree without the script. `pnpm id:next`
+  (`scripts/lib/id-counter.mjs`) keeps `next-id.json` beside `next-ticket.json`
+  under a short directory lock and allocates past the highest id on origin's
+  master and on every queued attempt. Replayed over the 20 September conflicts
+  in a scratch shared clone: 7 merge; 414, 415, 421 and 422 are refused on
+  exactly their duplicate ids (incident `0021` twice, incident `0023` with
+  BUG-141, BUG-141 and BUG-142); 381 stays a conflict because its third
+  commit deletes a line at the anchor, which is not an append; 405 is in
+  `scripts/`, outside the scope; the 7 real overlaps all still conflict. This
+  branch's own rebase onto `8918c2a6` hit the case live, two findings above
+  one anchor in this file, and the driver's result is byte-identical to the
+  hand resolution. `scripts/append-merge.test.mjs` pins hunk parsing and id
+  extraction, then proves on real rebases that same-anchor entries merge in
+  order while a duplicate `BUG-n` and a real overlap keep their markers, that
+  the probe reaches the same verdicts, that the installed command keeps markers
+  where the driver is absent, that two queued tickets appending at one anchor
+  both land while a third reusing an id is refused early, and that `id:next`
+  allocates past master, a hand-picked id and a queued ticket, and hands eight
+  concurrent callers eight distinct ids. Ten mutations, all killed.
+
 - 2026-09-24, BUG-202: the third change asks the head's rebase question
   before the head does. 20 of the 38 September deaths were head rebase
   conflicts; those tickets spent 2.3 hours queued in total and died within a

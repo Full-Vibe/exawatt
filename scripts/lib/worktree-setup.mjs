@@ -13,9 +13,12 @@ export function runWorktreeSetup({
   say('pnpm install');
   run('pnpm install --prefer-offline');
 
-  // One setting in the common git config, so it covers the main checkout and
-  // every worktree, each running its own tree's hooks (BUG-195).
-  say('installing versioned git hooks (core.hooksPath=.githooks)');
+  // Settings in the common git config, so they cover the main checkout and
+  // every worktree, each running its own tree's hooks (BUG-195) and its own
+  // append-only docs merge driver (BUG-203).
+  say(
+    'installing versioned git hooks and the docs merge driver (core.hooksPath, merge.exawatt-append)'
+  );
   run('pnpm hooks:install');
 
   if (platform === 'darwin') {

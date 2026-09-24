@@ -1,0 +1,7 @@
+# Append-only engineering logs merge with the exawatt-append driver (BUG-203):
+# two pure insertions at the same anchor keep both, ours first, unless they
+# introduce the same id; anything else stays an ordinary conflict. The driver
+# is installed by `pnpm hooks:install`; without it git merges these as text.
+docs/engineering/roadmap.md merge=exawatt-append
+docs/engineering/projects/*.md merge=exawatt-append
+docs/engineering/incidents/README.md merge=exawatt-append

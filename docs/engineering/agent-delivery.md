@@ -260,6 +260,8 @@ All worktrees in one clone resolve the same state root:
 <git-common-dir>/exawatt-delivery/
 ├── next-ticket.json
 ├── admission.lock/
+├── next-id.json                  # `pnpm id:next` (BUG-203)
+├── id-counter.lock/
 ├── queue/<ticket-id>.json
 ├── ticket-locks/<ticket-id>.lock/
 ├── metrics.jsonl
@@ -334,6 +336,51 @@ When its ticket becomes head, the author process fetches `origin/master`.
   a conversational retry cycle.
 - If push output is ambiguous, the process fetches and checks attempt
   reachability before choosing a terminal result.
+
+### Same-anchor log insertions merge
+
+13 of September's 20 conflict deaths were two pure insertions at the same spot
+in an engineering log: two backlog entries, two findings, two incident index
+lines. For an append-only log either order is right. In 4 of the 13 both
+sides had also taken the same id, and that is a real conflict.
+
+The `exawatt-append` merge driver (BUG-203, `scripts/merge-append-docs.mjs`
+over `scripts/lib/append-merge.mjs`) resolves exactly that shape.
+`.gitattributes` scopes it to `docs/engineering/roadmap.md`,
+`docs/engineering/projects/*.md` and `docs/engineering/incidents/README.md`.
+
+- git's own merge runs first; a clean result stands untouched.
+- Otherwise every conflicting region must be one pure insertion from each
+  side at the same base position, in git's own `-U0` diff (no base line
+  edited or removed by either side). Both are kept, `master`'s first, then the
+  ticket's; identical insertions are kept once.
+- Neither side may introduce a BUG, FIX, D, incident or decision id the other
+  side also introduces (present in its inserted lines, absent from the base).
+- Anything else leaves git's conflict markers exactly as git wrote them, and
+  the driver says why on stderr.
+
+`agent:land` passes the driver explicitly (`git -c merge.exawatt-append.*`,
+by absolute path to its own tree's script) on the head's rebase and on both
+conflict probes; the probes read attributes from the `master` they replay
+onto (`--attr-source`), as the rebase does. `pnpm hooks:install` (run by
+`worktree:setup`) writes the same driver into the common git config for
+manual rebases, as a relative command that falls back to `git merge-file`
+when a tree predates the script, so a driver that cannot start never leaves a
+conflict without markers.
+
+Replayed over September's 20 conflict deaths: 7 now merge; the 4 duplicate-id
+cases (incident `0021` twice, incident `0023` with BUG-141, BUG-141 and
+BUG-142) still conflict, as they must; one pure insertion stays a conflict
+because a later commit of that ticket deleted a line at the anchor; one was
+in `scripts/`, outside the scope; all 7 real overlaps still conflict.
+
+`pnpm id:next BUG|D|incident|decision [--count <n>]` removes the duplicate-id
+half at the source. It allocates under the common git directory like
+`next-ticket.json`: a short lock, then an atomic write of `next-id.json`. Each
+id is at least one past the highest on origin's `master` (read into
+`FETCH_HEAD`, never the shared ref) and in every attempt still in the queue,
+so a missing or bypassed counter cannot hand out a taken id. The roadmap parse
+test, which allows zero warnings, still refuses a duplicate backlog heading.
 
 ### Conflicts are found while a ticket waits
 
@@ -589,6 +636,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Symptom                                                          | Safe response                                                                                                                                                                                                                                                     |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                                                                                |
+| A rebase or probe prints `[exawatt-append] ... both sides introduce <id>` | Two changes took the same id. Renumber yours with `pnpm id:next <kind>`, update every reference, and land again. |
 | A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the floor (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
 | Automatic rebase conflicts                                       | The rebase is aborted and the ticket is terminal `failed`. Fetch/rebase the author branch normally, resolve and verify it, commit if needed, then submit a new ticket. The failed attempt ref remains evidence.                                                   |
 | Queue head has a live PID and stale heartbeat                    | Wait and inspect machine load/process health. Never delete its ticket or lock. If the operator establishes that it is irrecoverably wedged, terminate that exact PID; the next waiter will reconcile it.                                                          |
@@ -636,6 +684,10 @@ verification, or a live owner's ticket.
   publication, its failure classes, and its knobs.
 - `scripts/lib/conflict-probe.mjs`: the in-memory rebase replay a candidate
   and a waiting ticket run against `origin/master`.
+- `scripts/merge-append-docs.mjs`, `scripts/lib/append-merge.mjs`,
+  `.gitattributes`, and `scripts/hooks-install.mjs`: the append-only docs
+  merge driver, its scope, and its install.
+- `scripts/id-next.mjs` and `scripts/lib/id-counter.mjs`: the id counter.
 - `scripts/lib/delivery-policy.mjs`: changed-path floor and check evidence.
 - `scripts/lib/delivery-state.mjs`: common-dir paths, atomic JSON, metrics, and
   rollup calculations.
@@ -663,7 +715,8 @@ verification, or a live owner's ticket.
   `scripts/dogfood-queue.test.mjs`, `scripts/dogfood-delivery.test.mjs`,
   `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
   `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
-  `scripts/queue-hold.test.mjs`, and `scripts/conflict-probe.test.mjs` (with
+  `scripts/queue-hold.test.mjs`, `scripts/conflict-probe.test.mjs`, and
+  `scripts/append-merge.test.mjs` (with
   `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.
