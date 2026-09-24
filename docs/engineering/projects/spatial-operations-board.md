@@ -2611,3 +2611,12 @@ still target commandable Agents only. New context/aggregate/coverage visuals
 require a shared-fixture gallery review; this is not a shipped surface change.
 
 [Canonical execution detail](delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).
+
+### 2026-09-23 — Spatial deep-link viewport report (BUG-143)
+
+Operator feedback `072c0009-f042-4908-b108-09abcabdada1` reports unused bottom
+space at the hosted `/fleet/spatial?altitude=agent` deep link. Classified small
+fix; queued, not reproduced. The capture wrapper names the desktop workspace,
+so reproduce the reported hosted route separately. Acceptance: the shared
+Spatial viewport fills the available application height on deep-link load and
+resize, without clipping controls or creating a second layout owner.

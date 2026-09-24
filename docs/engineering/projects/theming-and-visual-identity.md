@@ -967,3 +967,11 @@ no packet privately extends the contract to solve a local color.
   durable point is about the gate rather than the colours: this check exists so
   that a surface cannot invent a colour, and it had been failing long enough
   for its red to be read as background noise.
+
+### 2026-09-23 — Avatar Theme submenu occlusion (BUG-144)
+
+Operator feedback `13591993-5d70-4083-ac0c-b210b8352367` reports the website's
+avatar Theme submenu hidden behind its parent menu. Classified small fix;
+queued, not reproduced. Inspect shared portal, stacking and collision ownership
+before adding local z-index overrides. Acceptance: submenu remains visible and
+keyboard reachable at narrow and wide viewports, with dismissal/focus restored.

@@ -2198,6 +2198,27 @@ binds exact targets, activity changes cannot bypass consent, unrelated Projects
 continue, and Resume uses existing exact-identity recovery with honest source
 and shell exclusions. [Execution contract](projects/daily-driver-adoption.md#2026-09-20--shared-session-operations-and-storage-recovery).
 
+### BUG-143 Spatial deep links leave unused bottom space
+
+Status: bug · ENG-004 · operator feedback 072c0009, promoted 2026-09-23.
+
+Restore full available viewport height on direct Spatial entry and resize.
+[Report and acceptance](projects/spatial-operations-board.md#2026-09-23--spatial-deep-link-viewport-report-bug-143).
+
+### BUG-144 Avatar Theme submenu is occluded
+
+Status: bug · ENG-032 · operator feedback 13591993, promoted 2026-09-23.
+
+Keep the submenu visible and keyboard reachable through shared menu ownership.
+[Report and acceptance](projects/theming-and-visual-identity.md#2026-09-23--avatar-theme-submenu-occlusion-bug-144).
+
+### BUG-145 A running Claude monitor is shown as requiring input
+
+Status: bug · ENG-023 · operator feedback b2b53b9b, promoted 2026-09-23.
+
+Correct false attention while preserving real approval/input requests. Richer
+mixed-state presentation remains deferred. [Evidence and acceptance](projects/delegation-visibility.md#2026-09-23--a-running-monitor-must-not-imply-input-required-bug-145).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

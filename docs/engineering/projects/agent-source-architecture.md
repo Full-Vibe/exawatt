@@ -754,3 +754,14 @@ Use the provider matrix and preservation gates in the linked brief. Existing
 launchability, source custody and external attachment behavior remain unchanged.
 
 [Canonical execution detail](delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).
+
+### 2026-09-23 — Muse, Instinct and extensible source demand
+
+Operator feedback `0283d334-5301-4831-a231-8826c8e0257b` requests Muse and
+Instinct support plus a plugin architecture for emerging harnesses and Agent
+types. Classified evidence for ENG-003, with ENG-028 vocabulary boundaries;
+no new competing roadmap. Queue capability research: establish exact products
+and official interfaces first, then assess launch, identity, retained context,
+resume and event truth against existing source contracts. Neither support nor
+a plugin runtime is promised by this intake. Marketing demand is recorded in
+`docs/product/marketing.md`; claims require demonstrated integration evidence.

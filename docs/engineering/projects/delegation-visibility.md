@@ -1744,3 +1744,16 @@ truth. The operator confirmed the prior Session's three subagents were visible.
 [Execution contract](#2026-09-16--bug-133-half-2-isolate-uncertainty-and-disclose-observation-health).
 Half 1 remains unshaped; the provider's withheld authority is not repaired by
 this application change. BUG-134 remains separate.
+
+### 2026-09-23 — A running monitor must not imply input required (BUG-145)
+
+Operator feedback `b2b53b9b-2e70-4a04-8bce-397ca6c8a520` on 0.1.13 reports amber
+attention while Claude Code still has one monitor running. Classified small
+fix under ENG-023; queued diagnosis. The attached screenshot shows both the
+amber Agent tab and the provider's “1 monitor still running” footer; it does
+not establish the underlying event ordering. Investigate monitor coverage and
+attention precedence through the existing shared lifecycle owner, adjacent to
+D6/D8 work, rather than treating this as another timeout adjustment. Acceptance:
+background work alone never asserts input required; actual approval/input
+requests remain visible. A richer mixed running/input-ready state is explicitly
+deferred by the operator, not a prerequisite for correcting false attention.
