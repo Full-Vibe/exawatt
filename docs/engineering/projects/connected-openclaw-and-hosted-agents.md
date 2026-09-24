@@ -413,12 +413,16 @@ governance, policy ceilings, and billing. Neither owns a parallel roster.
 
 ## H2.1–H2.3 execution packets (shaped 2026-09-14 for pickup)
 
-State on 2026-09-16: BUG-132 is fixed, integrated as `6a1daaac`, dogfood
-installed, and the running app is that build. The connected-source store file
-exists and holds zero sources; neither dogfood Gateway has been connected from
-the installed app. The first step is the operator's, not an agent's: connect
-both Gateways from ⌘N and use them for a few days. Build the packets below
-against that use, in order. Alias names and endpoints never enter this doc.
+State on 2026-09-23: the installed app is 0.1.13, which carries BUG-132 but
+not the Connect-path repairs; those (C6, BUG-147 to BUG-153) and C7's evidence
+(BUG-154) landed 2026-09-23 and reach the operator with the next dogfood
+build. Neither dogfood Gateway has been connected from the installed app; a
+second attempt on 2026-09-21 ended with nothing saved and no evidence of why.
+The first step is the operator's, not an agent's: on a build that carries
+C6/C7, connect both Gateways from ⌘N and use them for a few days, and read
+`logs/connected-sources.jsonl` first if anything fails. Build the packets
+below against that use, in order. Alias names and endpoints never enter this
+doc.
 
 ### H2.1 Work and automations reach the pane
 
@@ -1473,3 +1477,52 @@ this landing: no packaged build of this tree exists and the review asked for
 no dogfood build; the connected-fleet eval is the next thing to run against
 the next packaged candidate.
 
+
+### 2026-09-23 — the fixes that stayed on a branch, and a trace nobody could read
+
+The operator's second attempt to connect the fleet, on 2026-09-21 in 0.1.13,
+left the store with zero sources and the projection plan with zero mappings,
+both files written in the same minute a day into the app's run. Nothing else
+survived: `main.jsonl` has never carried a line from this subsystem, and
+`connected-sources.jsonl` was written only for a refused projection, so it
+did not exist. A refused tunnel, a Save that threw, and a Cancel were
+indistinguishable after the fact. BUG-150's signed-out Save failure matches
+the trace; nothing on disk can confirm it.
+
+The same week held the answer to part of it. The 2026-09-16 release-candidate
+review had written eight fixes on this path, the C6 predicate hardening on
+`agent/fix-gateway-hardening` and the renderer repairs on
+`agent/fix-renderer-blockers`, and neither branch was landed. Two other
+release blockers from that review were, and 0.1.12 and 0.1.13 shipped from
+master without these. Their authoring session confirmed on 2026-09-23 that the
+branches were abandoned and handed them over; both were applied to master that
+day in a fresh worktree, with conflicts only where master had grown beside
+them (a new Codex item parser at the same spot as the binary resolver, and
+dated doc entries).
+
+Their bug ids had collided twice, with each other and with master, which had
+since assigned BUG-141 to BUG-145 elsewhere. They were renumbered in one pass
+over the patches, commit messages included. For anyone reading the stale
+branches or their session transcript:
+
+| On the branch | Now | Record |
+| --- | --- | --- |
+| gateway BUG-141 | BUG-146 | Connected sources threw permanent verdicts as retryable failures |
+| renderer BUG-141 | BUG-147 | File → Connect existing Agent… could not be cancelled |
+| renderer BUG-142 | BUG-148 | A coworker's draft, outbox, and transcript were discarded on tab switch |
+| renderer BUG-143 | BUG-149 | An ungranted Claude plan read looked like the operator's own switch |
+| renderer BUG-144 | BUG-150 | A signed-out account build could not finish Connect |
+| renderer BUG-145 | BUG-151 | The Fleet selection panel counted an unreported coworker as idle |
+| renderer BUG-146 | BUG-152 | A failed conversation read said "Opening the conversation" forever |
+| renderer BUG-147 | BUG-153 | Limitation copy and em dashes in global chrome and usage |
+
+C7 closes the evidence gap rather than guessing at the 2026-09-21 cause
+(BUG-154). Every operator act on a source and every phase transition now
+writes one line to `connected-sources.jsonl`, in fields a bug report can
+carry without describing the operator's infrastructure, and the bug report
+attaches the file. The packaged connected-fleet gate, which the renderer
+repairs had waived for want of a packaged build, ran on the landed tree and
+now also proves the real IPC writes those lines and names no source.
+
+Next is unchanged and still the operator's: connect both Gateways on a build
+that carries this, and let the log say what happens.

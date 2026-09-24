@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -701,6 +702,44 @@ try {
     env,
     expected: first,
   });
+  // BUG-154: the connect path leaves evidence through the real preload and
+  // IPC, and the evidence names no server. A unit can prove the field
+  // allowlist; only the packaged app can prove the handlers write at all.
+  const sourceLogPath = join(userData, 'logs', 'connected-sources.jsonl');
+  const sourceLog = existsSync(sourceLogPath)
+    ? readFileSync(sourceLogPath, 'utf8')
+    : '';
+  const sourceEvents = sourceLog
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line));
+  check(
+    'connected-source acts and phase transitions reach the log (BUG-154)',
+    sourceEvents.some(
+      entry =>
+        entry.event === 'connected-sources.connect' &&
+        entry.outcome === 'connected'
+    ) &&
+      sourceEvents.some(
+        entry =>
+          entry.event === 'connected-sources.phase' &&
+          entry.phase === 'connected'
+      ),
+    JSON.stringify(
+      sourceEvents
+        .slice(0, 24)
+        .map(entry => `${entry.event}:${entry.outcome ?? entry.phase}`)
+    )
+  );
+  const named = sources
+    .flatMap(source => [source.displayName, source.input.transport.alias])
+    .filter(value => typeof value === 'string' && value.length > 0)
+    .filter(value => sourceLog.includes(value));
+  check(
+    'the connected-source log names no source (BUG-154)',
+    named.length === 0,
+    named.length === 0 ? '' : `${named.length} source name(s) found`
+  );
   if (!LIVE) {
     check(
       'relaunch used saved scoped device credentials rather than source secrets',

@@ -99,6 +99,9 @@ const LOG_NAMES = [
   // Riding along here is the whole operator workflow for a beachball: file a
   // report, the trace is already attached.
   'main.jsonl',
+  // Connected-source acts and phase transitions (BUG-154): a Connect that
+  // failed and one that was cancelled leave different lines here.
+  'connected-sources.jsonl',
 ];
 
 function defaultReadLog(filePath: string): string | null {

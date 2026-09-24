@@ -7307,4 +7307,3 @@ the screenshot caught it before the test did, which is the reason the
 screenshot rule exists. The publish panel's "Operator publishing unavailable"
 heading and the em-dash strings in the usage page, meter, publish panel and
 hosted-features disclosure moved in the same landing.
-

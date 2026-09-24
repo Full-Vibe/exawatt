@@ -3,9 +3,21 @@ import { app, BrowserWindow, safeStorage } from 'electron';
 import { OCClient, type OCClientConfig } from '@exawatt/core';
 import { handleTrusted } from './ipc-security';
 import {
+  boundDiagnosticRecorder,
   createDiagnosticsLog,
+  type DiagnosticFields,
   type DiagnosticRecorder,
 } from './diagnostics-log';
+import {
+  createPhaseTracker,
+  describeAdd,
+  describeAuthorityRequest,
+  describeConnect,
+  describeMapAgents,
+  describeOk,
+  describeThrown,
+  safeSourceId,
+} from './connected-source-diagnostics';
 import {
   ConnectedSourceStore,
   type AddConnectedSourceInput,
@@ -64,24 +76,75 @@ function sourceStore(): ConnectedSourceStore {
 }
 
 /**
- * Where a refused projection is reported: `logs/connected-sources.jsonl`,
- * bounded and rotated alongside the other main-process logs.
+ * `logs/connected-sources.jsonl`, rotated alongside the other main-process
+ * logs: refused projections, and since BUG-154 every operator act on a source
+ * and every phase transition, in the fields `connected-source-diagnostics.ts`
+ * allows and no others.
  *
  * A roster that comes back empty because the projection plan is corrupt looks
  * exactly like a roster that comes back empty because nobody is configured,
- * and in the packaged app stdout goes nowhere. A recorder that cannot open its
- * file degrades to a no-op: instrumentation must never keep a source from
- * being read.
+ * and a Connect that failed looks exactly like one that was cancelled, and in
+ * the packaged app stdout goes nowhere. The recorder is bounded the way the
+ * stall trace is, so a source stuck on its reconnect ladder cannot grow the
+ * file without limit, and one that cannot open its file degrades to a no-op:
+ * instrumentation must never keep a source from being read.
  */
-function createProjectionDiagnostics(): DiagnosticRecorder {
+let diagnostics: DiagnosticRecorder | null = null;
+function sourceDiagnostics(): DiagnosticRecorder {
+  if (diagnostics) return diagnostics;
+  let file: DiagnosticRecorder;
   try {
-    return createDiagnosticsLog(
+    file = createDiagnosticsLog(
       path.join(app.getPath('userData'), 'logs', 'connected-sources.jsonl')
     );
   } catch {
-    return () => {};
+    file = () => {};
+  }
+  diagnostics = boundDiagnosticRecorder(file, { perMinute: 30, perRun: 600 });
+  return diagnostics;
+}
+
+function record(event: string, fields: DiagnosticFields): void {
+  try {
+    sourceDiagnostics()(event, fields);
+  } catch {
+    // Never load-bearing: a diagnostic that throws must not fail the act.
   }
 }
+
+/**
+ * Run one operator act and leave one line saying how it ended, including when
+ * it threw. `base` carries only fields already made safe by the caller.
+ */
+async function recorded<T>(
+  event: string,
+  base: DiagnosticFields,
+  run: () => Promise<T> | T,
+  describe: (value: T) => DiagnosticFields
+): Promise<T> {
+  const startedAt = Date.now();
+  let value: T;
+  try {
+    value = await run();
+  } catch (error) {
+    record(event, {
+      ...base,
+      ...describeThrown(error),
+      elapsedMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+  let fields: DiagnosticFields;
+  try {
+    fields = describe(value);
+  } catch {
+    fields = { outcome: 'undescribed' };
+  }
+  record(event, { ...base, ...fields, elapsedMs: Date.now() - startedAt });
+  return value;
+}
+
+const phases = createPhaseTracker();
 
 function sourceRuntime(): ConnectedSourceRuntime {
   if (runtime) return runtime;
@@ -114,7 +177,7 @@ function sourceRuntime(): ConnectedSourceRuntime {
         clearTimer: handle => clearTimeout(handle as NodeJS.Timeout),
       }),
     now: Date.now,
-    recordDiagnostic: createProjectionDiagnostics(),
+    recordDiagnostic: sourceDiagnostics(),
   });
   created.onChange(change => {
     broadcastToWindows(
@@ -122,6 +185,8 @@ function sourceRuntime(): ConnectedSourceRuntime {
       'connected-sources:changed',
       change
     );
+    const transition = phases.observe(change);
+    if (transition) record('connected-sources.phase', transition);
   });
   /*
    * Unlike `changed`, this one carries content, because a reply the operator
@@ -235,7 +300,12 @@ export function registerConnectedSourcesIPC(): void {
       // The store validates exhaustively, including the alias injection guard.
       // This layer only refuses shapes that are not worth handing on.
       assertString(input.displayName, 'source name');
-      const result = sourceStore().add(input);
+      const result = await recorded(
+        'connected-sources.add',
+        {},
+        () => sourceStore().add(input),
+        added => describeAdd(input, added)
+      );
       if (!result.ok) return { ok: false as const, issues: result.issues };
       const view = sourceStore()
         .listViews()
@@ -258,9 +328,15 @@ export function registerConnectedSourcesIPC(): void {
    * Connect one saved source and answer with the Agents it configures. This is
    * the operator act that reaches a server, and it is read-only end to end.
    */
-  handleTrusted('connected-sources:connect', async (_event, id: unknown) =>
-    sourceRuntime().connect(assertString(id, 'source id'))
-  );
+  handleTrusted('connected-sources:connect', async (_event, id: unknown) => {
+    const sourceId = assertString(id, 'source id');
+    return recorded(
+      'connected-sources.connect',
+      { sourceId: safeSourceId(sourceId) },
+      () => sourceRuntime().connect(sourceId),
+      describeConnect
+    );
+  });
 
   /**
    * Per-source freshness. Reading it also resumes the sources the operator
@@ -288,11 +364,16 @@ export function registerConnectedSourcesIPC(): void {
    */
   handleTrusted(
     'connected-sources:map-agents',
-    async (_event, id: unknown, mappings: unknown) =>
-      sourceRuntime().mapAgents(
-        assertString(id, 'source id'),
-        readMappingInputs(mappings)
-      )
+    async (_event, id: unknown, mappings: unknown) => {
+      const sourceId = assertString(id, 'source id');
+      const inputs = readMappingInputs(mappings);
+      return recorded(
+        'connected-sources.map-agents',
+        { sourceId: safeSourceId(sourceId) },
+        () => sourceRuntime().mapAgents(sourceId, inputs),
+        result => describeMapAgents(sourceId, result)
+      );
+    }
   );
 
   /** What Exawatt may do with each source. Reads state; asks nothing. */
@@ -307,8 +388,15 @@ export function registerConnectedSourcesIPC(): void {
    */
   handleTrusted(
     'connected-sources:request-command-authority',
-    async (_event, id: unknown) =>
-      sourceRuntime().requestCommandAuthority(assertString(id, 'source id'))
+    async (_event, id: unknown) => {
+      const sourceId = assertString(id, 'source id');
+      return recorded(
+        'connected-sources.authority-request',
+        { sourceId: safeSourceId(sourceId) },
+        () => sourceRuntime().requestCommandAuthority(sourceId),
+        result => describeAuthorityRequest(sourceId, result)
+      );
+    }
   );
 
   /** Hand write access back and keep observing. */
@@ -353,9 +441,15 @@ export function registerConnectedSourcesIPC(): void {
    * Stop observing. The remote installation keeps working, its coworkers stay
    * in the roster as last-known, and their freshness says so.
    */
-  handleTrusted('connected-sources:disconnect', async (_event, id: unknown) =>
-    sourceRuntime().disconnect(assertString(id, 'source id'))
-  );
+  handleTrusted('connected-sources:disconnect', async (_event, id: unknown) => {
+    const sourceId = assertString(id, 'source id');
+    return recorded(
+      'connected-sources.disconnect',
+      { sourceId: safeSourceId(sourceId) },
+      () => sourceRuntime().disconnect(sourceId),
+      result => describeOk(sourceId, result)
+    );
+  });
 
   /**
    * Detach. Exawatt forgets the source and its stored credential. The remote
@@ -369,8 +463,16 @@ export function registerConnectedSourcesIPC(): void {
     // plan — while the record is still there to describe it; the store then
     // removes the record and the credential. Reversed, the runtime would be
     // detaching a source it can no longer name.
-    await sourceRuntime().detach(sourceId);
-    return { ok: sourceStore().remove(sourceId) };
+    return recorded(
+      'connected-sources.detach',
+      { sourceId: safeSourceId(sourceId) },
+      async () => {
+        await sourceRuntime().detach(sourceId);
+        phases.forget(sourceId);
+        return { ok: sourceStore().remove(sourceId) };
+      },
+      result => describeOk(sourceId, result)
+    );
   });
 
   /*

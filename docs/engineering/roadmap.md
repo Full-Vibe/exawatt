@@ -39,7 +39,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-006 | Decision model                                   | planned      | Decision as a first-class scoped record with Approval scope and lifetime.                                                                                                              |
 | ENG-007 | Context Signals                                  | planned      | Many-to-many external inputs (PostHog, Slack, email, GitHub, calendar) as modeled sources.                                                                                             |
 | ENG-009 | Connections, secrets, and configuration          | planned      | UNSHAPED pending a design pass — vendor connections, buy-vs-build secrets, and a future credential-broker seam.                                                                        |
-| ENG-010 | Connected OpenClaw on customer infrastructure    | done         | C0–C5 landed: packaged and official installed-app evidence proves the operator's existing fleet through Agent/Team/Fleet.                                                             |
+| ENG-010 | Connected OpenClaw on customer infrastructure    | done         | C0–C7 landed: installed-app proof of the existing fleet; C6/C7 (2026-09-23) harden failure predicates and make every Connect act leave evidence. |
 | ENG-011 | Multi-source fleet management                    | planned      | Aggregate mixed-assurance sources from one agent to thousands.                                                                                                                         |
 | ENG-012 | Hosted Exawatt control plane                     | planned      | Hosted metadata, team governance, managed ceilings, fleet health, billing.                                                                                                             |
 | ENG-013 | Lead agent — the non-worker role                 | planned      | One non-worker role — intent custody, attention filtering, dispatch — at Project and Workspace scope.                                                                                  |
@@ -1620,7 +1620,7 @@ Decision record:
 ### ENG-010 Connected OpenClaw on customer infrastructure
 
 Status: done — shaped 2026-08-16 from the operator's two live OpenClaw VPS
-installations. C0–C5 and H2 landed. Packaged evidence and the exact installed
+installations. C0–C7 and H2 landed. Packaged evidence and the exact installed
 official app proved the existing fleet through Agent/Team/Fleet and relaunch
 without widening source authority or mutating source state.
 
@@ -1693,7 +1693,9 @@ Milestones:
   `7dc07d2c29c31e26917c001f63038c07b30a7b23` then proved both live SSH-alias
   Gateways, three source-qualified Agents, Team/Fleet opening, relaunch-stable
   Agent/Project/UI identity, observation-only authority, and exact cleanup.
-- C6 Failure predicate hardening — LANDED 2026-09-16 (BUG-146): the
+- C6 Failure predicate hardening — LANDED 2026-09-23 (BUG-146; fixed
+  2026-09-16 on a branch that stayed unlanded through 0.1.12 and 0.1.13,
+  rescued and renumbered 2026-09-23): the
   release-candidate review found seven defects of one class in this path,
   "connection failed" and "source refused" collapsed into one predicate and
   permanent verdicts thrown as retryable failures. Fixed as one predicate per
@@ -1704,6 +1706,11 @@ Milestones:
   reports, a non-conforming frame cannot escape as an unhandled rejection,
   and main records the ones that do. Unit fixtures fail without each fix;
   the live two-Gateway pass was not re-run.
+- C7 Connect leaves evidence — LANDED 2026-09-23 (BUG-154): every operator
+  act on a source and every phase transition writes one allowlisted line to
+  `logs/connected-sources.jsonl`, which bug reports now attach; the packaged
+  gate proves the real IPC writes it and that it names no source. Landed with
+  the renderer release-candidate repairs BUG-147 to BUG-153.
 
 Exit criteria: active discovery offers Marcus, Scout, and Tyler exactly once;
 Priya remains retired unless explicitly selected; source Sessions/cron/helpers
@@ -1740,6 +1747,14 @@ guessed, and are shaped below as H2.1–H2.3 for pickup; execution detail is in
 the project doc's "H2.1–H2.3 execution packets" section. Sequence: connect the
 fleet and live with it before building; then H2.1, H2.2 (needs one operator
 decision), H2.3.
+
+2026-09-23 state: a second attempt on 2026-09-21 left zero sources, zero
+mappings, and no evidence of why. Eight Connect-path fixes found by the
+2026-09-16 release-candidate review had sat on two unlanded branches while
+0.1.12 and 0.1.13 shipped; they landed on 2026-09-23 as ENG-010 C6 and
+BUG-147 to BUG-153, together with C7's evidence (BUG-154). The first move is
+unchanged: connect both Gateways on a build that carries them, and on any
+failure read `logs/connected-sources.jsonl` before diagnosing.
 
 2026-09-07 dependency note: demand for provider-hosted conversation discovery/attachment is recorded in the [ENG-003 investigation](projects/agent-source-architecture.md#2026-09-07--adoption-source-investigation). It is distinct from managed placement; implementation depends on a supported interface, not on private endpoint emulation.
 
