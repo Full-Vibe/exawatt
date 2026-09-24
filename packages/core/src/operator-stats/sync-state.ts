@@ -6,7 +6,7 @@ import type { OperatorStatsCoverage } from './types';
  * renderer that performs the sync, the Electron settings store that
  * remembers the last one, the diagnostics log, and the owner's status line.
  */
-export const OPERATOR_STATS_SYNC_FAILURES = [
+const OPERATOR_STATS_SYNC_FAILURES = [
   /** The local Consumption view could not be read. */
   'local-scan',
   /** Publication state could not be read or written locally. */

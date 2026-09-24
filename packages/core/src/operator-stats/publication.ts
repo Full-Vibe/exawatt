@@ -55,7 +55,7 @@ export interface OperatorStatsPublicationPlanInput {
 /** A row the contract refuses, left out rather than allowed to block the
  *  rest. A refused day also leaves its date uncovered, so hosted history for
  *  it stands instead of being replaced by nothing. */
-export interface OperatorStatsExclusion {
+interface OperatorStatsExclusion {
   localDate: string;
   kind: 'day' | 'run';
   reason: string;
