@@ -9,8 +9,9 @@
  *
  * `--pre-push <remote> <url>` is the versioned hook's entry point
  * (`.githooks/pre-push`, installed by `pnpm hooks:install`). It reads git's
- * pre-push lines on stdin and refuses a push to origin's master that changes
- * docs and fails these checks.
+ * pre-push lines on stdin and refuses any push to origin's master that is not
+ * `agent:land`'s own (BUG-200): docs land through `pnpm agent:land -- --docs`,
+ * which runs these same checks.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +20,7 @@ import {
   defaultDocsBase,
   formatDocsCheckReport,
   formatPushGuardReport,
-  guardDocsPush,
+  guardMasterPush,
   parsePushUpdates,
   runDocsChecks,
   workingTreeChangedPaths,
@@ -44,8 +45,10 @@ async function readStdin() {
 
 async function prePush(args) {
   const index = args.indexOf('--pre-push');
-  const decision = await guardDocsPush({
-    root: ROOT,
+  // Git runs a hook from the top of the pushing checkout, which is the
+  // repository the push comes from; ROOT is only where this script lives.
+  const decision = await guardMasterPush({
+    root: process.cwd(),
     remoteName: args[index + 1] ?? '',
     remoteUrl: args[index + 2] ?? '',
     updates: parsePushUpdates(await readStdin()),

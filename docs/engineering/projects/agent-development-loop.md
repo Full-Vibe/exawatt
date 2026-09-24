@@ -330,6 +330,36 @@ tests remain the recovery floor during the rollout.
   tree, then a normal landing) and asserts every field; each is
   mutation-verified.
 
+- 2026-09-24, BUG-200 (landing-queue measurement, 89 September tickets):
+  67% of landing wall time, 10.9 of 16.3 hours, went to tickets that then
+  failed. 38 died: 20 on rebase conflicts, 11 on the public latch, 6 on a
+  check failure after rebase, 1 dead owner. 20 of the 132 September `master`
+  commits skipped the queue, and they caused 13 of the 38 deaths and every
+  repeat rebase at the head; ticket 445's "attempt 4" was three direct pushes
+  in 25 minutes while it held the head. Re-checks after a base move were only
+  18% of check time (only the head re-checks, so compute is already O(N)),
+  which rules out a merge train or scoped re-checks as the lever. The lever
+  is deaths, so five changes land in order, one commit each. The first closes
+  the side door. BUG-195 put the docs checks in front of a direct push, which
+  kept bad docs out but let a good push move the base under the head, so
+  `agent:land -- --docs` now carries documentation through the queue from any
+  checkout with no worktree or setup. It refuses unless every changed path is
+  Markdown or under `docs/`, runs `classifyDocsChecks` in parallel on the
+  exact commit in a temporary detached checkout that borrows the invoking
+  checkout's `node_modules`, admits a `lane: "docs"` ticket, and re-runs only
+  the docs checks when it rebases at the head. The invoking checkout, often
+  the shared `master`, is never rebased and never has to be clean; afterwards
+  it moves by `git reset --keep`, which refuses rather than overwrite another
+  session's edit. The pre-push hook now refuses every push to origin's
+  `master` except the SHA `agent:land` states: its floor-verified final push
+  or the operator-gated `--direct` path. `scripts/docs-lane.test.mjs` drives
+  this tree's real `agent-land.mjs` and hook against a bare local origin: a
+  direct docs or code push is refused and origin does not move; the lane
+  lands a docs commit from a shared checkout holding another session's dirty
+  and untracked files and leaves them intact; it rebases onto a moved master
+  and re-runs the docs checks, not the full floor; and it refuses code and a
+  failing docs check before taking a ticket.
+
 - 2026-09-23, BUG-195: the docs-only in-place path to `master` is sanctioned
   so the operator's question is answered before any landing, and it ran no
   landing check at all. Three pushes on it broke things the floor would have

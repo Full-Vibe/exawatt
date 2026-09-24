@@ -2367,6 +2367,22 @@ bare remote in `scripts/docs-check.test.mjs`. `--no-verify` and a machine
 without the hook still get through; only a server-side rule refuses those.
 [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-200 Pushes that skip the queue moved the base out from under its head
+
+Status: done · ENG-022 · measured 2026-09-24 over September's 89 tickets; resolved 2026-09-24.
+
+20 of 132 September `master` commits skipped the queue. They caused 13 of the
+38 ticket deaths and every repeat rebase at the head; ticket 445 held the head
+through three direct pushes in 25 minutes. BUG-195 checked those pushes but
+could not stop a good one from moving the base. Fix: `pnpm agent:land -- --docs`
+lands committed documentation from any checkout, the shared `master` included,
+with no worktree or setup: the docs checks run in seconds on the exact commit
+in a temporary checkout, the ticket queues like any other, and the invoking
+checkout moves forward only by `git reset --keep`. The pre-push hook now
+refuses every push to origin's `master` that is not `agent:land`'s own.
+Proven in `scripts/docs-lane.test.mjs` against a real local queue.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
@@ -2569,3 +2585,4 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | BUG-032's horizon widening, computed once in `main.ts` at boot from `operatorProfile.startedAt` | BUG-141, 2026-09-16 | The horizon is a live read from one owner (`retention-policy.ts`), consulted at hydrate and after every pass; an active publication whose anchor is not yet recorded resolves to the 400-day ceiling, not the 14-day default. The window's anchor is bounded at wall time plus a day. Incident `0023`; decision `0039` amended. |
 | ENG-035's whole-history publication (every sync replaced the operator's entire public aggregate) and one Run per provider Session | BUG-164, 2026-09-24 | A publication (body schema 2) replaces only the local dates it declares, at most 31, and a long history is several publications; Runs split at an hour of inactivity and at 31 days. Every limit is defined once in `operator-stats/contract.ts`. Retention (BUG-032/BUG-141) bounds what can be republished but can no longer erase hosted history. Decision `0029` amended. |
 | BUG-044's claim that keyboard overrides persist in `userData/settings.json` | BUG-142, 2026-09-16 | They were written there and never read back; `parseSettings` lacked the field. The settings schema is now one table both parse and write derive from, with a typed round-trip test over every field. |
+| BUG-195's docs push guard, which let a docs push reach `master` once `docs:check` passed, and AGENTS.md's in-place docs path that pushed directly | BUG-200, 2026-09-24 | Only `agent:land` moves `master`. The pre-push hook refuses every other push to it, and documentation lands through `pnpm agent:land -- --docs`: no worktree, the docs checks only, a queue ticket like any other. |

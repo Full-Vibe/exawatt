@@ -4,20 +4,28 @@ import { promisify } from 'node:util';
 import { classifyDocsChecks } from './delivery-policy.mjs';
 
 /**
- * `pnpm docs:check` and the pre-push hook that enforces it (BUG-195).
+ * `pnpm docs:check`, the docs lane's checks, and the pre-push hook (BUG-195,
+ * BUG-200).
  *
- * A small docs-only promotion may be committed straight to `master` from the
- * checkout the operator is talking to, because the answer to his question
+ * A small docs-only promotion used to be committed straight to `master` from
+ * the checkout the operator is talking to, because the answer to his question
  * should not wait for a landing. That path skipped every landing check, and
  * three times the skipped checks would have refused the change: two
  * public-variant directives the projector rejects (BUG-131) and a doubled
  * blank line that made the public roadmap render with a seam (`0cbcb226`).
  * Each time the next queued landing found it, on someone else's change.
  *
- * This runs the landing checks a documentation change can fail, taken from
- * `classifyDocsChecks` so they are the floor's own definitions, in parallel,
- * without a machine slot: it has to stay fast enough to sit in front of a
- * push.
+ * BUG-195 put the docs checks in front of that push. BUG-200 closed the path:
+ * in September 20 of 132 `master` commits skipped the queue, and they caused
+ * 13 of the 38 ticket deaths and every repeat rebase at the queue head. A
+ * direct push moves the base out from under the head, however good the push
+ * is. So `agent:land -- --docs` now carries a docs change through the queue
+ * in seconds, and the hook refuses every other push to origin's `master`.
+ *
+ * The checks are the landing checks a documentation change can fail, taken
+ * from `classifyDocsChecks` so they are the floor's own definitions, run in
+ * parallel without a machine slot: they have to stay fast enough to sit in
+ * front of an operator's answer.
  */
 
 const execFileAsync = promisify(execFile);
@@ -28,9 +36,16 @@ const PUSH_GUARD_REF = 'refs/heads/master';
 /**
  * Set by `agent:land` on its final push to the SHA its floor just verified.
  * It excuses exactly that commit, so it is not a general bypass: any other
- * SHA, or no variable, runs the check.
+ * SHA, or no variable, is refused.
  */
 export const FLOOR_VERIFIED_ENV = 'EXAWATT_AGENT_LAND_FLOOR_SHA';
+
+/**
+ * Set by the operator-only `agent:land -- --direct` recovery path, which is
+ * already gated on `EXAWATT_AGENT_LAND_ALLOW_DIRECT=1`, to the one SHA it
+ * pushes. Like the floor variable it excuses exactly that commit.
+ */
+export const DIRECT_RECOVERY_ENV = 'EXAWATT_AGENT_LAND_DIRECT_SHA';
 
 const ZERO_SHA = /^0+$/u;
 
@@ -45,7 +60,8 @@ const REPOSITORY_LOCATORS = [
   'GIT_PREFIX',
 ];
 
-function isDocsPath(file) {
+/** What the docs lane may carry: Markdown anywhere, and anything under docs/. */
+export function isDocsPath(file) {
   return file.endsWith('.md') || file.startsWith('docs/');
 }
 
@@ -112,8 +128,12 @@ function runCheck(root, check, env) {
 }
 
 /** Runs the docs subset of the floor for these changed paths, in parallel. */
-export async function runDocsChecks({ root, paths, env = process.env }) {
-  const checks = classifyDocsChecks(paths);
+export async function runDocsChecks({
+  root,
+  paths,
+  checks = classifyDocsChecks(paths),
+  env = process.env,
+}) {
   return Promise.all(checks.map(check => runCheck(root, check, env)));
 }
 
@@ -142,42 +162,6 @@ export function parsePushUpdates(text) {
   });
 }
 
-async function commitExists(root, sha) {
-  try {
-    await git(root, ['cat-file', '-e', `${sha}^{commit}`]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** What the remote ref will change: a tree diff when its tip is known here. */
-async function pushedPaths(root, update) {
-  if (
-    !ZERO_SHA.test(update.remoteSha) &&
-    (await commitExists(root, update.remoteSha))
-  ) {
-    return lines(
-      await git(root, [
-        'diff',
-        '--name-only',
-        update.remoteSha,
-        update.localSha,
-      ])
-    );
-  }
-  return lines(
-    await git(root, [
-      'log',
-      '--format=',
-      '--name-only',
-      update.localSha,
-      '--not',
-      '--remotes',
-    ])
-  );
-}
-
 async function isGuardedRemote(root, remoteName, remoteUrl) {
   if (remoteName === PUSH_GUARD_REMOTE) return true;
   try {
@@ -193,65 +177,33 @@ async function isGuardedRemote(root, remoteName, remoteUrl) {
   }
 }
 
-function refusal(reason, detail) {
-  return { verdict: 'refuse', reason, detail };
-}
-
 /**
- * The pre-push decision. `skip` covers every push this hook does not own and
- * returns before any check runs; `refuse` always names what to do next.
+ * The pre-push decision (BUG-200). `skip` covers every push this hook does
+ * not own; `refuse` covers every other push to origin's `master`, because the
+ * only writer of `master` is the delivery queue. A push is excused only when
+ * `agent:land` stated the exact SHA it is pushing, from its floor-verified
+ * final push or from the operator-gated `--direct` recovery path.
  */
-export async function guardDocsPush({
+export async function guardMasterPush({
   root,
   remoteName,
   remoteUrl,
   updates,
   env = process.env,
-  runChecks = runDocsChecks,
 }) {
-  const master = updates.filter(
-    update =>
-      update.remoteRef === PUSH_GUARD_REF && !ZERO_SHA.test(update.localSha)
-  );
+  const master = updates.filter(update => update.remoteRef === PUSH_GUARD_REF);
   if (master.length === 0) return { verdict: 'skip', reason: 'not-master' };
   if (!(await isGuardedRemote(root, remoteName, remoteUrl)))
     return { verdict: 'skip', reason: 'not-origin' };
-  if (master.every(update => update.localSha === env[FLOOR_VERIFIED_ENV]))
-    return { verdict: 'skip', reason: 'floor-verified' };
-
-  const changed = [
-    ...new Set(
-      (
-        await Promise.all(master.map(update => pushedPaths(root, update)))
-      ).flat()
-    ),
-  ].sort();
-  const docs = changed.filter(isDocsPath);
-  if (docs.length === 0) return { verdict: 'skip', reason: 'no-docs' };
-
-  // Every check reads the checkout, so the checkout must BE the commit being
-  // pushed. A pass over different files would read as proof and prove nothing.
-  const head = await git(root, ['rev-parse', 'HEAD']);
-  const elsewhere = master.find(update => update.localSha !== head);
-  if (elsewhere)
-    return refusal('not-checked-out', {
-      pushed: elsewhere.localSha,
-      head,
-    });
-  const dirty = await git(root, [
-    'status',
-    '--porcelain',
-    '--untracked-files=no',
-  ]);
-  if (dirty) return refusal('dirty-checkout', { dirty: lines(dirty) });
-
-  const results = await runChecks({ root, paths: changed, env });
-  const failed = results.filter(result => result.status !== 'passed');
+  const excused = update =>
+    !ZERO_SHA.test(update.localSha) &&
+    (update.localSha === env[FLOOR_VERIFIED_ENV] ||
+      update.localSha === env[DIRECT_RECOVERY_ENV]);
+  if (master.every(excused)) return { verdict: 'skip', reason: 'agent-land' };
   return {
-    verdict: failed.length === 0 ? 'pass' : 'refuse',
-    reason: failed.length === 0 ? 'checks-passed' : 'checks-failed',
-    docs,
-    results,
+    verdict: 'refuse',
+    reason: 'not-agent-land',
+    pushed: master.find(update => !excused(update)).localSha,
   };
 }
 
@@ -259,38 +211,15 @@ const RECOVERY_LINE =
   '`git push --no-verify` is for the recovery path in docs/engineering/agent-delivery.md only.';
 
 export function formatPushGuardReport(decision) {
-  if (decision.verdict === 'skip') return '';
-  const out = [];
-  if (decision.results) {
-    out.push(
-      `[docs:check] this push to master changes ${decision.docs.length} doc(s)`
-    );
-    out.push(formatDocsCheckReport(decision.results).trimEnd());
-  }
-  if (decision.verdict === 'pass') return out.join('\n') + '\n';
-
-  if (decision.reason === 'checks-failed') {
-    const names = decision.results
-      .filter(result => result.status !== 'passed')
-      .map(result => result.id)
-      .join(', ');
-    out.push(
-      '',
-      `[docs:check] push refused: ${names} failed.`,
-      'Fix the change, run `pnpm docs:check` until it passes, commit, and push again.'
-    );
-  } else if (decision.reason === 'not-checked-out') {
-    out.push(
-      `[docs:check] push refused: it sends ${decision.detail.pushed.slice(0, 12)}, but this checkout is at ${decision.detail.head.slice(0, 12)}.`,
-      'docs:check reads the checked-out files, so push from a checkout of the commit you are sending.'
-    );
-  } else {
-    out.push(
-      '[docs:check] push refused: this checkout has uncommitted changes to tracked files, so a check would not read what you are pushing:',
-      ...decision.detail.dirty.map(line => `  ${line}`),
-      'Commit them or push from a clean agent worktree through `pnpm agent:land`.'
-    );
-  }
-  out.push(RECOVERY_LINE);
-  return out.join('\n') + '\n';
+  if (decision.verdict !== 'refuse') return '';
+  return (
+    [
+      `[pre-push] push refused: ${decision.pushed.slice(0, 12)} would reach origin's master outside the delivery queue.`,
+      'Only `pnpm agent:land` moves master (BUG-200), so a push never moves the base out from under the queue head.',
+      '  Docs only (*.md, docs/**): commit, then `pnpm agent:land -- --docs` from this checkout.',
+      '    No worktree or setup; it runs the docs checks in seconds and takes a queue ticket.',
+      '  Anything else: an agent/* worktree and `pnpm agent:land`.',
+      RECOVERY_LINE,
+    ].join('\n') + '\n'
+  );
 }

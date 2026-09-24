@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -21,7 +21,7 @@ import {
   classifyDeliveryPolicy,
   classifyDocsChecks,
 } from './lib/delivery-policy.mjs';
-import { FLOOR_VERIFIED_ENV, guardDocsPush } from './lib/docs-check.mjs';
+import { FLOOR_VERIFIED_ENV } from './lib/docs-check.mjs';
 import { git, gitOutcome, hermeticGitEnv } from './lib/hermetic-git.mjs';
 
 /**
@@ -31,9 +31,12 @@ import { git, gitOutcome, hermeticGitEnv } from './lib/hermetic-git.mjs';
  * refused it, and every later landing failed its rebase checks on a change
  * nobody in the queue had made.
  *
- * These tests push to a local bare remote through the real versioned hook,
- * installed by the real `pnpm hooks:install`, running the real `docs:check`
- * over a clone of this tree.
+ * BUG-200 closed the path: docs land through `agent:land -- --docs`, which
+ * runs these checks, and the hook refuses every other push to master.
+ *
+ * These tests run the real `docs:check` over a clone of this tree, and push
+ * to a local bare remote through the real versioned hook installed by the
+ * real `pnpm hooks:install`. `scripts/docs-lane.test.mjs` drives the lane.
  */
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -170,6 +173,19 @@ describe('the versioned pre-push hook', () => {
     if (parent) rmSync(parent, { recursive: true, force: true });
   });
 
+  /** Runs this tree's `docs:check` against the clone's committed change. */
+  function docsCheck() {
+    const result = spawnSync(
+      process.execPath,
+      [path.join(work, 'scripts/docs-check.mjs'), '--base', 'HEAD~1'],
+      { cwd: work, env: env(), encoding: 'utf8' }
+    );
+    return {
+      ok: result.status === 0,
+      output: `${result.stdout}${result.stderr}`,
+    };
+  }
+
   it('passes a clean roadmap change after running every docs check', () => {
     const text = readFileSync(roadmap(), 'utf8');
     const at = seamAnchor(text);
@@ -177,12 +193,11 @@ describe('the versioned pre-push hook', () => {
       roadmap(),
       `${text.slice(0, at)}A clean fixture paragraph.\n\n${text.slice(at)}`
     );
-    const sha = commit('docs: clean fixture paragraph');
-    const result = push();
+    commit('docs: clean fixture paragraph');
+    const result = docsCheck();
     assert.ok(result.ok, result.output);
     for (const id of ['recipe-renderers', 'roadmap-contract', 'content:scan'])
       assert.match(result.output, new RegExp(`passed ${id} `));
-    assert.equal(remoteMaster(), sha);
   });
 
   it('refuses the 0cbcb226 seam and names the failing check', t => {
@@ -190,19 +205,36 @@ describe('the versioned pre-push hook', () => {
       t.skip('the projected public tree renders no recipes, so it has no seam');
       return;
     }
-    const before = remoteMaster();
     const text = readFileSync(roadmap(), 'utf8');
     const at = seamAnchor(text);
     writeFileSync(roadmap(), `${text.slice(0, at)}\n${text.slice(at)}`);
     commit('docs: queue Spatial attention keyboard request');
-    // A floor signal for any other commit is not a pass for this one.
-    const result = push({ [FLOOR_VERIFIED_ENV]: before });
+    const result = docsCheck();
     assert.equal(result.ok, false, result.output);
     assert.match(result.output, /FAILED recipe-renderers/);
-    assert.match(result.output, /blank-line seam/);
-    assert.match(result.output, /push refused: recipe-renderers failed/);
-    assert.match(result.output, /pnpm docs:check/);
+    // The authoring lint's own finding, at the line this test doubled: the
+    // renderer unit tests' expected messages also say "blank-line seam", so
+    // only the path and line prove the lint ran over this commit (BUG-196).
+    const line = text.slice(0, at).split('\n').length - 1;
+    assert.match(
+      result.output,
+      new RegExp(
+        `docs/engineering/roadmap\\.md line ${line} has two blank lines in a row`
+      )
+    );
+    git(work, ['reset', '--quiet', '--hard', 'HEAD~1']);
+  });
+
+  it('refuses a direct docs push and names the docs lane', () => {
+    const before = remoteMaster();
+    const result = push();
+    assert.equal(result.ok, false, result.output);
+    assert.match(result.output, /outside the delivery queue/);
+    assert.match(result.output, /pnpm agent:land -- --docs/);
     assert.match(result.output, /--no-verify` is for the recovery path/);
+    // A floor signal for any other commit is not a pass for this one.
+    const other = push({ [FLOOR_VERIFIED_ENV]: before });
+    assert.equal(other.ok, false, other.output);
     assert.equal(remoteMaster(), before);
   });
 
@@ -210,53 +242,17 @@ describe('the versioned pre-push hook', () => {
     const sha = git(work, ['rev-parse', 'HEAD']);
     const result = push({ [FLOOR_VERIFIED_ENV]: sha });
     assert.ok(result.ok, result.output);
-    assert.doesNotMatch(result.output, /\[docs:check\]/);
+    assert.doesNotMatch(result.output, /push refused/);
     assert.equal(remoteMaster(), sha);
   });
 
-  it('does not fire on a push that changes no docs', () => {
-    // An unclassified path fails the path check, so a pass proves no check ran.
+  it('refuses a direct push that changes no docs as well', () => {
+    const before = remoteMaster();
     writeFileSync(path.join(work, 'unclassified-probe.txt'), 'probe\n');
-    const sha = commit('chore: non-docs change');
+    commit('chore: non-docs change');
     const result = push();
-    assert.ok(result.ok, result.output);
-    assert.doesNotMatch(result.output, /\[docs:check\]/);
-    assert.equal(remoteMaster(), sha);
-  });
-
-  it('refuses before any check when the checkout is not what is pushed', async () => {
-    const head = git(work, ['rev-parse', 'HEAD']);
-    const guard = updates =>
-      guardDocsPush({
-        root: work,
-        remoteName: 'origin',
-        remoteUrl: remote,
-        updates,
-        env: {},
-        runChecks: () => assert.fail('no check may run'),
-      });
-    writeFileSync(path.join(work, 'README.md'), 'edited\n');
-    const docsSha = commit('docs: readme');
-    writeFileSync(path.join(work, 'README.md'), 'dirty\n');
-    const dirty = await guard([
-      {
-        localRef: 'refs/heads/master',
-        localSha: docsSha,
-        remoteRef: 'refs/heads/master',
-        remoteSha: head,
-      },
-    ]);
-    assert.equal(dirty.reason, 'dirty-checkout');
-    git(work, ['checkout', '--quiet', '--', 'README.md']);
-    git(work, ['checkout', '--quiet', '--detach', head]);
-    const elsewhere = await guard([
-      {
-        localRef: 'refs/heads/master',
-        localSha: docsSha,
-        remoteRef: 'refs/heads/master',
-        remoteSha: head,
-      },
-    ]);
-    assert.equal(elsewhere.reason, 'not-checked-out');
+    assert.equal(result.ok, false, result.output);
+    assert.match(result.output, /outside the delivery queue/);
+    assert.equal(remoteMaster(), before);
   });
 });

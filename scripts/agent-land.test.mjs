@@ -143,6 +143,7 @@ test('parses repeated verification and delivery options', () => {
     ]),
     {
       direct: false,
+      docs: false,
       dogfood: true,
       help: false,
       keepBranch: false,

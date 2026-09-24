@@ -26,6 +26,10 @@ sequencer-contingency review in decision `0030`.
 5. After verified integration, remove the temporary worktree and local branch.
    The command deletes the ticket's remote attempt refs by default.
 
+Documentation alone takes the docs lane instead: commit it in whatever
+checkout it was written in and run `pnpm agent:land -- --docs` (see "Docs lane
+and the master push guard"). Nothing else may push to `master`.
+
 `worktree:setup` has four required boundaries: dependency installation, the
 signed-browser identity check on macOS, a node-pty rebuild when its Electron
 binding is absent, and Electron main compilation. Any required boundary fails
@@ -157,38 +161,56 @@ A gate that genuinely does not apply is waived on purpose with
 (`surface_gate_refused`, `surface_gate_waived`), so skipped evidence stays
 visible instead of vanishing. Adding a gate is a data edit to `SURFACE_GATES`.
 
-## Docs push guard
+## Docs lane and the master push guard
 
-A small docs-only change may be committed and pushed to `master` straight from
-a checkout, without a worktree or `agent:land`, so the answer to an operator's
-question does not wait for a landing. That path is unguarded by the floor, and
-three times it pushed docs the floor would have refused: two public-variant
-directives the projector rejects (BUG-131) and a doubled blank line that gave
-the public roadmap a blank-line seam (`0cbcb226`). Each time the next queued
-landing found it, on somebody else's change (BUG-195).
+Only `agent:land` moves origin's `master` (BUG-200). In September 20 of 132
+`master` commits skipped the queue, most of them documentation pushed straight
+from the shared checkout so an operator's answer would not wait for a landing.
+They caused 13 of the 38 ticket deaths and every repeat rebase at the queue
+head: ticket 445 held the head through three direct pushes in 25 minutes.
+BUG-195's check-before-push kept bad docs out; it could not keep a good push
+from moving the base out from under the head.
 
-`pnpm docs:check` runs the floor's docs checks on the working tree in about
-five seconds: the recipe-renderer test, the roadmap contract when
-`docs/engineering/**` changed, path classification, and the public content
-scan of the changed paths. It takes the floor's own definitions from
-`classifyDocsChecks` in `scripts/lib/delivery-policy.mjs`. Stage first: path
-classification reads the index.
+`pnpm agent:land -- --docs` is the fast path that replaced the push. Run it
+from the checkout where the docs were committed, including the shared
+`master`; it needs no agent worktree and no `worktree:setup`.
 
-The versioned hook `.githooks/pre-push` enforces it. `pnpm hooks:install` sets
-`core.hooksPath=.githooks` in the common Git config, which covers the main
-checkout and every worktree; `worktree:setup` runs it, so the setting
-re-asserts itself. A relative path means each checkout runs its own tree's
-hook. A push to origin's `master` that changes a `*.md` file or anything under
-`docs/` runs `docs:check` and is refused when a check fails, naming the check.
-It is also refused, before any check, when the pushed commit is not the
-checkout's `HEAD` or tracked files are dirty, because the checks read the
-checkout. Every other push returns from the shell before node starts.
+- It refuses unless every path changed since `origin/master` is Markdown or
+  under `docs/`, and it takes no `--verify`, `--dogfood`, or `--waive-gate`.
+- It opens a temporary detached checkout of the exact commit in the OS temp
+  directory, borrowing the invoking checkout's `node_modules` through links,
+  and does every git mutation there. The invoking checkout is never rebased
+  and never has to be clean; other sessions' uncommitted edits in it are safe.
+- It runs the docs checks from `classifyDocsChecks` (the recipe renderers, the
+  roadmap contract when `docs/engineering/**` changed, path classification,
+  and the public content scan of the changed paths), in parallel and without
+  a machine slot, in about five to twenty seconds. They are recorded as
+  `floor_check` events with `lane: "docs"`.
+- It takes a queue ticket (`lane: "docs"`) and from then on is an ordinary
+  ticket: it waits its turn, rebases at the head, re-runs the docs checks on
+  the rebased tree, and pushes with the floor-verified SHA.
+- After integration it moves the invoking checkout to the integrated commit
+  with `git reset --keep`, only when that checkout still points at the landed
+  commit. `--keep` refuses rather than overwrite an uncommitted edit; the
+  landing then says so and leaves the checkout for its owner. The status line
+  ends in `lane=docs`.
 
+`pnpm docs:check` runs the same checks on the working tree, in about five
+seconds, before a commit. Stage first: path classification reads the index.
+
+The versioned hook `.githooks/pre-push` enforces the single writer.
+`pnpm hooks:install` sets `core.hooksPath=.githooks` in the common Git config,
+which covers the main checkout and every worktree; `worktree:setup` runs it,
+so the setting re-asserts itself. A relative path means each checkout runs its
+own tree's hook. Any push to origin's `master` is refused, docs or code, and
+the refusal names both lanes. Two variables excuse exactly one SHA each:
 `agent:land` sets `EXAWATT_AGENT_LAND_FLOOR_SHA` on its final push to the SHA
-its floor just verified, and the hook excuses exactly that SHA. `--direct`
-does not set it, because that path skips the floor. `git push --no-verify` is
-for the recovery path only, such as pushing a repair while `master` itself
-fails the check; the ordinary answer to a refusal is to fix the change.
+its floor just verified, and the operator-gated `--direct` path sets
+`EXAWATT_AGENT_LAND_DIRECT_SHA` to the SHA it pushes. Deleting `master` is
+refused too. Every push that does not target a master ref returns from the
+shell before node starts. `git push --no-verify` is for the recovery path
+only, such as a repair while the queue itself is broken; the ordinary answer
+to a refusal is the docs lane or a worktree.
 
 ## Three-stage flow
 
@@ -493,7 +515,8 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Shared `master` is dirty or stale                                | Leave it alone. Remote integration is authoritative and already succeeded; clean/sync the shared checkout only when its owner can do so safely.                                                                                                                   |
 | Attempt-ref cleanup warns after integration                      | First prove the attempt SHA is reachable from `origin/master`, then delete that exact remote `agent-attempts/*` ref. Never use a broad branch pattern.                                                                                                            |
 | CI batch request remains after a failure                         | Inspect `ci_batch_failed`; a later normal landing restarts the detached worker. For urgent evidence, manually dispatch `CI` at `master`. Do not delete request or cadence state to manufacture a green signal.                                                    |
-| Commits reach `master` without a ticket (a direct push from the shared checkout) | Do not revert. Record what the bypass skipped and let the next landing's whole-tree checks run over it. BUG-131 is the observed case (2026-09-13): two docs-only call-capture commits were pushed straight to `master`, wrote public-variant directives the projector rejects, and stalled publication for two days before a queued landing's renderer tests said so. Since BUG-195 the docs push guard refuses the docs half of that accident on the pushing machine; `--no-verify` or a machine without the hook still gets through. Only a server-side rule on `master` refuses the intent, and that is an operator decision. |
+| Commits reach `master` without a ticket (a direct push from the shared checkout) | Do not revert. Record what the bypass skipped and let the next landing's whole-tree checks run over it. BUG-131 is the observed case (2026-09-13): two docs-only call-capture commits were pushed straight to `master`, wrote public-variant directives the projector rejects, and stalled publication for two days before a queued landing's renderer tests said so. Since BUG-200 the pre-push hook refuses every push to `master` that is not `agent:land`'s, and docs take `pnpm agent:land -- --docs`; `--no-verify`, a checkout whose tree predates the hook, or a machine without the hook still gets through. Only a server-side rule on `master` refuses the intent, and that is an operator decision. |
+| A docs landing says it left the invoking checkout behind | The landing integrated. The checkout held an uncommitted edit that `git reset --keep` would have overwritten, or it gained commits during the wait. Commit or finish those edits, then `git reset --keep origin/master` (or rebase the new commits onto it). Never land the stale pre-rebase commits again. |
 | Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                                                                        |
 | A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                                                                          |
 | A landing reports `flaked=<check>:<n>`                           | Nothing blocking. The named files failed in a large selection and passed alone, which is contention. Read the file names: if `summarizeDeliveryMetrics`' per-file tally shows the SAME file flaking across landings, that is a defect to chase, not machine load. |
@@ -543,14 +566,17 @@ verification, or a live owner's ticket.
   and the single deliberate force path.
 - `scripts/contribution-pull.mjs`: the inbound contribution path and its CLA
   refusal.
-- `scripts/docs-check.mjs`, `scripts/lib/docs-check.mjs`, and
-  `.githooks/pre-push`: the docs subset of the floor and the pre-push guard
-  that enforces it.
+- `scripts/docs-check.mjs`, `scripts/lib/docs-check.mjs`,
+  `scripts/lib/docs-lane.mjs`, and `.githooks/pre-push`: the docs subset of
+  the floor, the docs lane's temporary checkout and invoking-checkout sync,
+  and the pre-push guard that leaves `agent:land` the only writer of
+  `master`.
 - `scripts/agent-land.test.mjs`, `scripts/ci-batch.test.mjs`,
   `scripts/delivery-queue.test.mjs`, `scripts/delivery-policy.test.mjs`,
   `scripts/dogfood-queue.test.mjs`, `scripts/dogfood-delivery.test.mjs`,
-  `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`, and
-  `scripts/docs-check.test.mjs`:
+  `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
+  `scripts/docs-check.test.mjs`, and `scripts/docs-lane.test.mjs` (with
+  `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.
   <!-- exawatt:public-omit-begin the company delivery queue owns public-repository maintenance -->

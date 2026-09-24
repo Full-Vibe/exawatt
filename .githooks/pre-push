@@ -1,9 +1,10 @@
 #!/bin/sh
-# Versioned pre-push hook (BUG-195), installed by `pnpm hooks:install`.
+# Versioned pre-push hook (BUG-195, BUG-200), installed by `pnpm hooks:install`.
 #
-# A push to origin's master that changes docs runs `pnpm docs:check` first and
-# is refused when it fails. Every push that does not target a master ref
-# returns here without starting node; `scripts/docs-check.mjs` decides the rest.
+# Only `pnpm agent:land` moves origin's master: any other push to it is
+# refused, and docs land through `pnpm agent:land -- --docs`. Every push that
+# does not target a master ref returns here without starting node;
+# `scripts/docs-check.mjs` decides the rest.
 updates=$(cat)
 case "$updates" in
   *" refs/heads/master "*) ;;

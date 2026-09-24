@@ -20,6 +20,7 @@ import {
 } from './lib/delivery-queue.mjs';
 import {
   classifyDeliveryPolicy,
+  classifyDocsChecks,
   missingSurfaceGates,
   quarantinedSurfaceGates,
   surfaceGateMessage,
@@ -30,7 +31,17 @@ import {
   delay,
   processExists,
 } from './lib/delivery-state.mjs';
-import { FLOOR_VERIFIED_ENV } from './lib/docs-check.mjs';
+import {
+  DIRECT_RECOVERY_ENV,
+  FLOOR_VERIFIED_ENV,
+  formatDocsCheckReport,
+  runDocsChecks,
+} from './lib/docs-check.mjs';
+import {
+  docsLaneRefusal,
+  openDocsCheckout,
+  syncInvokingCheckout,
+} from './lib/docs-lane.mjs';
 
 const execFileAsync = promisify(execFile);
 const HEARTBEAT_INTERVAL_MS = 5_000;
@@ -39,6 +50,7 @@ const QUEUE_POLL_MS = 250;
 export function parseArgs(argv) {
   const options = {
     direct: false,
+    docs: false,
     dogfood: false,
     help: false,
     keepBranch: false,
@@ -50,6 +62,7 @@ export function parseArgs(argv) {
     const argument = argv[index];
     if (argument === '--') continue;
     if (argument === '--direct') options.direct = true;
+    else if (argument === '--docs') options.docs = true;
     else if (argument === '--dogfood') options.dogfood = true;
     else if (argument === '--keep-branch') options.keepBranch = true;
     else if (argument === '--help' || argument === '-h') options.help = true;
@@ -93,14 +106,19 @@ export function parseWorktrees(output) {
 
 function usage() {
   return `Usage: pnpm agent:land -- [--verify <package-script> ...] [--dogfood] [--keep-branch]
+       pnpm agent:land -- --docs
 
 Runs the repository-owned verification floor, admits the committed agent branch
-to the local FIFO queue, and lands it without a pull request.
+to the local FIFO queue, and lands it without a pull request. This is the only
+path that moves origin's master; the pre-push hook refuses any other push.
 
   --verify <script>  Add a package.json check to the repository-owned floor.
   --waive-gate <id>  Declare on purpose that a surface gate does not apply.
   --dogfood          Queue a coalescing Electron dogfood install after integration.
   --keep-branch      Keep the immutable remote attempt ref after integration.
+  --docs             Land committed documentation (*.md, docs/**) from this
+                     checkout: no worktree or setup, the docs checks only, and
+                     a queue ticket like any other landing.
   --direct           Operator-only guarded recovery path (requires explicit env opt-in).
 `;
 }
@@ -306,11 +324,58 @@ async function directLand(root, branch, options) {
         'origin/master moved while the direct recovery path waited.'
       );
     }
-    await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root);
+    // The pre-push hook refuses every master push that is not agent:land's
+    // own (BUG-200); this operator-gated path names the one SHA it pushes.
+    await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root, {
+      [DIRECT_RECOVERY_ENV]: await git(root, 'rev-parse', 'HEAD'),
+    });
   } finally {
     await lock.release();
   }
   console.log(`[agent-land] direct recovery integrated ${branch}`);
+}
+
+/**
+ * The docs lane's checks (BUG-200): the floor's docs subset, in parallel and
+ * without a machine slot, reported and recorded like any floor check.
+ */
+async function runDocsLaneChecks(root, checks, { phase, onResult }) {
+  const results = await runDocsChecks({ root, checks });
+  process.stdout.write(formatDocsCheckReport(results));
+  const evidence = [];
+  for (const result of results) {
+    const entry = {
+      id: result.id,
+      phase,
+      lane: 'docs',
+      status: result.status,
+      durationMs: result.durationMs,
+      completedAt: new Date().toISOString(),
+    };
+    await onResult(entry);
+    evidence.push(entry);
+  }
+  const failed = results.filter(result => result.status !== 'passed');
+  if (failed.length > 0) {
+    throw new Error(
+      `docs lane ${phase} checks failed: ${failed.map(result => result.id).join(', ')}. Fix the change, commit, and run \`pnpm agent:land -- --docs\` again.`
+    );
+  }
+  return evidence;
+}
+
+function refuseDocsLaneOptions(options) {
+  const combined = [
+    options.direct && '--direct',
+    options.dogfood && '--dogfood',
+    options.verify.length > 0 && '--verify',
+    options.waiveGate.length > 0 && '--waive-gate',
+  ].filter(Boolean);
+  if (combined.length > 0) {
+    throw new Error(
+      `--docs runs the docs checks only and cannot be combined with ${combined.join(', ')}.`
+    );
+  }
 }
 
 async function main() {
@@ -320,17 +385,23 @@ async function main() {
     return;
   }
 
-  const root = await git(process.cwd(), 'rev-parse', '--show-toplevel');
-  const branch = await git(root, 'branch', '--show-current');
-  if (!/^agent\/[a-z0-9][a-z0-9._/-]*$/.test(branch)) {
-    throw new Error(
-      `agent:land must run from an agent/<slug> branch; current branch is ${branch || '(detached)'}.`
-    );
+  // The checkout the command was run from. The worktree lane does all of its
+  // work here; the docs lane only reads it and works in a temporary checkout.
+  const invokingRoot = await git(process.cwd(), 'rev-parse', '--show-toplevel');
+  const invokingBranch = await git(invokingRoot, 'branch', '--show-current');
+  if (options.docs) {
+    refuseDocsLaneOptions(options);
+  } else {
+    if (!/^agent\/[a-z0-9][a-z0-9._/-]*$/.test(invokingBranch)) {
+      throw new Error(
+        `agent:land must run from an agent/<slug> branch; current branch is ${invokingBranch || '(detached)'}. Documentation lands from any checkout with \`pnpm agent:land -- --docs\`.`
+      );
+    }
+    await requireClean(invokingRoot, 'Agent worktree');
   }
-  await requireClean(root, 'Agent worktree');
 
   const packageJson = JSON.parse(
-    await readFile(path.join(root, 'package.json'), 'utf8')
+    await readFile(path.join(invokingRoot, 'package.json'), 'utf8')
   );
   for (const script of options.verify) {
     if (typeof packageJson.scripts?.[script] !== 'string') {
@@ -341,45 +412,100 @@ async function main() {
     }
   }
 
-  await run('git', ['fetch', 'origin', 'master'], root);
+  await run('git', ['fetch', 'origin', 'master'], invokingRoot);
   if (options.direct) {
-    await directLand(root, branch, options);
+    await directLand(invokingRoot, invokingBranch, options);
     return;
   }
 
-  const candidateBase = await git(root, 'merge-base', 'origin/master', 'HEAD');
-  const candidateSha = await git(root, 'rev-parse', 'HEAD');
-  const files = await changedPaths(root, candidateBase);
-  // Surface gates are declared, not run here: they need a dev server the
-  // floor does not own. Refuse before any expensive work so the omission is
-  // loud and early rather than invisible (D51).
-  const missingGates = missingSurfaceGates(files, [
-    ...options.verify,
-    ...options.waiveGate,
-  ]);
-  if (missingGates.length > 0) {
-    await appendDeliveryMetric(root, 'surface_gate_refused', {
-      candidateSha,
-      gates: missingGates.map(entry => entry.gate),
-    });
-    throw new Error(surfaceGateMessage(missingGates));
+  const candidateBase = await git(
+    invokingRoot,
+    'merge-base',
+    'origin/master',
+    'HEAD'
+  );
+  const candidateSha = await git(invokingRoot, 'rev-parse', 'HEAD');
+  const files = await changedPaths(invokingRoot, candidateBase);
+
+  // A lane is where the landing's git work happens and which checks it owes.
+  // Everything after admission is shared, so a docs ticket waits, rebases,
+  // re-checks and integrates exactly as a worktree ticket does.
+  let lane;
+  if (options.docs) {
+    const refusal = docsLaneRefusal(files);
+    if (refusal) throw new Error(refusal);
+    const checkout = await openDocsCheckout(invokingRoot, candidateSha);
+    lane = {
+      kind: 'docs',
+      root: checkout.root,
+      branch: `docs/${invokingBranch || 'detached'}`,
+      close: checkout.close,
+      checksFor: changed => classifyDocsChecks(changed),
+      runChecks: runDocsLaneChecks,
+    };
+  } else {
+    // Surface gates are declared, not run here: they need a dev server the
+    // floor does not own. Refuse before any expensive work so the omission is
+    // loud and early rather than invisible (D51).
+    const missingGates = missingSurfaceGates(files, [
+      ...options.verify,
+      ...options.waiveGate,
+    ]);
+    if (missingGates.length > 0) {
+      await appendDeliveryMetric(invokingRoot, 'surface_gate_refused', {
+        candidateSha,
+        gates: missingGates.map(entry => entry.gate),
+      });
+      throw new Error(surfaceGateMessage(missingGates));
+    }
+    for (const entry of quarantinedSurfaceGates(files)) {
+      console.warn(
+        `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this change would otherwise owe it: ${entry.why}`
+      );
+      await appendDeliveryMetric(invokingRoot, 'surface_gate_quarantined', {
+        candidateSha,
+        gate: entry.gate,
+        backlogId: entry.backlogId,
+      });
+    }
+    if (options.waiveGate.length > 0) {
+      await appendDeliveryMetric(invokingRoot, 'surface_gate_waived', {
+        candidateSha,
+        gates: options.waiveGate,
+      });
+    }
+    lane = {
+      kind: 'worktree',
+      root: invokingRoot,
+      branch: invokingBranch,
+      close: async () => {},
+      checksFor: (changed, extras) => classifyDeliveryPolicy(changed, extras),
+      runChecks: runDeliveryChecks,
+    };
   }
-  for (const entry of quarantinedSurfaceGates(files)) {
-    console.warn(
-      `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this change would otherwise owe it: ${entry.why}`
-    );
-    await appendDeliveryMetric(root, 'surface_gate_quarantined', {
+  try {
+    await landThroughQueue({
+      options,
+      lane,
+      invokingRoot,
+      candidateBase,
       candidateSha,
-      gate: entry.gate,
-      backlogId: entry.backlogId,
+      files,
     });
+  } finally {
+    await lane.close();
   }
-  if (options.waiveGate.length > 0) {
-    await appendDeliveryMetric(root, 'surface_gate_waived', {
-      candidateSha,
-      gates: options.waiveGate,
-    });
-  }
+}
+
+async function landThroughQueue({
+  options,
+  lane,
+  invokingRoot,
+  candidateBase,
+  candidateSha,
+  files,
+}) {
+  const { root, branch } = lane;
 
   // A check that failed and then passed with the machine to itself is
   // reported, never swallowed (BUG-090). The status line carries the count so
@@ -390,8 +516,8 @@ async function main() {
     await appendDeliveryMetric(root, 'floor_check', { ...extra, ...result });
   };
 
-  const checks = classifyDeliveryPolicy(files, options.verify);
-  const evidence = await runDeliveryChecks(root, checks, {
+  const checks = lane.checksFor(files, options.verify);
+  const evidence = await lane.runChecks(root, checks, {
     phase: 'candidate',
     onResult: recordFloorCheck({ candidateSha }),
   });
@@ -402,6 +528,7 @@ async function main() {
   await pushAttempt(root, ref);
   let ticket = await allocateTicket(root, {
     branch,
+    lane: lane.kind,
     baseSha: candidateBase,
     candidateSha,
     attemptSha: candidateSha,
@@ -494,8 +621,8 @@ async function main() {
         ref = attemptRef(branch, attemptNumber);
         await pushAttempt(root, ref);
         const rebasedFiles = await changedPaths(root, remoteBase);
-        const rebaseChecks = classifyDeliveryPolicy(rebasedFiles);
-        const rebaseEvidence = await runDeliveryChecks(root, rebaseChecks, {
+        const rebaseChecks = lane.checksFor(rebasedFiles);
+        const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
           onResult: recordFloorCheck({
             ticketId: ticket.id,
@@ -629,7 +756,28 @@ async function main() {
   }
 
   const integratedSha = ticket.result.integratedSha;
-  const masterWorktree = await bestEffortMasterSync(root);
+  // The docs lane landed from a temporary checkout; the checkout the operator
+  // ran it from moves onto the integrated commit only if nothing there would
+  // be overwritten, and the shared master is then synced as usual.
+  let invokingSync = null;
+  if (lane.kind === 'docs') {
+    invokingSync = await syncInvokingCheckout(invokingRoot, {
+      candidateSha,
+      integratedSha,
+    });
+    if (invokingSync.state === 'kept') {
+      console.warn(
+        `[agent-land] integrated; ${invokingRoot} was left at ${candidateSha.slice(0, 12)} because moving it would touch uncommitted edits (${invokingSync.reason}). Run \`git reset --keep origin/master\` there once they are committed.`
+      );
+    } else if (invokingSync.state === 'moved-on') {
+      console.warn(
+        `[agent-land] integrated; ${invokingRoot} has new commits since this landing started. Rebase them onto origin/master before landing them.`
+      );
+    }
+  }
+  const masterWorktree = await bestEffortMasterSync(
+    lane.kind === 'docs' ? invokingRoot : root
+  );
   let ciState = 'not-requested';
   try {
     const ciRequest = await requestCi(root, integratedSha);
@@ -687,8 +835,9 @@ async function main() {
               (result.phase === 'rebase' ? '(rebase)' : '')
           )
           .join(',')}`;
+  const laneState = lane.kind === 'docs' ? ' lane=docs' : '';
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {
@@ -697,7 +846,7 @@ async function main() {
       );
     }
   }
-  if (masterWorktree) {
+  if (masterWorktree && lane.kind === 'worktree') {
     console.log(
       `[agent-land] remove this worktree from ${masterWorktree}, then delete local branch ${branch}.`
     );

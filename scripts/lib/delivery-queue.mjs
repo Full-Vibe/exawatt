@@ -89,6 +89,8 @@ export async function allocateTicket(
       revision: 1,
       status: 'queued',
       branch: candidate.branch,
+      // `docs` for a documentation-only landing from any checkout (BUG-200).
+      lane: candidate.lane ?? 'worktree',
       baseSha: candidate.baseSha,
       candidateSha: candidate.candidateSha,
       attemptSha: candidate.attemptSha,
