@@ -648,6 +648,29 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-09-23 (S6.4 follow-up, landed): **the native menu and ⌘K said
+  "parked" about the Agents every other surface called Paused; they now read
+  the owner's word.** Parked was not a distinct state. The ⌘K scope row and
+  Session ▸ Resume Parked Agents count and resume exactly the
+  `tabCanResumeAsAgent` set the recovery bar already reports as "N Agents
+  paused", through the same `resumeProject`/`resumeAll` scope; a clean quit
+  and an operator Pause both record `stopped-clean`, which the owner calls
+  Paused. BUG-025's "parked is remembered, not forgotten" is main's memory
+  contract (`stopAll` keeps a Session's runtime record, a close forgets it),
+  not a presentation state. The command-verb manifest lives in
+  `@exawatt/core`, which Electron main builds the menu from and which cannot
+  import `@exawatt/ui-model`, so the words moved one layer down to
+  `SESSION_LIFECYCLE_WORD` (`packages/core/src/session-lifecycle-words.ts`,
+  the `surface-names.ts` precedent); the owner assigns them, the manifest
+  composes "Resume Paused Agents" from the table, and ⌘K counts with the
+  owner's `pausedAgentsNoun`. `session-lifecycle-vocabulary.test.tsx` pins
+  the menu label, the shortcut-sheet label and the resume description to the
+  word the paused Session's tab prints; the ⌘K ranking test and
+  `eval:navigation:spine` derive their expected labels from the owner and
+  the compiled manifest. Open for the operator, not changed here: the set
+  the bar and ⌘K count as paused also holds Interrupted, nonzero-Exited and
+  Resume failed Agents that carry a conversation id, which their own tabs
+  name by those words.
 - 2026-09-23 (S6.4, landed; closes BUG-046 under decision `0042`): **one
   paused Agent spoke four vocabularies and two resume verbs at once, and the
   cure was one owner, not four edits.**

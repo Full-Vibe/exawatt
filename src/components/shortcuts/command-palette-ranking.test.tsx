@@ -21,6 +21,11 @@ import {
   it,
   vi,
 } from 'vitest';
+import {
+  pausedAgentsNoun,
+  SESSION_LIFECYCLE_VERB_LABEL,
+  SESSION_RESUME_SCOPE_LABEL,
+} from '@exawatt/ui-model';
 import type { SessionRow } from '@/components/workspace/switcher-rows';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
@@ -547,8 +552,10 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     await typeQuery('resume');
 
     const rows = visibleRows();
-    expect(rows[0].textContent).toContain('Resume this Agent');
-    expect(rows[1].textContent).toContain('Resume 2 parked Agents in exawatt');
+    expect(rows[0].textContent).toContain(SESSION_LIFECYCLE_VERB_LABEL.resume);
+    expect(rows[1].textContent).toContain(
+      `Resume ${pausedAgentsNoun(2)} in exawatt`
+    );
     const session = rows.findIndex(r =>
       r.textContent?.includes('Rebuild the consumer metrics')
     );
@@ -581,11 +588,15 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     await typeQuery('resume');
 
     const rows = visibleRows();
-    expect(rows[0].textContent).toContain('Resume all 3 parked Agents');
-    // the selected Agent is live — its verb is not offered
-    expect(rows.some(r => r.textContent?.includes('Resume this Agent'))).toBe(
-      false
+    expect(rows[0].textContent).toContain(
+      `${SESSION_RESUME_SCOPE_LABEL.all} ${pausedAgentsNoun(3)}`
     );
+    // the selected Agent is live — its verb is not offered
+    expect(
+      rows.some(r =>
+        r.textContent?.includes(SESSION_LIFECYCLE_VERB_LABEL.resume)
+      )
+    ).toBe(false);
   });
 
   it('asks the workspace to resume, carrying no identity of its own', async () => {

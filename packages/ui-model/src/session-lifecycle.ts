@@ -1,4 +1,4 @@
-import { getCommandVerb } from '@exawatt/core';
+import { getCommandVerb, SESSION_LIFECYCLE_WORD as WORD } from '@exawatt/core';
 
 /**
  * Session lifecycle vocabulary (ENG-015 S6.4): the one owner of what a
@@ -15,6 +15,9 @@ import { getCommandVerb } from '@exawatt/core';
  *
  * Pure over the lifecycle facts a Session already carries, so Demo and Live
  * share it and a test can pin that every surface prints the same words.
+ * The words are spelled in `@exawatt/core` (`SESSION_LIFECYCLE_WORD`) so the
+ * native menu, built in Electron main, prints the same Paused this module
+ * hands the renderer; this module decides which word a Session gets.
  */
 
 export type SessionLifecyclePhase =
@@ -110,9 +113,16 @@ export function agentsNoun(count: number): string {
   return `${count} ${count === 1 ? 'Agent' : 'Agents'}`;
 }
 
+const PAUSED = WORD.paused.toLowerCase();
+
 /** "3 Agents paused" */
 export function pausedAgentsCopy(count: number): string {
-  return `${agentsNoun(count)} paused`;
+  return `${agentsNoun(count)} ${PAUSED}`;
+}
+
+/** "3 paused Agents", the count a resume verb acts on. */
+export function pausedAgentsNoun(count: number): string {
+  return `${count} ${PAUSED} ${count === 1 ? 'Agent' : 'Agents'}`;
 }
 
 /** "1 Agent needs reconnection" / "2 Agents need reconnection" */
@@ -151,7 +161,7 @@ export function sessionLifecyclePresentation(
   switch (facts.lifecycle) {
     case 'draft':
       return {
-        word: 'Draft',
+        word: WORD.draft,
         line: null,
         tone: 'neutral',
         verb: null,
@@ -159,7 +169,7 @@ export function sessionLifecyclePresentation(
       };
     case 'running':
       return {
-        word: 'Running',
+        word: WORD.running,
         line: null,
         tone: 'neutral',
         verb: null,
@@ -167,7 +177,7 @@ export function sessionLifecyclePresentation(
       };
     case 'resuming':
       return {
-        word: 'Resuming',
+        word: WORD.resuming,
         line: 'Starting a new process for the saved conversation',
         tone: 'neutral',
         verb: null,
@@ -175,7 +185,7 @@ export function sessionLifecyclePresentation(
       };
     case 'failed':
       return {
-        word: 'Resume failed',
+        word: WORD.resumeFailed,
         line: `Last resume attempt failed · ${KEPT(facts)}`,
         tone: 'fault',
         verb: verbFor(facts),
@@ -183,7 +193,7 @@ export function sessionLifecyclePresentation(
       };
     case 'interrupted':
       return {
-        word: 'Interrupted',
+        word: WORD.interrupted,
         line: `Ended without a clean shutdown · ${KEPT(facts)}`,
         tone: 'warn',
         verb: verbFor(facts),
@@ -197,7 +207,7 @@ export function sessionLifecyclePresentation(
       const code = facts.exitCode;
       if (code !== null && code !== 0) {
         return {
-          word: 'Exited',
+          word: WORD.exited,
           line: `Exited with code ${code} · ${KEPT(facts)}`,
           tone: 'warn',
           verb: verbFor(facts),
@@ -206,7 +216,7 @@ export function sessionLifecyclePresentation(
       }
       if (facts.harness === 'shell') {
         return {
-          word: 'Closed',
+          word: WORD.closed,
           line: 'Shell closed · history kept',
           tone: 'neutral',
           verb: 'new-shell',
@@ -214,7 +224,7 @@ export function sessionLifecyclePresentation(
         };
       }
       return {
-        word: 'Paused',
+        word: WORD.paused,
         line: `Stopped cleanly · ${KEPT(facts)}`,
         tone: identityTone(facts),
         verb: verbFor(facts),

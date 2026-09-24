@@ -29,6 +29,7 @@
  */
 
 import { CONSUMPTION_SURFACE_NAME } from '../surface-names';
+import { SESSION_LIFECYCLE_WORD } from '../session-lifecycle-words';
 import type { DistributionContractV2 } from '../distribution/contract';
 
 export type CommandVerbModifier = 'ctrl' | 'alt' | 'shift' | 'meta';
@@ -197,6 +198,10 @@ export type CommandVerb = {
 } & (KeyboardSurfaced | KeyboardUnsurfaced) &
   (PaletteSurfaced | PaletteUnsurfaced) &
   (MenuSurfaced | MenuUnsurfaced);
+
+/** The resume verbs name the Agents they act on with the lifecycle word the
+ *  tab, the recovery bar and the record print, never a synonym of their own. */
+const PAUSED_WORD = SESSION_LIFECYCLE_WORD.paused.toLowerCase();
 
 /**
  * Declaration order is menu order inside each section. Separators are placed
@@ -659,7 +664,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
   {
     id: 'workspace-resume-agent',
     label: 'Resume this Agent',
-    description: 'Restart the selected parked Agent on its exact Session',
+    description: `Restart the selected ${PAUSED_WORD} Agent on its exact Session`,
     keys: { key: 'r', modifiers: ['meta', 'alt'] },
     category: 'workspace',
     contexts: ['workspace'],
@@ -673,7 +678,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
   },
   {
     id: 'workspace-resume-scope',
-    label: 'Resume the parked Agents',
+    label: `Resume the ${PAUSED_WORD} Agents`,
     description:
       "Restart the recovery bar's scope: this Project, or every Project",
     keys: { key: 'r', modifiers: ['meta', 'alt', 'shift'] },
@@ -683,7 +688,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     palette: { rowId: 'ws-resume-scope' },
     menu: {
       commandId: 'resume-scope',
-      label: 'Resume Parked Agents',
+      label: `Resume ${SESSION_LIFECYCLE_WORD.paused} Agents`,
       section: 'session',
     },
   },

@@ -10,6 +10,11 @@
  * expectation from that owner, so a deliberate change to the words moves
  * the product and the test together; only a surface growing its own copy
  * fails it.
+ *
+ * The native Session menu, the shortcut sheet and ⌘K kept a sixth word,
+ * "parked", for the same Agents after the owner landed ("Resume Parked
+ * Agents" beside a tab that said Paused). They are pinned here too, against
+ * the word this Session's tab prints.
  */
 import type { ReactElement, ReactNode } from 'react';
 import {
@@ -19,8 +24,10 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { getCommandVerb } from '@exawatt/core';
 import {
   pausedAgentsCopy,
+  pausedAgentsNoun,
   SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_SCOPE_LABEL,
   sessionLifecyclePresentation,
@@ -184,6 +191,20 @@ describe('one Session, one lifecycle vocabulary', () => {
         document.querySelector('[data-paused-agent-word]')
       ).toHaveTextContent(expected.word)
     );
+  });
+
+  it('the native menu, the shortcut sheet and ⌘K count the same word', () => {
+    const word = expected.word.toLowerCase();
+    const scope = getCommandVerb('workspace-resume-scope');
+    if (scope.menu === null) throw new Error(scope.menuDiscoverability);
+    expect(scope.menu.label.toLowerCase()).toContain(word);
+    expect(scope.label.toLowerCase()).toContain(word);
+    expect(
+      getCommandVerb('workspace-resume-agent').description.toLowerCase()
+    ).toContain(word);
+    // ⌘K's scope row counts with this noun (command-palette-ranking.test.tsx
+    // pins that the row prints it).
+    expect(pausedAgentsNoun(2).toLowerCase()).toContain(word);
   });
 
   it('the Team tile prints the shared word and the shared line', () => {

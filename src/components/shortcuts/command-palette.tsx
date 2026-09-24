@@ -26,6 +26,11 @@ import {
   commandVerbOffered,
   getCommandVerb,
 } from '@exawatt/core';
+import {
+  pausedAgentsNoun,
+  SESSION_LIFECYCLE_VERB_LABEL,
+  SESSION_RESUME_SCOPE_LABEL,
+} from '@exawatt/ui-model';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import {
   SquareTerminal,
@@ -651,15 +656,15 @@ export function CommandPalette({
     // with "Resume" so the D48 name-prefix band ranks the verb over a fuzzy
     // Session hit, and the scope row names the exact scope the recovery
     // bar's one-click control would use — never a second recovery model.
+    // Its words come from the lifecycle owner (ENG-015 S6.4), so the row
+    // counts the same paused Agents the bar and the tabs call paused.
     const resumeScope = workspaceAvailability.resumeScope;
-    const parkedAgents = (count: number) =>
-      `${count} parked ${count === 1 ? 'Agent' : 'Agents'}`;
     const resumeScopeLabel =
       resumeScope === null
         ? null
         : resumeScope.kind === 'project'
-          ? `Resume ${parkedAgents(resumeScope.count)} in ${resumeScope.projectName}`
-          : `Resume all ${parkedAgents(resumeScope.count)}`;
+          ? `Resume ${pausedAgentsNoun(resumeScope.count)} in ${resumeScope.projectName}`
+          : `${SESSION_RESUME_SCOPE_LABEL.all} ${pausedAgentsNoun(resumeScope.count)}`;
     const resumeKeywords = [
       'resume',
       'restart',
@@ -689,9 +694,9 @@ export function CommandPalette({
         ? [
             {
               id: WORKSPACE_PALETTE_ROW_ID.resumeAgent,
-              label: 'Resume this Agent',
+              label: SESSION_LIFECYCLE_VERB_LABEL.resume,
               value: paletteValue(
-                'Resume this Agent',
+                SESSION_LIFECYCLE_VERB_LABEL.resume,
                 WORKSPACE_PALETTE_ROW_ID.resumeAgent
               ),
               keywords: [...resumeKeywords, 'this', 'selected'],

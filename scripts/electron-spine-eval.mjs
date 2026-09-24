@@ -10,6 +10,7 @@
  * main (`pnpm electron:compile`).
  */
 import { mkdtempSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
@@ -19,6 +20,9 @@ const OUT = process.env.NAV_SCREENSHOT_DIR || '/tmp/exawatt-spine-eval';
 mkdirSync(OUT, { recursive: true });
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-spine-eval-'));
 const distribution = await resolvePackagedApp();
+// The compiled manifest main builds its menu from, so a relabel moves the
+// menu and this eval together; only a menu that drops the item fails it.
+const { getCommandVerb } = createRequire(import.meta.url)('@exawatt/core');
 const productName = distribution.identity.productName;
 const feedbackEnabled = distribution.contract.services.productFeedback !== null;
 
@@ -175,8 +179,8 @@ await withElectronApp(
   // from the command-verb manifest, not just a chord and a palette row.
   const helpMenu = menuDump.find(m => m.label === 'Help');
   for (const row of [
-    'Resume This Agent|Command+Alt+R',
-    'Resume Parked Agents|Command+Alt+Shift+R',
+    `${getCommandVerb('workspace-resume-agent').menu.label}|Command+Alt+R`,
+    `${getCommandVerb('workspace-resume-scope').menu.label}|Command+Alt+Shift+R`,
   ]) {
     check(
       `Session menu publishes ${row.split('|')[0]}`,

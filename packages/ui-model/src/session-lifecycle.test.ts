@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agentsNoun,
   pausedAgentsCopy,
+  pausedAgentsNoun,
   reconnectAgentsCopy,
   resumingAgentsCopy,
   SESSION_LIFECYCLE_VERB_LABEL,
@@ -121,6 +122,7 @@ describe('sessionLifecyclePresentation', () => {
       ...Object.values(SESSION_LIFECYCLE_VERB_LABEL),
       ...Object.values(SESSION_RESUME_SCOPE_LABEL),
       pausedAgentsCopy(2),
+      pausedAgentsNoun(2),
       reconnectAgentsCopy(1),
       resumingAgentsCopy(1, 2),
       ...PHASES.flatMap(lifecycle => {
