@@ -44,6 +44,11 @@ import {
   syncInvokingCheckout,
 } from './lib/docs-lane.mjs';
 import {
+  peekOriginMaster,
+  probeConflictMessage,
+  probeRebase,
+} from './lib/conflict-probe.mjs';
+import {
   describePublicLatch,
   holdWhilePublicLatched,
   publicLatchHoldPolicy,
@@ -52,6 +57,13 @@ import {
 const execFileAsync = promisify(execFile);
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const QUEUE_POLL_MS = 250;
+const PROBE_SECONDS_ENV = 'EXAWATT_AGENT_LAND_PROBE_SECONDS';
+
+/** How often a waiting ticket looks for a moved master (BUG-202); 0 = never. */
+function probeIntervalMs(env = process.env) {
+  const seconds = Number.parseFloat(env[PROBE_SECONDS_ENV] ?? '');
+  return (Number.isFinite(seconds) && seconds >= 0 ? seconds : 30) * 1_000;
+}
 
 export function parseArgs(argv) {
   const options = {
@@ -592,6 +604,41 @@ async function landThroughQueue({
     await appendDeliveryMetric(root, 'floor_check', { ...extra, ...result });
   };
 
+  // BUG-202: the head's rebase verdict, asked before the floor. In September
+  // 10 of the 20 tickets that died on a rebase conflict already conflicted
+  // with origin/master when their candidate floor started.
+  const masterNow = await git(root, 'rev-parse', 'origin/master');
+  if (
+    probeIntervalMs() > 0 &&
+    !(await isAncestor(root, masterNow, candidateSha))
+  ) {
+    const upfront = await probeRebase(root, {
+      sha: candidateSha,
+      onto: masterNow,
+    }).catch(error => {
+      console.warn(
+        `[agent-land] conflict probe failed (${error.message.split('\n')[0]}); the head's rebase still decides.`
+      );
+      return { clean: true };
+    });
+    if (!upfront.clean) {
+      await appendDeliveryMetric(root, 'probe_conflict', {
+        phase: 'candidate',
+        candidateSha,
+        baseSha: masterNow,
+        commit: upfront.commit,
+        paths: upfront.paths,
+      });
+      throw new Error(
+        probeConflictMessage({
+          onto: masterNow,
+          commit: upfront.commit,
+          paths: upfront.paths,
+        })
+      );
+    }
+  }
+
   const checks = lane.checksFor(files, options.verify);
   const evidence = await lane.runChecks(root, checks, {
     phase: 'candidate',
@@ -639,6 +686,66 @@ async function landThroughQueue({
 
   const latchPolicy = publicLatchHoldPolicy();
   let publicHeldMs = 0;
+  // BUG-202: while it waits, the ticket replays itself onto every new
+  // origin/master in memory, and leaves the queue as soon as the head's
+  // rebase would conflict instead of when it gets there.
+  const probeEveryMs = probeIntervalMs();
+  let nextProbeAt = 0;
+  let probedBase = null;
+  let probeFailureAnnounced = false;
+  const probeWhileWaiting = async () => {
+    let onto;
+    try {
+      onto = await peekOriginMaster(root);
+    } catch (error) {
+      if (!probeFailureAnnounced) {
+        probeFailureAnnounced = true;
+        console.warn(
+          `[agent-land] conflict probe could not read origin/master (${error.message.split('\n')[0]}); the head's rebase still decides.`
+        );
+      }
+      return;
+    }
+    if (onto === probedBase) return;
+    probedBase = onto;
+    const attemptSha = ticket.attemptSha;
+    if (await isAncestor(root, onto, attemptSha)) return;
+    let verdict;
+    try {
+      verdict = await probeRebase(root, { sha: attemptSha, onto });
+    } catch (error) {
+      console.warn(
+        `[agent-land] conflict probe failed against ${onto.slice(0, 12)} (${error.message.split('\n')[0]}); the head's rebase still decides.`
+      );
+      return;
+    }
+    if (verdict.clean) return;
+    const probeConflict = {
+      baseSha: onto,
+      commit: verdict.commit,
+      paths: verdict.paths,
+    };
+    await appendDeliveryMetric(root, 'probe_conflict', {
+      phase: 'queued',
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      waitedMs: Date.now() - new Date(ticket.admittedAt).getTime(),
+      ...probeConflict,
+    });
+    console.log(
+      `[agent-land] STATUS failed=probe-conflict base=${onto.slice(0, 12)} paths=${verdict.paths.join(',')}`
+    );
+    const error = new Error(
+      probeConflictMessage({
+        ticketNumber: ticket.number,
+        onto,
+        commit: verdict.commit,
+        paths: verdict.paths,
+      })
+    );
+    error.probeConflict = probeConflict;
+    throw error;
+  };
   try {
     const announcedStaleHeads = new Set();
     let announcedHold = null;
@@ -656,6 +763,10 @@ async function landThroughQueue({
         );
       }
       announcedHold = holdKey;
+      if (probeEveryMs > 0 && Date.now() >= nextProbeAt) {
+        await probeWhileWaiting();
+        nextProbeAt = Date.now() + probeEveryMs;
+      }
       if (!processExists(head.owner?.pid)) await reconcileDeadHead(root, head);
       else {
         const heartbeatAgeMs =
@@ -931,6 +1042,7 @@ async function landThroughQueue({
         // commit, file, check and recovery rather than only a sentence.
         ...(error.publicLatch ? { publicLatch: error.publicLatch } : {}),
         ...(error.queueHold ? { queueHold: error.queueHold } : {}),
+        ...(error.probeConflict ? { probeConflict: error.probeConflict } : {}),
       }).catch(() => current);
     }
     throw error;

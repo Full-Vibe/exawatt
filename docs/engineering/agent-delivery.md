@@ -283,8 +283,9 @@ Normal states are:
 
 ```text
 queued → integrating → integrated
-             ↓ ↑    ↘ failed
-       holding (public latch; bounded)
+   ↓         ↓ ↑    ↘ failed
+   ↓   holding (public latch; bounded)
+   ↘ failed (the conflict probe: the head's rebase would conflict)
 
 dead owner → recovering → integrated (attempt already reached master)
                        ↘ failed (attempt ref preserved)
@@ -333,6 +334,35 @@ When its ticket becomes head, the author process fetches `origin/master`.
   a conversational retry cycle.
 - If push output is ambiguous, the process fetches and checks attempt
   reachability before choosing a terminal result.
+
+### Conflicts are found while a ticket waits
+
+In September 20 of the 38 ticket deaths were head rebase conflicts; those
+tickets spent 2.3 hours in the queue in total and then died within a second of
+reaching the head. The verdict was knowable when the conflicting commit landed.
+
+So the conflict probe (BUG-202, `scripts/lib/conflict-probe.mjs`) asks
+earlier, with the head's own question:
+
+- Before the candidate floor, against the `origin/master` just fetched. A
+  change that already conflicts is refused with the paths named, before any
+  check runs and without a ticket. 10 of September's 20 conflicted tickets
+  were in this state when their floor started (45 minutes of floor time).
+- While the ticket waits, every `EXAWATT_AGENT_LAND_PROBE_SECONDS` (30), it
+  reads where origin's `master` is (a fetch into this checkout's own
+  `FETCH_HEAD` only, so waiters never contend for the `origin/master` ref
+  lock) and, when that moved, replays the ticket's admitted commits onto it.
+  A conflict fails the ticket at once, naming the paths, the first conflicting
+  commit and the base; the attempt ref is preserved. Replaying September's 20
+  conflicted tickets, the probe reaches the head's verdict on every one and
+  would have returned 2.2 of their 2.3 queued hours.
+
+The replay is `git merge-tree --write-tree` per commit against that commit's
+own parent, chaining the trees, the way `git rebase` applies them: a commit
+that conflicts is caught even when a later commit would undo it. Nothing in
+the worktree, index or any ref changes. A probe that cannot run (no network, a
+git error) says so once and changes nothing: the head's real rebase still
+decides. `EXAWATT_AGENT_LAND_PROBE_SECONDS=0` turns both probes off.
 
 ### The public latch holds the queue
 
@@ -534,6 +564,7 @@ contributor's own commit is what the projector publishes.
 | `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                                                                                                                                                      |
 | `public_projection`                                                                                           | projection state, private/public SHA pair, duration, and when it did not publish the failure class (`deterministic`/`transient`) and the unrenderable private commit, file and check                         |
 | `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
+| `probe_conflict`                                                                                              | `phase` (`candidate` before the floor, `queued` while waiting), ticket, the `origin/master` it replayed onto, the first conflicting commit, the paths, and for a queued ticket how long it had waited |
 | `queue_hold` / `queue_hold_released`                                                                          | the head held on a latched publication: ticket, `failure` class and the `publicLatch` record; on release the `outcome` (`released`/`expired`) and `heldMs`. A failed ticket's `queue_terminal` carries `publicLatch` and `queueHold` |
 
 `summarizeDeliveryMetrics` computes integrated and failed counts, queue p50/p95,
@@ -558,6 +589,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Symptom                                                          | Safe response                                                                                                                                                                                                                                                     |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                                                                                |
+| A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the floor (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
 | Automatic rebase conflicts                                       | The rebase is aborted and the ticket is terminal `failed`. Fetch/rebase the author branch normally, resolve and verify it, commit if needed, then submit a new ticket. The failed attempt ref remains evidence.                                                   |
 | Queue head has a live PID and stale heartbeat                    | Wait and inspect machine load/process health. Never delete its ticket or lock. If the operator establishes that it is irrecoverably wedged, terminate that exact PID; the next waiter will reconcile it.                                                          |
 | Queue head owner is dead                                         | No manual mutation is needed. The next waiter/lander claims a new epoch, checks remote reachability, and records exactly one terminal result.                                                                                                                     |
@@ -602,6 +634,8 @@ verification, or a live owner's ticket.
   ownership fencing, terminal results, hold records, and dead-owner claims.
 - `scripts/lib/queue-hold.mjs`: the head's bounded hold on a latched public
   publication, its failure classes, and its knobs.
+- `scripts/lib/conflict-probe.mjs`: the in-memory rebase replay a candidate
+  and a waiting ticket run against `origin/master`.
 - `scripts/lib/delivery-policy.mjs`: changed-path floor and check evidence.
 - `scripts/lib/delivery-state.mjs`: common-dir paths, atomic JSON, metrics, and
   rollup calculations.
@@ -628,9 +662,9 @@ verification, or a live owner's ticket.
   `scripts/delivery-queue.test.mjs`, `scripts/delivery-policy.test.mjs`,
   `scripts/dogfood-queue.test.mjs`, `scripts/dogfood-delivery.test.mjs`,
   `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
-  `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`, and
-  `scripts/queue-hold.test.mjs` (with `scripts/lib/delivery-queue-fixture.mjs`,
-  a real local queue):
+  `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
+  `scripts/queue-hold.test.mjs`, and `scripts/conflict-probe.test.mjs` (with
+  `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.
   <!-- exawatt:public-omit-begin the company delivery queue owns public-repository maintenance -->

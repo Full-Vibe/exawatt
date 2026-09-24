@@ -301,6 +301,34 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-202: the third change asks the head's rebase question
+  before the head does. 20 of the 38 September deaths were head rebase
+  conflicts; those tickets spent 2.3 hours queued in total and died within a
+  second of reaching the head. `scripts/lib/conflict-probe.mjs` replays a
+  change's commits onto a given `master` with `git merge-tree --write-tree`,
+  each against its own parent as the base and chaining the trees, the way
+  `git rebase` applies them, so a commit that conflicts is caught even if a
+  later one undoes it; it writes objects only, never the worktree, index or a
+  ref. `agent:land` runs it before the candidate floor, where a conflict is
+  refused with no ticket taken, and every `EXAWATT_AGENT_LAND_PROBE_SECONDS`
+  (30) while the ticket waits, against origin's `master` read into the
+  checkout's own `FETCH_HEAD` (`--refmap=`), so waiters never contend for the
+  `origin/master` ref lock the head's fetch needs. A conflict fails the waiting
+  ticket with `probeConflict` (base, first conflicting commit, paths) in its
+  result and a `probe_conflict` metric. A probe that cannot run is announced
+  and the head's rebase still decides. Replaying September's 20 conflicted
+  tickets in a scratch shared clone against every `master` commit that landed
+  while each waited: the probe reaches the head's verdict on all 20, would have
+  failed them 2.2 of their 2.3 queued hours earlier (421 and 422 alone waited
+  67 and 61 minutes), and 10 of the 20 already conflicted when their candidate
+  floor began, 45 minutes of floor time that now never runs.
+  `scripts/conflict-probe.test.mjs` pins the replay (commit-by-commit, nothing
+  on disk touched) and drives a real queue: with the head held at the delivery
+  lock, a waiter whose file master rewrote leaves as `failed` while the head is
+  still `integrating`, a clean waiter keeps its place and both land; a change
+  that already conflicts is refused before any floor check or admission; a
+  zero interval turns the probe off. Six mutations, all killed.
+
 - 2026-09-24, BUG-201: the second change turns the public latch from a
   death into a wait. 11 of the 38 September deaths were the latch, 10 on one
   night and 6 of those after a complete re-check, because the head met the

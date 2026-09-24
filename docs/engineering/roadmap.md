@@ -2397,6 +2397,20 @@ operator's recovery, and enabling the maintenance hold releases the queue. The
 ENG-030 guarantee is unchanged. Proven in `scripts/queue-hold.test.mjs`.
 [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-202 Conflicted tickets waited for a verdict that was already known
+
+Status: done · ENG-022 · measured 2026-09-24 over September's 89 tickets; resolved 2026-09-24.
+
+20 of September's 38 ticket deaths were head rebase conflicts. They spent 2.3
+hours in the queue in total and died within a second of reaching the head;
+10 already conflicted when their candidate floor started. A conflict probe now
+replays the change onto `origin/master` in memory, commit by commit as the
+head's rebase would, before the floor and again whenever `master` moves while
+the ticket waits, and fails it at once naming the paths. Replayed over
+September's 20, it reaches the head's verdict on all of them and returns 2.2
+of the 2.3 hours. Proven in `scripts/conflict-probe.test.mjs`.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
