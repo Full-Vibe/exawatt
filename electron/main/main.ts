@@ -69,6 +69,7 @@ import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
+import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
 import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import {
@@ -152,7 +153,6 @@ const testQuitResponses =
 const safeThemeLaunch = process.argv.includes('--safe-theme');
 
 let mainWindow: BrowserWindow | null = null;
-let pendingDeepLinkUrl: string | null = null;
 let rendererReadyPromise: Promise<string> | null = null;
 let rendererWasWarmAtLaunch = false;
 let bootstrapExitInProgress = false;
@@ -355,130 +355,23 @@ if (rendererWasWarmAtLaunch) {
   void rendererReadyPromise.catch(() => {});
 }
 
-// Register only when this distribution owns a protocol. Community builds do
-// not claim the official URL scheme.
-if (protocolScheme) {
-  // In dev (process.defaultApp), pass execPath + script so macOS can re-launch correctly.
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient(protocolScheme, process.execPath, [
-        path.resolve(process.argv[1]),
-      ]);
-    }
-  } else {
-    app.setAsDefaultProtocolClient(protocolScheme);
-  }
-}
-
-// macOS: deep links on a running app arrive via open-url.
+// Any local process can invoke `exawatt://`; the router vets a link before it
+// reaches the renderer and holds one that arrives before the workspace loads.
+const deepLinks = createDeepLinkRouter({
+  protocolScheme,
+  window: () => mainWindow,
+  authCoordinator: () => authCoordinator,
+  isLinkOutcome: () => isElectronAuthLinkOutcome,
+  safeAuthError: error => safeElectronAuthError(error),
+  isWorkspaceTarget: target => isWorkspaceTarget(target),
+  record: (event, fields) => recordAuthDiagnostic(event, fields),
+});
 // Must be registered before app.whenReady() to also catch links during startup.
-if (protocolScheme) {
-  app.on('open-url', (event, url) => {
-    event.preventDefault();
-    handleDeepLink(url);
-  });
-}
-
-function handleDeepLink(url: string): void {
-  if (!protocolScheme || !url.startsWith(`${protocolScheme}://`)) {
-    recordAuthDiagnostic('auth.callback.rejected_scheme');
-    return;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch (error) {
-    recordAuthDiagnostic('auth.callback.parse_failure', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return;
-  }
-
-  // exawatt://auth/callback?code=...  or  ?link=<outcome>
-  if (parsed.hostname === 'auth' && parsed.pathname === '/callback') {
-    const code = parsed.searchParams.get('code');
-    const linkOutcome = parsed.searchParams.get('link');
-    recordAuthDiagnostic('auth.callback.received', {
-      host: parsed.hostname,
-      path: parsed.pathname,
-      queryNames: [...new Set(parsed.searchParams.keys())].sort(),
-      hasCode: Boolean(code),
-      codeLength: code?.length ?? 0,
-      windowReady: Boolean(mainWindow && !mainWindow.isDestroyed()),
-      coordinatorReady: Boolean(authCoordinator),
-    });
-
-    if (code) {
-      if (
-        mainWindow &&
-        !mainWindow.isDestroyed() &&
-        authCoordinator &&
-        isWorkspaceTarget(mainWindow.webContents.getURL())
-      ) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-        void completeElectronAuth(code);
-      } else {
-        // Window not ready — queue for delivery after load
-        pendingDeepLinkUrl = url;
-        recordAuthDiagnostic('auth.callback.queued');
-      }
-    } else if (linkOutcome) {
-      // An identity link that Supabase answered without a code — including
-      // "already linked", which is the state the operator wanted. The surface
-      // that started it owns the verdict, so main only relays the token.
-      if (
-        mainWindow &&
-        !mainWindow.isDestroyed() &&
-        isElectronAuthLinkOutcome &&
-        isWorkspaceTarget(mainWindow.webContents.getURL())
-      ) {
-        if (!isElectronAuthLinkOutcome(linkOutcome)) {
-          recordAuthDiagnostic('auth.callback.link_outcome_rejected');
-          return;
-        }
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-        mainWindow.webContents.send('auth:link-outcome', linkOutcome);
-        recordAuthDiagnostic('auth.callback.link_outcome_sent', {
-          outcome: linkOutcome,
-        });
-      } else {
-        pendingDeepLinkUrl = url;
-        recordAuthDiagnostic('auth.callback.queued');
-      }
-    } else {
-      recordAuthDiagnostic('auth.callback.missing_code');
-    }
-  } else {
-    recordAuthDiagnostic('auth.callback.ignored_route', {
-      host: parsed.hostname,
-      path: parsed.pathname,
-    });
-  }
-}
-
-async function completeElectronAuth(code: string): Promise<void> {
-  const win = mainWindow;
-  if (!win || win.isDestroyed()) return;
-
-  try {
-    if (!authCoordinator) throw new Error('Authentication is not ready.');
-    await authCoordinator.exchangeCode(code);
-    if (!win.isDestroyed()) {
-      win.webContents.send('auth:complete');
-      recordAuthDiagnostic('auth.renderer_completion_sent');
-    } else {
-      recordAuthDiagnostic('auth.renderer_completion_skipped_destroyed');
-    }
-  } catch (error) {
-    const safeError = safeElectronAuthError(error);
-    recordAuthDiagnostic('auth.completion_failure', { error: safeError });
-    console.error('[auth] Electron OAuth code exchange failed', safeError);
-    if (!win.isDestroyed()) win.webContents.send('auth:error', safeError);
-  }
-}
+registerDeepLinkProtocol(app, protocolScheme, deepLinks, {
+  defaultApp: Boolean(process.defaultApp),
+  execPath: process.execPath,
+  argv: process.argv,
+});
 
 function workspaceUrl(): string {
   return isDev ? DEV_URL : `${rendererServer.origin}/workspace`;
@@ -645,9 +538,8 @@ function createWindow(
     const currentUrl = mainWindow?.webContents.getURL() ?? '';
     if (currentUrl.startsWith('data:text/html')) {
       updateStartupScreen(startupStage);
-    } else if (pendingDeepLinkUrl && isWorkspaceTarget(currentUrl)) {
-      handleDeepLink(pendingDeepLinkUrl);
-      pendingDeepLinkUrl = null;
+    } else {
+      deepLinks.deliverPending(currentUrl);
     }
   });
 
