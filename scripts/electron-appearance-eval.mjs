@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -305,15 +307,6 @@ async function inspectRenderer(app, page, label, expected) {
     expected.mirrorAppearance,
     `${label} bootstrap mirror mismatch`
   );
-  if (expected.settingsSubset) {
-    for (const [key, value] of Object.entries(expected.settingsSubset)) {
-      assertDeep(
-        renderer.settings?.[key],
-        value,
-        `${label} changed unrelated ${key} settings`
-      );
-    }
-  }
 
   await page.screenshot({ path: join(screenshots, `${label}.png`) });
   return { renderer, native };
@@ -383,20 +376,13 @@ async function launch(
       await page.waitForURL(`${BASE}/workspace`, {
         waitUntil: 'domcontentloaded',
       });
-      const preferencesLoaded = page.waitForResponse(response => {
-        const request = response.request();
-        return (
-          request.method() === 'POST' &&
-          new URL(response.url()).pathname === '/workspace'
-        );
-      });
       await page.reload({ waitUntil: 'domcontentloaded' });
-      // The Workspace mounts server-backed preference providers after DOM
-      // readiness. Observe its preference action response before a short
-      // appearance scenario closes its window, or teardown can manufacture an
-      // unrelated `Failed to fetch` console error after every appearance
-      // assertion passed.
-      await preferencesLoaded;
+      // Wait for the reloaded Workspace itself, not for a request it may make.
+      // This used to wait for the keyboard-override server action's POST, so a
+      // short scenario could not abort it at teardown. Since BUG-044 that read
+      // is device-first: a distribution without an account never sends it,
+      // and an account read that fails only warns (BUG-215).
+      await page.locator('[data-command-altitude]').waitFor();
       const result = await body(app, page, startup);
       assert(
         rendererErrors.length === 0,
@@ -798,14 +784,26 @@ try {
         settingsAppearance: classicRecovery,
         mirrorAppearance: classicRecovery,
         bootstrapThemeId: 'exawatt-classic-dark',
-        settingsSubset: {
-          terminal: { fontSize: 15 },
-          notifications: { attention: true },
-        },
       });
+      // A settings file that fails its stored schema is set aside whole and
+      // writes stay blocked until it is repaired (the storage recovery
+      // contract of 0.1.13, `store-integrity.test.ts`). So the operator's
+      // other choices are protected by keeping these bytes, not by reading
+      // them while the file needs recovery.
+      const preserved = readdirSync(corruptData).filter(name =>
+        name.startsWith('settings.json.corrupt-')
+      );
       assert(
-        readFileSync(corruptSettingsFile, 'utf8') === corruptSeed,
-        'corrupt recovery rewrote the settings file'
+        preserved.length === 1 &&
+          readFileSync(join(corruptData, preserved[0]), 'utf8') ===
+            corruptSeed &&
+          existsSync(`${corruptSettingsFile}.recovery-required`),
+        'corrupt recovery did not preserve the damaged settings',
+        preserved
+      );
+      assert(
+        !existsSync(corruptSettingsFile),
+        'corrupt recovery wrote replacement settings over the damaged file'
       );
       return snapshot;
     }

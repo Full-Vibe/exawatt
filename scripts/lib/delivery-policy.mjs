@@ -599,7 +599,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:appearance',
     why: 'a fresh or saved appearance resolves before first paint in every launch scenario',
-    quarantined: 'BUG-215',
     match: file =>
       file === 'electron/main/appearance.ts' ||
       file === 'src/components/appearance/appearance-provider.tsx' ||
