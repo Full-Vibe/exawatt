@@ -301,6 +301,51 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-221 (sweep) and BUG-222: **every eval now waits for
+  hydration, and none counts output a redraw can repeat.** A read-only audit
+  of about 70 scripts found three groups. (1) 15 sites dispatched
+  `exawatt:open-project` after `[data-command-altitude]`, the "Open Project"
+  button, a "Loading…" probe or a 1.2 s sleep; `use-workspace-requests.ts`
+  drops the event until the workspace is ready and nothing replays a raw
+  dispatch, so each lost event is a composer timeout. `openFixtureSession`
+  (clone-context, delegation, model-change, project-pause, turn-truth) had
+  documented exactly this and used the button as the ready signal, which
+  renders before hydration too. All now call `waitForWorkspaceReady()`; the
+  lifecycle and idempotency `pageFor` helpers do it once, so their relaunch
+  "spawned nothing" reads also come after the layout restores. (2) Saves
+  raced by the app's own: spine now seeds while `/leaderboard` is showing
+  (the workspace is unmounted and its flush already sent); lifecycle waits
+  for `workspace.json` to carry the crash shell before SIGKILL instead of
+  700 ms; recents polls for the first save carrying the resumed tab instead
+  of 500 ms; project-agent waits for hydration before the chooser on its
+  relaunch (a Project opened earlier was replaced by the restored layout)
+  and reads the native menu until availability is published instead of
+  100 ms. (3) Output counts: real-harness asked for a reply token its prompt
+  contained and counted at least three copies, which echoes and input-line
+  repaints can supply with no reply, so the prompt now spells the token out
+  and the check is presence; terminal-fundamentals' scrollback wait was an
+  async `waitForFunction` (it never waited; a 3 s sleep did) demanding two
+  copies of a line awk prints once, and now waits for that line in xterm's
+  buffer; its menu check compared shell output byte for byte after 250 ms
+  and now records xterm's own `onData` while the menu is open
+  (mutation-checked: one injected arrow key fails it, named). Verified: every
+  enforced gate these files owe, run directly (project-agent, recents,
+  spine, roadmap rail, agent-sources, tenancy, delegation, turn-truth,
+  lifecycle, idempotency), plus clone-context, model-change, project-pause,
+  interaction-performance and terminal-fundamentals (clipboard restored).
+  Not run: real-harness (paid provider turns) and product-update (a signed
+  baseline); their edits are the hydration wait and, for real-harness, the
+  reply token. Not touched: `electron-context-label-feedback-eval.mjs`'s
+  seed race, since that quarantined eval is being rewritten by the BUG-216
+  repair in flight. BUG-222: turn-truth failed once in six runs at "the
+  reported operator gate", twelve checks after the only step this change
+  touches (master's fixture passed twice, this one three times). Cause: the fake Claude's stdin handler was async, so `ask` and
+  `permission` posted concurrently, and `delegation-state.ts` keeps the
+  first report of a gate. A probe that holds the first post open for 300 ms
+  showed master's fake with both posts in flight and `permission_prompt`
+  answered first; the fixed fake queues each command behind the previous
+  one, and turn-truth then passed five of five.
+
 - 2026-09-24, BUG-221: **two workspace evals acted before the workspace
   had loaded, and one counted text a redraw can repeat.** Measured, not
   inferred. A probe replaying `eval:workspace:split`'s old sequence (seed

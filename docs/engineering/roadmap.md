@@ -2530,7 +2530,7 @@ and idempotency restore. Unit tests beside the modules owe nothing. Proven in
 
 ### BUG-221 Workspace evals acted before hydration and counted redrawable text
 
-Status: bug · ENG-022 · found 2026-09-24; `eval:workspace:split` and `eval:workspace:draft` repaired 2026-09-24.
+Status: done · ENG-022 · found 2026-09-24; resolved 2026-09-24.
 
 `eval:workspace:split` wrote its seed layout from the page and reloaded; the
 app's first save, 400 ms after hydration, could land after it, so the reload
@@ -2540,9 +2540,26 @@ showed one written paste three times. The stage now carries
 `data-workspace-ready` once hydration lands; `waitForWorkspaceReady()` and
 `seedWorkspaceLayout()` in `scripts/lib/electron-eval.mjs` replace the page
 seed and every fixed sleep in both, and the draft eval counts pastes in the
-PTY's input as `cat` receives it. Open: other scripts share one of the two
-shapes, most by dispatching `exawatt:open-project` before hydration, which
-drops it. [Findings](projects/agent-development-loop.md#findings-log).
+PTY's input as `cat` receives it. An audit of every eval found the same
+shapes elsewhere: 15 sites dispatched `exawatt:open-project`, which the
+workspace ignores until hydrated, after a pre-hydration marker; spine,
+lifecycle, recents and project-agent raced the app's own save or read state
+before hydration; real-harness and terminal-fundamentals counted or compared
+terminal output. All wait for the marker or an effect now, and count input.
+Left to the BUG-216 repair in flight: `eval:electron:context-labels`' seed
+race. [Findings](projects/agent-development-loop.md#findings-log).
+
+### BUG-222 The fixture Claude could post its hooks out of order
+
+Status: done · ENG-022 · found 2026-09-24 by `eval:electron:turn-truth`; resolved 2026-09-24.
+
+`eval:electron:turn-truth` timed out once in six runs waiting for "the
+reported operator gate". The fake Claude in `harness-event-fixture.mjs`
+handled stdin with an async handler, so `ask` and `permission` posted
+concurrently, and the product keeps the first report of a gate: a
+`permission_prompt` that landed first read as a permission gate. A real
+Claude posts sequentially. The fake now handles one command at a time, in
+order. [Findings](projects/agent-development-loop.md#findings-log).
 
 ## Amendment chain
 
