@@ -56,13 +56,13 @@ export function createRecoveryBudget(
 }
 
 /** Chromium's account of a renderer that went away (`render-process-gone`). */
-export interface RendererGoneDetails {
+interface RendererGoneDetails {
   reason: string;
   exitCode: number;
 }
 
 /** Chromium's account of any other helper that went away. */
-export interface ChildGoneDetails {
+interface ChildGoneDetails {
   type: string;
   reason: string;
   exitCode: number;
@@ -97,7 +97,7 @@ export function rendererRecoveryPrompt(productName: string): {
   };
 }
 
-export interface RendererRecoveryDependencies {
+interface RendererRecoveryDependencies {
   record: DiagnosticRecorder;
   /** True once shutdown is past confirmation: nothing restarts from then on. */
   isQuitting: () => boolean;
@@ -183,7 +183,7 @@ export function recordChildProcessGone(
   });
 }
 
-export interface RendererServerSupervisorDependencies {
+interface RendererServerSupervisorDependencies {
   record: DiagnosticRecorder;
   isQuitting: () => boolean;
   /** Starts the server again on the port it was serving. */
