@@ -56,6 +56,10 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  useLatestRequest,
+  type RequestTicket,
+} from '@/hooks/use-latest-request';
 import { OpenClawIcon } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
@@ -347,8 +351,8 @@ export function ConnectSourceDialog({
   const serversRequested = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const retainedDraft = useRef<ManualServerDraft | null>(null);
-  /** Bumped whenever a result in flight stops being the one on screen. */
-  const attemptToken = useRef(0);
+  /** Superseded whenever a result in flight stops being the one on screen. */
+  const attempts = useLatestRequest();
   /**
    * A retry reuses the same opaque identity. The source mapping write may
    * have committed even when its acknowledgement was lost, so minting a new
@@ -397,7 +401,7 @@ export function ConnectSourceDialog({
     if (closed.current) return;
     closed.current = true;
     const outcome = cancelConnectFlow(state);
-    attemptToken.current += 1;
+    attempts.invalidate();
     serversRequested.current = false;
     retainedDraft.current = outcome.retainedDraft;
     if (
@@ -413,7 +417,7 @@ export function ConnectSourceDialog({
     setMappingError(null);
     setBusy(false);
     dispatch({ type: 'cancel' });
-  }, [open, state]);
+  }, [attempts, open, state]);
 
   // The operator's own typing comes back with them. An alias they merely
   // clicked leaves nothing to restore, so reopening starts clean.
@@ -433,7 +437,7 @@ export function ConnectSourceDialog({
     const api = bridgeRef.current;
     if (!api) return;
     serversRequested.current = true;
-    const token = attemptToken.current;
+    const ticket = attempts.current();
     const saved = api.list
       ? api
           .list()
@@ -444,7 +448,7 @@ export function ConnectSourceDialog({
       : Promise.resolve([]);
     void Promise.all([api.sshAliases(), saved, coworkers])
       .then(([result, sources, agents]) => {
-        if (token !== attemptToken.current) return;
+        if (!ticket.current) return;
         const connected: ConnectedServer[] = sources.flatMap(source =>
           source.alias === null
             ? []
@@ -467,7 +471,7 @@ export function ConnectSourceDialog({
         });
       })
       .catch(() => {
-        if (token !== attemptToken.current) return;
+        if (!ticket.current) return;
         dispatch({
           type: 'servers-loaded',
           aliases: [],
@@ -476,7 +480,7 @@ export function ConnectSourceDialog({
           incompleteIncludes: false,
         });
       });
-  }, [open]);
+  }, [attempts, open]);
 
   /**
    * The bounded test ticks from main's own connection channel, subscribed for
@@ -503,7 +507,7 @@ export function ConnectSourceDialog({
       sourceId: string;
       placement: AgentSourcePlacement;
       credentialOwner: SourceCredentialOwner;
-      token: number;
+      ticket: RequestTicket;
     }) => {
       const api = bridgeRef.current;
       if (!api) return;
@@ -515,12 +519,12 @@ export function ConnectSourceDialog({
           .detach(input.sourceId)
           .then(result => result.ok)
           .catch(() => false);
-        if (input.token !== attemptToken.current) return;
+        if (!input.ticket.current) return;
         dispatch({ type: 'test-failed', failure, message, released });
       };
       try {
         const result = await api.connect(input.sourceId);
-        if (input.token !== attemptToken.current) return;
+        if (!input.ticket.current) return;
         if (result.ok) {
           const observed = result.observed ?? null;
           dispatch({
@@ -537,10 +541,10 @@ export function ConnectSourceDialog({
         }
         await fail(result.failure ?? 'unknown', result.message);
       } catch {
-        if (input.token !== attemptToken.current) return;
+        if (!input.ticket.current) return;
         await fail('unknown', '');
       } finally {
-        if (input.token === attemptToken.current) setBusy(false);
+        if (input.ticket.current) setBusy(false);
       }
     },
     []
@@ -555,14 +559,14 @@ export function ConnectSourceDialog({
       setServerError(null);
       setMappingError(null);
       setBusy(true);
-      const token = ++attemptToken.current;
+      const ticket = attempts.begin();
       // Picking another server releases the one this flow tested and has not
       // connected. Left in place, it stayed saved and was dialed in the
       // background indefinitely (BUG-157).
       const previous = state.attempt;
       if (previous && previous.owned && !state.settled) {
         await api.detach(previous.sourceId).catch(() => undefined);
-        if (token !== attemptToken.current) return;
+        if (!ticket.current) return;
         dispatch({ type: 'attempt-released' });
       }
       let sourceId: string | null = null;
@@ -575,13 +579,13 @@ export function ConnectSourceDialog({
           transport: input.transport,
           credentialOwner,
         });
-        if (token !== attemptToken.current) return;
+        if (!ticket.current) return;
         sourceId = added.ok && added.source ? added.source.id : null;
         owned = added.ok && added.created !== false;
       } catch {
         sourceId = null;
       }
-      if (token !== attemptToken.current) return;
+      if (!ticket.current) return;
       if (!sourceId) {
         setServerError(
           'Exawatt could not save this server. Check the details and try again.'
@@ -606,9 +610,9 @@ export function ConnectSourceDialog({
         operatorAuthored: input.operatorAuthored,
         owned,
       });
-      await observe({ sourceId, placement, credentialOwner, token });
+      await observe({ sourceId, placement, credentialOwner, ticket });
     },
-    [busy, observe, state]
+    [attempts, busy, observe, state]
   );
 
   /** A row's Try again: the same server, the way it was reached. */
