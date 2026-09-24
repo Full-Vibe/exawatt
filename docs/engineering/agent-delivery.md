@@ -337,7 +337,9 @@ When its ticket becomes head, the author process fetches `origin/master`.
   evidence for the exact attempted tree.
 - If not, the process rebases its own bootstrapped worktree. A conflict is
   aborted and becomes a terminal failure. A clean rebase gets a new immutable
-  attempt ref and reruns the repository floor against the rebased tree.
+  attempt ref and reruns the repository floor against the rebased tree, plus
+  every declared surface gate whose surface the commits it rebased over
+  touched (BUG-205, below).
 - The process then acquires the repository delivery lock for only the final
   fetch, ancestor check, and non-force `HEAD:master` push.
 - If another writer wins that final race, the lock is released and the same
@@ -390,6 +392,31 @@ id is at least one past the highest on origin's `master` (read into
 `FETCH_HEAD`, never the shared ref) and in every attempt still in the queue,
 so a missing or bypassed counter cannot hand out a taken id. The roadmap parse
 test, which allows zero warnings, still refuses a duplicate backlog heading.
+
+### Declared surface gates re-run when their surface moved
+
+Before BUG-205 the head's re-check never re-ran a declared gate. Ticket 466
+integrated with gate evidence from its pre-rebase tree although `698c1e79`, the
+landing it rebased over, changed `workspace-client.tsx` and the connected-fleet
+bridge: four of its thirteen declared gates owned those files, and none saw the
+combination that integrated.
+
+Now, after each head rebase, `surfaceGateRecheck` in
+`scripts/lib/delivery-policy.mjs` intersects each declared gate's
+`SURFACE_GATES` match set with the paths changed from the ticket's last
+verified base to the new one. A gate that intersects re-runs on the rebased
+tree inside the same re-check, on the head's reserved machine slot. A gate that
+does not keeps its pre-rebase evidence, because nothing it owns moved.
+Undeclared gates are not added. The landing prints each verdict, records a
+`gate_recheck` metric and a `gateRechecks` entry on the ticket, and ends its
+status line with `gates=rerun:<gate>,stood:<gate>`.
+
+A re-run gate uses the same environment as the candidate run, so a gate that
+needs a dev server needs it until the ticket integrates: keep
+`pnpm dev -p <port>` serving (`EXAWATT_DEV_IDLE_MINUTES=0` stops an idle one
+from exiting while the ticket waits) and `EXA_BASE` set. A server that has gone
+fails the ticket, naming the gate, the range and paths that forced the re-run,
+and `EXA_BASE`; nothing skips it silently.
 
 ### Conflicts are found while a ticket waits
 
@@ -477,7 +504,10 @@ Success output distinguishes:
 - `public=published|pending|refused`: what the public projection did. The field
   is absent entirely when no public remote is configured, which is the default;
 - `held=public-latch:<m>`: how long the head held on a latched publication
-  before it continued. Absent when it did not hold.
+  before it continued. Absent when it did not hold;
+- `gates=rerun:<gate>,stood:<gate>`: after a head rebase, which declared
+  surface gates re-ran on the rebased tree and whose pre-rebase evidence
+  stood. Absent when the head did not rebase or declared no gate.
 
 ## Batched hosted CI
 
@@ -620,6 +650,7 @@ contributor's own commit is what the projector publishes.
 | `actions_run`                                                                                                 | run ID/SHA, conclusion, elapsed billable-minute evidence                                                                                                                                                      |
 | `public_projection`                                                                                           | projection state, private/public SHA pair, duration, and when it did not publish the failure class (`deterministic`/`transient`) and the unrenderable private commit, file and check                         |
 | `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
+| `gate_recheck`                                                                                                | a head rebase with declared surface gates: ticket, old and new base, the gates that re-ran with the upstream paths on their surface, and the gates whose evidence stood |
 | `probe_conflict`                                                                                              | `phase` (`candidate` before the floor, `queued` while waiting), ticket, the `origin/master` it replayed onto, the first conflicting commit, the paths, and for a queued ticket how long it had waited |
 | `queue_hold` / `queue_hold_released`                                                                          | the head held on a latched publication: ticket, `failure` class and the `publicLatch` record; on release the `outcome` (`released`/`expired`) and `heldMs`. A failed ticket's `queue_terminal` carries `publicLatch` and `queueHold` |
 
@@ -647,6 +678,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                                                                                |
 | A rebase or probe prints `[exawatt-append] ... both sides introduce <id>` | Two changes took the same id. Renumber yours with `pnpm id:next <kind>`, update every reference, and land again. |
 | A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the floor (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
+| A landing fails with `surface gate <gate> re-ran on the rebased tree` | The commits it rebased over touched that gate's surface, and the gate failed on the combination. If the output says no dev server answered, restart `pnpm dev -p <port>` with `EXAWATT_DEV_IDLE_MINUTES=0` and land again; otherwise the combination broke, so rebase, reproduce the gate, and fix it. |
 | Automatic rebase conflicts                                       | The rebase is aborted and the ticket is terminal `failed`. Fetch/rebase the author branch normally, resolve and verify it, commit if needed, then submit a new ticket. The failed attempt ref remains evidence.                                                   |
 | Queue head has a live PID and stale heartbeat                    | Wait and inspect machine load/process health. Never delete its ticket or lock. If the operator establishes that it is irrecoverably wedged, terminate that exact PID; the next waiter will reconcile it.                                                          |
 | Queue head owner is dead                                         | No manual mutation is needed. The next waiter/lander claims a new epoch, checks remote reachability, and records exactly one terminal result.                                                                                                                     |
@@ -725,7 +757,8 @@ verification, or a live owner's ticket.
   `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
   `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
   `scripts/queue-hold.test.mjs`, `scripts/conflict-probe.test.mjs`, and
-  `scripts/append-merge.test.mjs`, and `scripts/queue-head-slot.test.mjs` (with
+  `scripts/append-merge.test.mjs`, `scripts/queue-head-slot.test.mjs`, and
+  `scripts/gate-recheck.test.mjs` (with
   `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.

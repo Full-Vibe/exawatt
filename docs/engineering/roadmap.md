@@ -2440,6 +2440,21 @@ nothing else may take it, and each floor check records its slot wait. Proven
 in `scripts/queue-head-slot.test.mjs` and `scripts/machine-slots.test.mjs`.
 [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-205 A head rebase kept gate evidence from the pre-rebase tree
+
+Status: done · ENG-022 · found 2026-09-24 by ticket 466; resolved 2026-09-24.
+
+After a queue-head rebase `agent:land` re-ran only the repository floor, never
+a declared surface gate. Ticket 466 rebased over `698c1e79`, which changed
+`workspace-client.tsx` and the connected-fleet bridge, and integrated with all
+13 declared gates' evidence from before it. Now each declared gate whose
+`SURFACE_GATES` match set intersects the paths rebased over re-runs on the
+rebased tree, on the head's reserved slot; the others' evidence stands, and the
+status line and ticket say which. A gate whose dev server has gone fails the
+ticket, naming the gate and `EXA_BASE`. Replayed on 466: four gates re-run.
+Proven in `scripts/gate-recheck.test.mjs`.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

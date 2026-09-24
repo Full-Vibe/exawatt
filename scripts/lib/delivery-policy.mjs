@@ -441,6 +441,37 @@ export function missingSurfaceGates(changedPaths, declared = []) {
   });
 }
 
+/**
+ * Which declared surface gates a queue-head rebase must re-run (BUG-205).
+ *
+ * The head re-runs the repository floor on its rebased tree, and before this
+ * it never re-ran a declared gate: ticket 466's gate evidence came from its
+ * pre-rebase tree although `698c1e79`, the landing it rebased over, changed
+ * `workspace-client.tsx` on the surface of five of the gates it declared. A
+ * gate can pass before a colliding change and never see the combination that
+ * integrates.
+ *
+ * A declared gate re-runs when the commits rebased over (`upstreamPaths`,
+ * old base to new base) touch its surface; otherwise its pre-rebase evidence
+ * stands, because nothing it owns moved under it. Undeclared gates are not
+ * added: the ticket's own paths decided what it owes, and a surface only the
+ * upstream change touched was that change's to prove.
+ */
+export function surfaceGateRecheck(declared, upstreamPaths) {
+  const declaredGates = new Set(declared);
+  const paths = [...new Set(upstreamPaths)];
+  const rerun = [];
+  const stood = [];
+  for (const entry of SURFACE_GATES) {
+    if (!declaredGates.has(entry.gate)) continue;
+    const touched = paths.filter(entry.match).sort();
+    if (touched.length > 0) rerun.push({ gate: entry.gate, paths: touched });
+    else stood.push(entry.gate);
+  }
+  rerun.sort((left, right) => left.gate.localeCompare(right.gate));
+  return { rerun, stood: stood.sort() };
+}
+
 /** Gates this change would owe if their scripts were green. Announced so a
  *  quarantine cannot quietly become "this surface needs no evidence". */
 export function quarantinedSurfaceGates(changedPaths) {
@@ -1035,7 +1066,11 @@ export async function runDeliveryChecks(
       };
       if (outcome.status === 'failed') {
         await onResult(result);
-        throw new Error(outcome.message);
+        throw new Error(
+          check.failureHint
+            ? `${outcome.message}\n${check.failureHint}`
+            : outcome.message
+        );
       }
       evidence.push(result);
       await onResult(result);

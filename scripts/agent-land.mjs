@@ -26,6 +26,7 @@ import {
   missingSurfaceGates,
   quarantinedSurfaceGates,
   surfaceGateMessage,
+  surfaceGateRecheck,
   runDeliveryChecks,
 } from './lib/delivery-policy.mjs';
 import {
@@ -697,6 +698,9 @@ async function landThroughQueue({
 
   const latchPolicy = publicLatchHoldPolicy();
   let publicHeldMs = 0;
+  // Declared surface gates across this ticket's head rebases (BUG-205).
+  const gatesRerun = new Set();
+  const gatesStood = new Set();
   // BUG-202: while it waits, the ticket replays itself onto every new
   // origin/master in memory, and leaves the queue as soon as the head's
   // rebase would conflict instead of when it gets there.
@@ -921,6 +925,49 @@ async function landThroughQueue({
         await pushAttempt(root, ref);
         const rebasedFiles = await changedPaths(root, remoteBase);
         const rebaseChecks = lane.checksFor(rebasedFiles);
+        // BUG-205: a declared surface gate re-runs on the rebased tree when
+        // the commits rebased over touched its surface, on the head's
+        // reserved slot with the rest of this re-check; otherwise its
+        // pre-rebase evidence stands, and the ticket says which.
+        const fromBase = ticket.baseSha;
+        const gateRecheck = surfaceGateRecheck(
+          options.verify,
+          (await git(root, 'diff', '--name-only', fromBase, remoteBase))
+            .split('\n')
+            .filter(Boolean)
+        );
+        const declaresGates =
+          gateRecheck.rerun.length + gateRecheck.stood.length > 0;
+        if (declaresGates) {
+          const range = `${fromBase.slice(0, 12)}..${remoteBase.slice(0, 12)}`;
+          for (const { gate, paths } of gateRecheck.rerun) {
+            console.log(
+              `[agent-land] surface gate ${gate} re-runs on the rebased tree: ${range} changed ${paths.join(', ')}`
+            );
+            rebaseChecks.push({
+              id: gate,
+              command: 'pnpm',
+              args: ['run', gate],
+              failureHint:
+                `surface gate ${gate} re-ran on the rebased tree because ${range} changed ${paths.join(', ')} on its surface, and failed on that combination. ` +
+                `If it needs a dev server or a packaged build, keep it serving for the whole landing (EXA_BASE=${process.env.EXA_BASE ?? '(unset)'}; EXAWATT_DEV_IDLE_MINUTES=0 stops an idle dev server from exiting while the ticket waits).`,
+            });
+            gatesRerun.add(gate);
+          }
+          for (const gate of gateRecheck.stood) {
+            console.log(
+              `[agent-land] surface gate ${gate}: pre-rebase evidence stands; ${range} changed nothing on its surface`
+            );
+          }
+          await appendDeliveryMetric(root, 'gate_recheck', {
+            ticketId: ticket.id,
+            fromBase,
+            toBase: remoteBase,
+            rerun: gateRecheck.rerun,
+            stood: gateRecheck.stood,
+          });
+          for (const gate of gateRecheck.stood) gatesStood.add(gate);
+        }
         const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
           queueHead: true,
@@ -940,6 +987,16 @@ async function landThroughQueue({
           attemptNumber,
           checks: rebaseEvidence,
           status: 'integrating',
+          ...(declaresGates
+            ? {
+                gateRecheck: {
+                  fromBase,
+                  toBase: remoteBase,
+                  rerun: gateRecheck.rerun.map(entry => entry.gate),
+                  stood: gateRecheck.stood,
+                },
+              }
+            : {}),
         });
       }
 
@@ -1156,8 +1213,18 @@ async function landThroughQueue({
   const laneState = lane.kind === 'docs' ? ' lane=docs' : '';
   const heldState =
     publicHeldMs > 0 ? ` held=public-latch:${minutes(publicHeldMs)}` : '';
+  // Absent when the head did not rebase or declared no gate; otherwise which
+  // gates re-ran on the rebased tree and whose pre-rebase evidence stood.
+  const stoodOnly = [...gatesStood].filter(gate => !gatesRerun.has(gate));
+  const gateState =
+    gatesRerun.size + stoodOnly.length === 0
+      ? ''
+      : ` gates=${[
+          ...[...gatesRerun].map(gate => `rerun:${gate}`),
+          ...stoodOnly.map(gate => `stood:${gate}`),
+        ].join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${laneState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {

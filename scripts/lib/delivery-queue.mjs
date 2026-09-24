@@ -222,6 +222,12 @@ export async function updateAttempt(root, ticket, attempt) {
       current.attemptRefs.push(attempt.attemptRef);
       current.attemptNumber = attempt.attemptNumber;
       current.checks = [...current.checks, ...(attempt.checks ?? [])];
+      if (attempt.gateRecheck) {
+        current.gateRechecks = [
+          ...(current.gateRechecks ?? []),
+          attempt.gateRecheck,
+        ];
+      }
       current.owner.heartbeatAt = new Date().toISOString();
       return current;
     }

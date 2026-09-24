@@ -65,7 +65,10 @@ export function commit(root, message, files = null) {
   return git(root, ['rev-parse', 'HEAD']);
 }
 
-export function createQueueFixture(prefix = 'exawatt-queue-') {
+export function createQueueFixture(
+  prefix = 'exawatt-queue-',
+  { scripts = {} } = {}
+) {
   const parent = mkdtempSync(path.join(tmpdir(), prefix));
   const at = name => path.join(parent, name);
   const origin = at('origin.git');
@@ -78,7 +81,11 @@ export function createQueueFixture(prefix = 'exawatt-queue-') {
     main,
     'package.json',
     `${JSON.stringify(
-      { name: 'queue-fixture', private: true, scripts: FLOOR_SCRIPTS },
+      {
+        name: 'queue-fixture',
+        private: true,
+        scripts: { ...FLOOR_SCRIPTS, ...scripts },
+      },
       null,
       2
     )}\n`
@@ -93,7 +100,25 @@ export function createQueueFixture(prefix = 'exawatt-queue-') {
 
   const bin = at('bin');
   mkdirSync(bin, { recursive: true });
-  writeFileSync(path.join(bin, 'pnpm'), '#!/bin/sh\nexit 0\n');
+  // A pnpm that exits zero. Optionally it logs every invocation, and fails an
+  // `eval:` gate when the file standing in for its dev server is gone.
+  writeFileSync(
+    path.join(bin, 'pnpm'),
+    [
+      '#!/bin/sh',
+      '[ -n "$FIXTURE_PNPM_LOG" ] && echo "$*" >> "$FIXTURE_PNPM_LOG"',
+      'case "$*" in',
+      '  "run eval:"*)',
+      '    if [ -n "$FIXTURE_DEV_SERVER" ] && [ ! -f "$FIXTURE_DEV_SERVER" ]; then',
+      '      echo "no dev server answering at ${EXA_BASE:-(unset)}" >&2',
+      '      exit 1',
+      '    fi',
+      '    ;;',
+      'esac',
+      'exit 0',
+      '',
+    ].join('\n')
+  );
   chmodSync(path.join(bin, 'pnpm'), 0o755);
   const env = { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
 

@@ -301,6 +301,28 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-205: the stacked landing, ticket 466 (`516dccb9`),
+  showed that a head rebase re-ran the repository floor and never a declared
+  surface gate, so gate evidence could describe a tree that never integrated.
+  `surfaceGateRecheck` intersects each declared gate's `SURFACE_GATES` match
+  set with `git diff --name-only <last verified base> <new base>`; an
+  intersecting gate joins the head's rebase re-check (same environment,
+  reserved slot), and the rest keep their pre-rebase evidence. Verdicts go to
+  the landing output, a `gate_recheck` metric, the ticket's `gateRechecks`, and
+  `gates=rerun:...,stood:...` on the status line. A re-run gate's failure
+  appends the range and paths that forced it plus `EXA_BASE`, so a dev server
+  that idled out while the ticket waited is named, not skipped. Replayed on
+  466's real rebase (`8918c2a6..698c1e79`, 25 paths): of 13 declared gates,
+  `eval:electron:connected-fleet`, `eval:electron:lifecycle`,
+  `eval:workspace:chrome` and `eval:workspace:split` would have re-run
+  (`workspace-client.tsx`, and for connected-fleet the gateway, preload and
+  remote-agent files); nine stood. `scripts/gate-recheck.test.mjs` drives real
+  queues: an upstream change on a declared gate's surface re-runs that gate at
+  the head while another declared gate stands; an unrelated upstream change
+  re-runs neither and reports both as stood; and a gate whose dev server went
+  away while its ticket waited fails the ticket naming the gate and
+  `EXA_BASE`. Six mutations, all killed.
+
 - 2026-09-24, BUG-204: the fifth change reserves one machine slot for the
   queue head. Everyone behind the head waits on its rebase re-check, and in
   September the head waited for a slot in 9 of 36 rebases, 30 minutes in
