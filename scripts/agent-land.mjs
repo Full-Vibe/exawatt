@@ -50,6 +50,7 @@ import {
   probeConflictMessage,
   probeRebase,
 } from './lib/conflict-probe.mjs';
+import { reinstallWhenStale } from './lib/install-freshness.mjs';
 import {
   describePublicLatch,
   holdWhilePublicLatched,
@@ -541,6 +542,9 @@ async function main() {
       close: checkout.close,
       checksFor: changed => classifyDocsChecks(changed),
       runChecks: runDocsLaneChecks,
+      // The docs checkout borrows the invoking checkout's node_modules through
+      // links, which may be the shared master's; it never installs into them.
+      refreshInstall: async () => null,
     };
   } else {
     // Surface gates are declared, not run here: they need a dev server the
@@ -580,6 +584,7 @@ async function main() {
       close: async () => {},
       checksFor: (changed, extras) => classifyDeliveryPolicy(changed, extras),
       runChecks: runDeliveryChecks,
+      refreshInstall: () => reinstallWhenStale(invokingRoot, { run }),
     };
   }
   try {
@@ -613,6 +618,36 @@ async function landThroughQueue({
   const recordFloorCheck = extra => async result => {
     if (result.status === 'flaked') flakes.push(result);
     await appendDeliveryMetric(root, 'floor_check', { ...extra, ...result });
+  };
+
+  // BUG-219: every floor run first makes node_modules the installed form of
+  // the tree it is about to check. A rebase that brings a lockfile change, or
+  // a worktree submitted with a stale install, otherwise fails a check on
+  // dependencies nobody committed. Each reinstall is recorded and named on
+  // the STATUS line, so a landing that had to install never reads as clean.
+  const reinstalls = [];
+  const refreshInstall = async (phase, extra) => {
+    let refreshed;
+    try {
+      refreshed = await lane.refreshInstall();
+    } catch (error) {
+      await appendDeliveryMetric(root, 'install_refresh_failed', {
+        ...extra,
+        phase,
+        reason: error.message.split('\n')[0],
+      });
+      throw error;
+    }
+    if (!refreshed) return;
+    reinstalls.push(phase);
+    console.log(
+      `[agent-land] ${phase}: node_modules was stale (${refreshed.reason}); reinstalled from the lockfile before the floor${refreshed.nodePtyRebuilt ? ', and rebuilt node-pty for Electron' : ''}`
+    );
+    await appendDeliveryMetric(root, 'install_refreshed', {
+      ...extra,
+      phase,
+      ...refreshed,
+    });
   };
 
   // BUG-202: the head's rebase verdict, asked before the floor. In September
@@ -651,6 +686,10 @@ async function landThroughQueue({
     }
   }
 
+  // Before admission: a stale install of the submitter's own lockfile is
+  // repaired here, or refused with its remedy, rather than failing a check
+  // minutes into the floor.
+  await refreshInstall('candidate', { candidateSha });
   const checks = lane.checksFor(files, options.verify);
   const evidence = await lane.runChecks(root, checks, {
     phase: 'candidate',
@@ -968,6 +1007,12 @@ async function landThroughQueue({
           });
           for (const gate of gateRecheck.stood) gatesStood.add(gate);
         }
+        await refreshInstall('rebase', {
+          ticketId: ticket.id,
+          candidateSha: rebasedSha,
+          fromBase,
+          toBase: remoteBase,
+        });
         const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
           queueHead: true,
@@ -1223,8 +1268,12 @@ async function landThroughQueue({
           ...[...gatesRerun].map(gate => `rerun:${gate}`),
           ...stoodOnly.map(gate => `stood:${gate}`),
         ].join(',')}`;
+  // Absent when node_modules already matched every tree the floor checked;
+  // otherwise each floor phase that had to reinstall first (BUG-219).
+  const reinstalledState =
+    reinstalls.length === 0 ? '' : ` reinstalled=${reinstalls.join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${laneState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {

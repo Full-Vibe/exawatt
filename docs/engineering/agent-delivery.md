@@ -353,7 +353,8 @@ When its ticket becomes head, the author process fetches `origin/master`.
   aborted and becomes a terminal failure. A clean rebase gets a new immutable
   attempt ref and reruns the repository floor against the rebased tree, plus
   every declared surface gate whose surface the commits it rebased over
-  touched (BUG-205, below).
+  touched (BUG-205, below). When the rebase left `node_modules` behind the
+  lockfile, it reinstalls before that re-check (BUG-219, below).
 - The process then acquires the repository delivery lock for only the final
   fetch, ancestor check, and non-force `HEAD:master` push.
 - If another writer wins that final race, the lock is released and the same
@@ -431,6 +432,32 @@ needs a dev server needs it until the ticket integrates: keep
 from exiting while the ticket waits) and `EXA_BASE` set. A server that has gone
 fails the ticket, naming the gate, the range and paths that forced the re-run,
 and `EXA_BASE`; nothing skips it silently.
+
+### A floor never checks a tree nobody installed
+
+Ticket 476's head rebase brought in `e3115004`, a jsdom lockfile bump. Nothing
+reinstalled, so its re-check ran `test:agent-delivery` against the pre-bump
+`node_modules` and failed on a combination nobody committed; the same change
+landed on its second ticket untouched.
+
+Now every worktree-lane floor run, the candidate's before admission and the
+head's after each rebase, first asks `scripts/lib/install-freshness.mjs`
+whether `node_modules/.pnpm/lock.yaml` is the checked-out `pnpm-lock.yaml`.
+When it is not, `reinstallWhenStale` runs
+`pnpm install --frozen-lockfile --prefer-offline` in that worktree, believes
+it only when the comparison then agrees, and rebuilds node-pty for Electron if
+the install removed a binding the worktree had. The lockfile is the whole
+contract: workspace `packages/*` links are its `importers` and the patched
+`cmdk` is its `patchedDependencies` hash, so one comparison covers all three.
+Each reinstall prints a line, records an `install_refreshed` metric, and adds
+`reinstalled=<phase>,...` to the status line.
+
+A frozen install that fails means the committed lockfile does not satisfy
+`package.json`. At admission that stops the landing before the floor and
+before a ticket exists, naming the remedy; at the head it fails the ticket.
+Both record `install_refresh_failed`. The docs lane never installs: its
+temporary checkout borrows the invoking checkout's `node_modules` through
+links, which may be the shared master's.
 
 ### Conflicts are found while a ticket waits
 
@@ -665,6 +692,7 @@ contributor's own commit is what the projector publishes.
 | `public_projection`                                                                                           | projection state, private/public SHA pair, duration, and when it did not publish the failure class (`deterministic`/`transient`) and the unrenderable private commit, file and check                         |
 | `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
 | `gate_recheck`                                                                                                | a head rebase with declared surface gates: ticket, old and new base, the gates that re-ran with the upstream paths on their surface, and the gates whose evidence stood |
+| `install_refreshed` / `install_refresh_failed`                                                                 | a floor run found `node_modules` stale against the lockfile: `phase` (`candidate`/`rebase`), ticket, SHA, what was stale, install duration, whether node-pty was rebuilt; or the install's failure |
 | `probe_conflict`                                                                                              | `phase` (`candidate` before the floor, `queued` while waiting), ticket, the `origin/master` it replayed onto, the first conflicting commit, the paths, and for a queued ticket how long it had waited |
 | `queue_hold` / `queue_hold_released`                                                                          | the head held on a latched publication: ticket, `failure` class and the `publicLatch` record; on release the `outcome` (`released`/`expired`) and `heldMs`. A failed ticket's `queue_terminal` carries `publicLatch` and `queueHold` |
 
@@ -690,6 +718,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Symptom                                                          | Safe response                                                                                                                                                                                                                                                     |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                                                                                |
+| A landing stops with `pnpm install --frozen-lockfile --prefer-offline` failed | The committed `pnpm-lock.yaml` does not satisfy `package.json`. Run `pnpm install`, commit the lockfile it writes, and land again. At admission no ticket was taken. |
 | A rebase or probe prints `[exawatt-append] ... both sides introduce <id>` | Two changes took the same id. Renumber yours with `pnpm id:next <kind>`, update every reference, and land again. |
 | A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the floor (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
 | A landing fails with `surface gate <gate> re-ran on the rebased tree` | The commits it rebased over touched that gate's surface, and the gate failed on the combination. If the output says no dev server answered, restart `pnpm dev -p <port>` with `EXAWATT_DEV_IDLE_MINUTES=0` and land again; otherwise the combination broke, so rebase, reproduce the gate, and fix it. |
@@ -771,8 +800,8 @@ verification, or a live owner's ticket.
   `scripts/public-delivery.test.mjs`, `scripts/contribution-pull.test.mjs`,
   `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
   `scripts/queue-hold.test.mjs`, `scripts/conflict-probe.test.mjs`, and
-  `scripts/append-merge.test.mjs`, `scripts/queue-head-slot.test.mjs`, and
-  `scripts/gate-recheck.test.mjs` (with
+  `scripts/append-merge.test.mjs`, `scripts/queue-head-slot.test.mjs`,
+  `scripts/gate-recheck.test.mjs`, and `scripts/landing-reinstall.test.mjs` (with
   `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.

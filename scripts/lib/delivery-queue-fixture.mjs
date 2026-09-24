@@ -67,7 +67,7 @@ export function commit(root, message, files = null) {
 
 export function createQueueFixture(
   prefix = 'exawatt-queue-',
-  { scripts = {} } = {}
+  { scripts = {}, files = {} } = {}
 ) {
   const parent = mkdtempSync(path.join(tmpdir(), prefix));
   const at = name => path.join(parent, name);
@@ -93,6 +93,9 @@ export function createQueueFixture(
   write(main, 'scripts/recipe-renderers.test.mjs', RECIPE_RENDERERS_STAND_IN);
   write(main, 'docs/guide.md', '# Guide\n\nFirst paragraph.\n');
   write(main, 'src/app.ts', 'export const app = 1;\n');
+  for (const [file, contents] of Object.entries(files)) {
+    write(main, file, contents);
+  }
   commit(main, 'root');
   git(main, ['push', '--quiet', '-u', 'origin', 'master']);
   // This tree's own versioned hook, as `pnpm hooks:install` installs it.
@@ -102,11 +105,33 @@ export function createQueueFixture(
   mkdirSync(bin, { recursive: true });
   // A pnpm that exits zero. Optionally it logs every invocation, and fails an
   // `eval:` gate when the file standing in for its dev server is gone.
+  //
+  // `install` does what pnpm does to the one file install freshness reads: it
+  // copies the lockfile to `node_modules/.pnpm/lock.yaml` (or fails, standing
+  // in for a lockfile that does not satisfy package.json). With
+  // FIXTURE_REQUIRE_FRESH_INSTALL set, every other command fails when that
+  // copy differs from the lockfile, standing in for the ERR_MODULE_NOT_FOUND
+  // a check meets on a tree nobody installed (BUG-219).
   writeFileSync(
     path.join(bin, 'pnpm'),
     [
       '#!/bin/sh',
       '[ -n "$FIXTURE_PNPM_LOG" ] && echo "$*" >> "$FIXTURE_PNPM_LOG"',
+      'case "$*" in',
+      '  "install"*)',
+      '    if [ -n "$FIXTURE_INSTALL_FAILS" ]; then',
+      '      echo "ERR_PNPM_OUTDATED_LOCKFILE stand-in" >&2',
+      '      exit 1',
+      '    fi',
+      '    mkdir -p node_modules/.pnpm && cp pnpm-lock.yaml node_modules/.pnpm/lock.yaml',
+      '    exit $?',
+      '    ;;',
+      'esac',
+      'if [ -n "$FIXTURE_REQUIRE_FRESH_INSTALL" ] && [ -f pnpm-lock.yaml ] &&',
+      '  ! cmp -s pnpm-lock.yaml node_modules/.pnpm/lock.yaml; then',
+      '  echo "ERR_MODULE_NOT_FOUND stand-in: node_modules is not the installed form of pnpm-lock.yaml" >&2',
+      '  exit 1',
+      'fi',
       'case "$*" in',
       '  "run eval:"*)',
       '    if [ -n "$FIXTURE_DEV_SERVER" ] && [ ! -f "$FIXTURE_DEV_SERVER" ]; then',
