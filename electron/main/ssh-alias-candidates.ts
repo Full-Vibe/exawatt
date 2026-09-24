@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseSshHostAliases, type SshHostAlias } from '@exawatt/core';
+import { parseSshHostAliases } from '@exawatt/core';
+import type { SshAliasCandidates } from '@exawatt/core/desktop-bridge';
 
 /**
  * Passive SSH alias enumeration (ENG-010 C1).
@@ -39,14 +40,6 @@ export interface SshConfigLocations {
 const MAX_INCLUDE_DEPTH = 8;
 const MAX_FILES = 64;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
-
-export interface SshAliasCandidates {
-  aliases: readonly SshHostAlias[];
-  /** True when a config file exists at all. False means nothing to offer. */
-  configPresent: boolean;
-  /** True when some Include target could not be read. */
-  incompleteIncludes: boolean;
-}
 
 function readTextFile(file: string): string | null {
   try {

@@ -8,21 +8,13 @@ import {
   loadPackagedDistribution,
   type ResolvedDistribution,
 } from './distribution';
+import type { BuildInfo } from '@exawatt/core/desktop-bridge';
 
 /**
  * What this process is: the build it came from, the distribution contract it
  * was built for, and the identity that contract resolves to. Read once, at
  * the top of main, before anything else can depend on a guess.
  */
-
-export interface BuildInfo {
-  sha: string;
-  branch: string;
-  builtAt: string;
-  delivery: 'dogfood' | 'signed';
-  distributionDigest: string;
-  rendererCompositionDigest: string | null;
-}
 
 interface BuildIdentity {
   buildInfo: BuildInfo;

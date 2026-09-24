@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
-import { defaultShell, type PtySessionInfo } from '../pty/session-manager';
+import { defaultShell } from '../pty/session-manager';
 import { planLoginShell, shellQuote } from '../pty/login-shell';
 import type { DelegationReportSink } from './delegation-monitor';
 import {
@@ -24,6 +24,7 @@ import {
   type DelegationObservations,
   type DelegationObservation,
 } from './delegation-observation';
+import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 
 const MINIMUM_PROTOCOL_VERSION = [0, 147, 0] as const;
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
@@ -801,7 +802,7 @@ interface CodexDelegationVerdict {
 }
 
 interface SessionManagerLike extends EventEmitter {
-  list(): PtySessionInfo[];
+  list(): PtySessionRecord[];
 }
 
 function childDescription(thread: CodexChildThread): string | null {
@@ -902,7 +903,7 @@ export class CodexDelegationObserver {
   attach(manager: SessionManagerLike, sink: DelegationReportSink): void {
     this.sink = sink;
     for (const session of manager.list()) this.observe(session);
-    manager.on('session', (session: PtySessionInfo) => this.observe(session));
+    manager.on('session', (session: PtySessionRecord) => this.observe(session));
     manager.on(
       'identity',
       (id: string, _durableSessionId: string, harnessSessionId: string) => {
@@ -913,7 +914,7 @@ export class CodexDelegationObserver {
     manager.on('exit', (id: string) => this.drop(id));
   }
 
-  observe(session: PtySessionInfo): void {
+  observe(session: PtySessionRecord): void {
     if (
       session.harness !== 'codex' ||
       session.exited ||

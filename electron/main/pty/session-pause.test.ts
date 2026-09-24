@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSessionPauser } from './session-pause';
-import type { PtySessionInfo } from './session-manager';
+import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 
 function fixture() {
-  const sessions = new Map<string, PtySessionInfo>(
+  const sessions = new Map<string, PtySessionRecord>(
     ['one', 'two'].map(durableSessionId => [
       durableSessionId,
       {
@@ -12,7 +12,7 @@ function fixture() {
         harness: 'claude',
         exited: false,
         harnessSessionId: `conversation-${durableSessionId}`,
-      } as PtySessionInfo,
+      } as PtySessionRecord,
     ])
   );
   const active = new Set<string>();

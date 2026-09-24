@@ -1,4 +1,5 @@
 import { readJsonDocument, writeJsonFileAtomic } from '../atomic-json-file';
+import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
 /**
  * Recently-closed Session ledger (ENG-016 D23).
@@ -12,25 +13,6 @@ import { readJsonDocument, writeJsonFileAtomic } from '../atomic-json-file';
  *
  * Pure Node (no Electron imports) so it unit-tests directly.
  */
-
-export interface ClosedSessionEntry {
-  durableSessionId: string;
-  title: string;
-  /** Optional for v1 ledger compatibility; current writers preserve whether
-   * the title was the default identity or an explicit operator rename. */
-  titleKind?: 'default' | 'operator';
-  /** goal subtitle at close time (D21 durable goal) */
-  goal: string | null;
-  harness: string;
-  cwd: string;
-  projectDir: string;
-  projectName: string;
-  /** provider conversation id — exact resume works after reopen */
-  harnessSessionId: string | null;
-  /** the composer's stated task (re-anchors the summarizer on resume) */
-  initialTask: string | null;
-  closedAt: number;
-}
 
 export const CLOSED_SESSION_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 

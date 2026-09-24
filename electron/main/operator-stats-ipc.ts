@@ -7,13 +7,13 @@ import {
   parseOperatorStatsSyncEvent,
   planOperatorStatsPublication,
   type ConsumptionSample,
-  type OperatorStatsPublicationCursor,
   type OperatorStatsPublicationPlan,
   type PublicRunUpload,
 } from '@exawatt/core';
 import type { DiagnosticRecorder } from './diagnostics-log';
 import { handleTrusted } from './ipc-security';
 import { recordOperatorStatsSync } from './settings-store';
+import type { OperatorStatsPlanRequest } from '@exawatt/core/desktop-bridge';
 
 export interface OperatorStatsConsumptionSource {
   /**
@@ -24,13 +24,6 @@ export interface OperatorStatsConsumptionSource {
     samples: ConsumptionSample[];
     completeSinceMs: number;
   }>;
-}
-
-export interface OperatorStatsPlanRequest {
-  /** The immutable first-consent instant. */
-  since: string;
-  timezone: string;
-  cursor: OperatorStatsPublicationCursor | null;
 }
 
 function hash(value: string): string {

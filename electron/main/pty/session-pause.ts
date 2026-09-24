@@ -1,16 +1,11 @@
-import type { PtySessionInfo } from './session-manager';
-
-export interface SessionPauseResult {
-  durableSessionId: string;
-  status: 'paused' | 'already-paused' | 'unsupported' | 'failed';
-  error?: string;
-}
-export type SessionPauseBatchResult =
-  | { kind: 'needs-confirmation'; activeSessionIds: string[] }
-  | { kind: 'completed'; results: SessionPauseResult[] };
+import type {
+  PtySessionRecord,
+  SessionPauseBatchResult,
+  SessionPauseResult,
+} from '@exawatt/core/desktop-bridge';
 
 interface PausePorts {
-  session(durableSessionId: string): PtySessionInfo | undefined;
+  session(durableSessionId: string): PtySessionRecord | undefined;
   active(runtimeId: string): boolean;
   prepare(
     runtimeId: string

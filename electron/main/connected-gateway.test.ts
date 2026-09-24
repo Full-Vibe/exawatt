@@ -28,7 +28,6 @@ import {
   RESNAPSHOT_COALESCE_DELAY_MS,
   evidenceBasisForAdapter,
   type ConnectedGatewayClient,
-  type ConnectedGatewayPhase,
   type ConnectedGatewaySessionDeps,
 } from './connected-gateway';
 import type { GatewayIdentity } from './gateway-identity';
@@ -43,6 +42,7 @@ import type {
   SshTunnelFailure,
   SshTunnelFailureClass,
 } from './ssh-tunnel';
+import type { ConnectedGatewayPhase } from '@exawatt/core/desktop-bridge';
 
 /**
  * Contract tests for one configured source's read-only lifecycle (ENG-010 C1).

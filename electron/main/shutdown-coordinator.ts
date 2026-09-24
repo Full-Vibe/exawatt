@@ -1,15 +1,9 @@
+import type { ShutdownPhase } from '@exawatt/core/desktop-bridge';
 /** `restart` is an operator-initiated relaunch that is not carrying an update
  *  — today the remedy for incident 0001, where macOS stops vending Exawatt's
  *  accessibility element and window managers can no longer move the window.
  *  It takes the same checkpoint-and-rehydrate path as quit and update. */
 export type ShutdownIntent = 'quit' | 'update' | 'restart';
-export type ShutdownPhase =
-  | 'idle'
-  | 'confirming'
-  | 'checkpointing'
-  | 'stopping'
-  | 'finalizing';
-
 export interface LiveProcessCounts {
   agents: number;
   shells: number;

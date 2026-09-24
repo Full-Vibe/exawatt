@@ -7,37 +7,10 @@ import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
 } from './diagnostics-log';
-
-export type UpdaterDisabledReason =
-  | 'unsigned-delivery'
-  | 'not-packaged'
-  | 'test-run'
-  | 'no-feed-config';
-
-export type ProductUpdatePhase =
-  | 'idle'
-  | 'checking'
-  | 'available'
-  | 'downloading'
-  | 'downloaded'
-  | 'error';
-
-export interface ProductUpdateStatus {
-  phase: ProductUpdatePhase;
-  currentVersion: string;
-  availableVersion: string | null;
-  percent: number | null;
-  liveSessions: number;
-  error: string | null;
-  /** false when this build has no update channel at all (unsigned local
-   *  delivery, or a dev/test run). A user on such a build never sees an
-   *  update and never sees a failure; only this field says so. */
-  enabled: boolean;
-  /** why the channel is off, when it is. `null` while updates are live. */
-  disabledReason: UpdaterDisabledReason | null;
-  /** Absolute path to the JSONL a user can send back after a failed update. */
-  logPath: string | null;
-}
+import type {
+  ProductUpdateStatus,
+  UpdaterDisabledReason,
+} from '@exawatt/core/desktop-bridge';
 
 let status: ProductUpdateStatus = {
   phase: 'idle',

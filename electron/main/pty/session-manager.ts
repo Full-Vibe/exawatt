@@ -1,8 +1,5 @@
 import { EventEmitter } from 'events';
-import {
-  modelChangeResumeOptions,
-  type SessionModelChange,
-} from './session-model-change';
+import { modelChangeResumeOptions } from './session-model-change';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -26,8 +23,6 @@ import {
   listResumeCandidates,
   reconcileResumeIdentities as reconcilePersistedResumeIdentities,
   opencodeSessionAgent,
-  type ReconciledResumeIdentity,
-  type ResumeIdentityHint,
 } from './resume-candidates';
 import { ownerOfCodexCandidate } from './codex-identity-match';
 import { planLoginShell } from './login-shell';
@@ -43,6 +38,13 @@ import {
   SessionIdentityStore,
   type SessionIdentityRecord,
 } from './session-identity-store';
+import type {
+  PtyCreateOptions,
+  PtySessionRecord,
+  ReconciledResumeIdentity,
+  ResumeIdentityHint,
+  SessionModelChange,
+} from '@exawatt/core/desktop-bridge';
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_IDENTITY_TIMEOUT_MS = 20_000;
@@ -62,60 +64,6 @@ const OPENCODE_IDENTITY_TIMEOUT_MS = 20_000;
  */
 
 export type { AgentHarness, AgentPermissionMode, PtyHarness };
-
-export interface PtyCreateOptions {
-  harness: PtyHarness;
-  /** working directory (worktree) — defaults to the user's home */
-  cwd?: string;
-  cols?: number;
-  rows?: number;
-  /** display title; defaults to the harness name */
-  title?: string;
-  /** Exact provider conversation ID. Presence means resume that ID. */
-  resumeSessionId?: string;
-  /** Stable Exawatt Session identity; survives PTY process replacement. */
-  durableSessionId?: string;
-  /** Optional first user task for a newly-created interactive agent. */
-  initialPrompt?: string;
-  /** Goal statement carried across a resume for context summaries (D21).
-   *  Metadata only — never written to the process; a fresh create's
-   *  initialPrompt already doubles as the stated task. */
-  statedTask?: string;
-  /** Persisted goal subtitle re-seeded into the summarizer on resume (D21).
-   *  Metadata only — transported to the context summarizer, never here. */
-  restoredSubtitle?: string;
-  /** Source-agnostic launch policy translated to provider CLI flags. */
-  permissionMode?: AgentPermissionMode;
-  /** Model choice resolved by the source catalog and pinned for this launch. */
-  model?: string;
-  /** Reasoning effort resolved beside the model and pinned for this launch. */
-  effort?: string;
-}
-
-export interface PtySessionInfo {
-  id: string;
-  durableSessionId: string;
-  harness: PtyHarness;
-  title: string;
-  cwd: string;
-  /** directory-keyed Project/Project grouping (worktree-aware git root) */
-  projectDir: string;
-  projectName: string;
-  cols: number;
-  rows: number;
-  startedAt: number;
-  exited: boolean;
-  exitCode: number | null;
-  /** The signal that ended the process, by this platform's name for it. */
-  exitSignal: string | null;
-  /** last output timestamp (ENG-015 S2: live status in the switcher) */
-  lastDataAt: number;
-  /** Durable provider identity; unlike `id`, survives a new PTY process. */
-  harnessSessionId: string | null;
-  /** Requested at launch; native in-terminal changes may differ. */
-  launchModel?: string;
-  launchEffort?: string;
-}
 
 /** A signal number as this platform names it; numbering differs between
  *  macOS and Linux past the common few, so the name is resolved here. */
@@ -173,7 +121,7 @@ export async function defaultShell(): Promise<string> {
 interface Session {
   launchOptions: PtyCreateOptions;
   proc: pty.IPty;
-  info: PtySessionInfo;
+  info: PtySessionRecord;
   /** Real path used only for provider identity matching. Keep info.cwd as the
    * operator-entered path for display/persistence, but do not let macOS's
    * /var → /private/var alias make one launch look like two directories. */
@@ -304,14 +252,14 @@ export class PtySessionManager extends EventEmitter {
     this.acceptingCreates = true;
   }
 
-  async create(options: PtyCreateOptions): Promise<PtySessionInfo> {
+  async create(options: PtyCreateOptions): Promise<PtySessionRecord> {
     return this.createForOperation(options);
   }
 
   private async createForOperation(
     options: PtyCreateOptions,
     ownedIdentity?: string
-  ): Promise<PtySessionInfo> {
+  ): Promise<PtySessionRecord> {
     if (!this.acceptingCreates) {
       throw new Error(`${this.productName} is stopping Sessions`);
     }
@@ -341,7 +289,7 @@ export class PtySessionManager extends EventEmitter {
   private async createUnlocked(
     options: PtyCreateOptions,
     durableSessionId: string
-  ): Promise<PtySessionInfo> {
+  ): Promise<PtySessionRecord> {
     const cwd = expandTilde((options.cwd || '').trim()) || os.homedir();
     // fail loudly BEFORE spawning: node-pty with a bad cwd dies instantly
     // with no output, which reads as "the harness is broken"
@@ -492,7 +440,7 @@ export class PtySessionManager extends EventEmitter {
       throw error;
     }
 
-    const info: PtySessionInfo = {
+    const info: PtySessionRecord = {
       id,
       durableSessionId,
       harness: options.harness,
@@ -607,7 +555,7 @@ export class PtySessionManager extends EventEmitter {
     return { ...info };
   }
 
-  private async rememberIdentity(info: PtySessionInfo): Promise<void> {
+  private async rememberIdentity(info: PtySessionRecord): Promise<void> {
     if (info.harness === 'shell' || !info.harnessSessionId) return;
     try {
       await this.identities?.remember({
@@ -625,7 +573,7 @@ export class PtySessionManager extends EventEmitter {
   }
 
   private async captureCodexIdentity(
-    info: PtySessionInfo,
+    info: PtySessionRecord,
     before: Set<string>,
     submittedAt = info.startedAt
   ): Promise<void> {
@@ -1116,7 +1064,7 @@ export class PtySessionManager extends EventEmitter {
   async changeModel(
     id: string,
     choice: SessionModelChange
-  ): Promise<PtySessionInfo> {
+  ): Promise<PtySessionRecord> {
     return this.withSessionOperation(id, async () => {
       const session = this.sessions.get(id);
       if (!session || session.info.exited)
@@ -1277,12 +1225,12 @@ export class PtySessionManager extends EventEmitter {
     if (window) this.history?.queue(durableId, window, Date.now());
   }
 
-  list(): PtySessionInfo[] {
+  list(): PtySessionRecord[] {
     return Array.from(this.sessions.values(), s => ({ ...s.info }));
   }
 
   /** layout persistence source (W0.2): everything EXCEPT the live process */
-  serialize(): PtySessionInfo[] {
+  serialize(): PtySessionRecord[] {
     return this.list();
   }
 

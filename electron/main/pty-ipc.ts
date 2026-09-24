@@ -2,13 +2,10 @@ import { createSessionPauser } from './pty/session-pause';
 import { readSessionCloneContext } from './pty/session-clone-context';
 import { BrowserWindow, Notification, app, nativeTheme, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
-import {
-  createSessionModelChanger,
-  type SessionModelChange,
-} from './pty/session-model-change';
+import { createSessionModelChanger } from './pty/session-model-change';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
-import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
+import { defaultShell } from './pty/session-manager';
 import { listAgentModels, setAgentModelCatalogCache } from './pty/agent-models';
 import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
 import {
@@ -16,7 +13,7 @@ import {
   inspectAgentSources,
   inspectOpencodeLaunchEnvironment,
 } from './pty/agent-source-registry';
-import { ContextSummarizer, type GoalVisual } from './pty/context-summarizer';
+import { ContextSummarizer } from './pty/context-summarizer';
 import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
@@ -26,10 +23,7 @@ import { harnessEventChannel } from './harness-events/channel';
 import { delegationMonitor } from './harness-events/delegation-monitor';
 import { codexDelegationObserver } from './harness-events/codex-app-server';
 import { wireReportedTurnTruth } from './harness-events/turn-truth';
-import {
-  ClosedSessionLedger,
-  type ClosedSessionEntry,
-} from './pty/closed-session-ledger';
+import { ClosedSessionLedger } from './pty/closed-session-ledger';
 import { createWorktree, expandTilde } from './pty/project-resolve';
 import {
   loadWorkspace,
@@ -60,7 +54,6 @@ import {
 } from './settings-store';
 import { applyNativeAppearancePreference } from './appearance';
 import { listResumeCandidates } from './pty/resume-candidates';
-import type { ResumeIdentityHint } from './pty/resume-candidates';
 import { RecentConversationCatalog } from './pty/conversation-catalog';
 import {
   clipboardInput,
@@ -75,8 +68,16 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows } from './window-broadcast';
-import { isAgentHarness } from '@exawatt/core';
+import { isAgentHarness, type AgentPermissionMode } from '@exawatt/core';
 import type { DistributionContractV2 } from '@exawatt/core/distribution';
+import type {
+  ClosedSessionEntry,
+  GoalVisual,
+  PtyAttention,
+  PtyCreateOptions,
+  ResumeIdentityHint,
+  SessionModelChange,
+} from '@exawatt/core/desktop-bridge';
 
 let activeContextSummarizer: ContextSummarizer | null = null;
 
@@ -279,7 +280,7 @@ export function registerPtyIPC(
     nativeNotifications.get(id)?.close();
     nativeNotifications.delete(id);
     const typedAttention = attention as
-      | import('./pty/attention-monitor').SessionAttention
+      | PtyAttention
       | null;
     if (
       !shouldDeliverNativeNotification(
@@ -957,7 +958,7 @@ export function registerPtyIPC(
       const settings = setAgentPermissionMode(
         projectDir,
         source,
-        permissionMode as import('./settings-store').AgentPermissionMode
+        permissionMode as AgentPermissionMode
       );
       broadcast('settings:changed', settings);
       return settings;

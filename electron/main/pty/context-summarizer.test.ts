@@ -7,7 +7,6 @@ import {
   consumeOperatorInput,
   provisionalSubtitle,
   redactContextEvidence,
-  type ReentryRecap,
 } from './context-summarizer';
 import type { PtySessionManager } from './session-manager';
 import {
@@ -18,6 +17,7 @@ import {
   COMMUNITY_DISTRIBUTION,
   type DistributionContractV2,
 } from '@exawatt/core/distribution';
+import type { PtyReentryRecap } from '@exawatt/core/desktop-bridge';
 
 const OFFICIAL_ENRICHMENT_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
@@ -1110,8 +1110,8 @@ describe('the re-entry recap is independently controllable', () => {
       summarize: summarizeFn,
     });
     service.attach(manager as unknown as PtySessionManager);
-    const recaps: ReentryRecap[] = [];
-    service.on('recap', (recap: ReentryRecap) => recaps.push(recap));
+    const recaps: PtyReentryRecap[] = [];
+    service.on('recap', (recap: PtyReentryRecap) => recaps.push(recap));
     return { manager, service, summarize: summarizeFn, recaps, state };
   }
 

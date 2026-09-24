@@ -7,7 +7,7 @@
  * and any other settings write (`loadSettings` + `writeSettings`) erased it
  * from disk within the same session. This suite is the missing crossing, for
  * every field rather than the one that failed: the fixture map below is typed
- * over `keyof ExawattSettings`, so adding a field to the interface without a
+ * over `keyof StoredSettings`, so adding a field to the interface without a
  * fixture here is a compile error, and `SETTINGS_KEYS` is asserted to be
  * exactly that key set.
  */
@@ -35,7 +35,7 @@ import {
   setKeyboardShortcutOverrides,
   setReentryRecapEnabled,
   writeSettings,
-  type ExawattSettings,
+  type StoredSettings,
 } from './settings-store';
 
 const REBIND: KeyboardShortcutOverridesV1 = {
@@ -58,7 +58,7 @@ const REBIND: KeyboardShortcutOverridesV1 = {
  * proven to round-trip.
  */
 const FIXTURES: {
-  [K in keyof ExawattSettings]-?: NonNullable<ExawattSettings[K]>;
+  [K in keyof StoredSettings]-?: NonNullable<StoredSettings[K]>;
 } = {
   terminal: {
     fontFamily: '"MesloLGS For Powerline", Menlo, monospace',
@@ -116,7 +116,7 @@ describe('the settings schema', () => {
     expect([...SETTINGS_KEYS].sort()).toEqual(Object.keys(FIXTURES).sort());
   });
 
-  it.each(Object.keys(FIXTURES) as (keyof ExawattSettings)[])(
+  it.each(Object.keys(FIXTURES) as (keyof StoredSettings)[])(
     '%s survives write → parse unchanged',
     key => {
       writeSettings({ [key]: FIXTURES[key] });

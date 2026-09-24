@@ -4,11 +4,11 @@ import type {
   AgentSourceEvidenceBasis,
 } from '@exawatt/core';
 import type { ConnectedAgentMapping } from './connected-agent-projection-plan';
+import type { ConnectedSourceRuntime } from './connected-source-runtime';
 import type {
-  ConnectedSourceRuntime,
   ConnectedSourceStatusView,
   RemoteAgentView,
-} from './connected-source-runtime';
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * The connected-source lifecycle contract (ENG-010 C3).

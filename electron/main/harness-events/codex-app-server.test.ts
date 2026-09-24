@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 import type { ChildProcessWithoutNullStreams } from 'child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { PtySessionInfo } from '../pty/session-manager';
 import {
   DelegationMonitor,
   type DelegationReportSink,
@@ -36,10 +35,11 @@ import {
   selectSpatialBoardLayout,
   selectSpatialDelegationUnits,
 } from '../../../packages/ui-model/src/spatial-board';
+import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 
 const ROOT = '019fedc3-d5fb-77c0-8922-19d3ee31d297';
 
-const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
+const session = (over: Partial<PtySessionRecord> = {}): PtySessionRecord => ({
   id: 'pty-codex',
   durableSessionId: 'durable-codex',
   harness: 'codex',

@@ -7,6 +7,7 @@ import {
   DEFAULT_ELECTRON_APPEARANCE_PREFERENCES,
   type ElectronAppearancePreferencesV1,
 } from './settings-store';
+import type { AppearanceBootstrapSnapshot } from '@exawatt/core/desktop-bridge';
 
 export const CLASSIC_BOOTSTRAP_THEME_ID: ThemeBootstrapId =
   'exawatt-classic-dark';
@@ -41,11 +42,8 @@ export interface NativeThemeAdapter {
   readonly shouldUseDarkColors: boolean;
 }
 
-export interface ElectronAppearanceBootstrapSnapshot {
-  preferences: ElectronAppearancePreferencesV1;
-  dark: boolean;
-  safeTheme: boolean;
-}
+export type ElectronAppearanceBootstrapSnapshot =
+  AppearanceBootstrapSnapshot<ThemeBootstrapId>;
 
 export interface NativeAppearanceWindow {
   isDestroyed(): boolean;

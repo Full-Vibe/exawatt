@@ -5,7 +5,6 @@ import { registerAnalyticsIPC } from './analytics-ipc';
 import { createElectronAuthCookies } from './auth-cookies';
 import type { ElectronAuthCoordinator } from './auth-coordinator';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
-import type { CommandEnginePhase } from './command-engine';
 import {
   ClaudePlanAccountService,
   isClaudePlanRemoteReadAllowed,
@@ -25,6 +24,7 @@ import { isClaudePlanWindowsEnabled, loadSettings } from './settings-store';
 import type { ShutdownCoordinator } from './shutdown-coordinator';
 import type { ShutdownSequence } from './shutdown-sequence';
 import { registerSystemShortcutIPC } from './system-shortcuts';
+import type { CommandEnginePhase } from '@exawatt/core/desktop-bridge';
 
 /**
  * The command surface: everything behind the launch frame. Bootstrap loads the

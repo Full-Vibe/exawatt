@@ -45,7 +45,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AgentModelCatalog } from './agent-models';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 /**
  * Cached catalogs render immediately, but demand a new source observation

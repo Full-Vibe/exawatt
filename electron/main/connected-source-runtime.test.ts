@@ -25,16 +25,16 @@ import {
 import {
   ConnectedSourceRuntime,
   type ConnectedSourceSession,
-  type ConversationUpdate,
-  type SendToAgentOptions,
 } from './connected-source-runtime';
-import type { AuthorityRequestResult } from './connected-gateway-authority';
 import type { OwnPendingRequest } from './source-device-approval';
-import type {
-  ConnectedGatewayPhase,
-  ObservedGatewayFacts,
-} from './connected-gateway';
+import type { ObservedGatewayFacts } from './connected-gateway';
 import type { GatewayIdentity } from './gateway-identity';
+import type {
+  AuthorityRequestResult,
+  ConnectedGatewayPhase,
+  ConversationUpdate,
+  SendToAgentOptions,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-010 C2. The runtime that owns every configured source.

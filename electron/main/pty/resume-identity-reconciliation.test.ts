@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  reconcileResumeIdentities,
-  type ResumeIdentityHint,
-} from './resume-candidates';
+import { reconcileResumeIdentities } from './resume-candidates';
+import type { ResumeIdentityHint } from '@exawatt/core/desktop-bridge';
 
 const hint = (
   durableSessionId: string,

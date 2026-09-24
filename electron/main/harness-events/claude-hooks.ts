@@ -19,8 +19,8 @@ import type {
   CensusChild,
   HarnessEvent,
   ReportedChildCensus,
-  SessionBlockedReason,
 } from './delegation-state';
+import type { SessionBlockedReason } from '@exawatt/core/desktop-bridge';
 
 /** Kept low on purpose: every hook runs INSIDE the harness turn, so this is
  *  the operator's latency, not ours. A dead listener fails open. */

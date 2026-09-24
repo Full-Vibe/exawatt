@@ -7,57 +7,19 @@ import {
   type RoadmapDoc,
   type RoadmapItem,
   type RoadmapItemStatus,
+  type AgentPermissionMode,
 } from '@exawatt/core';
-import { loadSettings, type AgentPermissionMode } from '../settings-store';
+import { loadSettings } from '../settings-store';
 import { isRepoRelativePath, resolveContainedPath } from '../contained-path';
+import type {
+  RoadmapUndoResult,
+  RoadmapWritableStatus,
+  RoadmapWriteAction,
+  RoadmapWriteRequest,
+  RoadmapWriteResult,
+} from '@exawatt/core/desktop-bridge';
 
 export const ROADMAP_STATE_WRITE_PERMISSION = 'roadmap-state-write' as const;
-
-export type RoadmapWritableStatus = 'now' | 'next' | 'later' | 'parked';
-
-export type RoadmapWriteAction =
-  | {
-      kind: 'set-status';
-      itemId: string;
-      status: RoadmapWritableStatus;
-    }
-  | {
-      kind: 'move-item';
-      itemId: string;
-      direction: 'up' | 'down';
-    }
-  | {
-      kind: 'set-milestone';
-      itemId: string;
-      line: number;
-      done: boolean;
-    };
-
-export interface RoadmapWriteRequest {
-  projectDir: string;
-  file: string;
-  expectedContentHash: string;
-  action: RoadmapWriteAction;
-  /** One explicit confirmation for Projects whose launch policy is Ask first. */
-  confirmed?: boolean;
-}
-
-export type RoadmapWriteResult =
-  | {
-      status: 'applied';
-      contentHash: string;
-      undoToken: string;
-      permission: typeof ROADMAP_STATE_WRITE_PERMISSION;
-    }
-  | {
-      status: 'permission-required' | 'refused' | 'failed';
-      message: string;
-      permission: typeof ROADMAP_STATE_WRITE_PERMISSION;
-    };
-
-export type RoadmapUndoResult =
-  | { status: 'applied'; contentHash: string }
-  | { status: 'refused' | 'failed'; message: string };
 
 interface UndoEntry {
   filePath: string;

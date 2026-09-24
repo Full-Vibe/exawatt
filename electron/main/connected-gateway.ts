@@ -27,7 +27,6 @@ import {
   isH1ReadMethod,
   isH2WriteMethod,
   narrowerAuthority,
-  type AuthorityRequestResult,
   type H1ReadMethod,
   type H2WriteMethod,
 } from './connected-gateway-authority';
@@ -66,6 +65,10 @@ import {
   isRecord,
   sourceSentence,
 } from './untrusted-input';
+import type {
+  AuthorityRequestResult,
+  ConnectedGatewayPhase,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-010 C1: one configured source's whole read-only lifecycle.
@@ -107,16 +110,6 @@ import {
  *    tries to approve its own device: doing so would need the admin-capable
  *    authority this whole custody model exists to avoid holding.
  */
-
-export type ConnectedGatewayPhase =
-  | 'idle'
-  | 'opening-tunnel'
-  | 'bootstrapping'
-  | 'pairing'
-  | 'discovering'
-  | 'connected'
-  | 'reconnecting'
-  | 'failed';
 
 /**
  * Bounded facts observed alongside the snapshot. Deliberately counts and one

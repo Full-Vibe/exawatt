@@ -11,7 +11,7 @@ import {
   retainGoalVisual,
   setGoalVisualStore,
 } from './goal-visual-store';
-import type { GoalVisual } from './pty/context-summarizer';
+import type { GoalVisual } from '@exawatt/core/desktop-bridge';
 
 // This suite runs in Node, so importing the real `electron` package would run
 // its installer shim: it reads `node_modules/electron/path.txt`, and when that

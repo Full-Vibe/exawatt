@@ -12,6 +12,7 @@ import {
   type SourceTransport,
 } from '@exawatt/core';
 import { readJsonDocument, writeJsonFileAtomic } from './atomic-json-file';
+import type { AddConnectedSourceInput } from '@exawatt/core/desktop-bridge';
 
 /**
  * Persisted registry of configured Agent Sources (ENG-010 C1).
@@ -161,14 +162,6 @@ function sourceIdForTarget(target: string | null): string {
   if (target === null) return randomUUID();
   const digest = createHash('sha256').update(target).digest('hex');
   return `source-${digest.slice(0, 24)}`;
-}
-
-export interface AddConnectedSourceInput {
-  adapterId: ConnectedSourceRecord['adapterId'];
-  placement: ConnectedSourceRecord['placement'];
-  displayName: string;
-  transport: SourceTransport;
-  credentialOwner: ConnectedSourceRecord['credentialOwner'];
 }
 
 export type AddConnectedSourceResult =

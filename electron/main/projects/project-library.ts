@@ -1,12 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveProject } from '../pty/project-resolve';
-
-export interface ProjectImportCandidate {
-  projectDir: string;
-  projectName: string;
-  suggested: boolean;
-}
+import type { ProjectImportCandidate } from '@exawatt/core/desktop-bridge';
 
 const PROJECT_MARKERS = [
   '.git',

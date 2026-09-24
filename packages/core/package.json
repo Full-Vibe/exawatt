@@ -28,6 +28,12 @@
       "require": "./dist-cjs/distribution/index.js",
       "import": "./src/distribution/index.ts",
       "default": "./src/distribution/index.ts"
+    },
+    "./desktop-bridge": {
+      "types": "./dist/desktop-bridge/index.d.ts",
+      "require": "./dist-cjs/desktop-bridge/index.js",
+      "import": "./src/desktop-bridge/index.ts",
+      "default": "./src/desktop-bridge/index.ts"
     }
   },
   "typesVersions": {
@@ -37,6 +43,9 @@
       ],
       "distribution": [
         "dist/distribution/index.d.ts"
+      ],
+      "desktop-bridge": [
+        "dist/desktop-bridge/index.d.ts"
       ],
       "*": [
         "dist/index.d.ts"

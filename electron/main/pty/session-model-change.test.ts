@@ -3,11 +3,13 @@ import {
   createSessionModelChanger,
   modelChangeResumeOptions,
 } from './session-model-change';
-import type { PtySessionInfo } from './session-manager';
-import type { AgentModelCatalog } from './agent-models';
+import type {
+  AgentModelCatalog,
+  PtySessionRecord,
+} from '@exawatt/core/desktop-bridge';
 
 function fixture() {
-  const session: PtySessionInfo = {
+  const session: PtySessionRecord = {
     id: 'runtime',
     durableSessionId: 'durable',
     harness: 'claude',

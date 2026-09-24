@@ -6,17 +6,12 @@ import {
   resolveConnectionStatus,
   sourceAgentKey,
   type AgentProjectionMapping,
-  type AgentSourceAdapterId,
-  type AgentSourceEvidenceBasis,
-  type AgentStatus,
   type AgentSourcePlacement,
   type AgentSourceTopologySnapshot,
   type ConnectedSourceRecord,
   type ProjectedAgent,
   type SourceAgentDiscoveryState,
-  type SourceAuthority,
   type SourceConnectionState,
-  type SourceFailureClass,
 } from '@exawatt/core';
 import {
   EMPTY_PROJECTION_PLAN,
@@ -35,15 +30,11 @@ import {
   findPrimaryConversation,
   isPrimaryConversation,
   readTranscript,
-  type ConversationRequest,
-  type ConversationTurnView,
 } from './connected-conversation';
 import { SCOPES_FOR_AUTHORITY } from './connected-gateway-authority';
 import { approveCommandsFor, sshDestinationOf } from './source-device-approval';
-import type { AuthorityRequestResult } from './connected-gateway-authority';
 import {
   evidenceBasisForAdapter,
-  type ConnectedGatewayPhase,
   type ConnectedGatewaySession,
   type ObservedGatewayFacts,
 } from './connected-gateway';
@@ -55,6 +46,27 @@ import {
   describeSourceError,
   validText,
 } from './untrusted-input';
+import type {
+  AgentMappingInput,
+  AuthorityRequestResult,
+  ConnectSourceResult,
+  ConnectedGatewayPhase,
+  ConnectedSourceChange,
+  ConnectedSourceStatusView,
+  ConversationRequest,
+  ConversationResult,
+  ConversationUpdate,
+  DiscoveredSourceAgent,
+  MapAgentsResult,
+  ObservedSourceCapability,
+  ObservedSourceFact,
+  ObservedSourceFactsView,
+  RemoteAgentView,
+  SendToAgentOptions,
+  SendToAgentResult,
+  SourceCommandAuthorityView,
+  SourceConnectionView,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * The main-process owner of every configured Agent Source (ENG-010 C2).
@@ -99,7 +111,10 @@ import {
  *    and viewing recent work can never silently retarget the composer.
  */
 
-/* ---- Renderer-facing views ----------------------------------------------- */
+/* ---- Renderer-facing labels ---------------------------------------------- */
+
+/* The view shapes these fill are the desktop bridge contract's
+ * (`@exawatt/core/desktop-bridge`), which the renderer imports as-is. */
 
 /**
  * The short freshness labels the design system names. `describeConnectionStatus`
@@ -123,226 +138,6 @@ export const PLACEMENT_LABELS: Readonly<Record<AgentSourcePlacement, string>> =
     'exawatt-hosted': 'Exawatt Cloud',
   };
 
-export interface SourceConnectionView {
-  state: SourceConnectionState;
-  /** `Live` | `Reconnecting` | `Stale` | `Unavailable`. */
-  label: string;
-  /** Longer sentence for detail surfaces; still only about observation. */
-  detail: string;
-  observationAgeMs: number | null;
-  stalePresentation: boolean;
-  failure: SourceFailureClass | null;
-}
-
-/**
- * One thing the source itself said, with the standing of the claim attached.
- *
- * `basis` and `provenance` travel with the value because a surface that shows
- * a version has to be able to say where it came from: a Demo source's answers
- * are simulated, and an operator reading a source-detail page is entitled to
- * know which check produced each line rather than being handed five sentences
- * of equal-looking authority.
- */
-export interface ObservedSourceFact {
-  value: string;
-  basis: AgentSourceEvidenceBasis;
-  /** Which check produced it, in the operator's words. */
-  provenance: string;
-}
-
-/** One thing Exawatt may do with this source, and how it knows. */
-export interface ObservedSourceCapability extends ObservedSourceFact {
-  label: string;
-}
-
-/**
- * The installation's own answers, as the Connect flow's fact list wants them:
- * raw tokens, so the surface owns the vocabulary it renders them in.
- */
-export interface ObservedSourceFactsView {
-  /** The source's own reported identity, or null when it declared none. */
-  identity: string | null;
-  version: string | null;
-  /** Scope tokens the Gateway granted this device. */
-  capabilities: readonly string[];
-  observedAt: number | null;
-}
-
-export interface ConnectedSourceStatusView {
-  sourceId: string;
-  displayName: string;
-  adapterId: AgentSourceAdapterId;
-  placement: AgentSourcePlacement;
-  placementLabel: string;
-  /** True once this launch opened a session for the source. */
-  observing: boolean;
-  phase: ConnectedGatewayPhase;
-  connection: SourceConnectionView;
-  /**
-   * The version the source reported, or null when this launch has not read
-   * one. Null is "not observed", never "no version": every discovery pays for
-   * this read, and a source Exawatt has not reached yet has told it nothing.
-   */
-  version: ObservedSourceFact | null;
-  /**
-   * What Exawatt may do with this source, and what it saw of its automations.
-   * Empty for the same reason `version` is null, and empty is the honest
-   * answer rather than a claim that the source can do nothing.
-   */
-  capabilities: readonly ObservedSourceCapability[];
-  /** The source now reports a different installation than the plan maps. */
-  identityDrift: boolean;
-  /**
-   * Bumped by every authoritative snapshot, and by nothing else.
-   *
-   * Both halves are load-bearing. A renderer keyed on this number re-reads the
-   * roster when it moves, so a snapshot that landed without moving it costs the
-   * operator whatever that snapshot brought in — and for a while exactly that
-   * happened, because only the operator's own `connect` bumped it while an
-   * automatic reconnect resnapshots authoritatively too. Phase movement still
-   * does not bump it: a reconnect ladder is freshness news, not new content,
-   * and a surface that only cares about topology must be able to ignore it.
-   */
-  snapshotRevision: number;
-}
-
-/** What the Connect dialog's discovery step chooses from. */
-export interface DiscoveredSourceAgent {
-  nativeAgentId: string;
-  displayName: string;
-  discoveryState: SourceAgentDiscoveryState;
-  contextCount: number;
-  /** False means this Agent opens on its work, not on a fabricated Home. */
-  hasPrimaryConversation: boolean;
-  /** The saved mapping, when this Agent already has one. */
-  mapping: {
-    exawattAgentId: string;
-    projectId: string;
-    projectLabel: string;
-    displayNameOverride: string | null;
-  } | null;
-}
-
-/** One projected coworker, ready for the roster. */
-export interface RemoteAgentView {
-  id: string;
-  displayName: string;
-  projectId: string;
-  projectLabel: string;
-  discoveryState: SourceAgentDiscoveryState;
-  placement: AgentSourcePlacement;
-  placementLabel: string;
-  adapterId: AgentSourceAdapterId;
-  source: { id: string; displayName: string };
-  nativeAgentId: string;
-  /** The source-declared `main` context, or null when it declares none. */
-  primaryContextId: string | null;
-  /**
-   * D40 work state, in the vocabulary a local Agent already uses, or null when
-   * the source has evidenced none.
-   *
-   * The kernel's answer, read rather than recomputed: `ProjectedAgent.workState`
-   * states the derivation once — a fault outranks a run in flight, a run in
-   * flight outranks quiet — and a surface that derived its own would drift from
-   * it the day the evidence grew.
-   *
-   * Null is unknown, and unknown is an answer. It must never render as a
-   * positive claim: a coworker whose source said nothing about any of its
-   * contexts is not idle, and showing it as idle would be Exawatt inventing a
-   * state nobody reported. This runtime once answered
-   * `hasActiveRun ? 'working' : 'idle'`, which threw away the fault the
-   * discovery reads had already paid for and turned silence into a claim that
-   * the coworker is quiet; every value here is now a word D40 already uses, so
-   * a remote coworker still needs no second status vocabulary.
-   *
-   * Observed at `observedAt` and nowhere else: a stale or unavailable
-   * connection leaves this exactly as it was last observed, and `connection`
-   * is what tells the operator the view is not current. Nothing in this field
-   * may move because observation moved.
-   */
-  workState: AgentStatus | null;
-  contextCount: number;
-  observedAt: number;
-  createdAt: number;
-  lastActiveAt: number;
-  connection: SourceConnectionView;
-  projectionVersion: typeof AGENT_PROJECTION_VERSION;
-}
-
-/**
- * What Exawatt may do with one source, kept apart from freshness on purpose.
- *
- * Placement, connection, work state, and source context are already four
- * independent dimensions and authority is a fifth. Folding it into the
- * freshness view would invite a surface to read a read-only source as a
- * degraded connection, which it is not: observation is perfect and the
- * coworker is working. This says only what Exawatt is allowed to say back.
- */
-export interface SourceCommandAuthorityView {
-  sourceId: string;
-  displayName: string;
-  /** What the Gateway granted on the last completed handshake. */
-  authority: SourceAuthority;
-  /**
-   * A write request is standing, waiting for someone to approve the Exawatt
-   * device on the source itself.
-   */
-  awaitingApproval: boolean;
-  /**
-   * Exawatt can run the source's own approval of its own request over the
-   * operator's SSH login (ENG-033 H2.4 P3). False for a source reached
-   * without one, which keeps the ask-and-wait path.
-   */
-  canApproveOnSource: boolean;
-  /**
-   * What the operator runs by hand to approve the standing request, in order,
-   * from this machine. Names the exact request when the source's pairing list
-   * did; null when no request is standing.
-   */
-  approveCommands: readonly string[] | null;
-}
-
-export type ConnectSourceResult =
-  | {
-      ok: true;
-      sourceId: string;
-      agents: readonly DiscoveredSourceAgent[];
-      status: ConnectedSourceStatusView;
-      /**
-       * What the source said about itself on this connection. The Connect
-       * dialog shows it beside the Agents it discovered, so the operator
-       * confirms which installation they just reached before they import
-       * anyone out of it.
-       */
-      observed: ObservedSourceFactsView | null;
-    }
-  | {
-      ok: false;
-      sourceId: string;
-      outcome: 'unknown-source' | 'identity-drift' | 'failed';
-      failure: SourceFailureClass | null;
-      message: string;
-    };
-
-/** One Project/name decision the Connect flow collected. */
-export interface AgentMappingInput {
-  nativeAgentId: string;
-  projectId: string;
-  projectLabel?: string;
-  displayNameOverride?: string | null;
-}
-
-export type MapAgentsResult =
-  | { ok: true; mapped: number }
-  | { ok: false; issues: readonly string[] };
-
-export interface ConnectedSourceChange {
-  sourceId: string;
-  phase: ConnectedGatewayPhase;
-  connection: SourceConnectionView;
-  snapshotRevision: number;
-}
-
 /* ---- Command authority (H2) ---------------------------------------------- */
 
 /**
@@ -364,101 +159,6 @@ export interface ConnectedSourceChange {
  */
 const AWAITING_APPROVAL_MESSAGE =
   'Approve the Exawatt device for write access with the source device tooling, then send again.';
-
-export type ConversationRefusal =
-  | 'unknown-agent'
-  | 'no-primary-conversation'
-  | 'disconnected'
-  | 'unreadable';
-
-export type ConversationResult =
-  | {
-      ok: true;
-      agentId: string;
-      sourceId: string;
-      contextId: string;
-      /** Oldest to newest, in the order the source retains them. */
-      turns: readonly ConversationTurnView[];
-      /** Older turns exist beyond this page. Bounding is never silent. */
-      hasMore: boolean;
-      characterCount: number;
-      observedAt: number;
-      connection: SourceConnectionView;
-    }
-  | {
-      ok: false;
-      agentId: string;
-      outcome: ConversationRefusal;
-      message: string;
-    };
-
-export interface SendToAgentOptions {
-  /**
-   * Reused verbatim on a retry. The Gateway accepts it on `chat.send`, so a
-   * retry after a dropped connection resolves to the same run rather than
-   * posting the message twice.
-   */
-  idempotencyKey?: string;
-}
-
-/**
- * Every way a send declines, each distinct because the operator's next step
- * differs. `read-only-source` says how to ask for authority;
- * `approval-pending` says the request is waiting on the Gateway. Neither is an
- * error, and none of them is a statement about the remote Agent.
- */
-export type SendRefusal =
-  | 'unknown-agent'
-  | 'read-only-source'
-  | 'approval-pending'
-  | 'no-primary-conversation'
-  | 'disconnected'
-  | 'invalid-message'
-  | 'refused';
-
-export type SendToAgentResult =
-  | {
-      ok: true;
-      agentId: string;
-      sourceId: string;
-      contextId: string;
-      runId: string | null;
-      status: 'sent' | 'queued';
-      idempotencyKey: string;
-      at: number;
-    }
-  | {
-      ok: false;
-      agentId: string;
-      outcome: SendRefusal;
-      message: string;
-    };
-
-export type ConversationUpdateKind =
-  | 'delta'
-  | 'complete'
-  | 'bounded'
-  | 'resnapshot';
-
-export interface ConversationUpdate {
-  agentId: string;
-  sourceId: string;
-  contextId: string;
-  runId: string | null;
-  kind: ConversationUpdateKind;
-  /** Reply text for `delta`; empty for every other kind. */
-  text: string;
-  /**
-   * Order within this process, monotonic across every source.
-   *
-   * Deliberately Exawatt's own counter. The Gateway's frame sequence resets
-   * per connection and events are never replayed, so storing one as a
-   * catch-up cursor would ask a reconnect for a position it cannot honour.
-   * This number is never written to disk and never sent to a source.
-   */
-  ordinal: number;
-  at: number;
-}
 
 /* ---- Runtime ------------------------------------------------------------- */
 

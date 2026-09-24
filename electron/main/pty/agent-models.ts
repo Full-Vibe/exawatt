@@ -9,6 +9,11 @@ import {
 } from './agent-model-catalog-cache';
 import { planLoginShell, shellQuote } from './login-shell';
 import { readQwenConfiguredModels, readQwenUserSettings } from './qwen-source';
+import type {
+  AgentEffortOption,
+  AgentModelCatalog,
+  AgentModelOption,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
@@ -98,52 +103,6 @@ const MODEL_ENV_KEYS = [
   'OPENCODE_CONFIG_DIR',
   'OPENCODE_CONFIG_CONTENT',
 ] as const;
-
-export interface AgentEffortOption {
-  id: string;
-  label: string;
-  description: string;
-}
-
-export interface AgentModelOption {
-  id: string;
-  label: string;
-  description: string;
-  defaultEffort: string | null;
-  efforts: AgentEffortOption[];
-}
-
-export interface AgentModelCatalog {
-  harness: AgentHarness;
-  /** The model Exawatt will pin for a new Agent unless the operator changes it. */
-  effectiveModel: string | null;
-  effectiveModelLabel: string;
-  effectiveModelSource:
-    | 'config'
-    | 'harness-recommended'
-    | 'account-default'
-    | 'unavailable';
-  /** The effort Exawatt will pin unless null/auto leaves it to the harness. */
-  effectiveEffort: string | null;
-  effectiveEffortLabel: string;
-  effectiveEffortSource:
-    | 'config'
-    | 'model-default'
-    | 'environment'
-    | 'unavailable';
-  effortLocked: boolean;
-  models: AgentModelOption[];
-  catalogMode:
-    | 'live-catalog'
-    | 'configured-values'
-    | 'source-owned'
-    | 'unavailable';
-  catalogProvenance: string;
-  observedAt: number;
-  selectionAction: 'choose-in-source' | null;
-  /** True when this came from the disk cache rather than a fresh probe. */
-  servedFromCache?: boolean;
-}
 
 interface CodexReasoningLevel {
   effort?: unknown;

@@ -18,21 +18,11 @@ import {
   describeThrown,
   safeSourceId,
 } from './connected-source-diagnostics';
-import {
-  ConnectedSourceStore,
-  type AddConnectedSourceInput,
-} from './connected-source-store';
+import { ConnectedSourceStore } from './connected-source-store';
 import { ConnectedGatewaySession } from './connected-gateway';
 import { FileConnectedAgentProjectionPlanStore } from './connected-agent-projection-plan';
-import {
-  MAX_MESSAGE_CHARACTERS,
-  type ConversationRequest,
-} from './connected-conversation';
-import {
-  ConnectedSourceRuntime,
-  type AgentMappingInput,
-  type SendToAgentOptions,
-} from './connected-source-runtime';
+import { MAX_MESSAGE_CHARACTERS } from './connected-conversation';
+import { ConnectedSourceRuntime } from './connected-source-runtime';
 import {
   createSshRemoteExec,
   resolveGatewayCredential,
@@ -41,6 +31,12 @@ import {
 import { openSshTunnel } from './ssh-tunnel';
 import { readSshAliasCandidates } from './ssh-alias-candidates';
 import { broadcastToWindows } from './window-broadcast';
+import type {
+  AddConnectedSourceInput,
+  AgentMappingInput,
+  ConversationRequest,
+  SendToAgentOptions,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * Renderer-safe control plane for configured Agent Sources (ENG-010 C1/C2).

@@ -9,7 +9,7 @@ import {
   CATALOG_MAX_ENTRIES,
   catalogCacheKey,
 } from './agent-model-catalog-cache';
-import type { AgentModelCatalog } from './agent-models';
+import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 const catalog = (
   overrides: Partial<AgentModelCatalog> = {}

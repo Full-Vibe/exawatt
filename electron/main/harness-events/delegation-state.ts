@@ -2,6 +2,11 @@ import {
   sessionHasBackgroundWork,
   type SessionBackgroundTask,
 } from '@exawatt/core';
+import type {
+  DelegatedChild,
+  SessionBlockedReason,
+  SessionDelegation,
+} from '@exawatt/core/desktop-bridge';
 /**
  * Delegation state (ENG-023 D1) — the two-fact model.
  *
@@ -16,23 +21,6 @@ import {
  * Electron and no IO: the harness adapter normalizes provider events into
  * `HarnessEvent` and this module owns what they mean.
  */
-
-/** One live delegated child. Deliberately richer than D1's dots need: D2's
- *  per-child rail enriches these rows rather than rebuilding the model. */
-export interface DelegatedChild {
-  /** harness-assigned child id — opaque, never shown to the operator */
-  id: string;
-  /** the source's own agent kind ("Explore", "general-purpose", …) */
-  agentType: string | null;
-  /**
-   * The operator-legible spawn label from `PreToolUse[Agent|Task]` (ENG-023
-   * D3a), adopted by correlation at child-start. `null` when the label was
-   * never observed or correlation failed — a missing label renders as absent,
-   * never invented. Labels only: results never enter this record.
-   */
-  description: string | null;
-  startedAt: number;
-}
 
 /**
  * One child as a source's CENSUS names it (ENG-023 D7). A census is the
@@ -90,38 +78,6 @@ function remember(list: readonly string[], id: string): string[] {
   return next.length > TOMBSTONE_CAP
     ? next.slice(next.length - TOMBSTONE_CAP)
     : next;
-}
-
-/**
- * Why the Agent stopped and handed control back to the operator (ENG-023 D4).
- * Kept as a reason rather than a boolean because Terminal and Sessions want to
- * say WHICH gate is open, and because the reasons unblock differently.
- */
-export type SessionBlockedReason = 'question' | 'permission' | 'elicitation';
-
-export interface SessionDelegation {
-  /**
-   * The Session's OWN turn. `generating` between a submitted prompt and the
-   * provider finishing its reply; `available` otherwise — including while its
-   * children are still working, which is the whole point.
-   */
-  ownTurn: 'generating' | 'available';
-  /**
-   * The operator gate the Agent is sitting behind, or `null` when it is not
-   * waiting on a human (ENG-023 D4).
-   *
-   * INDEPENDENT of `ownTurn` on purpose. An Agent blocked on `AskUserQuestion`
-   * is still `generating` — the turn has not ended and `Stop` has not fired —
-   * so collapsing the two would force a choice between "working" and "needs
-   * you" when the truth is both. `reference/agent-state.md` calls this the
-   * `Asked`/`Blocked` Event and requires attention and turn state to stay
-   * separate channels; this is that separation in the reported model.
-   */
-  blockedOn: SessionBlockedReason | null;
-  /** live children, oldest first */
-  children: DelegatedChild[];
-  /** Non-Agent work reported by the source; absent on older providers. */
-  backgroundTasks?: SessionBackgroundTask[];
 }
 
 /**

@@ -1,16 +1,18 @@
-import type { SessionAttention } from './pty/attention-monitor';
 import { agentSourceDeclaration } from './pty/generated-agent-source-declarations';
-import type { PtySessionInfo } from './pty/session-manager';
+import type {
+  PtyAttention,
+  PtySessionRecord,
+} from '@exawatt/core/desktop-bridge';
 
 export function shouldDeliverNativeNotification(
   enabled: boolean,
   windowFocused: boolean,
-  attention: SessionAttention | null
+  attention: PtyAttention | null
 ): boolean {
   return enabled && !windowFocused && attention !== null;
 }
 
-export function nativeNotificationCopy(session: PtySessionInfo): {
+export function nativeNotificationCopy(session: PtySessionRecord): {
   title: string;
   body: string;
 } {

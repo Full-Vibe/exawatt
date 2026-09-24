@@ -4,6 +4,10 @@ import {
   type SessionBackgroundTask,
 } from '@exawatt/core';
 import type { PtySessionManager } from './session-manager';
+import type {
+  PtyAttention,
+  PtyAttentionKind,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * Attention monitor (ENG-015 S1): detects "this session needs the operator"
@@ -42,8 +46,6 @@ import type { PtySessionManager } from './session-manager';
  *                                     600; 0 = every quiet turn flags)
  */
 
-export type AttentionKind = 'bell' | 'turn-end' | 'blocked';
-
 /** What the harness itself reported about a Session, when it reports at all.
  *  Structurally the delegation record; named for what it is used for here. */
 export interface ReportedTurn {
@@ -61,14 +63,8 @@ export interface ReportedTurn {
  * main decides which signal survives, the renderer decides which signal is
  * navigable, and they must never disagree about the class of a signal.
  */
-export function attentionIsOperatorGate(kind: AttentionKind): boolean {
+export function attentionIsOperatorGate(kind: PtyAttentionKind): boolean {
   return kind !== 'turn-end';
-}
-
-export interface SessionAttention {
-  kind: AttentionKind;
-  /** when the attention was raised — the queue orders oldest-first */
-  since: number;
 }
 
 /** Why inference reclaimed a reported record (ENG-023 D4/D7): the evidence
@@ -134,7 +130,7 @@ const REPORTED_TURN_STALE_FACTOR = 3;
 
 export class AttentionMonitor extends EventEmitter {
   private manager: PtySessionManager | null = null;
-  private attention = new Map<string, SessionAttention>();
+  private attention = new Map<string, PtyAttention>();
   private lastDataAt = new Map<string, number>();
   private lastResizeAt = new Map<string, number>();
   private burstBytes = new Map<string, number>();
@@ -218,7 +214,7 @@ export class AttentionMonitor extends EventEmitter {
     this.timer = null;
   }
 
-  get(id: string): SessionAttention | null {
+  get(id: string): PtyAttention | null {
     return this.attention.get(id) ?? null;
   }
 
@@ -637,7 +633,7 @@ export class AttentionMonitor extends EventEmitter {
     }
   }
 
-  private raise(id: string, kind: AttentionKind): void {
+  private raise(id: string, kind: PtyAttentionKind): void {
     const existing = this.attention.get(id);
     // Precedence, the same rule `mergeSessionAttentionSignals` applies on the
     // renderer side — which is exactly why it has to hold here too, or the two

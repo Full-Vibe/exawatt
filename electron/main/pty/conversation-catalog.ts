@@ -5,7 +5,6 @@ import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { PtyHarness } from './session-manager';
-import type { ClosedSessionEntry } from './closed-session-ledger';
 import { listProjectWorktrees } from './project-resolve';
 import {
   recordHostedCallHttpFailure,
@@ -34,28 +33,14 @@ import {
   type QwenTranscriptHead,
 } from './qwen-source';
 import { planLoginShell, shellQuote } from './login-shell';
+import type {
+  ClosedSessionEntry,
+  RecentConversation,
+} from '@exawatt/core/desktop-bridge';
 
 const execFileAsync = promisify(execFile);
 
 export type ConversationHarness = Exclude<PtyHarness, 'shell'>;
-
-export interface RecentConversation {
-  id: string;
-  harness: ConversationHarness;
-  cwd: string;
-  startedAt: number;
-  updatedAt: number;
-  title: string;
-  description: string | null;
-  titleSource: 'native' | 'generated' | 'fallback';
-  needsSummary: boolean;
-  /** Exact provider identity when one is known. Kept separate from the row ID
-   * because retained Exawatt Sessions may not have captured it yet. */
-  providerSessionId: string | null;
-  continuation:
-    | { kind: 'provider' }
-    | { kind: 'exawatt-session'; durableSessionId: string };
-}
 
 export interface ConversationDraft extends RecentConversation {
   fingerprint: string;

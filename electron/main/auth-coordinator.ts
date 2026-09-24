@@ -5,22 +5,12 @@ import {
   describeAuthError,
   type AuthDiagnosticRecorder,
 } from './auth-diagnostics';
-
-export interface ElectronAuthStartConfig {
-  supabaseUrl: string;
-  supabaseAnonKey: string;
-  redirectTo: string;
-}
-
-/** The renderer's live session, handed across IPC. Credentials — never logged. */
-export interface ElectronAuthSessionTokens {
-  accessToken: string;
-  refreshToken: string;
-}
-
-export interface ElectronAuthLinkConfig extends ElectronAuthStartConfig {
-  session?: ElectronAuthSessionTokens;
-}
+import type {
+  ElectronAuthError,
+  ElectronAuthLinkConfig,
+  ElectronAuthSessionTokens,
+  ElectronAuthStartConfig,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * Outcomes a GitHub link attempt may report back over the `exawatt://` deep
@@ -61,13 +51,6 @@ export function linkRedirectTarget(redirectTo: string): string {
   const target = new URL(redirectTo);
   target.searchParams.set('intent', 'link');
   return target.toString();
-}
-
-export interface ElectronAuthError {
-  name: string;
-  message: string;
-  status?: number;
-  code?: string;
 }
 
 interface OAuthResult {

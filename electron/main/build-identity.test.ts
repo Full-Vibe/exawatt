@@ -12,8 +12,8 @@ import {
   applyBuildIdentity,
   assertPackagedRendererComposition,
   resolveBuildIdentity,
-  type BuildInfo,
 } from './build-identity';
+import type { BuildInfo } from '@exawatt/core/desktop-bridge';
 
 const sha256 = (text: string) =>
   createHash('sha256').update(text).digest('hex');

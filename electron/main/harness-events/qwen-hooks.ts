@@ -35,8 +35,8 @@ import type {
   CensusChild,
   HarnessEvent,
   ReportedChildCensus,
-  SessionBlockedReason,
 } from './delegation-state';
+import type { SessionBlockedReason } from '@exawatt/core/desktop-bridge';
 
 /** Every hook runs inside the harness turn, so this is the operator's
  *  latency. Qwen's own default for an http hook is 600 seconds, which would

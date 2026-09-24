@@ -5,9 +5,9 @@ import type {
   LiveProcessCounts,
   ShutdownDependencies,
   ShutdownIntent,
-  ShutdownPhase,
   shutdownCopy as ShutdownCopy,
 } from './shutdown-coordinator';
+import type { ShutdownPhase } from '@exawatt/core/desktop-bridge';
 
 /**
  * What quit, restart and update-restart DO, step by step. The order of

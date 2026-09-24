@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import * as path from 'path';
 import { ContentStore } from './content-store';
-import type { GoalVisual } from './pty/context-summarizer';
+import type { GoalVisual } from '@exawatt/core/desktop-bridge';
 
 /**
  * Goal visuals as a content-addressed side store (BUG-031).

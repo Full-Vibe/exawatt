@@ -22,13 +22,17 @@ import {
   isCalendarDate,
   parseOperatorStatsSyncFailureRecord,
   type AgentLaunchConfigurationInput,
-  type KeyboardShortcutOverridesV1,
+  type AgentPermissionMode,
   type LaunchConfigurationPoolV1,
   type OperatorStatsSyncEvent,
-  type OperatorStatsSyncFailureRecord,
 } from '@exawatt/core';
-
-export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
+import type {
+  AppearanceAutoPairV1,
+  AppearancePreferencesV1,
+  AppearanceSelectionV1,
+  ExawattSettings as WireSettings,
+  TerminalFontSettings,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * User settings (ENG-015 S3): a plain JSON file in userData — the escape
@@ -46,128 +50,15 @@ export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
  * after window refocus, tolerant of a missing/invalid file.
  */
 
-export interface TerminalFontSettings {
-  fontFamily?: string;
-  fontSize?: number;
-  /** xterm line-height multiplier; 1.0 = the font's own metrics (what
-   *  Terminal.app uses — Meslo LG variants tune their gap internally) */
-  lineHeight?: number;
-  /** xterm cell-spacing adjustment. Native terminals often quantize a
-   *  font's fractional advance differently from Chromium. */
-  letterSpacing?: number;
-  /** Subpixel emboldening for matching native rasterizers without swapping
-   *  the configured font face for its bold variant. */
-  fontStrokeWidth?: number;
-}
-
-export interface ExawattSettings {
-  terminal?: TerminalFontSettings;
-  notifications?: {
-    attention: boolean;
-    /** macOS dock badge count + bounce for needs-you attention (D18):
-     *  default off — ambient OS-level signals are opt-in. */
-    dockBadge?: boolean;
-  };
-  /**
-   * ENG-030 OS1.5. The outbound-feature switches below are decision `0031`'s
-   * "independent user control" for each outbound behavior — three hosted
-   * features plus the re-entry recap, which goes out under the operator's own
-   * Claude Code credentials rather than Exawatt's. All default ON with
-   * disclosure; `undefined` means default, never off, and nothing writes a
-   * default back into the file. `src/lib/hosted-features/contract.ts` carries
-   * the same shape for the Settings surface.
-   */
-  contextLabels?: {
-    /** Hosted Session context labels. Off assembles no operator evidence and
-     * sends nothing; accepted and restored labels survive. */
-    hosted: boolean;
-  };
-  conversationSummaries?: {
-    /** Hosted Haiku labels for local conversation excerpts. Defaults on;
-     * excerpts are secret-redacted before they leave the device. */
-    hosted: boolean;
-  };
-  goalVisuals?: {
-    /** Generated Team-tile imagery defaults on; false suppresses rendering
-     * and future generation while preserving the private cache. */
-    enabled: boolean;
-  };
-  reentryRecap?: {
-    /** The "since you left" recap: recent terminal scrollback piped,
-     * unredacted, to the operator's OWN local `claude` CLI (never Exawatt's
-     * servers). Off reads no scrollback and spawns nothing. */
-    enabled: boolean;
-  };
-  claudePlanWindows?: {
-    /** ENG-038: read-only plan-window fetch from the operator's own Claude
-     * account (the endpoint Claude Code's `/usage` consults), authorized by
-     * the Keychain credential Claude Code already holds. Defaults ON
-     * (operator-pulled, 2026-08-11). Off constructs no request and serves
-     * no Claude plan windows. */
-    enabled: boolean;
-  };
-  operatorProfile?: {
-    /** ENG-035: automatic sync of the public operator profile. The one
-     * outbound switch that defaults OFF — publishing is opt-in under decision
-     * `0029`, and turning this on IS the consent act. Absent means off, never
-     * on; no upload of any kind may happen while it is absent or false. */
-    autoPublish: boolean;
-    /** Immutable first-consent boundary. Unlike renderer localStorage, this
-     *  survives the packaged app's per-launch localhost port. */
-    startedAt?: string;
-    /** Cached hosted truth for an honest status surface across relaunches. */
-    lastSyncedAt?: string;
-    profileEnabled?: boolean;
-    /** The publication cursor (BUG-164): the last operator-local date a
-     *  successful publication covered, and the Run derivation the hosted
-     *  history reflects. Absent or stale means republish since consent. */
-    publishedThrough?: string;
-    publishedDerivation?: number;
-    /** The last failed sync, until a sync succeeds. Survives relaunch so a
-     *  profile that stopped updating says so instead of reading as idle. */
-    lastFailure?: OperatorStatsSyncFailureRecord;
-  };
-  agentSources?: {
-    projectLastUsed: Record<string, string>;
-    sourceRecency: Record<string, number>;
-    projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
-  };
-  launchConfigurations?: LaunchConfigurationPoolV1;
-  appearance?: ElectronAppearancePreferencesV1;
-  /**
-   * Per-device keyboard overrides (BUG-044). They belong here rather than in
-   * renderer `localStorage` because the packaged renderer's origin carries its
-   * port: kept per install since BUG-022, but a launch that finds the kept port
-   * taken serves another origin, whose store starts empty.
-   * Absent means "this device has never stored a choice", which is what lets
-   * a signed-in operator adopt an account copy exactly once.
-   */
-  keyboardShortcuts?: KeyboardShortcutOverridesV1;
-}
-
+/** What the store holds: the wire document, with theme ids narrowed to the
+ *  ones this build's generated registry knows. */
+export type StoredSettings = WireSettings<ThemeBootstrapId>;
 export type ElectronAppearanceSelectionV1 =
-  | { mode: 'manual'; themeId: ThemeBootstrapId }
-  | {
-      mode: 'auto';
-      lightThemeId: ThemeBootstrapId;
-      darkThemeId: ThemeBootstrapId;
-    };
-
-export interface ElectronAppearanceAutoPairV1 {
-  lightThemeId: ThemeBootstrapId;
-  darkThemeId: ThemeBootstrapId;
-}
-
-export interface ElectronAppearancePreferencesV1 {
-  schemaVersion: 1;
-  selection: ElectronAppearanceSelectionV1;
-  autoPair?: ElectronAppearanceAutoPairV1;
-  accentSource: 'theme' | 'system';
-  interfaceFont: 'theme' | 'system' | 'geist';
-  interfaceScale: 90 | 100 | 110 | 120;
-  contrast: 'system' | 'enhanced';
-  transparency: 'system' | 'reduced';
-}
+  AppearanceSelectionV1<ThemeBootstrapId>;
+export type ElectronAppearanceAutoPairV1 =
+  AppearanceAutoPairV1<ThemeBootstrapId>;
+export type ElectronAppearancePreferencesV1 =
+  AppearancePreferencesV1<ThemeBootstrapId>;
 
 const DEFAULT_ELECTRON_AUTO_PAIR: ElectronAppearanceAutoPairV1 = {
   lightThemeId: 'exawatt-air-light',
@@ -379,7 +270,7 @@ export function isPersistableAppearancePreferences(
  * One parser per persisted field, and nothing else decides what the file
  * holds (BUG-142). `parseSettings` and `writeSettings` both derive from this
  * table, and the mapped type requires an entry for EVERY key of
- * `ExawattSettings`: a field added to the interface without a parser here is
+ * `StoredSettings`: a field added to the interface without a parser here is
  * a compile error, not a silently write-only setting. That is the class
  * BUG-044 shipped into — `keyboardShortcuts` was written by its IPC channel
  * and never assigned back by the parser, so a rebind vanished on relaunch and
@@ -392,8 +283,8 @@ export function isPersistableAppearancePreferences(
 type SettingsFieldParser<T> = (raw: unknown) => T | undefined;
 
 const SETTINGS_SCHEMA: {
-  readonly [K in keyof ExawattSettings]-?: SettingsFieldParser<
-    NonNullable<ExawattSettings[K]>
+  readonly [K in keyof StoredSettings]-?: SettingsFieldParser<
+    NonNullable<StoredSettings[K]>
   >;
 } = {
   terminal: raw => {
@@ -443,7 +334,7 @@ const SETTINGS_SCHEMA: {
     ) {
       return undefined;
     }
-    const parsed: NonNullable<ExawattSettings['notifications']> = {
+    const parsed: NonNullable<StoredSettings['notifications']> = {
       attention:
         typeof candidate.attention === 'boolean' ? candidate.attention : false,
     };
@@ -489,7 +380,7 @@ const SETTINGS_SCHEMA: {
       lastFailure?: unknown;
     };
     if (typeof candidate.autoPublish !== 'boolean') return undefined;
-    const parsed: NonNullable<ExawattSettings['operatorProfile']> = {
+    const parsed: NonNullable<StoredSettings['operatorProfile']> = {
       autoPublish: candidate.autoPublish,
     };
     const startedAt = normalizedTimestamp(candidate.startedAt);
@@ -604,7 +495,7 @@ const SETTINGS_SCHEMA: {
 
 /** Every field the settings file may carry, in schema order. */
 export const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as ReadonlyArray<
-  keyof ExawattSettings
+  keyof StoredSettings
 >;
 
 function explicitBoolean(raw: unknown, key: string): boolean | undefined {
@@ -613,10 +504,10 @@ function explicitBoolean(raw: unknown, key: string): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
-export function parseSettings(raw: unknown): ExawattSettings {
+export function parseSettings(raw: unknown): StoredSettings {
   if (!raw || typeof raw !== 'object') return {};
   const record = raw as Record<string, unknown>;
-  const settings: ExawattSettings = {};
+  const settings: StoredSettings = {};
   for (const key of SETTINGS_KEYS) {
     const value = SETTINGS_SCHEMA[key](record[key]);
     if (value !== undefined) {
@@ -635,7 +526,7 @@ function validStoredSettings(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const raw = value as Record<string, unknown>;
   const knownProperties: Partial<
-    Record<keyof ExawattSettings, readonly string[]>
+    Record<keyof StoredSettings, readonly string[]>
   > = {
     terminal: [
       'fontFamily',
@@ -737,7 +628,7 @@ function validStoredSettings(value: unknown): boolean {
   return true;
 }
 
-function recoverySettings(): ExawattSettings {
+function recoverySettings(): StoredSettings {
   return {
     appearance: structuredClone(
       CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
@@ -751,7 +642,7 @@ function recoverySettings(): ExawattSettings {
   };
 }
 
-export function loadSettings(): ExawattSettings {
+export function loadSettings(): StoredSettings {
   let result;
   try {
     result = readJsonFile(settingsFile(), validStoredSettings);
@@ -781,7 +672,7 @@ export function loadSettings(): ExawattSettings {
  * parser cannot be written, so the file can never hold something `parseSettings`
  * would drop on the next read.
  */
-export function writeSettings(settings: ExawattSettings): void {
+export function writeSettings(settings: StoredSettings): void {
   const persisted: Record<string, unknown> = {};
   for (const key of SETTINGS_KEYS) {
     if (settings[key] !== undefined) persisted[key] = settings[key];
@@ -790,7 +681,7 @@ export function writeSettings(settings: ExawattSettings): void {
 }
 
 function launchConfigurationPool(
-  settings: ExawattSettings
+  settings: StoredSettings
 ): LaunchConfigurationPoolV1 {
   return settings.launchConfigurations ?? emptyLaunchConfigurationPool();
 }
@@ -799,7 +690,7 @@ export function recordLaunchConfigurationSuccess(
   projectDir: string,
   rawTarget: unknown,
   launchedAt = Date.now()
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   settings.launchConfigurations = recordConfigurationSuccess(
     launchConfigurationPool(settings),
@@ -815,7 +706,7 @@ export function saveNamedLaunchConfiguration(
   rawConfiguration: unknown,
   name: unknown,
   savedAt = Date.now()
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   settings.launchConfigurations = saveNamedConfiguration(
     launchConfigurationPool(settings),
@@ -830,7 +721,7 @@ export function saveNamedLaunchConfiguration(
 export function renameLaunchConfiguration(
   id: unknown,
   name: unknown
-): ExawattSettings {
+): StoredSettings {
   if (typeof id !== 'string')
     throw new Error('Invalid Launch Configuration id');
   const settings = loadSettings();
@@ -843,7 +734,7 @@ export function renameLaunchConfiguration(
   return settings;
 }
 
-export function deleteLaunchConfiguration(id: unknown): ExawattSettings {
+export function deleteLaunchConfiguration(id: unknown): StoredSettings {
   if (typeof id !== 'string')
     throw new Error('Invalid Launch Configuration id');
   const settings = loadSettings();
@@ -859,7 +750,7 @@ export function setLaunchConfigurationPinned(
   projectDir: string,
   id: unknown,
   pinned: unknown
-): ExawattSettings {
+): StoredSettings {
   if (typeof id !== 'string' || typeof pinned !== 'boolean') {
     throw new Error('Invalid Launch Configuration pin');
   }
@@ -874,14 +765,14 @@ export function setLaunchConfigurationPinned(
   return settings;
 }
 
-export function setAttentionNotifications(enabled: boolean): ExawattSettings {
+export function setAttentionNotifications(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.notifications = { ...settings.notifications, attention: enabled };
   writeSettings(settings);
   return settings;
 }
 
-export function setDockBadge(enabled: boolean): ExawattSettings {
+export function setDockBadge(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.notifications = {
     attention: settings.notifications?.attention ?? false,
@@ -891,7 +782,7 @@ export function setDockBadge(enabled: boolean): ExawattSettings {
   return settings;
 }
 
-export function setHostedContextLabels(enabled: boolean): ExawattSettings {
+export function setHostedContextLabels(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.contextLabels = { hosted: enabled };
   writeSettings(settings);
@@ -900,14 +791,14 @@ export function setHostedContextLabels(enabled: boolean): ExawattSettings {
 
 export function setHostedConversationSummaries(
   enabled: boolean
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   settings.conversationSummaries = { hosted: enabled };
   writeSettings(settings);
   return settings;
 }
 
-export function setGoalVisualsEnabled(enabled: boolean): ExawattSettings {
+export function setGoalVisualsEnabled(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.goalVisuals = { enabled };
   writeSettings(settings);
@@ -921,21 +812,21 @@ export function setGoalVisualsEnabled(enabled: boolean): ExawattSettings {
  */
 export function setKeyboardShortcutOverrides(
   overrides: unknown
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   settings.keyboardShortcuts = parseKeyboardShortcutOverrides(overrides);
   writeSettings(settings);
   return settings;
 }
 
-export function setReentryRecapEnabled(enabled: boolean): ExawattSettings {
+export function setReentryRecapEnabled(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.reentryRecap = { enabled };
   writeSettings(settings);
   return settings;
 }
 
-export function setClaudePlanWindowsEnabled(enabled: boolean): ExawattSettings {
+export function setClaudePlanWindowsEnabled(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.claudePlanWindows = { enabled };
   writeSettings(settings);
@@ -943,7 +834,7 @@ export function setClaudePlanWindowsEnabled(enabled: boolean): ExawattSettings {
 }
 
 /** Default ON; only an explicit false is off (the `!== false` convention). */
-export function isClaudePlanWindowsEnabled(settings: ExawattSettings): boolean {
+export function isClaudePlanWindowsEnabled(settings: StoredSettings): boolean {
   return settings.claudePlanWindows?.enabled !== false;
 }
 
@@ -956,7 +847,7 @@ function normalizedTimestamp(value: unknown): string | null {
 export function setOperatorAutoPublish(
   enabled: boolean,
   now: () => number = Date.now
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   const current = settings.operatorProfile;
   settings.operatorProfile = { ...current, autoPublish: enabled };
@@ -979,7 +870,7 @@ export interface OperatorProfilePublicationState {
 /** Persist hosted publication truth without moving the consent boundary. */
 export function recordOperatorProfilePublicationState(
   raw: OperatorProfilePublicationState
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   const current = settings.operatorProfile;
   if (!current) throw new Error('Publishing preference is unavailable');
@@ -1014,7 +905,7 @@ export function recordOperatorProfilePublicationState(
  */
 export function recordOperatorStatsSync(
   event: OperatorStatsSyncEvent
-): ExawattSettings {
+): StoredSettings {
   const settings = loadSettings();
   const current = settings.operatorProfile;
   if (!current) throw new Error('Publishing preference is unavailable');
@@ -1045,7 +936,7 @@ export function recordOperatorStatsSync(
   return settings;
 }
 
-export function setAppearancePreferences(raw: unknown): ExawattSettings {
+export function setAppearancePreferences(raw: unknown): StoredSettings {
   const appearance = parseAppearancePreferences(raw);
   if (!appearance || !isPersistableAppearancePreferences(appearance)) {
     throw new Error('Invalid or unavailable appearance preference');
@@ -1060,7 +951,7 @@ export function recordAgentSourceUse(
   projectDir: string,
   source: string,
   usedAt: number
-): ExawattSettings {
+): StoredSettings {
   if (
     typeof projectDir !== 'string' ||
     !projectDir ||
@@ -1092,7 +983,7 @@ export function setAgentPermissionMode(
   projectDir: string,
   source: string,
   permissionMode: AgentPermissionMode
-): ExawattSettings {
+): StoredSettings {
   if (
     typeof projectDir !== 'string' ||
     !projectDir ||

@@ -18,6 +18,7 @@ import {
   type DistributionEndpointRefV1,
 } from '@exawatt/core/distribution';
 import { SessionScopedState } from './session-scoped-state';
+import type { GoalVisual, PtyReentryRecap } from '@exawatt/core/desktop-bridge';
 
 /**
  * ENG-021 E1 context owner.
@@ -56,13 +57,6 @@ const MODEL_PREAMBLE =
 const FIRST_PERSON =
   /\b(?:i(?:'m| am|'ve| have|'ll| will)|we(?:'re| are|'ve| have|'ll| will))\b/i;
 
-export interface ReentryRecap {
-  id: string;
-  text: string;
-  awayMs: number;
-  generatedAt: number;
-}
-
 export interface ContextLabelEvidence {
   schemaVersion: 1;
   sessionKey: string;
@@ -82,14 +76,6 @@ export interface HostedContextLabel {
   label: string;
   relationship: 'same_context' | 'new_context';
   confidence: number;
-}
-
-/** Source-neutral visual identity for one durable Session goal (ENG-015 S4.1). */
-export interface GoalVisual {
-  identityKey: string;
-  revision: number;
-  state: 'fallback' | 'generating' | 'ready' | 'rejected';
-  dataUrl?: string | null;
 }
 
 /**
@@ -1115,7 +1101,7 @@ export class ContextSummarizer extends EventEmitter {
           text,
           awayMs: request.awayMs,
           generatedAt: this.now(),
-        } satisfies ReentryRecap);
+        } satisfies PtyReentryRecap);
       }
     } catch (error) {
       this.diagnoseFn('recap.engine-failure', {

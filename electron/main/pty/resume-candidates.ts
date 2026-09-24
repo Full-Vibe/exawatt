@@ -10,36 +10,15 @@ import {
   parseOpencodeSessionList,
 } from './conversation-catalog';
 import { planLoginShell, shellQuote } from './login-shell';
+import type {
+  HarnessResumeCandidate,
+  ReconciledResumeIdentity,
+  ResumeIdentityHint,
+} from '@exawatt/core/desktop-bridge';
 
 export { parseOpencodeSessionList } from './conversation-catalog';
 
 const execFileAsync = promisify(execFile);
-
-export interface HarnessResumeCandidate {
-  id: string;
-  cwd: string;
-  /** Provider session creation time, used to associate parallel launches. */
-  startedAt: number;
-  updatedAt: number;
-  label: string;
-  description: string | null;
-}
-
-export interface ResumeIdentityHint {
-  durableSessionId: string;
-  harness: Exclude<PtyHarness, 'shell'>;
-  cwd: string;
-  initialTask: string | null;
-  harnessSessionId: string | null;
-}
-
-export interface ReconciledResumeIdentity {
-  durableSessionId: string;
-  harness: Exclude<PtyHarness, 'shell'>;
-  cwd: string;
-  harnessSessionId: string;
-  source: 'durable-index' | 'task-correlation';
-}
 
 const catalogs = new Map<string, RecentConversationCatalog>();
 

@@ -1,16 +1,15 @@
-import type { AgentModelCatalog } from './agent-models';
-import type { PtyCreateOptions, PtySessionInfo } from './session-manager';
-
-export interface SessionModelChange {
-  model: string;
-  effort?: string;
-}
+import type {
+  AgentModelCatalog,
+  PtyCreateOptions,
+  PtySessionRecord,
+  SessionModelChange,
+} from '@exawatt/core/desktop-bridge';
 
 interface ModelChangePorts {
-  session(id: string): PtySessionInfo | undefined;
+  session(id: string): PtySessionRecord | undefined;
   available(id: string): boolean;
-  catalog(session: PtySessionInfo): Promise<AgentModelCatalog>;
-  restart(id: string, choice: SessionModelChange): Promise<PtySessionInfo>;
+  catalog(session: PtySessionRecord): Promise<AgentModelCatalog>;
+  restart(id: string, choice: SessionModelChange): Promise<PtySessionRecord>;
 }
 
 /** Validate before stopping anything, then recheck live truth after discovery.
@@ -68,7 +67,7 @@ export function createSessionModelChanger(ports: ModelChangePorts) {
 
 /** Resume carries the launch policy, but never resends the initial task. */
 export function modelChangeResumeOptions(
-  session: PtySessionInfo,
+  session: PtySessionRecord,
   original: PtyCreateOptions,
   choice: SessionModelChange
 ): PtyCreateOptions {

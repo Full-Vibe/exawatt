@@ -16,8 +16,7 @@
  */
 import { broadcastToWindows } from './window-broadcast';
 import { handleTrusted } from './ipc-security';
-
-export type CommandEnginePhase = 'starting' | 'ready' | 'paused';
+import type { CommandEnginePhase } from '@exawatt/core/desktop-bridge';
 
 export const COMMAND_ENGINE_CHANNEL = 'app:command-engine';
 export const COMMAND_ENGINE_CHANGED_CHANNEL = 'app:command-engine-changed';

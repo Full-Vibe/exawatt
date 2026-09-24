@@ -1,15 +1,9 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import type { RoadmapProjectChange } from '@exawatt/core/desktop-bridge';
 
 const execFileAsync = promisify(execFile);
-
-export interface RoadmapProjectChange {
-  hash: string;
-  subject: string;
-  /** Unix epoch milliseconds. */
-  committedAt: number;
-}
 
 export async function readRoadmapActivity(
   projectDir: string

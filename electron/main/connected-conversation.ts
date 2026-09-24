@@ -4,6 +4,11 @@ import type {
   SourceContextRecord,
 } from '@exawatt/core';
 import { MAX_ID_LENGTH, isRecord, validText } from './untrusted-input';
+import type {
+  ConversationRequest,
+  ConversationRole,
+  ConversationTurnView,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * One coworker's conversation, as data (ENG-033 H2).
@@ -73,36 +78,6 @@ export function findPrimaryConversation(
 }
 
 /* ---- Turns --------------------------------------------------------------- */
-
-/**
- * Who said it. The product vocabulary, not the protocol's: Exawatt says
- * Conversation, and the two voices in one are the operator and the coworker.
- */
-export type ConversationRole = 'operator' | 'agent';
-
-export interface ConversationTurnView {
-  /**
-   * Stable identity, derived from the turn's own content and its position
-   * among identical siblings rather than minted per read. An authoritative
-   * resnapshot must produce the same id for the same turn, because that is
-   * what lets a reconnect reconcile instead of duplicating.
-   */
-  id: string;
-  role: ConversationRole;
-  text: string;
-  at: number;
-  /** The run that produced it, when the source names one. */
-  runId: string | null;
-  /** True when `text` was clipped to the per-turn budget. */
-  clipped: boolean;
-}
-
-export interface ConversationRequest {
-  /** Turns to return, newest backward. Clamped to `MAX_CONVERSATION_TURNS`. */
-  limit?: number;
-  /** Page further back: the turns older than this one. */
-  beforeTurnId?: string;
-}
 
 /**
  * One turn's stable id.

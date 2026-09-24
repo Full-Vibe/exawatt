@@ -10,15 +10,10 @@ import {
   refreshNativeWindowBackgrounds,
   rendererAppearanceBootstrapSnapshot,
 } from './appearance';
-import type {
-  ElectronAuthLinkConfig,
-  ElectronAuthStartConfig,
-} from './auth-coordinator';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import type { DiagnosticRecorder } from './diagnostics-log';
 import {
   buildDiagnosticsReport,
-  type DiagnosticsReport,
   type DiagnosticsReportInput,
 } from './diagnostics-report';
 import { createDirectoryPicker } from './directory-picker';
@@ -28,6 +23,11 @@ import {
 } from './distribution';
 import { registerTrustedChannels, type TrustedChannels } from './ipc-table';
 import type { ElectronAppearancePreferencesV1 } from './settings-store';
+import type {
+  DiagnosticsReport,
+  ElectronAuthLinkConfig,
+  ElectronAuthStartConfig,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * Main's own channels, as tables keyed by channel name (`ipc-table.ts`):

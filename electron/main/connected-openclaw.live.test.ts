@@ -22,26 +22,24 @@ import {
   ConnectedGatewaySession,
   describeExawattClient,
 } from './connected-gateway';
-import {
-  ConnectedSourceStore,
-  type AddConnectedSourceInput,
-} from './connected-source-store';
+import { ConnectedSourceStore } from './connected-source-store';
 import {
   FileConnectedAgentProjectionPlanStore,
   deriveRemoteAgentId,
 } from './connected-agent-projection-plan';
-import {
-  ConnectedSourceRuntime,
-  type ConnectedSourceStatusView,
-  type DiscoveredSourceAgent,
-  type RemoteAgentView,
-} from './connected-source-runtime';
+import { ConnectedSourceRuntime } from './connected-source-runtime';
 import {
   buildSshArgs,
   openSshTunnel,
   type SshDestination,
   type SshTunnel,
 } from './ssh-tunnel';
+import type {
+  AddConnectedSourceInput,
+  ConnectedSourceStatusView,
+  DiscoveredSourceAgent,
+  RemoteAgentView,
+} from '@exawatt/core/desktop-bridge';
 
 vi.mock('electron', () => ({}));
 

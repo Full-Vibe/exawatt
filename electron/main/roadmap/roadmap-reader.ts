@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { RoadmapReadResult } from '@exawatt/core/desktop-bridge';
 
 /**
  * Roadmap file discovery + read for the roadmap lens (ENG-017).
@@ -27,11 +28,6 @@ export const ROADMAP_DISCOVERY_ORDER = [
  * arrives.
  */
 const MAX_ROADMAP_BYTES = 8 * 1024 * 1024;
-
-export type RoadmapReadResult =
-  | { status: 'ok'; file: string; text: string; mtimeMs: number }
-  | { status: 'none'; checked: string[] }
-  | { status: 'error'; error: string };
 
 function assertValidProjectDir(projectDir: string): void {
   if (

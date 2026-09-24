@@ -1,14 +1,12 @@
 import type { DiagnosticFields } from './diagnostics-log';
+import type { AddConnectedSourceResult } from './connected-source-store';
 import type {
   AddConnectedSourceInput,
-  AddConnectedSourceResult,
-} from './connected-source-store';
-import type {
+  AuthorityRequestResult,
   ConnectSourceResult,
   ConnectedSourceChange,
   MapAgentsResult,
-} from './connected-source-runtime';
-import type { AuthorityRequestResult } from './connected-gateway-authority';
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * What the connected-source subsystem records about the operator's own acts

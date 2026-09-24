@@ -13,12 +13,14 @@ import {
   delegationBusy,
   delegationIsLive,
   EMPTY_LEDGER,
-  type DelegatedChild,
   type DelegationLedger,
   type HarnessEvent,
   type ReportedChildCensus,
-  type SessionDelegation,
 } from './delegation-state';
+import type {
+  DelegatedChild,
+  SessionDelegation,
+} from '@exawatt/core/desktop-bridge';
 
 /** What inference withdrew when a reported record lost coverage (D7). */
 interface StaleReportReclaim {

@@ -4,6 +4,10 @@ import {
   anonymizeHomePath,
   redactDiagnosticValue,
 } from './diagnostics-redaction';
+import type {
+  DiagnosticsLogTail,
+  DiagnosticsReport,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * The anonymized diagnostics bundle (ENG-025 F5).
@@ -33,44 +37,6 @@ const MAX_LOG_BYTES = 24_000;
 /** Hard ceiling on the serialized bundle. The intake cap is 32KB; stopping
  *  short leaves room for the surrounding feedback context. */
 export const MAX_REPORT_BYTES = 28_000;
-
-export interface DiagnosticsLogTail {
-  name: string;
-  present: boolean;
-  lines: unknown[];
-  /** Set when the tail was shortened, so a reader never mistakes a truncated
-   *  log for a complete one. */
-  truncated?: boolean;
-}
-
-export interface DiagnosticsReport {
-  reportVersion: number;
-  generatedAt: string;
-  app: {
-    version: string;
-    sha: string;
-    branch: string;
-    delivery: string;
-    packaged: boolean;
-    installPath: string;
-  };
-  system: {
-    platform: string;
-    arch: string;
-    osRelease: string;
-    electron: string;
-    node: string;
-    locale: string;
-  };
-  update: Record<string, unknown> | null;
-  session: {
-    signedIn: boolean;
-    liveSessions: number;
-  };
-  logs: DiagnosticsLogTail[];
-  /** Populated when the bundle had to be shortened to fit the byte ceiling. */
-  notes?: string[];
-}
 
 export interface DiagnosticsReportInput {
   build: {
