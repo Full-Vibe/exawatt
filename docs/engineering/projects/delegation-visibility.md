@@ -1851,3 +1851,13 @@ The split:
 
 The reproduction runs through the real client with two Sessions and fails on
 master at the first poll (the other Session's census never arrives).
+
+Found while gating: `eval:electron:delegation` failed once under load (three
+checks read a false `turn-end` on the Codex Session) and passed on rerun, with
+and without this change. Cause: the fixture's fake Codex rewrote its state
+file with a plain `writeFileSync` while the fixture app-server read it from
+another process. A read between truncate and write parses `''`, the server
+crashes, the census withdraws, and a quiet parent (1.2 s quiet, 1-byte burst
+in that eval) raises `turn-end`. A two-process write loop measured 6,881 parse
+failures in 50,633 reads with plain writes and none with write-then-rename;
+`harness-event-fixture.mjs` now writes by rename.

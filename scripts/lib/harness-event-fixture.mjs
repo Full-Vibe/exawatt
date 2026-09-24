@@ -235,6 +235,15 @@ const protocolStatePath = ${JSON.stringify(codexState)};
 const sessionsRoot = ${JSON.stringify(codexSessions)};
 const projectDirectory = ${JSON.stringify(project)};
 const rootThreadId = ${JSON.stringify(codexRootId)};
+// The fixture app-server reads this file from another process on every
+// request. A plain write truncates before it writes, so a read in between
+// parsed '' and crashed the server; the census withdrew and a quiet parent
+// raised a false turn-end (found gating BUG-183 under load). Rename is atomic.
+const writeState = state => {
+  const temporary = protocolStatePath + '.' + process.pid + '.tmp';
+  fs.writeFileSync(temporary, JSON.stringify(state));
+  fs.renameSync(temporary, protocolStatePath);
+};
 if (cargv[0] === 'app-server') {
   if (!protocolEnabled) process.exit(2);
   let rpcBuffer = '';
@@ -355,7 +364,7 @@ process.stdin.on('data', chunk => {
       if (child) {
         child.live = false;
         child.updatedAt += 100;
-        fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+        writeState(state);
       }
     } else if (line.startsWith('resume ') || line.startsWith('fail ')) {
       const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
@@ -364,18 +373,18 @@ process.stdin.on('data', chunk => {
         child.live = line.startsWith('resume ');
         child.status = child.live ? null : 'failed';
         // Deliberately preserve updatedAt: source timestamps cannot gate lifecycle.
-        fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+        writeState(state);
       }
     } else if (line === 'activity-refused' || line === 'activity-restored') {
       const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
       state.refuseActivity = line === 'activity-refused';
       state.children[0].live = true;
       state.children[0].direct = true;
-      fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+      writeState(state);
     } else if (line === 'protocol-down' || line === 'protocol-up') {
       const state = JSON.parse(fs.readFileSync(protocolStatePath, 'utf8'));
       state.available = line === 'protocol-up';
-      fs.writeFileSync(protocolStatePath, JSON.stringify(state));
+      writeState(state);
     }
   }
 });
