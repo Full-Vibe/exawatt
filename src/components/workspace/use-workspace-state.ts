@@ -36,7 +36,7 @@ import {
   operatorPosition,
   type OperatorMoveClaim,
 } from '@/components/nav/operator-position';
-import { pickDistinctColor, projectColor } from './project-colors';
+import { pickDistinctColor } from './project-colors';
 import {
   moveProjectInList,
   moveTabWithinProject,
@@ -47,7 +47,7 @@ import {
   tabAtOrdinal,
   type RingAnchor,
 } from './tab-ring';
-import { nextPin, tabIsPinnable } from './split-layout';
+import { nextPin } from './split-layout';
 import {
   SESSION_JUMP_EVENT,
   TAB_SELECT_EVENT,
@@ -73,7 +73,6 @@ import {
   loadAgentSourceRegistry,
   loadAgentModelCatalog,
   permissionModeFor,
-  type AgentSourceId,
 } from './agent-sources';
 import {
   cloneTargetSourceReady,
@@ -93,7 +92,6 @@ import type { AgentPermissionMode, PtyHarness } from '@exawatt/core';
 import type {
   ClosedSessionEntry,
   GoalVisual,
-  GoalVisualRef,
   PtyAttention,
   PtyReentryRecap,
   PtySessionRecord,
@@ -127,10 +125,23 @@ import {
 import {
   dropDetachedRemoteTabs,
   parsePersisted,
-  type PersistedTab,
-  type PersistedV6,
   type PersistedV7,
 } from './workspace-state/persisted-layout';
+import {
+  persistedContextSummaries,
+  persistedGoalVisualRefs,
+  restoreLayout,
+  resumeIdentityHints,
+  seedSessionStores,
+  unresolvedGoalVisual,
+  withReconciledIdentities,
+} from './workspace-state/layout-restore';
+import {
+  serializeLayout,
+  shutdownTargets,
+  withLiveHarnessIdentities,
+} from './workspace-state/layout-serialize';
+import { RecentProjects } from './workspace-state/recent-projects';
 
 // The workspace model and its persisted shapes live in `workspace-state/`;
 // this module stays the one entry point every caller imports them from.
@@ -171,22 +182,6 @@ export type {
   PersistedV6,
   PersistedV7,
 } from './workspace-state/persisted-layout';
-
-/**
- * The layout's share of a goal visual: its identity, never its pixels
- * (BUG-031). A visual that has not settled `ready` persists as nothing at
- * all, exactly as before — transitional states are not layout.
- */
-function persistedGoalVisual(
-  visual: GoalVisual | undefined
-): GoalVisualRef | null {
-  if (!visual || visual.state !== 'ready') return null;
-  return {
-    identityKey: visual.identityKey,
-    revision: visual.revision,
-    state: 'ready',
-  };
-}
 
 /**
  * The ids of the sources Exawatt still has a record of.
@@ -345,7 +340,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const editedDirsRef = useRef<Set<string>>(new Set());
   /** durable Project recency (ENG-016 D8) — loaded from the persisted layout,
    *  re-merged on every save so closed Projects survive */
-  const recentsRef = useRef<NonNullable<PersistedV6['recentProjects']>>([]);
+  const [recents] = useState(() => new RecentProjects());
   const readyRef = useRef(ready);
   readyRef.current = ready;
   /** Clone requests currently spawning, keyed `tabId:targetId`. A ref, not
@@ -575,73 +570,30 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (persistedRaw !== null && persistedRaw !== undefined && !decoded) {
         throw new Error('Saved workspace format is not supported');
       }
-      const persisted = dropDetachedRemoteTabs(decoded, configuredSourceIds);
+      let persisted = dropDetachedRemoteTabs(decoded, configuredSourceIds);
       if (persisted && api.reconcileResumeIdentities) {
-        const agentTabs = persisted.projects.flatMap(project =>
-          project.tabs.flatMap(tab =>
-            // A coworker has no provider conversation of Exawatt's to
-            // reconcile: its history is its source's, and Exawatt never
-            // holds a resume identity for it.
-            tab.kind === 'remote-agent' ||
-            tab.harness === 'shell' ||
-            tab.lifecycle === 'draft'
-              ? []
-              : [
-                  {
-                    durableSessionId: tab.durableSessionId,
-                    harness: tab.harness,
-                    cwd: tab.cwd,
-                    initialTask: tab.initialTask ?? null,
-                    harnessSessionId: tab.harnessSessionId,
-                  },
-                ]
-          )
-        );
-        if (agentTabs.some(tab => !tab.harnessSessionId)) {
+        const hints = resumeIdentityHints(persisted);
+        if (hints.some(tab => !tab.harnessSessionId)) {
           try {
-            const reconciled = await api.reconcileResumeIdentities(agentTabs);
+            const reconciled = await api.reconcileResumeIdentities(hints);
             if (cancelled) return;
-            const byDurableId = new Map(
-              reconciled.map(identity => [
-                identity.durableSessionId,
-                identity.harnessSessionId,
-              ])
-            );
-            for (const project of persisted.projects) {
-              for (const tab of project.tabs) {
-                if (tab.kind === 'remote-agent') continue;
-                tab.harnessSessionId =
-                  byDurableId.get(tab.durableSessionId) ?? tab.harnessSessionId;
-              }
-            }
+            persisted = withReconciledIdentities(persisted, reconciled);
           } catch (cause) {
             console.warn('Session identity reconciliation failed', cause);
           }
         }
       }
-      const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
-      // goal subtitles (D21): the persisted layout restores each Session's
-      // goal first; live truth from main overrides it, all by durable id.
-      // Attention, activity, and started flags adopt from live main truth
-      // (D22/D29), so renderer reloads cannot regress any status surface.
-      const seeded: Record<string, string> = {};
-      const seededGoalVisuals: Record<string, GoalVisual> = {};
-      const seededAttention: Record<string, PtyAttention> = {};
-      const seededActivity: Record<string, boolean> = {};
-      const seededEngaged: Record<string, boolean> = {};
-      const seededDelegation: Record<string, SessionDelegation> = {};
+      // goal subtitles (D21) and their last ready visual: the persisted
+      // layout restores each Session's goal first, through main's stores.
+      let restoredSummaries: ReadonlyArray<readonly [string, string | null]> =
+        [];
+      let restoredGoalVisuals: ReadonlyArray<
+        readonly [string, GoalVisual | null]
+      > = [];
       if (persisted) {
-        const persistedSummaries = persisted.projects.flatMap(g =>
-          g.tabs.flatMap(t =>
-            // Goals are a durable SESSION's, keyed by an identity a coworker
-            // tab does not have. Its context lives on its own source.
-            t.kind !== 'remote-agent' && t.contextSummary
-              ? [[t.durableSessionId, t.contextSummary] as const]
-              : []
-          )
-        );
+        const persistedSummaries = persistedContextSummaries(persisted);
         const restoreContext = api.restoreContext;
-        const restoredSummaries = restoreContext
+        restoredSummaries = restoreContext
           ? await Promise.all(
               persistedSummaries.map(
                 async ([durableSessionId, summary]) =>
@@ -653,21 +605,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             )
           : persistedSummaries;
         if (cancelled) return;
-        for (const [durableSessionId, summary] of restoredSummaries) {
-          if (summary) seeded[durableSessionId] = summary;
-        }
-        const persistedGoalVisuals = persisted.projects.flatMap(g =>
-          g.tabs.flatMap(t =>
-            t.kind !== 'remote-agent' && t.goalVisual
-              ? [[t.durableSessionId, t.goalVisual] as const]
-              : []
-          )
-        );
+        const persistedGoalVisuals = persistedGoalVisualRefs(persisted);
         const restoreGoalVisual = api.restoreGoalVisual;
-        // Only main can turn a persisted REFERENCE back into pixels (the
-        // content store is main's). Without that bridge a restored reference
-        // is honestly a fallback, never a `ready` state with no image.
-        const restoredGoalVisuals = restoreGoalVisual
+        restoredGoalVisuals = restoreGoalVisual
           ? await Promise.all(
               persistedGoalVisuals.map(
                 async ([durableSessionId, visual]) =>
@@ -679,226 +619,50 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             )
           : persistedGoalVisuals.map(
               ([durableSessionId, visual]) =>
-                [
-                  durableSessionId,
-                  { ...visual, state: 'fallback', dataUrl: null } as GoalVisual,
-                ] as const
+                [durableSessionId, unresolvedGoalVisual(visual)] as const
             );
         if (cancelled) return;
-        for (const [durableSessionId, visual] of restoredGoalVisuals) {
-          if (visual) seededGoalVisuals[durableSessionId] = visual;
+      }
+      const seeds = seedSessionStores(
+        live,
+        { summaries: restoredSummaries, goalVisuals: restoredGoalVisuals },
+        {
+          attentionCleared: clearedBeforeSeed,
+          quiet: quietBeforeSeed,
+          settled: settledBeforeSeed,
         }
+      );
+      if (Object.keys(seeds.summaries).length > 0) {
+        setSummaries(prev => ({ ...seeds.summaries, ...prev }));
       }
-      for (const s of live) {
-        if (s.contextSummary) seeded[s.durableSessionId] = s.contextSummary;
-        if (s.goalVisual) seededGoalVisuals[s.durableSessionId] = s.goalVisual;
-        if (s.attention && !clearedBeforeSeed.has(s.id)) {
-          seededAttention[s.id] = s.attention;
-        }
-        if (s.working && !quietBeforeSeed.has(s.id)) {
-          seededActivity[s.id] = true;
-        }
-        if (s.engaged) seededEngaged[s.id] = true;
-        // Reload and late-attach adopt live delegation immediately (ENG-023);
-        // otherwise the dots would wait for the next child to start or stop.
-        // Already filtered by main; a settled Session simply carries none.
-        if (s.delegation && !settledBeforeSeed.has(s.id)) {
-          seededDelegation[s.id] = s.delegation;
-        }
+      if (Object.keys(seeds.goalVisuals).length > 0) {
+        setGoalVisuals(prev => ({ ...seeds.goalVisuals, ...prev }));
       }
-      if (Object.keys(seeded).length > 0) {
-        setSummaries(prev => ({ ...seeded, ...prev }));
+      if (Object.keys(seeds.attention).length > 0) {
+        setAttention(prev => ({ ...seeds.attention, ...prev }));
       }
-      if (Object.keys(seededGoalVisuals).length > 0) {
-        setGoalVisuals(prev => ({ ...seededGoalVisuals, ...prev }));
+      if (Object.keys(seeds.activity).length > 0) {
+        setActivity(prev => ({ ...seeds.activity, ...prev }));
       }
-      if (Object.keys(seededAttention).length > 0) {
-        setAttention(prev => ({ ...seededAttention, ...prev }));
+      if (Object.keys(seeds.engaged).length > 0) {
+        setEngaged(prev => ({ ...seeds.engaged, ...prev }));
       }
-      if (Object.keys(seededActivity).length > 0) {
-        setActivity(prev => ({ ...seededActivity, ...prev }));
+      if (Object.keys(seeds.delegation).length > 0) {
+        setDelegation(prev => ({ ...seeds.delegation, ...prev }));
       }
-      if (Object.keys(seededEngaged).length > 0) {
-        setEngaged(prev => ({ ...seededEngaged, ...prev }));
-      }
-      if (Object.keys(seededDelegation).length > 0) {
-        setDelegation(prev => ({ ...seededDelegation, ...prev }));
-      }
+      const { restored, unclaimed } = restoreLayout(persisted, live, {
+        observedIdentities: observedIdentitiesRef.current,
+        previousRunInterrupted: recovery.previousRunInterrupted,
+      });
       /** where the restored layout put the operator, if anywhere */
       let restoredActiveDir: string | null = null;
-      if (persisted) {
-        const assigned: Array<string | undefined> = persisted.projects.map(
-          g => g.color
-        );
-        const restored: Project[] = persisted.projects.map((g, gi) => ({
-          dir: g.dir,
-          rootPath: g.rootPath,
-          name: g.name,
-          color:
-            g.color ??
-            (assigned[gi] = pickDistinctColor(assigned)) ??
-            projectColor(g.dir),
-          // belt-and-suspenders vs older/hand-edited files: an activeTabId
-          // that matches no tab would blank the pane area
-          activeTabId: g.tabs.some(t => t.id === g.activeTabId)
-            ? g.activeTabId
-            : (g.tabs[0]?.id ?? null),
-          tabs: g.tabs.map<WorkspaceTab>(raw => {
-            if (raw.kind === 'remote-agent') {
-              // A coworker restores as identity and nothing else. There is no
-              // process to adopt, no lifecycle to repair, and no cached
-              // conversation: the surface re-reads the source on open, so a
-              // relaunch can never present yesterday's transcript as current.
-              return {
-                kind: 'remote-agent',
-                id: raw.id,
-                title: raw.title,
-                sourceId: raw.sourceId,
-                nativeAgentId: raw.nativeAgentId,
-                agentId: raw.agentId,
-                projectLabel: raw.projectLabel,
-              };
-            }
-            // the persisted draft fields stay OFF non-draft tabs (and the
-            // untyped draftSource string never reaches WorkspaceTab)
-            const {
-              draftTask,
-              draftSource,
-              draftModel,
-              draftEffort,
-              draftTouched,
-              draftWorktree,
-              draftBranch,
-              draftRoadmapItemId,
-              ...t
-            } = raw;
-            // a persisted draft (D28) restores as a draft: no process, no
-            // resume identity — just the composer with the saved work
-            if (t.lifecycle === 'draft') {
-              return {
-                ...t,
-                kind: 'session' as const,
-                initialTask: t.initialTask ?? null,
-                sessionId: null,
-                exitCode: null,
-                lifecycle: 'draft' as const,
-                resumeState: 'identity-missing' as const,
-                draftTask: draftTask ?? null,
-                draftSource: isAgentSourceId(draftSource ?? '')
-                  ? (draftSource as AgentSourceId)
-                  : null,
-                draftModel:
-                  typeof draftModel === 'string' &&
-                  draftModel.length <= 512 &&
-                  !/[\s\u0000-\u001f\u007f]/.test(draftModel)
-                    ? draftModel
-                    : null,
-                draftEffort:
-                  typeof draftEffort === 'string' &&
-                  draftEffort.length <= 32 &&
-                  /^[a-z][a-z0-9_-]*$/.test(draftEffort)
-                    ? draftEffort
-                    : null,
-                draftTouched: draftTouched === true,
-                draftWorktree: draftWorktree === true,
-                draftBranch:
-                  typeof draftBranch === 'string' &&
-                  draftBranch.length <= 512 &&
-                  !/[\u0000-\u001f\u007f]/.test(draftBranch)
-                    ? draftBranch
-                    : null,
-                draftRoadmapItemId:
-                  typeof draftRoadmapItemId === 'string' &&
-                  draftRoadmapItemId.length <= 256 &&
-                  !/[\u0000-\u001f\u007f]/.test(draftRoadmapItemId)
-                    ? draftRoadmapItemId
-                    : null,
-              };
-            }
-            const s = liveByDurableId.get(t.durableSessionId);
-            const initialTask = t.initialTask ?? null;
-            const observedIdentity =
-              observedIdentitiesRef.current.get(t.durableSessionId) ?? null;
-            if (s && !s.exited) {
-              liveByDurableId.delete(s.durableSessionId);
-              return {
-                ...t,
-                kind: 'session' as const,
-                initialTask,
-                startedAt: s.startedAt,
-                launchModel: s.launchModel,
-                launchEffort: s.launchEffort,
-                sessionId: s.id,
-                harnessSessionId:
-                  s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
-                resumeState: 'live' as const,
-                lifecycle: 'running' as const,
-                exitCode: s.exited ? (s.exitCode ?? 0) : null,
-                exitSignal: null,
-              };
-            }
-            if (s?.exited) {
-              liveByDurableId.delete(s.durableSessionId);
-              return {
-                ...t,
-                kind: 'session' as const,
-                initialTask,
-                startedAt: s.startedAt,
-                sessionId: null,
-                harnessSessionId:
-                  s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
-                resumeState:
-                  s.harnessSessionId || observedIdentity || t.harnessSessionId
-                    ? ('ended-resumable' as const)
-                    : ('identity-missing' as const),
-                lifecycle: 'exited' as const,
-                exitCode: s.exitCode ?? t.exitCode,
-                // Main's record of THIS exit; a persisted signal belongs to
-                // an older incarnation.
-                exitSignal: s.exitSignal,
-              };
-            }
-            // App restart: process is gone. Restore history and identity, but
-            // never spawn until the operator explicitly resumes.
-            return {
-              ...t,
-              kind: 'session' as const,
-              initialTask,
-              harnessSessionId: observedIdentity ?? t.harnessSessionId,
-              sessionId: null,
-              exitCode: t.exitCode,
-              lifecycle:
-                recovery.previousRunInterrupted &&
-                (t.lifecycle === 'running' || t.lifecycle === 'resuming')
-                  ? ('interrupted' as const)
-                  : t.lifecycle === 'running' || t.lifecycle === 'resuming'
-                    ? ('stopped-clean' as const)
-                    : t.lifecycle,
-              resumeState:
-                observedIdentity || t.harnessSessionId
-                  ? ('ended-resumable' as const)
-                  : ('identity-missing' as const),
-            };
-          }),
-        }));
-        setProjects(restored);
-        restoredActiveDir = persisted.activeDir ?? restored[0]?.dir ?? null;
+      if (restored) {
+        setProjects(restored.projects);
+        restoredActiveDir = restored.activeDir;
         setActiveDir(restoredActiveDir);
-        setLastUsedDir(persisted.lastUsedDir ?? '');
-        // tolerate a corrupt/hand-edited recentProjects: a bad shape here
-        // must not break every later debounced save or the shutdown
-        // checkpoint (which calls recentsRef.current.filter)
-        recentsRef.current = Array.isArray(persisted.recentProjects)
-          ? persisted.recentProjects.filter(
-              (r): r is (typeof persisted.recentProjects)[number] =>
-                !!r && typeof r === 'object' && typeof r.dir === 'string'
-            )
-          : [];
-        // restore the split only if the pinned tab still exists
-        const pinned = persisted.pinnedTabId ?? null;
-        if (pinned && restored.some(g => g.tabs.some(t => t.id === pinned))) {
-          setPinnedTabId(pinned);
-        }
+        setLastUsedDir(restored.lastUsedDir);
+        recents.replace(restored.recentProjects);
+        if (restored.pinnedTabId) setPinnedTabId(restored.pinnedTabId);
       }
       // PTY incarnations unknown to the persisted layout (e.g. created or
       // exited since the last save) — or the whole fresh-start case. Exited
@@ -908,11 +672,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // Adoption appends and moves nobody. Only a workspace with no restored
       // position needs one, and it lands on the FIRST adopted Session rather
       // than on whichever one happened to be enumerated last.
-      for (const s of liveByDurableId.values()) {
+      for (const s of unclaimed) {
         addSession(s, s.exited ? s.durableSessionId : undefined);
       }
       if (!restoredActiveDir) {
-        const [firstAdopted] = liveByDurableId.values();
+        const [firstAdopted] = unclaimed;
         if (firstAdopted) setActiveDir(firstAdopted.projectDir);
       }
       setReady(true);
@@ -1114,126 +878,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const serializeWorkspace = useCallback(
     (cleanShutdown = false): PersistedV7 => {
-      const {
-        projects: gs,
-        activeDir: ad,
-        lastUsedDir: lu,
-        pinnedTabId: pin,
-      } = stateRef.current;
-      // the pin follows the tab (D26): it persists with a stopped tab and
-      // reattaches to retained history on relaunch (drafts never persist)
-      const pinSurvives =
-        pin !== null &&
-        gs.some(g => g.tabs.some(t => t.id === pin && tabIsPinnable(t)));
-      const now = Date.now();
-      const recents = [
-        ...gs.map(g => ({
-          dir: g.dir,
-          name: g.name,
-          ...(g.color ? { color: g.color } : {}),
-          lastOpenedAt: now,
-        })),
-        ...recentsRef.current.filter(r => !gs.some(g => g.dir === r.dir)),
-      ].slice(0, 12);
-      recentsRef.current = recents;
-      return {
-        v: 7,
-        lastUsedDir: lu,
-        activeDir: ad,
-        pinnedTabId: pinSurvives ? pin : null,
-        recentProjects: recents,
-        projects: gs.map(g => {
-          // An untouched draft is pre-session UI and vanishes with the run.
-          // Any explicit composer choice is operator work, even when its task
-          // is blank, and persists with the rest of the launch intent.
-          const tabs = g.tabs
-            .filter(
-              tab =>
-                // A coworker tab is identity, so it always persists: there is
-                // no unstarted state for a view of someone else's work.
-                isRemoteAgentTab(tab) ||
-                tab.lifecycle !== 'draft' ||
-                tab.draftTouched === true ||
-                !!tab.draftTask?.trim()
-            )
-            .map<PersistedTab>(tab => {
-              if (isRemoteAgentTab(tab)) {
-                // Identity, and nothing the source owns. No transcript, no
-                // work stack, no coworker state: all of it is re-read on open.
-                return {
-                  kind: 'remote-agent',
-                  id: tab.id,
-                  title: tab.title,
-                  sourceId: tab.sourceId,
-                  nativeAgentId: tab.nativeAgentId,
-                  agentId: tab.agentId,
-                  projectLabel: tab.projectLabel,
-                };
-              }
-              const stopped =
-                cleanShutdown &&
-                (shutdownTargetsRef.current.has(tab.durableSessionId) ||
-                  tabIsLive(tab) ||
-                  tab.lifecycle === 'resuming');
-              return {
-                kind: 'session' as const,
-                id: tab.id,
-                durableSessionId: tab.durableSessionId,
-                harness: tab.harness,
-                title: tab.title,
-                titleKind: tab.titleKind,
-                cwd: tab.cwd,
-                sessionId: stopped ? null : tab.sessionId,
-                launchModel: tab.launchModel,
-                launchEffort: tab.launchEffort,
-                harnessSessionId: tab.harnessSessionId,
-                roadmapItemId: tab.roadmapItemId,
-                lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
-                exitCode: tab.exitCode,
-                // Exawatt's own stop signals the process; that is not how
-                // it ended to the operator.
-                exitSignal: stopped ? null : tab.exitSignal,
-                initialTask: tab.initialTask ?? null,
-                startedAt: tab.startedAt ?? null,
-                contextSummary:
-                  summariesRef.current[tab.durableSessionId] ?? null,
-                // A REFERENCE, never the pixels (BUG-031). The image is a
-                // 265 KB data URL and this record is rewritten end to end
-                // 400 ms after every composer keystroke burst and on every
-                // tab switch; main keeps the bytes in a content-addressed
-                // side store keyed by the same `identityKey` and resolves
-                // them back through `pty:restore-goal-visual`.
-                goalVisual: persistedGoalVisual(
-                  goalVisualsRef.current[tab.durableSessionId]
-                ),
-                ...(tab.lifecycle === 'draft'
-                  ? {
-                      draftTask: tab.draftTask ?? null,
-                      draftSource: tab.draftSource ?? null,
-                      draftModel: tab.draftModel ?? null,
-                      draftEffort: tab.draftEffort ?? null,
-                      draftTouched: tab.draftTouched ?? false,
-                      draftWorktree: tab.draftWorktree ?? false,
-                      draftBranch: tab.draftBranch ?? null,
-                      draftRoadmapItemId: tab.draftRoadmapItemId ?? null,
-                    }
-                  : {}),
-              };
-            });
-          return {
-            dir: g.dir,
-            ...(g.rootPath !== undefined ? { rootPath: g.rootPath } : {}),
-            name: g.name,
-            color: g.color,
-            activeTabId: tabs.some(t => t.id === g.activeTabId)
-              ? g.activeTabId
-              : (tabs[0]?.id ?? null),
-            tabs,
-          };
-        }),
-      };
+      const layout = stateRef.current;
+      return serializeLayout(layout, {
+        recentProjects: recents.mergeOpen(layout.projects, Date.now()),
+        summaries: summariesRef.current,
+        goalVisuals: goalVisualsRef.current,
+        cleanShutdown,
+        shutdownTargets: shutdownTargetsRef.current,
+      });
     },
-    [goalVisualsRef, shutdownTargetsRef, summariesRef]
+    [goalVisualsRef, recents, shutdownTargetsRef, summariesRef]
   );
 
   // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
@@ -1286,33 +940,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     void appApi.setWorkspaceCheckpointOwner(true);
     const offCheckpoint = appApi.onCheckpointRequest(({ requestId, stage }) => {
       if (stage === 'pre-stop') {
-        shutdownTargetsRef.current = new Set(
-          stateRef.current.projects.flatMap(project =>
-            project.tabs
-              .filter(isSessionTab)
-              .filter(tab => tabIsLive(tab) || tab.lifecycle === 'resuming')
-              .map(tab => tab.durableSessionId)
-          )
-        );
+        shutdownTargetsRef.current = shutdownTargets(stateRef.current.projects);
       }
       const state = serializeWorkspace(stage === 'stopped');
       void ptyApi
         .list()
-        .then(live => {
-          const byDurable = new Map(
-            live.map(session => [session.durableSessionId, session])
-          );
-          for (const project of state.projects) {
-            for (const tab of project.tabs) {
-              if (tab.kind === 'remote-agent') continue;
-              const session = byDurable.get(tab.durableSessionId);
-              if (session?.harnessSessionId) {
-                tab.harnessSessionId = session.harnessSessionId;
-              }
-            }
-          }
-          return ws.save(state);
-        })
+        .then(live => ws.save(withLiveHarnessIdentities(state, live)))
         .then(() => appApi.completeCheckpoint(requestId, true))
         .catch(() => appApi.completeCheckpoint(requestId, false));
     });
@@ -2567,36 +2200,31 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * durable registry/library identity. Callers own any Agent close flow first;
    * this guard prevents a Project close from orphaning a live PTY off-screen.
    */
-  const closeProject = useCallback((dir: string): boolean => {
-    const { projects: groups, activeDir: currentDir } = stateRef.current;
-    const index = groups.findIndex(project => project.dir === dir);
-    const project = groups[index];
-    if (!project || project.tabs.length > 0) return false;
+  const closeProject = useCallback(
+    (dir: string): boolean => {
+      const { projects: groups, activeDir: currentDir } = stateRef.current;
+      const index = groups.findIndex(project => project.dir === dir);
+      const project = groups[index];
+      if (!project || project.tabs.length > 0) return false;
 
-    // A just-opened Project may not have reached the debounced layout save.
-    // Seed recency synchronously so ⌘N can always bring a closed group back.
-    recentsRef.current = [
-      {
-        dir: project.dir,
-        name: project.name,
-        ...(project.color ? { color: project.color } : {}),
-        lastOpenedAt: Date.now(),
-      },
-      ...recentsRef.current.filter(recent => recent.dir !== project.dir),
-    ].slice(0, 12);
+      // A just-opened Project may not have reached the debounced layout save.
+      // Seed recency synchronously so ⌘N can always bring a closed group back.
+      recents.recordClosed(project, Date.now());
 
-    setProjects(previous =>
-      previous.some(
-        candidate => candidate.dir === dir && candidate.tabs.length > 0
-      )
-        ? previous
-        : previous.filter(candidate => candidate.dir !== dir)
-    );
-    if (currentDir === dir) {
-      setActiveDir(groups[index + 1]?.dir ?? groups[index - 1]?.dir ?? null);
-    }
-    return true;
-  }, []);
+      setProjects(previous =>
+        previous.some(
+          candidate => candidate.dir === dir && candidate.tabs.length > 0
+        )
+          ? previous
+          : previous.filter(candidate => candidate.dir !== dir)
+      );
+      if (currentDir === dir) {
+        setActiveDir(groups[index + 1]?.dir ?? groups[index - 1]?.dir ?? null);
+      }
+      return true;
+    },
+    [recents]
+  );
 
   const selectProject = useCallback(
     (index: number): boolean => {
