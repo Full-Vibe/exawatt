@@ -69,6 +69,7 @@ import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
+import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import {
   availabilityMenuCommands,
@@ -161,9 +162,9 @@ let claudePlanAccount: ClaudePlanAccountService | null = null;
 let runStateStore: RunStateStore | null = null;
 let authCoordinator: ElectronAuthCoordinator | null = null;
 let recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
-/** `logs/main.jsonl`. A no-op until `app.whenReady()` opens it, so an IPC
- *  channel registered before then degrades to silently dropping the entry
- *  rather than throwing. */
+/** `logs/main.jsonl`. A no-op until the log opens, once the userData path is
+ *  final and before the renderer server starts (its port policy records
+ *  here), so anything earlier degrades to dropping the entry, not throwing. */
 let mainDiagnostics: DiagnosticRecorder = () => {};
 let ptySessions: PtySessionManager;
 let disposePty: () => Promise<void> = async () => {};
@@ -320,6 +321,7 @@ if (!isDev) {
   });
 }
 
+mainDiagnostics = createMainDiagnostics();
 const rendererServer = createRendererServer({
   resourcesPath: process.resourcesPath,
   userDataPath: () => app.getPath('userData'),
@@ -331,6 +333,10 @@ const rendererServer = createRendererServer({
     distributionChildEnvironment(distribution, process.env),
   forwardStdout: process.env.EXAWATT_RENDERER_LOGS === '1',
   spawn,
+  ports: createRendererPortPolicy({
+    userDataPath: () => app.getPath('userData'),
+    record: (event, fields) => mainDiagnostics(event, fields),
+  }),
   extractArchive: async (archive, destination) => {
     await execFileAsync('/usr/bin/ditto', ['-x', '-k', archive, destination]);
   },
@@ -1337,8 +1343,8 @@ async function bootstrapCommandSurface(): Promise<void> {
   runtime.ptyIpc.registerPtyIPC(
     distribution.contract,
     recovery.previousRunInterrupted,
-    // Late-bound on purpose: `mainDiagnostics` opens with `app.whenReady`, and
-    // a recorder captured by value here would be the boot-time no-op forever.
+    // Late-bound on purpose: a recorder captured by value would be whatever
+    // `mainDiagnostics` held at registration, not the log it holds later.
     (event, fields) => mainDiagnostics(event, fields)
   );
   runtime.roadmapIpc.registerRoadmapIPC();
@@ -1497,7 +1503,6 @@ function watchShellStartupArtifacts(
 }
 
 app.whenReady().then(() => {
-  mainDiagnostics = createMainDiagnostics();
   configureJsonStoreDiagnostics(mainDiagnostics);
   // Standing main-thread instrumentation: the next beachball records itself.
   // Started before the window so a stall during startup is captured too.

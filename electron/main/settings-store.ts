@@ -136,8 +136,9 @@ export interface ExawattSettings {
   appearance?: ElectronAppearancePreferencesV1;
   /**
    * Per-device keyboard overrides (BUG-044). They belong here rather than in
-   * renderer `localStorage` because the packaged renderer's origin changes
-   * every launch (BUG-022), which silently reset anything stored per-origin.
+   * renderer `localStorage` because the packaged renderer's origin carries its
+   * port: kept per install since BUG-022, but a launch that finds the kept port
+   * taken serves another origin, whose store starts empty.
    * Absent means "this device has never stored a choice", which is what lets
    * a signed-in operator adopt an account copy exactly once.
    */

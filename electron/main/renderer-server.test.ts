@@ -73,6 +73,7 @@ afterEach(() => {
 function harness(overrides: Partial<RendererServerDependencies> = {}) {
   const spawned: Spawned[] = [];
   const extracted: string[] = [];
+  const served: number[] = [];
   let probes = 0;
   let answerAfter = 2;
   const deps: RendererServerDependencies = {
@@ -99,7 +100,12 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
         ''
       );
     },
-    allocatePort: async () => 34567,
+    ports: {
+      allocate: async () => 34567,
+      serving: async port => {
+        served.push(port);
+      },
+    },
     probe: async () => ++probes >= answerAfter,
     // Never advances, so only the child's exit or an answer ends the wait;
     // each sleep yields a full event-loop turn so other work can run.
@@ -114,7 +120,7 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
     server: createRendererServer(deps),
     spawned,
     extracted,
-    probeCount: () => probes,
+    served,
     answerAfter: (n: number) => {
       answerAfter = n;
     },
@@ -126,7 +132,7 @@ const versionRoot = () =>
 
 describe('createRendererServer', () => {
   it('unpacks a cold version, runs its server as Node on loopback, and reports the origin once it answers', async () => {
-    const { server, spawned, extracted } = harness();
+    const { server, spawned, extracted, served } = harness();
     expect(server.hasWarmCache()).toBe(false);
     expect(server.origin).toBeNull();
 
@@ -134,6 +140,8 @@ describe('createRendererServer', () => {
 
     expect(origin).toBe('http://127.0.0.1:34567');
     expect(server.origin).toBe(origin);
+    // The port policy hears about the port only once something answers on it.
+    expect(served).toEqual([34567]);
     expect(extracted).toEqual([`${versionRoot()}.staging-4242`]);
     expect(fs.existsSync(`${versionRoot()}.staging-4242`)).toBe(false);
     expect(server.hasWarmCache()).toBe(true);
@@ -168,7 +176,7 @@ describe('createRendererServer', () => {
   });
 
   it('fails the start when the server exits before it ever answers', async () => {
-    const { server, spawned, answerAfter } = harness();
+    const { server, spawned, served, answerAfter } = harness();
     answerAfter(Number.POSITIVE_INFINITY);
     const started = server.start();
     await vi.waitFor(() => expect(spawned).toHaveLength(1));
@@ -176,6 +184,7 @@ describe('createRendererServer', () => {
 
     await expect(started).rejects.toThrow('Packaged renderer exited with 1');
     expect(server.origin).toBeNull();
+    expect(served).toEqual([]);
   });
 
   it('stops its child with SIGTERM and releases it only once it has closed', async () => {

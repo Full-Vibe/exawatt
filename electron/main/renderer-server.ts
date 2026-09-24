@@ -1,9 +1,9 @@
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import fs from 'fs';
 import http from 'http';
-import nodeNet from 'net';
 import path from 'path';
 import { stopChildProcess } from './child-process-lifecycle';
+import type { RendererPortPolicy } from './renderer-port';
 
 /**
  * The packaged renderer server: the Next standalone payload, unpacked into a
@@ -49,7 +49,8 @@ export interface RendererServerDependencies {
   spawn: Spawn;
   /** Unpacks `archive` into the empty directory `destination`. */
   extractArchive: (archive: string, destination: string) => Promise<void>;
-  allocatePort?: () => Promise<number>;
+  /** Which port to serve on, told once the server answers (BUG-022). */
+  ports: RendererPortPolicy;
   probe?: (url: string) => Promise<boolean>;
   clock?: RendererServerClock;
   writeStdout?: (data: unknown) => void;
@@ -68,22 +69,6 @@ export interface RendererServer {
   hasWarmCache(): boolean;
   /** Removes every cached version except the one this launch runs. */
   pruneCache(): void;
-}
-
-async function availableLoopbackPort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = nodeNet.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') {
-        server.close();
-        reject(new Error('Could not allocate a renderer port'));
-        return;
-      }
-      server.close(error => (error ? reject(error) : resolve(address.port)));
-    });
-  });
 }
 
 /** One readiness probe: any non-5xx answer means the server is serving. */
@@ -143,7 +128,6 @@ const realClock: RendererServerClock = {
 export function createRendererServer(
   deps: RendererServerDependencies
 ): RendererServer {
-  const allocatePort = deps.allocatePort ?? availableLoopbackPort;
   const probe = deps.probe ?? probeRenderer;
   const clock = deps.clock ?? realClock;
   const writeStdout =
@@ -176,7 +160,7 @@ export function createRendererServer(
   }
 
   async function startPackagedRenderer(): Promise<string> {
-    const port = await allocatePort();
+    const port = await deps.ports.allocate();
     const archive = path.join(packagedRenderer, 'renderer.zip');
     const archiveHash = (
       await fs.promises.readFile(
@@ -220,6 +204,7 @@ export function createRendererServer(
     const origin = `http://127.0.0.1:${port}`;
     await waitForRenderer(`${origin}/workspace`);
     rendererOrigin = origin;
+    await deps.ports.serving(port);
     return origin;
   }
 

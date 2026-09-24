@@ -243,9 +243,11 @@ export const SURFACE_GATES = [
       // every packaged eval launches.
       file === 'scripts/lib/packaged-app.mjs' ||
       // ENG-039 M1: the one owner of starting, stopping and outliving the
-      // standalone renderer. The gate asserts the server serves and that it
-      // ends with a SIGKILLed main (BUG-070).
-      file === 'electron/main/renderer-server.ts',
+      // standalone renderer, and the policy for the port its origin carries.
+      // The gate asserts the server serves, that a relaunch keeps its origin
+      // and storage (BUG-022), and that it ends with a SIGKILLed main (BUG-070).
+      file === 'electron/main/renderer-server.ts' ||
+      file === 'electron/main/renderer-port.ts',
   },
   {
     gate: 'eval:spatial:viewport',

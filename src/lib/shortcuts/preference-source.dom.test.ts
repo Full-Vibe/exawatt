@@ -150,9 +150,9 @@ describe('a distribution that does ship an account service', () => {
 
 describe('the packaged desktop', () => {
   it('persists through the Electron settings store, not the per-launch origin', async () => {
-    // The packaged renderer is served from a fresh ephemeral port each launch,
-    // so a per-origin store starts empty every time (BUG-022). The desktop
-    // path must not depend on that being repaired.
+    // The packaged renderer's origin carries its port. An install keeps one
+    // (BUG-022), but a launch that finds it taken serves another origin with
+    // an empty store, so the desktop path must not depend on the port.
     let stored: unknown;
     (window as { electron?: unknown }).electron = {
       settings: {

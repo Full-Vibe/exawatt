@@ -367,11 +367,42 @@ try {
     throw new Error(`Packaged Electron errors: ${errors.join(' | ')}`);
   }
 
+  // BUG-022: a second launch of the same install serves the same origin, so
+  // what the renderer stored per origin is still there. The port used to be
+  // picked at random every launch, which made `localStorage` a per-launch
+  // store on the desktop.
+  const firstOrigin = new URL(page.url()).origin;
+  const marker = `relaunch-${Date.now()}`;
+  await page.evaluate(
+    value => localStorage.setItem('exawatt.eval.relaunch-marker', value),
+    marker
+  );
+  await app.close();
+  app = null;
+  app = await launchPackaged();
+  const relaunched = await app.firstWindow({ timeout: 45_000 });
+  relaunched.setDefaultTimeout(20_000);
+  await relaunched.locator('[data-command-altitude]').waitFor();
+  const secondOrigin = new URL(relaunched.url()).origin;
+  if (secondOrigin !== firstOrigin) {
+    throw new Error(
+      `The second launch moved the renderer origin: ${firstOrigin} -> ${secondOrigin}`
+    );
+  }
+  const survived = await relaunched.evaluate(() =>
+    localStorage.getItem('exawatt.eval.relaunch-marker')
+  );
+  if (survived !== marker) {
+    throw new Error(
+      `localStorage did not survive a relaunch on ${secondOrigin}: expected ${marker}, read ${survived}`
+    );
+  }
+
   // BUG-070: the renderer server ends with Electron main however main ends.
   // SIGKILL runs no shutdown code at all, so only the child's own lifeline to
   // main can end it; before that lifeline the server reparented to launchd and
   // kept its port, its memory, and a Dock icon of its own.
-  const rendererPort = Number(new URL(page.url()).port);
+  const rendererPort = Number(new URL(relaunched.url()).port);
   const serverPid = listenerOn(rendererPort);
   if (!serverPid) {
     throw new Error(
@@ -392,7 +423,8 @@ try {
   console.log(
     `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
       'local renderer + capability-shaped preload/menu/diagnostics + PTY round trip + contract-declared updater ' +
-      `${productUpdatesEnabled ? 'present' : 'absent'} + renderer server ends with a killed main`
+      `${productUpdatesEnabled ? 'present' : 'absent'} + one origin and its storage across a relaunch + ` +
+      'renderer server ends with a killed main'
   );
 } finally {
   if (app) await app.close();

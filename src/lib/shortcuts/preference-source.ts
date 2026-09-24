@@ -27,9 +27,10 @@ import type { ShortcutOverride } from '@/types/shortcuts';
  * locally, first, before any network exists in the picture:
  *
  * - Desktop: `userData/settings.json` through the Electron settings bridge.
- *   Deliberately NOT `localStorage` — the packaged renderer is served from a
- *   fresh ephemeral port each launch, so a per-origin store starts empty every
- *   time (BUG-022). Nothing here depends on that being repaired.
+ *   Deliberately NOT `localStorage`: the packaged renderer's origin carries
+ *   its port, and although an install now keeps one port (BUG-022), a launch
+ *   that finds it taken serves another origin with an empty store. A setting
+ *   the operator chose must not depend on which port was free.
  * - Web: `localStorage`, whose origin is stable there.
  *
  * An account, where the distribution ships one, SYNCS the device copy. It is
