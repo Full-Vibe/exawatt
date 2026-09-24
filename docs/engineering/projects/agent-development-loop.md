@@ -344,7 +344,14 @@ tests remain the recovery floor during the rollout.
   first report of a gate. A probe that holds the first post open for 300 ms
   showed master's fake with both posts in flight and `permission_prompt`
   answered first; the fixed fake queues each command behind the previous
-  one, and turn-truth then passed five of five.
+  one, and turn-truth then passed five of five. The first landing of this
+  sweep then failed `eval:electron:project-agent` at its permission-menu
+  keyboard step, the same shape one level down: the option menu takes focus
+  a frame after opening (`onOpenAutoFocus` in a requestAnimationFrame) and
+  the eval pressed ArrowUp as soon as the listbox existed, so a late frame
+  sent the key to the trigger. With rAF delayed 400 ms the old step times out
+  exactly as the landing did; the eval now waits for the list to own focus
+  and an active option, and passes under the same delay.
 
 - 2026-09-24, BUG-221: **two workspace evals acted before the workspace
   had loaded, and one counted text a redraw can repeat.** Measured, not

@@ -941,6 +941,17 @@ try {
       await launcherAxis(page, 'permission').focus();
       await page.keyboard.press('Space');
       await page.locator('[role="listbox"]').waitFor();
+      // The menu takes the keyboard a frame after it opens (`onOpenAutoFocus`
+      // focuses the list in a requestAnimationFrame). A key pressed before
+      // that lands on the trigger and is lost, so wait for the list to own
+      // focus and an active option first (BUG-221).
+      await page.waitForFunction(() => {
+        const list = document.querySelector('[role="listbox"]');
+        return (
+          !!list?.parentElement?.contains(document.activeElement) &&
+          !!list.querySelector('[role="option"][data-active]')
+        );
+      });
       // keyboard doctrine (D24): from the YOLO default (last option),
       // ArrowUp must land on Auto-review and ⏎ must commit it — the
       // Select's keyboard path is a first-class contract
