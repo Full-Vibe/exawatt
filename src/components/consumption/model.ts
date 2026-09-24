@@ -29,9 +29,11 @@
  * Pure data and pure functions: no React, no DOM. Components import from here;
  * this file imports nothing from them.
  */
+import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   SOURCE_CAPABILITIES,
   planWindowKey,
+  type AgentHarness,
   type ConsumptionRollup,
   type ConsumptionSourceId,
   type PlanWindow,
@@ -42,11 +44,24 @@ const HOUR_MS = 3_600_000;
 
 export type Harness = ConsumptionSourceId;
 
-export const HARNESS_LABEL: Record<Harness, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  grok: 'Grok Build',
-};
+/**
+ * The Agent Source each Consumption source measures. Consumption keeps its own
+ * ids (`claude-code` names the log format, not the adapter), so the mapping is
+ * stated here once rather than inferred from the spelling.
+ */
+export const CONSUMPTION_SOURCE_HARNESS = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  grok: 'grok',
+} as const satisfies Record<Harness, AgentHarness>;
+
+/** A Consumption source's display name: its Agent Source's declared label. */
+export const HARNESS_LABEL = Object.fromEntries(
+  Object.entries(CONSUMPTION_SOURCE_HARNESS).map(([source, harness]) => [
+    source,
+    agentSourceDeclaration(harness).label,
+  ])
+) as Record<Harness, string>;
 
 /**
  * The VENDOR ACCOUNT behind a harness (ENG-038).
@@ -365,9 +380,7 @@ export function planReadState(
 
 /** True for the states where the source's true position is UNKNOWN. */
 export function planReadIsUnknown(state: PlanReadState): boolean {
-  return (
-    state === 'off' || state === 'unconfigured' || state === 'unreadable'
-  );
+  return state === 'off' || state === 'unconfigured' || state === 'unreadable';
 }
 
 /** Sources whose plan position is unknown right now. */
@@ -393,9 +406,7 @@ export function windowOwnerLabel(
 
 /** The name to call a source whose plan position is unknown. */
 export function sourceOwnerLabel(source: ConsumptionSourceView): string {
-  return source.accountRead
-    ? ACCOUNT_LABEL[source.harness]
-    : source.label;
+  return source.accountRead ? ACCOUNT_LABEL[source.harness] : source.label;
 }
 
 /* ------------------------------------------------------------------ */

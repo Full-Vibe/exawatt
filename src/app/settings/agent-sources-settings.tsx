@@ -10,7 +10,6 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
-  Sparkles,
   WifiOff,
 } from 'lucide-react';
 import {
@@ -30,17 +29,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  ClaudeIcon,
-  OpenAIIcon,
-  OpenCodeIcon,
-  OpenClawIcon,
-} from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { runAgentSourceAction } from '@/components/workspace/agent-sources';
 import {
   ConnectedSourceDetail,
   ConnectedSourcesRail,
+  SettingsSourceMark,
   useConnectedSources,
 } from './connected-sources-section';
 import type {
@@ -54,20 +48,6 @@ import type {
 export const SOURCE_AUTH_RECHECK_DELAYS_MS = [
   1_200, 2_500, 4_000, 6_000,
 ] as const;
-
-function SourceMark({
-  id,
-  size = 19,
-}: {
-  id: AgentSourceAdapterId;
-  size?: number;
-}) {
-  if (id === 'claude') return <ClaudeIcon size={size} />;
-  if (id === 'codex') return <OpenAIIcon size={size} />;
-  if (id === 'opencode') return <OpenCodeIcon size={size} />;
-  if (id === 'openclaw') return <OpenClawIcon size={size} />;
-  return <Sparkles aria-hidden size={size} />;
-}
 
 function stateTone(state: AgentSourceState): {
   color: string;
@@ -332,7 +312,7 @@ function RegistryRail({
                 className="size-9 rounded-lg"
                 color={source.color}
               >
-                <SourceMark id={source.adapterId} />
+                <SettingsSourceMark id={source.adapterId} />
               </SourceIdentityMark>
               <span className="min-w-0 flex-1">
                 <span
@@ -420,7 +400,7 @@ function SourceDetail({
             className="size-11 rounded-lg"
             color={source.color}
           >
-            <SourceMark id={source.adapterId} size={22} />
+            <SettingsSourceMark id={source.adapterId} size={22} />
           </SourceIdentityMark>
           <div className="min-w-0">
             <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">
@@ -605,19 +585,6 @@ function SourceDetail({
   );
 }
 
-function CatalogMark({ id }: { id: AgentSourceCatalogEntry['adapterId'] }) {
-  if (
-    id === 'claude' ||
-    id === 'codex' ||
-    id === 'opencode' ||
-    id === 'openclaw' ||
-    id === 'demo'
-  ) {
-    return <SourceMark id={id} size={20} />;
-  }
-  return <Sparkles aria-hidden size={20} />;
-}
-
 function AddSourceView({
   available,
   comingSoon,
@@ -664,7 +631,7 @@ function AddSourceView({
               className="flex min-h-[72px] w-full items-center gap-3 px-1 text-left outline-none transition-colors hover:bg-[var(--settings-hover)] focus-visible:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--settings-teal)]"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-soft)]">
-                <CatalogMark id={entry.adapterId} />
+                <SettingsSourceMark id={entry.adapterId} size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">
@@ -708,7 +675,7 @@ function AddSourceView({
               className="flex min-h-[68px] items-center gap-3 px-1 opacity-70"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-faint)]">
-                <CatalogMark id={entry.adapterId} />
+                <SettingsSourceMark id={entry.adapterId} size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">
@@ -860,7 +827,6 @@ export function AgentSourcesSettings({
       setMessage({ ok: true, text: 'Agent Source status verified.' });
     }
   }, [recheckRegistry]);
-
 
   const selected = useMemo(
     () => registry.sources.find(source => source.id === selectedId) ?? null,

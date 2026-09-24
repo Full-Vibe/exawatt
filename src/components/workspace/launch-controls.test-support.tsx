@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, vi } from 'vitest';
 
-import { fallbackAgentSourceRegistry } from './agent-sources';
+import {
+  fallbackAgentSourceRegistry,
+  type AgentSourceId,
+} from './agent-sources';
 import { AgentComposer } from './launch-controls';
 import { FOCUS_AGENT_COMPOSER_EVENT } from './session-jump';
 import type { AgentModelCatalog } from '@/types/electron';
@@ -293,6 +296,13 @@ export const GROK_MODEL_CATALOG: AgentModelCatalog = {
   selectionAction: null,
 };
 
+const MODEL_CATALOGS: Record<AgentSourceId, AgentModelCatalog> = {
+  claude: CLAUDE_MODEL_CATALOG,
+  codex: CODEX_MODEL_CATALOG,
+  opencode: OPENCODE_MODEL_CATALOG,
+  grok: GROK_MODEL_CATALOG,
+};
+
 export function installComposerTestHarness() {
   const recordAgentSourceUse = vi.fn();
   const setAgentPermissionMode = vi.fn();
@@ -317,14 +327,8 @@ export function installComposerTestHarness() {
         onChanged: vi.fn(() => vi.fn()),
       },
       pty: {
-        listAgentModels: vi.fn(async harness =>
-          harness === 'codex'
-            ? CODEX_MODEL_CATALOG
-            : harness === 'opencode'
-              ? OPENCODE_MODEL_CATALOG
-              : harness === 'grok'
-                ? GROK_MODEL_CATALOG
-                : CLAUDE_MODEL_CATALOG
+        listAgentModels: vi.fn(
+          async (harness: AgentSourceId) => MODEL_CATALOGS[harness]
         ),
         listRecentConversations: vi.fn().mockResolvedValue([]),
       },

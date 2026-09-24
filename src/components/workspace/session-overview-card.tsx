@@ -9,6 +9,7 @@ import {
   tokens,
 } from '@/components/consumption/flux';
 import { HarnessGlyph } from './harness-icons';
+import { HARNESS_META } from './harnesses';
 import { SessionGoalSummary } from './session-goal-summary';
 import {
   DelegationDots,
@@ -112,17 +113,7 @@ export function SessionOverviewCardContent({
       <div className="flex min-w-0 items-center justify-between gap-3">
         <span className="inline-flex min-w-0 flex-1 items-center gap-2">
           <span
-            aria-label={
-              harness === 'claude'
-                ? 'Claude Code'
-                : harness === 'codex'
-                  ? 'Codex'
-                  : harness === 'opencode'
-                    ? 'OpenCode'
-                    : harness === 'grok'
-                      ? 'Grok Build'
-                      : 'Shell'
-            }
+            aria-label={HARNESS_META[harness].label}
             className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
             style={{ color }}
           >

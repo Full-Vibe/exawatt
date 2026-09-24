@@ -11,10 +11,11 @@ use belongs to that owner.
 ## Where they ship
 
 There are no brand image files in this repository. Every mark is INLINE SVG in
-`src/components/workspace/harness-icons.tsx`, one exported component per mark, so nothing is
-fetched at runtime, nothing needs an `id`, and the app and the marketing board draw the same
-geometry. `src/components/site/harness-mark.tsx` is the adapter from an Agent Source's declared
-`adapterId` to the component.
+`src/components/workspace/harness-icons.tsx`, one component per mark, registered by Agent Source
+id in `SOURCE_MARKS` and drawn through `SourceGlyph`, so nothing is fetched at runtime, nothing
+needs an `id`, and the app and the marketing board draw the same geometry.
+`src/components/site/harness-mark.tsx` is the adapter from an Agent Source's declared `adapterId`
+to that registry.
 
 | Component      | Harness     | Path data taken from                                                                                            |
 | -------------- | ----------- | --------------------------------------------------------------------------------------------------------------- |

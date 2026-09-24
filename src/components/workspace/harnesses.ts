@@ -6,7 +6,7 @@
  * Main-process command resolution lives in electron/main/pty/session-manager.ts.
  */
 import type { PtyHarness } from '@/types/electron';
-import { AGENT_SOURCE_META } from './agent-sources';
+import { AGENT_SOURCE_META, mapAgentSources } from './agent-sources';
 
 export interface HarnessMeta {
   /** tab title + picker label */
@@ -18,14 +18,13 @@ export interface HarnessMeta {
 }
 
 export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
-  // brand colors: Anthropic terracotta / OpenAI neutral-on-dark.
   // "+" prefix: the button CREATES a new session — "launch" language in
   // tooltips/palette ("launch" was internal shorthand, unclear to users;
   // operator, dogfood round 4)
-  claude: { ...AGENT_SOURCE_META.claude, launch: '+ Claude Code' },
-  codex: { ...AGENT_SOURCE_META.codex, launch: '+ Codex' },
-  opencode: { ...AGENT_SOURCE_META.opencode, launch: '+ OpenCode' },
-  grok: { ...AGENT_SOURCE_META.grok, launch: '+ Grok Build' },
+  ...mapAgentSources(source => {
+    const meta = AGENT_SOURCE_META[source];
+    return { ...meta, launch: `+ ${meta.label}` };
+  }),
   // Source identity is a brand/data channel and stays stable across themes.
   shell: { label: 'Shell', color: '#6A7585', launch: '+ Shell' },
 };

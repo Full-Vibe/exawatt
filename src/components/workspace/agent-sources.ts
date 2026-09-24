@@ -10,9 +10,9 @@ import type {
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
 } from '@/types/electron';
+import { AGENT_HARNESSES } from '@exawatt/core';
 import {
   agentSourceDeclaration,
-  AGENT_SOURCE_DECLARATIONS,
   FUTURE_AGENT_SOURCE_CATALOG,
 } from '@/generated/agent-source-declarations';
 
@@ -68,73 +68,40 @@ export interface AgentSourceMeta {
   };
 }
 
-export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
-  claude: (() => {
-    const declaration = agentSourceDeclaration('claude');
-    return {
-      label: declaration.label,
-      color: declaration.color,
-      capabilities: {
-        interactive: declaration.capabilities.interactiveLaunch,
-        initialTask: declaration.capabilities.initialTask,
-        exactResume: declaration.capabilities.exactResume,
-        modelSelection: true,
-        effortSelection: true,
-        permissionModes: declaration.capabilities.permissionModes,
-      },
-    };
-  })(),
-  codex: (() => {
-    const declaration = agentSourceDeclaration('codex');
-    return {
-      label: declaration.label,
-      color: declaration.color,
-      capabilities: {
-        interactive: declaration.capabilities.interactiveLaunch,
-        initialTask: declaration.capabilities.initialTask,
-        exactResume: declaration.capabilities.exactResume,
-        modelSelection: true,
-        effortSelection: true,
-        permissionModes: declaration.capabilities.permissionModes,
-      },
-    };
-  })(),
-  opencode: (() => {
-    const declaration = agentSourceDeclaration('opencode');
-    return {
-      label: declaration.label,
-      color: declaration.color,
-      capabilities: {
-        interactive: declaration.capabilities.interactiveLaunch,
-        initialTask: declaration.capabilities.initialTask,
-        exactResume: declaration.capabilities.exactResume,
-        modelSelection: true,
-        effortSelection: true,
-        permissionModes: declaration.capabilities.permissionModes,
-      },
-    };
-  })(),
-  grok: (() => {
-    const declaration = agentSourceDeclaration('grok');
-    return {
-      label: declaration.label,
-      color: declaration.color,
-      capabilities: {
-        interactive: declaration.capabilities.interactiveLaunch,
-        initialTask: declaration.capabilities.initialTask,
-        exactResume: declaration.capabilities.exactResume,
-        modelSelection:
-          declaration.capabilities.modelSelection !== 'source-owned',
-        // Grok Build accepts `--reasoning-effort` but publishes no per-model
-        // option set to any interface a PTY launch can read, so Exawatt shows
-        // no effort control rather than inventing one.
-        effortSelection:
-          declaration.capabilities.effortSelection !== 'source-owned',
-        permissionModes: declaration.capabilities.permissionModes,
-      },
-    };
-  })(),
-};
+function agentSourceMeta(source: AgentSourceId): AgentSourceMeta {
+  const declaration = agentSourceDeclaration(source);
+  return {
+    label: declaration.label,
+    color: declaration.color,
+    capabilities: {
+      interactive: declaration.capabilities.interactiveLaunch,
+      initialTask: declaration.capabilities.initialTask,
+      exactResume: declaration.capabilities.exactResume,
+      // A source-owned choice gets no control in Exawatt. Grok Build is the
+      // case: it accepts `--reasoning-effort` but publishes no per-model
+      // option set to any interface a PTY launch can read, so Exawatt shows
+      // no effort control rather than inventing one.
+      modelSelection:
+        declaration.capabilities.modelSelection !== 'source-owned',
+      effortSelection:
+        declaration.capabilities.effortSelection !== 'source-owned',
+      permissionModes: declaration.capabilities.permissionModes,
+    },
+  };
+}
+
+/** One value per local harness, keyed in `AGENT_HARNESSES` order. */
+export function mapAgentSources<Value>(
+  build: (source: AgentSourceId) => Value
+): Record<AgentSourceId, Value> {
+  return Object.fromEntries(
+    AGENT_HARNESSES.map(source => [source, build(source)] as const)
+  ) as Record<AgentSourceId, Value>;
+}
+
+/** Presentation and capability metadata for every local harness, read from
+ *  its declaration. */
+export const AGENT_SOURCE_META = mapAgentSources(agentSourceMeta);
 
 export const AGENT_SOURCE_ORDER = Object.keys(
   AGENT_SOURCE_META
@@ -314,7 +281,10 @@ export function checkingAgentSourceRegistry(
     ...fallback,
     sources: fallback.sources.map(source => {
       if (source.adapterId === 'demo') return source;
-      const fact = fallbackFact('Checking', `${source.label} is being checked.`);
+      const fact = fallbackFact(
+        'Checking',
+        `${source.label} is being checked.`
+      );
       return {
         ...source,
         state: 'checking',

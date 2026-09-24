@@ -55,17 +55,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  ClaudeIcon,
-  OpenAIIcon,
-  OpenCodeIcon,
-  OpenClawIcon,
-} from '@/components/workspace/harness-icons';
+import { SourceGlyph } from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   describeConnectionStatus,
-  type AgentSourceAdapterId,
+  type AgentSourceCatalogId,
   type AgentSourceEvidenceBasis,
   type AgentSourcePlacement,
   type ConnectedSourceView,
@@ -255,18 +250,22 @@ function ConnectionPill({ status }: { status: ConnectionStatus }) {
   );
 }
 
-function AdapterMark({
+/** A source's mark in a Settings plate. A source with no vendor mark (Demo
+ *  Mode, a coming-soon adapter) shows the neutral sparkle. */
+export function SettingsSourceMark({
   id,
   size = 19,
 }: {
-  id: AgentSourceAdapterId;
+  id: AgentSourceCatalogId;
   size?: number;
 }) {
-  if (id === 'claude') return <ClaudeIcon size={size} />;
-  if (id === 'codex') return <OpenAIIcon size={size} />;
-  if (id === 'opencode') return <OpenCodeIcon size={size} />;
-  if (id === 'openclaw') return <OpenClawIcon size={size} />;
-  return <Sparkles aria-hidden size={size} />;
+  return (
+    <SourceGlyph
+      source={id}
+      size={size}
+      fallback={<Sparkles aria-hidden size={size} />}
+    />
+  );
 }
 
 const BASIS_LABELS: Readonly<Record<AgentSourceEvidenceBasis, string>> = {
@@ -665,7 +664,7 @@ export function ConnectedSourcesRail({
                   className="size-9 rounded-lg"
                   color={declaration.color}
                 >
-                  <AdapterMark id={source.adapterId} />
+                  <SettingsSourceMark id={source.adapterId} />
                 </SourceIdentityMark>
                 <span className="min-w-0 flex-1">
                   <span
@@ -790,7 +789,7 @@ export function ConnectedSourceDetail({
             className="size-11 rounded-lg"
             color={declaration.color}
           >
-            <AdapterMark id={source.adapterId} size={22} />
+            <SettingsSourceMark id={source.adapterId} size={22} />
           </SourceIdentityMark>
           <div className="min-w-0">
             <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">

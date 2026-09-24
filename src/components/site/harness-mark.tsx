@@ -30,23 +30,14 @@
  * as a data edit.
  */
 import {
-  ClaudeIcon,
-  GrokIcon,
-  OpenAIIcon,
-  OpenClawIcon,
-  OpenCodeIcon,
+  SourceGlyph,
+  sourceMarkExists,
 } from '@/components/workspace/harness-icons';
 
-/** Which declared Agent Sources have a brand mark. `demo` deliberately has
- *  none: Demo Mode is Exawatt's own scenario source, not a vendor. */
+/** Which declared Agent Sources have a brand mark, from the one registry in
+ *  `harness-icons.tsx` (Demo Mode has none: it is not a vendor). */
 export function harnessMarkExists(adapterId: string): boolean {
-  return (
-    adapterId === 'claude' ||
-    adapterId === 'codex' ||
-    adapterId === 'opencode' ||
-    adapterId === 'grok' ||
-    adapterId === 'openclaw'
-  );
+  return sourceMarkExists(adapterId);
 }
 
 export function HarnessMark({
@@ -56,10 +47,7 @@ export function HarnessMark({
   adapterId: string;
   size?: number;
 }) {
-  if (adapterId === 'claude') return <ClaudeIcon size={size} />;
-  if (adapterId === 'codex') return <OpenAIIcon size={size} />;
-  if (adapterId === 'opencode') return <OpenCodeIcon size={size} />;
-  if (adapterId === 'grok') return <GrokIcon size={size} />;
-  if (adapterId === 'openclaw') return <OpenClawIcon size={size} />;
-  return null;
+  return sourceMarkExists(adapterId) ? (
+    <SourceGlyph source={adapterId} size={size} />
+  ) : null;
 }

@@ -17,6 +17,7 @@ import {
   type LaunchTarget,
 } from '@exawatt/core';
 import type { PtyHarness } from '@/types/electron';
+import { AGENT_SOURCE_ORDER, type AgentSourceId } from '../agent-sources';
 import { HARNESS_META } from '../harnesses';
 import {
   rowCapacityForWidth,
@@ -341,7 +342,10 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     selectedIndex: 0,
     detailOpen: false,
     task: '',
-    notice: { kind: 'notice', text: 'Claude Code: not signed in · checked 2h ago' },
+    notice: {
+      kind: 'notice',
+      text: 'Claude Code: not signed in · checked 2h ago',
+    },
     width: 768,
   },
   {
@@ -357,20 +361,18 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
   },
 ];
 
+const ENGINE_DESCRIPTION: Record<AgentSourceId, string> = {
+  claude: 'Anthropic models',
+  codex: 'OpenAI models',
+  opencode: 'Multi-provider and local models',
+  grok: 'xAI models',
+};
+
 /** The engine axis carries the same brand glyphs the chips do (finding 7). */
-const ENGINE_OPTIONS: DetailAxisOption[] = (
-  ['claude', 'codex', 'opencode', 'grok'] as PtyHarness[]
-).map(harness => ({
+const ENGINE_OPTIONS: DetailAxisOption[] = AGENT_SOURCE_ORDER.map(harness => ({
   id: harness,
   label: HARNESS_META[harness].label,
-  description:
-    harness === 'opencode'
-      ? 'Multi-provider and local models'
-      : harness === 'codex'
-        ? 'OpenAI models'
-        : harness === 'grok'
-          ? 'xAI models'
-          : 'Anthropic models',
+  description: ENGINE_DESCRIPTION[harness],
   mark: (
     <EngineGlyph
       engine={{
@@ -388,83 +390,83 @@ const MODEL_OPTIONS: DetailAxisOption[] = [
     id: 'Opus 5',
     label: 'Opus 5',
     description: '1M context · best for complex work',
-    group: 'Claude Code',
+    group: HARNESS_META.claude.label,
     keywords: 'opus[1m] anthropic',
   },
   {
     id: 'Sonnet 5',
     label: 'Sonnet 5',
     description: 'Efficient for routine tasks',
-    group: 'Claude Code',
+    group: HARNESS_META.claude.label,
     keywords: 'sonnet anthropic',
   },
   {
     id: 'Sonnet 4.6',
     label: 'Sonnet 4.6',
     description: 'Balanced',
-    group: 'Claude Code',
+    group: HARNESS_META.claude.label,
     keywords: 'sonnet-4-6 anthropic',
   },
   {
     id: 'Fable 5',
     label: 'Fable 5',
     description: 'Longest-running tasks',
-    group: 'Claude Code',
+    group: HARNESS_META.claude.label,
     keywords: 'claude-fable-5',
   },
   {
     id: 'Haiku 4.5',
     label: 'Haiku 4.5',
     description: 'Fastest for quick answers',
-    group: 'Claude Code',
+    group: HARNESS_META.claude.label,
     keywords: 'haiku',
   },
   {
     id: 'GPT-5.3 Codex',
     label: 'GPT-5.3 Codex',
-    group: 'Codex',
+    group: HARNESS_META.codex.label,
     keywords: 'gpt-5.3-codex openai',
   },
   {
     id: 'Kimi K3',
     label: 'Kimi K3',
     description: 'Served by OpenRouter',
-    group: 'OpenCode',
+    group: HARNESS_META.opencode.label,
     keywords: 'moonshotai/kimi-k3 openrouter',
   },
   {
     id: 'Qwen3 Coder',
     label: 'Qwen3 Coder',
     description: 'Runs locally through Ollama',
-    group: 'OpenCode',
+    group: HARNESS_META.opencode.label,
     keywords: 'ollama/qwen3-coder local',
   },
   {
     id: 'DeepSeek V4',
     label: 'DeepSeek V4',
     description: 'Served by OpenRouter',
-    group: 'OpenCode',
+    group: HARNESS_META.opencode.label,
     keywords: 'deepseek openrouter',
   },
   {
     id: 'GLM 5',
     label: 'GLM 5',
     description: 'Served by OpenRouter',
-    group: 'OpenCode',
+    group: HARNESS_META.opencode.label,
     keywords: 'glm zhipu openrouter',
   },
   {
     id: 'Llama 4 405B',
     label: 'Llama 4 405B',
     description: 'Served by OpenRouter',
-    group: 'OpenCode',
+    group: HARNESS_META.opencode.label,
     keywords: 'meta llama openrouter',
   },
   {
     id: 'Mistral Large 3',
     label: 'Mistral Large 3',
     description: 'Served by OpenRouter',
-    group: 'OpenCode',
+    group: HARNESS_META.opencode.label,
     keywords: 'mistral openrouter',
   },
 ];
