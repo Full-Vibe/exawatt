@@ -1,4 +1,5 @@
 import type { SessionAttention } from './pty/attention-monitor';
+import { agentSourceDeclaration } from './pty/generated-agent-source-declarations';
 import type { PtySessionInfo } from './pty/session-manager';
 
 export function shouldDeliverNativeNotification(
@@ -14,15 +15,9 @@ export function nativeNotificationCopy(session: PtySessionInfo): {
   body: string;
 } {
   const harness =
-    session.harness === 'claude'
-      ? 'Claude Code'
-      : session.harness === 'codex'
-        ? 'Codex'
-        : session.harness === 'opencode'
-          ? 'OpenCode'
-          : session.harness === 'grok'
-            ? 'Grok Build'
-            : 'Session';
+    session.harness === 'shell'
+      ? 'Session'
+      : agentSourceDeclaration(session.harness).label;
   return {
     title: session.title || harness,
     body: `${harness} needs your attention in ${session.projectName}.`,

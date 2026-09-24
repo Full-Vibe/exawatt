@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AgentHarness, AgentSourceAdapterId } from '@exawatt/core';
 import type { ElectronAppearanceBootstrapSnapshot } from './appearance';
 
 /** one subscribe-shape for every main→renderer event channel: wraps the
@@ -55,7 +56,7 @@ contextBridge.exposeInMainWorld('electron', {
     remembered: (scope: 'all' | 'launch' = 'all') =>
       ipcRenderer.invoke('agent-sources:remembered', scope),
     act: (
-      adapterId: 'claude' | 'codex' | 'opencode' | 'grok' | 'openclaw' | 'demo',
+      adapterId: AgentSourceAdapterId,
       action: 'authenticate' | 'choose-model' | 'install-guide'
     ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
@@ -221,7 +222,7 @@ contextBridge.exposeInMainWorld('electron', {
     reconcileResumeIdentities: (
       hints: Array<{
         durableSessionId: string;
-        harness: 'claude' | 'codex' | 'opencode' | 'grok';
+        harness: AgentHarness;
         cwd: string;
         initialTask: string | null;
         harnessSessionId: string | null;

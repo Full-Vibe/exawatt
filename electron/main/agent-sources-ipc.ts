@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { broadcastToWindows } from './window-broadcast';
 import { delegationObservations } from './harness-events/delegation-observation';
-import type { AgentSourceAction, AgentSourceAdapterId } from '@exawatt/core';
+import { isAgentSourceAdapterId, type AgentSourceAction } from '@exawatt/core';
 import { handleTrusted } from './ipc-security';
 import {
   inspectAgentSources,
@@ -11,7 +11,6 @@ import {
 } from './pty/agent-source-registry';
 import { AgentSourceObservationStore } from './pty/agent-source-observation-store';
 import { defaultShell } from './pty/session-manager';
-import type { AgentHarness } from './pty/harness-types';
 import { agentSourceDeclaration } from './pty/generated-agent-source-declarations';
 
 // The last complete observation of every source outlives the process, so a
@@ -51,7 +50,11 @@ export function registerAgentSourcesIPC(): void {
       if (typeof refresh !== 'boolean') {
         throw new Error('Invalid Agent Source refresh request');
       }
-      return inspectAgentSources(await defaultShell(), validScope(scope), refresh);
+      return inspectAgentSources(
+        await defaultShell(),
+        validScope(scope),
+        refresh
+      );
     }
   );
 
@@ -65,19 +68,8 @@ export function registerAgentSourcesIPC(): void {
 
   handleTrusted(
     'agent-sources:act',
-    async (
-      _event,
-      adapterId: AgentSourceAdapterId,
-      action: AgentSourceAction
-    ) => {
-      if (
-        adapterId !== 'claude' &&
-        adapterId !== 'codex' &&
-        adapterId !== 'opencode' &&
-        adapterId !== 'grok' &&
-        adapterId !== 'openclaw' &&
-        adapterId !== 'demo'
-      ) {
+    async (_event, adapterId: unknown, action: AgentSourceAction) => {
+      if (!isAgentSourceAdapterId(adapterId)) {
         throw new Error('Unsupported Agent Source');
       }
       if (
@@ -87,8 +79,8 @@ export function registerAgentSourcesIPC(): void {
       ) {
         throw new Error('Unsupported Agent Source action');
       }
+      const declaration = agentSourceDeclaration(adapterId);
       if (action === 'install-guide') {
-        const declaration = agentSourceDeclaration(adapterId);
         if (!declaration.installationGuideUrl) {
           throw new Error('This Agent Source has no installation guide');
         }
@@ -98,18 +90,16 @@ export function registerAgentSourcesIPC(): void {
           message: `${declaration.label} installation guide opened.`,
         };
       }
-      if (
-        adapterId !== 'claude' &&
-        adapterId !== 'codex' &&
-        adapterId !== 'opencode' &&
-        adapterId !== 'grok'
-      ) {
+      // Sign-in and model choice run the source's own CLI, so only a source
+      // with a local harness has them.
+      const harness = declaration.harness;
+      if (harness === null) {
         throw new Error('This Agent Source does not expose that action');
       }
-      if (action === 'choose-model' && adapterId !== 'claude') {
+      if (action === 'choose-model' && harness !== 'claude') {
         throw new Error('This source exposes its model catalog in Exawatt');
       }
-      return launchSourceOwnedAction(adapterId as AgentHarness, action);
+      return launchSourceOwnedAction(harness, action);
     }
   );
 }

@@ -7,23 +7,42 @@
  * successful probe.
  */
 
-export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'grok'] as const;
+import {
+  AGENT_HARNESSES,
+  AGENT_SOURCE_ADAPTER_IDS,
+  AGENT_SOURCE_CATALOG_IDS,
+} from './generated/agent-source-ids';
+
+/*
+ * The id lists are generated from `contracts/agent-sources.json`, so
+ * declaring a source there is what adds it to every type and guard below.
+ */
+export { AGENT_HARNESSES, AGENT_SOURCE_ADAPTER_IDS, AGENT_SOURCE_CATALOG_IDS };
+
 export type AgentHarness = (typeof AGENT_HARNESSES)[number];
 export type PtyHarness = 'shell' | AgentHarness;
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
-export const AGENT_SOURCE_ADAPTER_IDS = [
-  ...AGENT_HARNESSES,
-  'openclaw',
-  'demo',
-] as const;
 export type AgentSourceAdapterId = (typeof AGENT_SOURCE_ADAPTER_IDS)[number];
 
-export const AGENT_SOURCE_CATALOG_IDS = [
-  ...AGENT_SOURCE_ADAPTER_IDS,
-  'custom',
-] as const;
 export type AgentSourceCatalogId = (typeof AGENT_SOURCE_CATALOG_IDS)[number];
+
+const AGENT_HARNESS_SET: ReadonlySet<string> = new Set(AGENT_HARNESSES);
+const AGENT_SOURCE_ADAPTER_ID_SET: ReadonlySet<string> = new Set(
+  AGENT_SOURCE_ADAPTER_IDS
+);
+
+/** A source Exawatt runs as a local CLI. Safe on untrusted IPC input. */
+export function isAgentHarness(value: unknown): value is AgentHarness {
+  return typeof value === 'string' && AGENT_HARNESS_SET.has(value);
+}
+
+/** Any declared Agent Source. Safe on untrusted IPC input. */
+export function isAgentSourceAdapterId(
+  value: unknown
+): value is AgentSourceAdapterId {
+  return typeof value === 'string' && AGENT_SOURCE_ADAPTER_ID_SET.has(value);
+}
 
 export type AgentSourceState =
   | 'ready'

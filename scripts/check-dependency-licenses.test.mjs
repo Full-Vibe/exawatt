@@ -230,6 +230,7 @@ test('the Apache carve-out stays narrow and generated bindings stay AGPL', async
     /^<!-- SPDX-License-Identifier: Apache-2\.0 -->/u
   );
   for (const generated of [
+    'packages/core/src/generated/agent-source-ids.ts',
     'src/generated/agent-source-declarations.ts',
     'electron/main/pty/generated-agent-source-declarations.ts',
   ]) {

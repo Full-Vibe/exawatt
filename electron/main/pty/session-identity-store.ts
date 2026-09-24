@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { isAgentHarness } from '@exawatt/core';
+
 import type { AgentHarness } from './harness-types';
 
 export interface SessionIdentityRecord {
@@ -25,10 +27,7 @@ function validRecord(value: unknown): value is SessionIdentityRecord {
   return (
     typeof record.durableSessionId === 'string' &&
     SAFE_DURABLE_ID.test(record.durableSessionId) &&
-    (record.harness === 'claude' ||
-      record.harness === 'codex' ||
-      record.harness === 'opencode' ||
-      record.harness === 'grok') &&
+    isAgentHarness(record.harness) &&
     typeof record.harnessSessionId === 'string' &&
     SAFE_PROVIDER_ID.test(record.harnessSessionId) &&
     typeof record.cwd === 'string' &&

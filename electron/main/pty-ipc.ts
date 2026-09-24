@@ -75,6 +75,7 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows } from './window-broadcast';
+import { isAgentHarness } from '@exawatt/core';
 import type { DistributionContractV2 } from '@exawatt/core/distribution';
 
 let activeContextSummarizer: ContextSummarizer | null = null;
@@ -402,12 +403,16 @@ export function registerPtyIPC(
       !delegationMonitor.get(id)?.blockedOn &&
       (!attentionMonitor.get(id) ||
         attentionMonitor.get(id)?.kind === 'turn-end'),
-    catalog: async session =>
-      listAgentModels(
-        session.harness as 'claude' | 'codex',
+    catalog: async session => {
+      if (!isAgentHarness(session.harness)) {
+        throw new Error('Unsupported Agent Source');
+      }
+      return listAgentModels(
+        session.harness,
         session.cwd,
         await defaultShell()
-      ),
+      );
+    },
     restart: async (id, choice) => {
       const session = await ptySessions.changeModel(id, choice);
       attentionMonitor.noteEngaged(session.id);
@@ -429,18 +434,8 @@ export function registerPtyIPC(
   );
   handleTrusted(
     'pty:list-agent-models',
-    async (
-      _event,
-      harness: Exclude<PtyCreateOptions['harness'], 'shell'>,
-      cwd: string,
-      refresh = false
-    ) => {
-      if (
-        harness !== 'claude' &&
-        harness !== 'codex' &&
-        harness !== 'opencode' &&
-        harness !== 'grok'
-      ) {
+    async (_event, harness: unknown, cwd: string, refresh = false) => {
+      if (!isAgentHarness(harness)) {
         throw new Error('Unsupported Agent Source');
       }
       if (typeof cwd !== 'string' || !cwd.trim() || cwd.includes('\0')) {
@@ -749,10 +744,7 @@ export function registerPtyIPC(
         if (
           typeof hint.durableSessionId !== 'string' ||
           !/^[A-Za-z0-9._-]{1,200}$/.test(hint.durableSessionId) ||
-          (hint.harness !== 'claude' &&
-            hint.harness !== 'codex' &&
-            hint.harness !== 'opencode' &&
-            hint.harness !== 'grok') ||
+          !isAgentHarness(hint.harness) ||
           typeof hint.cwd !== 'string' ||
           !hint.cwd ||
           hint.cwd.includes('\0') ||

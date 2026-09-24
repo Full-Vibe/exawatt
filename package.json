@@ -37,7 +37,7 @@
     "test:publication": "node --test scripts/github-workflows.test.mjs scripts/publication-check.test.mjs scripts/check-asset-provenance.test.mjs scripts/check-dependency-licenses.test.mjs scripts/secret-scan.test.mjs",
     "test:workflows": "node --test scripts/github-workflows.test.mjs scripts/publication-check.test.mjs",
     "agent-sources:generate": "node scripts/generate-agent-source-declarations.mjs",
-    "agent-sources:check": "pnpm agent-sources:generate && git diff --exit-code -- src/generated/agent-source-declarations.ts electron/main/pty/generated-agent-source-declarations.ts",
+    "agent-sources:check": "node scripts/generate-agent-source-declarations.mjs --check",
     "icon:generate": "node scripts/generate-app-icon.mjs",
     "icon:check": "node scripts/generate-app-icon.mjs --check",
     "theme:generate": "node scripts/generate-themes.mjs",
