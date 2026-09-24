@@ -2476,6 +2476,22 @@ BUG-209, with behaviour unchanged. The repair needs a decision on what an
 unknown harness reopens as; the ledger's own read must not drop the row, since
 absence is not an answer.
 
+### BUG-218 Renderer tests timed out under load in jsdom's style engine
+
+Status: done · ENG-022 · found 2026-09-24 by the floor's flake detector; resolved 2026-09-24.
+
+`privacy-settings` and `session-state-tile-study` hit the 5 s timeout at load
+35.9 and passed alone. The time went to jsdom 27.2's `cssstyle`, which
+re-validated every declaration on every style write and `getComputedStyle`
+and built a css-tree error with a formatted stack for each shorthand miss;
+role queries and `toBeVisible` call `getComputedStyle` per candidate and per
+ancestor. A lockfile-only update inside `^27.2.0` (jsdom 27.4.0, `cssstyle`
+5.3.7, which memoizes) removes that work across the DOM suite. The Privacy
+disclosure test and the Connect voice test walked a contract list inside one
+timeout and are now one test per item. Under 12 concurrent copies at load 13
+to 93 they had timed out in 21 and 23 of 24 runs; after, zero failures.
+Mutation-checked. [Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

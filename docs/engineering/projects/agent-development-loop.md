@@ -391,6 +391,54 @@ tests remain the recovery floor during the rollout.
   1.5 s, and passed twice more. Its surface gains the launcher's roadmap
   control, the declared-link projection and its script.
 
+- 2026-09-24, BUG-218: the two renderer tests the floor flagged as suspected
+  flakes at load 35.9 (`privacy-settings`, `session-state-tile-study`) spent
+  their time in jsdom's style engine, not in their own logic. A CPU profile of
+  the tile study put 46% of it in `getComputedStyle` and 29% in building
+  css-tree errors. jsdom 27.2's `cssstyle` 5.3.3 re-validates every declaration
+  through css-tree on every style write and every `getComputedStyle`, with no
+  memo, and tries a shorthand such as `background: rgba(...)` against each
+  longhand. Each miss builds a `SyntaxMatchError` whose stack css-tree formats
+  at once (`Object.assign` reads its `stack` getter), through Vitest's
+  source-mapping `prepareStackTrace`: one study render and one role query
+  raised 439 of them. Role queries (a visibility check per candidate and per
+  ancestor) and `toBeVisible` (per ancestor) call `getComputedStyle` hundreds
+  of times per test, so assertions paid as much as renders. Import graphs,
+  `waitFor` polling and real timers were measured and were not the cost.
+  Two fixes. (1) A lockfile-only update inside the declared `^27.2.0`: jsdom
+  27.4.0, whose `cssstyle` 5.3.7 memoizes validation and parsing, and css-tree
+  3.2.1; `package.json` is unchanged. Across the 880 DOM tests, interleaved
+  runs put the median test at 0.83x its old time. (2) Two tests walked a
+  contract list inside one timeout: the Privacy disclosure test (8 controls, 5
+  visibility checks each) and the Connect voice test (8 walks through the
+  dialog; it also timed out at 5.6 s in a full-suite run during this work).
+  Each is now one test per item, so a failure names the control or failure
+  class; mutation-checked (a hidden disclosure on one control, an em dash in
+  one failure headline: each fails exactly its own case). Measured with 12
+  concurrent copies of the three files at load 13 to 93, before and after:
+  the Privacy disclosure test timed out in 21 of 24 runs, and its slowest case
+  now takes 1.3 s; the Connect voice test timed out in 23 of 24, now 0.4 s a
+  case; the tile study's slowest went from 4.1 s to 2.0 s; zero failures in 24
+  runs. Alone (one worker, interleaved): Privacy 566 ms to 310 ms for the
+  first case and 53 to 78 ms for the rest; Connect voice 955 ms to at most
+  131 ms; tile study 221, 169 and 376 ms to 147, 132 and 276 ms. The tile
+  study's first test did not move alone (about 500 ms at load 13 to 50): the
+  first test in every jsdom file also pays that file's cold start (JIT,
+  jsdom's default stylesheet, the first render).
+  Measured slowdown at load 30 was about 12x, so the margin that matters is
+  about a tenth of the timeout, not 40%. No test in two full-suite runs
+  exceeded 40% of its timeout; 24 exceeded 500 ms, led by
+  `agent-source-registry-cache` (real shell probes, 1.7 s),
+  `demo-workspace-client` W6 (1.4 s), the goal-visuals bench (21 tiles for one
+  assertion, 1.3 s), `agent-source-registry`'s OpenCode seam probe (1.2 s),
+  the gallery's keyswitch workbench (1.0 s), `settings-client`'s shortcut
+  policy (1.0 s) and `launch-controls.launching`'s six-menu drafts walk
+  (1.0 s). None shares the loop shape; they are listed, not changed. Proposed,
+  not built: record per-test durations from the floor's Vitest checks in
+  `metrics.jsonl` and report tests whose median passes a tenth of their
+  timeout. A duration gate would flake by construction, and `scripts/` was
+  being changed on another branch.
+
 - 2026-09-24, BUG-205: the stacked landing, ticket 466 (`516dccb9`),
   showed that a head rebase re-ran the repository floor and never a declared
   surface gate, so gate evidence could describe a tree that never integrated.
