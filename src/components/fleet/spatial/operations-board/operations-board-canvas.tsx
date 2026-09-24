@@ -1580,8 +1580,8 @@ function ProjectHealthRail({
   );
 }
 
-/** Ceiling for in-world DOM anchors: above the board's own chrome, below the
- *  app's fixed layers (the feedback panel is `z-50`, first-run is `z-90`). */
+/** Depth range within the isolated world layer. Scene labels may overlap one
+ *  another, but never the sibling board controls or application overlays. */
 const BOARD_HTML_Z_MAX = 30;
 
 function DampedHtmlAnchor({

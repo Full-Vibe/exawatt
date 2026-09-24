@@ -679,7 +679,7 @@ export function SpatialFleetClient() {
       data-spatial-altitude={scene.altitude}
       data-agent-count={commandView.agents.length}
       data-spatial-shell-theme={resolvedAppearance.themeId}
-      className="flex min-h-[calc(100svh-3rem)] flex-col overflow-x-hidden bg-background text-foreground xl:h-[calc(100svh-3rem)] xl:overflow-hidden"
+      className="flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-background text-foreground"
     >
       <header className="exa-material-chrome relative z-20 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2">
         <span className="sr-only" aria-live="polite">
@@ -827,15 +827,20 @@ export function SpatialFleetClient() {
         </Button>
       </header>
 
+      {/* The toolbar takes its natural wrapping height; the board and inspector
+          divide only the remaining route slot. Neither estimates the viewport.
+          The spacing-48 floor fits the two wrapped control rows (h-16 +
+          h-11 with chrome insets/gaps) in short windows; the shell
+          scrolls locally only when that minimum cannot fit beneath chrome. */}
       <main
-        className={`relative grid flex-none xl:flex-1 xl:overflow-hidden ${
+        className={`relative grid flex-1 shrink-0 ${
           showSelectionPanel
-            ? 'min-h-[calc(100svh+6rem)] xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_340px]'
-            : 'min-h-0'
+            ? 'min-h-96 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] xl:min-h-48 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]'
+            : 'min-h-48 grid-rows-[minmax(0,1fr)]'
         }`}
       >
         <section
-          className="relative h-[52svh] min-h-[360px] overflow-hidden sm:min-h-[420px] xl:h-auto"
+          className="relative min-h-0 min-w-0 overflow-hidden"
           aria-label="Fleet surface"
         >
           <OperationsBoardSurface

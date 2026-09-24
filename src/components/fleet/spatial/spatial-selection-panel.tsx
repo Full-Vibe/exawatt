@@ -295,7 +295,7 @@ export function SpatialSelectionPanel({
       data-spatial-selection-panel={multi ? 'multi' : 'agent'}
       data-selection-count={multi ? selectedAgents.length : agent ? 1 : 0}
       aria-label="Selection"
-      className="exa-material-overlay relative z-10 flex flex-col gap-3 overflow-y-auto border-t border-border p-4 pb-24 xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4"
+      className="exa-material-overlay relative z-10 flex min-h-0 flex-col gap-3 overflow-y-auto border-t border-border p-4 xl:border-l xl:border-t-0"
     >
       {multi ? (
         <MultiSelectionCommand

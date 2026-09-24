@@ -817,7 +817,15 @@ Built:
 - Workspace tenancy (ENG-027): Personal and Demo are `available` tenants behind the account-menu switcher; the Voltaic Grid Systems shared tenant is a non-activatable `preview` Workspace linking to `/organization`. **Demo** is the tenant identity and **Voltaic Grid Systems** is the separately modeled organization its fixtures portray. The Demo source runs the authored Voltaic fleet, pane content sources (transcripts / honest session records, never a PTY), demo ⌘K rows, Initiative projections, and the Voltaic consumption corpus through the production surfaces
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
-  superseded immersive 3D composition)
+  superseded immersive 3D composition). Its route owns the viewport below the
+  fixed application navigation; loading, scoped Workspaces, and Demo/Live
+  inherit that slot. A flex/grid remainder sizes the board beneath wrapping
+  chrome, and the selection inspector owns its scroll in stacked and side-rail
+  layouts (BUG-143), without a second viewport calculation inside the renderer.
+  Cramped windows scroll the route locally when its wrapping controls and the
+  board's control-safe minimum cannot fit; document scrolling stays outside
+  this application surface. The scene wrapper isolates in-world DOM label
+  stacking beneath sibling board controls.
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
   xterm.js for Claude Code, Codex, OpenCode, Grok Build, and shells, behind a session-manager boundary
 - Electron-main turn-state ownership that distinguishes Agent work from PTY

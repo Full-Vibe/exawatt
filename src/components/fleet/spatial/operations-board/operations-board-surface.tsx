@@ -734,7 +734,8 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
           </select>
         </div>
       )}
-      <div className="absolute inset-0">
+      {/* World labels own depth within the scene, never above sibling chrome. */}
+      <div className="absolute inset-0 isolate">
         <BoardErrorBoundary theme={theme}>
           <OperationsBoardCanvas
             layout={layout}

@@ -528,7 +528,7 @@ export const architectureManifest = {
           id: 'spatial-operations-board',
           label: 'Fleet Operations Board',
           summary:
-            'R3F tactical board with stable catalog-backed Project zones, including zero-Agent state, semantic zoom, anchored live and dotted stopped Agents, attention, and exact Session handoff.',
+            'R3F tactical board with stable catalog-backed Project zones, including zero-Agent state, semantic zoom, anchored live and dotted stopped Agents, attention, and exact Session handoff. One route-owned viewport feeds the board and contained, scrollable inspector across direct entry and resize.',
           layer: 'ui',
           status: 'implemented',
           x: 455,

@@ -583,9 +583,13 @@ async function runScenario(browser, scenario) {
     result.idleFrames = await measureIdleFrames(page);
 
     if (scenario.mobile) {
-      result.scrollable = await page.evaluate(
-        () => document.documentElement.scrollHeight > window.innerHeight
-      );
+      result.scrollable = await page.evaluate(() => {
+        const panel = document.querySelector('[data-spatial-selection-panel]');
+        if (!panel) return false;
+        // Overflow belongs to the inspector, not the whole application.
+        panel.scrollTop = panel.scrollHeight;
+        return panel.scrollHeight <= panel.clientHeight || panel.scrollTop > 0;
+      });
       check(
         result.scrollable,
         'Mobile inspector is not reachable by scrolling'

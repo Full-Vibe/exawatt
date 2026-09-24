@@ -244,6 +244,18 @@ export const SURFACE_GATES = [
       file === 'scripts/lib/packaged-app.mjs',
   },
   {
+    gate: 'eval:spatial:viewport',
+    why: 'Spatial deep links and resizing must share one viewport owner, with reachable inspector controls',
+    match: file =>
+      file.startsWith('src/app/fleet/spatial/') ||
+      file === 'src/components/fleet/spatial/spatial-fleet-client.tsx' ||
+      file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
+      file === 'src/components/nav/site-header-nav.tsx' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-surface.tsx' ||
+      file === 'scripts/spatial-viewport-eval.mjs',
+  },
+  {
     gate: 'eval:electron:connected-fleet',
     why: 'customer-hosted Agents cross the packaged preload, IPC, Gateway runtime, durable mapping, and Agent/Team/Fleet composition as one surface',
     match: file =>

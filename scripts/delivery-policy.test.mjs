@@ -393,6 +393,24 @@ test('the packaged customer-hosted fleet owns its end-to-end gate', () => {
   );
 });
 
+test('Spatial viewport owners require the real-route geometry gate', () => {
+  for (const file of [
+    'src/app/fleet/spatial/page.tsx',
+    'src/components/fleet/spatial/spatial-fleet-client.tsx',
+    'src/components/fleet/spatial/spatial-selection-panel.tsx',
+    'src/components/nav/site-header-nav.tsx',
+    'src/components/fleet/spatial/operations-board/operations-board-surface.tsx',
+    'scripts/spatial-viewport-eval.mjs',
+  ]) {
+    assert.ok(
+      missingSurfaceGates([file]).some(
+        entry => entry.gate === 'eval:spatial:viewport'
+      ),
+      file
+    );
+  }
+});
+
 test('the shared menu primitive owes the launcher gate', () => {
   assert.deepEqual(
     missingSurfaceGates(['src/components/ui/option-menu.tsx']).map(

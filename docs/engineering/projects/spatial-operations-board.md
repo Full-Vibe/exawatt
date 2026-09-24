@@ -2629,3 +2629,34 @@ scrolls within its allocated row or column rather than extending the viewport.
 The layout lane owns route/client geometry and direct-entry/resize regression
 coverage, including no selection, invalid selection and stacked/side layouts.
 No camera or Canvas sizing workaround belongs in this repair.
+
+### 2026-09-23 — Spatial viewport ownership and reachability (BUG-143)
+
+The board now fills the route's available height at every altitude and width.
+The exact reported 1312×821 Agent route already filled at the desktop
+breakpoint; a narrower effective viewport reproduced the class of failure:
+`flex-none` and a `52svh` board left unused space, while selecting an Agent
+forced a separate `100svh+6rem` minimum and pushed controls below the fold.
+
+The route now owns one dynamic viewport slot below the fixed application
+navigation. Loading, tenant-scoped, Demo, and Live states inherit it; a flex/grid
+remainder accounts for the toolbar's actual wrapping height. Selection shares
+the remainder as stacked rows or the existing desktop rail, with its own
+scrollable contents. The spacing-48 board floor fits the two wrapped control
+rows plus chrome insets/gaps. Only physically cramped windows scroll the route
+locally to preserve reachable controls; the document never gains a second
+application scroll owner. Existing design-system chrome/operational spacing,
+materials, typography, and board rendering remain unchanged.
+
+Verification: `eval:spatial:viewport` exercises direct Fleet, Project, Agent, and
+unknown-Agent entry plus six width/height changes per route, including
+390×320 and 320×320. It measures the actual header, toolbar, board/canvas, and
+inspector bounds and checks action reachability rather than fixed screenshots.
+The delivery policy requires this gate whenever a viewport owner changes.
+The cramped-view hit test also exposed in-world DOM anchors escaping above
+board controls. The canvas/world wrapper now isolates scene-relative label
+stacking beneath sibling chrome; controls stay hittable regardless of camera
+placement. Signed Brave browser doctor/smoke and `eval:spatial:pointer` passed;
+related inspector/surface tests passed 12/12, and delivery policy tests passed
+39/39. Desktop and mobile screenshots were visually checked for nonblank
+rendering, clipping, and control readability.
