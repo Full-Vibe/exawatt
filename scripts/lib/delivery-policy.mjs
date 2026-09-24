@@ -372,6 +372,16 @@ export const SURFACE_GATES = [
       file === 'electron/main/pty/agent-models.ts',
   },
   {
+    gate: 'eval:electron:connect-flow',
+    why: 'Connect and send access are held to the click and SSH-login budgets the H2.4 audit set, through the real preload, tunnel owner, and remote exec',
+    match: file =>
+      file === 'src/components/workspace/connect-source-dialog.tsx' ||
+      file === 'src/components/workspace/connect-source-model.ts' ||
+      file === 'electron/main/source-device-approval.ts' ||
+      file === 'scripts/electron-connect-flow-eval.mjs' ||
+      file === 'scripts/lib/connect-eval-ssh.mjs',
+  },
+  {
     gate: 'eval:electron:lifecycle',
     why: 'the launcher composer is the only way to start a Session, and the whole PTY lifecycle — cancel, quit, corrupt history, restore, resume, crash — hangs off what it starts',
     // Routed for the FIRST time here. Nothing in this map named it, so no

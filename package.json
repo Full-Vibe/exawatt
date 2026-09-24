@@ -110,6 +110,7 @@
     "eval:workspace:draft": "node scripts/workspace-draft-paste-eval.mjs",
     "eval:electron:project-agent": "node scripts/electron-project-agent-launcher-eval.mjs",
     "eval:electron:agent-sources": "node scripts/electron-agent-sources-eval.mjs",
+    "eval:electron:connect-flow": "node scripts/electron-connect-flow-eval.mjs",
     "eval:electron:grok-source": "node scripts/electron-grok-source-eval.mjs",
     "eval:electron:recents": "node scripts/electron-recent-conversations-eval.mjs",
     "eval:electron:startup": "node scripts/electron-startup-eval.mjs",

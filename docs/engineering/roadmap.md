@@ -1858,8 +1858,10 @@ Milestones:
   new Remote one, "Connect N Agents"). P2b holds three follow-ups: landing on
   the Project with the new coworker marked (ships with P1), a ⌘K row
   (rewrites the verb's recorded no-palette reason), and send access inside the
-  dialog. Next: P1 once the workspace-honesty registry work lands, with P2b's
-  landing; P5's eval; then P4 with D54.
+  dialog. P5 LANDED 2026-09-24: `eval:electron:connect-flow` holds Connect and
+  send access to click and SSH-login budgets in the real app. Next: P1 once
+  the workspace-honesty registry work lands, with P2b's landing; then P4 with
+  D54.
 - H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
   authorization pass for provisioning, credential custody, deletion, billing,
   and control-plane ownership before implementation begins.

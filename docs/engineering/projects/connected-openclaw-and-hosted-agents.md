@@ -604,7 +604,8 @@ queue with the connected-fleet gate.
   sits under More. The launcher is ENG-016 D54's surface and carries in-flight
   readiness work, so this packet is shaped with D54 and coordinated with that
   work before it starts.
-- **P5 UI eval.** Turn the audit harness (stand-in `ssh` plus
+- **P5 UI eval.** LANDED 2026-09-24 as `eval:electron:connect-flow` (log
+  entry of that date). Turn the audit harness (stand-in `ssh` plus
   `ConnectedGatewayFixture`) into a Connect UI eval that measures clicks,
   screens, and SSH logins, and gate P2 to P4 on it.
 
@@ -1844,4 +1845,27 @@ server connected with both coworkers; the second server defaulted into the
 same Remote Project and "Connect Tyler" put all three mappings there. One
 connect is ⌘N and three clicks, or ⌘N, two clicks, and a typed name; each
 server costs three SSH logins.
+
+### 2026-09-24 — the Connect flow is measured (H2.4 P5)
+
+`eval:electron:connect-flow` drives ⌘N → Connect a server… and send access in
+the real app, through the real preload, tunnel owner, and remote exec, against
+two Gateway fixtures reached by a committed stand-in `ssh`
+(`scripts/lib/connect-eval-ssh.mjs`). The stand-in answers the tunnel and the
+five commands Exawatt runs on a source, keeps pairing state in the fixtures
+through a loopback control port, and logs every login, so the eval can count
+what each step costs on the operator's servers. Every name and address in it
+is invented (RFC 5737 ranges and example domains) in the shape of a real
+twelve-alias configuration.
+
+It holds the flow to budgets: a connect takes three clicks or fewer after ⌘N
+(two with a typed name), testing a server costs three SSH logins, a dead
+server is dialed once and leaves nothing saved, and the one click costs six
+logins and approves only Exawatt's own request while another device's request
+waits beside it. It also checks the connected row (coworkers named, no second
+connect), the shared default Project across two servers, the copy path's exact
+`ssh` and `openclaw devices approve <id>` lines finishing through Check again,
+and that the diagnostics log records the one click's step without naming a
+server. It gates changes to the Connect dialog and model, the approval
+matcher, and itself. First run: all sixteen checks passed.
 
