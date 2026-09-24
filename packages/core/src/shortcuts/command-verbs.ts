@@ -376,7 +376,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     // owns it beside Open Project, and why the ⌘N chooser presents it as a
     // peer route rather than a setting buried in a pane.
     id: 'connect-agent-source',
-    label: 'Connect existing Agent',
+    label: 'Connect a server',
     description:
       'Attach a server you already run so its Agents appear beside local ones',
     keys: null,
@@ -391,7 +391,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
       'The palette presses one row, and this is one of three peer routes on the ⌘N chooser the palette already lists; a row that jumped straight into the connect flow would hide the two routes an operator weighs it against at the moment of choosing. Sources that already exist are managed in Settings, which the palette reaches as a destination.',
     menu: {
       commandId: 'connect-agent-source',
-      label: 'Connect Existing Agent…',
+      label: 'Connect a Server…',
       section: 'file',
     },
   },

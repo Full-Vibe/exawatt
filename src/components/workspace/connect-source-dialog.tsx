@@ -1,13 +1,18 @@
 'use client';
 
 /**
- * Connect existing Agent (ENG-010 C2).
+ * Connect a server (ENG-010 C2, reshaped into one screen by ENG-033 H2.4 P2).
  *
- * The surface for `connect-source-model.ts`. It renders the step the model is
- * on and reports what the operator did; it decides no policy of its own. The
+ * The surface for `connect-source-model.ts`. It renders what the model hands
+ * it and reports what the operator did; it decides no policy of its own. The
  * house dialog contract applies: Radix primitives through `@/components/ui`,
- * one declared primary action per step with its chord printed on its face,
- * Cancel to its left, full keyboard operation, and visible focus.
+ * one declared primary action with its chord printed on its face, Cancel to
+ * its left, full keyboard operation, and visible focus.
+ *
+ * One screen: the operator's servers with a filter, each tested in place when
+ * picked; the Agents of the server that answered, checked and renameable in
+ * place; one Project for the batch; and "Connect N Agents". A failure stays on
+ * its row and saves nothing.
  *
  * Two things this surface never does. It never shows the value of a HostName,
  * User, or IdentityFile line: alias metadata crosses the bridge as booleans
@@ -23,6 +28,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type ReactNode,
 } from 'react';
 import {
   Dialog,
@@ -41,13 +47,15 @@ import type {
   SshHostAlias,
 } from '@exawatt/core';
 import {
-  ArrowLeft,
   Check,
-  Circle,
+  ChevronRight,
   LoaderCircle,
+  Pencil,
+  Search,
   Server,
   TriangleAlert,
 } from 'lucide-react';
+import Link from 'next/link';
 import { OpenClawIcon } from './harness-icons';
 import { SourceIdentityMark } from './source-identity-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
@@ -57,16 +65,12 @@ import {
   ProjectRegistryUnavailableError,
 } from '@/lib/projects/registry';
 import {
-  CONNECT_FAILURE_COPY,
-  CONNECT_STAGES,
-  CONNECT_STAGE_COPY,
   DEFAULT_GATEWAY_PORT,
-  canGoBack,
+  canTestServer,
   cancelConnectFlow,
   connectFlowReducer,
   connectionFacts,
   credentialOwnerForTransport,
-  existingSourceIdForAlias,
   initialConnectFlowState,
   partitionAgents,
   placementForTransport,
@@ -74,15 +78,15 @@ import {
   saveConnectFlow,
   stageForPhase,
   validateManualDraft,
-  type AgentMappingRow,
+  visibleServerRows,
+  type ConnectAttempt,
   type ConnectIssue,
-  type ConnectStage,
-  type ConnectStep,
-  type ConnectionFact,
+  type ConnectedServer,
   type DiscoveredAgent,
   type ManualServerDraft,
   type ObservedSourceFacts,
   type ProjectTarget,
+  type ServerRow,
 } from './connect-source-model';
 
 /** OpenClaw's brand color, from `contracts/agent-sources.json`. */
@@ -170,7 +174,20 @@ export interface ConnectSourceBridge {
    * a bridge without it lists every alias as available, which is what the
    * guard in `startTest` backs up.
    */
-  list?(): Promise<readonly { alias: string | null }[]>;
+  list?(): Promise<readonly { id: string; alias: string | null }[]>;
+  /**
+   * The coworkers already connected, so a saved server's row names them and
+   * the batch defaults to the Project they already live in. Optional, like
+   * `list`: without it the rows say Connected and the batch defaults to a new
+   * Project.
+   */
+  agents?(): Promise<
+    readonly {
+      displayName: string;
+      projectId: string;
+      source: { id: string };
+    }[]
+  >;
   /** Bounded test plus read-only discovery. Answers once, at the end. */
   connect(sourceId: string): Promise<ConnectAttemptResult>;
   /** Persists the whole Exawatt-side projection decision atomically in main. */
@@ -223,6 +240,7 @@ function electronBridge(): ConnectSourceBridge | null {
     // Guarded like the change channel below: a bridge without it lists every
     // alias as available, and the add-time guard still refuses a saved one.
     list: typeof api.list === 'function' ? () => api.list() : undefined,
+    agents: typeof api.agents === 'function' ? () => api.agents() : undefined,
     connect: sourceId => api.connect(sourceId),
     mapAgents: (sourceId, mappings) => api.mapAgents(sourceId, [...mappings]),
     // Older bridges predate the channel. A dialog with no progress still
@@ -233,12 +251,73 @@ function electronBridge(): ConnectSourceBridge | null {
   };
 }
 
+/** The name the batch's Project gets when nothing better is known. */
+export const DEFAULT_REMOTE_PROJECT_NAME = 'Remote';
+
+/**
+ * Where the batch lands unless the operator says otherwise: the Project the
+ * connected coworkers already live in, by identity, or a new one named for
+ * where remote coworkers live (ENG-033 H2.4, "a special project, like
+ * remote"). Never a Project named after the server.
+ */
+function defaultProjectFor(
+  projects: readonly ConnectProjectOption[],
+  coworkerProjectIds: readonly string[]
+): ProjectTarget {
+  const known = new Set(projects.map(project => project.id));
+  const counts = new Map<string, number>();
+  for (const id of coworkerProjectIds) {
+    if (known.has(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  const home = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return home
+    ? { kind: 'existing-project', projectId: home }
+    : { kind: 'new-project', name: DEFAULT_REMOTE_PROJECT_NAME };
+}
+
+interface TestInput {
+  alias: string;
+  displayName: string;
+  transport: SourceTransport;
+  operatorAuthored: boolean;
+}
+
+function aliasInput(alias: string): TestInput {
+  return {
+    alias,
+    displayName: alias,
+    transport: {
+      kind: 'ssh-alias',
+      alias,
+      remotePort: DEFAULT_GATEWAY_PORT,
+    },
+    operatorAuthored: false,
+  };
+}
+
+function manualInput(draft: ManualServerDraft): TestInput {
+  return {
+    alias: draft.label.trim(),
+    displayName: draft.label.trim(),
+    transport: {
+      kind: 'ssh-manual',
+      host: draft.host.trim(),
+      user: draft.user.trim(),
+      port: draft.port,
+      identityFile: draft.identityFile.trim() || null,
+      remotePort: draft.gatewayPort,
+    },
+    operatorAuthored: true,
+  };
+}
+
 export function ConnectSourceDialog({
   open,
   onOpenChange,
   projects = [],
   bridge,
   onConnected,
+  onManageServer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -248,6 +327,11 @@ export function ConnectSourceDialog({
   bridge?: ConnectSourceBridge | null;
   /** The saved source and its Project mapping, once the operator confirms. */
   onConnected?: (result: ConnectSourceResult) => void;
+  /**
+   * Where a connected server's Manage goes. Absent, it links to Settings;
+   * Settings itself passes a close, because the operator is already there.
+   */
+  onManageServer?: () => void;
 }) {
   const [state, dispatch] = useReducer(
     connectFlowReducer,
@@ -257,12 +341,14 @@ export function ConnectSourceDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [mappingError, setMappingError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const aliasesRequested = useRef(false);
-  /** The step's own content, so focus can follow a step change into it. */
+  const [coworkerProjectIds, setCoworkerProjectIds] = useState<
+    readonly string[]
+  >([]);
+  const serversRequested = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const retainedDraft = useRef<ManualServerDraft | null>(null);
   /** Bumped whenever a result in flight stops being the one on screen. */
-  const attempt = useRef(0);
+  const attemptToken = useRef(0);
   /**
    * A retry reuses the same opaque identity. The source mapping write may
    * have committed even when its acknowledgement was lost, so minting a new
@@ -281,22 +367,26 @@ export function ConnectSourceDialog({
   const bridgeRef = useRef(resolvedBridge);
   bridgeRef.current = resolvedBridge;
 
-  const step = state.step;
   /** The source under test, read from inside a subscription that outlives it. */
-  const pendingSourceId = useRef<string | null>(null);
-  pendingSourceId.current = state.pendingSourceId;
+  const testingSourceId = useRef<string | null>(null);
+  testingSourceId.current =
+    state.attempt?.phase.kind === 'testing' ? state.attempt.sourceId : null;
   const knownProjectIds = useMemo(
     () => projects.map(project => project.id),
     [projects]
   );
+  const defaultProject = useMemo(
+    () => defaultProjectFor(projects, coworkerProjectIds),
+    [coworkerProjectIds, projects]
+  );
+  const project = state.project ?? defaultProject;
 
   const leave = useCallback(() => onOpenChange(false), [onOpenChange]);
 
   /**
    * Closing is the only cancel path, whichever control reached it: the
    * button, Escape, or the host. Leaving releases the record this flow
-   * created so a server the operator walked away from is not left half
-   * connected, and touches nothing on the server itself.
+   * created, and touches nothing on the server itself.
    */
   const closed = useRef(true);
   useEffect(() => {
@@ -307,8 +397,8 @@ export function ConnectSourceDialog({
     if (closed.current) return;
     closed.current = true;
     const outcome = cancelConnectFlow(state);
-    attempt.current += 1;
-    aliasesRequested.current = false;
+    attemptToken.current += 1;
+    serversRequested.current = false;
     retainedDraft.current = outcome.retainedDraft;
     if (
       outcome.releaseSourceId &&
@@ -332,72 +422,82 @@ export function ConnectSourceDialog({
     const draft = retainedDraft.current;
     if (!draft) return;
     retainedDraft.current = null;
-    dispatch({ type: 'choose-adapter', adapterId: 'openclaw' });
     dispatch({ type: 'set-manual', manual: true });
     dispatch({ type: 'edit-manual', patch: draft });
   }, [open]);
 
-  // Alias enumeration reads local configuration only, and only once the
-  // operator has asked for the server step.
+  // Listing reads local configuration and Exawatt's own records only.
+  // Listing a server is not contacting it.
   useEffect(() => {
-    if (!open || step.kind !== 'choose-server' || aliasesRequested.current) {
-      return;
-    }
+    if (!open || serversRequested.current) return;
     const api = bridgeRef.current;
     if (!api) return;
-    aliasesRequested.current = true;
-    const token = attempt.current;
+    serversRequested.current = true;
+    const token = attemptToken.current;
     const saved = api.list
-      ? api.list().catch(() => [] as readonly { alias: string | null }[])
-      : Promise.resolve([] as readonly { alias: string | null }[]);
-    void Promise.all([api.sshAliases(), saved])
-      .then(([result, sources]) => {
-        if (token !== attempt.current) return;
+      ? api
+          .list()
+          .catch(() => [] as readonly { id: string; alias: string | null }[])
+      : Promise.resolve([] as readonly { id: string; alias: string | null }[]);
+    const coworkers = api.agents
+      ? api.agents().catch(() => [])
+      : Promise.resolve([]);
+    void Promise.all([api.sshAliases(), saved, coworkers])
+      .then(([result, sources, agents]) => {
+        if (token !== attemptToken.current) return;
+        const connected: ConnectedServer[] = sources.flatMap(source =>
+          source.alias === null
+            ? []
+            : [
+                {
+                  alias: source.alias,
+                  agentNames: agents
+                    .filter(agent => agent.source.id === source.id)
+                    .map(agent => agent.displayName),
+                },
+              ]
+        );
+        setCoworkerProjectIds(agents.map(agent => agent.projectId));
         dispatch({
-          type: 'aliases-loaded',
+          type: 'servers-loaded',
           aliases: result.aliases,
-          connectedAliases: sources
-            .map(source => source.alias)
-            .filter((alias): alias is string => alias !== null),
+          connected,
           configPresent: result.configPresent,
           incompleteIncludes: result.incompleteIncludes,
         });
       })
       .catch(() => {
-        if (token !== attempt.current) return;
+        if (token !== attemptToken.current) return;
         dispatch({
-          type: 'aliases-loaded',
+          type: 'servers-loaded',
           aliases: [],
+          connected: [],
           configPresent: false,
           incompleteIncludes: false,
         });
       });
-  }, [open, step.kind]);
+  }, [open]);
 
   /**
-   * The bounded test ticks from main's own connection channel.
-   *
-   * Subscribed for as long as the dialog is open, which is what makes the
-   * first stage real: the tunnel phase is broadcast before `connect` resolves
-   * and often before the operator's click has finished settling, so a
-   * subscription taken when the test starts would miss the one stage that
-   * takes the longest.
-   *
-   * Two filters keep somebody else's server off this screen. The change has
-   * to name the source this flow is testing, and the reducer accepts a stage
-   * only while the flow is standing on the bounded test, so a reconnect
-   * ladder running behind Settings cannot drive the checklist.
+   * The bounded test ticks from main's own connection channel, subscribed for
+   * as long as the dialog is open so the first stage is never missed. Only the
+   * source under test moves the row, and only while it is under test.
    */
   useEffect(() => {
     if (!open || !resolvedBridge) return;
     return resolvedBridge.onSourceChanged(change => {
-      if (change.sourceId !== pendingSourceId.current) return;
+      if (change.sourceId !== testingSourceId.current) return;
       const stage = stageForPhase(change.phase);
       if (stage === null) return;
       dispatch({ type: 'test-stage', stage });
     });
   }, [open, resolvedBridge]);
 
+  /**
+   * Run the bounded test on a saved record. A failure releases the record at
+   * once, so the row's "Nothing was saved" is true when it is shown; a release
+   * that itself fails says so instead.
+   */
   const observe = useCallback(
     async (input: {
       sourceId: string;
@@ -407,103 +507,97 @@ export function ConnectSourceDialog({
     }) => {
       const api = bridgeRef.current;
       if (!api) return;
+      const fail = async (
+        failure: SourceFailureClass,
+        message: string
+      ): Promise<void> => {
+        const released = await api
+          .detach(input.sourceId)
+          .then(result => result.ok)
+          .catch(() => false);
+        if (input.token !== attemptToken.current) return;
+        dispatch({ type: 'test-failed', failure, message, released });
+      };
       try {
         const result = await api.connect(input.sourceId);
-        if (input.token !== attempt.current) return;
+        if (input.token !== attemptToken.current) return;
         if (result.ok) {
+          const observed = result.observed ?? null;
           dispatch({
             type: 'agents-discovered',
             agents: result.agents,
             facts: connectionFacts({
-              observed: result.observed ?? null,
+              observed,
               placement: input.placement,
               credentialOwner: input.credentialOwner,
             }),
+            version: observed?.version ?? null,
           });
           return;
         }
-        dispatch({
-          type: 'test-failed',
-          failure: result.failure ?? 'unknown',
-          message: result.message,
-        });
+        await fail(result.failure ?? 'unknown', result.message);
       } catch {
-        if (input.token !== attempt.current) return;
-        dispatch({
-          type: 'test-failed',
-          failure: 'unknown',
-          message: '',
-        });
+        if (input.token !== attemptToken.current) return;
+        await fail('unknown', '');
       } finally {
-        if (input.token === attempt.current) setBusy(false);
+        if (input.token === attemptToken.current) setBusy(false);
       }
     },
     []
   );
 
   const startTest = useCallback(
-    async (input: {
-      alias: string;
-      displayName: string;
-      transport: SourceTransport;
-      operatorAuthored: boolean;
-    }) => {
+    async (input: TestInput) => {
       const api = bridgeRef.current;
-      if (!api || busy) return;
+      if (!api || busy || !canTestServer(state, input.alias)) return;
       const placement = placementForTransport(input.transport.kind);
       const credentialOwner = credentialOwnerForTransport(input.transport.kind);
       setServerError(null);
+      setMappingError(null);
       setBusy(true);
-      const token = ++attempt.current;
-      // Moving on to a different server releases the attempt this flow made
-      // for the last one. Left in place, a server that failed stayed saved
-      // and was dialed in the background indefinitely (BUG-157).
-      if (
-        state.pendingSourceId &&
-        state.pendingOwned &&
-        !state.settled &&
-        state.pendingAlias !== input.alias
-      ) {
-        const released = state.pendingSourceId;
-        await api.detach(released).catch(() => undefined);
-        if (token !== attempt.current) return;
-        dispatch({ type: 'pending-released' });
+      const token = ++attemptToken.current;
+      // Picking another server releases the one this flow tested and has not
+      // connected. Left in place, it stayed saved and was dialed in the
+      // background indefinitely (BUG-157).
+      const previous = state.attempt;
+      if (previous && previous.owned && !state.settled) {
+        await api.detach(previous.sourceId).catch(() => undefined);
+        if (token !== attemptToken.current) return;
+        dispatch({ type: 'attempt-released' });
       }
-      let sourceId = existingSourceIdForAlias(state, input.alias);
-      let owned = sourceId !== null && state.pendingOwned;
+      let sourceId: string | null = null;
+      let owned = false;
+      try {
+        const added = await api.add({
+          adapterId: 'openclaw',
+          placement,
+          displayName: input.displayName,
+          transport: input.transport,
+          credentialOwner,
+        });
+        if (token !== attemptToken.current) return;
+        sourceId = added.ok && added.source ? added.source.id : null;
+        owned = added.ok && added.created !== false;
+      } catch {
+        sourceId = null;
+      }
+      if (token !== attemptToken.current) return;
       if (!sourceId) {
-        try {
-          const added = await api.add({
-            adapterId: 'openclaw',
-            placement,
-            displayName: input.displayName,
-            transport: input.transport,
-            credentialOwner,
-          });
-          if (token !== attempt.current) return;
-          sourceId = added.ok && added.source ? added.source.id : null;
-          owned = added.ok && added.created !== false;
-        } catch {
-          sourceId = null;
-        }
-        if (token !== attempt.current) return;
-        if (!sourceId) {
-          setServerError(
-            'Exawatt could not save this server. Check the details and try again.'
-          );
-          setBusy(false);
-          return;
-        }
-        // A server that is already saved is not this flow's to test, map, or
-        // release. Adopting it let Cancel detach a working connection
-        // (BUG-155).
-        if (!owned) {
-          setServerError(
-            `${input.alias} is already connected. Manage it in Settings.`
-          );
-          setBusy(false);
-          return;
-        }
+        setServerError(
+          'Exawatt could not save this server. Check the details and try again.'
+        );
+        setBusy(false);
+        return;
+      }
+      // A server that is already saved is not this flow's to test, map, or
+      // release. Adopting it let Cancel detach a working connection
+      // (BUG-155).
+      if (!owned) {
+        setServerError(
+          `${input.alias} is already connected. Manage it in Settings.`
+        );
+        setBusy(false);
+        return;
       }
       dispatch({
         type: 'test-started',
@@ -517,52 +611,25 @@ export function ConnectSourceDialog({
     [busy, observe, state]
   );
 
-  const retry = useCallback(() => {
-    if (step.kind !== 'failed') return;
-    const sourceId = state.pendingSourceId;
-    if (!sourceId) return;
-    setBusy(true);
-    const token = ++attempt.current;
-    dispatch({
-      type: 'test-started',
-      alias: step.alias,
-      sourceId,
-      operatorAuthored: state.operatorAuthored,
-      owned: state.pendingOwned,
-    });
-    void observe({
-      sourceId,
-      placement: 'customer-hosted',
-      credentialOwner: state.operatorAuthored
-        ? 'exawatt-keychain'
-        : 'source-owned-ssh',
-      token,
-    });
-  }, [
-    observe,
-    state.operatorAuthored,
-    state.pendingOwned,
-    state.pendingSourceId,
-    step,
-  ]);
+  /** A row's Try again: the same server, the way it was reached. */
+  const retry = useCallback(
+    (alias: string) => {
+      const listed = state.servers.aliases.some(entry => entry.alias === alias);
+      void startTest(listed ? aliasInput(alias) : manualInput(state.draft));
+    },
+    [startTest, state.draft, state.servers.aliases]
+  );
 
   /**
-   * Saving runs the machine's own decision rather than a second copy of it:
-   * `saveConnectFlow` is the same function the reducer consults, so a mapping
-   * this surface hands on is exactly a mapping the model accepted.
-   *
-   * Success closes through to the Agent. There is no confirmation screen to
-   * land on, because the operator asked to open a coworker and a page that
-   * says "Connected." with a Done button on it is one keystroke standing
-   * between them and the person they came to see.
+   * Saving runs the machine's own decision rather than a second copy of it.
+   * Success closes through to the Agent: the operator asked to open a
+   * coworker, and a "Connected." page between them is one step too many.
    */
   const finish = useCallback(async () => {
-    if (step.kind !== 'map-projects' || busy) return;
-    const outcome = saveConnectFlow(state, knownProjectIds);
-    // Validation writes its issues through the reducer; durable custody does
-    // not change until main confirms the projection-plan write below.
+    if (busy) return;
+    const outcome = saveConnectFlow(state, knownProjectIds, defaultProject);
     if (!outcome.ok) {
-      dispatch({ type: 'save', knownProjectIds });
+      dispatch({ type: 'save', knownProjectIds, project: defaultProject });
       return;
     }
     const api = bridgeRef.current;
@@ -573,51 +640,48 @@ export function ConnectSourceDialog({
     const createdProjectIds: string[] = [];
     let mapAttempted = false;
     try {
-      const agents: ConnectedAgentMapping[] = [];
-      const inputs: Parameters<ConnectSourceBridge['mapAgents']>[1][number][] =
-        [];
-      for (const row of outcome.rows) {
-        let project: ConnectedProjectMapping;
-        if (row.project.kind === 'existing-project') {
-          const projectId = row.project.projectId;
-          const known = projects.find(candidate => candidate.id === projectId);
-          if (!known) {
-            setMappingError('Choose a Project that still exists.');
-            return;
-          }
-          project = {
-            id: known.id,
-            name: known.name,
-            rootPath: known.rootPath ?? null,
-          };
-        } else {
-          const identityKey = `${outcome.sourceId}:${row.nativeAgentId}`;
-          const projectId =
-            manualProjectIds.current.get(identityKey) ?? crypto.randomUUID();
-          manualProjectIds.current.set(identityKey, projectId);
-          const created = await openManualProject({
-            id: projectId,
-            name: row.project.name,
-          });
-          createdProjectIds.push(created.id);
-          project = {
-            id: created.id,
-            name: created.name,
-            rootPath: created.root_path,
-          };
+      const target = outcome.rows[0]!.project;
+      let mapped: ConnectedProjectMapping;
+      if (target.kind === 'existing-project') {
+        const known = projects.find(
+          candidate => candidate.id === target.projectId
+        );
+        if (!known) {
+          setMappingError('Choose a Project that still exists.');
+          return;
         }
-        agents.push({
-          nativeAgentId: row.nativeAgentId,
-          displayName: resolvedDisplayName(row),
-          project,
+        mapped = {
+          id: known.id,
+          name: known.name,
+          rootPath: known.rootPath ?? null,
+        };
+      } else {
+        // One Project for the batch, so one identity, reused across retries.
+        const projectId =
+          manualProjectIds.current.get(outcome.sourceId) ?? crypto.randomUUID();
+        manualProjectIds.current.set(outcome.sourceId, projectId);
+        const created = await openManualProject({
+          id: projectId,
+          name: target.name.trim(),
         });
-        inputs.push({
-          nativeAgentId: row.nativeAgentId,
-          projectId: project.id,
-          projectLabel: project.name,
-          displayNameOverride: row.nameOverride,
-        });
+        createdProjectIds.push(created.id);
+        mapped = {
+          id: created.id,
+          name: created.name,
+          rootPath: created.root_path,
+        };
       }
+      const agents: ConnectedAgentMapping[] = outcome.rows.map(row => ({
+        nativeAgentId: row.nativeAgentId,
+        displayName: resolvedDisplayName(row),
+        project: mapped,
+      }));
+      const inputs = outcome.rows.map(row => ({
+        nativeAgentId: row.nativeAgentId,
+        projectId: mapped.id,
+        projectLabel: mapped.name,
+        displayNameOverride: row.nameOverride,
+      }));
 
       mapAttempted = true;
       const saved = await api.mapAgents(outcome.sourceId, inputs);
@@ -636,11 +700,10 @@ export function ConnectSourceDialog({
         return;
       }
 
-      // Custody changes only after main confirms the complete mapping write.
       for (const id of createdProjectIds)
         uncertainProjectIds.current.delete(id);
       committedSourceId.current = outcome.sourceId;
-      dispatch({ type: 'save', knownProjectIds });
+      dispatch({ type: 'save', knownProjectIds, project: defaultProject });
       onConnected?.({
         sourceId: outcome.sourceId,
         openNativeAgentId: outcome.openAgentId,
@@ -665,104 +728,79 @@ export function ConnectSourceDialog({
     } finally {
       setBusy(false);
     }
-  }, [busy, knownProjectIds, onConnected, onOpenChange, projects, state, step]);
+  }, [
+    busy,
+    defaultProject,
+    knownProjectIds,
+    onConnected,
+    onOpenChange,
+    projects,
+    state,
+  ]);
 
-  const manualIssues =
-    step.kind === 'choose-server' && step.manual
-      ? validateManualDraft(step.draft)
-      : [];
-
-  /**
-   * Focus follows the step.
-   *
-   * Each step replaces the whole body, which destroys whatever the operator
-   * had focused. Radix then falls back to the dialog element itself, which
-   * paints the browser's own focus ring around the entire modal and leaves
-   * Tab starting from the footer rather than from the step's own controls.
-   * Moving focus to the first control of the new step is both the keyboard
-   * path and the fix for the ring.
-   */
-  useEffect(() => {
-    if (!open) return;
-    const body = bodyRef.current;
-    if (!body) return;
-    // Only when focus is orphaned. Keying on the step alone was not enough:
-    // the server step renders empty and fills in when the alias read answers,
-    // so the one pass happened while there was nothing to focus. Running on
-    // every step update is safe because focus already inside the step is left
-    // exactly where the operator put it.
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && body.contains(active)) return;
-    const first = body.querySelector<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    // A step with nothing to press (the bounded test) keeps focus in the
-    // dialog so Escape still cancels; it just does not steal it back.
-    first?.focus();
-  }, [open, step]);
+  const manualIssues = state.manual ? validateManualDraft(state.draft) : [];
+  const ready = state.attempt?.phase.kind === 'ready' ? state.attempt : null;
+  const selectedCount =
+    ready?.phase.kind === 'ready' ? ready.phase.selected.size : 0;
+  const { rows, total } = visibleServerRows(state);
+  const readyPanel =
+    ready && ready.phase.kind === 'ready' ? (
+      <ReadyPanel
+        attempt={ready}
+        issues={state.issues}
+        mappingError={mappingError}
+        project={project}
+        projects={projects}
+        onToggle={nativeAgentId =>
+          dispatch({ type: 'toggle-agent', nativeAgentId })
+        }
+        onRename={(nativeAgentId, name) => {
+          setMappingError(null);
+          dispatch({ type: 'rename-agent', nativeAgentId, name });
+        }}
+        onProject={next => {
+          setMappingError(null);
+          dispatch({ type: 'set-project', project: next });
+        }}
+      />
+    ) : null;
 
   const primaryAction = (() => {
-    switch (step.kind) {
-      case 'choose-source':
-        return {
-          none: 'Choosing a source is a chooser rather than a form: each row is its own action.',
-        };
-      case 'choose-server':
-        if (!step.manual) {
-          return {
-            none: 'The alias list is a chooser: each server is its own action.',
-          };
-        }
-        return {
-          label: 'Test connection',
-          disabled: busy || manualIssues.length > 0,
-          run: () => {
-            const draft = step.draft;
-            void startTest({
-              alias: draft.label.trim(),
-              displayName: draft.label.trim(),
-              transport: {
-                kind: 'ssh-manual',
-                host: draft.host.trim(),
-                user: draft.user.trim(),
-                port: draft.port,
-                identityFile: draft.identityFile.trim() || null,
-                remotePort: draft.gatewayPort,
-              },
-              operatorAuthored: true,
-            });
-          },
-        };
-      case 'testing':
-        return {
-          none: 'The connection test is already running. Cancel is the only action here, and a default button would press it by accident.',
-        };
-      case 'failed':
-        return { label: 'Try again', disabled: busy, run: retry };
-      case 'choose-agents':
-        return {
-          label: 'Continue',
-          disabled: step.selected.size === 0,
-          run: () => dispatch({ type: 'to-mapping' }),
-        };
-      case 'map-projects': {
-        const lead = step.rows[0];
-        return {
-          label: lead
-            ? `Connect and open ${resolvedDisplayName(lead)}`
-            : 'Connect',
-          disabled: busy,
-          run: () => void finish(),
-        };
-      }
+    if (ready && ready.phase.kind === 'ready') {
+      const chosen = ready.phase.agents.filter(agent =>
+        ready.phase.kind === 'ready'
+          ? ready.phase.selected.has(agent.nativeAgentId)
+          : false
+      );
+      const lead = chosen[0];
+      return {
+        label:
+          chosen.length === 1 && lead
+            ? `Connect ${ready.phase.names[lead.nativeAgentId] ?? lead.displayName}`
+            : chosen.length > 1
+              ? `Connect ${chosen.length} Agents`
+              : 'Connect',
+        disabled: busy || selectedCount === 0,
+        run: () => void finish(),
+      };
     }
+    if (state.manual) {
+      return {
+        label: 'Test connection',
+        disabled: busy || manualIssues.length > 0,
+        run: () => void startTest(manualInput(state.draft)),
+      };
+    }
+    return {
+      none: 'Picking a server tests it in place; Connect is offered once one answers.',
+    };
   })();
 
   return (
     <Dialog
       open={open}
       onOpenChange={next => {
-        if (!next && busy && step.kind === 'map-projects') return;
+        if (!next && busy && ready) return;
         onOpenChange(next);
       }}
     >
@@ -780,105 +818,81 @@ export function ConnectSourceDialog({
             className="font-display text-base"
             style={{ color: HUD.text }}
           >
-            Connect existing Agent
+            Connect a server
           </DialogTitle>
           <DialogDescription
             className="text-chrome-meta"
             style={{ color: HUD.textDim }}
           >
-            {describeStep(step.kind)}
+            Read only. Nothing on the server changes.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" ref={bodyRef}>
-          {step.kind === 'choose-source' && (
-            <SourceChooser
-              available={resolvedBridge !== null}
-              onChoose={() =>
-                dispatch({ type: 'choose-adapter', adapterId: 'openclaw' })
-              }
-            />
-          )}
-
-          {step.kind === 'choose-server' && (
-            <ServerChooser
-              aliases={step.aliases}
-              connectedAliases={step.connectedAliases}
-              configPresent={step.configPresent}
-              incompleteIncludes={step.incompleteIncludes}
-              manual={step.manual}
-              draft={step.draft}
-              busy={busy}
-              error={serverError}
+        <div
+          className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-5 py-4"
+          ref={bodyRef}
+        >
+          {!resolvedBridge ? (
+            <p className="text-sm" style={{ color: HUD.textDim }}>
+              Connecting a server runs in the Exawatt desktop app.
+            </p>
+          ) : state.manual ? (
+            <ManualForm
+              configPresent={state.servers.configPresent}
+              draft={state.draft}
               issues={manualIssues}
-              onSetManual={manual => dispatch({ type: 'set-manual', manual })}
               onEdit={patch => dispatch({ type: 'edit-manual', patch })}
-              onChooseAlias={alias =>
-                void startTest({
-                  alias: alias.alias,
-                  displayName: alias.alias,
-                  transport: {
-                    kind: 'ssh-alias',
-                    alias: alias.alias,
-                    remotePort: DEFAULT_GATEWAY_PORT,
-                  },
-                  operatorAuthored: false,
-                })
-              }
+            />
+          ) : (
+            <ServerList
+              busy={busy}
+              filter={state.filter}
+              incompleteIncludes={state.servers.incompleteIncludes}
+              loaded={state.servers.loaded}
+              configPresent={state.servers.configPresent}
+              rows={rows}
+              total={total}
+              onFilter={text => dispatch({ type: 'filter', text })}
+              onManage={onManageServer}
+              onPick={alias => void startTest(aliasInput(alias))}
+              onRetry={retry}
+              canPick={alias => canTestServer(state, alias)}
+              readyAlias={ready?.alias ?? null}
+              readyPanel={readyPanel}
             />
           )}
 
-          {step.kind === 'testing' && (
-            <div className="grid gap-3">
-              <p className="text-sm" style={{ color: HUD.text }}>
-                {step.alias}
-              </p>
-              <StageList stage={step.stage} outcome="running" />
-            </div>
-          )}
+          {state.manual ? (
+            // A described server under test or failed still needs a row to
+            // stand on while the form is open.
+            <ul className="grid gap-0.5">
+              {rows
+                .filter(
+                  row =>
+                    row.alias === state.draft.label.trim() &&
+                    row.state !== 'idle'
+                )
+                .map(row => (
+                  <ServerRowView
+                    key={row.alias}
+                    row={row}
+                    disabled={busy}
+                    onRetry={() => retry(row.alias)}
+                  >
+                    {row.state === 'ready' ? readyPanel : null}
+                  </ServerRowView>
+                ))}
+            </ul>
+          ) : null}
 
-          {step.kind === 'failed' && (
-            <FailureReport
-              alias={step.alias}
-              stage={step.stage}
-              failure={step.failure}
-              message={step.message}
-            />
-          )}
-
-          {step.kind === 'choose-agents' && (
-            <AgentChooser
-              alias={step.alias}
-              agents={step.agents}
-              selected={step.selected}
-              facts={step.facts}
-              onToggle={nativeAgentId =>
-                dispatch({ type: 'toggle-agent', nativeAgentId })
-              }
-            />
-          )}
-
-          {step.kind === 'map-projects' && (
-            <div className="grid gap-3">
-              {mappingError && (
-                <p
-                  role="alert"
-                  className="font-mono text-chrome-label"
-                  style={{ color: HUD.red }}
-                >
-                  {mappingError}
-                </p>
-              )}
-              <ProjectMapper
-                rows={step.rows}
-                projects={projects}
-                issues={state.issues}
-                onEdit={(nativeAgentId, patch) => {
-                  setMappingError(null);
-                  dispatch({ type: 'edit-mapping', nativeAgentId, patch });
-                }}
-              />
-            </div>
+          {serverError && (
+            <p
+              role="alert"
+              className="text-chrome-label"
+              style={{ color: HUD.red }}
+            >
+              {serverError}
+            </p>
           )}
         </div>
 
@@ -887,20 +901,23 @@ export function ConnectSourceDialog({
           style={{ borderColor: HUD.strokeFaint }}
         >
           <div className="flex items-center gap-2">
-            {canGoBack(state) && (
+            {resolvedBridge && state.servers.configPresent ? (
               <button
                 type="button"
-                disabled={busy && step.kind === 'map-projects'}
-                onClick={() => dispatch({ type: 'back' })}
-                className="inline-flex h-8 items-center gap-2 rounded px-2 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                data-connect-describe
+                disabled={busy}
+                onClick={() =>
+                  dispatch({ type: 'set-manual', manual: !state.manual })
+                }
+                className="inline-flex h-8 items-center rounded px-2 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"
                 style={{ color: HUD.textDim }}
               >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Back
+                {state.manual ? 'Choose a saved server' : 'Describe a server'}
               </button>
-            )}
+            ) : null}
             <button
               type="button"
-              disabled={busy && step.kind === 'map-projects'}
+              disabled={busy && Boolean(ready)}
               onClick={leave}
               className="inline-flex h-8 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: HUD.text, borderColor: HUD.strokeSoft }}
@@ -914,281 +931,367 @@ export function ConnectSourceDialog({
   );
 }
 
-function describeStep(kind: ConnectStep['kind']): string {
-  switch (kind) {
-    case 'choose-source':
-    case 'testing':
-      return 'Read only. Nothing on the server changes.';
-    case 'choose-server':
-      return 'Exawatt reaches a server only once you choose it.';
-    case 'failed':
-      return 'The server keeps running its own work.';
-    case 'choose-agents':
-      return 'Configured Agents are selected.';
-    case 'map-projects':
-      return 'Names and Projects live in Exawatt. The server keeps its own.';
-  }
-}
-
-function SourceChooser({
-  available,
-  onChoose,
+function ServerList({
+  busy,
+  filter,
+  loaded,
+  configPresent,
+  incompleteIncludes,
+  rows,
+  total,
+  onFilter,
+  onManage,
+  onPick,
+  onRetry,
+  canPick,
+  readyAlias,
+  readyPanel,
 }: {
-  available: boolean;
-  onChoose: () => void;
+  busy: boolean;
+  filter: string;
+  loaded: boolean;
+  configPresent: boolean;
+  incompleteIncludes: boolean;
+  rows: readonly ServerRow[];
+  total: number;
+  onFilter: (text: string) => void;
+  onManage?: () => void;
+  onPick: (alias: string) => void;
+  onRetry: (alias: string) => void;
+  canPick: (alias: string) => boolean;
+  /** The server that answered, whose Agents open inline beneath it. */
+  readyAlias: string | null;
+  readyPanel: ReactNode;
 }) {
-  if (!available) {
+  if (!loaded) {
     return (
       <p className="text-sm" style={{ color: HUD.textDim }}>
-        Connecting a server runs in the Exawatt desktop app.
+        Reading your SSH configuration.
       </p>
     );
   }
+  if (total === 0) {
+    return (
+      <p className="text-sm" style={{ color: HUD.textDim }}>
+        {configPresent
+          ? 'No servers saved on this machine yet. Describe one instead.'
+          : 'This machine has no SSH configuration yet.'}
+      </p>
+    );
+  }
+  const narrowed = filter.trim().length > 0;
   return (
-    <button
-      type="button"
-      data-connect-adapter="openclaw"
-      onClick={onChoose}
-      className="flex w-full min-w-0 items-center gap-3 rounded-md border p-3 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-      style={{
-        borderColor: HUD.strokeFaint,
-        background: HUD.surfaceInputSoft,
-      }}
-    >
-      <SourceIdentityMark color={OPENCLAW_COLOR}>
-        <OpenClawIcon size={12} />
-      </SourceIdentityMark>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium" style={{ color: HUD.text }}>
-          OpenClaw
-        </span>
-        <span className="block text-chrome-meta" style={{ color: HUD.textDim }}>
-          Gateway on a server you host
-        </span>
-      </span>
-    </button>
+    <div className="grid gap-2">
+      <label
+        className="flex h-9 items-center gap-2 rounded border px-3"
+        style={{ borderColor: HUD.stroke, background: HUD.surfaceInput }}
+      >
+        <Search
+          className="h-3.5 w-3.5 shrink-0"
+          aria-hidden
+          style={{ color: HUD.textDim }}
+        />
+        <input
+          aria-label="Filter servers"
+          autoFocus
+          data-connect-filter
+          value={filter}
+          onChange={event => onFilter(event.target.value)}
+          onKeyDown={event => {
+            // Return on a narrowed list picks the one server left, so a
+            // typed name is one keystroke from its test.
+            if (event.key !== 'Enter' || event.metaKey || event.ctrlKey) {
+              return;
+            }
+            const pickable = rows.filter(row => canPick(row.alias));
+            if (narrowed && pickable.length === 1 && !busy) {
+              event.preventDefault();
+              const only = pickable[0]!;
+              if (only.state === 'failed') onRetry(only.alias);
+              else onPick(only.alias);
+            }
+          }}
+          placeholder="Filter servers"
+          className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+          style={{ color: HUD.text }}
+        />
+        {narrowed ? (
+          <span
+            className="shrink-0 font-mono text-chrome-micro"
+            data-connect-filter-count
+            style={{ color: HUD.textDim }}
+          >
+            {`${rows.length} of ${total} servers`}
+          </span>
+        ) : null}
+      </label>
+      {rows.length === 0 ? (
+        <p className="px-3 text-chrome-meta" style={{ color: HUD.textDim }}>
+          No server matches.
+        </p>
+      ) : (
+        <ul className="grid gap-0.5" aria-label="Servers">
+          {rows.map(row => (
+            <ServerRowView
+              key={row.alias}
+              row={row}
+              disabled={busy || !canPick(row.alias)}
+              onManage={onManage}
+              onPick={() => onPick(row.alias)}
+              onRetry={() => onRetry(row.alias)}
+            >
+              {row.alias === readyAlias ? readyPanel : null}
+            </ServerRowView>
+          ))}
+        </ul>
+      )}
+      {incompleteIncludes && (
+        <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
+          Your SSH configuration includes other files Exawatt did not read.
+        </p>
+      )}
+    </div>
   );
 }
 
-function ServerChooser({
-  aliases,
-  connectedAliases,
-  configPresent,
-  incompleteIncludes,
-  manual,
-  draft,
-  busy,
-  error,
-  issues,
-  onSetManual,
-  onEdit,
-  onChooseAlias,
+function ServerRowView({
+  row,
+  disabled = true,
+  onManage,
+  onPick,
+  onRetry,
+  children,
 }: {
-  aliases: readonly SshHostAlias[];
-  connectedAliases: readonly string[];
+  row: ServerRow;
+  disabled?: boolean;
+  onManage?: () => void;
+  onPick?: () => void;
+  onRetry?: () => void;
+  /** What opens beneath the row: the answered server's Agents. */
+  children?: ReactNode;
+}) {
+  const mark =
+    row.state === 'connected' || row.state === 'ready' ? (
+      <Check className="h-3.5 w-3.5" aria-hidden style={{ color: HUD.green }} />
+    ) : row.state === 'testing' ? (
+      // The one moving thing on the screen, and it moves only while the round
+      // trip is open. Reduced motion holds it still.
+      <LoaderCircle
+        className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+        aria-hidden
+        style={{ color: HUD.cyan }}
+      />
+    ) : row.state === 'failed' ? (
+      <TriangleAlert
+        className="h-3.5 w-3.5"
+        aria-hidden
+        style={{ color: HUD.amber }}
+      />
+    ) : (
+      <Server
+        className="h-3.5 w-3.5"
+        aria-hidden
+        style={{ color: HUD.textDim }}
+      />
+    );
+  const text = (
+    <span className="min-w-0 flex-1">
+      <span className="block truncate text-sm" style={{ color: HUD.text }}>
+        {row.alias}
+      </span>
+      {row.detail ? (
+        <span
+          className="block text-chrome-meta"
+          aria-live={row.state === 'testing' ? 'polite' : undefined}
+          style={{ color: row.state === 'failed' ? HUD.amber : HUD.textDim }}
+        >
+          {row.detail}
+        </span>
+      ) : null}
+      {row.note ? (
+        <span
+          className="block font-mono text-chrome-micro"
+          style={{ color: HUD.textDim }}
+        >
+          {row.note}
+        </span>
+      ) : null}
+    </span>
+  );
+  const active =
+    row.state === 'testing' || row.state === 'ready'
+      ? { background: HUD.fill }
+      : undefined;
+  return (
+    <li
+      className="grid rounded"
+      data-connect-server={row.alias}
+      data-server-state={row.state}
+      data-connected={row.state === 'connected' || undefined}
+      role={row.state === 'failed' ? 'alert' : undefined}
+      style={active}
+    >
+      <div className="flex min-h-9 items-center gap-3">
+        {row.state === 'idle' && onPick ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onPick}
+            className="flex min-h-9 min-w-0 flex-1 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"
+          >
+            <span className="grid h-4 w-4 shrink-0 place-items-center">
+              {mark}
+            </span>
+            {text}
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0"
+              aria-hidden
+              style={{ color: HUD.textDim }}
+            />
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2">
+            <span className="grid h-4 w-4 shrink-0 place-items-center">
+              {mark}
+            </span>
+            {text}
+            {row.state === 'connected' ? (
+              onManage ? (
+                <button
+                  type="button"
+                  data-connect-manage
+                  onClick={onManage}
+                  className="shrink-0 rounded px-1 text-chrome-label underline underline-offset-2 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                  style={{ color: HUD.textDim }}
+                >
+                  Manage
+                </button>
+              ) : (
+                <Link
+                  data-connect-manage
+                  href="/settings"
+                  className="shrink-0 rounded px-1 text-chrome-label underline underline-offset-2 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                  style={{ color: HUD.textDim }}
+                >
+                  Manage
+                </Link>
+              )
+            ) : null}
+            {row.state === 'failed' && onRetry ? (
+              <button
+                type="button"
+                data-connect-retry
+                disabled={disabled}
+                onClick={onRetry}
+                className="inline-flex h-8 shrink-0 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"
+                style={{ color: HUD.text, borderColor: HUD.strokeSoft }}
+              >
+                Try again
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+      {children ? <ReadyScroll>{children}</ReadyScroll> : null}
+    </li>
+  );
+}
+
+/**
+ * The answered server's Agents, brought into view as they open. In a long
+ * list the ready row can sit below the fold, and a Connect button for Agents
+ * the operator cannot see is a button they cannot judge.
+ */
+function ReadyScroll({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, []);
+  return (
+    <div className="px-3 pt-1 pb-3" ref={ref}>
+      {children}
+    </div>
+  );
+}
+
+function ManualForm({
+  configPresent,
+  draft,
+  issues,
+  onEdit,
+}: {
   configPresent: boolean;
-  incompleteIncludes: boolean;
-  manual: boolean;
   draft: ManualServerDraft;
-  busy: boolean;
-  error: string | null;
   /** What the draft still needs. The model already names each one. */
   issues: readonly ConnectIssue[];
-  onSetManual: (manual: boolean) => void;
   onEdit: (patch: Partial<ManualServerDraft>) => void;
-  onChooseAlias: (alias: SshHostAlias) => void;
 }) {
   return (
     <div className="grid gap-3">
-      {manual ? (
-        <div className="grid gap-3">
-          {!configPresent && (
-            <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
-              This machine has no SSH configuration yet. Describe the server and
-              Exawatt connects over SSH.
-            </p>
-          )}
-          <ManualField
-            id="connect-server-label"
-            label="Name"
-            value={draft.label}
-            autoFocus
-            onChange={value => onEdit({ label: value })}
-          />
-          <ManualField
-            id="connect-server-host"
-            label="Address"
-            value={draft.host}
-            onChange={value => onEdit({ host: value })}
-          />
-          <ManualField
-            id="connect-server-user"
-            label="SSH user"
-            value={draft.user}
-            onChange={value => onEdit({ user: value })}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <ManualField
-              id="connect-server-port"
-              label="SSH port"
-              value={String(draft.port)}
-              inputMode="numeric"
-              onChange={value => onEdit({ port: toPort(value) })}
-            />
-            <ManualField
-              id="connect-server-gateway-port"
-              label="Gateway port"
-              value={String(draft.gatewayPort)}
-              inputMode="numeric"
-              onChange={value => onEdit({ gatewayPort: toPort(value) })}
-            />
-          </div>
-          <ManualField
-            id="connect-server-identity"
-            label="Key file"
-            value={draft.identityFile}
-            onChange={value => onEdit({ identityFile: value })}
-          />
-          {issues.length > 0 && (
-            // The model has always computed these and the surface only used
-            // them to disable the button, which left the operator looking at
-            // a dead primary action with no reason on screen.
-            <ul className="grid gap-0.5" data-manual-issues>
-              {issues.map(entry => (
-                <li
-                  className="text-chrome-meta"
-                  key={entry.code}
-                  style={{ color: HUD.textDim }}
-                >
-                  {entry.message}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
-            These details go to your keychain. Leave the key file empty to use
-            your SSH default.
-          </p>
-        </div>
-      ) : (
-        <>
-          {aliases.length === 0 ? (
-            <p className="text-sm" style={{ color: HUD.textDim }}>
-              {configPresent
-                ? 'No servers saved on this machine yet.'
-                : 'Reading your SSH configuration.'}
-            </p>
-          ) : (
-            <div className="grid gap-1">
-              {/* The list is a chooser, so it says what choosing does.
-                  Without a heading it is three bare names under a caption
-                  about privacy, and the operator has to guess the verb. */}
-              <h3
-                className="px-3 pb-1 text-chrome-meta"
-                style={{ color: HUD.textDim }}
-              >
-                Choose a server
-              </h3>
-              {aliases.map(alias => {
-                const connected = connectedAliases.includes(alias.alias);
-                return (
-                  <button
-                    key={alias.alias}
-                    type="button"
-                    data-connect-server={alias.alias}
-                    data-connected={connected || undefined}
-                    disabled={busy || connected}
-                    title={
-                      connected
-                        ? 'Already connected. Manage it in Settings.'
-                        : undefined
-                    }
-                    onClick={() => onChooseAlias(alias)}
-                    className="flex min-h-9 min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-50"
-                  >
-                    <Server
-                      className="h-3.5 w-3.5 shrink-0"
-                      aria-hidden
-                      style={{ color: HUD.textDim }}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className="block truncate text-sm"
-                        style={{ color: HUD.text }}
-                      >
-                        {alias.alias}
-                      </span>
-                      <span
-                        className="mt-0.5 flex flex-wrap gap-1.5 font-mono text-chrome-micro"
-                        style={{ color: HUD.textDim }}
-                      >
-                        {connected ? (
-                          <span
-                            className="rounded border px-1.5 py-0.5"
-                            data-connected-chip
-                            style={{
-                              borderColor: HUD.strokeSoft,
-                              color: HUD.text,
-                            }}
-                          >
-                            Connected
-                          </span>
-                        ) : null}
-                        {declaredKeywords(alias).map(keyword => (
-                          <span
-                            key={keyword}
-                            className="rounded border px-1.5 py-0.5"
-                            style={{ borderColor: HUD.strokeFaint }}
-                          >
-                            {keyword}
-                          </span>
-                        ))}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {incompleteIncludes && (
-            <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
-              Your SSH configuration includes other files Exawatt did not read.
-            </p>
-          )}
-        </>
-      )}
-
-      {configPresent && (
-        <div>
-          {/* With no saved servers to choose from, describing one IS the path,
-              so it wears a control's border rather than sitting under a
-              negative sentence as a text link the operator has to find. */}
-          <button
-            type="button"
-            onClick={() => onSetManual(!manual)}
-            className="inline-flex h-9 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-            style={{
-              color: !manual && aliases.length === 0 ? HUD.text : HUD.textDim,
-              borderColor:
-                !manual && aliases.length === 0
-                  ? HUD.strokeSoft
-                  : 'transparent',
-            }}
-          >
-            {manual ? 'Choose a saved server' : 'Describe a server instead'}
-          </button>
-        </div>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="text-chrome-label"
-          style={{ color: HUD.red }}
-        >
-          {error}
+      {!configPresent && (
+        <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
+          This machine has no SSH configuration yet. Describe the server and
+          Exawatt connects over SSH.
         </p>
       )}
+      <ManualField
+        id="connect-server-label"
+        label="Name"
+        value={draft.label}
+        autoFocus
+        onChange={value => onEdit({ label: value })}
+      />
+      <ManualField
+        id="connect-server-host"
+        label="Address"
+        value={draft.host}
+        onChange={value => onEdit({ host: value })}
+      />
+      <ManualField
+        id="connect-server-user"
+        label="SSH user"
+        value={draft.user}
+        onChange={value => onEdit({ user: value })}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <ManualField
+          id="connect-server-port"
+          label="SSH port"
+          value={String(draft.port)}
+          inputMode="numeric"
+          onChange={value => onEdit({ port: toPort(value) })}
+        />
+        <ManualField
+          id="connect-server-gateway-port"
+          label="Gateway port"
+          value={String(draft.gatewayPort)}
+          inputMode="numeric"
+          onChange={value => onEdit({ gatewayPort: toPort(value) })}
+        />
+      </div>
+      <ManualField
+        id="connect-server-identity"
+        label="Key file"
+        value={draft.identityFile}
+        onChange={value => onEdit({ identityFile: value })}
+      />
+      {issues.length > 0 && (
+        <ul className="grid gap-0.5" data-manual-issues>
+          {issues.map(entry => (
+            <li
+              className="text-chrome-meta"
+              key={entry.code}
+              style={{ color: HUD.textDim }}
+            >
+              {entry.message}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
+        These details go to your keychain. Leave the key file empty to use your
+        SSH default.
+      </p>
     </div>
   );
 }
@@ -1236,209 +1339,45 @@ function ManualField({
   );
 }
 
-/**
- * Which keywords the operator's own Host block declares. Never their values:
- * those are read in Electron main and never cross the bridge.
- */
-function declaredKeywords(alias: SshHostAlias): string[] {
-  const keywords: string[] = [];
-  if (alias.hasHostName) keywords.push('Hostname');
-  if (alias.hasUser) keywords.push('User');
-  if (alias.hasIdentityFile) keywords.push('Key file');
-  if (keywords.length === 0) keywords.push('Defaults from your SSH config');
-  return keywords;
-}
-
 function toPort(value: string): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-/**
- * The bounded test, stage by stage.
- *
- * Naming the stage in progress is the point: a bare spinner would leave the
- * operator guessing which half of the handshake is slow, and the tunnel is
- * usually the slow half. The stages here are the session's own phases, so
- * this list moves because the connection moved and for no other reason.
- *
- * `outcome` decides what the row the flow stopped on means. While the test
- * runs it is the step in progress and turns; once it has failed it is the
- * step that failed and holds still, so the operator reads the report against
- * the point the connection actually reached.
- */
-function StageList({
-  stage,
-  outcome,
-}: {
-  stage: ConnectStage;
-  outcome: 'running' | 'failed';
-}) {
-  const current = CONNECT_STAGES.indexOf(stage);
-  const failed = outcome === 'failed';
-  return (
-    <ol
-      className="grid gap-1.5"
-      // Live only while it is live. The failure screen is already an alert,
-      // and a frozen list inside it announcing itself a second time would
-      // read the whole checklist back over the sentence that matters.
-      aria-live={failed ? undefined : 'polite'}
-      data-connect-stages={outcome}
-    >
-      {CONNECT_STAGES.map((entry, index) => {
-        const done = index < current;
-        const active = index === current;
-        return (
-          <li
-            key={entry}
-            data-stage={entry}
-            data-stage-state={
-              active
-                ? failed
-                  ? 'failed'
-                  : 'active'
-                : done
-                  ? 'done'
-                  : 'waiting'
-            }
-            aria-current={active ? 'step' : undefined}
-            className="flex items-center gap-2 text-chrome-label"
-            style={{ color: active || done ? HUD.text : HUD.textDim }}
-          >
-            <span className="grid h-4 w-4 shrink-0 place-items-center">
-              {done ? (
-                <Check
-                  className="h-3 w-3"
-                  aria-hidden
-                  style={{ color: HUD.green }}
-                />
-              ) : active && failed ? (
-                <TriangleAlert
-                  className="h-3 w-3"
-                  aria-hidden
-                  style={{ color: HUD.amber }}
-                />
-              ) : active ? (
-                // The one moving thing on the screen, and it moves only while
-                // the round trip is actually open. Reduced motion renders the
-                // same mark held still.
-                <LoaderCircle
-                  className="h-3 w-3 animate-spin motion-reduce:animate-none"
-                  aria-hidden
-                  style={{ color: HUD.cyan }}
-                />
-              ) : (
-                <Circle
-                  className="h-2 w-2"
-                  aria-hidden
-                  style={{ color: HUD.idle, fill: 'transparent' }}
-                />
-              )}
-            </span>
-            {CONNECT_STAGE_COPY[entry]}
-            {/* Shape and icon already separate the four row states; this is
-                the third channel, so none of it is carried by hue alone. */}
-            {active && failed && (
-              <span className="text-chrome-meta" style={{ color: HUD.textDim }}>
-                did not complete
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-function FailureReport({
-  alias,
-  stage,
-  failure,
-  message,
-}: {
-  alias: string;
-  stage: ConnectStage;
-  failure: SourceFailureClass;
-  message: string;
-}) {
-  const copy = CONNECT_FAILURE_COPY[failure];
-  return (
-    <div className="grid gap-3" role="alert">
-      <div className="grid gap-2">
-        {/* Which server. A operator with several saved servers reads this
-            screen after a wait and otherwise cannot tell which one failed. */}
-        <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
-          {alias}
-        </p>
-        <p className="text-base font-semibold" style={{ color: HUD.text }}>
-          {copy.headline}
-        </p>
-        <p className="text-sm" style={{ color: HUD.text }}>
-          {copy.nextStep}
-        </p>
-        {message && (
-          <p
-            className="font-mono text-chrome-meta"
-            style={{ color: HUD.textDim }}
-          >
-            {message}
-          </p>
-        )}
-      </div>
-      {/* The checklist the operator was already reading, held at the step it
-          stopped on. How far the connection got is half the diagnosis, and
-          resetting it to the first step would throw that half away. */}
-      <StageList stage={stage} outcome="failed" />
-    </div>
-  );
-}
-
-function AgentChooser({
-  alias,
-  agents,
-  selected,
-  facts,
+function ReadyPanel({
+  attempt,
+  issues,
+  mappingError,
+  project,
+  projects,
   onToggle,
+  onRename,
+  onProject,
 }: {
-  alias: string;
-  agents: readonly DiscoveredAgent[];
-  selected: ReadonlySet<string>;
-  facts: readonly ConnectionFact[];
+  attempt: ConnectAttempt;
+  issues: readonly ConnectIssue[];
+  mappingError: string | null;
+  project: ProjectTarget;
+  projects: readonly ConnectProjectOption[];
   onToggle: (nativeAgentId: string) => void;
+  onRename: (nativeAgentId: string, name: string | null) => void;
+  onProject: (project: ProjectTarget) => void;
 }) {
+  if (attempt.phase.kind !== 'ready') return null;
+  const { agents, selected, names, facts } = attempt.phase;
   const { configured, retired } = partitionAgents(agents);
+  const flowIssues = issues.filter(entry => entry.nativeAgentId === null);
   return (
-    <div className="grid gap-4">
-      {/* The connected server, so the facts beneath it have a subject. */}
-      <p className="text-sm font-medium" style={{ color: HUD.text }}>
-        {alias}
-      </p>
-      <dl className="grid gap-1.5">
-        {facts.map(fact => (
-          <div key={fact.id} className="flex items-baseline gap-3">
-            <dt
-              className="w-28 shrink-0 text-chrome-meta"
-              style={{ color: HUD.textDim }}
-            >
-              {fact.label}
-            </dt>
-            <dd
-              className="min-w-0 text-chrome-label"
-              style={{ color: HUD.text }}
-            >
-              {fact.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
+    <div className="grid gap-4" data-connect-ready={attempt.alias}>
       <AgentGroup
-        heading="Agents"
+        heading={`Agents on ${attempt.alias}`}
         agents={configured}
         selected={selected}
+        names={names}
+        issues={issues}
         onToggle={onToggle}
+        onRename={onRename}
       />
-
       {retired.length > 0 && (
         <div
           className="grid gap-2 border-t pt-3"
@@ -1448,13 +1387,64 @@ function AgentChooser({
             heading="Retired on this server"
             agents={retired}
             selected={selected}
+            names={names}
+            issues={issues}
             onToggle={onToggle}
+            onRename={onRename}
           />
           <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
             These join your roster when you choose them.
           </p>
         </div>
       )}
+
+      <ProjectChoice
+        project={project}
+        projects={projects}
+        onProject={onProject}
+      />
+
+      {/* Identity, version, placement, credentials, and capabilities, kept
+          apart as the Connect contract requires, one disclosure away. */}
+      <details data-connect-facts className="group">
+        <summary
+          className="w-fit cursor-pointer rounded px-1 text-chrome-label outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          style={{ color: HUD.textDim }}
+        >
+          Connection details
+        </summary>
+        <dl className="mt-2 grid gap-1.5">
+          {facts.map(fact => (
+            <div key={fact.id} className="flex items-baseline gap-3">
+              <dt
+                className="w-28 shrink-0 text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
+                {fact.label}
+              </dt>
+              <dd
+                className="min-w-0 text-chrome-label"
+                style={{ color: HUD.text }}
+              >
+                {fact.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+
+      {[...flowIssues.map(entry => entry.message), mappingError]
+        .filter((message): message is string => Boolean(message))
+        .map(message => (
+          <p
+            key={message}
+            role="alert"
+            className="text-chrome-label"
+            style={{ color: HUD.red }}
+          >
+            {message}
+          </p>
+        ))}
     </div>
   );
 }
@@ -1463,13 +1453,20 @@ function AgentGroup({
   heading,
   agents,
   selected,
+  names,
+  issues,
   onToggle,
+  onRename,
 }: {
   heading: string;
   agents: readonly DiscoveredAgent[];
   selected: ReadonlySet<string>;
+  names: Readonly<Record<string, string | null>>;
+  issues: readonly ConnectIssue[];
   onToggle: (nativeAgentId: string) => void;
+  onRename: (nativeAgentId: string, name: string | null) => void;
 }) {
+  const [renaming, setRenaming] = useState<string | null>(null);
   return (
     <section className="grid gap-1">
       <h3 className="text-chrome-meta" style={{ color: HUD.textDim }}>
@@ -1482,45 +1479,111 @@ function AgentGroup({
       ) : (
         agents.map(agent => {
           const checked = selected.has(agent.nativeAgentId);
+          const shown = names[agent.nativeAgentId] ?? agent.displayName;
+          const rowIssues = issues.filter(
+            entry => entry.nativeAgentId === agent.nativeAgentId
+          );
+          const nameId = `connect-name-${agent.nativeAgentId}`;
           return (
-            <button
+            <div
               key={agent.nativeAgentId}
-              type="button"
-              role="checkbox"
-              aria-checked={checked}
-              onClick={() => onToggle(agent.nativeAgentId)}
-              className="flex min-h-9 min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="grid gap-1"
+              data-connect-agent={agent.nativeAgentId}
             >
-              <span
-                className="grid h-4 w-4 shrink-0 place-items-center border"
-                style={{
-                  borderColor: checked ? HUD.cyan : HUD.textDim,
-                  color: HUD.cyan,
-                }}
-              >
-                {checked && <Check className="h-3 w-3" aria-hidden />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span
-                  className="block truncate text-sm"
-                  style={{ color: HUD.text }}
+              <div className="flex min-h-9 items-center gap-3 rounded px-3 py-1.5">
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={checked}
+                  aria-label={`Connect ${shown}`}
+                  onClick={() => onToggle(agent.nativeAgentId)}
+                  className="grid h-4 w-4 shrink-0 place-items-center border outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                  style={{
+                    borderColor: checked ? HUD.cyan : HUD.textDim,
+                    color: HUD.cyan,
+                  }}
                 >
-                  {agent.displayName}
+                  {checked && <Check className="h-3 w-3" aria-hidden />}
+                </button>
+                <SourceIdentityMark color={OPENCLAW_COLOR}>
+                  <OpenClawIcon size={12} />
+                </SourceIdentityMark>
+                <span className="min-w-0 flex-1">
+                  {renaming === agent.nativeAgentId ? (
+                    <input
+                      id={nameId}
+                      aria-label={`Name for ${agent.displayName}`}
+                      autoFocus
+                      defaultValue={names[agent.nativeAgentId] ?? ''}
+                      placeholder={agent.displayName}
+                      onBlur={event => {
+                        onRename(agent.nativeAgentId, event.target.value);
+                        setRenaming(null);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' && !event.metaKey) {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                        if (event.key === 'Escape') {
+                          // Escape leaves the rename, not the dialog.
+                          event.stopPropagation();
+                          setRenaming(null);
+                        }
+                      }}
+                      className="h-7 w-full min-w-0 rounded border px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                      style={{
+                        color: HUD.text,
+                        borderColor: HUD.strokeSoft,
+                        background: HUD.surfaceInput,
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: HUD.text }}
+                    >
+                      <span className="truncate">{shown}</span>
+                      <button
+                        type="button"
+                        aria-label={`Rename ${shown}`}
+                        data-connect-rename={agent.nativeAgentId}
+                        onClick={() => setRenaming(agent.nativeAgentId)}
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                        style={{ color: HUD.textDim }}
+                      >
+                        <Pencil className="h-3 w-3" aria-hidden />
+                      </button>
+                    </span>
+                  )}
+                  <span
+                    className="block truncate text-chrome-meta"
+                    style={{ color: HUD.textDim }}
+                  >
+                    {agent.hasPrimaryConversation
+                      ? 'Conversation'
+                      : 'No conversation yet'}
+                    {' · '}
+                    {agent.contextCount === 1
+                      ? '1 context'
+                      : `${agent.contextCount} contexts`}
+                    {names[agent.nativeAgentId]
+                      ? ` · the server calls it ${agent.displayName}`
+                      : ''}
+                  </span>
                 </span>
-                <span
-                  className="block truncate text-chrome-meta"
-                  style={{ color: HUD.textDim }}
+              </div>
+              {rowIssues.map(entry => (
+                <p
+                  key={entry.message}
+                  role="alert"
+                  className="px-3 text-chrome-label"
+                  style={{ color: HUD.red }}
                 >
-                  {agent.hasPrimaryConversation
-                    ? 'Conversation'
-                    : 'No conversation yet'}
-                  {' · '}
-                  {agent.contextCount === 1
-                    ? '1 context'
-                    : `${agent.contextCount} contexts`}
-                </span>
-              </span>
-            </button>
+                  {entry.message}
+                </p>
+              ))}
+            </div>
           );
         })
       )}
@@ -1528,164 +1591,76 @@ function AgentGroup({
   );
 }
 
-function ProjectMapper({
-  rows,
+function ProjectChoice({
+  project,
   projects,
-  issues,
-  onEdit,
+  onProject,
 }: {
-  rows: readonly AgentMappingRow[];
+  project: ProjectTarget;
   projects: readonly ConnectProjectOption[];
-  issues: readonly ConnectIssue[];
-  onEdit: (
-    nativeAgentId: string,
-    patch: { nameOverride?: string | null; project?: ProjectTarget }
-  ) => void;
+  onProject: (project: ProjectTarget) => void;
 }) {
   return (
-    <div className="grid gap-4">
-      {rows.map(row => {
-        const rowIssues = issues.filter(
-          entry => entry.nativeAgentId === row.nativeAgentId
-        );
-        const nameId = `connect-name-${row.nativeAgentId}`;
-        const projectId = `connect-project-${row.nativeAgentId}`;
-        const projectNameId = `connect-project-name-${row.nativeAgentId}`;
-        return (
-          <div
-            key={row.nativeAgentId}
-            className="grid gap-3 rounded-md border p-4"
-            style={{
-              borderColor: HUD.strokeFaint,
-              background: HUD.surfaceInputSoft,
-            }}
-          >
-            {/* Three identical forms stacked with the Agent's name only in a
-                placeholder is unreadable at a glance. The card says whose
-                settings these are. */}
-            <h3
-              className="text-chrome-title font-medium"
-              style={{ color: HUD.text }}
-            >
-              {resolvedDisplayName(row)}
-            </h3>
-            <div className="grid gap-1">
-              <label
-                htmlFor={nameId}
-                className="text-chrome-meta"
-                style={{ color: HUD.textDim }}
-              >
-                Name
-              </label>
-              <input
-                id={nameId}
-                value={row.nameOverride ?? ''}
-                placeholder={row.sourceName}
-                onChange={event =>
-                  onEdit(row.nativeAgentId, {
-                    nameOverride: event.target.value,
-                  })
-                }
-                className="h-9 min-w-0 rounded border px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{
-                  color: HUD.text,
-                  borderColor: HUD.strokeSoft,
-                  background: HUD.surfaceInput,
-                }}
-              />
-              <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
-                {`The server calls it ${row.sourceName}.`}
-              </p>
-            </div>
-
-            <div className="grid gap-1">
-              <label
-                htmlFor={projectId}
-                className="text-chrome-meta"
-                style={{ color: HUD.textDim }}
-              >
-                Project
-              </label>
-              <select
-                id={projectId}
-                value={
-                  row.project.kind === 'new-project'
-                    ? 'new-project'
-                    : row.project.projectId
-                }
-                onChange={event =>
-                  onEdit(row.nativeAgentId, {
-                    project:
-                      event.target.value === 'new-project'
-                        ? {
-                            kind: 'new-project',
-                            name: row.nameOverride ?? row.sourceName,
-                          }
-                        : {
-                            kind: 'existing-project',
-                            projectId: event.target.value,
-                          },
-                  })
-                }
-                className="h-9 min-w-0 rounded border px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{
-                  color: HUD.text,
-                  borderColor: HUD.strokeSoft,
-                  background: HUD.surfaceInput,
-                }}
-              >
-                <option value="new-project">New Project</option>
-                {projects.map(project => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {row.project.kind === 'new-project' && (
-              <div className="grid gap-1">
-                <label
-                  htmlFor={projectNameId}
-                  className="text-chrome-meta"
-                  style={{ color: HUD.textDim }}
-                >
-                  Project name
-                </label>
-                <input
-                  id={projectNameId}
-                  value={row.project.name}
-                  onChange={event =>
-                    onEdit(row.nativeAgentId, {
-                      project: {
-                        kind: 'new-project',
-                        name: event.target.value,
-                      },
-                    })
+    <div className="grid gap-2" data-connect-project>
+      <div className="flex flex-wrap items-center gap-3">
+        <label
+          htmlFor="connect-project"
+          className="text-chrome-meta"
+          style={{ color: HUD.textDim }}
+        >
+          Add to
+        </label>
+        <select
+          id="connect-project"
+          value={
+            project.kind === 'new-project' ? 'new-project' : project.projectId
+          }
+          onChange={event =>
+            onProject(
+              event.target.value === 'new-project'
+                ? {
+                    kind: 'new-project',
+                    name:
+                      project.kind === 'new-project'
+                        ? project.name
+                        : DEFAULT_REMOTE_PROJECT_NAME,
                   }
-                  className="h-9 min-w-0 rounded border px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                  style={{
-                    color: HUD.text,
-                    borderColor: HUD.strokeSoft,
-                    background: HUD.surfaceInput,
-                  }}
-                />
-              </div>
-            )}
-
-            {rowIssues.map(entry => (
-              <p
-                key={entry.message}
-                role="alert"
-                className="text-chrome-label"
-                style={{ color: HUD.red }}
-              >
-                {entry.message}
-              </p>
-            ))}
-          </div>
-        );
-      })}
+                : { kind: 'existing-project', projectId: event.target.value }
+            )
+          }
+          className="h-8 min-w-0 rounded border px-2 text-chrome-label outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          style={{
+            color: HUD.text,
+            borderColor: HUD.strokeSoft,
+            background: HUD.surfaceInput,
+          }}
+        >
+          <option value="new-project">New Project</option>
+          {projects.map(option => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+        </select>
+        {project.kind === 'new-project' ? (
+          <input
+            aria-label="Project name"
+            value={project.name}
+            onChange={event =>
+              onProject({ kind: 'new-project', name: event.target.value })
+            }
+            className="h-8 min-w-0 flex-1 rounded border px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            style={{
+              color: HUD.text,
+              borderColor: HUD.strokeSoft,
+              background: HUD.surfaceInput,
+            }}
+          />
+        ) : null}
+      </div>
+      <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
+        Names and Projects live in Exawatt. The server keeps its own.
+      </p>
     </div>
   );
 }

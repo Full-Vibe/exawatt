@@ -184,7 +184,7 @@ export function SettingsClient() {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>('agent-sources');
   /**
-   * The Connect existing Agent route, mounted where the operator with no
+   * The Connect route, mounted where the operator with no
    * sources actually stands.
    *
    * Agent Sources is the page somebody lands on when they have nothing
@@ -601,10 +601,15 @@ export function SettingsClient() {
         </DialogContent>
       </Dialog>
 
-      {/* The Connect existing Agent route. It closes itself on success and
+      {/* The Connect route. It closes itself on success and
           leaves the operator on Settings, where the connection it just made
           is now a source with its own health. */}
-      <ConnectSourceDialog open={connectOpen} onOpenChange={setConnectOpen} />
+      <ConnectSourceDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        // The operator is already where saved servers are managed.
+        onManageServer={() => setConnectOpen(false)}
+      />
     </main>
   );
 }

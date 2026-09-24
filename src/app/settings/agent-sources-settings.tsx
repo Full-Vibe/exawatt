@@ -698,7 +698,7 @@ export function AgentSourcesSettings({
   onConnectExistingAgent,
 }: {
   /**
-   * The ⌘N Connect existing Agent route. A sibling packet owns that dialog,
+   * The ⌘N Connect route. A sibling packet owns that dialog,
    * so Settings takes an opener rather than growing a second connect flow;
    * until one is exported the empty state names the chord instead.
    */

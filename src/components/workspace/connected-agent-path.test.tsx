@@ -247,12 +247,10 @@ describe('Connect → mapping → roster → Team → Agent', () => {
     }
 
     render(<Harness />, { wrapper: Providers });
-    fireEvent.click(await screen.findByRole('button', { name: /OpenClaw/ }));
     fireEvent.click(await screen.findByRole('button', { name: /atlas-box/ }));
-    await screen.findByRole('heading', { name: 'Agents' });
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    await screen.findByRole('heading', { name: 'Agents on atlas-box' });
     fireEvent.click(
-      await screen.findByRole('button', { name: /Connect and open/ })
+      await screen.findByRole('button', { name: /Connect social-poster/ })
     );
 
     await waitFor(() => expect(mapAgents).toHaveBeenCalledOnce());

@@ -831,7 +831,7 @@ describe('Connected sources in Agent Source Settings', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers one route to Connect existing Agent and no invented roster', async () => {
+  it('offers one route to Connect a server and no invented roster', async () => {
     const onConnect = vi.fn();
     mountBridge({ sources: [], statuses: [] });
     render(<AgentSourcesSettings onConnectExistingAgent={onConnect} />);
@@ -847,7 +847,7 @@ describe('Connected sources in Agent Source Settings', () => {
     expect(document.querySelector('[data-connected-source]')).toBeNull();
 
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Connect existing Agent' })
+      await screen.findByRole('button', { name: 'Connect a server' })
     );
     expect(onConnect).toHaveBeenCalledTimes(1);
   });
@@ -869,7 +869,7 @@ describe('Connected sources in Agent Source Settings', () => {
     expect(empty.textContent ?? '').not.toMatch(/⌘/);
     expect(
       within(empty as HTMLElement).getByRole('button', {
-        name: 'Connect existing Agent',
+        name: 'Connect a server',
       })
     ).toBeInTheDocument();
   });

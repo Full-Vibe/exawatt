@@ -1,5 +1,5 @@
 /**
- * The Connect existing Agent surface (ENG-010 C2).
+ * The Connect surface (ENG-010 C2, one screen since ENG-033 H2.4 P2).
  *
  * Every fixture value is invented. No hostname, address, user, or key path in
  * this file belongs to anyone's real infrastructure.
@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOURCE_FAILURE_CLASSES, type SshHostAlias } from '@exawatt/core';
 import {
   ConnectSourceDialog,
+  DEFAULT_REMOTE_PROJECT_NAME,
   type ConnectAttemptResult,
   type ConnectSourceBridge,
   type ConnectSourceProgress,
@@ -26,7 +27,6 @@ import {
 } from './connect-source-dialog';
 import {
   CONNECT_FAILURE_COPY,
-  CONNECT_STAGES,
   CONNECT_STAGE_COPY,
   type DiscoveredAgent,
 } from './connect-source-model';
@@ -44,6 +44,12 @@ const ALIASES: readonly SshHostAlias[] = [
     hasHostName: false,
     hasUser: false,
     hasIdentityFile: false,
+  },
+  {
+    alias: 'cinder-box',
+    hasHostName: true,
+    hasUser: false,
+    hasIdentityFile: true,
   },
 ];
 
@@ -138,10 +144,12 @@ function renderDialog({
   bridge,
   projects,
   onConnected,
+  onManageServer,
 }: {
   bridge: ConnectSourceBridge;
   projects?: readonly { id: string; name: string }[];
   onConnected?: (result: ConnectSourceResult) => void;
+  onManageServer?: () => void;
 }) {
   function Harness() {
     const [open, setOpen] = useState(true);
@@ -152,50 +160,49 @@ function renderDialog({
         bridge={bridge}
         projects={projects}
         onConnected={onConnected}
+        onManageServer={onManageServer}
       />
     );
   }
   return render(<Harness />);
 }
 
-async function chooseOpenClaw() {
-  fireEvent.click(await screen.findByRole('button', { name: /OpenClaw/ }));
+function row(alias: string): HTMLElement {
+  const found = document.querySelector(`[data-connect-server="${alias}"]`);
+  if (!(found instanceof HTMLElement)) throw new Error(`No row for ${alias}`);
+  return found;
 }
 
-async function chooseAtlas() {
-  await chooseOpenClaw();
-  fireEvent.click(await screen.findByRole('button', { name: /atlas-box/ }));
+async function pick(alias: string) {
+  await screen.findByRole('button', { name: new RegExp(alias) });
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(alias) }));
 }
 
-async function reachAgentChoice() {
-  await chooseAtlas();
-  await screen.findByRole('heading', { name: 'Agents' });
+async function reachReady(alias = 'atlas-box') {
+  await pick(alias);
+  await screen.findByRole('heading', { name: `Agents on ${alias}` });
 }
 
-async function reachMapping() {
-  await reachAgentChoice();
-  fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
-  await screen.findByRole('button', { name: /Connect and open/ });
+function primary(): HTMLElement {
+  return screen.getByRole('button', { name: /^Connect/ });
 }
 
 afterEach(() => {
   cleanup();
 });
 
-describe('Connect existing Agent: choosing a server', () => {
-  it('lists the operator aliases and what each block declares', async () => {
-    renderDialog({ bridge: makeBridge() });
-    await chooseOpenClaw();
-
-    const atlas = await screen.findByRole('button', { name: /atlas-box/ });
-    expect(within(atlas).getByText('Hostname')).toBeInTheDocument();
-    expect(within(atlas).getByText('User')).toBeInTheDocument();
-    expect(within(atlas).queryByText('Key file')).toBeNull();
-
-    const beacon = screen.getByRole('button', { name: /beacon-box/ });
+describe('Connect: the server list', () => {
+  it('opens on the operator’s servers, with no source step while OpenClaw is the only one', async () => {
+    const bridge = makeBridge();
+    renderDialog({ bridge });
     expect(
-      within(beacon).getByText('Defaults from your SSH config')
+      await screen.findByRole('button', { name: /atlas-box/ })
     ).toBeInTheDocument();
+    expect(document.querySelector('[data-connect-adapter]')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Connect a server' }));
+    // Listing is not contacting.
+    expect(bridge.add).not.toHaveBeenCalled();
+    expect(bridge.connect).not.toHaveBeenCalled();
   });
 
   it('carries alias names only, never the values behind them', async () => {
@@ -209,11 +216,54 @@ describe('Connect existing Agent: choosing a server', () => {
         'hasUser',
       ]);
     }
-
     renderDialog({ bridge });
-    await chooseOpenClaw();
     await screen.findByRole('button', { name: /atlas-box/ });
     expect(document.body.textContent ?? '').not.toMatch(/\.invalid|@|\.pem/);
+  });
+
+  it('narrows as the operator types, and Return tests the one left', async () => {
+    const bridge = makeBridge();
+    renderDialog({ bridge });
+    const filter = await screen.findByLabelText('Filter servers');
+    expect(filter).toHaveFocus();
+
+    fireEvent.change(filter, { target: { value: 'bea' } });
+    expect(screen.queryByRole('button', { name: /atlas-box/ })).toBeNull();
+    expect(screen.getByText('1 of 3 servers')).toBeInTheDocument();
+
+    fireEvent.keyDown(filter, { key: 'Enter' });
+    await waitFor(() =>
+      expect(bridge.add).toHaveBeenCalledWith(
+        expect.objectContaining({ displayName: 'beacon-box' })
+      )
+    );
+  });
+
+  it('marks a connected server with its coworkers and a way to manage it', async () => {
+    const onManageServer = vi.fn();
+    const bridge = makeBridge({
+      list: vi.fn(async () => [{ id: 'source-9', alias: 'cinder-box' }]),
+      agents: vi.fn(async () => [
+        { displayName: 'Scout', projectId: 'p-1', source: { id: 'source-9' } },
+        { displayName: 'reddit', projectId: 'p-1', source: { id: 'source-9' } },
+      ]),
+    });
+    renderDialog({ bridge, onManageServer });
+    await waitFor(() =>
+      expect(row('cinder-box')).toHaveAttribute(
+        'data-server-state',
+        'connected'
+      )
+    );
+    expect(row('cinder-box')).toHaveTextContent('Connected · Scout, reddit');
+    // A connected server is not a button, so it cannot start a second
+    // connect (BUG-155).
+    expect(
+      screen.queryByRole('button', { name: /cinder-box/ })
+    ).not.toBeInTheDocument();
+    fireEvent.click(within(row('cinder-box')).getByText('Manage'));
+    expect(onManageServer).toHaveBeenCalledOnce();
+    expect(bridge.add).not.toHaveBeenCalled();
   });
 
   it('offers the manual path plainly when the machine has no SSH config', async () => {
@@ -226,13 +276,10 @@ describe('Connect existing Agent: choosing a server', () => {
         })),
       }),
     });
-    await chooseOpenClaw();
-
     expect(
       await screen.findByLabelText('Name', { selector: 'input' })
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Address')).toBeInTheDocument();
-    expect(screen.getByLabelText('SSH user')).toBeInTheDocument();
     expect(screen.getByLabelText('Gateway port')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Test connection' })
@@ -249,19 +296,19 @@ describe('Connect existing Agent: choosing a server', () => {
         })),
       }),
     });
-    await chooseOpenClaw();
     expect(
       await screen.findByText(
         'Your SSH configuration includes other files Exawatt did not read.'
       )
     ).toBeInTheDocument();
   });
+});
 
-  it('saves the chosen server as a remote source owned by the SSH config', async () => {
+describe('Connect: testing in place', () => {
+  it('saves the picked server as a remote source owned by the SSH config', async () => {
     const bridge = makeBridge();
     renderDialog({ bridge });
-    await chooseAtlas();
-
+    await pick('atlas-box');
     await waitFor(() => expect(bridge.add).toHaveBeenCalledOnce());
     expect(bridge.add).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -272,27 +319,12 @@ describe('Connect existing Agent: choosing a server', () => {
       })
     );
   });
-});
 
-function stageRow(stage: (typeof CONNECT_STAGES)[number]): HTMLElement {
-  const row = screen.getByText(CONNECT_STAGE_COPY[stage]).closest('li');
-  if (!(row instanceof HTMLElement)) throw new Error(`No row for ${stage}`);
-  return row;
-}
-
-describe('Connect existing Agent: the bounded test', () => {
   /**
-   * The regression this file did not have.
-   *
-   * The checklist used to be driven by a callback handed to `connect`, and
-   * the desktop bridge could not deliver one: `connect` is an `invoke`, so
-   * the function was dropped at the boundary and every real connection showed
-   * a frozen "Opening the SSH tunnel" for the whole round trip. So the test
-   * plays the phases the way main actually reports them — over the change
-   * channel, while the connect call is still in flight — and asserts the
-   * operator is looking at the step the connection is really on.
+   * Progress rides main's change channel while `connect` is in flight: a
+   * callback handed to `connect` could never cross the context bridge.
    */
-  it('ticks through the phases the connection is actually in', async () => {
+  it('ticks the row through the phases the connection is actually in', async () => {
     const progress = makeProgress();
     let settle: ((result: ConnectAttemptResult) => void) | undefined;
     const bridge = makeBridge({
@@ -305,359 +337,302 @@ describe('Connect existing Agent: the bounded test', () => {
       ),
     });
     renderDialog({ bridge });
-    await chooseAtlas();
+    await pick('atlas-box');
+    await waitFor(() =>
+      expect(row('atlas-box')).toHaveAttribute('data-server-state', 'testing')
+    );
+    expect(row('atlas-box')).toHaveTextContent(CONNECT_STAGE_COPY.tunnel);
 
-    expect(
-      await screen.findByText(CONNECT_STAGE_COPY.tunnel)
-    ).toBeInTheDocument();
-
-    const phases = [
-      ['opening-tunnel', 'tunnel'],
-      ['bootstrapping', 'credential'],
-      ['pairing', 'pairing'],
-      ['discovering', 'discovery'],
-    ] as const;
-    for (const [phase, stage] of phases) {
-      act(() => progress.emit(phase));
-      expect(stageRow(stage)).toHaveAttribute('aria-current', 'step');
-      expect(stageRow(stage)).toHaveAttribute('data-stage-state', 'active');
-    }
-    // Everything the connection already passed reads as done rather than
-    // pending, so the operator can see how far it got at a glance.
-    expect(stageRow('tunnel')).toHaveAttribute('data-stage-state', 'done');
+    act(() => progress.emit('bootstrapping'));
+    expect(row('atlas-box')).toHaveTextContent(CONNECT_STAGE_COPY.credential);
+    // Another source's phase never moves this row.
+    act(() => progress.emit('discovering', 'source-other'));
+    expect(row('atlas-box')).toHaveTextContent(CONNECT_STAGE_COPY.credential);
 
     await act(async () => {
       settle?.({ ok: true, agents: AGENTS, observed: OBSERVED });
     });
-    await screen.findByRole('heading', { name: 'Agents' });
-  });
-
-  it('ignores progress from a server this flow is not testing', async () => {
-    const progress = makeProgress();
-    const bridge = makeBridge({
-      onSourceChanged: progress.onSourceChanged,
-      connect: vi.fn(() => new Promise<ConnectAttemptResult>(() => {})),
-    });
-    renderDialog({ bridge });
-    await chooseAtlas();
-    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
-
-    act(() => progress.emit('discovering', 'some-other-source'));
-    expect(stageRow('tunnel')).toHaveAttribute('aria-current', 'step');
-    expect(stageRow('discovery')).toHaveAttribute(
-      'data-stage-state',
-      'waiting'
-    );
+    expect(row('atlas-box')).toHaveAttribute('data-server-state', 'ready');
+    expect(row('atlas-box')).toHaveTextContent('OpenClaw 2.4.0 · 2 Agents');
   });
 
   it('drops the subscription when the dialog closes', async () => {
     const progress = makeProgress();
-    const bridge = makeBridge({ onSourceChanged: progress.onSourceChanged });
-    renderDialog({ bridge });
-    await chooseOpenClaw();
+    renderDialog({
+      bridge: makeBridge({ onSourceChanged: progress.onSourceChanged }),
+    });
+    await screen.findByRole('button', { name: /atlas-box/ });
     expect(progress.subscribers()).toBe(1);
-
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(progress.subscribers()).toBe(0));
   });
 
-  it('leaves the source and the remote runtime alone when the operator cancels', async () => {
+  it('keeps a failure on its row, releases the record, and saves nothing', async () => {
     const bridge = makeBridge({
-      connect: vi.fn(
-        () => new Promise<ConnectAttemptResult>(() => {})
-      ) as ConnectSourceBridge['connect'],
+      connect: vi.fn(async () => ({
+        ok: false as const,
+        failure: 'host-unreachable' as const,
+        message: 'Nothing answered on the server’s SSH port.',
+      })),
     });
     renderDialog({ bridge });
-    await chooseAtlas();
-    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
+    await pick('atlas-box');
+    await waitFor(() =>
+      expect(row('atlas-box')).toHaveAttribute('data-server-state', 'failed')
+    );
+    expect(row('atlas-box')).toHaveTextContent(
+      'Server unreachable. Nothing was saved.'
+    );
+    expect(row('atlas-box')).toHaveTextContent(
+      'Nothing answered on the server’s SSH port.'
+    );
+    expect(bridge.detach).toHaveBeenCalledWith('source-1');
+    // The rest of the list is still there to pick from.
+    expect(
+      screen.getByRole('button', { name: /beacon-box/ })
+    ).not.toBeDisabled();
+  });
+
+  it('says so when the failed record could not be released', async () => {
+    renderDialog({
+      bridge: makeBridge({
+        connect: vi.fn(async () => ({
+          ok: false as const,
+          failure: 'gateway-down' as const,
+          message: '',
+        })),
+        detach: vi.fn(async () => ({ ok: false })),
+      }),
+    });
+    await pick('atlas-box');
+    await waitFor(() =>
+      expect(row('atlas-box')).toHaveTextContent(
+        'It is still saved; remove it in Settings.'
+      )
+    );
+  });
+
+  it('tries a failed server again from its own row', async () => {
+    const bridge = makeBridge({
+      connect: vi
+        .fn<ConnectSourceBridge['connect']>()
+        .mockResolvedValueOnce({
+          ok: false,
+          failure: 'gateway-down',
+          message: '',
+        })
+        .mockResolvedValue({ ok: true, agents: AGENTS, observed: OBSERVED }),
+    });
+    renderDialog({ bridge });
+    await pick('atlas-box');
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    fireEvent.click(retry);
+    await screen.findByRole('heading', { name: 'Agents on atlas-box' });
+    expect(bridge.add).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases a tested server when the operator picks another (BUG-157)', async () => {
+    let next = 0;
+    const bridge = makeBridge({
+      add: vi.fn(async () => ({
+        ok: true as const,
+        source: { id: `source-${++next}` },
+        created: true,
+      })),
+    });
+    renderDialog({ bridge });
+    await reachReady('atlas-box');
+    await pick('beacon-box');
+    await screen.findByRole('heading', { name: 'Agents on beacon-box' });
+
+    expect(bridge.detach).toHaveBeenCalledWith('source-1');
+    expect(bridge.detach).not.toHaveBeenCalledWith('source-2');
+    expect(row('atlas-box')).toHaveAttribute('data-server-state', 'idle');
+  });
+
+  it('never tests, maps, or releases a server it was handed back (BUG-155)', async () => {
+    const bridge = makeBridge({
+      add: vi.fn(async () => ({
+        ok: true as const,
+        source: { id: 'source-live' },
+        created: false,
+      })),
+    });
+    renderDialog({ bridge });
+    await pick('atlas-box');
+    await screen.findByText(/already connected/);
+    expect(bridge.connect).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() =>
-      expect(bridge.detach).toHaveBeenCalledExactlyOnceWith('source-1')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     );
+    expect(bridge.detach).not.toHaveBeenCalled();
   });
 
-  it('shows every connection fact separately once the test lands', async () => {
-    renderDialog({ bridge: makeBridge() });
-    await reachAgentChoice();
-
-    for (const [label, value] of [
-      ['Identity', 'gateway-alpha'],
-      ['Version', '2.4.0'],
-      ['Placement', 'Remote'],
-      ['Credentials', 'Your SSH configuration'],
-      ['Capabilities', 'Read'],
-    ]) {
-      const term = screen.getByText(label as string);
-      expect(term.parentElement).toHaveTextContent(value as string);
-    }
-  });
-
-  it('marks a fact the source did not declare instead of inventing one', async () => {
-    renderDialog({
-      bridge: makeBridge({
-        connect: vi.fn(async () => ({ ok: true as const, agents: AGENTS })),
-      }),
-    });
-    await reachAgentChoice();
-    expect(screen.getAllByText('Not reported')).toHaveLength(3);
-  });
-});
-
-describe('Connect existing Agent: failures', () => {
-  for (const failure of SOURCE_FAILURE_CLASSES) {
-    it(`states the next step for ${failure}`, async () => {
-      renderDialog({
-        bridge: makeBridge({
-          connect: vi.fn(async () => ({
-            ok: false as const,
-            failure,
-            message: 'The Gateway answered with nothing usable.',
-          })),
-        }),
-      });
-      await chooseAtlas();
-
-      const copy = CONNECT_FAILURE_COPY[failure];
-      expect(await screen.findByText(copy.headline)).toBeInTheDocument();
-      expect(screen.getByText(copy.nextStep)).toBeInTheDocument();
-      expect(
-        screen.getByRole('button', { name: /Try again/ })
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText('The server keeps running its own work.')
-      ).toBeInTheDocument();
-    });
-  }
-
-  it('leaves the failed step showing rather than resetting to the first', async () => {
-    const progress = makeProgress();
-    let settle: ((result: ConnectAttemptResult) => void) | undefined;
-    renderDialog({
-      bridge: makeBridge({
-        onSourceChanged: progress.onSourceChanged,
-        connect: vi.fn(
-          () =>
-            new Promise<ConnectAttemptResult>(resolve => {
-              settle = resolve;
-            })
-        ),
-      }),
-    });
-    await chooseAtlas();
-    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
-
-    act(() => progress.emit('pairing'));
-    await act(async () => {
-      settle?.({
-        ok: false,
-        failure: 'approval-required',
-        message: 'The Gateway is waiting for an approval.',
-      });
-    });
-
-    await screen.findByText(CONNECT_FAILURE_COPY['approval-required'].headline);
-    // How far it got is half the diagnosis: the tunnel and the credential
-    // were fine, and pairing is the step that did not complete.
-    expect(stageRow('tunnel')).toHaveAttribute('data-stage-state', 'done');
-    expect(stageRow('credential')).toHaveAttribute('data-stage-state', 'done');
-    expect(stageRow('pairing')).toHaveAttribute('data-stage-state', 'failed');
-    expect(stageRow('discovery')).toHaveAttribute(
-      'data-stage-state',
-      'waiting'
-    );
-  });
-
-  it('retries the same server rather than saving a second one', async () => {
-    const connect = vi
-      .fn<ConnectSourceBridge['connect']>()
-      .mockResolvedValueOnce({
-        ok: false,
-        failure: 'gateway-down',
-        message: '',
-      })
-      .mockResolvedValue({ ok: true, agents: AGENTS, observed: OBSERVED });
-    const bridge = makeBridge({ connect });
+  it('leaves the remote runtime alone when the operator cancels', async () => {
+    const bridge = makeBridge();
     renderDialog({ bridge });
-    await chooseAtlas();
-
-    fireEvent.click(await screen.findByRole('button', { name: /Try again/ }));
-    await screen.findByRole('heading', { name: 'Agents' });
-    expect(bridge.add).toHaveBeenCalledOnce();
-    expect(connect).toHaveBeenCalledTimes(2);
+    await reachReady();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(bridge.detach).toHaveBeenCalledWith('source-1'));
+    expect(bridge.mapAgents).not.toHaveBeenCalled();
   });
 });
 
-describe('Connect existing Agent: choosing Agents', () => {
-  it('selects configured Agents and keeps retired ones apart and unchecked', async () => {
+describe('Connect: Agents, names, and the Project', () => {
+  it('checks configured Agents, keeps retired ones apart and unchecked', async () => {
     renderDialog({ bridge: makeBridge() });
-    await reachAgentChoice();
-
+    await reachReady();
     expect(
-      screen.getByRole('checkbox', { name: /social-poster/ })
+      screen.getByRole('checkbox', { name: 'Connect social-poster' })
     ).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('checkbox', { name: /Beacon/ })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
-
-    const retired = screen.getByRole('checkbox', { name: /former-helper/ });
-    expect(retired).toHaveAttribute('aria-checked', 'false');
+    expect(
+      screen.getByRole('checkbox', { name: 'Connect Beacon' })
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(
+      screen.getByRole('checkbox', { name: 'Connect former-helper' })
+    ).toHaveAttribute('aria-checked', 'false');
     expect(
       screen.getByRole('heading', { name: 'Retired on this server' })
     ).toBeInTheDocument();
+    expect(primary()).toHaveTextContent('Connect 2 Agents');
   });
 
-  it('imports a retired Agent only when the operator chooses it', async () => {
-    const onConnected = vi.fn();
-    renderDialog({ bridge: makeBridge(), onConnected });
-    await reachAgentChoice();
-
-    fireEvent.click(screen.getByRole('checkbox', { name: /former-helper/ }));
-    expect(
-      screen.getByRole('checkbox', { name: /former-helper/ })
-    ).toHaveAttribute('aria-checked', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
-    await screen.findByRole('button', { name: /Connect and open/ });
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
-
-    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
-    expect(
-      onConnected.mock.calls[0]?.[0].agents.map(
-        (agent: { nativeAgentId: string }) => agent.nativeAgentId
-      )
-    ).toEqual(['agent-alpha', 'agent-beta', 'agent-gamma']);
-  });
-
-  it('reports how much work each Agent carries', async () => {
+  it('names the one Agent in the primary action, and refuses none', async () => {
     renderDialog({ bridge: makeBridge() });
-    await reachAgentChoice();
-    expect(
-      screen.getByRole('checkbox', { name: /social-poster/ })
-    ).toHaveTextContent('Conversation · 75 contexts');
-    expect(screen.getByRole('checkbox', { name: /Beacon/ })).toHaveTextContent(
-      'No conversation yet · 3 contexts'
+    await reachReady();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Connect Beacon' }));
+    expect(primary()).toHaveTextContent('Connect social-poster');
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Connect social-poster' })
     );
+    expect(primary()).toBeDisabled();
   });
-});
 
-describe('Connect existing Agent: Project mapping', () => {
-  it('suggests one renameable Project per Agent and keeps the source name', async () => {
+  it('keeps every connection fact one disclosure away', async () => {
     renderDialog({ bridge: makeBridge() });
-    await reachMapping();
+    await reachReady();
+    const facts = document.querySelector('[data-connect-facts]');
+    expect(facts).not.toBeNull();
+    for (const label of [
+      'Identity',
+      'Version',
+      'Placement',
+      'Credentials',
+      'Capabilities',
+    ]) {
+      expect(within(facts as HTMLElement).getByText(label)).toBeInTheDocument();
+    }
+  });
 
-    const names = screen.getAllByLabelText('Name');
-    expect(names[0]).toHaveAttribute('placeholder', 'social-poster');
-    expect(names[0]).toHaveValue('');
+  it('renames an Agent in place without touching the source', async () => {
+    const bridge = makeBridge();
+    const onConnected = vi.fn();
+    renderDialog({ bridge, onConnected });
+    await reachReady();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Rename social-poster' })
+    );
+    const field = screen.getByLabelText('Name for social-poster');
+    fireEvent.change(field, { target: { value: 'Marcus' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(screen.getByText('Marcus')).toBeInTheDocument();
     expect(
-      screen.getByText('The server calls it social-poster.')
+      screen.getByText(/the server calls it social-poster/)
     ).toBeInTheDocument();
 
-    const projectNames = screen.getAllByLabelText('Project name');
-    expect(projectNames[0]).toHaveValue('social-poster');
-    expect(projectNames[1]).toHaveValue('Beacon');
+    fireEvent.click(primary());
+    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
+    expect(bridge.mapAgents).toHaveBeenCalledWith(
+      'source-1',
+      expect.arrayContaining([
+        expect.objectContaining({
+          nativeAgentId: 'agent-alpha',
+          displayNameOverride: 'Marcus',
+        }),
+      ])
+    );
   });
 
-  it('groups several Agents into one existing Project when asked', async () => {
-    const onConnected = vi.fn();
+  it('puts the batch into one new Remote Project by default', async () => {
     const bridge = makeBridge();
+    const onConnected = vi.fn();
+    renderDialog({ bridge, onConnected });
+    await reachReady();
+    expect(screen.getByLabelText('Project name')).toHaveValue(
+      DEFAULT_REMOTE_PROJECT_NAME
+    );
+    fireEvent.click(primary());
+    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
+    const rows = vi.mocked(bridge.mapAgents).mock.calls[0]![1];
+    expect(new Set(rows.map(entry => entry.projectId)).size).toBe(1);
+    expect(rows.map(entry => entry.projectLabel)).toEqual([
+      DEFAULT_REMOTE_PROJECT_NAME,
+      DEFAULT_REMOTE_PROJECT_NAME,
+    ]);
+  });
+
+  it('defaults to the Project the connected coworkers already live in', async () => {
+    const bridge = makeBridge({
+      list: vi.fn(async () => [{ id: 'source-9', alias: 'cinder-box' }]),
+      agents: vi.fn(async () => [
+        {
+          displayName: 'Scout',
+          projectId: 'project-home',
+          source: { id: 'source-9' },
+        },
+      ]),
+    });
+    const onConnected = vi.fn();
     renderDialog({
       bridge,
-      projects: [{ id: 'project-1', name: 'Growth' }],
       onConnected,
+      projects: [
+        { id: 'project-other', name: 'Growth' },
+        { id: 'project-home', name: 'Fleet' },
+      ],
     });
-    await reachMapping();
-
-    for (const select of screen.getAllByLabelText('Project')) {
-      fireEvent.change(select, { target: { value: 'project-1' } });
-    }
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
-
+    await reachReady();
+    expect(screen.getByLabelText('Add to')).toHaveValue('project-home');
+    fireEvent.click(primary());
     await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
-    const result = onConnected.mock.calls[0]?.[0] as ConnectSourceResult;
-    expect(result.sourceId).toBe('source-1');
-    expect(result.openNativeAgentId).toBe('agent-alpha');
-    expect(result.agents.map(agent => agent.project)).toEqual([
-      { id: 'project-1', name: 'Growth', rootPath: null },
-      { id: 'project-1', name: 'Growth', rootPath: null },
-    ]);
-    expect(bridge.mapAgents).toHaveBeenCalledWith('source-1', [
-      {
-        nativeAgentId: 'agent-alpha',
-        projectId: 'project-1',
-        projectLabel: 'Growth',
-        displayNameOverride: null,
-      },
-      {
-        nativeAgentId: 'agent-beta',
-        projectId: 'project-1',
-        projectLabel: 'Growth',
-        displayNameOverride: null,
-      },
-    ]);
-  });
-
-  it('renames an Agent in Exawatt without touching the source', async () => {
-    const onConnected = vi.fn();
-    const bridge = makeBridge();
-    renderDialog({ bridge, onConnected });
-    await reachMapping();
-
-    fireEvent.change(screen.getAllByLabelText('Name')[0] as HTMLInputElement, {
-      target: { value: 'Marcus' },
-    });
-    fireEvent.click(
-      screen.getByRole('button', { name: /Connect and open Marcus/ })
-    );
-
-    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
-    const result = onConnected.mock.calls[0]?.[0] as ConnectSourceResult;
-    expect(result.agents[0]?.displayName).toBe('Marcus');
-    expect(result.agents[1]?.displayName).toBe('Beacon');
-  });
-
-  it('names the fault when a Project name is emptied', async () => {
-    const onConnected = vi.fn();
-    renderDialog({ bridge: makeBridge(), onConnected });
-    await reachMapping();
-
-    fireEvent.change(
-      screen.getAllByLabelText('Project name')[0] as HTMLInputElement,
-      { target: { value: '   ' } }
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
-
     expect(
-      await screen.findByText('Name the Project this Agent belongs to.')
-    ).toBeInTheDocument();
-    expect(onConnected).not.toHaveBeenCalled();
+      vi
+        .mocked(bridge.mapAgents)
+        .mock.calls[0]![1].every(entry => entry.projectId === 'project-home')
+    ).toBe(true);
   });
 
-  /*
-   * Connecting closes through to the coworker. There is no "Connected." page
-   * with a Done button on it, because the operator asked to open somebody and
-   * a confirmation screen is one keystroke standing in the way.
-   */
+  it('names a Project fault once when the Project name is emptied', async () => {
+    renderDialog({ bridge: makeBridge() });
+    await reachReady();
+    fireEvent.change(screen.getByLabelText('Project name'), {
+      target: { value: '' },
+    });
+    fireEvent.click(primary());
+    expect(await screen.findAllByText('Name the Project.')).toHaveLength(1);
+  });
+
   it('closes straight through to the Agent with no confirmation screen', async () => {
     const bridge = makeBridge();
     const onConnected = vi.fn();
     renderDialog({ bridge, onConnected });
-    await reachMapping();
-
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    await reachReady();
+    fireEvent.click(primary());
     await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
-
-    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(onConnected.mock.calls[0]![0]).toMatchObject({
+      sourceId: 'source-1',
+      openNativeAgentId: 'agent-alpha',
+    });
     await waitFor(() =>
       expect(document.querySelector('[data-connect-source]')).toBeNull()
     );
-    // The record is the operator's now. Closing releases an abandoned
-    // attempt; it must never release a connection they just kept.
+    // The record is the operator's now; closing must never release it.
     expect(bridge.detach).not.toHaveBeenCalled();
   });
 
-  it('keeps the mapping step open when main refuses the projection write', async () => {
+  it('stays open when main refuses the projection write', async () => {
     const onConnected = vi.fn();
     const bridge = makeBridge({
       mapAgents: vi.fn(async () => ({
@@ -670,13 +645,11 @@ describe('Connect existing Agent: Project mapping', () => {
       projects: [{ id: 'project-1', name: 'Growth' }],
       onConnected,
     });
-    await reachMapping();
-    for (const select of screen.getAllByLabelText('Project')) {
-      fireEvent.change(select, { target: { value: 'project-1' } });
-    }
-
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
-
+    await reachReady();
+    fireEvent.change(screen.getByLabelText('Add to'), {
+      target: { value: 'project-1' },
+    });
+    fireEvent.click(primary());
     expect(
       await screen.findByText('Choose a Project that still exists.')
     ).toBeInTheDocument();
@@ -684,23 +657,24 @@ describe('Connect existing Agent: Project mapping', () => {
     expect(onConnected).not.toHaveBeenCalled();
   });
 
-  it('reuses opaque Project identities when a mapping acknowledgement is retried', async () => {
+  it('reuses the batch Project’s identity when a mapping acknowledgement is retried', async () => {
     const onConnected = vi.fn();
     const mapAgents = vi
       .fn<ConnectSourceBridge['mapAgents']>()
       .mockResolvedValueOnce({ ok: false, issues: ['Try again.'] })
       .mockResolvedValueOnce({ ok: true, mapped: 2 });
     renderDialog({ bridge: makeBridge({ mapAgents }), onConnected });
-    await reachMapping();
+    await reachReady();
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    fireEvent.click(primary());
     await screen.findByText('Try again.');
-    const firstIds = mapAgents.mock.calls[0]![1].map(row => row.projectId);
+    const firstIds = mapAgents.mock.calls[0]![1].map(entry => entry.projectId);
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    fireEvent.click(primary());
     await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
-    const retriedIds = mapAgents.mock.calls[1]![1].map(row => row.projectId);
-
+    const retriedIds = mapAgents.mock.calls[1]![1].map(
+      entry => entry.projectId
+    );
     expect(retriedIds).toEqual(firstIds);
   });
 
@@ -710,15 +684,17 @@ describe('Connect existing Agent: Project mapping', () => {
       .mockRejectedValueOnce(new Error('ack lost'))
       .mockResolvedValueOnce({ ok: false, issues: ['Try later.'] });
     renderDialog({ bridge: makeBridge({ mapAgents }) });
-    await reachMapping();
+    await reachReady();
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    fireEvent.click(primary());
     await screen.findByText(
       'Exawatt could not save these Agent mappings. Try again.'
     );
-    const uncertainIds = mapAgents.mock.calls[0]![1].map(row => row.projectId);
+    const uncertainIds = mapAgents.mock.calls[0]![1].map(
+      entry => entry.projectId
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect and open/ }));
+    fireEvent.click(primary());
     await screen.findByText('Try later.');
 
     const durableIds = new Set(
@@ -726,34 +702,17 @@ describe('Connect existing Agent: Project mapping', () => {
     );
     for (const id of uncertainIds) expect(durableIds).toContain(id);
   });
-
-  it('steps back to the Agent choice with the selection intact', async () => {
-    renderDialog({ bridge: makeBridge() });
-    await reachMapping();
-
-    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
-    expect(
-      await screen.findByRole('checkbox', { name: /social-poster/ })
-    ).toHaveAttribute('aria-checked', 'true');
-  });
 });
 
-describe('Connect existing Agent: voice', () => {
+describe('Connect: voice', () => {
   it('never uses an em dash, and never says remote work changed', async () => {
     const seen: string[] = [];
     const record = () => seen.push(document.body.textContent ?? '');
 
     renderDialog({ bridge: makeBridge() });
-    record();
-    await chooseOpenClaw();
     await screen.findByRole('button', { name: /atlas-box/ });
     record();
-    fireEvent.click(screen.getByRole('button', { name: /atlas-box/ }));
-    record();
-    await screen.findByRole('heading', { name: 'Agents' });
-    record();
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
-    await screen.findByRole('button', { name: /Connect and open/ });
+    await reachReady();
     record();
     cleanup();
 
@@ -767,8 +726,10 @@ describe('Connect existing Agent: voice', () => {
           })),
         }),
       });
-      await chooseAtlas();
-      await screen.findByText(CONNECT_FAILURE_COPY[failure].headline);
+      await pick('atlas-box');
+      await screen.findByText(
+        new RegExp(CONNECT_FAILURE_COPY[failure].headline)
+      );
       record();
       cleanup();
     }
@@ -782,7 +743,6 @@ describe('Connect existing Agent: voice', () => {
         })),
       }),
     });
-    await chooseOpenClaw();
     await screen.findByLabelText('Address');
     record();
 
@@ -795,21 +755,16 @@ describe('Connect existing Agent: voice', () => {
 });
 
 /**
- * The desktop path, wired the way production wires it.
- *
- * Every other test in this file injects a bridge, which is exactly how a
- * frozen checklist survived review: the injected double honoured a progress
- * callback the real preload could never deliver. This one mounts the dialog
- * with no bridge prop at all, so it builds its own over
- * `window.electron.connectedSources` and can only tick if the seam it uses is
- * one the preload actually exposes.
+ * The desktop path, wired the way production wires it: no bridge prop, so the
+ * dialog builds its own over `window.electron.connectedSources` and can only
+ * tick if the seam it uses is one the preload actually exposes.
  */
-describe('Connect existing Agent: the desktop bridge', () => {
+describe('Connect: the desktop bridge', () => {
   afterEach(() => {
     Reflect.deleteProperty(window, 'electron');
   });
 
-  it('carries the connection phase from the preload to the checklist', async () => {
+  it('carries the connection phase from the preload to the row', async () => {
     const handlers = new Set<(change: ConnectSourceProgress) => void>();
     let settle: ((result: ConnectAttemptResult) => void) | undefined;
     const connectedSources = {
@@ -848,9 +803,10 @@ describe('Connect existing Agent: the desktop bridge', () => {
     }
     render(<Harness />);
 
-    await chooseAtlas();
-    await screen.findByText(CONNECT_STAGE_COPY.tunnel);
-    // Main broadcasts the phase per source; nothing is handed to `connect`.
+    await pick('atlas-box');
+    await waitFor(() =>
+      expect(row('atlas-box')).toHaveTextContent(CONNECT_STAGE_COPY.tunnel)
+    );
     expect(connectedSources.connect).toHaveBeenCalledExactlyOnceWith(
       'source-1'
     );
@@ -860,78 +816,38 @@ describe('Connect existing Agent: the desktop bridge', () => {
         handler({ sourceId: 'source-1', phase: 'discovering' });
       }
     });
-    expect(stageRow('discovery')).toHaveAttribute('aria-current', 'step');
+    expect(row('atlas-box')).toHaveTextContent(CONNECT_STAGE_COPY.discovery);
 
     await act(async () => {
       settle?.({ ok: true, agents: AGENTS, observed: OBSERVED });
     });
-    await screen.findByRole('heading', { name: 'Agents' });
+    await screen.findByRole('heading', { name: 'Agents on atlas-box' });
   });
 });
 
-describe('Connect existing Agent: records the flow did not make', () => {
-  it('marks a server that is already connected and does not start a second connect (BUG-155)', async () => {
-    const bridge = makeBridge({
-      list: vi.fn(async () => [{ alias: 'atlas-box' }]),
-    });
+describe('Connect: a server described by hand', () => {
+  it('tests it from the form and stands the result on its own row', async () => {
+    const bridge = makeBridge();
     renderDialog({ bridge });
-    await chooseOpenClaw();
-    const row = await screen.findByRole('button', { name: /atlas-box/ });
-    await waitFor(() => expect(row).toHaveAttribute('data-connected'));
-    expect(row).toBeDisabled();
-    fireEvent.click(row);
-    expect(bridge.add).not.toHaveBeenCalled();
-    expect(bridge.connect).not.toHaveBeenCalled();
-  });
-
-  it('never tests, maps, or releases a server it was handed back (BUG-155)', async () => {
-    // A bridge that cannot list sources, so the guard in the flow itself is
-    // what stands between Cancel and a working connection.
-    const bridge = makeBridge({
-      add: vi.fn(async () => ({
-        ok: true as const,
-        source: { id: 'source-live' },
-        created: false,
-      })),
+    await screen.findByRole('button', { name: /atlas-box/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Describe a server' }));
+    fireEvent.change(screen.getByLabelText('Name', { selector: 'input' }), {
+      target: { value: 'Studio box' },
     });
-    renderDialog({ bridge });
-    await chooseAtlas();
-    await screen.findByText(/already connected/);
-    expect(bridge.connect).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Address'), {
+      target: { value: 'studio.invalid' },
+    });
+    fireEvent.change(screen.getByLabelText('SSH user'), {
+      target: { value: 'operator' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    await screen.findByRole('heading', { name: 'Agents on Studio box' });
+    expect(bridge.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialOwner: 'exawatt-keychain',
+        transport: expect.objectContaining({ kind: 'ssh-manual' }),
+      })
     );
-    expect(bridge.detach).not.toHaveBeenCalled();
-  });
-
-  it('releases a failed attempt when the operator moves on to another server (BUG-157)', async () => {
-    let next = 0;
-    const bridge = makeBridge({
-      add: vi.fn(async () => ({
-        ok: true as const,
-        source: { id: `source-${++next}` },
-        created: true,
-      })),
-      connect: vi
-        .fn<ConnectSourceBridge['connect']>()
-        .mockResolvedValueOnce({
-          ok: false as const,
-          failure: 'host-unreachable',
-          message: 'Nothing answered.',
-        })
-        .mockResolvedValue({ ok: true, agents: AGENTS, observed: OBSERVED }),
-    });
-    renderDialog({ bridge });
-    await chooseAtlas();
-    await screen.findByText(CONNECT_FAILURE_COPY['host-unreachable'].headline);
-
-    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /beacon-box/ }));
-    await screen.findByRole('heading', { name: 'Agents' });
-
-    expect(bridge.detach).toHaveBeenCalledWith('source-1');
-    expect(bridge.detach).not.toHaveBeenCalledWith('source-2');
+    expect(row('Studio box')).toHaveAttribute('data-server-state', 'ready');
   });
 });

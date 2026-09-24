@@ -357,12 +357,11 @@ try {
       // one the operator can scroll, and its last row lands inside the dialog.
       await page
         .locator('[data-connected-sources-empty] button', {
-          hasText: 'Connect existing Agent',
+          hasText: 'Connect a server',
         })
         .click();
       const connectDialog = page.locator('[data-connect-source]');
       await connectDialog.waitFor();
-      await connectDialog.locator('[data-connect-adapter="openclaw"]').click();
       const serverRows = connectDialog.locator('[data-connect-server]');
       await serverRows.first().waitFor();
       await serverRows.last().scrollIntoViewIfNeeded();

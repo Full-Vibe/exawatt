@@ -183,10 +183,13 @@ Launching creates new work. Connecting imports an existing configured source
 and projects existing source Agents without starting or modifying them. The two
 verbs stay distinct even when they eventually share the New flow.
 
-The OpenClaw path is **⌘N → Connect existing Agent…**: choose OpenClaw,
-select an existing SSH host alias or supported Gateway endpoint, test the
-connection, inspect discovered configured Agents, and confirm an editable
-Project mapping for each selected Agent. Active configured Agents are suggested;
+The OpenClaw path is **⌘N → Connect a server…** (also in the File menu and
+Settings): pick an existing SSH host alias, or describe a server, and it is
+tested in place on its own row. A failed test stays on that row and saves
+nothing. The server that answers lists its configured Agents beneath it;
+check the ones to connect, rename any in place, and choose the one Project
+they join, which defaults to the Project your connected coworkers already live
+in, or a new Project named Remote. Active configured Agents are suggested;
 retired or historical identities are never activated silently.
 
 The mapping is persisted before Connect closes, and the source-qualified native

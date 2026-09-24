@@ -58,7 +58,7 @@ const REGISTRY_LABEL: Record<RegistryPosition, string | null> = {
  * The route is not standing state beside `open`. The chooser closes itself
  * to hand the screen to Connect and reopens itself when Connect is cancelled
  * or the native folder picker is dismissed; a route that survived that round
- * trip re-entered Connect on every reopen, so File → Connect existing Agent…
+ * trip re-entered Connect on every reopen, so File → Connect a server…
  * could never be cancelled (BUG-147). With closed as a member of the same
  * value, the chooser reopening itself lands on the Project routes, and only
  * a fresh summons can put it on Connect.
@@ -676,7 +676,7 @@ export function ProjectOpener({
                     borderColor: HUD.strokeSoft,
                   }}
                 >
-                  <Cable className="h-3.5 w-3.5" /> Connect existing Agent…
+                  <Cable className="h-3.5 w-3.5" /> Connect a server…
                 </button>
                 {!connectSupported && (
                   <span

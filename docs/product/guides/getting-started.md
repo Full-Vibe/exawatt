@@ -61,9 +61,9 @@ does not stop their work or prevent another Agent launch.
 ### Connect existing OpenClaw Agents
 
 The existing-fleet path connects to Agents already running on your
-infrastructure. **⌘N → Connect existing Agent…** adds an OpenClaw source,
-tests a saved SSH alias or supported Gateway endpoint, discovers configured
-Agents, and lets you map each one to a renameable Project. Connecting observes
+infrastructure. **⌘N → Connect a server…** lists the servers in your SSH
+configuration, tests the one you pick in place, discovers its configured
+Agents, and adds the ones you check to one Project. Connecting observes
 existing work; it does not provision a server, start an Agent, or edit the
 remote installation.
 

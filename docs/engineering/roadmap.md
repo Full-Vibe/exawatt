@@ -46,7 +46,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-030 | Open-source readiness                            | active-build | Public repo is live; repair projection/history parity, exact-tree CI/security, and public Release provenance before the friend cohort. Contribution intake is trigger-deferred. |
 | ENG-031 | Website — vision communication and guides        | active-build | SHAPED 2026-08-14 — the overhaul IS the ENG-030 launch surface; altitude-ladder spine, band system, live board hero.                                                                   |
 | ENG-032 | Theming and visual identity                      | done         | T0–T5.3 LANDED — three presets share one app-global Manual/Auto contract with browser-paint and public-typography continuity gates.                                                    |
-| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. |
+| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P2 one-screen Connect and P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. |
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
@@ -1852,8 +1852,14 @@ Milestones:
   and the copy path shows the exact `ssh` and `openclaw devices approve <id>`
   lines. Verified in the real app against the Gateway fixture and against the
   pending-request shape of OpenClaw 2026.7.1-2 on the operator's servers.
-  Next: P2 (one-step Connect), then P1 once the workspace-honesty registry
-  work lands, then P4 with D54, with P5's eval gating P2 to P4.
+  P2 LANDED 2026-09-24: ⌘N → Connect a server… is one screen (filter, test
+  in place, failure on its row with nothing saved, Agents inline with rename,
+  one Project for the batch defaulting to the coworkers' existing Project or a
+  new Remote one, "Connect N Agents"). P2b holds three follow-ups: landing on
+  the Project with the new coworker marked (ships with P1), a ⌘K row
+  (rewrites the verb's recorded no-palette reason), and send access inside the
+  dialog. Next: P1 once the workspace-honesty registry work lands, with P2b's
+  landing; P5's eval; then P4 with D54.
 - H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
   authorization pass for provisioning, credential custody, deletion, billing,
   and control-plane ownership before implementation begins.
@@ -1884,7 +1890,7 @@ constraint it puts on this item is worth stating here rather than only on the
 website: **a present-tense rewrite of that sentence is owed to H4**, not to H3,
 because the sentence a reader will hold us to is that a RUNNING agent moves and
 keeps working, and H4 is where Exawatt can enumerate what actually transfers. The daily connection route starts at **⌘N →
-Connect existing Agent…**; `/cloud` evolves into the later placement-management
+Connect a server…**; `/cloud` evolves into the later placement-management
 surface, never a duplicate roster.
 
 Ownership: ENG-010 owns H1, ENG-011 later proves mixed-source fleet scale,

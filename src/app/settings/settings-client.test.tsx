@@ -58,7 +58,7 @@ vi.mock('./appearance-settings', () => ({
 }));
 
 // The section stands in for the real one, but it keeps the prop that matters
-// here: whether Settings actually hands it a route to Connect existing Agent.
+// here: whether Settings actually hands it a route to Connect a server.
 // Without one, the empty state has nothing for an operator to press.
 vi.mock('./agent-sources-settings', () => ({
   AgentSourcesSettings: ({
@@ -69,7 +69,7 @@ vi.mock('./agent-sources-settings', () => ({
     <div data-agent-sources-settings>
       {onConnectExistingAgent ? (
         <button type="button" onClick={onConnectExistingAgent}>
-          Connect existing Agent
+          Connect a server
         </button>
       ) : (
         <span data-no-connect-route />
@@ -292,7 +292,7 @@ describe('shortcut settings policy', () => {
   });
 });
 
-describe('Settings: the Connect existing Agent route', () => {
+describe('Settings: the Connect route', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'electron', {
       configurable: true,
@@ -315,14 +315,14 @@ describe('Settings: the Connect existing Agent route', () => {
     expect(document.querySelector('[data-no-connect-route]')).toBeNull();
 
     fireEvent.click(
-      screen.getByRole('button', { name: 'Connect existing Agent' })
+      screen.getByRole('button', { name: 'Connect a server' })
     );
     await act(async () => undefined);
 
     const dialog = document.querySelector('[data-connect-source]');
     expect(dialog).not.toBeNull();
     expect(
-      screen.getByRole('heading', { name: 'Connect existing Agent' })
+      screen.getByRole('heading', { name: 'Connect a server' })
     ).toBeVisible();
   });
 });

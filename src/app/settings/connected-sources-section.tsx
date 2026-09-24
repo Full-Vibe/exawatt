@@ -613,7 +613,7 @@ export function ConnectedSourcesRail({
   observations: Map<string, ConnectedSourceObservation>;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  /** Opens the Connect existing Agent route. The host owns the dialog. */
+  /** Opens the Connect route. The host owns the dialog. */
   onConnect?: () => void;
 }) {
   return (
@@ -721,7 +721,7 @@ function ConnectedSourcesEmpty({ onConnect }: { onConnect?: () => void }) {
           onClick={onConnect}
           className="mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-lg border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3 font-ui text-chrome-title font-medium text-[var(--settings-soft)] outline-none transition-colors hover:bg-[var(--settings-hover-strong)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
         >
-          Connect existing Agent
+          Connect a server
         </button>
       ) : null}
     </div>

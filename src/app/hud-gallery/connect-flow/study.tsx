@@ -627,7 +627,7 @@ function SendAccessBlock({
           className="inline-flex h-8 items-center gap-2 rounded px-2 text-chrome-label outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
           style={{ color: HUD.textDim }}
         >
-          <Copy size={12} /> Copy commands instead
+          <Copy size={12} /> Show commands
         </button>
       </div>
       {path === 'copy' ? (

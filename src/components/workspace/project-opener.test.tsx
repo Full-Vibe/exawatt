@@ -44,7 +44,7 @@ vi.mock('./connect-source-dialog', () => ({
     }) => void;
   }) =>
     open ? (
-      <div role="dialog" aria-label="Connect existing Agent">
+      <div role="dialog" aria-label="Connect a server">
         <p>Can place into {(projects ?? []).map(p => p.name).join(', ')}</p>
         <button
           type="button"
@@ -305,14 +305,14 @@ describe('Project opener', () => {
     // A peer of Browse and Import, present even with nothing in the library.
     await screen.findByText('No Projects yet.');
     const connect = screen.getByRole('button', {
-      name: /Connect existing Agent/,
+      name: /Connect a server/,
     });
     expect(connect).toBeEnabled();
 
     // The route takes the screen, exactly as the native folder picker does.
     fireEvent.click(connect);
     const dialog = await screen.findByRole('dialog', {
-      name: 'Connect existing Agent',
+      name: 'Connect a server',
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(document.querySelector('[data-project-opener]')).toBeNull();
@@ -330,7 +330,7 @@ describe('Project opener', () => {
     // Connecting finished the errand: the chooser does not come back.
     expect(onOpenChange.mock.calls.map(([value]) => value)).toEqual([false]);
     expect(
-      screen.queryByRole('dialog', { name: 'Connect existing Agent' })
+      screen.queryByRole('dialog', { name: 'Connect a server' })
     ).toBeNull();
   });
 
@@ -351,10 +351,10 @@ describe('Project opener', () => {
     });
 
     fireEvent.click(
-      await screen.findByRole('button', { name: /Connect existing Agent/ })
+      await screen.findByRole('button', { name: /Connect a server/ })
     );
     const dialog = await screen.findByRole('dialog', {
-      name: 'Connect existing Agent',
+      name: 'Connect a server',
     });
     // Mapping is explicit, so the flow is handed the Projects it may choose.
     expect(within(dialog).getByText('Can place into Project')).toBeVisible();
@@ -369,7 +369,7 @@ describe('Project opener', () => {
       ])
     );
     expect(
-      await screen.findByRole('button', { name: /Connect existing Agent/ })
+      await screen.findByRole('button', { name: /Connect a server/ })
     ).toBeEnabled();
   });
 
@@ -463,7 +463,7 @@ describe('Project opener', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: /Connect existing Agent/ })
+        screen.getByRole('button', { name: /Connect a server/ })
       ).toBeDisabled()
     );
     expect(screen.getByText('Desktop app only')).toBeInTheDocument();
@@ -488,7 +488,7 @@ describe('Project opener summoned on the connect route', () => {
     return (
       <>
         <button type="button" onClick={() => opener.summon('connect')}>
-          File: Connect existing Agent
+          File: Connect a server
         </button>
         <ProjectOpener
           open={opener.open}
@@ -510,10 +510,10 @@ describe('Project opener summoned on the connect route', () => {
     render(<Workspace onOpenChange={onOpenChange} />);
 
     fireEvent.click(
-      screen.getByRole('button', { name: 'File: Connect existing Agent' })
+      screen.getByRole('button', { name: 'File: Connect a server' })
     );
     const dialog = await screen.findByRole('dialog', {
-      name: 'Connect existing Agent',
+      name: 'Connect a server',
     });
     // Connect took the screen; the chooser is the owner underneath.
     expect(document.querySelector('[data-project-opener]')).toBeNull();
@@ -525,7 +525,7 @@ describe('Project opener summoned on the connect route', () => {
     // The chooser is back on the routes Connect sits beside, once.
     await screen.findByText('No Projects yet.');
     expect(
-      screen.queryByRole('dialog', { name: 'Connect existing Agent' })
+      screen.queryByRole('dialog', { name: 'Connect a server' })
     ).toBeNull();
     expect(onOpenChange.mock.calls.map(([value]) => value)).toEqual([
       false,
@@ -540,11 +540,11 @@ describe('Project opener summoned on the connect route', () => {
       expect(document.querySelector('[data-project-opener]')).toBeNull()
     );
     expect(
-      screen.queryByRole('dialog', { name: 'Connect existing Agent' })
+      screen.queryByRole('dialog', { name: 'Connect a server' })
     ).toBeNull();
     fireEvent.click(
-      screen.getByRole('button', { name: 'File: Connect existing Agent' })
+      screen.getByRole('button', { name: 'File: Connect a server' })
     );
-    await screen.findByRole('dialog', { name: 'Connect existing Agent' });
+    await screen.findByRole('dialog', { name: 'Connect a server' });
   });
 });

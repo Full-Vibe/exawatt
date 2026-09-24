@@ -1,5 +1,6 @@
 /**
- * The Connect flow's product rules, one test each (ENG-010 C2).
+ * The Connect flow's product rules, one test each (ENG-010 C2, one screen
+ * since ENG-033 H2.4 P2).
  *
  * Every fixture value is invented. No hostname, address, user, or key path in
  * this file belongs to anyone's real infrastructure.
@@ -8,9 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SshHostAlias } from '@exawatt/core';
 import {
-  CONNECTABLE_ADAPTER_IDS,
   CONNECT_FAILURE_COPY,
-  CONNECT_ISSUE_CODES,
   CONNECT_STAGES,
   CONNECT_STAGE_COPY,
   CREDENTIAL_OWNER_LABELS,
@@ -18,15 +17,13 @@ import {
   DEFAULT_SSH_PORT,
   NOT_REPORTED,
   PLACEMENT_LABELS,
-  canGoBack,
+  canTestServer,
   cancelConnectFlow,
   connectFlowReducer,
   connectionFacts,
   credentialOwnerForTransport,
   emptyManualDraft,
-  existingSourceIdForAlias,
   initialConnectFlowState,
-  isConnectableAdapter,
   mappingRowsFor,
   partitionAgents,
   placementForTransport,
@@ -36,25 +33,26 @@ import {
   stageForPhase,
   validateManualDraft,
   validateMappingRows,
-  type AgentMappingRow,
+  visibleServerRows,
   type ConnectAction,
   type ConnectFlowState,
   type DiscoveredAgent,
+  type ProjectTarget,
 } from './connect-source-model';
 
-const ALIASES: readonly SshHostAlias[] = [
-  {
-    alias: 'atlas-box',
+function alias(name: string): SshHostAlias {
+  return {
+    alias: name,
     hasHostName: true,
     hasUser: true,
     hasIdentityFile: false,
-  },
-  {
-    alias: 'beacon-box',
-    hasHostName: false,
-    hasUser: false,
-    hasIdentityFile: false,
-  },
+  };
+}
+
+const ALIASES: readonly SshHostAlias[] = [
+  alias('atlas-box'),
+  alias('beacon-box'),
+  alias('cinder-box'),
 ];
 
 const AGENTS: readonly DiscoveredAgent[] = [
@@ -92,6 +90,8 @@ const FACTS = connectionFacts({
   credentialOwner: 'source-owned-ssh',
 });
 
+const REMOTE: ProjectTarget = { kind: 'new-project', name: 'Remote' };
+
 function run(
   actions: readonly ConnectAction[],
   from: ConnectFlowState = initialConnectFlowState()
@@ -99,108 +99,79 @@ function run(
   return actions.reduce(connectFlowReducer, from);
 }
 
-const TO_SERVER: readonly ConnectAction[] = [
-  { type: 'choose-adapter', adapterId: 'openclaw' },
+const LOADED: readonly ConnectAction[] = [
   {
-    type: 'aliases-loaded',
+    type: 'servers-loaded',
     aliases: ALIASES,
+    connected: [{ alias: 'cinder-box', agentNames: ['Scout', 'reddit'] }],
     configPresent: true,
     incompleteIncludes: false,
   },
 ];
 
-const TO_TESTING: readonly ConnectAction[] = [
-  ...TO_SERVER,
-  {
+function started(name: string, sourceId: string, owned = true): ConnectAction {
+  return {
     type: 'test-started',
-    alias: 'atlas-box',
-    sourceId: 'source-1',
+    alias: name,
+    sourceId,
     operatorAuthored: false,
-    owned: true,
-  },
+    owned,
+  };
+}
+
+const TESTING: readonly ConnectAction[] = [
+  ...LOADED,
+  started('atlas-box', 'source-1'),
 ];
 
-const TO_AGENTS: readonly ConnectAction[] = [
-  ...TO_TESTING,
-  { type: 'agents-discovered', agents: AGENTS, facts: FACTS },
+const READY: readonly ConnectAction[] = [
+  ...TESTING,
+  { type: 'agents-discovered', agents: AGENTS, facts: FACTS, version: '2.4.0' },
 ];
 
-const TO_MAPPING: readonly ConnectAction[] = [
-  ...TO_AGENTS,
-  { type: 'to-mapping' },
-];
+function rowOf(state: ConnectFlowState, name: string) {
+  return visibleServerRows(state).rows.find(row => row.alias === name);
+}
 
-const TO_SETTLED: readonly ConnectAction[] = [
-  ...TO_MAPPING,
-  { type: 'save', knownProjectIds: [] },
-];
-
-describe('Connect flow: choosing a source', () => {
-  it('opens on the adapter choice with nothing pending', () => {
-    const state = initialConnectFlowState();
-    expect(state.step.kind).toBe('choose-source');
-    expect(state.pendingSourceId).toBeNull();
-    expect(state.settled).toBe(false);
-  });
-
-  it('moves to the server choice once OpenClaw is chosen', () => {
-    const state = run([{ type: 'choose-adapter', adapterId: 'openclaw' }]);
-    expect(state.step.kind).toBe('choose-server');
-    expect(state.adapterId).toBe('openclaw');
-    expect(state.issues).toEqual([]);
-  });
-
-  it('reports an adapter it cannot carry instead of advancing', () => {
-    const state = run([{ type: 'choose-adapter', adapterId: 'claude' }]);
-    expect(state.step.kind).toBe('choose-source');
-    expect(state.issues.map(issue => issue.code)).toEqual([
-      'adapter-not-connectable',
+describe('Connect: listing servers', () => {
+  it('lists the operator aliases in their order without contacting any', () => {
+    const state = run(LOADED);
+    expect(visibleServerRows(state).rows.map(row => row.alias)).toEqual([
+      'atlas-box',
+      'beacon-box',
+      'cinder-box',
     ]);
+    expect(state.attempt).toBeNull();
   });
 
-  it('names OpenClaw as the connectable adapter', () => {
-    expect(CONNECTABLE_ADAPTER_IDS).toEqual(['openclaw']);
-    expect(isConnectableAdapter('openclaw')).toBe(true);
-    expect(isConnectableAdapter('codex')).toBe(false);
+  it('names what a connected server already brings, and never tests it again', () => {
+    const state = run(LOADED);
+    expect(rowOf(state, 'cinder-box')).toMatchObject({
+      state: 'connected',
+      detail: 'Connected · Scout, reddit',
+    });
+    expect(canTestServer(state, 'cinder-box')).toBe(false);
+    expect(canTestServer(state, 'atlas-box')).toBe(true);
   });
-});
 
-describe('Connect flow: choosing a server', () => {
-  it('lists the operator aliases without contacting anything', () => {
-    const state = run(TO_SERVER);
-    if (state.step.kind !== 'choose-server') throw new Error('wrong step');
-    expect(state.step.aliases).toEqual(ALIASES);
-    expect(state.step.manual).toBe(false);
-    expect(state.pendingSourceId).toBeNull();
+  it('narrows by what the operator types, and counts what it hides', () => {
+    const state = run([...LOADED, { type: 'filter', text: 'BEA' }]);
+    const { rows, total } = visibleServerRows(state);
+    expect(rows.map(row => row.alias)).toEqual(['beacon-box']);
+    expect(total).toBe(3);
   });
 
   it('offers manual entry as the path when no SSH config exists', () => {
     const state = run([
-      { type: 'choose-adapter', adapterId: 'openclaw' },
       {
-        type: 'aliases-loaded',
+        type: 'servers-loaded',
         aliases: [],
+        connected: [],
         configPresent: false,
         incompleteIncludes: false,
       },
     ]);
-    if (state.step.kind !== 'choose-server') throw new Error('wrong step');
-    expect(state.step.manual).toBe(true);
-  });
-
-  it('keeps the operator in manual entry once they ask for it', () => {
-    const state = run([
-      ...TO_SERVER,
-      { type: 'set-manual', manual: true },
-      {
-        type: 'aliases-loaded',
-        aliases: ALIASES,
-        configPresent: true,
-        incompleteIncludes: false,
-      },
-    ]);
-    if (state.step.kind !== 'choose-server') throw new Error('wrong step');
-    expect(state.step.manual).toBe(true);
+    expect(state.manual).toBe(true);
   });
 
   it('carries the manual draft defaults', () => {
@@ -237,23 +208,25 @@ describe('Connect flow: choosing a server', () => {
   });
 });
 
-describe('Connect flow: the bounded test', () => {
-  it('starts at the tunnel and advances one named stage at a time', () => {
-    let state = run(TO_TESTING);
-    if (state.step.kind !== 'testing') throw new Error('wrong step');
-    expect(state.step.stage).toBe('tunnel');
-    for (const stage of CONNECT_STAGES) {
-      state = connectFlowReducer(state, { type: 'test-stage', stage });
-      if (state.step.kind !== 'testing') throw new Error('wrong step');
-      expect(state.step.stage).toBe(stage);
-    }
+describe('Connect: testing a server in place', () => {
+  it('tests on the row, advancing one named stage at a time', () => {
+    let state = run(TESTING);
+    expect(rowOf(state, 'atlas-box')).toMatchObject({
+      state: 'testing',
+      detail: CONNECT_STAGE_COPY.tunnel,
+    });
+    state = connectFlowReducer(state, { type: 'test-stage', stage: 'pairing' });
+    expect(rowOf(state, 'atlas-box')?.detail).toBe(CONNECT_STAGE_COPY.pairing);
   });
 
-  /*
-   * The four stages are the session's own phases in the operator's words.
-   * This is the translation, and it is the whole reason the checklist can
-   * move: the surface reads the phase channel main already broadcasts.
-   */
+  it('starts no second test while one is running', () => {
+    const state = run(TESTING);
+    expect(canTestServer(state, 'beacon-box')).toBe(false);
+    expect(connectFlowReducer(state, started('beacon-box', 'source-2'))).toBe(
+      state
+    );
+  });
+
   it('reads each stage off the phase the connection is actually in', () => {
     expect(stageForPhase('opening-tunnel')).toBe('tunnel');
     expect(stageForPhase('bootstrapping')).toBe('credential');
@@ -261,7 +234,7 @@ describe('Connect flow: the bounded test', () => {
     expect(stageForPhase('discovering')).toBe('discovery');
   });
 
-  it('lets no phase outside the bounded test move the checklist', () => {
+  it('lets no phase outside the bounded test move the row', () => {
     for (const phase of [
       'idle',
       'connected',
@@ -273,56 +246,100 @@ describe('Connect flow: the bounded test', () => {
     }
   });
 
-  it('leaves the operator on the stage that failed, not the first one', () => {
+  it('keeps a failure on its own row, saying nothing was saved', () => {
     const state = run([
-      ...TO_TESTING,
+      ...TESTING,
       { type: 'test-stage', stage: 'pairing' },
       {
         type: 'test-failed',
-        failure: 'approval-required',
-        message: 'The Gateway is waiting for approval.',
+        failure: 'host-unreachable',
+        message: 'Nothing answered on the server’s SSH port.',
+        released: true,
       },
     ]);
-    if (state.step.kind !== 'failed') throw new Error('wrong step');
-    expect(state.step.stage).toBe('pairing');
+    expect(state.attempt).toBeNull();
+    expect(rowOf(state, 'atlas-box')).toMatchObject({
+      state: 'failed',
+      detail: 'Server unreachable. Nothing was saved.',
+      note: 'Nothing answered on the server’s SSH port.',
+    });
+    expect(state.failures['atlas-box']?.stage).toBe('pairing');
+    // The failed server can be tried again, and others can be picked.
+    expect(canTestServer(state, 'atlas-box')).toBe(true);
+    expect(canTestServer(state, 'beacon-box')).toBe(true);
   });
 
-  it('remembers the record so a retry reuses one server', () => {
-    const state = run(TO_TESTING);
-    expect(existingSourceIdForAlias(state, 'atlas-box')).toBe('source-1');
-    expect(existingSourceIdForAlias(state, 'beacon-box')).toBeNull();
+  it('says so when the failed record could not be released', () => {
+    const state = run([
+      ...TESTING,
+      {
+        type: 'test-failed',
+        failure: 'gateway-down',
+        message: '',
+        released: false,
+      },
+    ]);
+    expect(rowOf(state, 'atlas-box')?.detail).toBe(
+      'Gateway not responding. It is still saved; remove it in Settings.'
+    );
+    expect(rowOf(state, 'atlas-box')?.note).toBe(
+      CONNECT_FAILURE_COPY['gateway-down'].nextStep
+    );
+  });
+
+  it('keeps one server failed while another answers', () => {
+    const state = run([
+      ...TESTING,
+      {
+        type: 'test-failed',
+        failure: 'host-unreachable',
+        message: '',
+        released: true,
+      },
+      started('beacon-box', 'source-2'),
+      {
+        type: 'agents-discovered',
+        agents: AGENTS,
+        facts: FACTS,
+        version: '2.4.0',
+      },
+    ]);
+    expect(rowOf(state, 'atlas-box')?.state).toBe('failed');
+    expect(rowOf(state, 'beacon-box')).toMatchObject({
+      state: 'ready',
+      detail: 'OpenClaw 2.4.0 · 2 Agents',
+    });
+  });
+
+  it('clears a failure when the same server is tried again', () => {
+    const state = run([
+      ...TESTING,
+      {
+        type: 'test-failed',
+        failure: 'host-unreachable',
+        message: '',
+        released: true,
+      },
+      started('atlas-box', 'source-3'),
+    ]);
+    expect(state.failures['atlas-box']).toBeUndefined();
+    expect(rowOf(state, 'atlas-box')?.state).toBe('testing');
   });
 
   it('creates no roster Agents when discovery fails', () => {
     const state = run([
-      ...TO_TESTING,
+      ...TESTING,
       {
         type: 'test-failed',
         failure: 'gateway-down',
-        message: 'The Gateway did not answer.',
+        message: '',
+        released: true,
       },
     ]);
-    if (state.step.kind !== 'failed') throw new Error('wrong step');
-    expect(state.step.failure).toBe('gateway-down');
-    expect(state.settled).toBe(false);
-  });
-
-  it('retries from the failure without stacking a second server', () => {
-    const state = run([
-      ...TO_TESTING,
-      { type: 'test-failed', failure: 'host-unreachable', message: '' },
-      {
-        type: 'test-started',
-        alias: 'atlas-box',
-        sourceId: 'source-1',
-        operatorAuthored: false,
-        owned: true,
-      },
-    ]);
-    expect(state.step.kind).toBe('testing');
-    expect(
-      state.history.filter(step => step.kind === 'choose-server')
-    ).toHaveLength(1);
+    expect(saveConnectFlow(state, [], REMOTE)).toEqual({
+      ok: false,
+      issues: [],
+    });
   });
 
   it('names every stage and every failure class in operator language', () => {
@@ -332,17 +349,8 @@ describe('Connect flow: the bounded test', () => {
     expect(CONNECT_FAILURE_COPY['host-unreachable'].headline).toBe(
       'Server unreachable'
     );
-    expect(CONNECT_FAILURE_COPY['gateway-down'].headline).toBe(
-      'Gateway not responding'
-    );
     expect(CONNECT_FAILURE_COPY['auth-rejected'].headline).toBe(
       'Sign-in rejected'
-    );
-    expect(CONNECT_FAILURE_COPY['approval-required'].headline).toBe(
-      'Approval needed'
-    );
-    expect(CONNECT_FAILURE_COPY.incompatible.headline).toBe(
-      'Version not supported'
     );
   });
 
@@ -361,7 +369,7 @@ describe('Connect flow: the bounded test', () => {
   });
 });
 
-describe('Connect flow: the connection facts', () => {
+describe('Connect: the connection facts', () => {
   it('keeps identity, version, placement, credentials, and capabilities apart', () => {
     expect(FACTS.map(fact => fact.id)).toEqual([
       'identity',
@@ -386,13 +394,34 @@ describe('Connect flow: the connection facts', () => {
     expect(facts[4]?.value).toBe(NOT_REPORTED);
     expect(facts[3]?.value).toBe('Exawatt keychain');
   });
+
+  it('leaves the version out of the row when the source did not report one', () => {
+    const state = run([
+      ...TESTING,
+      {
+        type: 'agents-discovered',
+        agents: AGENTS,
+        facts: FACTS,
+        version: null,
+      },
+    ]);
+    expect(rowOf(state, 'atlas-box')?.detail).toBe('2 Agents');
+  });
 });
 
-describe('Connect flow: choosing Agents', () => {
+describe('Connect: choosing Agents', () => {
   it('preselects configured Agents and no others', () => {
-    const state = run(TO_AGENTS);
-    if (state.step.kind !== 'choose-agents') throw new Error('wrong step');
-    expect([...state.step.selected]).toEqual(['agent-alpha', 'agent-beta']);
+    const state = run(READY);
+    expect(state.attempt?.phase.kind).toBe('ready');
+    if (state.attempt?.phase.kind !== 'ready') return;
+    expect([...state.attempt.phase.selected]).toEqual([
+      'agent-alpha',
+      'agent-beta',
+    ]);
+    expect([...preselectedAgentIds(AGENTS)]).toEqual([
+      'agent-alpha',
+      'agent-beta',
+    ]);
   });
 
   it('separates retired identities from the active roster', () => {
@@ -402,439 +431,307 @@ describe('Connect flow: choosing Agents', () => {
       'agent-beta',
     ]);
     expect(retired.map(agent => agent.nativeAgentId)).toEqual(['agent-gamma']);
-    expect([...preselectedAgentIds(AGENTS)]).not.toContain('agent-gamma');
   });
 
   it('imports a retired Agent only by an explicit act', () => {
-    const before = run(TO_AGENTS);
-    if (before.step.kind !== 'choose-agents') throw new Error('wrong step');
-    expect(before.step.selected.has('agent-gamma')).toBe(false);
-
-    const after = connectFlowReducer(before, {
-      type: 'toggle-agent',
-      nativeAgentId: 'agent-gamma',
-    });
-    if (after.step.kind !== 'choose-agents') throw new Error('wrong step');
-    expect(after.step.selected.has('agent-gamma')).toBe(true);
+    const state = run([
+      ...READY,
+      { type: 'toggle-agent', nativeAgentId: 'agent-gamma' },
+    ]);
+    if (state.attempt?.phase.kind !== 'ready') throw new Error('not ready');
+    expect(state.attempt.phase.selected.has('agent-gamma')).toBe(true);
   });
 
   it('does not let a retired Agent ride a later discovery back in', () => {
     const state = run([
-      ...TO_AGENTS,
+      ...READY,
       { type: 'toggle-agent', nativeAgentId: 'agent-gamma' },
-      { type: 'back' },
+      { type: 'attempt-released' },
+      started('atlas-box', 'source-9'),
       {
-        type: 'test-started',
-        alias: 'atlas-box',
-        sourceId: 'source-1',
-        operatorAuthored: false,
-        owned: true,
+        type: 'agents-discovered',
+        agents: AGENTS,
+        facts: FACTS,
+        version: '2.4.0',
       },
-      { type: 'agents-discovered', agents: AGENTS, facts: FACTS },
     ]);
-    if (state.step.kind !== 'choose-agents') throw new Error('wrong step');
-    expect(state.step.selected.has('agent-gamma')).toBe(false);
+    if (state.attempt?.phase.kind !== 'ready') throw new Error('not ready');
+    expect(state.attempt.phase.selected.has('agent-gamma')).toBe(false);
   });
 
-  it('ignores a toggle for an Agent the source did not report', () => {
-    const before = run(TO_AGENTS);
-    const after = connectFlowReducer(before, {
-      type: 'toggle-agent',
-      nativeAgentId: 'agent-unknown',
-    });
-    expect(after).toBe(before);
+  it('ignores a toggle or rename for an Agent the source did not report', () => {
+    const state = run(READY);
+    expect(
+      connectFlowReducer(state, {
+        type: 'toggle-agent',
+        nativeAgentId: 'agent-invented',
+      })
+    ).toBe(state);
+    expect(
+      connectFlowReducer(state, {
+        type: 'rename-agent',
+        nativeAgentId: 'agent-invented',
+        name: 'Marcus',
+      })
+    ).toBe(state);
   });
 
-  it('asks for a selection before mapping Projects', () => {
+  it('asks for a selection before connecting', () => {
     const state = run([
-      ...TO_AGENTS,
+      ...READY,
       { type: 'toggle-agent', nativeAgentId: 'agent-alpha' },
       { type: 'toggle-agent', nativeAgentId: 'agent-beta' },
-      { type: 'to-mapping' },
     ]);
-    expect(state.step.kind).toBe('choose-agents');
-    expect(state.issues.map(issue => issue.code)).toEqual([
+    const saved = saveConnectFlow(state, [], REMOTE);
+    expect(saved.ok).toBe(false);
+    if (saved.ok) return;
+    expect(saved.issues.map(entry => entry.code)).toEqual([
       'selection-required',
     ]);
   });
 });
 
-describe('Connect flow: Project mapping', () => {
-  it('suggests one renameable Project per imported Agent', () => {
-    const state = run(TO_MAPPING);
-    if (state.step.kind !== 'map-projects') throw new Error('wrong step');
-    expect(state.step.rows).toHaveLength(2);
-    expect(state.step.rows.map(row => row.project)).toEqual([
-      { kind: 'new-project', name: 'social-poster' },
-      { kind: 'new-project', name: 'Beacon' },
-    ]);
+describe('Connect: names and one Project for the batch', () => {
+  it('puts every chosen Agent into the one Project the batch chose', () => {
+    const saved = saveConnectFlow(run(READY), [], REMOTE);
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.rows.map(row => row.project)).toEqual([REMOTE, REMOTE]);
+    expect(saved.openAgentId).toBe('agent-alpha');
+    expect(saved.sourceId).toBe('source-1');
   });
 
   it('never turns the server into a Project', () => {
-    const rows = mappingRowsFor(AGENTS, new Set(['agent-alpha']));
-    const names = rows.map(row =>
-      row.project.kind === 'new-project'
-        ? row.project.name
-        : row.project.projectId
-    );
-    expect(names).toEqual(['social-poster']);
-    expect(names).not.toContain('atlas-box');
-  });
-
-  it('places several Agents in one existing Project when asked', () => {
-    const state = run([
-      ...TO_MAPPING,
-      {
-        type: 'edit-mapping',
-        nativeAgentId: 'agent-alpha',
-        patch: {
-          project: { kind: 'existing-project', projectId: 'project-1' },
-        },
-      },
-      {
-        type: 'edit-mapping',
-        nativeAgentId: 'agent-beta',
-        patch: {
-          project: { kind: 'existing-project', projectId: 'project-1' },
-        },
-      },
-    ]);
-    if (state.step.kind !== 'map-projects') throw new Error('wrong step');
-    expect(
-      state.step.rows.every(
-        row =>
-          row.project.kind === 'existing-project' &&
-          row.project.projectId === 'project-1'
-      )
-    ).toBe(true);
-  });
-
-  it('defaults the display name to the name the source configured', () => {
-    const state = run(TO_MAPPING);
-    if (state.step.kind !== 'map-projects') throw new Error('wrong step');
-    const row = state.step.rows[0] as AgentMappingRow;
-    expect(row.nameOverride).toBeNull();
-    expect(resolvedDisplayName(row)).toBe('social-poster');
-  });
-
-  it('keeps an override the operator typed, and falls back when cleared', () => {
-    const withName = run([
-      ...TO_MAPPING,
-      {
-        type: 'edit-mapping',
-        nativeAgentId: 'agent-alpha',
-        patch: { nameOverride: 'Marcus' },
-      },
-    ]);
-    if (withName.step.kind !== 'map-projects') throw new Error('wrong step');
-    expect(resolvedDisplayName(withName.step.rows[0] as AgentMappingRow)).toBe(
-      'Marcus'
-    );
-
-    const cleared = connectFlowReducer(withName, {
-      type: 'edit-mapping',
-      nativeAgentId: 'agent-alpha',
-      patch: { nameOverride: '' },
-    });
-    if (cleared.step.kind !== 'map-projects') throw new Error('wrong step');
-    const row = cleared.step.rows[0] as AgentMappingRow;
-    expect(row.nameOverride).toBeNull();
-    expect(resolvedDisplayName(row)).toBe('social-poster');
-  });
-
-  it('reports mapping faults instead of throwing them', () => {
-    const rows: AgentMappingRow[] = [
-      {
-        nativeAgentId: 'agent-alpha',
-        sourceName: 'social-poster',
-        nameOverride: '   ',
-        project: { kind: 'new-project', name: '  ' },
-        hasPrimaryConversation: true,
-      },
-      {
-        nativeAgentId: 'agent-beta',
-        sourceName: 'Beacon',
-        nameOverride: 'x'.repeat(200),
-        project: { kind: 'existing-project', projectId: 'project-gone' },
-        hasPrimaryConversation: false,
-      },
-    ];
-    const issues = validateMappingRows(rows, ['project-1']);
-    expect(issues.map(issue => issue.code)).toEqual([
-      'agent-name-required',
-      'project-name-required',
-      'agent-name-too-long',
-      'project-unknown',
-    ]);
-    for (const issue of issues) {
-      expect(CONNECT_ISSUE_CODES).toContain(issue.code);
-      expect(issue.message).not.toContain('—');
+    const saved = saveConnectFlow(run(READY), [], REMOTE);
+    if (!saved.ok) throw new Error('refused');
+    for (const row of saved.rows) {
+      expect(row.project).not.toEqual({
+        kind: 'new-project',
+        name: 'atlas-box',
+      });
     }
   });
 
-  it('reports a Project name past the length bound', () => {
+  it('uses the operator’s choice over the default', () => {
+    const chosen: ProjectTarget = {
+      kind: 'existing-project',
+      projectId: 'project-7',
+    };
+    const saved = saveConnectFlow(
+      run([...READY, { type: 'set-project', project: chosen }]),
+      ['project-7'],
+      REMOTE
+    );
+    if (!saved.ok) throw new Error('refused');
+    expect(saved.rows.every(row => row.project === chosen)).toBe(true);
+  });
+
+  it('defaults the display name to the name the source configured', () => {
+    const saved = saveConnectFlow(run(READY), [], REMOTE);
+    if (!saved.ok) throw new Error('refused');
+    expect(saved.rows[0]?.nameOverride).toBeNull();
+    expect(resolvedDisplayName(saved.rows[0]!)).toBe('social-poster');
+  });
+
+  it('keeps a name the operator typed in place, and falls back when cleared', () => {
+    const named = run([
+      ...READY,
+      { type: 'rename-agent', nativeAgentId: 'agent-alpha', name: 'Marcus' },
+    ]);
+    const saved = saveConnectFlow(named, [], REMOTE);
+    if (!saved.ok) throw new Error('refused');
+    expect(resolvedDisplayName(saved.rows[0]!)).toBe('Marcus');
+
+    const cleared = connectFlowReducer(named, {
+      type: 'rename-agent',
+      nativeAgentId: 'agent-alpha',
+      name: '',
+    });
+    const again = saveConnectFlow(cleared, [], REMOTE);
+    if (!again.ok) throw new Error('refused');
+    expect(again.rows[0]?.nameOverride).toBeNull();
+    expect(resolvedDisplayName(again.rows[0]!)).toBe('social-poster');
+  });
+
+  it('names a Project fault once for the batch, not once per Agent', () => {
+    const blank = saveConnectFlow(run(READY), [], {
+      kind: 'new-project',
+      name: '   ',
+    });
+    expect(blank.ok).toBe(false);
+    if (blank.ok) return;
+    expect(blank.issues).toEqual([
+      {
+        code: 'project-name-required',
+        nativeAgentId: null,
+        message: 'Name the Project.',
+      },
+    ]);
+
+    const gone = saveConnectFlow(run(READY), [], {
+      kind: 'existing-project',
+      projectId: 'project-deleted',
+    });
+    if (gone.ok) throw new Error('accepted a missing Project');
+    expect(gone.issues.map(entry => entry.code)).toEqual(['project-unknown']);
+  });
+
+  it('refuses to settle while a fault stands, and settles in place when clean', () => {
+    const faulted = run([
+      ...READY,
+      {
+        type: 'save',
+        knownProjectIds: [],
+        project: { kind: 'new-project', name: '' },
+      },
+    ]);
+    expect(faulted.settled).toBe(false);
+    expect(faulted.issues.map(entry => entry.code)).toEqual([
+      'project-name-required',
+    ]);
+
+    const settled = run([
+      ...READY,
+      { type: 'save', knownProjectIds: [], project: REMOTE },
+    ]);
+    expect(settled.settled).toBe(true);
+    expect(settled.attempt?.phase.kind).toBe('ready');
+  });
+
+  it('reports a name fault on its Agent', () => {
     const issues = validateMappingRows(
-      [
-        {
-          nativeAgentId: 'agent-alpha',
-          sourceName: 'social-poster',
-          nameOverride: null,
-          project: { kind: 'new-project', name: 'p'.repeat(200) },
-          hasPrimaryConversation: true,
-        },
-      ],
+      mappingRowsFor(
+        AGENTS,
+        new Set(['agent-alpha']),
+        { 'agent-alpha': '   ' },
+        REMOTE
+      ),
       []
     );
-    expect(issues.map(issue => issue.code)).toEqual(['project-name-too-long']);
-  });
-
-  it('refuses to save while a mapping fault stands', () => {
-    const state = run([
-      ...TO_MAPPING,
-      {
-        type: 'edit-mapping',
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: 'agent-name-required',
         nativeAgentId: 'agent-alpha',
-        patch: {
-          project: { kind: 'existing-project', projectId: 'project-x' },
-        },
-      },
-      { type: 'save', knownProjectIds: [] },
+      }),
     ]);
-    expect(state.step.kind).toBe('map-projects');
-    expect(state.settled).toBe(false);
-    expect(state.issues.map(issue => issue.code)).toEqual(['project-unknown']);
-  });
-
-  it('refuses to save a fault without inventing an outcome', () => {
-    const state = run([
-      ...TO_MAPPING,
-      {
-        type: 'edit-mapping',
-        nativeAgentId: 'agent-alpha',
-        patch: { nameOverride: ' ' },
-      },
-    ]);
-    const outcome = saveConnectFlow(state, []);
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) throw new Error('a faulty mapping must not save');
-    expect(outcome.issues.map(issue => issue.code)).toEqual([
-      'agent-name-required',
-    ]);
-  });
-
-  it('hands the mapping on and opens the first chosen Agent', () => {
-    const state = run(TO_MAPPING);
-    const outcome = saveConnectFlow(state, []);
-    if (!outcome.ok) throw new Error('a valid mapping must save');
-    expect(outcome.sourceId).toBe('source-1');
-    expect(outcome.openAgentId).toBe('agent-alpha');
-    expect(outcome.rows.map(row => row.nativeAgentId)).toEqual([
-      'agent-alpha',
-      'agent-beta',
-    ]);
-  });
-
-  /*
-   * There is no terminal screen and there must not be one: connecting closes
-   * through to the coworker. The flow still has to remember that it settled,
-   * because that is what stops the close from releasing the record it just
-   * handed over.
-   */
-  it('settles in place rather than resting on a confirmation screen', () => {
-    const state = run(TO_SETTLED);
-    expect(state.step.kind).toBe('map-projects');
-    expect(state.settled).toBe(true);
   });
 });
 
-describe('Connect flow: going back', () => {
-  it('has nothing behind the first step', () => {
-    expect(canGoBack(initialConnectFlowState())).toBe(false);
+describe('Connect: leaving', () => {
+  it('releases the record this flow created, whatever it was doing', () => {
+    expect(cancelConnectFlow(run(TESTING)).releaseSourceId).toBe('source-1');
+    expect(cancelConnectFlow(run(READY)).releaseSourceId).toBe('source-1');
   });
 
-  it('returns from the server choice to the source choice', () => {
-    const state = run([...TO_SERVER, { type: 'back' }]);
-    expect(state.step.kind).toBe('choose-source');
+  it('never releases a record the flow did not create (BUG-155)', () => {
+    const state = run([...LOADED, started('atlas-box', 'source-live', false)]);
+    expect(cancelConnectFlow(state).releaseSourceId).toBeNull();
   });
 
-  it('returns from the test to the server list with the aliases intact', () => {
-    const state = run([...TO_TESTING, { type: 'back' }]);
-    if (state.step.kind !== 'choose-server') throw new Error('wrong step');
-    expect(state.step.aliases).toEqual(ALIASES);
-  });
-
-  it('returns from a failure to the server list', () => {
+  it('has nothing to release after a failure, which already released it', () => {
     const state = run([
-      ...TO_TESTING,
-      { type: 'test-failed', failure: 'auth-rejected', message: '' },
-      { type: 'back' },
-    ]);
-    expect(state.step.kind).toBe('choose-server');
-  });
-
-  it('keeps typed server details when the operator steps back', () => {
-    const state = run([
-      ...TO_SERVER,
-      { type: 'set-manual', manual: true },
-      { type: 'edit-manual', patch: { label: 'Studio box', user: 'operator' } },
+      ...TESTING,
       {
-        type: 'test-started',
-        alias: 'Studio box',
-        sourceId: 'source-2',
-        operatorAuthored: true,
-        owned: true,
+        type: 'test-failed',
+        failure: 'host-unreachable',
+        message: '',
+        released: true,
       },
-      { type: 'back' },
     ]);
-    if (state.step.kind !== 'choose-server') throw new Error('wrong step');
-    expect(state.step.draft.label).toBe('Studio box');
-    expect(state.step.draft.user).toBe('operator');
-    expect(state.step.manual).toBe(true);
+    expect(cancelConnectFlow(state).releaseSourceId).toBeNull();
   });
 
-  it('returns from Project mapping with the Agent selection intact', () => {
+  it('forgets a released attempt when another server is picked (BUG-157)', () => {
+    const state = run([...READY, { type: 'attempt-released' }]);
+    expect(state.attempt).toBeNull();
+    expect(cancelConnectFlow(state).releaseSourceId).toBeNull();
+  });
+
+  it('leaves a connected source alone once it is the operator’s', () => {
     const state = run([
-      ...TO_AGENTS,
-      { type: 'toggle-agent', nativeAgentId: 'agent-gamma' },
-      { type: 'to-mapping' },
-      { type: 'back' },
+      ...READY,
+      { type: 'save', knownProjectIds: [], project: REMOTE },
     ]);
-    if (state.step.kind !== 'choose-agents') throw new Error('wrong step');
-    expect([...state.step.selected].sort()).toEqual([
-      'agent-alpha',
-      'agent-beta',
-      'agent-gamma',
-    ]);
-  });
-
-  it('never reverses a settled connection', () => {
-    const state = run(TO_SETTLED);
-    expect(canGoBack(state)).toBe(false);
-    expect(connectFlowReducer(state, { type: 'back' })).toBe(state);
-  });
-});
-
-describe('Connect flow: cancelling', () => {
-  const steps: readonly {
-    name: string;
-    actions: readonly ConnectAction[];
-    releases: string | null;
-  }[] = [
-    { name: 'choose-source', actions: [], releases: null },
-    { name: 'choose-server', actions: TO_SERVER, releases: null },
-    { name: 'testing', actions: TO_TESTING, releases: 'source-1' },
-    {
-      name: 'failed',
-      actions: [
-        ...TO_TESTING,
-        { type: 'test-failed', failure: 'host-unreachable', message: '' },
-      ],
-      releases: 'source-1',
-    },
-    { name: 'choose-agents', actions: TO_AGENTS, releases: 'source-1' },
-    { name: 'map-projects', actions: TO_MAPPING, releases: 'source-1' },
-  ];
-
-  for (const step of steps) {
-    it(`saves no source when the operator leaves at ${step.name}`, () => {
-      const state = run(step.actions);
-      expect(state.step.kind).toBe(step.name);
-      const outcome = cancelConnectFlow(state);
-      expect(outcome.savedSource).toBeNull();
-      expect(outcome.releaseSourceId).toBe(step.releases);
-      expect(connectFlowReducer(state, { type: 'cancel' }).settled).toBe(false);
-    });
-  }
-
-  it('returns to the first step so nothing carries into the next attempt', () => {
-    const state = connectFlowReducer(run(TO_MAPPING), { type: 'cancel' });
-    expect(state).toEqual(initialConnectFlowState());
+    expect(cancelConnectFlow(state).releaseSourceId).toBeNull();
+    expect(connectFlowReducer(state, { type: 'attempt-released' })).toBe(state);
   });
 
   it('keeps a server the operator described so they can come back to it', () => {
     const state = run([
-      ...TO_SERVER,
+      ...LOADED,
       { type: 'set-manual', manual: true },
       { type: 'edit-manual', patch: { label: 'Studio box' } },
     ]);
     expect(cancelConnectFlow(state).retainedDraft?.label).toBe('Studio box');
   });
 
-  it('keeps nothing when the operator only clicked an alias', () => {
-    const outcome = cancelConnectFlow(run(TO_TESTING));
-    expect(outcome.retainedDraft).toBeNull();
+  it('keeps nothing when the operator only picked an alias', () => {
+    expect(cancelConnectFlow(run(TESTING)).retainedDraft).toBeNull();
   });
 
-  it('leaves a saved source alone when the dialog closes on the last step', () => {
-    const outcome = cancelConnectFlow(run(TO_SETTLED));
-    expect(outcome.savedSource).toBeNull();
-    expect(outcome.releaseSourceId).toBeNull();
+  it('starts clean after leaving', () => {
+    expect(connectFlowReducer(run(READY), { type: 'cancel' })).toEqual(
+      initialConnectFlowState()
+    );
   });
 });
 
-describe('Connect flow: out of order actions', () => {
+describe('Connect: out of order reports', () => {
   it('ignores a stage report when no test is running', () => {
-    const state = run(TO_SERVER);
+    const state = run(READY);
     expect(
       connectFlowReducer(state, { type: 'test-stage', stage: 'pairing' })
     ).toBe(state);
   });
 
   it('ignores discovery results when no test is running', () => {
-    const state = run(TO_SERVER);
+    const state = run(LOADED);
     expect(
       connectFlowReducer(state, {
         type: 'agents-discovered',
         agents: AGENTS,
         facts: FACTS,
+        version: null,
       })
     ).toBe(state);
   });
 
-  it('ignores a mapping edit outside the mapping step', () => {
-    const state = run(TO_AGENTS);
+  it('ignores a failure report when no test is running', () => {
+    const state = run(READY);
     expect(
       connectFlowReducer(state, {
-        type: 'edit-mapping',
-        nativeAgentId: 'agent-alpha',
-        patch: { nameOverride: 'Marcus' },
+        type: 'test-failed',
+        failure: 'unknown',
+        message: '',
+        released: true,
       })
     ).toBe(state);
   });
 });
 
-describe('releasing on the way out (BUG-155)', () => {
-  it('never releases a record the flow did not create', () => {
-    let state = initialConnectFlowState();
+describe('Connect: a server described by hand', () => {
+  it('stands its test on a row of its own and closes the form once it answers', () => {
+    let state = run([
+      ...LOADED,
+      { type: 'set-manual', manual: true },
+      { type: 'edit-manual', patch: { label: 'Studio box' } },
+      {
+        type: 'test-started',
+        alias: 'Studio box',
+        sourceId: 'source-m',
+        operatorAuthored: true,
+        owned: true,
+      },
+    ]);
+    expect(rowOf(state, 'Studio box')?.state).toBe('testing');
     state = connectFlowReducer(state, {
-      type: 'choose-adapter',
-      adapterId: 'openclaw',
+      type: 'agents-discovered',
+      agents: AGENTS,
+      facts: FACTS,
+      version: '2.4.0',
     });
-    state = connectFlowReducer(state, {
-      type: 'test-started',
-      alias: 'atlas-box',
-      sourceId: 'source-live',
-      operatorAuthored: false,
-      owned: false,
-    });
-    expect(cancelConnectFlow(state).releaseSourceId).toBe(null);
-  });
-
-  it('releases the record it created', () => {
-    let state = initialConnectFlowState();
-    state = connectFlowReducer(state, {
-      type: 'choose-adapter',
-      adapterId: 'openclaw',
-    });
-    state = connectFlowReducer(state, {
-      type: 'test-started',
-      alias: 'atlas-box',
-      sourceId: 'source-new',
-      operatorAuthored: false,
-      owned: true,
-    });
-    expect(cancelConnectFlow(state).releaseSourceId).toBe('source-new');
-    state = connectFlowReducer(state, { type: 'pending-released' });
-    expect(cancelConnectFlow(state).releaseSourceId).toBe(null);
+    expect(state.manual).toBe(false);
+    expect(rowOf(state, 'Studio box')?.state).toBe('ready');
+    expect(cancelConnectFlow(state).retainedDraft?.label).toBe('Studio box');
   });
 });

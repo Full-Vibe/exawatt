@@ -1,29 +1,31 @@
 /**
- * The Connect existing Agent flow, as a pure state machine (ENG-010 C2).
+ * Connect a server, as a pure state machine (ENG-010 C2, reshaped by ENG-033
+ * H2.4 P2 into one screen).
  *
- * No React, no IO, no clock. The dialog renders whatever step this module
- * hands it and dispatches what the operator did; every product rule from
+ * No React, no IO, no clock. The dialog renders what this module hands it and
+ * dispatches what the operator did; every product rule from
  * `docs/engineering/projects/connected-openclaw-and-hosted-agents.md` lives
  * here, so the surface can never disagree with the policy:
  *
+ * - the operator's servers are listed without contacting any of them, and a
+ *   server is reached only once it is picked;
+ * - picking a server tests it in place, on its own row, and a failure stays on
+ *   that row with nothing saved;
  * - retired identities are never preselected and only ever join by an
  *   explicit act;
- * - Project mapping is explicit, suggested per imported Agent, and a Gateway
- *   is never turned into a Project;
+ * - one Project choice covers the batch, and a Gateway is never turned into a
+ *   Project;
  * - a display name defaults to the source's own configured name, and a
  *   persona is never promoted to an identity;
- * - cancelling leaves the source and the remote runtime untouched, and a
- *   failed discovery creates no roster Agents;
+ * - cancelling leaves the remote runtime untouched and releases only a record
+ *   this flow created;
  * - a partially entered server survives as a draft only when the operator
- *   authored it;
- * - back returns to the previous step with its input intact.
+ *   authored it.
  *
- * Validation reports issues; it never throws. A malformed edit leaves the
- * flow standing on the step it was on with the fault named.
+ * Validation reports issues; it never throws.
  */
 
 import type {
-  AgentSourceAdapterId,
   AgentSourcePlacement,
   SourceAgentDiscoveryState,
   SourceCredentialOwner,
@@ -31,20 +33,6 @@ import type {
   SourceFailureClass,
   SshHostAlias,
 } from '@exawatt/core';
-
-/** The adapters the flow can carry today. Others are not connect targets. */
-export const CONNECTABLE_ADAPTER_IDS = ['openclaw'] as const;
-export type ConnectableAdapterId = (typeof CONNECTABLE_ADAPTER_IDS)[number];
-
-const CONNECTABLE_ADAPTER_SET: ReadonlySet<string> = new Set(
-  CONNECTABLE_ADAPTER_IDS
-);
-
-export function isConnectableAdapter(
-  adapterId: AgentSourceAdapterId
-): adapterId is ConnectableAdapterId {
-  return CONNECTABLE_ADAPTER_SET.has(adapterId);
-}
 
 /**
  * The source's own default loopback Gateway port. It is the port the record
@@ -143,7 +131,6 @@ export function emptyManualDraft(): ManualServerDraft {
 }
 
 export const CONNECT_ISSUE_CODES = [
-  'adapter-not-connectable',
   'server-label-required',
   'server-host-required',
   'server-user-required',
@@ -180,139 +167,6 @@ export interface ConnectionFact {
   id: 'identity' | 'version' | 'placement' | 'credential' | 'capabilities';
   label: string;
   value: string;
-}
-
-export type ConnectStep =
-  | { kind: 'choose-source' }
-  | {
-      kind: 'choose-server';
-      aliases: readonly SshHostAlias[];
-      /**
-       * Aliases that already have a saved source. They are shown as
-       * Connected and cannot start a second connect: re-running the flow on a
-       * saved server adopted its record, and Cancel then detached it
-       * (BUG-155).
-       */
-      connectedAliases: readonly string[];
-      configPresent: boolean;
-      incompleteIncludes: boolean;
-      manual: boolean;
-      draft: ManualServerDraft;
-    }
-  | { kind: 'testing'; alias: string; stage: ConnectStage }
-  | {
-      kind: 'failed';
-      alias: string;
-      /**
-       * The stage the test was standing on when it stopped. Carried so the
-       * failure screen can leave the operator looking at the step that
-       * failed: "the pairing never completed" and "the server never answered"
-       * are different problems with different next actions, and a report that
-       * always pointed at the first step would hide which one they have.
-       */
-      stage: ConnectStage;
-      failure: SourceFailureClass;
-      message: string;
-    }
-  | {
-      kind: 'choose-agents';
-      alias: string;
-      sourceId: string;
-      agents: readonly DiscoveredAgent[];
-      selected: ReadonlySet<string>;
-      facts: readonly ConnectionFact[];
-    }
-  | {
-      kind: 'map-projects';
-      alias: string;
-      sourceId: string;
-      rows: readonly AgentMappingRow[];
-    };
-
-export interface ConnectFlowState {
-  step: ConnectStep;
-  /**
-   * The resting steps behind the current one, oldest first. `testing` and
-   * `failed` never enter it: they are in-flight states, and returning to one
-   * would show progress that is not running.
-   */
-  history: readonly ConnectStep[];
-  adapterId: ConnectableAdapterId | null;
-  /** The record this flow created, before it is the operator's to keep. */
-  pendingSourceId: string | null;
-  /** The server that record points at, so a retry reuses it. */
-  pendingAlias: string | null;
-  /**
-   * True only when this flow created the pending record. Leaving releases a
-   * record the flow created and never one it was handed (BUG-155).
-   */
-  pendingOwned: boolean;
-  /** True when the operator described the server rather than picking one. */
-  operatorAuthored: boolean;
-  /**
-   * The mapping has been handed on and the record belongs to the operator.
-   *
-   * There is no step for this, because the product closes straight through to
-   * the Agent rather than parking on a confirmation nobody asked for. The
-   * fact still has to survive the close: it is what tells `cancelConnectFlow`
-   * that the source it can see is a connection the operator kept, not a
-   * half-finished attempt to release.
-   */
-  settled: boolean;
-  issues: readonly ConnectIssue[];
-}
-
-export type ConnectAction =
-  | { type: 'choose-adapter'; adapterId: AgentSourceAdapterId }
-  | {
-      type: 'aliases-loaded';
-      aliases: readonly SshHostAlias[];
-      connectedAliases?: readonly string[];
-      configPresent: boolean;
-      incompleteIncludes: boolean;
-    }
-  | { type: 'set-manual'; manual: boolean }
-  | { type: 'edit-manual'; patch: Partial<ManualServerDraft> }
-  | {
-      type: 'test-started';
-      alias: string;
-      sourceId: string;
-      operatorAuthored: boolean;
-      /** Whether this flow created the record the test runs against. */
-      owned: boolean;
-    }
-  /**
-   * The pending record was released because the operator moved on to a
-   * different server. A failed attempt stays in Settings and keeps dialing
-   * otherwise (BUG-157).
-   */
-  | { type: 'pending-released' }
-  | { type: 'test-stage'; stage: ConnectStage }
-  | { type: 'test-failed'; failure: SourceFailureClass; message: string }
-  | {
-      type: 'agents-discovered';
-      agents: readonly DiscoveredAgent[];
-      facts: readonly ConnectionFact[];
-    }
-  | { type: 'toggle-agent'; nativeAgentId: string }
-  | { type: 'to-mapping' }
-  | {
-      type: 'edit-mapping';
-      nativeAgentId: string;
-      patch: { nameOverride?: string | null; project?: ProjectTarget };
-    }
-  | { type: 'save'; knownProjectIds: readonly string[] }
-  | { type: 'back' }
-  | { type: 'cancel' };
-
-/** What the caller owes the world when the operator walks away. */
-export interface CancelOutcome {
-  /** Cancelling never produces a saved source. The type says so. */
-  savedSource: null;
-  /** A record this flow created that must be removed. Remote work is untouched. */
-  releaseSourceId: string | null;
-  /** The operator's own typing, kept so they can come back to it. */
-  retainedDraft: ManualServerDraft | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -488,21 +342,23 @@ export function resolvedDisplayName(row: AgentMappingRow): string {
 }
 
 /**
- * One suggested Project per imported Agent, named after the Agent, because
- * that is what the first topology looks like. Every row stays editable, and a
- * Gateway is never a Project: the suggestion is per Agent, never per server.
+ * The rows a Connect saves: every chosen Agent, under the name the operator
+ * gave it inline or the source's own, all into the one Project the batch
+ * chose. The Project is chosen for the batch, never derived from the server.
  */
 export function mappingRowsFor(
   agents: readonly DiscoveredAgent[],
-  selected: ReadonlySet<string>
+  selected: ReadonlySet<string>,
+  names: Readonly<Record<string, string | null>>,
+  project: ProjectTarget
 ): readonly AgentMappingRow[] {
   return agents
     .filter(agent => selected.has(agent.nativeAgentId))
     .map(agent => ({
       nativeAgentId: agent.nativeAgentId,
       sourceName: agent.displayName,
-      nameOverride: null,
-      project: { kind: 'new-project', name: agent.displayName },
+      nameOverride: names[agent.nativeAgentId] ?? null,
+      project,
       hasPrimaryConversation: agent.hasPrimaryConversation,
     }));
 }
@@ -548,7 +404,6 @@ export function validateMappingRows(
     issues.push(issue('selection-required', 'Choose at least one Agent.'));
     return issues;
   }
-  const known = new Set(knownProjectIds);
   for (const row of rows) {
     const name = row.nameOverride;
     if (name !== null && nonEmpty(name) === null) {
@@ -568,35 +423,25 @@ export function validateMappingRows(
         )
       );
     }
-
-    if (row.project.kind === 'new-project') {
-      const projectName = nonEmpty(row.project.name);
-      if (projectName === null) {
-        issues.push(
-          issue(
-            'project-name-required',
-            'Name the Project this Agent belongs to.',
-            row.nativeAgentId
-          )
-        );
-      } else if (projectName.length > MAX_NAME_LENGTH) {
-        issues.push(
-          issue(
-            'project-name-too-long',
-            `Keep the Project name to ${MAX_NAME_LENGTH} characters.`,
-            row.nativeAgentId
-          )
-        );
-      }
-    } else if (!known.has(row.project.projectId)) {
+  }
+  // One Project for the batch, so one fault for it, not one per Agent.
+  const project = rows[0]!.project;
+  if (project.kind === 'new-project') {
+    const projectName = nonEmpty(project.name);
+    if (projectName === null) {
+      issues.push(issue('project-name-required', 'Name the Project.'));
+    } else if (projectName.length > MAX_NAME_LENGTH) {
       issues.push(
         issue(
-          'project-unknown',
-          'Choose a Project that still exists.',
-          row.nativeAgentId
+          'project-name-too-long',
+          `Keep the Project name to ${MAX_NAME_LENGTH} characters.`
         )
       );
     }
+  } else if (!new Set(knownProjectIds).has(project.projectId)) {
+    issues.push(
+      issue('project-unknown', 'Choose a Project that still exists.')
+    );
   }
   return issues;
 }
@@ -614,37 +459,265 @@ function isPort(value: number): boolean {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Machine                                                                    */
+/* The one screen                                                             */
 /* -------------------------------------------------------------------------- */
+
+/** A server Exawatt already keeps a source for, with the coworkers it maps. */
+export interface ConnectedServer {
+  alias: string;
+  agentNames: readonly string[];
+}
+
+/** The server under test, or tested and ready to connect. */
+export interface ConnectAttempt {
+  alias: string;
+  sourceId: string;
+  /**
+   * True only when this flow created the record. Leaving releases a record
+   * the flow created and never one it was handed (BUG-155).
+   */
+  owned: boolean;
+  /** True when the operator described the server rather than picking one. */
+  operatorAuthored: boolean;
+  phase:
+    | { kind: 'testing'; stage: ConnectStage }
+    | {
+        kind: 'ready';
+        agents: readonly DiscoveredAgent[];
+        selected: ReadonlySet<string>;
+        /** Inline renames. Absent or null means the source's own name. */
+        names: Readonly<Record<string, string | null>>;
+        facts: readonly ConnectionFact[];
+        version: string | null;
+      };
+}
+
+/**
+ * A server whose test stopped. It stays on its own row, and the record the
+ * test ran against was released, so nothing of it is saved (`released`
+ * false says the release itself failed and the record is still in Settings).
+ */
+interface ConnectFailure {
+  stage: ConnectStage;
+  failure: SourceFailureClass;
+  message: string;
+  released: boolean;
+}
+
+export interface ConnectFlowState {
+  servers: {
+    /** False until the local configuration read answers. */
+    loaded: boolean;
+    aliases: readonly SshHostAlias[];
+    connected: readonly ConnectedServer[];
+    configPresent: boolean;
+    incompleteIncludes: boolean;
+  };
+  filter: string;
+  /** True when the operator is describing a server rather than picking one. */
+  manual: boolean;
+  draft: ManualServerDraft;
+  attempt: ConnectAttempt | null;
+  failures: Readonly<Record<string, ConnectFailure>>;
+  /**
+   * The batch's Project, once the operator chose one. Null means the host's
+   * default stands, which the dialog passes in because only it knows the
+   * Projects and the coworkers already connected.
+   */
+  project: ProjectTarget | null;
+  /**
+   * The mapping has been handed on and the record belongs to the operator.
+   * There is no step for this: the flow closes straight through to the Agent.
+   */
+  settled: boolean;
+  issues: readonly ConnectIssue[];
+}
+
+export type ConnectAction =
+  | {
+      type: 'servers-loaded';
+      aliases: readonly SshHostAlias[];
+      connected: readonly ConnectedServer[];
+      configPresent: boolean;
+      incompleteIncludes: boolean;
+    }
+  | { type: 'filter'; text: string }
+  | { type: 'set-manual'; manual: boolean }
+  | { type: 'edit-manual'; patch: Partial<ManualServerDraft> }
+  | {
+      type: 'test-started';
+      alias: string;
+      sourceId: string;
+      operatorAuthored: boolean;
+      owned: boolean;
+    }
+  | { type: 'test-stage'; stage: ConnectStage }
+  | {
+      type: 'test-failed';
+      failure: SourceFailureClass;
+      message: string;
+      released: boolean;
+    }
+  | {
+      type: 'agents-discovered';
+      agents: readonly DiscoveredAgent[];
+      facts: readonly ConnectionFact[];
+      version: string | null;
+    }
+  /** The ready attempt was released because the operator picked another server. */
+  | { type: 'attempt-released' }
+  | { type: 'toggle-agent'; nativeAgentId: string }
+  | { type: 'rename-agent'; nativeAgentId: string; name: string | null }
+  | { type: 'set-project'; project: ProjectTarget }
+  | { type: 'save'; knownProjectIds: readonly string[]; project: ProjectTarget }
+  | { type: 'cancel' };
+
+/** What the caller owes the world when the operator walks away. */
+export interface CancelOutcome {
+  /** Cancelling never produces a saved source. The type says so. */
+  savedSource: null;
+  /** A record this flow created that must be removed. Remote work is untouched. */
+  releaseSourceId: string | null;
+  /** The operator's own typing, kept so they can come back to it. */
+  retainedDraft: ManualServerDraft | null;
+}
+
+/** How one server row reads. */
+type ServerRowState =
+  | 'idle'
+  | 'connected'
+  | 'testing'
+  | 'ready'
+  | 'failed';
+
+export interface ServerRow {
+  alias: string;
+  state: ServerRowState;
+  /** The line under the name: progress, result, failure, or its coworkers. */
+  detail: string | null;
+  /** The source's own words for a failure, or what to do next. */
+  note: string | null;
+}
 
 export function initialConnectFlowState(): ConnectFlowState {
   return {
-    step: { kind: 'choose-source' },
-    history: [],
-    adapterId: null,
-    pendingSourceId: null,
-    pendingAlias: null,
-    pendingOwned: false,
-    operatorAuthored: false,
+    servers: {
+      loaded: false,
+      aliases: [],
+      connected: [],
+      configPresent: false,
+      incompleteIncludes: false,
+    },
+    filter: '',
+    manual: false,
+    draft: emptyManualDraft(),
+    attempt: null,
+    failures: {},
+    project: null,
     settled: false,
     issues: [],
   };
 }
 
-export function canGoBack(state: ConnectFlowState): boolean {
-  return state.history.length > 0 && !state.settled;
+function agentCount(count: number): string {
+  return count === 1 ? '1 Agent' : `${count} Agents`;
+}
+
+function rowFor(state: ConnectFlowState, alias: string): ServerRow {
+  const attempt = state.attempt?.alias === alias ? state.attempt : null;
+  if (attempt?.phase.kind === 'testing') {
+    return {
+      alias,
+      state: 'testing',
+      detail: CONNECT_STAGE_COPY[attempt.phase.stage],
+      note: null,
+    };
+  }
+  if (attempt?.phase.kind === 'ready') {
+    const configured = partitionAgents(attempt.phase.agents).configured.length;
+    return {
+      alias,
+      state: 'ready',
+      detail: [
+        attempt.phase.version ? `OpenClaw ${attempt.phase.version}` : null,
+        agentCount(configured),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      note: null,
+    };
+  }
+  const failure = state.failures[alias];
+  if (failure) {
+    const copy = CONNECT_FAILURE_COPY[failure.failure];
+    return {
+      alias,
+      state: 'failed',
+      detail: `${copy.headline}. ${
+        failure.released
+          ? 'Nothing was saved.'
+          : 'It is still saved; remove it in Settings.'
+      }`,
+      note: nonEmpty(failure.message) ?? copy.nextStep,
+    };
+  }
+  const connected = state.servers.connected.find(
+    entry => entry.alias === alias
+  );
+  if (connected) {
+    return {
+      alias,
+      state: 'connected',
+      detail:
+        connected.agentNames.length > 0
+          ? `Connected · ${connected.agentNames.join(', ')}`
+          : 'Connected',
+      note: null,
+    };
+  }
+  return { alias, state: 'idle', detail: null, note: null };
 }
 
 /**
- * What saving produces, decided once.
- *
- * The flow has no terminal screen: connecting closes through to the coworker,
- * because that is what the operator asked for and a "Connected." page with a
- * Done button on it is a step between them and the person they came to see.
- * So the outcome is a value the caller acts on rather than a state the
- * machine rests in, and the reducer reads this same function, which is what
- * stops the surface and the machine from holding two opinions about whether a
- * mapping was good enough to keep.
+ * The server list as the operator reads it: every alias from their own
+ * configuration, in their order, narrowed by what they typed. A server
+ * described by hand that is under test, ready, or failed is listed too, so
+ * its result has a row to stand on.
+ */
+export function visibleServerRows(state: ConnectFlowState): {
+  rows: readonly ServerRow[];
+  total: number;
+} {
+  const aliases = state.servers.aliases.map(alias => alias.alias);
+  // A described server has no alias to stand on, so its test or its failure
+  // is listed after the operator's own servers.
+  const authored = [
+    ...(state.attempt?.operatorAuthored ? [state.attempt.alias] : []),
+    ...Object.keys(state.failures),
+  ].filter(
+    (alias, index, all) =>
+      !aliases.includes(alias) && all.indexOf(alias) === index
+  );
+  const all = [...aliases, ...authored];
+  const needle = state.filter.trim().toLowerCase();
+  const shown =
+    needle.length === 0
+      ? all
+      : all.filter(alias => alias.toLowerCase().includes(needle));
+  return { rows: shown.map(alias => rowFor(state, alias)), total: all.length };
+}
+
+/** True when picking this server would start a test right now. */
+export function canTestServer(state: ConnectFlowState, alias: string): boolean {
+  if (state.settled || state.attempt?.phase.kind === 'testing') return false;
+  if (state.attempt?.alias === alias) return false;
+  return !state.servers.connected.some(entry => entry.alias === alias);
+}
+
+/**
+ * What saving produces, decided once. The reducer reads this same function,
+ * which stops the surface and the machine from holding two opinions about
+ * whether a mapping was good enough to keep.
  */
 export type ConnectSaveOutcome =
   | { ok: false; issues: readonly ConnectIssue[] }
@@ -658,49 +731,41 @@ export type ConnectSaveOutcome =
 
 export function saveConnectFlow(
   state: ConnectFlowState,
-  knownProjectIds: readonly string[]
+  knownProjectIds: readonly string[],
+  defaultProject: ProjectTarget
 ): ConnectSaveOutcome {
-  if (state.step.kind !== 'map-projects') {
-    return { ok: false, issues: [] };
-  }
-  const issues = validateMappingRows(state.step.rows, knownProjectIds);
+  const attempt = state.attempt;
+  if (attempt?.phase.kind !== 'ready') return { ok: false, issues: [] };
+  const rows = mappingRowsFor(
+    attempt.phase.agents,
+    attempt.phase.selected,
+    attempt.phase.names,
+    state.project ?? defaultProject
+  );
+  const issues = validateMappingRows(rows, knownProjectIds);
   if (issues.length > 0) return { ok: false, issues };
   return {
     ok: true,
-    sourceId: state.step.sourceId,
-    openAgentId: state.step.rows[0]?.nativeAgentId ?? null,
-    rows: state.step.rows,
+    sourceId: attempt.sourceId,
+    openAgentId: rows[0]?.nativeAgentId ?? null,
+    rows,
   };
 }
 
 /**
- * The record a retry should reuse. Adding a second record for the same server
- * because the first attempt failed would leave the operator two sources for
- * one machine.
- */
-export function existingSourceIdForAlias(
-  state: ConnectFlowState,
-  alias: string
-): string | null {
-  return state.pendingAlias === alias ? state.pendingSourceId : null;
-}
-
-/**
  * What leaving now costs. Nothing on the server and nothing in the roster: the
- * only local effect is releasing the record this flow created, so a server the
- * operator walked away from is not left half-connected in Settings. Their own
- * typing comes back with them; an alias they merely clicked leaves nothing to
- * come back to.
+ * only local effect is releasing the record this flow created. Their own
+ * typing comes back with them; an alias they merely clicked leaves nothing.
  */
 export function cancelConnectFlow(state: ConnectFlowState): CancelOutcome {
-  const draft = manualDraftOf(state);
   const authored =
-    state.operatorAuthored || (draft !== null && draftHasContent(draft));
+    Boolean(state.attempt?.operatorAuthored) || draftHasContent(state.draft);
+  const attempt = state.attempt;
   return {
     savedSource: null,
     releaseSourceId:
-      state.settled || !state.pendingOwned ? null : state.pendingSourceId,
-    retainedDraft: authored ? draft : null,
+      attempt && attempt.owned && !state.settled ? attempt.sourceId : null,
+    retainedDraft: authored ? state.draft : null,
   };
 }
 
@@ -713,227 +778,178 @@ function draftHasContent(draft: ManualServerDraft): boolean {
   );
 }
 
-function manualDraftOf(state: ConnectFlowState): ManualServerDraft | null {
-  const server = [state.step, ...state.history].find(
-    (step): step is Extract<ConnectStep, { kind: 'choose-server' }> =>
-      step.kind === 'choose-server'
-  );
-  return server ? server.draft : null;
-}
-
 export function connectFlowReducer(
   state: ConnectFlowState,
   action: ConnectAction
 ): ConnectFlowState {
   switch (action.type) {
-    case 'choose-adapter': {
-      if (!isConnectableAdapter(action.adapterId)) {
-        return {
-          ...state,
-          issues: [
-            issue(
-              'adapter-not-connectable',
-              'OpenClaw is the source Exawatt connects to today.'
-            ),
-          ],
-        };
-      }
+    case 'servers-loaded':
       return {
         ...state,
-        adapterId: action.adapterId,
-        issues: [],
-        history: push(state.history, state.step),
-        step: {
-          kind: 'choose-server',
-          aliases: [],
-          connectedAliases: [],
-          configPresent: false,
-          incompleteIncludes: false,
-          manual: false,
-          draft: emptyManualDraft(),
-        },
-      };
-    }
-
-    case 'aliases-loaded': {
-      if (state.step.kind !== 'choose-server') return state;
-      return {
-        ...state,
-        step: {
-          ...state.step,
+        servers: {
+          loaded: true,
           aliases: action.aliases,
-          connectedAliases: action.connectedAliases ?? [],
+          connected: action.connected,
           configPresent: action.configPresent,
           incompleteIncludes: action.incompleteIncludes,
-          // With no configuration to choose from, describing the server is the
-          // path, not a fallback the operator has to go looking for.
-          manual: state.step.manual || !action.configPresent,
+        },
+        // With no configuration to choose from, describing the server is the
+        // path, not a fallback the operator has to go looking for.
+        manual: state.manual || !action.configPresent,
+      };
+
+    case 'filter':
+      return { ...state, filter: action.text };
+
+    case 'set-manual':
+      if (state.settled) return state;
+      return { ...state, issues: [], manual: action.manual };
+
+    case 'edit-manual':
+      return {
+        ...state,
+        issues: [],
+        draft: { ...state.draft, ...action.patch },
+      };
+
+    case 'test-started': {
+      if (state.settled || state.attempt?.phase.kind === 'testing') {
+        return state;
+      }
+      const { [action.alias]: _cleared, ...failures } = state.failures;
+      return {
+        ...state,
+        issues: [],
+        failures,
+        attempt: {
+          alias: action.alias,
+          sourceId: action.sourceId,
+          owned: action.owned,
+          operatorAuthored: action.operatorAuthored,
+          phase: { kind: 'testing', stage: 'tunnel' },
         },
       };
     }
 
-    case 'set-manual': {
-      if (state.step.kind !== 'choose-server') return state;
-      return {
-        ...state,
-        issues: [],
-        step: { ...state.step, manual: action.manual },
-      };
-    }
-
-    case 'edit-manual': {
-      if (state.step.kind !== 'choose-server') return state;
-      const draft = { ...state.step.draft, ...action.patch };
-      return {
-        ...state,
-        issues: [],
-        step: { ...state.step, draft },
-      };
-    }
-
-    case 'test-started': {
-      if (state.step.kind !== 'choose-server' && state.step.kind !== 'failed') {
-        return state;
-      }
-      const history =
-        state.step.kind === 'choose-server'
-          ? push(state.history, state.step)
-          : state.history;
-      return {
-        ...state,
-        history,
-        pendingSourceId: action.sourceId,
-        pendingAlias: action.alias,
-        pendingOwned: action.owned,
-        operatorAuthored: action.operatorAuthored,
-        issues: [],
-        step: { kind: 'testing', alias: action.alias, stage: 'tunnel' },
-      };
-    }
-
-    case 'pending-released':
-      return {
-        ...state,
-        pendingSourceId: null,
-        pendingAlias: null,
-        pendingOwned: false,
-      };
-
     case 'test-stage': {
-      if (state.step.kind !== 'testing') return state;
-      return { ...state, step: { ...state.step, stage: action.stage } };
+      const attempt = state.attempt;
+      if (attempt?.phase.kind !== 'testing') return state;
+      return {
+        ...state,
+        attempt: {
+          ...attempt,
+          phase: { kind: 'testing', stage: action.stage },
+        },
+      };
     }
 
     case 'test-failed': {
-      if (state.step.kind !== 'testing') return state;
-      // No roster Agent exists yet and none is created here. The flow keeps
-      // the alias so a retry costs one keystroke, and the stage it stopped on
-      // so the report names the step that failed rather than the first one.
+      const attempt = state.attempt;
+      if (attempt?.phase.kind !== 'testing') return state;
+      // No roster Agent exists and none is created here. The failure keeps the
+      // stage it stopped on, so the row names the step that failed.
       return {
         ...state,
-        step: {
-          kind: 'failed',
-          alias: state.step.alias,
-          stage: state.step.stage,
-          failure: action.failure,
-          message: action.message,
+        attempt: null,
+        failures: {
+          ...state.failures,
+          [attempt.alias]: {
+            stage: attempt.phase.stage,
+            failure: action.failure,
+            message: action.message,
+            released: action.released,
+          },
         },
       };
     }
 
     case 'agents-discovered': {
-      if (state.step.kind !== 'testing') return state;
-      const sourceId = state.pendingSourceId;
-      if (sourceId === null) return state;
+      const attempt = state.attempt;
+      if (attempt?.phase.kind !== 'testing') return state;
       return {
         ...state,
-        step: {
-          kind: 'choose-agents',
-          alias: state.step.alias,
-          sourceId,
-          agents: action.agents,
-          selected: preselectedAgentIds(action.agents),
-          facts: action.facts,
+        // A described server that answered is a row now; the form's work is
+        // done.
+        manual: attempt.operatorAuthored ? false : state.manual,
+        attempt: {
+          ...attempt,
+          phase: {
+            kind: 'ready',
+            agents: action.agents,
+            selected: preselectedAgentIds(action.agents),
+            names: {},
+            facts: action.facts,
+            version: action.version,
+          },
         },
       };
     }
 
+    case 'attempt-released':
+      if (state.settled) return state;
+      return { ...state, attempt: null, issues: [] };
+
     case 'toggle-agent': {
-      if (state.step.kind !== 'choose-agents') return state;
-      const known = state.step.agents.some(
+      const attempt = state.attempt;
+      if (attempt?.phase.kind !== 'ready') return state;
+      const known = attempt.phase.agents.some(
         agent => agent.nativeAgentId === action.nativeAgentId
       );
       if (!known) return state;
-      const selected = new Set(state.step.selected);
+      const selected = new Set(attempt.phase.selected);
       if (selected.has(action.nativeAgentId)) {
         selected.delete(action.nativeAgentId);
       } else {
         // The one way a retired identity is imported: the operator says so.
         selected.add(action.nativeAgentId);
       }
-      return { ...state, issues: [], step: { ...state.step, selected } };
+      return {
+        ...state,
+        issues: [],
+        attempt: { ...attempt, phase: { ...attempt.phase, selected } },
+      };
     }
 
-    case 'to-mapping': {
-      if (state.step.kind !== 'choose-agents') return state;
-      const rows = mappingRowsFor(state.step.agents, state.step.selected);
-      if (rows.length === 0) {
-        return {
-          ...state,
-          issues: [issue('selection-required', 'Choose at least one Agent.')],
-        };
+    case 'rename-agent': {
+      const attempt = state.attempt;
+      if (attempt?.phase.kind !== 'ready') return state;
+      if (
+        !attempt.phase.agents.some(
+          agent => agent.nativeAgentId === action.nativeAgentId
+        )
+      ) {
+        return state;
       }
       return {
         ...state,
         issues: [],
-        history: push(state.history, state.step),
-        step: {
-          kind: 'map-projects',
-          alias: state.step.alias,
-          sourceId: state.step.sourceId,
-          rows,
+        attempt: {
+          ...attempt,
+          phase: {
+            ...attempt.phase,
+            names: {
+              ...attempt.phase.names,
+              [action.nativeAgentId]: normalizeOverride(action.name),
+            },
+          },
         },
       };
     }
 
-    case 'edit-mapping': {
-      if (state.step.kind !== 'map-projects') return state;
-      const rows = state.step.rows.map(row =>
-        row.nativeAgentId === action.nativeAgentId
-          ? {
-              ...row,
-              ...(action.patch.nameOverride !== undefined
-                ? { nameOverride: normalizeOverride(action.patch.nameOverride) }
-                : {}),
-              ...(action.patch.project !== undefined
-                ? { project: action.patch.project }
-                : {}),
-            }
-          : row
-      );
-      return { ...state, issues: [], step: { ...state.step, rows } };
-    }
+    case 'set-project':
+      if (state.settled) return state;
+      return { ...state, issues: [], project: action.project };
 
     case 'save': {
-      if (state.step.kind !== 'map-projects') return state;
-      const outcome = saveConnectFlow(state, action.knownProjectIds);
+      const outcome = saveConnectFlow(
+        state,
+        action.knownProjectIds,
+        action.project
+      );
       if (!outcome.ok) return { ...state, issues: outcome.issues };
-      // The step does not move: the caller opens the coworker and the dialog
-      // closes. What changes is custody — this source is the operator's now,
-      // so leaving no longer releases it.
+      // The screen does not move: the caller opens the coworker and the
+      // dialog closes. What changes is custody.
       return { ...state, issues: [], settled: true };
-    }
-
-    case 'back': {
-      if (!canGoBack(state)) return state;
-      const previous = state.history[state.history.length - 1];
-      if (!previous) return state;
-      return {
-        ...state,
-        issues: [],
-        history: state.history.slice(0, -1),
-        step: previous,
-      };
     }
 
     case 'cancel':
@@ -945,11 +961,4 @@ export function connectFlowReducer(
 function normalizeOverride(value: string | null): string | null {
   if (value === null) return null;
   return value.length === 0 ? null : value;
-}
-
-function push(
-  history: readonly ConnectStep[],
-  step: ConnectStep
-): readonly ConnectStep[] {
-  return [...history, step];
 }

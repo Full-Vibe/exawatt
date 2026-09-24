@@ -138,9 +138,9 @@ screenshots, or canonical docs.
 
 There is no separate “remote agents” workspace.
 
-- **⌘N** gains a first-class **Connect existing Agent…** route beside Project
-  open/create. It creates or selects a configured Agent Source, discovers its
-  Agents, and asks where each selected Agent belongs.
+- **⌘N** gains a first-class **Connect a server…** route beside Project
+  open/create. It creates a configured Agent Source, discovers its Agents, and
+  asks which Project the selected Agents join.
 - **Settings → Agent Sources** remains the complete source-instance and
   connection-health surface.
 - **Agent, Team, and Fleet** remain the daily operating surfaces. Agent name and
@@ -148,16 +148,18 @@ There is no separate “remote agents” workspace.
 - The existing `/cloud` preview becomes the eventual management/provisioning
   face for Exawatt-hosted placement, not a second roster.
 
-Initial Project mapping is explicit. The flow suggests one renameable Project
-per imported Agent because that matches the first dogfood topology, but the
-operator may choose an existing Project or place several Agents together. A
-Gateway is never silently turned into a Project.
+Project mapping is explicit and chosen once for the batch (ENG-033 H2.4 P2):
+the default is the Project the connected coworkers already live in, by
+identity, or a new Project named Remote; the operator may choose any existing
+Project instead. A Gateway is never silently turned into a Project.
 
 ### Connect flow
 
-1. Invoke **⌘N → Connect existing Agent…**.
-2. Choose **OpenClaw** and either an existing SSH host alias or a manually
-   entered server. Exawatt may passively list named SSH aliases and
+1. Invoke **⌘N → Connect a server…** (also File → Connect a Server… and
+   Settings).
+2. Pick an existing SSH host alias, filtered by typing, or describe a server.
+   OpenClaw is the only connectable adapter, so there is no adapter step until
+   a second one exists. Exawatt may passively list named SSH aliases and
    source-owned saved remote targets from local configuration, but it never
    probes or connects to one until the operator selects it. Candidate
    enumeration reads only alias/endpoint metadata and never imports secret
@@ -166,11 +168,14 @@ Gateway is never silently turned into a Project.
    resolve the source-owned Gateway credential through that tunnel, and hold it
    in memory only. Exawatt never persists the Gateway token and never asks the
    operator to paste one when the server already declares it.
-4. Run a bounded connection test and show identity, version, placement,
-   credential owner, and observed capabilities separately.
-5. Discover configured Agents. Preselect active configured Agents; show retired
-   or historical identities separately and unchecked.
-6. For each selected Agent, confirm display name and Project mapping.
+4. Run a bounded connection test on the picked server's own row and show
+   identity, version, placement, credential owner, and observed capabilities
+   separately (one disclosure away on that row). A failed test stays on its row
+   and releases the record, so nothing is saved.
+5. Discover configured Agents, listed beneath the server that answered.
+   Preselect active configured Agents; show retired or historical identities
+   separately and unchecked.
+6. Rename any Agent in place and choose one Project for the batch.
 7. Save the configured source and versioned projection; open the selected Agent
    without starting, stopping, or modifying remote work.
 
@@ -181,7 +186,7 @@ operator has authored it. No failed discovery creates roster Agents.
 
 | State                | What the operator sees                                           | Product rule                                                     |
 | -------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
-| No connected sources | One concise Connect existing Agent action                        | No fake remote roster or required hosted signup                  |
+| No connected sources | One concise Connect a server action                              | No fake remote roster or required hosted signup                  |
 | Source draft         | Chosen adapter and local alias/endpoint reference                | Nothing is persisted as an Agent until discovery succeeds        |
 | Testing              | Bounded progress with the exact step: tunnel, auth, discovery    | Cancel leaves source and remote runtime untouched                |
 | Approval required    | The Gateway/device approval needed and how to complete it        | Distinct from bad credentials or an offline Agent                |
@@ -562,7 +567,8 @@ queue with the connected-fleet gate.
   Touches the Project registry, so it lands after the workspace-honesty work
   on signed-in, signed-out, and expired-session registries, and must hold for
   all three.
-- **P2 One-step Connect.** Filter with type-ahead; saved servers marked with
+- **P2 One-step Connect.** LANDED 2026-09-24 except the three items in P2b
+  (log entry of that date). Filter with type-ahead; saved servers marked with
   their Agents and a Manage link to Settings; picking a server tests it in
   place; a failure stays on its row and saves nothing (persist a source only
   after discovery succeeds, which retires BUG-157's release-on-switch); Agents
@@ -570,6 +576,13 @@ queue with the connected-fleet gate.
   "Connect N Agents"; skip the source step while OpenClaw is the only
   connectable adapter; land on the Project with the new coworker marked; a
   ⌘K row and a permanent Settings entry.
+- **P2b Connect follow-ups.** Three P2 items not in the first cut: (1) land on
+  the Project with the new coworker marked, which needs P1's Remote home to be
+  the Project it lands on, so it ships with P1; (2) a ⌘K row, which reverses
+  the `connect-agent-source` verb's recorded decision to have none, so the
+  manifest's reason is rewritten in the same change; (3) the send-access step
+  inside the dialog as the study shows it, which P3 put on the coworker pane
+  the dialog opens onto. The permanent Settings entry already exists.
 - **P3 Send access as server setup.** LANDED 2026-09-24 (log entry of that
   date). One click runs `openclaw devices
   approve <id>` for Exawatt's OWN pending request over the source's SSH
@@ -1784,4 +1797,51 @@ Cost to carry into P5: the one click is six SSH logins (credential read twice
 at two logins each, the list, the approval). Reusing the first credential read
 for the second ask would make it four; measure it in P5's eval before
 changing it.
+
+### 2026-09-24 — Connect in one screen (H2.4 P2)
+
+⌘N → Connect a server… opens straight onto the operator's servers: no source
+step while OpenClaw is the only connectable adapter, a filter that takes focus
+and counts what it hides, and Return on a filter narrowed to one server tests
+it. Picking a server tests it on its own row, stage by stage off main's change
+channel. A failure stays on that row, names the class and the source's own
+sentence, and releases the record before it says "Nothing was saved"; a
+release that itself fails says the record is still in Settings instead. The
+server that answers opens its Agents beneath its row: configured ones checked,
+retired ones apart and unchecked, each renameable in place, the five
+connection facts one disclosure away, and one "Add to" Project for the batch.
+The primary action names what it connects ("Connect Tyler", "Connect 2
+Agents") and closes through to the first Agent as before. A saved server's row
+says what it brings ("Connected · reddit, Scout") with Manage, and cannot start
+a second connect.
+
+The batch's default Project is the one the connected coworkers already live
+in, found by identity from the roster, or a new Project named Remote. That is
+the operator's "special project, like remote" without P1's registry work: P1
+still owns making it an Exawatt-owned, renameable home, and can adopt the
+Project by the identity the mappings already carry.
+
+What did not change: main still needs a saved record to test, so the record is
+written before the test and released on failure or when another server is
+picked (BUG-157's rule, kept for a server that answered and was then passed
+over). A main-side probe that persists only after discovery would remove the
+brief window where a record exists mid-test; nothing the operator sees depends
+on it, so it is not built.
+
+The entry is renamed "Connect a server" everywhere: the dialog title, the ⌘N
+chooser, the File menu ("Connect a Server…"), the verb manifest, Settings, the
+product guide and reference, and the agent-sources eval, which no longer
+clicks an adapter step. Historical records keep the name they had.
+
+Evidence: 47 model and 29 dialog tests, rewritten for one screen, carry every
+rule the step-by-step flow protected (retired identities, BUG-155 custody,
+BUG-157 release, lost mapping acknowledgements, the manual draft, voice). A
+throwaway real-app walkthrough against two Gateway fixtures, through the real
+preload and a stand-in `ssh`, over the operator's twelve-alias shape: a dead
+host failed on its row with nothing saved; typing `claw-a` and Return tested
+the right server; "Connect 2 Agents" landed on Scout; reopening marked the
+server connected with both coworkers; the second server defaulted into the
+same Remote Project and "Connect Tyler" put all three mappings there. One
+connect is ⌘N and three clicks, or ⌘N, two clicks, and a typed name; each
+server costs three SSH logins.
 
