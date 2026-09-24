@@ -2191,6 +2191,11 @@ export function WorkspaceClient() {
             <div
               ref={panesRef}
               data-workspace-stage
+              // Hydration has landed: the saved layout is restored, live
+              // Sessions are adopted, and saves are ungated. The stage renders
+              // before that, so a keyboard verb that needs a Project, or a
+              // layout write, waits for this instead (BUG-221).
+              data-workspace-ready={ready || undefined}
               data-project-exiting={activeProjectExiting || undefined}
               className={`relative min-h-0 flex-1 origin-center transition-[transform,opacity] duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:scale-100 motion-reduce:transition-opacity ${
                 overviewOpen ? 'scale-[0.975] opacity-35' : ''

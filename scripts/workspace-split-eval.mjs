@@ -15,7 +15,11 @@
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  seedWorkspaceLayout,
+  waitForWorkspaceReady,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const OUT = process.env.SPLIT_SCREENSHOT_DIR || '/tmp/exawatt-split-eval';
 mkdirSync(OUT, { recursive: true });
@@ -27,6 +31,35 @@ const check = (name, ok) => {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`);
   if (!ok) failures.push(name);
 };
+
+// Seed: Project A (/tmp) empty, Project B (fresh dir) empty, restored by the
+// launch itself. The live tab is launched through the real ⌘⌥T path below,
+// not seeded. Writing this from the page raced the app's own first save,
+// and ⌘⌥T pressed before hydration had no Project to open a shell in
+// (BUG-221).
+seedWorkspaceLayout(userData, {
+  v: 5,
+  lastUsedDir: '/tmp',
+  activeDir: '/tmp',
+  pinnedTabId: null,
+  recentProjects: [],
+  projects: [
+    {
+      dir: '/tmp',
+      name: 'Alpha',
+      color: '#19E6FF',
+      activeTabId: null,
+      tabs: [],
+    },
+    {
+      dir: emptyProjectDir,
+      name: 'Empty',
+      color: '#FFB84D',
+      activeTabId: null,
+      tabs: [],
+    },
+  ],
+});
 
 await withElectronApp(
   {
@@ -46,39 +79,7 @@ await withElectronApp(
       console.log('[pageerror]', String(e.message || e).slice(0, 300))
     );
 
-    await page.locator('[data-workspace-stage]').waitFor();
-
-    // Seed: Project A (/tmp) empty, Project B (fresh dir) empty. The live
-    // tab is launched through the real ⌘⌥T path below, not seeded.
-    await page.evaluate(
-      ({ emptyDir }) =>
-        window.electron.workspace.save({
-          v: 5,
-          lastUsedDir: '/tmp',
-          activeDir: '/tmp',
-          pinnedTabId: null,
-          recentProjects: [],
-          projects: [
-            {
-              dir: '/tmp',
-              name: 'Alpha',
-              color: '#19E6FF',
-              activeTabId: null,
-              tabs: [],
-            },
-            {
-              dir: emptyDir,
-              name: 'Empty',
-              color: '#FFB84D',
-              activeTabId: null,
-              tabs: [],
-            },
-          ],
-        }),
-      { emptyDir: emptyProjectDir }
-    );
-    await page.reload({ waitUntil: 'networkidle' });
-    await page.locator('[data-workspace-stage]').waitFor();
+    await waitForWorkspaceReady(page);
 
     // launch a real shell in Alpha (⌘⌥T), then pin it (⌘D)
     await page.keyboard.press('Meta+Alt+KeyT');

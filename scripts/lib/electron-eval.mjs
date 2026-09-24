@@ -23,10 +23,12 @@ import {
 import { execFileSync } from 'node:child_process';
 import {
   closeSync,
+  mkdirSync,
   openSync,
   readFileSync,
   realpathSync,
   rmSync,
+  writeFileSync,
   writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -652,4 +654,42 @@ export async function startAgentFromLauncher(page, options = {}) {
     );
   }
   await start.click();
+}
+
+/**
+ * Wait until the workspace has HYDRATED: the saved layout is restored, live
+ * Sessions are adopted, and saves are ungated (BUG-221).
+ *
+ * `[data-command-altitude]` and `[data-workspace-stage]` both render before
+ * that. A keyboard verb pressed in between is silently dropped when it needs
+ * a Project the layout has not restored yet (⌘⌥T, ⌘⌥1, ⌘T, ⌘D), and a
+ * layout written through `workspace.save` can be overwritten by the app's
+ * first save. `eval:workspace:split` pressed ⌘⌥T into exactly that window.
+ * A workspace that failed to load fails here, naming it, rather than timing
+ * out on the marker.
+ */
+export async function waitForWorkspaceReady(page, { timeout } = {}) {
+  const ready = page.locator('[data-workspace-stage][data-workspace-ready]');
+  const failed = page.locator('[data-workspace-load-failure]');
+  await ready.or(failed).first().waitFor({ timeout });
+  if ((await failed.count()) > 0) {
+    throw new Error(
+      `The workspace failed to load: ${(await failed.innerText()).trim()}`
+    );
+  }
+}
+
+/**
+ * Seed the layout a launch restores by writing it where main reads it,
+ * BEFORE the app starts. Writing it from the page instead races the app's own
+ * first save and needs a reload, which is where `eval:workspace:split` and
+ * `eval:workspace:draft` lost their seeded Projects (BUG-221).
+ */
+export function seedWorkspaceLayout(userData, layout) {
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(
+    join(userData, 'workspace.json'),
+    `${JSON.stringify(layout, null, 2)}\n`,
+    { mode: 0o600 }
+  );
 }

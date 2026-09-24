@@ -40,7 +40,10 @@ export function WorkspaceStorageRecovery({
   // Design system: body/title type, reading-card spacing, semantic chrome,
   // and the shared primary/outline action recipe. No new status vocabulary.
   return (
-    <div className="flex h-full items-center justify-center bg-background p-8 font-ui text-foreground">
+    <div
+      data-workspace-load-failure
+      className="flex h-full items-center justify-center bg-background p-8 font-ui text-foreground"
+    >
       <section
         aria-labelledby="workspace-recovery-title"
         className="w-full max-w-lg space-y-4 rounded-lg border border-border bg-card px-5 py-4"
