@@ -907,3 +907,24 @@ Facebook Marketplace. Was that you? If so I'll start looking."
 - Instinct confirms emailed instructions by text before acting, which answers
   the August prompt-injection report for this path. Mail from an unknown
   sender was not tested.
+
+### 2026-09-23 — S5 execution plan and progress
+
+Plan of record for S5, updated as lanes land. Wave 1 changes no behavior: it
+makes the existing four harnesses read from one declaration, so the next source
+costs a fraction of S4.
+
+| Lane | Scope | Files owned | Acceptance | Status |
+| --- | --- | --- | --- | --- |
+| L1 Source ids from the contract | The generator emits the harness and adapter id lists from `contracts/agent-sources.json`. Core exports `isAgentHarness` and `isAgentSourceAdapterId`. Hand-written membership chains and preload unions use them. Notification copy reads the declaration label. | `packages/core/src/agent-sources.ts`, the generator and its outputs, `pty-ipc.ts`, `agent-sources-ipc.ts`, `session-identity-store.ts`, `preload.ts`, `notification-policy.ts` | Adding an id to the contract is the only edit these sites need. `agent-sources:check` covers every generated file. | in progress |
+| L2 One presentation registry | One icon registry and declaration labels for every renderer surface. The launch caption derives from the label. | `harness-icons.tsx`, `agent-sources-settings.tsx`, `connected-sources-section.tsx`, `site/harness-mark.tsx`, `session-overview-card.tsx`, `harnesses.ts`, `agent-types/page.tsx`, consumption labels | Four icon switches become one. Screens look the same. | in progress |
+| L3 Exhaustive behavior tables | Per-harness dispatch (probe, model catalog, resume candidates, conversation catalog) becomes typed tables, so a new harness fails type-check at every site that needs its own code. | `agent-source-registry.ts`, `agent-models.ts`, `resume-candidates.ts`, `conversation-catalog.ts`, dispatch in `session-manager.ts` | The compiler names every missing implementation. | in progress |
+| L4 Gemini CLI probe | Measure the installed Gemini CLI 0.45.0 against the source contracts; desk-check Qwen Code. | none (report) | Verdict recorded here. | in progress |
+
+Wave 2, after wave 1 lands: measure and record the "adding a source"
+checklist against the tree, then S5.2 Gemini CLI if L4 is green. S5.3 needs
+Qwen Code installed and signed in on the operator's Mac.
+
+Ground rules: each code lane works in its own `agent/s5-*` worktree and lands
+through `pnpm agent:land`. Lanes keep exported names stable so they compose,
+and Boy Scout fixes stay inside the lane's own files.
