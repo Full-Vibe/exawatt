@@ -813,3 +813,37 @@ Muse (Meta, launched 2026-09-08) ships as its own app with no third-party
 interface found, so no integration path exists today. Sources: Vellum's
 Instinct breakdown, TechCrunch (2026-08-24), Runtime Wire on the Mac app beta,
 and the Kilo, Hermes and Gemini CLI ACP documentation.
+
+### 2026-09-23 — Operator direction: every harness type first-class
+
+Operator follow-up to the Instinct verdict, given in session:
+
+- Instinct is a daily consumer tool for the operator, valued because it is
+  always on, keeps working between messages, and comes with its own email
+  address, calendar and document storage. It runs a restaurant reservation end
+  to end, including the venue's replies. The goal is to spin up one or more
+  and see them alongside the Exawatt fleet, and eventually have them work with
+  other agents regardless of harness.
+- The bridge is deferred: "maybe it's not worth building that shim yet."
+- The same applies to every harness type. Gemini CLI and Qwen Code are named,
+  and steady progress on harness plurality through S5 is wanted now.
+- OS permissions are product surface. When a plugin needs Full Disk Access or
+  another grant, the request is wrapped in guided onboarding at the moment it
+  is needed: why, what is read, and how to revoke it.
+
+Facts gathered for the S5 design pass:
+
+- Gemini CLI ships lifecycle hooks in `settings.json` (SessionStart,
+  BeforeAgent, AfterAgent, BeforeTool, AfterTool and Notification among them)
+  and an ACP mode. Qwen Code, a Gemini CLI fork, ships hooks and
+  `qwen --acp`. Both can follow the Claude Code pattern, a real terminal plus
+  reported turn and attention truth, if hooks can be injected per launch
+  without mutating `~/.gemini` or `~/.qwen`. That is the first probe.
+- Expected, not verified: a phone-number bridge (Twilio or similar) reaches
+  only an Instinct account registered to that number. Seeing the operator's
+  existing Instinct needs the Messages route; more Instincts means more
+  accounts, each with its own number and invite, and Instinct's terms need
+  checking first.
+- Instinct's own email address is a possible channel that needs no Mac
+  permission. Whether it acts on mail from anyone other than its owner is
+  unknown, and is also its main safety question.

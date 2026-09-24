@@ -1526,3 +1526,14 @@ now also proves the real IPC writes those lines and names no source.
 
 Next is unchanged and still the operator's: connect both Gateways on a build
 that carries this, and let the log say what happens.
+
+### 2026-09-23 — Instinct as the packaging bar for an always-on coworker
+
+Operator evidence, given in session. Instinct is always on, keeps working
+between messages, and arrives with its own email address, calendar and
+document storage, so it can run a restaurant reservation end to end, including
+the venue's replies. The operator wants to spin up one or more such agents and
+see them beside the Exawatt fleet, and says the same applies to every harness
+type. Recorded as demand for H3 managed placement and the per-agent identity it
+implies; ENG-009 owns credentials. No scope is shaped and H3 remains not
+active. [Source-side record](agent-source-architecture.md#2026-09-23--operator-direction-every-harness-type-first-class).

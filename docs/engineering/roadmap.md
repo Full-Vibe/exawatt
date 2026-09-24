@@ -53,6 +53,8 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-038 | Provider consumption accounts                    | active-build | Slice 1 landed — Claude plan windows (session + weeklies) read from the operator's own account render in the meter and `/usage`; spend-class UI and other vendors remain.              |
 | ENG-040 | Semantic agent search                            | planned      | UNSHAPED pending a design pass — reach the Agent by what it did, not by tab title, from `⌘K` and Fleet.                                                                                |
 | ENG-041 | Public defect communication                       | planned      | UNSHAPED pending a design pass — an industry-standard public way to collect, represent, and communicate defects, replacing the private backlog for outside readers. |
+| ENG-042 | Published research                               | planned      | UNSHAPED pending a design pass — publish the fleet's research and investigations as public articles or guides. |
+| ENG-043 | Documentation information architecture           | planned      | UNSHAPED pending a design pass — organize documentation by reader need, with Diátaxis as the candidate framework. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
@@ -1182,7 +1184,7 @@ Milestones:
 - S2.1 OpenCode prelaunch discovery fails soft (landed 2026-08-20; product-feedback `ee18e704` / BUG-095, commit `a03119b4`): failed redundant catalog snapshots no longer abort launch; exact-model requirements remain fail-closed and tested.
 - S3 Provider and model plurality as observed truth (shaped 2026-08-03, follows S2): a provider is a fact a source reports, not an entity Exawatt connects to; the model axis becomes searchable and provider-grouped for catalogs of hundreds; local inference earns a distinct readout (nothing leaves this machine, no billed dollars, watts as the honest unit) and never a distinct code path. Per the operator the near-term job is the UI that shows the app supports this, under the ENG-026 readiness grammar — running local inference is not itself a near-term requirement
 - S4 The Grok Build adapter (landed 2026-08-13; operator-pulled during the Grok Bot wave): xAI's open-source terminal harness is the fourth launchable source — generated declaration, registry facts, D46/D49 launch path, live `grok models` catalog, Exawatt-allocated `--session-id` identity with exact `--resume`, native recent history from its own `summary.json`, and `updates.jsonl` `turn_completed` usage as the ENG-008 local consumption read. Auth stays source-owned (its own OAuth in `~/.grok/auth.json`, never read by Exawatt); decision `0027` is untouched because this is a native harness, not credential injection. TWO shaped assumptions were corrected against the real install: `signals.json` is live context occupancy, not a billed total, so the ledger reads `updates.jsonl` instead; and the interactive TUI exposes no per-launch hook seam, so delegation is declared unobservable and status rides inference like Codex's rather than the ENG-023 channel. Grok-the-model remains launchable via the S2 `opencode` source. Verified facts, both corrections, and the follow-up seam: project doc §S4
-- S5 Source plugins (planned; operator direction 2026-09-23, deliberately unshaped pending a design pass): make the source list data, so a new source is a declared plugin of an existing kind instead of the ~60-file hand-wiring S4 cost. Instinct research found it reachable only as a message thread, so it would ride a conversation kind generalized from the connected OpenClaw path; the Hermes, Kilo Code and Gemini CLI demand would ride terminal-CLI or ACP kinds. Neither is promised before the design pass. [Instinct verdict](projects/agent-source-architecture.md#2026-09-23--instinct-verdict-reachable-only-as-a-text-thread).
+- S5 Source plugins (planned; operator direction 2026-09-23, deliberately unshaped pending a design pass): make the source list data, so a new source is a declared plugin of an existing kind instead of the ~60-file hand-wiring S4 cost. Operator framing: every harness type is first-class, meaning spin up one or more and see them alongside the fleet; Gemini CLI and Qwen Code are named beside the Hermes and Kilo Code demand. Any OS permission a plugin needs (Full Disk Access first) arrives as a guided step at the moment it is needed, never a bare system prompt. Instinct is reachable only as a message thread and would ride a conversation kind generalized from the connected OpenClaw path; the operator defers that bridge. [Instinct verdict](projects/agent-source-architecture.md#2026-09-23--instinct-verdict-reachable-only-as-a-text-thread) · [operator direction](projects/agent-source-architecture.md#2026-09-23--operator-direction-every-harness-type-first-class).
 
 Project doc:
 
@@ -2163,6 +2165,45 @@ Exit criteria: a public reader can see what defects exist, report one, and
 learn what was fixed, without the private backlog being published, and the
 public roadmap's Backlog note points at that surface instead of only saying
 the records are private.
+
+### ENG-042 Published research
+
+Status: planned — deliberately unshaped pending a design pass. Created
+2026-09-23 from operator direction.
+
+Direction (operator, 2026-09-23): the research and investigations the fleet
+already does, such as the ENG-003 Instinct capability verdict, should be
+published "either on our blog or on some sort of guide." The model is
+[Vellum's Instinct breakdown](https://www.vellum.ai/blog/official-instinct-breakdown),
+which reads as authoritative and is cited in other people's research,
+including ours.
+
+Builds on: ENG-031's guides surface, and ENG-030's public/private path
+classification. Internal research under `docs/research/` is private, so a
+published piece is an authored public version, not a projection.
+
+Scope is deliberately not fixed. Questions for the design pass: where it
+lives (a blog, a research section, or guides), which investigations qualify,
+who drafts and reviews, and how a published finding stays current when the
+facts change.
+
+### ENG-043 Documentation information architecture
+
+Status: planned — deliberately unshaped pending a design pass. Created
+2026-09-23 from operator direction.
+
+Direction (operator, 2026-09-23): organize Exawatt's documentation with
+[Diátaxis](https://diataxis.fr/) "or some similar IA framework." Diátaxis
+sorts documentation by what the reader needs: tutorials, how-to guides,
+reference, and explanation.
+
+Builds on: `docs/product/guides/` and `docs/product/reference/`, which already
+separate two of the four, and ENG-031's guides line, which names the OpenClaw
+docs IA as its reference model. The design pass reconciles the two.
+
+Scope is deliberately not fixed. The first question is which documentation it
+governs: the public guides and reference, the internal engineering canon, or
+both.
 
 ## Backlog
 

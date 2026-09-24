@@ -103,6 +103,18 @@ Therefore: **do not build an assignment mechanism until a collision appears that
 
 Vocabulary held by construction and by test: the module's exported copy contains no form of "claim" (`model.test.ts`), and the navigation manifest keyword flipped `claims` → `assignments`. The honest today line stays on screen: handoff today is the operator. No fan-out or coordination mechanism shipped — this is the viewer's designed shape; the substrate (C2 onward) remains gated on evidence.
 
+## 2026-09-23 — Operator direction: collaboration across harness types
+
+Operator: "as we introduce more agent-to-agent collaboration features, have the
+agents work together regardless of what species they are, including
+Instinct." This tests the repo-as-blackboard stance: an agent that lives behind
+a message thread cannot read `.exawatt/`. Collaboration across harness types
+therefore needs a message path beside the repo, and the boundary above (no
+agent-to-agent capability the operator cannot read afterward) applies to it.
+Agent recommendation, not decided: until ENG-006 Approvals exist, a message
+from one agent to another is drafted and the operator sends it, because email
+prompt injection against Instinct has been shown publicly. Unshaped.
+
 ## Sources
 
 - [Blackboard-driven multi-agent coordination (ARIADNE, arXiv 2605.02431)](https://arxiv.org/pdf/2605.02431)
