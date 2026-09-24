@@ -2162,6 +2162,8 @@ Status: planned — accepted 2026-08-04 from the unit-test throughput pass. The 
 
 2026-09-24 bounded application (BUG-206): the stale-async ratchet that guards M0's `useLatestRequest` seam finds hand-rolled guards by shape through the TypeScript AST instead of a name list, and the landing floor runs it on any `src/` change because related-test selection cannot pick a test that imports nothing. It lists the 26 guards that stay, each with a reason. [Milestone log](projects/module-topology.md#2026-09-24--the-stale-async-ratchet-finds-guards-by-shape-bug-206).
 
+2026-09-24 M1 slice: the desktop bridge is one typed contract. `@exawatt/core/desktop-bridge` declares all 116 request channels, the synchronous first-paint read and 30 pushes with the values that cross them, and refuses at compile time any value that could hold a function. Main's handlers, tables and pushes are typed by it, preload's `window.electron` `satisfies` it, the renderer's 1,475-line hand-written `electron.d.ts` is 15 lines that import it, and 39 test files install one double built from it, the only code lint lets write `window.electron`. Consequential renderer input is read at the boundary by per-channel readers typed by the contract. It surfaced BUG-209. Narrative in the [milestone log](projects/module-topology.md#2026-09-24--m1-slice-the-desktop-bridge-is-one-typed-contract).
+
 Scope:
 
 - discover module seams from runtime responsibility, dependency direction, change/test co-occurrence, and existing package boundaries; do not impose a big-bang folder taxonomy
@@ -2180,7 +2182,7 @@ Exit criteria:
 Milestones:
 
 - M0 Seam inventory and baseline (planned; first seam adopted 2026-09-13): dependency graph, cycle map, test co-change evidence, runtime environments, and per-module/full-suite timing baseline. First seam, demanded by BUG-062/BUG-082/incident `0021`: the Agent Source readiness fact model, three modules with one public shape each and one shared async primitive, in the [milestone log](projects/module-topology.md#2026-09-13--m0-first-seam-the-agent-source-readiness-fact-model).
-- M1 Module contracts (planned; first slice split 2026-09-23, enforcement not started): public entrypoints, allowed dependency direction, environment declarations, and mechanical deep-import/cycle enforcement for the first high-change slice. First slice: Electron main as a composition root over single-owner modules, in the [milestone log](projects/module-topology.md#2026-09-23--m1-first-slice-electron-main-is-a-composition-root).
+- M1 Module contracts (planned; first slice split 2026-09-23, enforcement not started): public entrypoints, allowed dependency direction, environment declarations, and mechanical deep-import/cycle enforcement for the first high-change slice. First slice: Electron main as a composition root over single-owner modules, in the [milestone log](projects/module-topology.md#2026-09-23--m1-first-slice-electron-main-is-a-composition-root). Second slice, 2026-09-24: the desktop bridge as one typed contract every side is checked against, in the [milestone log](projects/module-topology.md#2026-09-24--m1-slice-the-desktop-bridge-is-one-typed-contract).
 - M2 Layered suite ownership (planned): colocated module units, boundary contracts, named integration suites, and shared-fixture ownership replace cross-tree test accretion in that slice.
 - M3 Module-aware verification closure (planned): ENG-022 policy selects changed modules plus downstream contracts, with full-suite escalation for shared infrastructure and ambiguous ownership.
 - M4 Measured rollout (planned): extend slice by slice only while the 30-landing no-escape and feedback-time gates stay green.
@@ -2457,6 +2459,21 @@ status line and ticket say which. A gate whose dev server has gone fails the
 ticket, naming the gate and `EXA_BASE`. Replayed on 466: four gates re-run.
 Proven in `scripts/gate-recheck.test.mjs`.
 [Findings](projects/agent-development-loop.md#findings-log).
+
+### BUG-209 A Recently-closed row can name a harness this build does not know
+
+Status: bug · ENG-016 · found 2026-09-24 by the ENG-039 desktop bridge contract.
+
+The Recently-closed ledger is a file, and main admits any string as a row's
+`harness` (`closed-session-ledger.ts` checks `typeof`). The renderer's
+hand-written copy of `ClosedSessionEntry` said `PtyHarness`, so reopening a row
+indexes `HARNESS_META` with it and live consumption types it as a known
+harness. A row written by a build that knew a harness this build does not (a
+retired source, or a downgrade across a new one) reaches both. The contract now
+says `string`; the two sites assume a known harness explicitly, marked
+BUG-209, with behaviour unchanged. The repair needs a decision on what an
+unknown harness reopens as; the ledger's own read must not drop the row, since
+absence is not an answer.
 
 ## Amendment chain
 

@@ -44,6 +44,86 @@ also owns a subscription. Mutation-verified both ways: a new counter under an
 unseen name in a new file fails, and renaming `readGeneration` fails with
 both names.
 
+### 2026-09-24 — M1 slice: the desktop bridge is one typed contract
+
+**Main, preload, the renderer and the tests are now each checked against one
+contract, and checking them found five shapes that were already wrong.** The
+bridge had 116 request channels and 30 pushes named by string literals on
+both sides, a 1,475-line `electron.d.ts` re-declaring main's types by hand, an
+untyped preload object, about 22 inline `typeof` checks, and 39 test files
+building `window.electron` three different ways.
+
+| Piece | Where | What it enforces |
+| --- | --- | --- |
+| The contract | `packages/core/src/desktop-bridge/` (`@exawatt/core/desktop-bridge`) | every channel's arguments and answer, every push payload, `window.electron`; nothing callback-shaped, nothing imported from outside core |
+| Main | `ipc-security.ts`, `ipc-table.ts`, `window-broadcast.ts` | `handleTrusted<C>`, tables and every push typed per channel; ten direct `webContents.send` calls gone |
+| Preload | `preload.ts` | `invoke`/`subscribe` typed by channel; the object `satisfies DesktopBridge`; value imports refused (sandbox) |
+| Renderer | `src/types/electron.d.ts` | `window.electron?: DesktopBridge`, 15 lines; the wire shapes are imported, not copied |
+| Tests | `src/test-support/desktop-bridge-double.ts`, `eslint.config.mjs` | one double, less capable than preload but never more; lint refuses any other write |
+| Input | `electron/main/ipc-arguments.ts` | one reader per consequential channel, returning the contract's argument tuple |
+
+**Where it lives.** Core, not `electron/shared/`: core is already the
+Electron-free module both processes import by package name, main through its
+CommonJS build (already in the packaged runtime payload) and the renderer
+through source, and it already carried this boundary's wire types. A subpath
+keeps the bridge out of core's barrel. `electron/shared/` would have needed a
+tsconfig alias, a Vitest alias, and a hand-written rule to keep Electron out.
+
+**One definition per shape.** Main's wire types moved into the contract and
+main imports them; nothing re-exports the old paths. The pairs the renderer
+had renamed now share a name (`ConnectedGatewayPhase`, `SourceConnectionView`,
+`AgentMappingInput`, `PtyAttention`, `PtyReentryRecap`). Main's
+`PtySessionInfo` is `PtySessionRecord`, what a create answers; a `pty:list`
+row is `PtySessionInfo`, the record plus six live facts, built by one named
+function in `pty-ipc.ts` where it had been an anonymous object. Main's
+settings store instantiates the wire settings with its generated theme ids.
+The summarizer and both monitors declare their event maps, so what they hand
+to pushes is typed at the source.
+
+**Preload is types only.** It runs sandboxed and may require nothing but
+`electron`, so channel names stay literals there, each checked against the
+contract; `preload.test.ts` refuses any other value import. The compiled
+preload still requires `electron` alone.
+
+**Drift the contract caught.**
+
+- `app:checkpoint-request` carries `reason: 'restart'` for the window-management
+  restart; the renderer's type said it could not arrive. Nothing read it.
+- `ClosedSessionEntry.harness` is any string the ledger file holds; the
+  renderer indexed `HARNESS_META` with it. BUG-209.
+- Preload's inline payload types for `app:update-status` and
+  `settings:changed` had fallen behind main.
+- The renderer marked `exitSignal`, a child's `description`, a delegation's
+  `blockedOn` and the six live facts optional "for older mocks"; main always
+  sends them. The legacy-mock `working` fallback in `switcher-rows` is gone.
+- Doubles answered with shapes main never sends: `bufferSince` without
+  `truncated`, `pasteClipboard` resolving to nothing, exit events without
+  `exitSignal`, connect/send/add results without `sourceId`, `status`,
+  `created` or a receipt, change ticks without `connection`, a profile-state
+  write main refuses. One Settings test passed only because its double lacked
+  `isElectron`.
+
+**Input at the boundary.** The inline checks moved into readers with their
+sentences unchanged; the existing validators beside their subsystems
+(`parsePlanRequest`, `parseOperatorStatsSyncEvent`, the connected-source
+readers) stayed. `pty:create` spawn options and the `pty:worktree` git argv,
+which had been trusted, are now read, and refuse as `{ ok: false, error }`.
+The boundary is passed to `handleTrusted` rather than imported by it, so the
+command engine's channel registers without core (BUG-016).
+
+**Teeth, mutation-checked.** A channel renamed in preload only, or in main
+only; a preload method the contract lacks, or one it drops; a `pty:list` row
+missing a live fact; a handler answering a count for a list; a push payload
+renamed; a callback added to `connect` in the channel table or to a method in
+the API; a double given a method the contract lacks, as a literal or through
+a variable: each fails `tsc`. A hand-written `defineProperty` or assignment
+fails lint.
+
+**Not done.** Three eval scripts inject page stubs outside Vitest and are
+named exceptions in the lint; two of them carry shapes the bridge does not
+(`settings.set`, a `bufferSince` answering `data`). The 55 renderer files
+still read `window.electron` directly; an accessor was out of scope.
+
 ### 2026-09-23 — M1 first slice: Electron main is a composition root
 
 **`main.ts` went from 1,761 lines to 339 and now only wires modules; three

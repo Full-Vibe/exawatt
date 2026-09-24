@@ -63,6 +63,24 @@ bootstrap are separate modules. IPC registration is data: module registrars
 are rows in one ordered table and main's own channels are records keyed by
 channel name, all registered through `handleTrusted`.
 
+The main/renderer boundary is one typed contract, the **desktop bridge
+contract** in `@exawatt/core/desktop-bridge` (ENG-039). It declares every
+request, synchronous and push channel with the values that cross it, and the
+`window.electron` object built from them; a compile-time check refuses any
+channel value that could hold a function, because IPC carries only
+structured-clonable values. Every side is derived from it: `handleTrusted`,
+the channel tables and every push are typed per channel in main; preload's
+object `satisfies` the contract's `DesktopBridge` (preload is sandboxed, so it
+takes the contract as types only); the renderer declares `window.electron` as
+that type and imports the wire shapes from the contract rather than copying
+them; and tests install one double built from it
+(`src/test-support/desktop-bridge-double.ts`), the only code lint lets write
+`window.electron`. Main reads consequential renderer input through
+`electron/main/ipc-arguments.ts`, one reader per channel returning the
+contract's argument tuple, before a handler runs. The contract lives in core
+because core is already the Electron-free module both processes import by
+package name; it imports nothing outside core.
+
 The desktop artifact's **runtime payload is a declaration, not a copy**
 (BUG-030). electron-builder ships `dist-electron/**/*` and excludes
 `node_modules/**/*`, so the packed main process can require only what a
