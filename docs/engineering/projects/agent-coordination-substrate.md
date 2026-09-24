@@ -113,7 +113,9 @@ therefore needs a message path beside the repo, and the boundary above (no
 agent-to-agent capability the operator cannot read afterward) applies to it.
 Agent recommendation, not decided: until ENG-006 Approvals exist, a message
 from one agent to another is drafted and the operator sends it, because email
-prompt injection against Instinct has been shown publicly. Unshaped.
+prompt injection against Instinct has been shown publicly. Instinct itself now
+confirms emailed tasks with the operator by text before acting (operator test,
+same day), which matches this default. Unshaped.
 
 ## Sources
 

@@ -891,3 +891,19 @@ Milestones:
 - Later, each on its own trigger: Hermes and Kilo Code (demand rows), the
   conversation kind and Instinct (the operator lifts the bridge deferral), and
   user-added sources (a user asks).
+
+### 2026-09-23 — Instinct email test: it confirms by text
+
+The operator emailed Instinct's own address a small task from one of his own
+addresses. Instinct did not act. It texted him: "Got an email from your
+[operator domain] address asking me to find cheap portable whiteboards on
+Facebook Marketplace. Was that you? If so I'll start looking."
+
+- Email is not a separate channel. Instinct confirms even mail from an address
+  it knows belongs to the operator in the text thread, so any integration
+  still runs through that thread (Messages on the Mac, or a phone-number
+  bridge). The operator's read is that this is clunky for now, and the
+  deferral stands.
+- Instinct confirms emailed instructions by text before acting, which answers
+  the August prompt-injection report for this path. Mail from an unknown
+  sender was not tested.
