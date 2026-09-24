@@ -390,6 +390,9 @@ function resetThrowawayUserData(userData) {
   const temp = realpathOrSelf(tmpdir());
   if (!realpathOrSelf(userData).startsWith(`${temp}/`)) return;
   rmSync(userData, { recursive: true, force: true });
+  // A seeded layout is part of the state the first attempt started from.
+  const seeded = seededLayouts.get(realpathOrSelf(userData));
+  if (seeded) writeWorkspaceLayout(userData, seeded);
 }
 
 async function runElectronAttempt({
@@ -686,6 +689,16 @@ export async function waitForWorkspaceReady(page, { timeout } = {}) {
  * `eval:workspace:draft` lost their seeded Projects (BUG-221).
  */
 export function seedWorkspaceLayout(userData, layout) {
+  writeWorkspaceLayout(userData, layout);
+  // A relaunch after an external teardown wipes the throwaway profile; it
+  // re-applies this seed so the retry starts where the first attempt did.
+  seededLayouts.set(realpathOrSelf(userData), layout);
+}
+
+/** Seeded layouts by profile, for `resetThrowawayUserData`. */
+const seededLayouts = new Map();
+
+function writeWorkspaceLayout(userData, layout) {
   mkdirSync(userData, { recursive: true });
   writeFileSync(
     join(userData, 'workspace.json'),
