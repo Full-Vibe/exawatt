@@ -22,7 +22,7 @@ const slides = [
       <ul className="space-y-6 text-lg sm:text-xl text-muted-foreground max-w-2xl text-left">
         <li className="flex items-start gap-3">
           <span className="text-foreground mt-1">→</span>
-          <span>Teams won&apos;t just be people—they&apos;ll be people and agents working together</span>
+          <span>Teams won&apos;t just be people. They&apos;ll be people and agents working together</span>
         </li>
         <li className="flex items-start gap-3">
           <span className="text-foreground mt-1">→</span>
@@ -30,7 +30,7 @@ const slides = [
         </li>
         <li className="flex items-start gap-3">
           <span className="text-foreground mt-1">→</span>
-          <span>The question isn&apos;t whether agents will work for you—it&apos;s how you&apos;ll manage them</span>
+          <span>The question isn&apos;t whether agents will work for you. It&apos;s how you&apos;ll manage them</span>
         </li>
       </ul>
     ),

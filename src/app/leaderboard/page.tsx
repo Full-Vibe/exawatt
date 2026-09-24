@@ -21,14 +21,14 @@ export const metadata: Metadata = {
   description:
     'Agentmaxxing: the global high-score table for people who command fleets of AI agents.',
   openGraph: {
-    title: 'Leaderboard — Exawatt',
+    title: 'Leaderboard · Exawatt',
     description:
       'See who commands the most machine intelligence, stays hands-off longest, and runs the largest fleet.',
     type: 'website',
   },
   twitter: {
     card: 'summary',
-    title: 'Leaderboard — Exawatt',
+    title: 'Leaderboard · Exawatt',
     description: 'The global high-score table for AI agent operators.',
   },
 };

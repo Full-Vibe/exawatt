@@ -83,9 +83,9 @@ describe('SessionStateTileStudy', () => {
     expect(rail).not.toBeNull();
     // The tile subtree is presentational to AT, so the census must ride the
     // accessible name — the only place a screen-reader user hears the team.
-    expect(delegating.getAttribute('aria-label')).toContain(
-      '3 delegated agents working — Explore, general-purpose'
-    );
+    const name = delegating.getAttribute('aria-label');
+    expect(name).toContain('3 delegated agents working');
+    expect(name).toContain('Explore, general-purpose');
     // three children fit the row budget — all named, no summary row
     expect(rail!.querySelectorAll('[data-delegation-child]')).toHaveLength(3);
     expect(rail!.textContent).toContain('Map conversion checklist coverage');

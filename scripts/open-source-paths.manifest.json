@@ -161,6 +161,7 @@
         "scripts/check-asset-provenance.mjs",
         "scripts/check-dependency-licenses.mjs",
         "scripts/check-production-theme-literals.mjs",
+        "scripts/check-screen-copy.mjs",
         "scripts/ci-batch-worker.mjs",
         "scripts/cold-composer-probe.mjs",
         "scripts/composer-registry-cold-probe.mjs",

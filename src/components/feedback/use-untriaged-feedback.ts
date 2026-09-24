@@ -8,6 +8,7 @@ import {
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { parseFeedbackTriageCapability } from '@/lib/feedback/capability-contract';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import { FEEDBACK_SUBMITTED_EVENT } from './quick-feedback-events';
 
 /**
@@ -25,16 +26,15 @@ import { FEEDBACK_SUBMITTED_EVENT } from './quick-feedback-events';
  */
 export function useUntriagedFeedbackCount(enabled = true): number | null {
   const [count, setCount] = useState<number | null>(null);
+  // Mount and each accepted submission start a sample, and they overlap:
+  // the count on screen is the NEWEST sample's, never whichever response
+  // happened to land last.
+  const samples = useLatestRequest();
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
-    // Mount and each accepted submission start a sample, and they overlap:
-    // the count on screen is the NEWEST sample's, never whichever response
-    // happened to land last.
-    let generation = 0;
     const sample = async () => {
-      const mine = ++generation;
-      const stale = () => cancelled || mine !== generation;
+      const ticket = samples.begin();
+      const stale = () => !ticket.current;
       try {
         const distribution = resolvedDistribution();
         const endpoint = distribution.services.productFeedback;
@@ -84,9 +84,9 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
     const onSubmitted = () => void sample();
     window.addEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
     return () => {
-      cancelled = true;
+      samples.invalidate();
       window.removeEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
     };
-  }, [enabled]);
+  }, [enabled, samples]);
   return enabled ? count : null;
 }

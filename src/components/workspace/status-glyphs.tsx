@@ -229,7 +229,7 @@ export function DelegationRail({
             key={row.key}
             copy={`${row.description ?? row.agentType ?? 'delegated agent'}${
               Number.isFinite(row.startedAt)
-                ? ` — started ${new Date(row.startedAt).toLocaleTimeString()}`
+                ? ` · started ${new Date(row.startedAt).toLocaleTimeString()}`
                 : ''
             }`}
           >

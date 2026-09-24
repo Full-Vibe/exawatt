@@ -177,7 +177,7 @@ function errorHTML(message: string, productName: string): string {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>${escapeHTML(productName)} — Authentication Error</title>
+  <title>${escapeHTML(productName)} · Authentication Error</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;

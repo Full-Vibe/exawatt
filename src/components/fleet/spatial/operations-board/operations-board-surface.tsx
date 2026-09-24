@@ -413,7 +413,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         .map(piece => ({
           id: piece.agentId!,
           label: piece.delegation
-            ? `${piece.label} — ${piece.delegation.count} delegated`
+            ? `${piece.label}, ${piece.delegation.count} delegated`
             : piece.label,
         })),
     [layout.pieces]

@@ -496,19 +496,19 @@ export const SESSION_GLYPH_COPY: Record<SessionGlyphState, string> = {
   // no bytes at all — a long tool call, a slow first token — and a tooltip
   // that names a mechanism the operator can see is not happening teaches them
   // to distrust the light (BUG-008).
-  working: 'working — turn in progress',
-  blocked: 'needs you — waiting on your answer',
-  done: 'result ready — turn finished',
-  fresh: 'new — not given a task yet',
-  quiet: 'quiet — waiting or between turns',
+  working: 'working on a turn',
+  blocked: 'needs your answer',
+  done: 'result ready, turn finished',
+  fresh: 'new, ready for a first task',
+  quiet: 'quiet while idle or between turns',
 };
 
 /** Attention is intentionally calm: it means unseen, not necessarily bad. */
 export const ATTENTION_GLYPH_COPY =
-  'Needs you — Agent requested input or hit a roadmap block. Open this Session to respond.';
+  'Needs you: the Agent asked for input or hit a roadmap block. Open this Session to respond.';
 
 export const FAULT_GLYPH_COPY =
-  'Agent failed — open the Session for error details or recovery.';
+  'Agent failed. Open the Session for error details and recovery.';
 
 /** Compact turn-state words for the tab strip's and ⌘K's own vocabularies.
  *  Keyed on the TURN state, so it is not the word a status light may carry —
@@ -573,9 +573,9 @@ export const SESSION_BLOCKED_COPY: Record<
   string
 > = {
   question:
-    'Needs you — the Agent asked a question and is waiting on your answer.',
-  permission: 'Needs you — the Agent is waiting on a permission decision.',
-  elicitation: 'Needs you — a tool is waiting on input from you.',
+    'Needs you: the Agent asked a question and is waiting on your answer.',
+  permission: 'Needs you: the Agent is waiting on a permission decision.',
+  elicitation: 'Needs you: a tool is waiting on your input.',
 };
 
 /**
@@ -598,7 +598,7 @@ export function delegationCopy(
   const count = `${children.length} delegated ${
     children.length === 1 ? 'agent' : 'agents'
   } working`;
-  return kinds.length > 0 ? `${count} — ${kinds.join(', ')}` : count;
+  return kinds.length > 0 ? `${count}: ${kinds.join(', ')}` : count;
 }
 
 /**

@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react';
 export function chipTooltip(chip: ChipModel): string {
   const method = chip.method === 'declared' ? 'declared at launch' : 'inferred';
   const evidence = chip.evidence.map(e => e.excerpt).join(' · ');
-  return evidence ? `${method} — ${evidence}` : method;
+  return evidence ? `${method}: ${evidence}` : method;
 }
 
 function elapsedLabel(startedAt: number | null, now: number): string | null {

@@ -36,12 +36,12 @@ const STATUS_LEGEND: Array<{
   {
     glyph: <AttentionMarker />,
     label: 'unseen',
-    meaning: 'finished or requested input — ⌘J jumps there',
+    meaning: 'finished or asked for input · ⌘J jumps there',
   },
   {
     glyph: <SessionStatusGlyph state="working" />,
     label: 'working',
-    meaning: 'turn in progress — streaming or thinking',
+    meaning: 'turn in progress, streaming or thinking',
   },
   {
     glyph: <SessionStatusGlyph state="done" />,

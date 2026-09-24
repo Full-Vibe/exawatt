@@ -86,7 +86,7 @@ export const SUBSTRATE = [
     id: 'bus',
     title: 'Bus',
     detail:
-      'Live coordination messages over the harness event channel — bounded payloads, per-Session identity, fail-open.',
+      'Live coordination messages over the harness event channel: bounded payloads, per-Session identity, fail-open.',
     meta: 'harness event channel · ENG-023',
   },
   {
@@ -138,7 +138,7 @@ export const HANDOFF_SPECIMEN = {
     {
       heading: 'Unfinished',
       lines: [
-        'Days seven through ten unscored. Day seven needs the refreshed fixture first — see below.',
+        'Days seven through ten unscored. Day seven waits on the refreshed fixture below.',
       ],
     },
     {

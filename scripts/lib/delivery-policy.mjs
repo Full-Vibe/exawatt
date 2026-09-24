@@ -560,6 +560,40 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     });
   }
 
+  // BUG-206/BUG-207: two renderer guards read the whole tree rather than
+  // importing what they check, so the related-test selection above can never
+  // pick them. The stale-async ratchet went red on master from exactly that
+  // gap: a landing renamed a counter the ratchet listed and nothing it ran
+  // noticed. Both are whole-tree and take seconds, so any renderer change
+  // runs both.
+  const renderer = paths.filter(
+    file =>
+      /^(?:src|packages\/ui-model\/src|company\/overlay\/web\/src)\/.+\.tsx?$/.test(
+        file
+      ) || file === 'scripts/check-screen-copy.mjs'
+  );
+  if (renderer.length > 0) {
+    checks.push({
+      id: 'copy:check',
+      command: 'pnpm',
+      args: ['run', 'copy:check'],
+    });
+  }
+  if (renderer.some(file => file.startsWith('src/'))) {
+    checks.push({
+      id: 'stale-async-ratchet',
+      command: 'pnpm',
+      args: [
+        'exec',
+        'vitest',
+        'run',
+        'src/hooks/use-latest-request.ratchet.test.ts',
+        '--maxWorkers=1',
+      ],
+      rerun: VITEST_RERUN,
+    });
+  }
+
   // BUG-042: the default community contract has no account service, and the
   // resolver blanks the legacy service variables AFTER ambient env on purpose,
   // so a route that demands that capability while Next prerenders it fails

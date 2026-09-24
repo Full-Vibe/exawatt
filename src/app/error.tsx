@@ -33,8 +33,7 @@ export default function RouteError({
         This surface hit an error while rendering.
       </p>
       <p className="max-w-md text-sm text-[var(--exa-foundation-text)]">
-        Your agent sessions are unaffected — this is a display error, not a
-        session failure.
+        Your agent sessions are unaffected. Only this view failed to render.
       </p>
       <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={reset}>

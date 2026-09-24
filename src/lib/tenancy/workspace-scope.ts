@@ -51,7 +51,7 @@ export const PERSONAL_WORKSPACE: TenantWorkspace = {
   name: 'Personal',
   kind: 'personal',
   availability: 'available',
-  tagline: 'Local truth — this machine',
+  tagline: 'This machine',
 };
 
 /** Live since ENG-027 W2: the Voltaic demo source feeds the gated surfaces,
@@ -61,7 +61,7 @@ export const DEMO_WORKSPACE: TenantWorkspace = {
   name: 'Demo',
   kind: 'demo',
   availability: 'available',
-  tagline: `${DEMO_ORGANIZATION.name} — representative fleet`,
+  tagline: `${DEMO_ORGANIZATION.name} · representative fleet`,
 };
 
 /** ENG-027 W5: the future shared tenant is a first-class Workspace row, not a

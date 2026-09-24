@@ -83,8 +83,9 @@ try {
       check('a delegated child shows as a dot', (await dots.count()) === 1);
       check(
         'one child reads as one working agent',
-        (await dots.getAttribute('aria-label')) ===
-          '1 delegated agent working — Explore'
+        /^1 delegated agent working\b.*\bExplore$/.test(
+          (await dots.getAttribute('aria-label')) ?? ''
+        )
       );
 
       // The parent's own turn ended and it has gone quiet. Before ENG-023

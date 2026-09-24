@@ -278,7 +278,7 @@ export function floorTitle(o: OpportunityRead): string {
 /** The coach line. Spoken only at the closing tier, and only when no alarm
  *  outranks it — `opportunityCoach` below is the one arbiter. */
 export function coachLine(r: MeterReading, o: OpportunityRead): string {
-  return `${r.window.label} resets in ${duration(r.msToReset)} with ${o.freePts}% free — front-load the heavy runs.`;
+  return `${r.window.label} resets in ${duration(r.msToReset)} with ${o.freePts}% free. Front-load the heavy runs.`;
 }
 
 /** Best closing opportunity across a set of readings (most free wins). */
@@ -426,12 +426,12 @@ export function paceSentence(r: MeterReading): string {
 export function paceLabel(r: MeterReading): { text: string; color: string } {
   if (r.exhaustsBeforeReset && r.state !== 'exhausted') {
     return {
-      text: `spent in ${duration(r.msToExhaust)} — before reset`,
+      text: `spent in ${duration(r.msToExhaust)}, before reset`,
       color: FLUX.hot,
     };
   }
   if (r.state === 'exhausted') {
-    return { text: 'spent — holds until reset', color: FLUX.hot };
+    return { text: 'spent until reset', color: FLUX.hot };
   }
   const o = opportunityOf(r);
   if (o) return { text: `${o.freePts}% free to spend`, color: FLUX.calm };
@@ -456,7 +456,7 @@ export function remediationHint(r: MeterReading): string | null {
   }
   if (r.state !== 'hot') return null;
   if (r.exhaustsBeforeReset) {
-    return 'At this pace the window is spent before it resets — hold large launches or shift them past the reset.';
+    return 'At this pace the window is spent before it resets. Hold large launches or shift them past the reset.';
   }
-  return 'Running hot but inside pace to reset — keep launches small until the window turns over.';
+  return 'Running hot but inside pace to reset. Keep launches small until the window turns over.';
 }

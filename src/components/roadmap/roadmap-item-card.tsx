@@ -156,7 +156,7 @@ export function RoadmapItemCard({
               className="line-clamp-2 font-ui text-chrome-label"
               style={{ color: HUD.amber }}
             >
-              Blocked — {statusNoteProse(item.statusNote)}
+              Blocked: {statusNoteProse(item.statusNote)}
             </p>
           ) : nextMilestone ? (
             <p

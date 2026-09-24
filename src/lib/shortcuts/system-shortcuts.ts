@@ -259,7 +259,7 @@ export function findSystemShortcutConflict(
       if (!bindingsEqual(step, hotkey.binding)) continue;
       const combo = formatKeyBinding(hotkey.binding);
       const message = options.verified
-        ? `macOS uses ${combo} for “${hotkey.label}” — it never reaches Exawatt. Free it in System Settings → Keyboard → Keyboard Shortcuts, then rebind here.`
+        ? `macOS uses ${combo} for “${hotkey.label}”, so it never reaches Exawatt. Free it in System Settings → Keyboard → Keyboard Shortcuts, then rebind here.`
         : `${combo} is usually reserved by macOS for “${hotkey.label}”. If that shortcut is still enabled in System Settings, Exawatt will never receive it.`;
       return { hotkey, verified: options.verified, message };
     }

@@ -552,7 +552,7 @@ export const architectureManifest = {
           id: 'consumption-surface',
           label: `${CONSUMPTION_SURFACE_NAME} Surface`,
           summary:
-            'Plan-window headroom and pace, attribution pivot and session grid drilling into modelled dollars, and ratio diagnostics — stated assurance throughout.',
+            'Plan-window headroom and pace, attribution pivot and session grid drilling into modelled dollars, and ratio diagnostics, each with its stated assurance.',
           layer: 'ui',
           status: 'active-build',
           x: 945,
@@ -900,7 +900,7 @@ export const architectureManifest = {
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',
     'Delegation is source-declared evidence: Codex parent/child lifecycle comes only from its version-probed app-server protocol, reconnect resnapshots exact thread IDs, and unverifiable children withdraw without invented completion; independent siblings remain visible and source observation health distinguishes empty success from partial or unavailable coverage without filesystem, process, worktree, or terminal inference.',
     'Waiting on the operator is its own reported fact, independent of turn state and of delegation: an Agent asking a question is mid-turn, producing nothing, and answerable only by a human.',
-    'Independent attention sources compose semantically and declare their scope: human gates outrank quiet results, merged coverage is the intersection of the sources, and only a map every source covers may drive fleet-wide markers, availability, and navigation — a producer with a narrower lens answers unknown, never quiet.',
+    'Independent attention sources compose semantically and declare their scope: human gates outrank quiet results, merged coverage is the intersection of the sources, and only a map every source covers may drive fleet-wide markers, availability, and navigation. A producer with a narrower lens answers unknown, never quiet.',
     'Attention records what the operator has not yet seen; the status light records what is currently true. Focusing a Session changes the first and never the second.',
     'Session context labels follow submitted operator intent, never PTY output volume; one hosted inference path improves a durable last-good label while failures retain it.',
     'Goal visuals are quiet projections of accepted Session context: semantic pivots own revision cadence, a private identity derives the provider-facing natural scene without transmitting goal text, Demo/Live share deterministic fallback behavior, and one app-global device preference gates Electron and hosted renderers.',

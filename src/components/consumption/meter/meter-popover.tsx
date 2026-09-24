@@ -79,7 +79,7 @@ function WindowRow({
             aria-hidden
             className="inline-block h-1.5 w-1.5 self-center rounded-full"
             style={{ background: tone.fill }}
-            title={`The tightest live window across every reporting source — the one the ${sourceLabel} meter is showing.`}
+            title={`The tightest live window across every reporting source. The ${sourceLabel} meter shows this one.`}
           />
         )}
         <span

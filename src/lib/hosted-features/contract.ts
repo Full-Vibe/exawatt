@@ -163,7 +163,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     purpose:
       'Answers "what changed while you were away?" when you return to a Session.',
     sends:
-      'Recent terminal output from the Session you return to — up to 6,000 characters, exactly as it appeared on screen, not redacted.',
+      'Up to 6,000 characters of recent terminal output from the Session you return to, exactly as it appeared on screen and not redacted.',
     // Unlike everything above, this never touches Exawatt: the recap runs the
     // claude CLI already signed in on this machine, so the request is the
     // operator's own API traffic.
@@ -186,9 +186,9 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     purpose:
       'Shows your Claude session and weekly limits in the Usage meter and page.',
     sends:
-      'Nothing from your machine — one read-only usage request, authorized by the sign-in Claude Code already keeps in your Keychain. The credential is read in place, never stored or copied.',
+      'Nothing from your machine. One read-only usage request, authorized by the sign-in Claude Code already keeps in your Keychain. The credential is read in place, never stored or copied.',
     destination:
-      'Anthropic, through your own Claude Code sign-in — never Exawatt',
+      'Anthropic, through your own Claude Code sign-in, never Exawatt',
     cost: 'Claude shows no plan windows here; local token counts stay.',
     defaultEnabled: true,
     // Unlike the recap, this request leaves through Exawatt's OWN Chromium
@@ -205,8 +205,8 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     label: 'Public operator profile',
     purpose: 'Keeps your profile on the public leaderboard up to date.',
     sends:
-      'Aggregate daily totals and Run records — agent hours, fleet size, durations, and token counts — with your GitHub-seeded handle, name, and avatar. Never prompts, responses, code, Project names, paths, or transcripts.',
-    destination: 'Exawatt — publicly readable on the leaderboard',
+      'Aggregate daily totals and Run records (agent hours, fleet size, durations, and token counts) with your GitHub-seeded handle, name, and avatar. Never prompts, responses, code, Project names, paths, or transcripts.',
+    destination: 'Exawatt’s public leaderboard',
     cost: 'Your public profile stops updating; it stays visible until you remove it.',
     defaultEnabled: false,
     requiresDistributionCapability: 'services.operatorStats',
@@ -216,7 +216,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     label: 'Product analytics',
     purpose: 'Tells us the app launched, and when something failed.',
     sends:
-      'A fixed list of four events — launch, sign-in outcome, hosted-call failure, crash — against an anonymous installation id. Never content.',
+      'Four fixed events (launch, sign-in outcome, hosted-call failure, crash) against an anonymous installation id. Never content.',
     destination: 'Exawatt, then PostHog',
     cost: 'Failures affecting you become invisible to us until you report them.',
     defaultEnabled: true,

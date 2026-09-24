@@ -2054,9 +2054,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       const dir = opts.dir.trim();
       if (!dir) {
-        setError(
-          'Project directory is required — pick where this session lives.'
-        );
+        setError('Choose a Project directory for this session.');
         return false;
       }
       const launchLabel = opts.harness === 'shell' ? 'shell' : 'Agent';
@@ -2600,7 +2598,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           return { kind: 'closed', entry };
         } catch {
           setError(
-            `Could not archive ${tab.title} — its conversation is still recoverable from its source.`
+            `Could not archive ${tab.title}. Its conversation is still recoverable from its source.`
           );
           return { kind: 'noop' };
         } finally {
@@ -3024,9 +3022,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const activeProject = gs.find(group => group.dir === ad);
       const dir = activeProject ? projectRootPath(activeProject) : lu || null;
       if (!dir) {
-        setError(
-          'Project directory is required — pick where this session lives.'
-        );
+        setError('Choose a Project directory for this session.');
         return false;
       }
       void launch({ harness, dir });

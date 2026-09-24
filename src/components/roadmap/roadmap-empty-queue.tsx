@@ -38,7 +38,7 @@ export function RoadmapEmptyQueue({
       </p>
       <p className="text-xs leading-5" style={{ color: HUD.textDim }}>
         Nothing is next in this project. Agents here will idle when they finish
-        {shippedCount > 0 ? ` — ${shippedCount} shipped so far` : ''}.
+        {shippedCount > 0 ? `. ${shippedCount} shipped so far` : ''}.
       </p>
       {onOpenFile && (
         <button

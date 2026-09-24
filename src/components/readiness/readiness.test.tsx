@@ -38,12 +38,10 @@ describe('readiness grammar (ENG-026 N0)', () => {
         Push to cloud
       </AnnouncedChip>
     );
-    const chip = screen.getByTitle(
-      'Coming soon — one-click hosted agents (ENG-033)'
-    );
-    expect(chip).toHaveAttribute(
-      'aria-label',
-      'one-click hosted agents (ENG-033) — coming soon'
+    const chip = screen.getByTitle(/one-click hosted agents \(ENG-033\)/);
+    expect(chip.getAttribute('title')).toMatch(/coming soon/i);
+    expect(chip.getAttribute('aria-label')).toMatch(
+      /one-click hosted agents \(ENG-033\).*coming soon/i
     );
     // contents are inert: unreachable and unclickable, not merely disabled
     const inner = chip.querySelector('[inert]');
@@ -57,9 +55,7 @@ describe('readiness grammar (ENG-026 N0)', () => {
         Type
       </AnnouncedChip>
     );
-    const chip = screen.getByTitle(
-      'Coming soon — portable Agent Types (ENG-028)'
-    );
+    const chip = screen.getByTitle(/portable Agent Types \(ENG-028\)/);
     expect(chip.getAttribute('data-readiness')).toBe('announced');
     expect(chip.className).toContain('text-chrome-micro');
     expect(chip.querySelector('[inert]')).not.toBeNull();

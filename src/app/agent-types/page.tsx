@@ -147,7 +147,8 @@ export default function AgentTypesPage() {
           </div>
         </div>
         <p className="text-chrome-meta text-muted-foreground">
-          Applied at launch, merged with your own config — never mutating it.
+          Applied at launch and merged with your own config, which stays
+          untouched.
         </p>
       </section>
 

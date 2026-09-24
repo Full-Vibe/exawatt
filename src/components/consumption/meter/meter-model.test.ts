@@ -393,9 +393,7 @@ describe('opportunity coach — hot always outranks', () => {
 
   it('speaks one closing line when no alarm is live', () => {
     const coach = opportunityCoach(readingsOf('strongly-behind'));
-    expect(coach).toBe(
-      'Weekly window resets in 9h with 72% free — front-load the heavy runs.'
-    );
+    expect(coach).toMatch(/^Weekly window resets in 9h with 72% free\b/);
   });
 
   it('stays silent at the open tier', () => {

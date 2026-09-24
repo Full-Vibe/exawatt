@@ -25,6 +25,7 @@ import {
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { FORGOT_PASSWORD_PATH } from '@/components/auth/hosted-auth';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 
 const MIN_PASSWORD_CHARS = 6;
 
@@ -38,24 +39,25 @@ export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<AccountClient | null>(null);
+  const sessionRead = useLatestRequest();
 
   useEffect(() => {
-    let active = true;
     const supabase = createOptionalClient(resolvedDistribution());
     if (!supabase) {
       setStage('unavailable');
       return;
     }
     clientRef.current = supabase;
+    const ticket = sessionRead.begin();
     void supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
+      if (!ticket.current) return;
       setStage(data.session ? 'ready' : 'expired');
     });
     return () => {
-      active = false;
+      sessionRead.invalidate();
       clientRef.current = null;
     };
-  }, []);
+  }, [sessionRead]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

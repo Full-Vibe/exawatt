@@ -127,8 +127,8 @@ export function AnnouncedChip({
   return (
     <span
       data-readiness="announced"
-      title={`Coming soon — ${coming}`}
-      aria-label={`${coming} — coming soon`}
+      title={`Coming soon: ${coming}`}
+      aria-label={`${coming}, coming soon`}
       className={`inline-flex cursor-default select-none items-center rounded font-ui ${sizing} ${className}`}
       style={{
         border: `1px dashed ${READINESS_STROKE}`,

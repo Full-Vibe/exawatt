@@ -53,7 +53,7 @@ export const metadata: Metadata = {
   // history can tell surfaces apart
   title: {
     default: distributionIdentity.productName,
-    template: `%s — ${distributionIdentity.productName}`,
+    template: `%s · ${distributionIdentity.productName}`,
   },
   description: 'Power your AI agents',
   icons: {

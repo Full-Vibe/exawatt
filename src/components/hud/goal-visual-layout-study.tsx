@@ -15,6 +15,7 @@ import {
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createGoalVisualPreferenceSource } from '@/lib/goal-visuals/preference-source';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   GOAL_VISUAL_STUDY_IDENTITIES,
   type GoalVisualStudyId,
@@ -181,8 +182,9 @@ export function GoalVisualLanguageStudy() {
   const [loadState, setLoadState] = useState<
     'loading' | 'ready' | 'signed-out' | 'unavailable'
   >('loading');
+  const studyLoad = useLatestRequest();
   useEffect(() => {
-    let cancelled = false;
+    const ticket = studyLoad.begin();
     const load = async () => {
       try {
         // Settings -> Privacy -> "Agent tile backgrounds" is disclosed as the
@@ -198,7 +200,7 @@ export function GoalVisualLanguageStudy() {
           .catch(() => true);
         if (!enabled) {
           // Switched off: look up no session, construct no request.
-          if (!cancelled) setLoadState('unavailable');
+          if (ticket.current) setLoadState('unavailable');
           return;
         }
         const distribution = resolvedDistribution();
@@ -206,19 +208,19 @@ export function GoalVisualLanguageStudy() {
         // Capability absence is the community path. Keep every deterministic
         // study mounted and perform neither session lookup nor network I/O.
         if (!endpoint) {
-          if (!cancelled) setLoadState('unavailable');
+          if (ticket.current) setLoadState('unavailable');
           return;
         }
         const supabase = createOptionalClient(distribution);
         if (!supabase) {
-          if (!cancelled) setLoadState('unavailable');
+          if (ticket.current) setLoadState('unavailable');
           return;
         }
         const {
           data: { session },
         } = await supabase.auth.getSession();
         if (!session?.access_token) {
-          if (!cancelled) setLoadState('signed-out');
+          if (ticket.current) setLoadState('signed-out');
           return;
         }
         const entries = await Promise.all(
@@ -238,7 +240,7 @@ export function GoalVisualLanguageStudy() {
             }
           })
         );
-        if (cancelled) return;
+        if (!ticket.current) return;
         const next: Record<string, LoadedStudy> = {};
         for (const [id, study] of entries) {
           if (study) next[id] = study;
@@ -246,14 +248,12 @@ export function GoalVisualLanguageStudy() {
         setLoadedStudies(next);
         setLoadState(Object.keys(next).length > 0 ? 'ready' : 'unavailable');
       } catch {
-        if (!cancelled) setLoadState('unavailable');
+        if (ticket.current) setLoadState('unavailable');
       }
     };
     void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => studyLoad.invalidate();
+  }, [studyLoad]);
 
   const statusCopy =
     loadState === 'loading'

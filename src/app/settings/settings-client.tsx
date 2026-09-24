@@ -35,6 +35,7 @@ import {
   PermissionsExplainer,
 } from './notifications-settings';
 import { eventToBinding } from '@/lib/shortcuts/format';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   effectiveSystemHotkeys,
   findSystemShortcutConflict,
@@ -203,6 +204,7 @@ export function SettingsClient() {
   const [systemTable, setSystemTable] = useState<SystemHotkeyTable | null>(
     null
   );
+  const hotkeyRead = useLatestRequest();
 
   // macOS system-shortcut truth (D19 amendment): read the machine's actual
   // symbolic-hotkey prefs so a combo the user freed in System Settings is
@@ -212,7 +214,6 @@ export function SettingsClient() {
       setSystemTable({ hotkeys: [], verified: true });
       return;
     }
-    let cancelled = false;
     const read = window.electron?.shortcuts?.systemHotkeys;
     if (!read) {
       setSystemTable({
@@ -221,9 +222,10 @@ export function SettingsClient() {
       });
       return;
     }
+    const ticket = hotkeyRead.begin();
     read()
       .then(plist => {
-        if (cancelled) return;
+        if (!ticket.current) return;
         setSystemTable(
           plist === null
             ? { hotkeys: effectiveSystemHotkeys(null), verified: false }
@@ -234,16 +236,14 @@ export function SettingsClient() {
         );
       })
       .catch(() => {
-        if (cancelled) return;
+        if (!ticket.current) return;
         setSystemTable({
           hotkeys: effectiveSystemHotkeys(null),
           verified: false,
         });
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => hotkeyRead.invalidate();
+  }, [hotkeyRead]);
 
   const systemConflictFor = useCallback(
     (keys: ShortcutKeys): { error: string | null; warning: string | null } => {

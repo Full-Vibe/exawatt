@@ -49,7 +49,7 @@ export async function generateMetadata({
     title: `@${profile.handle} · Agentmaxxing`,
     description,
     openGraph: {
-      title: `${profile.displayName} (@${profile.handle}) — Agentmaxxing`,
+      title: `${profile.displayName} (@${profile.handle}) · Agentmaxxing`,
       description,
       type: 'profile',
       images: profile.avatarUrl ? [profile.avatarUrl] : undefined,

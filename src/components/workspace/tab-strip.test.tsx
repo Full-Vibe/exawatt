@@ -21,7 +21,11 @@ import {
 } from './session-status';
 import type { CloneSessionTarget } from './session-clone';
 import type { SessionAttentionSignal } from './status-glyphs';
-import { DELEGATION_DOT_CAP } from './session-status';
+import {
+  ATTENTION_GLYPH_COPY,
+  DELEGATION_DOT_CAP,
+  delegationCopy,
+} from './session-status';
 import type { Project, SessionTab } from './use-workspace-state';
 import type { SessionDelegation } from '@/types/electron';
 import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
@@ -275,7 +279,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
 
     fireEvent.pointerMove(marker!, { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'Needs you — Agent requested input or hit a roadmap block. Open this Session to respond.'
+      ATTENTION_GLYPH_COPY
     );
   });
 
@@ -710,7 +714,7 @@ describe('TabStrip delegated work (ENG-023)', () => {
     const cluster = container.querySelector('[data-delegation]');
     expect(cluster?.getAttribute('data-delegation')).toBe('3');
     expect(cluster?.getAttribute('aria-label')).toBe(
-      '3 delegated agents working — Explore'
+      delegationCopy(delegating(3))
     );
   });
 

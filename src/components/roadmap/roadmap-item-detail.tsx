@@ -186,7 +186,7 @@ export function RoadmapItemDetail({
         </div>
       ) : item.blocked && statusNoteProse(item.statusNote) ? (
         <p className="text-xs leading-5" style={{ color: HUD.amber }}>
-          Blocked — {deMarkdown(statusNoteProse(item.statusNote) as string)}
+          Blocked: {deMarkdown(statusNoteProse(item.statusNote) as string)}
         </p>
       ) : null}
 

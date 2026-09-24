@@ -61,6 +61,8 @@ test('the cheap changed-file floor cannot be weakened by the caller', () => {
     'test:agent-delivery',
     'exports:check',
     'vitest-related',
+    'copy:check',
+    'stale-async-ratchet',
     'test:fonts',
   ]);
 
@@ -107,13 +109,47 @@ test('provider composition changes receive related consumer tests', () => {
       'test:agent-delivery',
       'exports:check',
       'vitest-related',
+      'copy:check',
+      'stale-async-ratchet',
     ]
   );
-  assert.deepEqual(checks.at(-1).args, [
-    'run',
-    'test:related',
-    'src/components/ExposeOverlay.tsx',
-  ]);
+  assert.deepEqual(
+    checks.find(check => check.id === 'vitest-related').args,
+    ['run', 'test:related', 'src/components/ExposeOverlay.tsx']
+  );
+});
+
+// BUG-206/BUG-207: whole-tree renderer guards import nothing they check, so
+// the related-test selection can never pick them and they must be routed.
+test('renderer changes run the screen-copy guard and the stale-async ratchet', () => {
+  for (const file of [
+    'src/components/workspace/close-confirm.tsx',
+    'src/lib/hosted-features/contract.ts',
+  ]) {
+    const routed = ids([file]);
+    assert.ok(routed.includes('copy:check'), `${file} owes copy:check`);
+    assert.ok(
+      routed.includes('stale-async-ratchet'),
+      `${file} owes the stale-async ratchet`
+    );
+  }
+  for (const file of [
+    'packages/ui-model/src/roadmap-strip.ts',
+    'company/overlay/web/src/app/admin/invites/issue-invite-form.tsx',
+    'scripts/check-screen-copy.mjs',
+  ]) {
+    const routed = ids([file]);
+    assert.ok(routed.includes('copy:check'), `${file} owes copy:check`);
+    assert.ok(
+      !routed.includes('stale-async-ratchet'),
+      `${file} is outside the ratchet's tree`
+    );
+  }
+  for (const file of ['docs/engineering/design-system.md', 'electron/main/main.ts']) {
+    const routed = ids([file]);
+    assert.ok(!routed.includes('copy:check'), `${file} renders no screen copy`);
+    assert.ok(!routed.includes('stale-async-ratchet'));
+  }
 });
 
 test('dogfood and Electron orchestration changes receive Electron compilation', () => {
@@ -168,6 +204,8 @@ test('routable and distribution-seam changes receive the community build', () =>
     'test:agent-delivery',
     'exports:check',
     'vitest-related',
+    'copy:check',
+    'stale-async-ratchet',
     'verify:community-build',
     'verify:community-runtime',
   ]);
@@ -260,6 +298,8 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
       'test:agent-delivery',
       'exports:check',
       'vitest-related',
+      'copy:check',
+      'stale-async-ratchet',
       'electron:compile',
       'qa:browser:doctor',
       'eval:r3f',

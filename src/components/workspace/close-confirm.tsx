@@ -98,13 +98,13 @@ export function CloseConfirm({
           style={{ color: HUD.textDim }}
         >
           {turn === 'working' && (
-            <>It is still working — closing interrupts the turn in flight. </>
+            <>It is still working. Closing interrupts the turn in flight. </>
           )}
           {turn === 'blocked' && (
-            <>It is waiting on your answer — closing discards the question. </>
+            <>It is waiting on your answer. Closing discards the question. </>
           )}
-          The agent stops, and the Session — conversation, goal, and scrollback
-          — moves to Recently closed. Reopen it from ⌘K within 14 days.
+          The agent stops, and its conversation, goal, and scrollback move to
+          Recently closed. Reopen it from ⌘K for the next 14 days.
         </div>
         <div className="flex items-center justify-end gap-2">
           {/* One button system (D32/ENG-032): neutral outline + the active

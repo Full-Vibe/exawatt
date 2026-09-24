@@ -5,6 +5,45 @@ this doc holds the narrative of each seam as it is adopted.
 
 ## Roadmap milestone log
 
+### 2026-09-24 — the stale-async ratchet finds guards by shape (BUG-206)
+
+**The ratchet that keeps the M0 `useLatestRequest` seam from eroding now
+finds guards by what they do, not what they are called, and the floor runs
+it.** It had matched a name list, so it saw 15 of the renderer's 33
+hand-rolled guards, counted two things that are not guards, and went red on
+master when `11825936` renamed a listed counter, because related-test
+selection never picks a test that imports nothing.
+
+The rule, in `src/hooks/use-latest-request.ratchet.test.ts`, parsed with the
+TypeScript compiler API already in the repo:
+
+| Part | A guard is | Not a guard |
+| --- | --- | --- |
+| state | `useRef(<number or boolean>)` read through `.current`, or a `let` initialised to one | object tokens, `AbortController`s |
+| read | in an `if` condition or on the left of `&&` / `||`, after an `await` in an async function, in a `.then`/`.catch`/`.finally` callback, through a named predicate (`const stale = () => …`), or in a continuation passed by name | a read in a synchronous handler or a subscription callback |
+| write | by someone other than that continuation: an effect cleanup, an unmount, a newer call (a counter the reader increments itself counts when the read compares it by equality) | a result the reader writes itself (`let ok = false; ok = await launch()`) |
+
+Five fixture cases pin the rule's contract (a counter under a name it has
+never seen, a cleanup flag in a continuation, a predicate, a continuation
+passed by name, and the three things it must ignore).
+
+| | before | after |
+| --- | --- | --- |
+| guards seen | 15, plus 2 that are not guards | 33 |
+| listed | 19 counts by file, no reasons | 26 by `file:name`, one reason each |
+| migrated to `useLatestRequest` | | 6: `update-password`, the Settings hotkey read, the untriaged-feedback sample (a flag and a counter, now one channel), the composer clipboard visit (`current()` + `invalidate()`, so pastes in one visit still all commit), the goal-visual study load |
+| a rename | red on master | one failure naming the old key under `gone` and the new site under `unlisted` |
+| run by | the full suite only | the landing floor, for any `src/` change |
+
+The 26 that stay fall in three groups, each line saying which: request
+generations whose owner holds them (the Agent Source settings channels, the
+roadmap rail's write scope, the remote roster's newest-read answer, two
+ordering flags a ticket cannot express); effect cancel flags on gated
+surfaces or files another change owns today; and lifetime flags whose effect
+also owns a subscription. Mutation-verified both ways: a new counter under an
+unseen name in a new file fails, and renaming `readGeneration` fails with
+both names.
+
 ### 2026-09-23 — M1 first slice: Electron main is a composition root
 
 **`main.ts` went from 1,761 lines to 339 and now only wires modules; three

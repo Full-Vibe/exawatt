@@ -50,7 +50,7 @@ function itemLabel(item: RoadmapItemView, role: string): string {
       ? ` · ${item.milestonesDone}/${item.milestonesTotal}`
       : '';
   const state = item.blocked ? 'blocked' : role;
-  return `${id} — ${item.title} · ${state}${fraction}`;
+  return `${id}: ${item.title} · ${state}${fraction}`;
 }
 
 function itemNode(
@@ -96,7 +96,7 @@ export function buildRoadmapStrip(
     }
     nodes.push({
       kind: 'starving',
-      label: 'Queue empty — agents here will starve when they finish',
+      label: 'Queue empty · nothing next for agents here',
     });
     return nodes;
   }

@@ -185,19 +185,20 @@ describe('delegated work', () => {
   });
 
   it('names the work, deduplicating kinds and pluralizing', () => {
-    expect(delegationCopy(busyChild)).toBe(
-      '1 delegated agent working — Explore'
-    );
-    expect(
-      delegationCopy({
-        ownTurn: 'available',
-        children: [
-          { id: 'a', agentType: 'Explore', startedAt: 1 },
-          { id: 'b', agentType: 'Explore', startedAt: 2 },
-          { id: 'c', agentType: 'general-purpose', startedAt: 3 },
-        ],
-      })
-    ).toBe('3 delegated agents working — Explore, general-purpose');
+    const one = delegationCopy(busyChild)!;
+    expect(one).toMatch(/^1 delegated agent working\b/);
+    expect(one).toContain('Explore');
+    const three = delegationCopy({
+      ownTurn: 'available',
+      children: [
+        { id: 'a', agentType: 'Explore', startedAt: 1 },
+        { id: 'b', agentType: 'Explore', startedAt: 2 },
+        { id: 'c', agentType: 'general-purpose', startedAt: 3 },
+      ],
+    })!;
+    expect(three).toMatch(/^3 delegated agents working\b/);
+    expect(three).toContain('Explore, general-purpose');
+    expect(three.match(/Explore/g)).toHaveLength(1);
   });
 
   it('still names the count when a source reports no kind', () => {

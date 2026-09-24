@@ -687,7 +687,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
       state: missShare > 0.2 ? 'watch' : 'steady',
       hint:
         missShare > 0.2
-          ? 'fresh context is being rebuilt — check for cold restarts'
+          ? 'fresh context is being rebuilt, so check for cold restarts'
           : 'prompts are mostly served from cache',
       share: missShare,
     },
@@ -707,8 +707,8 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
       state: reasoningShare > 0.75 ? 'watch' : 'steady',
       hint:
         reasoningShare > 0.75
-          ? 'of generated tokens — effort setting may be above the task'
-          : 'of generated tokens — within the usual band for this effort mix',
+          ? 'of generated tokens, so the effort setting may be above the task'
+          : 'of generated tokens, within the usual band for this effort mix',
       share: reasoningShare,
     });
   }
@@ -726,7 +726,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
           label: 'Delegated share · 5h',
           value: `${Math.round(delegated * 100)}%`,
           state: 'steady',
-          hint: 'of Claude Code burn — children are booked against their parent Session',
+          hint: 'of Claude Code burn, each child counted against its parent Session',
           share: delegated,
         }
   );

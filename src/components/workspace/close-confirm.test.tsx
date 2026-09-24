@@ -81,7 +81,7 @@ describe('CloseConfirm', () => {
   it('names what this particular close costs', () => {
     const working = confirm('working');
     expect(screen.getByRole('dialog')).toHaveTextContent(
-      'It is still working — closing interrupts the turn in flight.'
+      /interrupts the turn in flight/
     );
     working.unmount();
 
@@ -89,7 +89,7 @@ describe('CloseConfirm', () => {
     // still throws away a question nobody answered.
     const blocked = confirm('blocked');
     expect(screen.getByRole('dialog')).toHaveTextContent(
-      'It is waiting on your answer — closing discards the question.'
+      /discards the question/
     );
     blocked.unmount();
 

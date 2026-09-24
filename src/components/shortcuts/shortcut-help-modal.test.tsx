@@ -88,9 +88,7 @@ describe('shortcut help manifest coverage', () => {
       });
     });
     expect(screen.getByText('working')).toBeVisible();
-    expect(
-      screen.getByText('turn in progress — streaming or thinking')
-    ).toBeVisible();
+    expect(screen.getByText(/^turn in progress/)).toBeVisible();
     view.unmount();
   });
 });

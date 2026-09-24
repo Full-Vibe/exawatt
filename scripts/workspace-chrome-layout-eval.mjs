@@ -834,8 +834,8 @@ try {
   const statusTooltip = page.getByRole('tooltip');
   await statusTooltip.waitFor();
   if (
-    !(await statusTooltip.innerText()).includes(
-      'Needs you — Agent requested input or hit a roadmap block. Open this Session to respond.'
+    !/^Needs you\b[\s\S]*Open this Session to respond\.$/m.test(
+      await statusTooltip.innerText()
     )
   ) {
     throw new Error(

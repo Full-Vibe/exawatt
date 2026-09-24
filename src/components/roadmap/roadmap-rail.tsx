@@ -777,7 +777,7 @@ export function RoadmapRail({
     return (
       <button
         type="button"
-        aria-label={`Open roadmap rail${healthAlert ? ' — needs attention' : ''}`}
+        aria-label={`Open roadmap rail${healthAlert ? ', needs attention' : ''}`}
         title="Roadmap (⌘B)"
         onClick={() => onModeChange('open')}
         className="relative flex shrink-0 flex-col items-center border-l pb-2 pt-3 outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
@@ -1246,7 +1246,7 @@ export function RoadmapRail({
               data-untriaged-feedback
               className="font-ui text-chrome-meta"
               style={{ color: HUD.amber }}
-              title="Filed feedback not yet folded into the roadmap — ask an agent to drain the inbox"
+              title="Filed feedback not yet folded into the roadmap. Ask an agent to drain the inbox."
             >
               {untriagedCount === 1
                 ? '1 filed thought awaiting triage'

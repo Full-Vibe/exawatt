@@ -37,7 +37,7 @@ export function NotificationsSettings() {
   return (
     <SettingsGroup
       title="Notifications"
-      description="How Exawatt signals outside its own window when an agent needs you. Everything here is off by default — inside the app, tab pulses and the ⌘J attention queue always work."
+      description="How Exawatt signals outside its own window when an agent needs you. Everything here starts off. Inside the app, tab pulses and the ⌘J attention queue always work."
       dataAttribute="data-notifications-settings"
     >
       <SettingRow
