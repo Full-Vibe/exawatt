@@ -3,10 +3,11 @@
 import { ChevronDownIcon, Cross2Icon, PlayIcon } from '@radix-ui/react-icons';
 import {
   agentsNoun,
-  pausedAgentsCopy,
   reconnectAgentsCopy,
+  resumableAgentsCopy,
   resumingAgentsCopy,
   SESSION_RESUME_SCOPE_LABEL,
+  type ResumableAgents,
 } from '@exawatt/ui-model';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,7 +52,8 @@ function ChordHint({ shortcutId }: { shortcutId: string }) {
 }
 
 export interface ResumeRecoveryBarProps {
-  readyAgentCount: number;
+  /** Every Agent a resume scope would start, counted by the lifecycle owner. */
+  readyAgents: ResumableAgents;
   reconnectableAgentCount: number;
   activeProjectName: string | null;
   activeProjectReadyCount: number;
@@ -64,13 +66,14 @@ export interface ResumeRecoveryBarProps {
 }
 
 /**
- * Relaunch recovery, once (ENG-016 D36/D47). The paused noun, the counts
- * and every resume verb come from the shared lifecycle vocabulary
- * (ENG-015 S6.4), so the bar says "paused" about the same Sessions the tab,
- * the pane, and the record call paused.
+ * Relaunch recovery, once (ENG-016 D36/D47). The counts and every resume
+ * verb come from the shared lifecycle vocabulary (ENG-015 S6.4), so the bar
+ * says "paused" only when every Agent it counts is Paused on its own tab,
+ * and "to resume" when the count mixes in Interrupted or Exited Agents
+ * (BUG-185).
  */
 export function ResumeRecoveryBar({
-  readyAgentCount,
+  readyAgents,
   reconnectableAgentCount,
   activeProjectName,
   activeProjectReadyCount,
@@ -82,6 +85,7 @@ export function ResumeRecoveryBar({
   onDismiss,
 }: ResumeRecoveryBarProps) {
   const disabled = progress !== null;
+  const readyAgentCount = readyAgents.count;
   const stoppedAgentCount = readyAgentCount + reconnectableAgentCount;
   if (stoppedAgentCount === 0) return null;
 
@@ -96,7 +100,7 @@ export function ResumeRecoveryBar({
   if (progress) {
     status = resumingAgentsCopy(progress.completed, progress.total);
   } else if (readyAgentCount > 0) {
-    status = pausedAgentsCopy(readyAgentCount);
+    status = resumableAgentsCopy(readyAgents);
     if (projectIsUsefulScope && readyAgentCount > activeProjectReadyCount) {
       status += ` · ${activeProjectReadyCount} in ${activeProjectName}`;
     }

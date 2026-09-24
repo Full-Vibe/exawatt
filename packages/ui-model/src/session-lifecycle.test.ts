@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentsNoun,
-  pausedAgentsCopy,
-  pausedAgentsNoun,
   reconnectAgentsCopy,
+  resumableAgents,
+  resumableAgentsCopy,
+  resumableAgentsNoun,
   resumingAgentsCopy,
   SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_SCOPE_LABEL,
   SESSION_RESUME_UNAVAILABLE,
+  sessionCanResume,
   sessionLifecyclePresentation,
   type SessionLifecycleFacts,
   type SessionLifecyclePhase,
@@ -18,6 +20,7 @@ const facts = (
 ): SessionLifecycleFacts => ({
   lifecycle: 'stopped-clean',
   exitCode: null,
+  exitSignal: null,
   harness: 'claude',
   harnessSessionId: 'prov-1',
   ...over,
@@ -67,10 +70,36 @@ describe('sessionLifecyclePresentation', () => {
     expect(killed.verb).toBe('resume');
   });
 
+  it('reads a signal as how it ended, never as a clean stop (BUG-186)', () => {
+    // node-pty reports a SIGKILL as exit code 0 plus the signal.
+    const killed = sessionLifecyclePresentation(
+      facts({ lifecycle: 'exited', exitCode: 0, exitSignal: 'SIGKILL' })
+    );
+    expect(killed).toMatchObject({
+      word: 'Exited',
+      tone: 'warn',
+      verb: 'resume',
+    });
+    expect(killed.line).toContain('SIGKILL');
+    expect(killed.line).not.toContain('cleanly');
+    // A record from before exits carried their signal is not clean either.
+    const unknown = sessionLifecyclePresentation(
+      facts({ lifecycle: 'exited', exitCode: 0, exitSignal: undefined })
+    );
+    expect(unknown.word).toBe('Exited');
+    expect(unknown.line).not.toContain('cleanly');
+    // Exawatt's own clean stop is clean whatever the record's age.
+    expect(
+      sessionLifecyclePresentation(facts({ exitSignal: undefined })).word
+    ).toBe('Paused');
+  });
+
   it('offers the verb the facts allow: resume exactly, reconnect first, or a new shell', () => {
+    // Paused promises resume, so a Session with no recorded conversation
+    // never wears it (BUG-185).
     expect(
       sessionLifecyclePresentation(facts({ harnessSessionId: null }))
-    ).toMatchObject({ word: 'Paused', verb: 'reconnect', tone: 'warn' });
+    ).toMatchObject({ word: 'Closed', verb: 'reconnect', tone: 'warn' });
     expect(
       sessionLifecyclePresentation(facts({ harnessSessionId: null })).line
     ).toContain('not recorded');
@@ -104,17 +133,25 @@ describe('sessionLifecyclePresentation', () => {
     const resuming = sessionLifecyclePresentation(
       facts({ lifecycle: 'resuming' })
     );
-    expect(resuming).toMatchObject({ word: 'Resuming', verb: null, ended: true });
+    expect(resuming).toMatchObject({
+      word: 'Resuming',
+      verb: null,
+      ended: true,
+    });
   });
 
   it('never calls a draft or a running Session ended', () => {
-    expect(sessionLifecyclePresentation(facts({ lifecycle: 'draft' }))).toMatchObject({
+    expect(
+      sessionLifecyclePresentation(facts({ lifecycle: 'draft' }))
+    ).toMatchObject({
       word: 'Draft',
       ended: false,
       verb: null,
     });
     expect(
-      sessionLifecyclePresentation(facts({ lifecycle: 'running', harnessSessionId: null }))
+      sessionLifecyclePresentation(
+        facts({ lifecycle: 'running', harnessSessionId: null })
+      )
     ).toMatchObject({ word: 'Running', ended: false, verb: null });
   });
 
@@ -122,13 +159,16 @@ describe('sessionLifecyclePresentation', () => {
     const strings = [
       ...Object.values(SESSION_LIFECYCLE_VERB_LABEL),
       ...Object.values(SESSION_RESUME_SCOPE_LABEL),
-      pausedAgentsCopy(2),
-      pausedAgentsNoun(2),
+      resumableAgentsCopy({ count: 2, allPaused: true }),
+      resumableAgentsCopy({ count: 2, allPaused: false }),
+      resumableAgentsNoun({ count: 2, allPaused: true }),
       ...Object.values(SESSION_RESUME_UNAVAILABLE),
       reconnectAgentsCopy(1),
       resumingAgentsCopy(1, 2),
       ...PHASES.flatMap(lifecycle => {
-        const p = sessionLifecyclePresentation(facts({ lifecycle, exitCode: 3 }));
+        const p = sessionLifecyclePresentation(
+          facts({ lifecycle, exitCode: 3 })
+        );
         return [p.word, p.line ?? ''];
       }),
     ];
@@ -140,10 +180,32 @@ describe('recovery counts', () => {
   it('counts the paused noun in the product register', () => {
     expect(agentsNoun(1)).toBe('1 Agent');
     expect(agentsNoun(3)).toBe('3 Agents');
-    expect(pausedAgentsCopy(1)).toBe('1 Agent paused');
+    expect(resumableAgentsCopy(resumableAgents([facts()]))).toBe(
+      '1 Agent paused'
+    );
     expect(reconnectAgentsCopy(1)).toBe('1 Agent needs reconnection');
     expect(reconnectAgentsCopy(2)).toBe('2 Agents need reconnection');
     expect(resumingAgentsCopy(1, 2)).toBe('Resuming 1 of 2 Agents…');
+  });
+
+  it('keeps "paused" only while it is true of every Agent counted', () => {
+    const interrupted = facts({ lifecycle: 'interrupted' });
+    const mixed = resumableAgents([facts(), interrupted]);
+    expect(mixed).toEqual({ count: 2, allPaused: false });
+    expect(resumableAgentsCopy(mixed)).toBe('2 Agents to resume');
+    expect(resumableAgentsNoun(mixed)).toBe('2 Agents');
+    const clean = resumableAgents([facts(), facts()]);
+    expect(resumableAgentsCopy(clean)).toBe('2 Agents paused');
+    expect(resumableAgentsNoun(clean)).toBe('2 paused Agents');
+  });
+
+  it('resumes exactly the Sessions whose verb is resume', () => {
+    expect(sessionCanResume(facts())).toBe(true);
+    expect(sessionCanResume(facts({ lifecycle: 'interrupted' }))).toBe(true);
+    expect(sessionCanResume(facts({ harnessSessionId: null }))).toBe(false);
+    expect(sessionCanResume(facts({ harness: 'shell' }))).toBe(false);
+    expect(sessionCanResume(facts({ lifecycle: 'running' }))).toBe(false);
+    expect(sessionCanResume(facts({ lifecycle: 'resuming' }))).toBe(false);
   });
 
   it('scopes the resume verb from the same label the pane prints', () => {

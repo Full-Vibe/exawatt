@@ -135,6 +135,7 @@ export function mergeLocalWorkspaceSessions(
         cwd?: unknown;
         lifecycle?: unknown;
         exitCode?: unknown;
+        exitSignal?: unknown;
       };
       if (
         typeof tab.id !== 'string' ||
@@ -156,6 +157,7 @@ export function mergeLocalWorkspaceSessions(
 
       const failed =
         tab.lifecycle === 'failed' ||
+        typeof tab.exitSignal === 'string' ||
         (typeof tab.exitCode === 'number' && tab.exitCode !== 0);
       merged.push({
         id: `workspace:${durableSessionId}`,

@@ -91,6 +91,7 @@ export function sessionCurrentStateCopy(input: {
   live: boolean;
   lifecycle: string;
   exitCode?: number | null;
+  exitSignal?: string | null;
   harnessSessionId?: string | null;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
@@ -99,6 +100,7 @@ export function sessionCurrentStateCopy(input: {
     ? sessionLifecyclePresentation({
         lifecycle: input.lifecycle,
         exitCode: input.exitCode ?? null,
+        exitSignal: input.exitSignal,
         harness: input.harness,
         harnessSessionId: input.harnessSessionId ?? null,
       })

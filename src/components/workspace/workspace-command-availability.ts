@@ -3,7 +3,11 @@
 import { useSyncExternalStore } from 'react';
 
 import type { WorkspaceContextCommand } from '@exawatt/core';
-import { SESSION_RESUME_UNAVAILABLE } from '@exawatt/ui-model';
+import {
+  NO_RESUMABLE_AGENTS,
+  SESSION_RESUME_UNAVAILABLE,
+  type ResumableAgents,
+} from '@exawatt/ui-model';
 
 /**
  * Workspace command truth shared by passive hints, the command palette, and
@@ -24,13 +28,14 @@ export interface CommandAvailability {
 
 /**
  * What the recovery bar's one-click control would do right now (D47): the
- * selected Project when it holds parked Agents, otherwise every Project. The
- * ⌘K row and the chord read this so all three entry points name the same
+ * selected Project when it holds resumable Agents, otherwise every Project.
+ * The ⌘K row and the chord read this so all three entry points name the same
  * scope and the same count instead of each deriving its own.
  */
 export interface ResumeScope {
   kind: 'project' | 'all';
-  count: number;
+  /** The Agents it resumes, counted by the lifecycle owner (BUG-185). */
+  agents: ResumableAgents;
   /** Present only for `kind: 'project'`. */
   projectName: string | null;
 }
@@ -55,13 +60,13 @@ export interface WorkspaceCommandAvailabilityInput {
   canMoveProjectRight: boolean;
   hasAttentionTarget: boolean;
   closedSessionCount: number;
-  /** Parked Agents with an exact provider identity, across every Project. */
-  resumableAgentCount: number;
+  /** Stopped Agents that can resume exactly, across every Project. */
+  resumableAgents: ResumableAgents;
   /** …of those, the ones in the selected Project. */
-  activeProjectResumableCount: number;
+  activeProjectResumableAgents: ResumableAgents;
   /** Running local Agents with an exact identity, in the selected Project. */
   activeProjectPausableCount?: number;
-  /** the selected tab is itself a parked Agent with an exact identity */
+  /** the selected tab is itself a stopped Agent that can resume exactly */
   activeTabCanResume: boolean;
 }
 
@@ -87,22 +92,22 @@ export function deriveWorkspaceCommandAvailability({
   canMoveProjectRight,
   hasAttentionTarget,
   closedSessionCount,
-  resumableAgentCount,
-  activeProjectResumableCount,
+  resumableAgents,
+  activeProjectResumableAgents,
   activeProjectPausableCount = 0,
   activeTabCanResume,
 }: WorkspaceCommandAvailabilityInput): WorkspaceCommandAvailability {
   const hasProject = activeProjectName !== null;
   const resumeScope: ResumeScope | null =
-    resumableAgentCount === 0
+    resumableAgents.count === 0
       ? null
-      : hasProject && activeProjectResumableCount > 0
+      : hasProject && activeProjectResumableAgents.count > 0
         ? {
             kind: 'project',
-            count: activeProjectResumableCount,
+            agents: activeProjectResumableAgents,
             projectName: activeProjectName,
           }
-        : { kind: 'all', count: resumableAgentCount, projectName: null };
+        : { kind: 'all', agents: resumableAgents, projectName: null };
   return {
     activeProjectName,
     resumeScope,
@@ -207,8 +212,8 @@ export const EMPTY_WORKSPACE_COMMAND_AVAILABILITY =
     canMoveProjectRight: false,
     hasAttentionTarget: false,
     closedSessionCount: 0,
-    resumableAgentCount: 0,
-    activeProjectResumableCount: 0,
+    resumableAgents: NO_RESUMABLE_AGENTS,
+    activeProjectResumableAgents: NO_RESUMABLE_AGENTS,
     activeTabCanResume: false,
   });
 

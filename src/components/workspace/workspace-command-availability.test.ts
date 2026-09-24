@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { SESSION_RESUME_UNAVAILABLE } from '@exawatt/ui-model';
+import {
+  NO_RESUMABLE_AGENTS,
+  SESSION_RESUME_UNAVAILABLE,
+  type ResumableAgents,
+} from '@exawatt/ui-model';
 import {
   EMPTY_WORKSPACE_COMMAND_AVAILABILITY,
   deriveWorkspaceCommandAvailability,
@@ -8,6 +12,11 @@ import {
   resetWorkspaceCommandAvailability,
   type WorkspaceCommandAvailabilityInput,
 } from './workspace-command-availability';
+
+const agents = (count: number): ResumableAgents => ({
+  count,
+  allPaused: true,
+});
 
 /** Nothing parked, nothing open — every test states only what it varies. */
 function input(
@@ -24,8 +33,8 @@ function input(
     canMoveProjectRight: false,
     hasAttentionTarget: false,
     closedSessionCount: 0,
-    resumableAgentCount: 0,
-    activeProjectResumableCount: 0,
+    resumableAgents: NO_RESUMABLE_AGENTS,
+    activeProjectResumableAgents: NO_RESUMABLE_AGENTS,
     activeTabCanResume: false,
     ...overrides,
   };
@@ -183,15 +192,15 @@ describe('workspace command availability', () => {
         input({
           activeProjectName: 'Exawatt',
           hasActiveTab: true,
-          resumableAgentCount: 5,
-          activeProjectResumableCount: 2,
+          resumableAgents: agents(5),
+          activeProjectResumableAgents: agents(2),
           activeTabCanResume: true,
         })
       );
 
       expect(state.resumeScope).toEqual({
         kind: 'project',
-        count: 2,
+        agents: agents(2),
         projectName: 'Exawatt',
       });
       expect(state.commands['resume-scope'].available).toBe(true);
@@ -203,14 +212,14 @@ describe('workspace command availability', () => {
         input({
           activeProjectName: 'Exawatt',
           hasActiveTab: true,
-          resumableAgentCount: 3,
-          activeProjectResumableCount: 0,
+          resumableAgents: agents(3),
+          activeProjectResumableAgents: agents(0),
         })
       );
 
       expect(state.resumeScope).toEqual({
         kind: 'all',
-        count: 3,
+        agents: agents(3),
         projectName: null,
       });
       expect(state.commands['resume-scope'].available).toBe(true);
@@ -221,12 +230,12 @@ describe('workspace command availability', () => {
 
     it('resumes every Project when none is selected', () => {
       const state = deriveWorkspaceCommandAvailability(
-        input({ resumableAgentCount: 4 })
+        input({ resumableAgents: agents(4) })
       );
 
       expect(state.resumeScope).toEqual({
         kind: 'all',
-        count: 4,
+        agents: agents(4),
         projectName: null,
       });
     });

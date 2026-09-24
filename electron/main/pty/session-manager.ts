@@ -106,6 +106,8 @@ export interface PtySessionInfo {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** The signal that ended the process, by this platform's name for it. */
+  exitSignal: string | null;
   /** last output timestamp (ENG-015 S2: live status in the switcher) */
   lastDataAt: number;
   /** Durable provider identity; unlike `id`, survives a new PTY process. */
@@ -113,6 +115,15 @@ export interface PtySessionInfo {
   /** Requested at launch; native in-terminal changes may differ. */
   launchModel?: string;
   launchEffort?: string;
+}
+
+/** A signal number as this platform names it; numbering differs between
+ *  macOS and Linux past the common few, so the name is resolved here. */
+function exitSignalName(signal: number): string {
+  const entry = Object.entries(os.constants.signals).find(
+    ([, value]) => value === signal
+  );
+  return entry ? entry[0] : `signal ${signal}`;
 }
 
 /**
@@ -494,6 +505,7 @@ export class PtySessionManager extends EventEmitter {
       startedAt: Date.now(),
       exited: false,
       exitCode: null,
+      exitSignal: null,
       lastDataAt: Date.now(),
       harnessSessionId,
       launchModel: options.model,
@@ -540,16 +552,22 @@ export class PtySessionManager extends EventEmitter {
         durableSessionId
       );
     });
-    proc.onExit(({ exitCode }) => {
+    proc.onExit(({ exitCode, signal }) => {
       // kill() may have already removed the session (process death is
       // asynchronous) — never resurrect a deleted buffer or re-broadcast
       // exit state for a session the UI already closed
       if (!this.sessions.has(id)) return;
       info.exited = true;
       info.exitCode = exitCode;
+      // node-pty reports a signalled death as exit code 0 PLUS the signal
+      // (`pty.cc`: WIFSIGNALED sets only `signal_code`). Keeping only the
+      // code recorded an OOM kill as a clean exit (BUG-186).
+      info.exitSignal = signal ? exitSignalName(signal) : null;
       // the marker goes through the BUFFER (not just live listeners) so a
       // pane attaching after a fast death still shows what happened
-      const marker = `\r\n\x1b[38;5;244m[session exited ${exitCode}]\x1b[0m\r\n`;
+      const marker = `\r\n\x1b[38;5;244m[session ${
+        info.exitSignal ? `ended by ${info.exitSignal}` : `exited ${exitCode}`
+      }]\x1b[0m\r\n`;
       this.appendBuffer(id, marker);
       this.emit(
         'data',
@@ -561,7 +579,7 @@ export class PtySessionManager extends EventEmitter {
       // A dead process cannot report anything else, and its token is now
       // worthless — retire both before anyone can reuse the id.
       this.cleanupHarnessWiring(id);
-      this.emit('exit', id, exitCode, durableSessionId);
+      this.emit('exit', id, exitCode, durableSessionId, info.exitSignal);
     });
 
     const session = this.sessions.get(id)!;

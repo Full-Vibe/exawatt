@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   agentsNoun,
-  pausedAgentsCopy,
+  resumableAgentsCopy,
   resumingAgentsCopy,
   SESSION_RESUME_SCOPE_LABEL,
 } from '@exawatt/ui-model';
@@ -16,7 +16,7 @@ function props(
   overrides: Partial<ResumeRecoveryBarProps> = {}
 ): ResumeRecoveryBarProps {
   return {
-    readyAgentCount: 5,
+    readyAgents: { count: 5, allPaused: true },
     reconnectableAgentCount: 0,
     activeProjectName: 'Exawatt',
     activeProjectReadyCount: 2,
@@ -48,7 +48,7 @@ describe('ResumeRecoveryBar', () => {
     render(<ResumeRecoveryBar {...value} />);
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      `${pausedAgentsCopy(5)} · 2 in Exawatt`
+      `${resumableAgentsCopy(value.readyAgents)} · 2 in Exawatt`
     );
     fireEvent.click(
       screen.getByRole('button', {
@@ -100,7 +100,7 @@ describe('ResumeRecoveryBar', () => {
 
   it('falls back to the remaining all-Project action after this Project resumes', () => {
     const value = props({
-      readyAgentCount: 3,
+      readyAgents: { count: 3, allPaused: true },
       activeProjectReadyCount: 0,
       activeTabCanResume: false,
     });

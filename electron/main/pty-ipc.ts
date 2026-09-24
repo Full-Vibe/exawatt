@@ -147,8 +147,13 @@ export function registerPtyIPC(
   );
   ptySessions.on(
     'exit',
-    (id: string, exitCode: number, durableSessionId: string) => {
-      broadcast('pty:exit', { id, durableSessionId, exitCode });
+    (
+      id: string,
+      exitCode: number,
+      durableSessionId: string,
+      exitSignal: string | null
+    ) => {
+      broadcast('pty:exit', { id, durableSessionId, exitCode, exitSignal });
     }
   );
   ptySessions.on(

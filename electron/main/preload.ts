@@ -244,6 +244,7 @@ contextBridge.exposeInMainWorld('electron', {
       id: string;
       durableSessionId: string;
       exitCode: number;
+      exitSignal: string | null;
     }>('pty:exit'),
     onIdentity: subscribe<{
       id: string;

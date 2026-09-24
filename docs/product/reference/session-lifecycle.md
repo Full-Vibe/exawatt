@@ -9,12 +9,17 @@ disconnects Exawatt but does not stop source-owned execution.
 ## States
 
 - **Running** — the local process is active.
-- **Paused** — the process stopped cleanly: an explicit quit, an update, a
-  Project pause, or a zero exit code. The conversation is kept.
+- **Paused** — the process stopped cleanly (an explicit quit, an update, a
+  Project pause, or a zero exit code) and its exact conversation is kept, so
+  it can resume. Only a Session that can resume is called Paused.
 - **Interrupted** — the prior app run ended without completing its checkpoint.
-- **Exited** — the process ended on its own with a nonzero exit code, which the
-  Session names.
-- **Closed** — a shell ended; its history is kept.
+- **Exited** — the process ended on its own with a nonzero exit code, or was
+  ended by a signal (an out-of-memory kill, a crash), which the Session names.
+  An exit recorded by an older version that did not keep the signal reads
+  `Exit status not recorded` rather than claiming a clean stop.
+- **Closed** — the process stopped cleanly with nothing to resume exactly: a
+  shell, whose history is kept, or an Agent whose conversation was never
+  recorded, which offers **Reconnect conversation**.
 - **Resuming** — Exawatt is starting a replacement process for the exact saved
   provider conversation.
 - **Resume failed** — that replacement process could not start.
@@ -22,7 +27,10 @@ disconnects Exawatt but does not stop source-owned execution.
 Every surface names these states with the same word and one line saying how
 the Session ended and what is kept, for example `Stopped cleanly · conversation
 kept`. The tab, the recovery bar, the pane and Team never disagree about a
-Session's state.
+Session's state. Interrupted, Exited and Resume failed Agents with a kept
+conversation can resume too; the recovery bar says "3 Agents paused" when
+every Agent it would resume is Paused, and "3 Agents to resume" when the set
+is mixed.
 
 These process states are separate from an Agent's turn state. A teal
 half-circle means the current turn is working; a green circled check means the

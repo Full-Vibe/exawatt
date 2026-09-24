@@ -270,6 +270,10 @@ export interface PtySessionInfo {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** The signal that ended the process (`SIGKILL`), null when none did.
+   *  node-pty reports a signalled death as code 0, so the code alone cannot
+   *  say an exit was clean (BUG-186). */
+  exitSignal?: string | null;
   /** Last output timestamp; retained for recency sorting and legacy mocks. */
   lastDataAt: number;
   /** Durable provider conversation identity; null until explicitly captured. */
@@ -498,6 +502,7 @@ export interface ElectronPtyApi {
       id: string;
       durableSessionId: string;
       exitCode: number;
+      exitSignal: string | null;
     }) => void
   ) => () => void;
   onIdentity: (

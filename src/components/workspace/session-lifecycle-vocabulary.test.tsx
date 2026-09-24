@@ -26,8 +26,9 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { getCommandVerb } from '@exawatt/core';
 import {
-  pausedAgentsCopy,
-  pausedAgentsNoun,
+  resumableAgents,
+  resumableAgentsCopy,
+  resumableAgentsNoun,
   SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_UNAVAILABLE,
   SESSION_RESUME_SCOPE_LABEL,
@@ -85,6 +86,7 @@ const paused: SessionTab = {
   resumeState: 'ended-resumable',
   lifecycle: 'exited',
   exitCode: 0,
+  exitSignal: null,
   roadmapItemId: null,
   initialTask: 'Migrate billing to usage-based',
 };
@@ -134,7 +136,7 @@ describe('one Session, one lifecycle vocabulary', () => {
   it('the recovery bar counts the same noun and scopes the same verb', () => {
     render(
       <ResumeRecoveryBar
-        readyAgentCount={1}
+        readyAgents={resumableAgents([paused])}
         reconnectableAgentCount={0}
         activeProjectName="repo"
         activeProjectReadyCount={1}
@@ -147,7 +149,7 @@ describe('one Session, one lifecycle vocabulary', () => {
       />
     );
     const status = screen.getByRole('status').textContent ?? '';
-    expect(status).toContain(pausedAgentsCopy(1));
+    expect(status).toContain(resumableAgentsCopy(resumableAgents([paused])));
     expect(status.toLowerCase()).toContain(expected.word.toLowerCase());
     expect(
       screen.getByRole('button', { name: /^Resume 1 Agent in repo$/ })
@@ -206,7 +208,9 @@ describe('one Session, one lifecycle vocabulary', () => {
     // ⌘K's scope row counts with this noun (command-palette-ranking.test.tsx
     // pins that the row prints it), and a chord or a disabled row with
     // nothing to resume says why with the same word.
-    expect(pausedAgentsNoun(2).toLowerCase()).toContain(word);
+    expect(
+      resumableAgentsNoun(resumableAgents([paused, paused])).toLowerCase()
+    ).toContain(word);
     for (const reason of Object.values(SESSION_RESUME_UNAVAILABLE)) {
       expect(reason.toLowerCase()).toContain(word);
     }

@@ -49,6 +49,9 @@ export interface LocalSessionSnapshot {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** The signal that ended the process; node-pty reports that death as exit
+   *  code 0, so the code alone would call it complete (BUG-186). */
+  exitSignal?: string | null;
   /** tab/durable reference used when no current PTY id exists */
   sessionKey?: string;
   /** explicit because a cleanly stopped tab can have no exit code */
@@ -117,7 +120,13 @@ function basename(p: string): string {
 export function sessionStatus(
   session: Pick<
     LocalSessionSnapshot,
-    'exited' | 'exitCode' | 'attention' | 'delegation' | 'working' | 'engaged'
+    | 'exited'
+    | 'exitCode'
+    | 'exitSignal'
+    | 'attention'
+    | 'delegation'
+    | 'working'
+    | 'engaged'
   > &
     Partial<Pick<LocalSessionSnapshot, 'harness'>>,
   lastActivityAt: number,
@@ -125,7 +134,8 @@ export function sessionStatus(
   workingWindowMs: number
 ): AgentStatus {
   if (session.exited)
-    return session.exitCode == null || session.exitCode === 0
+    return !session.exitSignal &&
+      (session.exitCode == null || session.exitCode === 0)
       ? 'complete'
       : 'error';
   // An operator gate outranks delegated work (same precedence as the tab

@@ -104,6 +104,7 @@ interface Tile {
   titleKind: 'default' | 'operator';
   lifecycle: string;
   exitCode: number | null;
+  exitSignal?: string | null;
   harnessSessionId: string | null;
   projectName: string;
   color: string;
@@ -325,6 +326,7 @@ export function ExposeOverlay({
             titleKind: t.titleKind,
             lifecycle: t.lifecycle,
             exitCode: t.exitCode,
+            exitSignal: t.exitSignal,
             harnessSessionId: t.harnessSessionId,
             projectName: g.name,
             color: g.color,
@@ -955,6 +957,7 @@ export function ExposeOverlay({
       live: tile.live,
       lifecycle: tile.lifecycle,
       exitCode: tile.exitCode,
+      exitSignal: tile.exitSignal,
       harnessSessionId: tile.harnessSessionId,
       glyphState,
       attention: attentionSignal,

@@ -21,9 +21,7 @@ const tab = (id: string, harnessSessionId?: string) => ({
 
 /** Every legacy layout below is Session tabs only; the upgrade stamps the
  *  kind, and these assertions read the Session fields it preserved. */
-function sessionTabs(project: {
-  tabs: PersistedTab[];
-}): PersistedSessionTab[] {
+function sessionTabs(project: { tabs: PersistedTab[] }): PersistedSessionTab[] {
   return project.tabs.filter(
     (tab): tab is PersistedSessionTab => tab.kind === 'session'
   );
@@ -47,9 +45,9 @@ describe('workspace persistence v3', () => {
         },
       ],
     });
-    expect(sessionTabs(parsed!.projects[0]).map(item => item.harnessSessionId)).toEqual(
-      ids
-    );
+    expect(
+      sessionTabs(parsed!.projects[0]).map(item => item.harnessSessionId)
+    ).toEqual(ids);
   });
 
   it('migrates old tabs to identity missing instead of inventing an ID', () => {
@@ -116,9 +114,9 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
       ],
     });
     expect(sessionTabs(parsed!.projects[0])[0].roadmapItemId).toBe('ENG-017');
-    expect(sessionTabs(parsed!.projects[0]).map(item => item.durableSessionId)).toEqual(
-      ['tab-1', 'tab-2']
-    );
+    expect(
+      sessionTabs(parsed!.projects[0]).map(item => item.durableSessionId)
+    ).toEqual(['tab-1', 'tab-2']);
   });
 
   it('chains a v1 initiatives layout all the way to v4', () => {
@@ -206,6 +204,40 @@ describe('workspace persistence v5 (ENG-018)', () => {
       lifecycle: 'stopped-clean',
       exitCode: 7,
     });
+  });
+
+  it('keeps an exit signal, and keeps its absence absent (BUG-186)', () => {
+    const parsed = parsePersisted({
+      v: 7,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: 'tab-1',
+          tabs: ['SIGKILL', null, undefined, 'rm -rf /'].map(
+            (exitSignal, index) => ({
+              kind: 'session',
+              ...tab(String(index)),
+              durableSessionId: `session-${index}`,
+              titleKind: 'operator',
+              roadmapItemId: null,
+              lifecycle: 'exited',
+              exitCode: 0,
+              ...(exitSignal === undefined ? {} : { exitSignal }),
+            })
+          ),
+        },
+      ],
+    });
+
+    const signals = sessionTabs(parsed!.projects[0]).map(
+      item => item.exitSignal
+    );
+    // A record written before the field existed, and one whose value cannot
+    // be read, both stay "not recorded": neither may be read as clean.
+    expect(signals).toEqual(['SIGKILL', null, undefined, undefined]);
   });
 
   it('round-trips the durable goal fields and tolerates their absence (D21)', () => {
@@ -492,6 +524,7 @@ describe('PTY tab adoption', () => {
         startedAt: 100,
         exited: true,
         exitCode: 0,
+        exitSignal: 'SIGKILL',
         lastDataAt: 200,
         harnessSessionId: null,
       },
@@ -505,6 +538,7 @@ describe('PTY tab adoption', () => {
       resumeState: 'identity-missing',
       lifecycle: 'exited',
       exitCode: 0,
+      exitSignal: 'SIGKILL',
       titleKind: 'default',
       startedAt: 100,
     });

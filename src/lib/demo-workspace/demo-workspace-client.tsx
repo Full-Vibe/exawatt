@@ -70,6 +70,7 @@ import type {
   Project,
   SessionTab,
 } from '@/components/workspace/use-workspace-state';
+import { NO_RESUMABLE_AGENTS } from '@exawatt/ui-model';
 import {
   deriveWorkspaceCommandAvailability,
   publishWorkspaceCommandAvailability,
@@ -723,8 +724,8 @@ export function DemoWorkspaceClient() {
       closedSessionCount: closedTabs.length,
       // Demo tabs never own a provider identity and cannot spawn a process,
       // so relaunch recovery has nothing to offer here (ENG-027).
-      resumableAgentCount: 0,
-      activeProjectResumableCount: 0,
+      resumableAgents: NO_RESUMABLE_AGENTS,
+      activeProjectResumableAgents: NO_RESUMABLE_AGENTS,
       activeTabCanResume: false,
     });
   }, [activeId, activeProject, activeTab, attention, closedTabs, projects]);

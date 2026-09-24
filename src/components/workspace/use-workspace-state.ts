@@ -26,6 +26,10 @@ import {
 import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
 import {
+  sessionCanResume,
+  sessionLifecyclePresentation,
+} from '@exawatt/ui-model';
+import {
   useSessionScope,
   useSessionScopeRelease,
   useSessionScopedIdSet,
@@ -146,6 +150,10 @@ export interface SessionTab {
   lifecycle: SessionLifecycle;
   /** null = running; number = exit code; REVIVE_FAILED = revive error */
   exitCode: number | null;
+  /** The signal that ended the process (`SIGKILL`), null when none did.
+   *  Absent on a record written before exits carried it (BUG-186), which
+   *  the lifecycle owner refuses to read as a clean exit. */
+  exitSignal?: string | null;
   /** roadmap item declared at launch (ENG-017 S4) — a machine-local view
    *  annotation per decision 0010; overrides link inference, never synced */
   roadmapItemId: string | null;
@@ -367,14 +375,27 @@ export function tabIsLive(tab: WorkspaceTab): boolean {
  * Resume starts a new local process for a saved provider conversation. There
  * is nothing to start for a coworker, and asking its source to would be a
  * command Exawatt does not hold.
+ *
+ * Past "a local process is gone", the answer is the lifecycle owner's
+ * (BUG-185): the same derivation that decides whether the tab may say
+ * Paused. Every count, verb and refusal about resuming reads this.
  */
 export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
   if (isRemoteAgentTab(tab)) return false;
   return (
+    !tabIsLive(tab) && tab.resumeState !== 'resuming' && sessionCanResume(tab)
+  );
+}
+
+/** A stopped Agent whose verb is reconnect: its conversation must be chosen
+ *  before it can resume. The complement of `tabCanResumeAsAgent` among
+ *  stopped Agents, from the same owner. */
+export function tabNeedsReconnection(tab: WorkspaceTab): boolean {
+  if (isRemoteAgentTab(tab)) return false;
+  return (
     !tabIsLive(tab) &&
     tab.resumeState !== 'resuming' &&
-    tab.harness !== 'shell' &&
-    !!tab.harnessSessionId
+    sessionLifecyclePresentation(tab).verb === 'reconnect'
   );
 }
 
@@ -405,6 +426,7 @@ export function tabFromPtySession(
       : 'live',
     lifecycle: session.exited ? 'exited' : 'running',
     exitCode: session.exited ? (session.exitCode ?? 0) : null,
+    exitSignal: session.exited ? session.exitSignal : null,
     roadmapItemId,
     initialTask,
     startedAt: session.startedAt,
@@ -484,6 +506,9 @@ export interface PersistedV6 {
       roadmapItemId: string | null;
       lifecycle: SessionLifecycle;
       exitCode: number | null;
+      /** Added without a schema bump (BUG-186): absent on every record
+       *  written before it, and absence means "not recorded", never clean. */
+      exitSignal?: string | null;
       /** goal statement + last goal subtitle (D21) — optional: pre-D21
        *  layouts lack them; both restore the context layer on relaunch */
       initialTask?: string | null;
@@ -695,6 +720,16 @@ function readRemoteAgentTab(tab: unknown): PersistedRemoteAgentTab | null {
   };
 }
 
+/** A persisted signal name, or null, or absent when the record has none.
+ *  Anything else is unreadable and reads as absent, never as clean. */
+function persistedExitSignal(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' &&
+    /^(?:SIG[A-Z0-9+]{1,16}|signal \d{1,3})$/.test(value)
+    ? value
+    : undefined;
+}
+
 /** Read the persisted layout, upgrading older shapes in place: v1 (key
  *  `initiatives`) → v2 (key `projects`) → v3 (exact provider IDs) → v4
  *  (declared roadmap links) → v5 (durable lifecycle) → v6 (title ownership)
@@ -789,6 +824,7 @@ export function parsePersisted(raw: unknown): PersistedV7 | null {
                     : 'operator',
               lifecycle,
               exitCode: session.exitCode ?? null,
+              exitSignal: persistedExitSignal(session.exitSignal),
             },
           ];
         }),
@@ -1041,7 +1077,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // Exits can precede the IPC reply that introduces a replacement runtime.
   // Keep them only for the lifetime of the corresponding operation.
   const operationExitsRef =
-    useSessionScopedMap<Record<string, number>>(sessionScope);
+    useSessionScopedMap<
+      Record<string, { exitCode: number; exitSignal: string | null }>
+    >(sessionScope);
   /** Close/archive work is tracked so browser-style reopen cannot race the
    * optimistic strip removal and read the ledger before the entry lands. */
   const closeInFlightRef = useRef<Set<Promise<CloseOutcome>>>(new Set());
@@ -1516,6 +1554,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 resumeState: 'live' as const,
                 lifecycle: 'running' as const,
                 exitCode: s.exited ? (s.exitCode ?? 0) : null,
+                exitSignal: null,
               };
             }
             if (s?.exited) {
@@ -1534,6 +1573,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                     : ('identity-missing' as const),
                 lifecycle: 'exited' as const,
                 exitCode: s.exitCode ?? t.exitCode,
+                // Main's record of THIS exit; a persisted signal belongs to
+                // an older incarnation.
+                exitSignal: s.exitSignal,
               };
             }
             // App restart: process is gone. Restore history and identity, but
@@ -1653,43 +1695,46 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setWorkspaceLoadFailure(recovery ?? { required: false });
     });
 
-    const offExit = api.onExit(({ id, durableSessionId, exitCode }) => {
-      if (
-        stateRef.current.projects.some(project =>
-          project.tabs.some(
-            tab =>
-              isSessionTab(tab) &&
-              tab.durableSessionId === durableSessionId &&
-              sessionOperationsRef.current.has(tab.id)
+    const offExit = api.onExit(
+      ({ id, durableSessionId, exitCode, exitSignal }) => {
+        if (
+          stateRef.current.projects.some(project =>
+            project.tabs.some(
+              tab =>
+                isSessionTab(tab) &&
+                tab.durableSessionId === durableSessionId &&
+                sessionOperationsRef.current.has(tab.id)
+            )
           )
-        )
-      ) {
-        operationExitsRef.current.set(durableSessionId, {
-          ...operationExitsRef.current.get(durableSessionId),
-          [id]: exitCode,
-        });
+        ) {
+          operationExitsRef.current.set(durableSessionId, {
+            ...operationExitsRef.current.get(durableSessionId),
+            [id]: { exitCode, exitSignal },
+          });
+        }
+        setProjects(prev =>
+          prev.map(g => ({
+            ...g,
+            // PTY events are about local processes. A coworker tab has no
+            // durable Session and no incarnation, so no event can name it.
+            tabs: g.tabs.map(t =>
+              isSessionTab(t) && t.sessionId === id
+                ? {
+                    ...t,
+                    sessionId: null,
+                    exitCode,
+                    exitSignal,
+                    resumeState: t.harnessSessionId
+                      ? 'ended-resumable'
+                      : 'identity-missing',
+                    lifecycle: 'exited',
+                  }
+                : t
+            ),
+          }))
+        );
       }
-      setProjects(prev =>
-        prev.map(g => ({
-          ...g,
-          // PTY events are about local processes. A coworker tab has no
-          // durable Session and no incarnation, so no event can name it.
-          tabs: g.tabs.map(t =>
-            isSessionTab(t) && t.sessionId === id
-              ? {
-                  ...t,
-                  sessionId: null,
-                  exitCode,
-                  resumeState: t.harnessSessionId
-                    ? 'ended-resumable'
-                    : 'identity-missing',
-                  lifecycle: 'exited',
-                }
-              : t
-          ),
-        }))
-      );
-    });
+    );
     const offIdentity = api.onIdentity?.(
       ({ id, durableSessionId, harnessSessionId }) => {
         observedIdentitiesRef.current.set(durableSessionId, harnessSessionId);
@@ -1865,6 +1910,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 roadmapItemId: tab.roadmapItemId,
                 lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
                 exitCode: tab.exitCode,
+                // Exawatt's own stop signals the process; that is not how
+                // it ended to the operator.
+                exitSignal: stopped ? null : tab.exitSignal,
                 initialTask: tab.initialTask ?? null,
                 startedAt: tab.startedAt ?? null,
                 contextSummary:
@@ -2737,7 +2785,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           : session.harnessSessionId || tab.harnessSessionId
             ? 'resumed'
             : 'live',
-        exitCode: exited ? (observedExit ?? session.exitCode) : null,
+        exitCode: exited ? (observedExit?.exitCode ?? session.exitCode) : null,
+        exitSignal: exited
+          ? observedExit
+            ? observedExit.exitSignal
+            : session.exitSignal
+          : null,
         startedAt: session.startedAt,
       });
       return true;
@@ -2773,6 +2826,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         resumeState: 'resuming',
         lifecycle: 'resuming',
         exitCode: null,
+        exitSignal: null,
       });
       try {
         const projectDir =
@@ -2907,6 +2961,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 sessionId: null,
                 lifecycle: 'stopped-clean',
                 exitCode: null,
+                exitSignal: null,
               });
           }
         }

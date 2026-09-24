@@ -648,6 +648,92 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-09-23 (S6.4 follow-up, BUG-185 and BUG-186): **"Paused" named two
+  sets of Agents, and a killed Agent read as cleanly paused; resumability
+  and the word are now one derivation, and the exit record keeps its
+  signal.**
+
+  - **Two tests, one word (BUG-185).** The tab chose its word in the owner
+    from lifecycle and exit code. Every "paused" count (recovery bar, ⌘K),
+    every resume verb's availability, the resume batch and the chord's
+    refusal chose their members with `tabCanResumeAsAgent`, which asked only
+    whether a conversation id was recorded. Measured on the baseline dev
+    Electron over a seeded layout: after a crash the bar read "5 Agents
+    paused · 4 in billing" and ⌘K "Resume 4 paused Agents in billing" over
+    four tabs reading Interrupted (the case the entry below left open with no
+    id); after a clean quit, an Agent with no recorded conversation read
+    Paused on its tab, pane and Team tile, and ⌘⌥R announced "This Agent is
+    not paused".
+  - **One predicate.** `sessionCanResume` in
+    `packages/ui-model/src/session-lifecycle.ts` is the owner's verb
+    (`resume`), and `tabCanResumeAsAgent` now reads it after its liveness
+    guard; the reconnect count reads the same verb (`tabNeedsReconnection`).
+    Paused is handed only to a Session whose verb is resume, so no surface
+    can show Paused on a Session the verbs skip.
+  - **Words (decided in the brief, implemented).** The count keeps the
+    operator's "paused" only while it is true of every Agent counted, the
+    clean-quit case it was designed for; a mixed set names the action: "5
+    Agents to resume", ⌘K "Resume 4 Agents in billing". The owner's
+    `resumableAgents` / `resumableAgentsCopy` / `resumableAgentsNoun`
+    replace `pausedAgentsCopy` / `pausedAgentsNoun` outright. A stopped
+    Session with no recorded conversation reads **Closed · Stopped cleanly ·
+    conversation not recorded**, amber, verb **Reconnect conversation**:
+    Closed is the word the owner already gives a clean stop with nothing to
+    resume exactly (a shell), so no new word was invented. The chord's
+    "This Agent is not paused" and the other `SESSION_RESUME_UNAVAILABLE`
+    reasons are unchanged and are now true of every Session they are
+    announced about. Residual, deliberately unchanged: the native menu's
+    static "Resume Paused Agents" label also resumes Interrupted and Exited
+    Agents with a kept conversation.
+  - **The signal (BUG-186), verified real.** node-pty's `pty.cc` sets
+    `exit_code` only under `WIFEXITED` and `signal_code` only under
+    `WIFSIGNALED`, so a signalled death arrives as `{ exitCode: 0, signal
+    }`; `session-manager.ts` kept the code. Probed with node-pty inside this
+    worktree's Electron, using `planLoginShell`'s argv: zsh and bash exec the
+    harness, so `kill -9` of the Agent reports `0 + 9`; fish does not exec,
+    so a killed child reports 137 through fish and a killed fish reports
+    `0 + 9`. In the real dev Electron, `kill -9` of a fixture Claude
+    Session's PTY root recorded `exitCode: 0` and read **Paused · Stopped
+    cleanly · conversation kept** on the tab, the pane bar and the Team tile.
+    After: main records `exitSignal: 'SIGKILL'` (the platform's own name via
+    `os.constants.signals`), `pty:exit` carries it, the layout persists it,
+    and the owner reads **Exited · Ended by SIGKILL · conversation kept**,
+    amber, with Resume still offered; the terminal marker reads `[session
+    ended by SIGKILL]`. The switcher row and Fleet status treat a signal as
+    a fault like a nonzero code.
+  - **Absence is not clean.** `exitSignal` is added to the persisted tab
+    without a schema bump, and `parsePersisted` keeps an absent or
+    unreadable value absent. The owner reads an `exited` record with no
+    signal field as **Exited · Exit status not recorded**, never "Stopped
+    cleanly": 0.1.13 and the current build stored a SIGKILL as code 0, so
+    such a record cannot claim a clean exit. A `stopped-clean` record is
+    Exawatt's own clean stop and stays Paused; the layout writes a null
+    signal for a Session Exawatt stopped, because its own SIGHUP is not how
+    the Session ended.
+  - **Tests.** `session-resume-truth.test.tsx` walks all 378 combinations of
+    lifecycle, exit code, signal, harness and identity through the rendered
+    tab strip and the recovery bar and fails if a tab's word and the resume
+    set disagree for any: Paused only on a resumable Session, every counted
+    Session states a word, every refused Session is not Paused, and the bar
+    and ⌘K noun say paused exactly when every member prints it.
+    Mutation-verified four ways: an unrecorded clean stop reading Paused
+    again (3 failures), a count that always says paused (2), membership back
+    to "an id was recorded" (1), and the owner ignoring the signal (1).
+    `session-exit-signal.test.ts` drives the real manager with a fake that
+    reports exits the way the native binding does (the older fakes emit
+    `{ exitCode }` alone, which is how this passed), and the persistence
+    test pins that absent stays absent.
+  - **Evidence.** Before/after captures on the baseline (`origin/master`)
+    and this tree's dev Electron, at 1400×820 for the seeded crash and clean
+    quit and 1200×760 for the real `kill -9`; `pnpm type-check`, `pnpm
+    lint`, `pnpm test:run` green. Gates green: `eval:workspace:chrome`,
+    `eval:workspace:split`, `eval:workspace:team`, `eval:workspace:paused`,
+    `eval:navigation:spine`, `eval:electron:idempotency`,
+    `eval:electron:connected-fleet`. `eval:electron:lifecycle` passed every
+    step on this tree's package up to its last, then failed exactly as
+    BUG-050 records (the non-workspace quit ceiling), so it is waived under
+    that id.
+
 - 2026-09-23 (S6.4 follow-up, landed): **the native menu and ⌘K said
   "parked" about the Agents every other surface called Paused; they now read
   the owner's word.** Parked was not a distinct state. The ⌘K scope row and
@@ -672,7 +758,7 @@ Implementation record (landed 2026-07-10):
   the compiled manifest. Open for the operator, not changed here: the set
   the bar and ⌘K count as paused also holds Interrupted, nonzero-Exited and
   Resume failed Agents that carry a conversation id, which their own tabs
-  name by those words.
+  name by those words (closed 2026-09-23 as BUG-185, above).
 - 2026-09-23 (S6.4, landed; closes BUG-046 under decision `0042`): **one
   paused Agent spoke four vocabularies and two resume verbs at once, and the
   cure was one owner, not four edits.**

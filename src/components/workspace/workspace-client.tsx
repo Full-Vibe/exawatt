@@ -66,12 +66,14 @@ import {
   useWorkspaceState,
   tabCanResumeAsAgent,
   tabIsLive,
+  tabNeedsReconnection,
 } from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
 import { RemoteAgentPane, useRemoteCoworkers } from './remote-agent';
 import { ResumeRecoveryBar } from './resume-recovery-bar';
 import { PausedAgentRecord } from './paused-agent-record';
 import {
+  resumableAgents,
   SESSION_RESUME_UNAVAILABLE,
   sessionLifecyclePresentation,
 } from '@exawatt/ui-model';
@@ -727,35 +729,38 @@ export function WorkspaceClient() {
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
   }, [inElectron, activeProject, createDraftTab, summonProjectOpener]);
 
-  const readyAgentCount = useMemo(
+  // One derivation for every resume count (BUG-185): the members are the
+  // tabs `tabCanResumeAsAgent` admits, which reads the same lifecycle owner
+  // as each tab's word, and the owner names the count from their words.
+  const readyAgents = useMemo(
     () =>
-      projects.flatMap(project => project.tabs).filter(tabCanResumeAsAgent)
-        .length,
-    [projects]
-  );
-  const activeProjectReadyCount = useMemo(
-    () => activeProject?.tabs.filter(tabCanResumeAsAgent).length ?? 0,
-    [activeProject]
-  );
-  const activeTabCanResume = !!activeTab && tabCanResumeAsAgent(activeTab);
-  const reconnectableAgents = useMemo(
-    () =>
-      projects.flatMap(project =>
-        project.tabs
+      resumableAgents(
+        projects
+          .flatMap(project => project.tabs)
+          .filter(tabCanResumeAsAgent)
           .filter(isSessionTab)
-          .flatMap(tab =>
-            tab.harness !== 'shell' &&
-            !tabIsLive(tab) &&
-            tab.resumeState !== 'resuming' &&
-            !tab.harnessSessionId &&
-            tab.lifecycle !== 'draft'
-              ? [{ projectDir: project.dir, tab }]
-              : []
-          )
       ),
     [projects]
   );
-  const stoppedAgentCount = readyAgentCount + reconnectableAgents.length;
+  const readyAgentCount = readyAgents.count;
+  const activeProjectReadyAgents = useMemo(
+    () =>
+      resumableAgents(
+        (activeProject?.tabs ?? [])
+          .filter(tabCanResumeAsAgent)
+          .filter(isSessionTab)
+      ),
+    [activeProject]
+  );
+  const activeProjectReadyCount = activeProjectReadyAgents.count;
+  const activeTabCanResume = !!activeTab && tabCanResumeAsAgent(activeTab);
+  const reconnectableAgentCount = useMemo(
+    () =>
+      projects.flatMap(project => project.tabs).filter(tabNeedsReconnection)
+        .length,
+    [projects]
+  );
+  const stoppedAgentCount = readyAgentCount + reconnectableAgentCount;
 
   // Relaunch recovery, once (ENG-016 D36, presented by D47). The chord, the
   // ⌘K row, and the recovery bar's controls all call these — a keyboard
@@ -1530,20 +1535,20 @@ export function WorkspaceClient() {
       // Recovery truth, shared by the bar, the chords, and the ⌘K rows
       // (D36/D47) — one derivation, so no surface can offer a scope the
       // others do not have.
-      resumableAgentCount: readyAgentCount,
-      activeProjectResumableCount: activeProjectReadyCount,
+      resumableAgents: readyAgents,
+      activeProjectResumableAgents: activeProjectReadyAgents,
       activeTabCanResume: resumeTargetCanResume,
     });
   }, [
     activeProject,
-    activeProjectReadyCount,
+    activeProjectReadyAgents,
     activeTab,
     closedSessionCount,
     resumeTargetCanResume,
     hasAttentionTarget,
     pinnedTabId,
     projects,
-    readyAgentCount,
+    readyAgents,
   ]);
   useEffect(() => {
     if (ready) publishWorkspaceCommandAvailability(commandAvailability);
@@ -2027,8 +2032,8 @@ export function WorkspaceClient() {
 
         {stoppedAgentCount > 0 && !resumeNoticeDismissed && (
           <ResumeRecoveryBar
-            readyAgentCount={readyAgentCount}
-            reconnectableAgentCount={reconnectableAgents.length}
+            readyAgents={readyAgents}
+            reconnectableAgentCount={reconnectableAgentCount}
             activeProjectName={activeProject?.name ?? null}
             activeProjectReadyCount={activeProjectReadyCount}
             activeTabCanResume={activeTabCanResume}

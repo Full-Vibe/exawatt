@@ -27,7 +27,7 @@ import {
   getCommandVerb,
 } from '@exawatt/core';
 import {
-  pausedAgentsNoun,
+  resumableAgentsNoun,
   SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_SCOPE_LABEL,
 } from '@exawatt/ui-model';
@@ -657,14 +657,15 @@ export function CommandPalette({
     // Session hit, and the scope row names the exact scope the recovery
     // bar's one-click control would use — never a second recovery model.
     // Its words come from the lifecycle owner (ENG-015 S6.4), so the row
-    // counts the same paused Agents the bar and the tabs call paused.
+    // says "paused" only when every Agent it counts is Paused on its own tab,
+    // and otherwise names the action (BUG-185).
     const resumeScope = workspaceAvailability.resumeScope;
     const resumeScopeLabel =
       resumeScope === null
         ? null
         : resumeScope.kind === 'project'
-          ? `Resume ${pausedAgentsNoun(resumeScope.count)} in ${resumeScope.projectName}`
-          : `${SESSION_RESUME_SCOPE_LABEL.all} ${pausedAgentsNoun(resumeScope.count)}`;
+          ? `Resume ${resumableAgentsNoun(resumeScope.agents)} in ${resumeScope.projectName}`
+          : `${SESSION_RESUME_SCOPE_LABEL.all} ${resumableAgentsNoun(resumeScope.agents)}`;
     const resumeKeywords = [
       'resume',
       'restart',

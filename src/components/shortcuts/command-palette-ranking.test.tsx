@@ -22,9 +22,11 @@ import {
   vi,
 } from 'vitest';
 import {
-  pausedAgentsNoun,
+  NO_RESUMABLE_AGENTS,
+  resumableAgentsNoun,
   SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_SCOPE_LABEL,
+  type ResumableAgents,
 } from '@exawatt/ui-model';
 import type { SessionRow } from '@/components/workspace/switcher-rows';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -392,7 +394,10 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
   });
 
   afterEach(() => {
-    Reflect.deleteProperty(window as unknown as Record<string, unknown>, 'electron');
+    Reflect.deleteProperty(
+      window as unknown as Record<string, unknown>,
+      'electron'
+    );
   });
 
   function renderPersonalPalette() {
@@ -462,9 +467,11 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     },
   ];
 
-  const parked = (
-    overrides: Partial<WorkspaceCommandAvailabilityInput> = {}
-  ) =>
+  const agents = (count: number): ResumableAgents => ({
+    count,
+    allPaused: true,
+  });
+  const parked = (overrides: Partial<WorkspaceCommandAvailabilityInput> = {}) =>
     deriveWorkspaceCommandAvailability({
       activeProjectName: 'exawatt',
       hasActiveTab: true,
@@ -476,8 +483,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
       canMoveProjectRight: false,
       hasAttentionTarget: false,
       closedSessionCount: 0,
-      resumableAgentCount: 0,
-      activeProjectResumableCount: 0,
+      resumableAgents: NO_RESUMABLE_AGENTS,
+      activeProjectResumableAgents: NO_RESUMABLE_AGENTS,
       activeTabCanResume: false,
       ...overrides,
     });
@@ -542,8 +549,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   it('ranks both recovery verbs above a fuzzy Session for "resume"', async () => {
     publishWorkspaceCommandAvailability(
       parked({
-        resumableAgentCount: 4,
-        activeProjectResumableCount: 2,
+        resumableAgents: agents(4),
+        activeProjectResumableAgents: agents(2),
         activeTabCanResume: true,
       })
     );
@@ -554,7 +561,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     const rows = visibleRows();
     expect(rows[0].textContent).toContain(SESSION_LIFECYCLE_VERB_LABEL.resume);
     expect(rows[1].textContent).toContain(
-      `Resume ${pausedAgentsNoun(2)} in exawatt`
+      `Resume ${resumableAgentsNoun(agents(2))} in exawatt`
     );
     const session = rows.findIndex(r =>
       r.textContent?.includes('Rebuild the consumer metrics')
@@ -565,8 +572,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   it('shows the rebindable chord beside each row', async () => {
     publishWorkspaceCommandAvailability(
       parked({
-        resumableAgentCount: 4,
-        activeProjectResumableCount: 2,
+        resumableAgents: agents(4),
+        activeProjectResumableAgents: agents(2),
         activeTabCanResume: true,
       })
     );
@@ -581,7 +588,10 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
 
   it('names the recovery bar’s own scope when this Project has nothing parked', async () => {
     publishWorkspaceCommandAvailability(
-      parked({ resumableAgentCount: 3, activeProjectResumableCount: 0 })
+      parked({
+        resumableAgents: agents(3),
+        activeProjectResumableAgents: agents(0),
+      })
     );
     renderWorkspacePalette();
     await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
@@ -589,7 +599,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
 
     const rows = visibleRows();
     expect(rows[0].textContent).toContain(
-      `${SESSION_RESUME_SCOPE_LABEL.all} ${pausedAgentsNoun(3)}`
+      `${SESSION_RESUME_SCOPE_LABEL.all} ${resumableAgentsNoun(agents(3))}`
     );
     // the selected Agent is live — its verb is not offered
     expect(
@@ -602,8 +612,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   it('asks the workspace to resume, carrying no identity of its own', async () => {
     publishWorkspaceCommandAvailability(
       parked({
-        resumableAgentCount: 4,
-        activeProjectResumableCount: 2,
+        resumableAgents: agents(4),
+        activeProjectResumableAgents: agents(2),
         activeTabCanResume: true,
       })
     );

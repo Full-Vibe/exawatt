@@ -52,6 +52,7 @@ export function sessionRowStatus(
     PtySessionInfo,
     | 'exited'
     | 'exitCode'
+    | 'exitSignal'
     | 'attention'
     | 'working'
     | 'lastDataAt'
@@ -63,7 +64,9 @@ export function sessionRowStatus(
   now: number
 ): SessionRowStatus {
   if (s.exited)
-    return s.exitCode != null && s.exitCode !== 0 ? 'fault' : 'exited';
+    return s.exitSignal || (s.exitCode != null && s.exitCode !== 0)
+      ? 'fault'
+      : 'exited';
   const delegatedBusy = sessionDelegationBusy(s.delegation);
   const working = s.working ?? now - s.lastDataAt < LEGACY_WORKING_FALLBACK_MS;
   // Turn state FIRST, attention second. This used to run the other way, and
@@ -136,7 +139,8 @@ export function extractRecentProjects(layout: unknown): RecentProject[] {
     seen.add(dir);
     rows.push({
       dir,
-      name: typeof name === 'string' && name ? name : dir.split('/').pop() || dir,
+      name:
+        typeof name === 'string' && name ? name : dir.split('/').pop() || dir,
       ...(typeof color === 'string' ? { color } : {}),
     });
   };
@@ -190,7 +194,7 @@ export function buildSessionRows(
   const colors = extractProjectColors(layout);
   const itemIds = extractRoadmapItemIds(layout);
   return sessions
-    .map((s) => {
+    .map(s => {
       const subtitle = s.contextSummary?.trim() || null;
       const status = sessionRowStatus(s, now);
       const roadmapItemId = itemIds[s.id] ?? null;
@@ -203,7 +207,8 @@ export function buildSessionRows(
         color: colors[s.projectDir] ?? projectColor(s.projectDir),
         status,
         roadmapItemId,
-        searchValue: `${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
+        searchValue:
+          `${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
       };
       // within needs-you: oldest flag first (queue order); every other
       // rank (incl. exited-with-stale-flag) sorts by output recency
@@ -214,5 +219,5 @@ export function buildSessionRows(
       return { row, rank: STATUS_RANK[status], sort };
     })
     .sort((a, b) => a.rank - b.rank || a.sort - b.sort)
-    .map((r) => r.row);
+    .map(r => r.row);
 }

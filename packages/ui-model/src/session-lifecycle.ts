@@ -51,6 +51,14 @@ export interface SessionLifecycleFacts {
   /** The process exit code once it has ended; null while it runs or when
    *  nothing was recorded. */
   exitCode: number | null;
+  /**
+   * The signal that ended the process, by name (`SIGKILL`). node-pty reports
+   * a signalled death as exit code 0 PLUS a signal, so the code alone reads
+   * an OOM kill as a clean exit. Null means the record says no signal;
+   * ABSENT means the record predates the field (0.1.13 and earlier stored a
+   * SIGKILL as code 0), which is not the same fact as clean.
+   */
+  exitSignal?: string | null;
   /** The harness id. `shell` is the one harness with no conversation to
    *  resume, only a new shell to start. */
   harness: string;
@@ -82,17 +90,19 @@ interface SessionLifecyclePresentation {
  * manifest's own label for `workspace-resume-agent`, so the pane, the tab
  * menu, the recovery bar and ⌘K cannot name the same action twice.
  */
-export const SESSION_LIFECYCLE_VERB_LABEL: Record<SessionLifecycleVerb, string> =
-  {
-    resume: getCommandVerb('workspace-resume-agent').label,
-    reconnect: 'Reconnect conversation',
-    'new-shell': 'Start new shell',
-  };
+export const SESSION_LIFECYCLE_VERB_LABEL: Record<
+  SessionLifecycleVerb,
+  string
+> = {
+  resume: getCommandVerb('workspace-resume-agent').label,
+  reconnect: 'Reconnect conversation',
+  'new-shell': 'Start new shell',
+};
 
 /**
  * A Project's Agents as one scope (operator, 0.1.13: the Project menu's
  * Pause Agents / Resume Agents). Pause produces the same `stopped-clean`
- * state a clean quit does, which is why both read "Paused" above.
+ * state a clean quit does, which is why both read "Paused" below.
  */
 export const SESSION_PROJECT_VERB_LABEL = {
   pause: 'Pause Agents',
@@ -115,18 +125,58 @@ export function agentsNoun(count: number): string {
 
 const PAUSED = WORD.paused.toLowerCase();
 
-/** "3 Agents paused" */
-export function pausedAgentsCopy(count: number): string {
-  return `${agentsNoun(count)} ${PAUSED}`;
+/**
+ * The Sessions a resume verb acts on, as a count names them (BUG-185).
+ *
+ * The recovery bar and ⌘K used to say "4 Agents paused" about a set chosen
+ * by whether a conversation id was recorded, while each tab chose its word
+ * from how the process ended: after a crash the bar said paused and all four
+ * tabs said Interrupted. The members come from `sessionCanResume`, the same
+ * derivation that decides the word, and the count keeps the operator's word
+ * only while it is true of every member.
+ */
+export interface ResumableAgents {
+  count: number;
+  /** Every member's own word is Paused, so the count may say paused. */
+  allPaused: boolean;
 }
 
-/** "3 paused Agents", the count a resume verb acts on. */
-export function pausedAgentsNoun(count: number): string {
-  return `${count} ${PAUSED} ${count === 1 ? 'Agent' : 'Agents'}`;
+export const NO_RESUMABLE_AGENTS: ResumableAgents = {
+  count: 0,
+  allPaused: true,
+};
+
+/** Count the Sessions a resume verb will act on. The caller passes exactly
+ *  that set; this names it, it does not choose it. */
+export function resumableAgents(
+  members: readonly SessionLifecycleFacts[]
+): ResumableAgents {
+  return {
+    count: members.length,
+    allPaused: members.every(
+      member => sessionLifecyclePresentation(member).word === WORD.paused
+    ),
+  };
+}
+
+/** "3 Agents paused" after a clean quit; "3 Agents to resume" when the set
+ *  also holds Interrupted, Exited or Resume failed Agents, because the
+ *  action is the one thing true of every member. */
+export function resumableAgentsCopy(agents: ResumableAgents): string {
+  return `${agentsNoun(agents.count)} ${agents.allPaused ? PAUSED : 'to resume'}`;
+}
+
+/** "3 paused Agents" or "3 Agents": the noun a resume verb names. */
+export function resumableAgentsNoun(agents: ResumableAgents): string {
+  return agents.allPaused
+    ? `${agents.count} ${PAUSED} ${agents.count === 1 ? 'Agent' : 'Agents'}`
+    : agentsNoun(agents.count);
 }
 
 /** Why a resume verb has nothing to act on: a disabled reason, or what a
- *  chord announces instead of silently doing nothing. */
+ *  chord announces instead of silently doing nothing. Each is true of the
+ *  Session it is announced about, because a Session that cannot resume is
+ *  never called Paused. */
 export const SESSION_RESUME_UNAVAILABLE = {
   agent: `This Agent is not ${PAUSED}`,
   noSelection: `Select a ${PAUSED} Agent to resume`,
@@ -211,7 +261,16 @@ export function sessionLifecyclePresentation(
     case 'exited': {
       // How it ended decides the word, not which code path recorded it: a
       // Session that exited with 0 and one the app stopped cleanly are the
-      // same fact to the operator.
+      // same fact to the operator. A signal is how it ended too (BUG-186).
+      if (facts.exitSignal) {
+        return {
+          word: WORD.exited,
+          line: `Ended by ${facts.exitSignal} · ${KEPT(facts)}`,
+          tone: 'warn',
+          verb: verbFor(facts),
+          ended: true,
+        };
+      }
       const code = facts.exitCode;
       if (code !== null && code !== 0) {
         return {
@@ -231,13 +290,49 @@ export function sessionLifecyclePresentation(
           ended: true,
         };
       }
+      // An exit recorded before exits carried their signal cannot claim it
+      // was clean: that build stored a SIGKILL as code 0. A `stopped-clean`
+      // record is Exawatt's own clean stop, so it needs no signal to say so.
+      if (facts.lifecycle === 'exited' && facts.exitSignal === undefined) {
+        return {
+          word: WORD.exited,
+          line: `Exit status not recorded · ${KEPT(facts)}`,
+          tone: 'warn',
+          verb: verbFor(facts),
+          ended: true,
+        };
+      }
+      // Paused promises resume, so only a Session that can resume wears it
+      // (BUG-185). A clean stop with no recorded conversation has nothing
+      // to resume exactly: like a closed shell, it is Closed, and its verb
+      // reconnects the conversation first.
+      if (!facts.harnessSessionId) {
+        return {
+          word: WORD.closed,
+          line: `Stopped cleanly · ${KEPT(facts)}`,
+          tone: identityTone(facts),
+          verb: verbFor(facts),
+          ended: true,
+        };
+      }
       return {
         word: WORD.paused,
         line: `Stopped cleanly · ${KEPT(facts)}`,
-        tone: identityTone(facts),
+        tone: 'neutral',
         verb: verbFor(facts),
         ended: true,
       };
     }
   }
+}
+
+/**
+ * The one test of whether a Session can resume exactly (BUG-185): the tab's
+ * word, the recovery bar's and ⌘K's counts, every resume verb's availability
+ * and the chord's refusal all read it. It is the owner's verb, so the word
+ * Paused, which is only handed to a Session whose verb is resume, can never
+ * sit on a Session the resume verbs skip.
+ */
+export function sessionCanResume(facts: SessionLifecycleFacts): boolean {
+  return sessionLifecyclePresentation(facts).verb === 'resume';
 }
