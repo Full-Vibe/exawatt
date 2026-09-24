@@ -1000,6 +1000,41 @@ has it installed and used it in June.
 - Gemini CLI: parked with the evidence above. Revisit if the operator gets an
   eligible credential or a user asks for it.
 
+### 2026-09-23 — Readiness follow-ups (BUG-180 to BUG-182)
+
+**Three defects from today's readiness fact model, fixed at the class.** Found
+by the read-only release-candidate review of `v0.1.13..master`; none shipped.
+
+- **BUG-180, a presence negative outlived the install.** The five-minute
+  settled window counted `not-installed` as settled, so ⌘T said "not
+  installed" for up to five minutes after the operator followed the install
+  guide. Choice made: re-confirm presence rather than shorten the cache. A
+  registry with an absent CLI would otherwise re-run the full probe on every
+  ⌘T (the operator's machine has one absent source, so BUG-062's zero-probe
+  steady state would have been lost). Past five seconds, `servableRegistry`
+  re-runs only the lookup that observed each absence, through the login shell
+  so a PATH edited by an installer is seen, and drops both scopes' caches when
+  a CLI has appeared, so the no-probe paint stops showing the stale negative
+  too. Unanswered is not confirmed. The memory paint (Start live in about
+  50 ms) is untouched.
+- **BUG-181, two predicates over one fact.** Decision `0043` §5 lived in
+  main's wrapper; the composer, saved setups, Clone and the one-click roadmap
+  launch read a verdict that ignored provenance (the last read `launchable`
+  directly). `agentSourceLaunchVerdict` now decides provenance: a remembered
+  blocking fact is `unproven` with `remembered: { fact, reason }`, painted in
+  the informing register with its age, never disabling Start. The wrapper
+  maps the verdict and restates nothing. `launch-verdict-parity.test.ts`
+  runs main's gate and every renderer surface over provenance × state ×
+  coverage; on master 12 cells disagreed, including declared negatives in the
+  one-click launch.
+- **BUG-182, a fast clock pinned the memory.** The observation store anchored
+  its 30-day bound on the newest row with no future tolerance. It now uses the
+  clamp decision `0039`'s amendment requires, through `retentionAnchorMs`, the
+  helper `ConsumptionSampleWindow` now shares. A row past wall time plus a day
+  is evicted, and a row stamped ahead of wall time never refuses a real write
+  (the ordering guard exists for probes of one process finishing out of
+  order, which cannot produce a future stamp).
+
 ### 2026-09-24 — S5.3 probe verdict: Antigravity CLI fits the terminal shape, with partial status
 
 Measured against Antigravity CLI (`agy`) 1.2.9 in a sandboxed home with

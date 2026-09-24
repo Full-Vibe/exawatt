@@ -158,8 +158,9 @@ export type AgentSourceProbeName =
  * - `declared`: nothing on this machine has observed the source at all; the
  *   snapshot is the adapter's declaration (the web fallback with no bridge).
  *
- * The main-process launch gate refuses only a `live` negative: a remembered
+ * Only a `live` negative refuses a launch, on every surface: a remembered
  * negative is a fact with an age, not a present verdict (incident `0021`).
+ * `agentSourceLaunchVerdict` is where that is decided.
  */
 export type AgentSourceObservation =
   | { origin: 'live' }
@@ -296,39 +297,75 @@ export function agentSourceFactFreshness(input: {
   return checking ? 'checking' : 'stale';
 }
 
+/** A fact the source cannot repair by running, so a LIVE one refuses. */
+export type AgentSourceBlockingFact =
+  | 'not-installed'
+  | 'incompatible'
+  | 'failed-checks';
+
 /**
- * What a snapshot SAYS about launching, independent of how old it is or
- * where it came from. Pure over the snapshot so the main gate, the composer
- * and Settings cannot disagree about which fact blocks.
+ * What a snapshot says about launching, and the ONLY place that decides
+ * whether it refuses. Every surface that can refuse a launch reads this: the
+ * main-process gate, the composer's Start, saved setups, Clone and the
+ * one-click roadmap launch (decision `0043` §7). A second predicate over the
+ * same fact is how the composer came to refuse a Start main would allow
+ * (BUG-181), so provenance is decided here and nowhere else.
  *
- * - `blocked` names a fact the source cannot repair by running: no CLI, a
- *   version Exawatt does not support, or checks that failed.
+ * - `blocked` names a LIVE fact the source cannot repair by running: no CLI,
+ *   a version Exawatt does not support, or checks that failed.
  * - `notice` is the sign-in fact (incident `0021`): the source reports no
  *   account, and running it is how it refreshes or asks. It never blocks.
- * - `unproven`: coverage incomplete or state unknown; the attempt is the
- *   probe (BUG-063).
+ * - `unproven`: coverage incomplete, state unknown, or a blocking fact that
+ *   is only REMEMBERED (decision `0043` §5). The attempt is the probe
+ *   (BUG-063). `remembered` carries the remembered negative so a surface can
+ *   still paint it, dated, without it refusing anything.
  */
 export type AgentSourceLaunchVerdict =
   | { kind: 'clear' }
   | { kind: 'notice'; fact: 'sign-in-required'; reason: string }
+  | { kind: 'blocked'; fact: AgentSourceBlockingFact; reason: string }
   | {
-      kind: 'blocked';
-      fact: 'not-installed' | 'incompatible' | 'failed-checks';
-      reason: string;
-    }
-  | { kind: 'unproven'; unobserved: readonly AgentSourceProbeName[] };
+      kind: 'unproven';
+      unobserved: readonly AgentSourceProbeName[];
+      remembered: null | { fact: AgentSourceBlockingFact; reason: string };
+    };
+
+function unprovenVerdict(
+  unobserved: readonly AgentSourceProbeName[]
+): AgentSourceLaunchVerdict {
+  return { kind: 'unproven', unobserved, remembered: null };
+}
 
 export function agentSourceLaunchVerdict(
   source: AgentSourceSnapshot | null | undefined
 ): AgentSourceLaunchVerdict {
-  if (!source) return { kind: 'unproven', unobserved: ['installation'] };
+  if (!source) return unprovenVerdict(['installation']);
   if (source.observation.origin === 'declared') {
-    return { kind: 'unproven', unobserved: source.unobservedProbes };
+    return unprovenVerdict(source.unobservedProbes);
   }
   // Coverage before state, exactly as the gate has done since BUG-063.
   if (source.unobservedProbes.length > 0 && !source.launchable) {
-    return { kind: 'unproven', unobserved: source.unobservedProbes };
+    return unprovenVerdict(source.unobservedProbes);
   }
+  const stated = statedLaunchVerdict(source);
+  // A remembered negative is a fact with an age, not a present verdict: this
+  // process asked and got no answer, or has not asked yet. It is painted and
+  // never refuses (decision `0043` §5). A remembered `ready` or sign-in fact
+  // stays what it says, which is what lets ⌘T paint a live Start from memory.
+  if (stated.kind === 'blocked' && source.observation.origin === 'remembered') {
+    return {
+      kind: 'unproven',
+      unobserved: source.observation.revalidation?.unobservedProbes ?? [],
+      remembered: { fact: stated.fact, reason: stated.reason },
+    };
+  }
+  return stated;
+}
+
+/** What the snapshot's state says, before provenance is weighed. */
+function statedLaunchVerdict(
+  source: AgentSourceSnapshot
+): AgentSourceLaunchVerdict {
   const label = source.label;
   switch (source.state) {
     case 'ready':
@@ -361,7 +398,7 @@ export function agentSourceLaunchVerdict(
     case 'connecting':
     case 'checking':
     case 'unknown':
-      return { kind: 'unproven', unobserved: source.unobservedProbes };
+      return unprovenVerdict(source.unobservedProbes);
   }
 }
 

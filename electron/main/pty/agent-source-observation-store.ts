@@ -23,6 +23,11 @@
  *   (anchored on the data, not the clock), and every row observed through the
  *   same login shell as the newest write, because a shell change changes the
  *   PATH the facts were read from;
+ * - future tolerance (decision `0039` amendment, BUG-182): the anchor is the
+ *   newest row clamped to wall time plus a day (`retentionAnchorMs`, the
+ *   rule consumption samples use), so one row stamped by a fast clock cannot
+ *   evict the others; a row stamped past that is itself evicted, and a row
+ *   stamped ahead of wall time never refuses a real observation;
  * - eviction owner: `AgentSourceObservationStore.remember` at every write,
  *   plus one sweep when the file is first loaded.
  */
@@ -32,6 +37,7 @@ import * as path from 'path';
 import {
   AGENT_SOURCE_ADAPTER_IDS,
   agentSourceObservationComplete,
+  retentionAnchorMs,
   type AgentSourceAdapterId,
   type AgentSourceSnapshot,
 } from '@exawatt/core';
@@ -113,23 +119,28 @@ function parseFile(raw: unknown): ObservationFile {
  * The eviction owner. Pure over a parsed file so the bound is testable
  * without a disk, and called from every path that WRITES the file.
  *
+ * `nowMs` is read at every call, never captured: it only bounds how far
+ * ahead of wall time the newest row may move the anchor.
+ *
  * Returns how many rows were removed.
  */
 export function evictObservationRows(
   file: ObservationFile,
-  options: { shell: string | null; maxAgeMs?: number }
+  options: { shell: string | null; nowMs: number; maxAgeMs?: number }
 ): number {
   const maxAgeMs = options.maxAgeMs ?? OBSERVATION_MAX_AGE_MS;
   let removed = 0;
   const rows = Object.entries(file.rows) as Array<
     [AgentSourceAdapterId, ObservationRow]
   >;
-  const newest = rows.reduce(
-    (max, [, row]) => Math.max(max, row.observedAt),
-    0
+  const anchor = retentionAnchorMs(
+    rows.reduce((max, [, row]) => Math.max(max, row.observedAt), 0),
+    options.nowMs
   );
   for (const [key, row] of rows) {
-    const behind = newest - row.observedAt;
+    // Negative only for a row stamped past the tolerance: a memory that
+    // cannot be dated honestly is not worth painting.
+    const behind = anchor - row.observedAt;
     if (
       (options.shell !== null && row.shell !== options.shell) ||
       behind > maxAgeMs ||
@@ -169,7 +180,10 @@ export class AgentSourceObservationStore {
       return this.file;
     }
     // Reclaim under the bound on first touch, before any probe has run.
-    const removed = evictObservationRows(this.file, { shell: null });
+    const removed = evictObservationRows(this.file, {
+      shell: null,
+      nowMs: this.now(),
+    });
     if (removed > 0 || onDiskVersion !== SCHEMA_VERSION) {
       await this.persist(this.file);
     }
@@ -203,14 +217,25 @@ export class AgentSourceObservationStore {
       return;
     }
     const file = await this.load();
+    const now = this.now();
     const current = file.rows[snapshot.adapterId];
-    if (current && current.observedAt > snapshot.observedAt) return;
+    // Only a genuinely newer row refuses: two probes of this process that
+    // finished out of order. A row stamped ahead of wall time is not newer,
+    // it is misdated, and holding it would pin the memory until the clock
+    // caught up (BUG-182).
+    if (
+      current &&
+      current.observedAt > snapshot.observedAt &&
+      current.observedAt <= now
+    ) {
+      return;
+    }
     file.rows[snapshot.adapterId] = {
       shell,
       observedAt: snapshot.observedAt,
       snapshot,
     };
-    evictObservationRows(file, { shell });
+    evictObservationRows(file, { shell, nowMs: now });
     await this.persist(file);
   }
 

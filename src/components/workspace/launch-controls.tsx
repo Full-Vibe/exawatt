@@ -1352,9 +1352,11 @@ export function AgentComposer({
       description:
         verdict.kind === 'blocked' || verdict.kind === 'notice'
           ? verdict.reason
-          : fact.freshness === 'checking'
-            ? 'Checking'
-            : snapshot.stateLabel,
+          : verdict.kind === 'unproven' && verdict.remembered
+            ? verdict.remembered.reason
+            : fact.freshness === 'checking'
+              ? 'Checking'
+              : snapshot.stateLabel,
       disabled: !fact.available,
       disabledReason:
         verdict.kind === 'blocked' ? verdict.reason : undefined,

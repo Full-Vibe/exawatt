@@ -7,10 +7,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS,
   CONSUMPTION_SAMPLE_HORIZON_MS,
   CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
   ConsumptionSampleWindow,
+  RETENTION_ANCHOR_FUTURE_TOLERANCE_MS,
   localLogAssurance,
   resolveSampleHorizonMs,
   type ConsumptionSample,
@@ -137,7 +137,7 @@ describe('ConsumptionSampleWindow', () => {
       window.add(sample(`real-${day}`, day));
     }
     expect(window.add(sample('from-the-future', -730))).not.toBeNull();
-    expect(window.anchorMs).toBe(WALL + CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS);
+    expect(window.anchorMs).toBe(WALL + RETENTION_ANCHOR_FUTURE_TOLERANCE_MS);
     expect(window.size).toBe(14);
     expect(window.evictedCount).toBe(0);
     // Still admits real activity arriving after the misdated sample.

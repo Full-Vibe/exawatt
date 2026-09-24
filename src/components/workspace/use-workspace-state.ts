@@ -25,7 +25,6 @@ import {
 } from 'react';
 import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
-import { agentSourceLaunchVerdict } from '@exawatt/core';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -71,7 +70,6 @@ import { useClosedSessionCount } from './use-closed-session-count';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
-  launchSourceSnapshots,
   loadAgentSourcePreferences,
   loadAgentSourceRegistry,
   loadAgentModelCatalog,
@@ -79,6 +77,7 @@ import {
   type AgentSourceId,
 } from './agent-sources';
 import {
+  cloneTargetSourceReady,
   sessionClonePrompt,
   tabCanClone,
   type CloneSessionTarget,
@@ -2243,17 +2242,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         loadAgentSourceRegistry('launch', true),
         loadAgentModelCatalog(target.source, project.dir),
       ]);
-      // A clone is refused only on an OBSERVED negative the source cannot
-      // repair by running (BUG-063; readiness fact model). A source whose
-      // probe never answered, or that reports no sign-in, is not "not
-      // available": the clone proceeds and the harness reports for itself.
-      const targetSnapshot = launchSourceSnapshots(registryLoad.snapshot).find(
-        source =>
-          source.id === target.sourceId && source.harness === target.source
-      );
-      const targetReady =
-        targetSnapshot !== undefined &&
-        agentSourceLaunchVerdict(targetSnapshot).kind !== 'blocked';
+      // A clone refuses exactly what the main-process gate refuses
+      // (`cloneTargetSourceReady`, one verdict for every surface).
+      const targetReady = cloneTargetSourceReady(registryLoad.snapshot, target);
       const modelReady =
         target.modelId === modelCatalog.effectiveModel ||
         modelCatalog.models.some(model => model.id === target.modelId);

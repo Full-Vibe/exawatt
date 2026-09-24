@@ -14,11 +14,11 @@
  * horizon is: anchored at the NEWEST sample seen, never at wall time, so a
  * machine whose clock jumps, or a corpus restored from backup, cannot silently
  * empty the window. The anchor trusts the data only as far as wall time plus
- * `CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS` (BUG-141): one sample stamped by a
- * bad clock two years ahead would otherwise become the anchor and evict the
- * entire real corpus until wall time caught up. Clamping the anchor DOWN can
- * only ever retain more, never less, so the backup and clock-jump cases above
- * still hold.
+ * a day (`retentionAnchorMs`, BUG-141): one sample stamped by a bad clock two
+ * years ahead would otherwise become the anchor and evict the entire real
+ * corpus until wall time caught up. Clamping the anchor DOWN can only ever
+ * retain more, never less, so the backup and clock-jump cases above still
+ * hold.
  *
  * The horizon is a policy input rather than a constant because one consumer's
  * window is not fixed by this module. Rendered surfaces read a 7-day window
@@ -38,6 +38,7 @@
  * and while a publication is active with its anchor still unknown the only
  * safe answer is the ceiling (BUG-141).
  */
+import { retentionAnchorMs } from '../retention-anchor';
 import { mergeSamples } from './merge';
 import type { ConsumptionSample } from './types';
 
@@ -50,12 +51,6 @@ export const CONSUMPTION_SAMPLE_HORIZON_MS = 14 * 24 * 3_600_000;
  * whole-history payload that made 400 days one).
  */
 export const CONSUMPTION_SAMPLE_MAX_HORIZON_MS = 400 * 24 * 3_600_000;
-
-/**
- * How far ahead of wall time a sample may sit and still move the retention
- * anchor. A harness clock a few minutes fast is ordinary; a day is not.
- */
-export const CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS = 24 * 3_600_000;
 
 export interface ConsumptionSampleWindowOptions {
   /** Retention behind the newest sample. Default `CONSUMPTION_SAMPLE_HORIZON_MS`. */
@@ -130,11 +125,7 @@ export class ConsumptionSampleWindow {
    * further ahead of wall time than the tolerance allows.
    */
   get anchorMs(): number {
-    if (!Number.isFinite(this.newestMs)) return this.newestMs;
-    return Math.min(
-      this.newestMs,
-      this.now() + CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS
-    );
+    return retentionAnchorMs(this.newestMs, this.now());
   }
 
   /** Samples dropped for age since this window was created. */

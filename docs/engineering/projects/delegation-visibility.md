@@ -1813,3 +1813,41 @@ can wake another foreground turn. Quiet stop paths and manual task UI do not
 guarantee that boundary. The conservative last report also blocks Apply and
 resume until a new boundary refreshes it; explicit pause/interrupt remains
 available. No arbitrary silence interval can prove a silent monitor ended.
+
+### 2026-09-23 — BUG-183: a Session's unreadable data is not a verdict about Codex
+
+**Binary facts and Session data now fail at different scopes.** Found by the
+release-candidate review, which reproduced it with a scratch test on master.
+
+BUG-146 item 5 made the Codex observer hold a permanent verdict instead of
+respawning `codex app-server` every 30 seconds. It also filed three
+data-dependent failures as verdicts about the binary: a child row the strict
+parser rejects, a lineage past 4,000 descendants, and a page over Exawatt's own
+2 MiB frame cap. The held verdict skips every Session and never expires, so one
+Session's large page froze every other Session's census: a finished child
+stayed live, and the health line said Codex refused a read. The frame cap was
+worse than the review saw: it failed the shared connection, so every other
+Session's in-flight read was rejected with the same error in the same poll.
+
+The split:
+
+- **"This binary cannot do X"** (`CodexProtocolIncompatibleError`): an
+  app-server older than the schema, or a break in the wire protocol itself (a
+  line that is not JSON, a response with no result). Held per binary path,
+  fingerprint and version, as before; holding it now withdraws every Session,
+  since none can be read. Health: "Codex {version} does not support a read
+  Exawatt needs".
+- **"This Session's data could not be read"** (`CodexSessionDataError`): every
+  parser and bound failure on a read. The Session is withdrawn; the read (by
+  lineage root or activity parent) waits on its own ladder, 1 s doubling to
+  30 s, so a page over the cap is not re-read every poll; the connection stays
+  up. Health reason `unreadable`: "Exawatt could not read the delegation data
+  of one Session", which names Exawatt, not Codex.
+- **An oversize frame fails only its request.** The client skips the frame to
+  its newline and attributes it by id. Verified on the installed 0.156.1
+  app-server: result frames are serialized id-first and error frames id-last,
+  so one edge always names the request; a frame with neither is dropped, and
+  its request times out like any lost reply.
+
+The reproduction runs through the real client with two Sessions and fails on
+master at the first poll (the other Session's census never arrives).

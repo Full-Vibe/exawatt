@@ -92,6 +92,19 @@ things.**
   raise the probe deadlines (BUG-063's reasoning stands), or persist an
   incomplete observation.
 
+## Amendment 2026-09-23 (BUG-180, BUG-181)
+
+- **§5 and §7 are one function.** Where a fact came from is decided inside
+  `agentSourceLaunchVerdict`, not in the main-process wrapper: a remembered
+  blocking fact is `unproven` and carries the fact so surfaces paint it,
+  dated, in the informing register. The gate, the composer, saved setups,
+  Clone and the one-click roadmap launch all read it, and a parity test
+  requires them to agree over provenance × state × coverage.
+- **§3's settled window is conditional for `not-installed`.** An absence is
+  the settled fact the operator changes in minutes, so past the five-second
+  window it is re-confirmed with the lookup that observed it before the
+  cached registry is served; a CLI that has appeared expires the cache.
+
 ## Open
 
 - Nothing observes a source's successful use outside Exawatt (the Terminal

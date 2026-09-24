@@ -8,7 +8,14 @@ import type {
 
 export interface DelegationObservation {
   state: 'complete' | 'partial' | 'unavailable';
-  reason: 'unsupported' | 'read-failed' | null;
+  /**
+   * Whose limit was met (BUG-183). `unsupported`: the installed source
+   * cannot serve a read, a fact about the binary. `unreadable`: this
+   * Session's data is past one of Exawatt's own read limits (frame size,
+   * lineage length, record shape), a fact about this Session and about
+   * Exawatt. `read-failed`: the attempt failed and is being retried.
+   */
+  reason: 'unsupported' | 'unreadable' | 'read-failed' | null;
   version: string | null;
   observedAt: number;
 }
@@ -51,11 +58,15 @@ export class DelegationObservations extends EventEmitter {
     if (!observations.length) return null;
     const incomplete = observations.filter(item => item.state !== 'complete');
     const unsupported = incomplete.find(item => item.reason === 'unsupported');
+    const unreadable = incomplete.filter(
+      item => item.reason === 'unreadable'
+    ).length;
     const partial =
       incomplete.length > 0 &&
       (incomplete.length < observations.length ||
         incomplete.some(item => item.state === 'partial'));
     const version = unsupported?.version;
+    const label = source === 'codex' ? 'Codex' : 'This source';
     return {
       basis: 'observed',
       state: incomplete.length
@@ -70,8 +81,10 @@ export class DelegationObservations extends EventEmitter {
         : 'Delegation observable',
       detail: incomplete.length
         ? unsupported
-          ? `${source === 'codex' ? 'Codex' : 'This source'}${version ? ` ${version}` : ''} refused a lifecycle read needed to verify some children. Unverified children are hidden; independently verified children remain visible.`
-          : 'Some delegation reads are unavailable. Unverified children are hidden while Exawatt retries; this does not stop their work.'
+          ? `${label}${version ? ` ${version}` : ''} does not support a read Exawatt needs to verify children. Children it cannot verify are hidden until ${label} is updated.`
+          : unreadable
+            ? `Exawatt could not read the delegation data of ${unreadable === 1 ? 'one Session' : `${unreadable} Sessions`}. Unverified children there are hidden while Exawatt retries; other Sessions are unaffected, and this does not stop their work.`
+            : 'Some delegation reads are unavailable. Unverified children are hidden while Exawatt retries; this does not stop their work.'
         : 'Live Session child censuses were read successfully. An empty census means no live children were reported.',
       provenance: {
         kind: 'source-protocol',

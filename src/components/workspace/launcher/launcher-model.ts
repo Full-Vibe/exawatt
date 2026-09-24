@@ -371,12 +371,18 @@ export function launcherStatusLine(
   if (fact.verdict.kind === 'blocked') {
     return { kind: 'blocked', text: `${fact.verdict.reason}${age}` };
   }
-  if (fact.verdict.kind === 'notice') {
+  // A sign-in fact, and a negative this machine only REMEMBERS, both inform
+  // and never block: the launch itself revalidates (decision `0043` §5-6).
+  const informing =
+    fact.verdict.kind === 'notice'
+      ? fact.verdict.reason
+      : fact.verdict.kind === 'unproven'
+        ? (fact.verdict.remembered?.reason ?? null)
+        : null;
+  if (informing !== null) {
     return {
       kind: 'notice',
-      text: `${fact.verdict.reason}${
-        fact.freshness === 'checking' ? ' · checking' : age
-      }`,
+      text: `${informing}${fact.freshness === 'checking' ? ' · checking' : age}`,
     };
   }
   if (fact.freshness === 'checking') {

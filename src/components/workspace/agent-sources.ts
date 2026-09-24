@@ -10,7 +10,7 @@ import type {
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
 } from '@/types/electron';
-import { AGENT_HARNESSES } from '@exawatt/core';
+import { AGENT_HARNESSES, agentSourceLaunchVerdict } from '@exawatt/core';
 import {
   agentSourceDeclaration,
   FUTURE_AGENT_SOURCE_CATALOG,
@@ -486,23 +486,15 @@ export function recommendAgentSource(
   )[0];
 }
 
-/** Sources whose observation is incomplete, so nothing about them is settled. */
-export function unprovenSources(
-  registry: AgentSourceRegistrySnapshot
-): AgentSourceSnapshot[] {
-  return registry.sources.filter(
-    source => source.unobservedProbes.length > 0 || source.state === 'unknown'
-  );
-}
-
 /**
  * What a one-click launch should do with the registry it can see.
  *
- * `none` is a CLAIM: every source was observed, and none of them can launch.
+ * `none` is a CLAIM: every source's verdict names a live fact that refuses.
  * `unproven` is the absence of one, and it still carries a source, because an
- * incomplete observation is not a reason to refuse the operator a launch. The
- * main process agrees (`agentSourceLaunchReadiness`): the launch attempt is
- * the better probe, and the harness speaks for itself in the pane.
+ * incomplete observation, or a negative this machine only remembers, is not
+ * a reason to refuse the operator a launch. The main process agrees: both
+ * read `agentSourceLaunchVerdict`, and the launch attempt is the better
+ * probe, with the harness speaking for itself in the pane.
  */
 export type LaunchSourceChoice =
   | { kind: 'launchable'; source: AgentSourceId }
@@ -511,20 +503,23 @@ export type LaunchSourceChoice =
 
 /**
  * Resolve a one-click launch against observed source truth. Preferences rank
- * candidates, but can never select a source the live registry says cannot
- * launch (BUG-063: they also cannot be overruled by a probe that never
- * answered).
+ * candidates, but can never select a source whose verdict refuses (BUG-063:
+ * they also cannot be overruled by a probe that never answered, and BUG-181:
+ * nor by a remembered negative).
  */
 export function recommendLaunchableAgentSource(
   state: AgentSourcePreferenceState,
   projectDir: string,
   registry: AgentSourceRegistrySnapshot
 ): LaunchSourceChoice {
-  const launchSources = launchSourceSnapshots(registry);
+  const verdicts = launchSourceSnapshots(registry).map(source => ({
+    harness: source.harness,
+    kind: agentSourceLaunchVerdict(source).kind,
+  }));
   const launchable = new Set(
-    launchSources
-      .filter(source => source.launchable)
-      .map(source => source.harness)
+    verdicts
+      .filter(({ kind }) => kind === 'clear' || kind === 'notice')
+      .map(({ harness }) => harness)
   );
   const projectChoice = state.projectLastUsed[projectDir];
   if (projectChoice && launchable.has(projectChoice)) {
@@ -540,9 +535,9 @@ export function recommendLaunchableAgentSource(
   // asking: "no source is ready" over an incomplete registry is the fleet-wide
   // marker painted from a partial map all over again.
   const unproven = new Set(
-    unprovenSources(registry)
-      .map(source => source.harness)
-      .filter((harness): harness is AgentSourceId => harness !== null)
+    verdicts
+      .filter(({ kind }) => kind === 'unproven')
+      .map(({ harness }) => harness)
   );
   if (unproven.size === 0) return { kind: 'none' };
   const preferred = recommendAgentSource(state, projectDir);

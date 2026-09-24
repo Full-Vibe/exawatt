@@ -1845,18 +1845,40 @@ async function discoverAgentSources(
 const REGISTRY_CACHE_MS = 5_000;
 
 /**
+ * The launchable sources a registry reports as observed NOT installed: live,
+ * complete, and saying the CLI is absent. These are the negatives that extend
+ * the cache window, so they are the ones the serve path re-confirms.
+ */
+function settledAbsences(
+  snapshot: AgentSourceRegistrySnapshot
+): Array<AgentSourceSnapshot & { harness: AgentHarness }> {
+  return snapshot.sources.filter(
+    (source): source is AgentSourceSnapshot & { harness: AgentHarness } =>
+      source.harness !== null &&
+      source.observation.origin === 'live' &&
+      source.unobservedProbes.length === 0 &&
+      source.state === 'not-installed'
+  );
+}
+
+/**
  * How long a cached registry is served without a re-probe.
  *
  * Five seconds coalesces a ribbon full of draft composers (the original
  * rule). A registry whose every launchable source is a complete, live and
  * SETTLED fact has nothing a re-probe would improve for a while, so it is
  * served for the same window the model-catalog cache uses before
- * revalidating (BUG-115): a steady-state ⌘T then spawns no login shell at
- * all. Settled means `ready` or `not-installed`, the two outcomes that
- * change on the order of days. Anything else (a memory, an unanswered
+ * revalidating (BUG-115): a steady-state ⌘T then spawns no full probe. Settled
+ * means `ready` or `not-installed`. Anything else (a memory, an unanswered
  * probe, a signed-out, degraded or incompatible source) keeps the short
  * window, because those are the facts a re-probe can change. A Settings
  * Recheck bypasses the cache regardless.
+ *
+ * `not-installed` is settled only on condition (BUG-180): it is the one
+ * settled fact the operator changes in minutes, by following the install
+ * guide. So `servableRegistry` re-confirms every absence with the same
+ * executable lookup that observed it before serving it past the short
+ * window, and a CLI that has since appeared expires the cache at once.
  */
 export function registryCacheWindowMs(
   snapshot: AgentSourceRegistrySnapshot
@@ -1870,14 +1892,20 @@ export function registryCacheWindowMs(
   );
   return settled ? AGENT_SOURCE_FACT_FRESH_MS : REGISTRY_CACHE_MS;
 }
-const registryCache = new Map<
-  'all' | 'launch',
-  { snapshot: AgentSourceRegistrySnapshot; cachedAt: number }
->();
+
+interface RegistryCacheEntry {
+  snapshot: AgentSourceRegistrySnapshot;
+  cachedAt: number;
+  /** When every settled absence in `snapshot` was last confirmed. */
+  absenceConfirmedAt: number;
+}
+
+const registryCache = new Map<'all' | 'launch', RegistryCacheEntry>();
 const registryInFlight = new Map<
   'all' | 'launch',
   Promise<AgentSourceRegistrySnapshot>
 >();
+const absenceChecks = new Map<RegistryCacheEntry, Promise<boolean>>();
 
 function cacheRegistry(
   scope: 'all' | 'launch',
@@ -1888,7 +1916,71 @@ function cacheRegistry(
   if (current && current.snapshot.observedAt > snapshot.observedAt) {
     return;
   }
-  registryCache.set(scope, { snapshot, cachedAt });
+  registryCache.set(scope, { snapshot, cachedAt, absenceConfirmedAt: cachedAt });
+}
+
+/**
+ * Whether every settled absence in `entry` still holds: the same lookup that
+ * observed each one (`command -v` through the login shell, one per absent
+ * CLI, in parallel), so a CLI the operator just installed, including one
+ * whose installer added a directory to his PATH, is seen. A lookup that did
+ * not answer is not a confirmation (absence is not an answer), so the cache
+ * expires and the full probe decides. Concurrent reads share one check.
+ */
+function confirmAbsences(
+  shell: string,
+  entry: RegistryCacheEntry
+): Promise<boolean> {
+  const existing = absenceChecks.get(entry);
+  if (existing) return existing;
+  const absent = settledAbsences(entry.snapshot);
+  const check = Promise.all(
+    absent.map(source =>
+      resolveExecutable(shell, harnessDescriptor(source.harness).source.executable)
+    )
+  )
+    .then(lookups => {
+      const holds = lookups.every(
+        lookup => lookup.answered && lookup.path === null
+      );
+      if (holds) entry.absenceConfirmedAt = Date.now();
+      return holds;
+    })
+    .finally(() => {
+      absenceChecks.delete(entry);
+    });
+  absenceChecks.set(entry, check);
+  return check;
+}
+
+/**
+ * The cached registry when it may still be served, or null when this read
+ * must probe. Past the short window, a settled registry is served only after
+ * its absences are re-confirmed; one that no longer holds drops BOTH scopes'
+ * caches, so neither this read nor the no-probe paint serves the stale
+ * negative again.
+ */
+async function servableRegistry(
+  shell: string,
+  scope: 'all' | 'launch'
+): Promise<AgentSourceRegistrySnapshot | null> {
+  const cached = registryCache.get(scope);
+  if (!cached) return null;
+  const now = Date.now();
+  const age = now - cached.cachedAt;
+  if (age < 0 || age >= registryCacheWindowMs(cached.snapshot)) return null;
+  const sinceConfirmed = now - cached.absenceConfirmedAt;
+  if (sinceConfirmed >= 0 && sinceConfirmed < REGISTRY_CACHE_MS) {
+    return cached.snapshot;
+  }
+  if (await confirmAbsences(shell, cached)) return cached.snapshot;
+  for (const candidate of ['all', 'launch'] as const) {
+    const entry = registryCache.get(candidate);
+    if (entry && entry.snapshot.observedAt <= cached.snapshot.observedAt) {
+      registryCache.delete(candidate);
+    }
+  }
+  return null;
 }
 
 function launchRegistryView(
@@ -2009,13 +2101,9 @@ async function inspectAgentSourceDeclarations(
   scope: 'all' | 'launch' = 'all',
   refresh = false
 ): Promise<AgentSourceRegistrySnapshot> {
-  const cached = registryCache.get(scope);
-  if (
-    !refresh &&
-    cached &&
-    Date.now() - cached.cachedAt < registryCacheWindowMs(cached.snapshot)
-  ) {
-    return cached.snapshot;
+  if (!refresh) {
+    const served = await servableRegistry(shell, scope);
+    if (served) return served;
   }
   const existing = registryInFlight.get(scope);
   if (!refresh && existing) return existing;
@@ -2062,12 +2150,11 @@ export async function inspectAgentSources(
  * A missing source is the same case one level up: absence from the snapshot
  * means it was never looked at, not that it is broken.
  *
- * Two facts never refuse (readiness fact model, 2026-09-13). A REMEMBERED
- * negative is a fact with an age: this process asked and got no answer, so
- * the memory is painted but is not a present verdict. And a sign-in negative
- * is the source's own to refresh (incident `0021`: an answered
- * `loggedIn:false` was wrong, and one ordinary Claude request repaired it);
- * the launch proceeds and the source runs its own sign-in in the pane.
+ * Which facts refuse is decided by `agentSourceLaunchVerdict` alone, the
+ * same function every renderer surface reads (decision `0043` §7). This
+ * wrapper only turns its verdict into the gate's shape and sentence; it does
+ * not restate any rule, because a rule restated here is a second predicate
+ * the composer does not share (BUG-181).
  */
 export function agentSourceLaunchReadiness(
   snapshot: AgentSourceRegistrySnapshot,
@@ -2076,13 +2163,6 @@ export function agentSourceLaunchReadiness(
   const source = snapshot.sources.find(
     candidate => candidate.harness === harness
   );
-  if (!source) return { known: false, unobserved: ['installation'] };
-  if (source.observation.origin === 'remembered') {
-    return {
-      known: false,
-      unobserved: source.observation.revalidation?.unobservedProbes ?? [],
-    };
-  }
   const verdict = agentSourceLaunchVerdict(source);
   switch (verdict.kind) {
     case 'clear':

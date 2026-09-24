@@ -9,7 +9,7 @@ import {
   type LaunchSourceCatalogs,
 } from './launch-target-catalog';
 import type { WorkspaceTab } from './use-workspace-state';
-import type { LaunchTarget } from '@exawatt/core';
+import { agentSourceLaunchVerdict, type LaunchTarget } from '@exawatt/core';
 
 const MAX_HANDOFF_CHARS = 20_000;
 const MAX_FIELD_CHARS = 1_000;
@@ -52,6 +52,27 @@ export interface CloneSessionTarget {
   detail?: string;
   /** Full spoken identity: source, model, effort, type. */
   accessibleLabel: string;
+}
+
+/**
+ * Whether Clone may start a new Session on `target`'s source over this
+ * registry. It refuses exactly what the main-process gate refuses: a source
+ * the live registry does not carry, or a verdict naming a LIVE fact the
+ * source cannot repair by running. A remembered negative, an unanswered
+ * probe and a sign-in fact all proceed, and the harness speaks for itself
+ * (BUG-063; decision `0043` §5-7).
+ */
+export function cloneTargetSourceReady(
+  registry: AgentSourceRegistrySnapshot,
+  target: Pick<CloneSessionTarget, 'sourceId' | 'source'>
+): boolean {
+  const snapshot = launchSourceSnapshots(registry).find(
+    source => source.id === target.sourceId && source.harness === target.source
+  );
+  return (
+    snapshot !== undefined &&
+    agentSourceLaunchVerdict(snapshot).kind !== 'blocked'
+  );
 }
 
 /**

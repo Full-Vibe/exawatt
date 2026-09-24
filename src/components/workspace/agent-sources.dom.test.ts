@@ -40,9 +40,15 @@ describe('renderer Agent Source boundary', () => {
 
   it('ranks only launchable sources for one-click roadmap launches', () => {
     const registry = fallbackAgentSourceRegistry('launch');
+    // Codex reports no sign-in (it launches and asks in the pane); every
+    // other source was observed not installed.
     registry.sources = registry.sources.map(source => ({
       ...source,
-      state: 'action-required' as const,
+      observation: { origin: 'live' as const },
+      state:
+        source.harness === 'codex'
+          ? ('action-required' as const)
+          : ('not-installed' as const),
       unobservedProbes: [],
       launchable: source.harness === 'codex',
     }));
@@ -82,6 +88,7 @@ describe('renderer Agent Source boundary', () => {
     const registry = fallbackAgentSourceRegistry('launch');
     registry.sources = registry.sources.map(source => ({
       ...source,
+      observation: { origin: 'live' as const },
       state: 'not-installed' as const,
       unobservedProbes: [],
       launchable: false,

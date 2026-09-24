@@ -112,7 +112,6 @@ export {
 } from './plan-window-history';
 export type { WindowObservationOptions } from './plan-window-history';
 export {
-  CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS,
   CONSUMPTION_SAMPLE_HORIZON_MS,
   CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
   ConsumptionSampleWindow,

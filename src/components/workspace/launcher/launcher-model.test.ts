@@ -321,6 +321,36 @@ describe('launcher readiness chain', () => {
     });
   });
 
+  // BUG-181, the release-candidate reproduction: Codex is remembered as older
+  // than supported, the operator has since updated it, and the relaunch
+  // probe timed out. Main's gate would launch; the composer disabled Start,
+  // dropped the Codex chip and painted the memory as a blocking line.
+  it('paints a remembered negative as information and never disables Start', () => {
+    const outdated = remembered(
+      liveRegistry(NOW - 26 * 60 * 60_000, source =>
+        source.harness === 'codex'
+          ? {
+              launchable: false,
+              state: 'incompatible',
+              stateLabel: 'Incompatible',
+            }
+          : {}
+      ),
+      { unobservedProbes: ['version'] }
+    );
+    const readiness = launcherReadiness(
+      input({
+        registry: { snapshot: outdated, checking: false, painted: 'live' },
+      })
+    );
+    const codex = readiness.facts.find(fact => fact.harness === 'codex')!;
+    expect(codex.available).toBe(true);
+    // The memory stays on screen, dated, in the informing register.
+    const line = launcherStatusLine(codex, readiness);
+    expect(line.kind).toBe('notice');
+    expect(line.text).toContain('26h ago');
+  });
+
   it('says nothing under a known, clear source', () => {
     const readiness = launcherReadiness(input());
     expect(launcherStatusLine(claude(readiness), readiness)).toEqual({

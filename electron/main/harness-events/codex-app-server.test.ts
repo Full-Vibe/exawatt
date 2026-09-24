@@ -12,9 +12,11 @@ import {
   CodexAppServerClient,
   CodexDelegationObserver,
   CodexProtocolIncompatibleError,
+  CodexSessionDataError,
   codexProtocolVersion,
   codexProtocolVersionSupported,
   isPermanentVerdict,
+  isSessionDataError,
   parseCodexLatestTurn,
   parseCodexSubagentActivity,
   parseCodexThreadPage,
@@ -315,7 +317,11 @@ describe('Codex app-server connection custody', () => {
  * An app-server whose answers the test scripts per method. Everything else is
  * the same stdio shape `fakeAppServer` presents.
  */
-function fakeAppServerAnswering(answer: (method: string) => unknown) {
+function fakeAppServerAnswering(
+  answer: (method: string, params: Record<string, unknown>) => unknown,
+  frame: (id: number, result: unknown) => string = (id, result) =>
+    JSON.stringify({ id, result })
+) {
   const process = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
     stdout: new PassThrough(),
@@ -329,12 +335,15 @@ function fakeAppServerAnswering(answer: (method: string) => unknown) {
   process.stdin.on('data', bytes => {
     const request = JSON.parse(String(bytes));
     if (request.id === undefined) return;
-    const result = answer(request.method);
+    const result = answer(request.method, request.params ?? {});
     // `undefined` scripts a request the server never answers.
     if (result === undefined) return;
-    process.stdout.write(
-      JSON.stringify({ id: request.id, result }) + '\n'
-    );
+    // Real stdout arrives in pipe-sized pieces, so a large frame reaches the
+    // client across many chunks, as it does from the real process.
+    const text = frame(request.id, result) + '\n';
+    for (let at = 0; at < text.length; at += 65_536) {
+      process.stdout.write(text.slice(at, at + 65_536));
+    }
   });
   return process as unknown as ChildProcessWithoutNullStreams;
 }
@@ -358,28 +367,59 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
     expect(child.killed).toBe(true);
   });
 
-  it('reports a page over the frame cap as a verdict, since re-reading it returns the same page', async () => {
-    // One `thread/items/list` page whose serialized frame exceeds 2 MiB. The
-    // adapter refuses the frame, which is right; what was wrong was
-    // treating the refusal as a transient failure and reconnecting into it.
-    const child = fakeAppServerAnswering(method =>
+  // BUG-183. The 2 MiB cap is Exawatt's own limit meeting ONE Session's
+  // page. It used to fail the whole connection as a verdict about Codex,
+  // rejecting every other Session's in-flight read with it.
+  it('fails only the read whose response is over the frame cap, and keeps the connection', async () => {
+    const huge = 'x'.repeat(2_200_000);
+    const child = fakeAppServerAnswering((method, params) =>
       method === 'initialize'
         ? { userAgent: 'exawatt-delegation/0.147.0 (fixture)' }
-        : method === 'thread/items/list'
-          ? {
-              data: [{ item: { type: 'agentMessage', text: 'x'.repeat(2_200_000) } }],
-              nextCursor: null,
-            }
+        : method === 'thread/items/list' && params.threadId === 'large'
+          ? { data: [{ item: { type: 'agentMessage', text: huge } }], nextCursor: null }
           : { data: [], nextCursor: null }
     );
     const client = new CodexAppServerClient(async () => child);
     await client.connect();
-    const outcome = await client.latestSubagentActivity(ROOT, ['child']).then(
+    const [large, other] = await Promise.allSettled([
+      client.latestSubagentActivity('large', ['child']),
+      client.latestSubagentActivity('small', ['child']),
+    ]);
+    expect(large.status).toBe('rejected');
+    const reason = (large as PromiseRejectedResult).reason;
+    expect(isSessionDataError(reason)).toBe(true);
+    expect(isPermanentVerdict(reason)).toBe(false);
+    expect((reason as Error).message).toMatch(/Exawatt's 2 MiB read limit/u);
+    expect(other).toEqual({ status: 'fulfilled', value: new Map() });
+    // The same connection keeps serving.
+    await expect(client.listDescendants(ROOT)).resolves.toEqual([]);
+    expect(child.killed).toBe(false);
+    client.close();
+  });
+
+  it('attributes an oversize error frame by its trailing id and drops an oversize notification', async () => {
+    const huge = 'x'.repeat(2_200_000);
+    const child = fakeAppServerAnswering(
+      method =>
+        method === 'initialize'
+          ? { userAgent: 'exawatt-delegation/0.147.0 (fixture)' }
+          : { data: [], nextCursor: null },
+      (id, result) =>
+        id === 1
+          ? JSON.stringify({ id, result })
+          : // The installed app-server writes error frames id-last.
+            `${JSON.stringify({ method: 'fixture/noise', params: { huge } })}\n` +
+            JSON.stringify({ error: { code: -32000, message: huge }, id })
+    );
+    const client = new CodexAppServerClient(async () => child);
+    await client.connect();
+    const outcome = await client.listDescendants(ROOT).then(
       () => null,
       (error: unknown) => error
     );
-    expect(isPermanentVerdict(outcome)).toBe(true);
-    expect((outcome as Error).message).toMatch(/2 MiB/u);
+    expect(isSessionDataError(outcome)).toBe(true);
+    expect(child.killed).toBe(false);
+    client.close();
   });
 
   it('treats a request that timed out or a process that exited as a failed attempt', async () => {
@@ -502,7 +542,7 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
   it('holds a verdict a read produced, not only one the connect produced', async () => {
     const h = verdictHarness();
     h.protocol.readVerdict = new CodexProtocolIncompatibleError(
-      'app-server frame exceeded 2 MiB'
+      'JSON-RPC response has no result'
     );
     await h.observer.pollNow();
     expect(h.protocol.connectCalls).toBe(1);
@@ -712,6 +752,129 @@ describe('CodexDelegationObserver', () => {
       h.monitor.getLive('pty-codex')?.children.map(item => item.id)
     ).toEqual(['healthy-child']);
     expect(h.monitor.getLive('other-pty')).toBeNull();
+    h.observer.drop('other-pty');
+  });
+
+  // BUG-183, the release-candidate reproduction. Session A's lineage page is
+  // over Exawatt's own 2 MiB frame cap. That used to be stored as a verdict
+  // about the binary with no expiry: every later poll skipped every Session,
+  // so Session B's finished child stayed painted live, and the health line
+  // said Codex refused a read. Driven through the real client, whose frame
+  // handling is where the cross-Session failure began.
+  it("does not let one Session's unreadable data freeze another Session", async () => {
+    const OTHER = 'other-root';
+    let otherChild: CodexTurnSummary = { status: 'inProgress', completedAt: null };
+    const process = fakeAppServerAnswering((method, params) => {
+      if (method === 'initialize')
+        return { userAgent: 'exawatt-delegation/0.147.0 (fixture)' };
+      if (method === 'thread/list')
+        return params.ancestorThreadId === ROOT
+          ? {
+              data: [child('huge', 1, { agentNickname: 'x'.repeat(2_200_000) })],
+              nextCursor: null,
+            }
+          : { data: [child('b-child', 5, { parentThreadId: OTHER })], nextCursor: null };
+      if (method === 'thread/turns/list') return { data: [otherChild] };
+      return { data: [], nextCursor: null };
+    });
+    const client = new CodexAppServerClient(async () => process);
+    const observations = new DelegationObservations();
+    const monitor = new DelegationMonitor();
+    const observer = new CodexDelegationObserver({
+      observations,
+      clientFactory: () => client,
+      pollIntervalMs: 60_000,
+      autoPoll: false,
+      sink: {
+        report: (id, event) => monitor.report(id, event),
+        reconcileReportedChildren: (id, children, completed) =>
+          monitor.reconcileReportedChildren(id, children, completed),
+        clearReportedChildren: id => monitor.clearReportedChildren(id),
+      },
+    });
+    observers.push(observer);
+    observer.observe(session());
+    observer.observe(session({ id: 'pty-other', harnessSessionId: OTHER }));
+
+    await observer.pollNow();
+    expect(monitor.getLive('pty-other')?.children.map(c => c.id)).toEqual([
+      'b-child',
+    ]);
+    expect(monitor.getLive('pty-codex')).toBeNull();
+    expect(observer.verdict).toBeNull();
+
+    // Session B's child finishes. B must say so on the next poll.
+    otherChild = completed();
+    await observer.pollNow();
+    expect(monitor.getLive('pty-other')).toBeNull();
+    expect(observer.verdict).toBeNull();
+    expect(process.killed).toBe(false);
+
+    // The health line names Exawatt's reading of one Session, not Codex.
+    const fact = observations.fact('codex');
+    expect(fact?.state).toBe('degraded');
+    expect(fact?.detail).toMatch(/Exawatt could not read/u);
+    expect(fact?.detail).not.toMatch(/does not support|refused/u);
+    observer.drop('pty-other');
+  });
+
+  it("retries one Session's unreadable read on its own ladder, not every poll", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const h = harness();
+      let lineageReads = 0;
+      h.protocol.listDescendants = async () => {
+        lineageReads += 1;
+        throw new CodexSessionDataError('thread/list row 0 has an invalid child shape');
+      };
+      await h.observer.pollNow();
+      await h.observer.pollNow();
+      expect(lineageReads).toBe(1);
+      expect(h.protocol.closeCalls).toBe(0);
+      expect(h.observations.fact('codex')?.state).toBe('unavailable');
+      now += 1_000;
+      await h.observer.pollNow();
+      expect(lineageReads).toBe(2);
+      // The ladder doubles; a success clears it.
+      now += 1_000;
+      await h.observer.pollNow();
+      expect(lineageReads).toBe(2);
+      h.protocol.listDescendants = async () => {
+        lineageReads += 1;
+        return [];
+      };
+      now += 1_000;
+      await h.observer.pollNow();
+      await h.observer.pollNow();
+      expect(lineageReads).toBe(4);
+      expect(h.observations.fact('codex')?.state).toBe('ready');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('withdraws every Session when a read meets a verdict about the binary', async () => {
+    const h = harness();
+    h.observer.observe(
+      session({ id: 'other-pty', harnessSessionId: 'other-root' })
+    );
+    h.protocol.listDescendants = async (root?: string) => {
+      if (root === 'other-root')
+        throw new CodexProtocolIncompatibleError('JSON-RPC response has no result');
+      return [child('healthy-child', 10)];
+    };
+    h.protocol.turns.set('healthy-child', {
+      status: 'inProgress',
+      completedAt: null,
+    });
+    await h.observer.pollNow();
+    expect(h.observer.verdict).not.toBeNull();
+    // A verdict stops every Session's reads, so none may keep a census
+    // painted from before it.
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+    expect(h.monitor.getLive('other-pty')).toBeNull();
+    expect(h.observations.fact('codex')?.detail).toMatch(/does not support/u);
     h.observer.drop('other-pty');
   });
 

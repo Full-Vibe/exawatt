@@ -98,6 +98,18 @@ recorded), the bound resolves to its widest value: retaining too much for one
 pass costs nothing, pruning under an anchor that arrives two minutes later
 deleted months of a published profile.
 
+## Amendment 2026-09-23 (BUG-182)
+
+The future tolerance is one rule, not one constant per collection.
+`retentionAnchorMs` and `RETENTION_ANCHOR_FUTURE_TOLERANCE_MS` in
+`@exawatt/core` replace `CONSUMPTION_SAMPLE_FUTURE_TOLERANCE_MS`, and every
+age-bounded collection anchors through them: consumption samples and
+`agent-source-observations.json` today. The second collection shipped the
+unclamped form, which is why it is a shared function now. A record stamped
+past the tolerance cannot be dated honestly, so where retention is per row
+it is evicted, and a record stamped ahead of wall time never refuses a later
+real write.
+
 ## Consequences
 
 - A new persisted collection without a stated bound is a review finding, the

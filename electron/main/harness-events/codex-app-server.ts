@@ -27,6 +27,8 @@ import {
 
 const MINIMUM_PROTOCOL_VERSION = [0, 147, 0] as const;
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
+/** How much of an oversize frame's head and tail is kept to find its id. */
+const FRAME_EDGE_CHARS = 64;
 const REQUEST_TIMEOUT_MS = 4_000;
 const POLL_INTERVAL_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -119,12 +121,13 @@ export class CodexProtocolReadError extends Error {
 }
 
 function observationFailure(error: unknown): DelegationObservation['reason'] {
-  // A permanent verdict is the installed provider declining the protocol,
-  // not a read Exawatt is retrying, so it discloses as unsupported.
-  return (
-    (error instanceof CodexProtocolReadError && error.unsupported) ||
+  // A Session's own data past Exawatt's limits is Exawatt's to disclose, not
+  // Codex's (BUG-183). A permanent verdict is the installed provider
+  // declining the protocol, not a read Exawatt is retrying, so it discloses
+  // as unsupported.
+  if (isSessionDataError(error)) return 'unreadable';
+  return (error instanceof CodexProtocolReadError && error.unsupported) ||
     isPermanentVerdict(error)
-  )
     ? 'unsupported'
     : 'read-failed';
 }
@@ -135,12 +138,16 @@ function observationFailure(error: unknown): DelegationObservation['reason'] {
  * Every other failure this adapter meets is transient: a spawn that failed, a
  * request that timed out, a process that exited. Asking again is the right
  * response to those. A protocol verdict is different in kind: the installed
- * app-server is older than the schema this adapter reads, or it emitted a
- * frame this adapter refuses, and asking the same binary again returns the
- * same verdict. Throwing it as a plain error put it on the retry ladder, which
- * spawned a login shell and a `codex app-server` every 30 seconds for as long
- * as any Codex Session was live (BUG-146). The marker is what lets the
- * observer remember it instead.
+ * app-server is older than the schema this adapter reads, or it broke the
+ * wire protocol itself (a line that is not JSON, a response with no result),
+ * and asking the same binary again returns the same verdict. Throwing it as a
+ * plain error put it on the retry ladder, which spawned a login shell and a
+ * `codex app-server` every 30 seconds for as long as any Codex Session was
+ * live (BUG-146). The marker is what lets the observer remember it instead.
+ *
+ * It is a claim about the BINARY, so it is never made from one Session's
+ * data: a page that is too large, too long or shaped unexpectedly for one
+ * Session is a `CodexSessionDataError` (BUG-183).
  */
 export class CodexProtocolIncompatibleError extends Error {
   readonly permanent = true as const;
@@ -159,8 +166,43 @@ export function isPermanentVerdict(error: unknown): error is Error {
   );
 }
 
-function protocolError(message: string): Error {
+/**
+ * A failure that belongs to ONE Session's data, not to the installed binary
+ * (BUG-183).
+ *
+ * The strict parser refusing a child row, a lineage past the bounded pages,
+ * a response over Exawatt's own 2 MiB frame cap: each depends on what that
+ * Session holds. Asking again for another Session answers normally; asking
+ * again for this one answers the same until its data changes. So it is
+ * withdrawn and retried per read on its own ladder, never held as a verdict
+ * about Codex, never closes the shared connection, and is never disclosed as
+ * Codex refusing something: these are Exawatt's limits.
+ */
+export class CodexSessionDataError extends Error {
+  readonly scope = 'session' as const;
+
+  constructor(message: string) {
+    super(`Codex Session data unreadable: ${message}`);
+    this.name = 'CodexSessionDataError';
+  }
+}
+
+/** Is this a failure of one Session's data rather than of the binary? */
+export function isSessionDataError(error: unknown): error is Error {
+  return (
+    error instanceof Error &&
+    (error as { scope?: unknown }).scope === 'session'
+  );
+}
+
+/** "This binary cannot do X": held per binary path and version. */
+function binaryVerdict(message: string): Error {
   return new CodexProtocolIncompatibleError(message);
+}
+
+/** "This Session's data could not be read": per Session, retried. */
+function sessionDataError(message: string): Error {
+  return new CodexSessionDataError(message);
 }
 
 function codexInvocation(): string {
@@ -200,16 +242,16 @@ export function parseCodexThreadPage(value: unknown): {
 } {
   const page = object(value);
   if (!page || !Array.isArray(page.data)) {
-    throw protocolError('thread/list response has no data array');
+    throw sessionDataError('thread/list response has no data array');
   }
   const nextCursor = nullableString(page.nextCursor);
   if (nextCursor === undefined) {
-    throw protocolError('thread/list response has an invalid cursor');
+    throw sessionDataError('thread/list response has an invalid cursor');
   }
   const data = page.data.map((candidate, index) => {
     const thread = object(candidate);
     if (!thread)
-      throw protocolError(`thread/list row ${index} is not an object`);
+      throw sessionDataError(`thread/list row ${index} is not an object`);
     const id = nullableString(thread.id);
     const parentThreadId = nullableString(thread.parentThreadId);
     const agentNickname = nullableString(thread.agentNickname);
@@ -224,7 +266,7 @@ export function parseCodexThreadPage(value: unknown): {
       createdAt === undefined ||
       updatedAt === undefined
     ) {
-      throw protocolError(
+      throw sessionDataError(
         `thread/list row ${index} has an invalid child shape`
       );
     }
@@ -248,7 +290,7 @@ export function parseCodexThreadPage(value: unknown): {
 export function parseCodexLatestTurn(value: unknown): CodexTurnSummary | null {
   const page = object(value);
   if (!page || !Array.isArray(page.data)) {
-    throw protocolError('thread/turns/list response has no data array');
+    throw sessionDataError('thread/turns/list response has no data array');
   }
   if (page.data.length === 0) return null;
   const turn = object(page.data[0]);
@@ -262,7 +304,7 @@ export function parseCodexLatestTurn(value: unknown): CodexTurnSummary | null {
       status !== 'inProgress') ||
     completedAt === undefined
   ) {
-    throw protocolError('thread/turns/list returned an invalid latest turn');
+    throw sessionDataError('thread/turns/list returned an invalid latest turn');
   }
   return { status, completedAt };
 }
@@ -276,7 +318,7 @@ export function parseCodexSubagentActivity(
 ): Map<string, CodexSubagentActivity> {
   const page = object(value);
   if (!page || !Array.isArray(page.data)) {
-    throw protocolError('thread/items/list response has no data array');
+    throw sessionDataError('thread/items/list response has no data array');
   }
   const latest = new Map<string, CodexSubagentActivity>();
   // The request is descending. First source-reported activity for a child is
@@ -291,7 +333,7 @@ export function parseCodexSubagentActivity(
       !childId ||
       (kind !== 'started' && kind !== 'interacted' && kind !== 'interrupted')
     ) {
-      throw protocolError('subAgentActivity item has an invalid shape');
+      throw sessionDataError('subAgentActivity item has an invalid shape');
     }
     if (!latest.has(childId)) latest.set(childId, kind);
   }
@@ -315,13 +357,30 @@ async function launchCodexAppServer(): Promise<ChildProcessWithoutNullStreams> {
 export function parseCodexConversationItems(value: unknown): unknown[] {
   const page = object(value);
   if (!Array.isArray(page?.data))
-    throw protocolError('thread/items/list response has no data array');
+    throw sessionDataError('thread/items/list response has no data array');
   return [...page.data].reverse().map(entry => {
     const item = object(object(entry)?.item);
     if (!item)
-      throw protocolError('thread/items/list entry has no item object');
+      throw sessionDataError('thread/items/list entry has no item object');
     return item;
   });
+}
+
+/**
+ * The request id of a frame too large to parse. Verified on the installed
+ * 0.156.1 app-server (2026-09-23): a result frame is serialized id-first,
+ * `{"id":1,"result":…}`, and an error frame id-last,
+ * `{"error":…,"id":3}`, so one edge names the request. Null for a
+ * notification or any other layout.
+ */
+function oversizeFrameId(frame: {
+  head: string;
+  tail: string;
+}): number | null {
+  const match =
+    /^\s*\{\s*"id"\s*:\s*(\d+)\s*,/u.exec(frame.head) ??
+    /,\s*"id"\s*:\s*(\d+)\s*\}\s*$/u.exec(frame.tail);
+  return match ? Number(match[1]) : null;
 }
 
 const execFileAsync = promisify(execFile);
@@ -371,6 +430,12 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
   private nextRequestId = 1;
   private pending = new Map<number, PendingRequest>();
   private stdoutBuffer = '';
+  private stdoutBufferBytes = 0;
+  /**
+   * A frame over the cap being skipped to its newline. Only its edges are
+   * kept, because they carry the request id that names whose read it was.
+   */
+  private oversize: { head: string; tail: string } | null = null;
   private stderrTail = '';
   private connected = false;
   version: string | null = null;
@@ -442,7 +507,7 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       const version = codexProtocolVersion(initialized?.userAgent);
       this.version = version?.join('.') ?? null;
       if (!version || !codexProtocolVersionSupported(version)) {
-        throw protocolError('installed app-server is older than 0.147.0');
+        throw binaryVerdict('installed app-server is older than 0.147.0');
       }
       if (this.process !== child)
         throw new Error('Codex app-server connection superseded');
@@ -461,6 +526,8 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     this.process = null;
     this.connected = false;
     this.stdoutBuffer = '';
+    this.stdoutBufferBytes = 0;
+    this.oversize = null;
     if (child && !child.killed) child.kill();
     this.rejectPending(new Error('Codex app-server connection closed'));
   }
@@ -483,7 +550,7 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       cursor = page.nextCursor;
       if (!cursor) return descendants;
     }
-    throw protocolError('thread/list exceeded the bounded descendant pages');
+    throw sessionDataError('thread/list exceeded the bounded descendant pages');
   }
 
   async latestTurn(threadId: string): Promise<CodexTurnSummary | null> {
@@ -519,12 +586,12 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       if ([...wanted].every(childId => latest.has(childId))) return latest;
       const nextCursor = nullableString(page?.nextCursor);
       if (nextCursor === undefined) {
-        throw protocolError('thread/items/list response has an invalid cursor');
+        throw sessionDataError('thread/items/list response has an invalid cursor');
       }
       cursor = nextCursor;
       if (!cursor) return latest;
     }
-    throw protocolError(
+    throw sessionDataError(
       'thread/items/list exceeded the bounded activity pages'
     );
   }
@@ -572,51 +639,98 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
+  /**
+   * Split stdout into frames. A frame over `MAX_FRAME_BYTES` is Exawatt's own
+   * limit meeting ONE response, so it fails that one read and nothing else
+   * (BUG-183): the bytes are skipped to the frame's newline, the connection
+   * stays up, and every other Session's read on it proceeds. Failing the
+   * connection instead rejected every in-flight read with the same error,
+   * which is how one Session's large page became a verdict on all of them.
+   */
   private acceptOutput(chunk: string): void {
-    this.stdoutBuffer += chunk;
-    if (Buffer.byteLength(this.stdoutBuffer) > MAX_FRAME_BYTES) {
-      this.fail(protocolError('app-server frame exceeded 2 MiB'));
-      return;
-    }
-    for (;;) {
-      const newline = this.stdoutBuffer.indexOf('\n');
-      if (newline < 0) return;
-      const line = this.stdoutBuffer.slice(0, newline).trim();
-      this.stdoutBuffer = this.stdoutBuffer.slice(newline + 1);
-      if (!line) continue;
-      let message: JsonObject | null = null;
-      try {
-        message = object(JSON.parse(line));
-      } catch {
-        // handled below
-      }
-      if (!message) {
-        this.fail(protocolError('app-server emitted invalid JSON'));
-        return;
-      }
-      const id = finiteNumber(message.id);
-      if (id === undefined) continue; // notification; this adapter is read-only
-      const pending = this.pending.get(id);
-      if (!pending) continue;
-      clearTimeout(pending.timer);
-      this.pending.delete(id);
-      const error = object(message.error);
-      if (error) {
-        pending.reject(
-          new CodexProtocolReadError(
-            pending.method,
-            finiteNumber(error.code),
-            typeof error.message === 'string'
-              ? error.message
-              : 'Codex app-server request failed'
-          )
+    let rest = chunk;
+    while (rest.length > 0) {
+      const newline = rest.indexOf('\n');
+      const piece = newline < 0 ? rest : rest.slice(0, newline);
+      rest = newline < 0 ? '' : rest.slice(newline + 1);
+      if (this.oversize) {
+        this.oversize.tail = (this.oversize.tail + piece).slice(
+          -FRAME_EDGE_CHARS
         );
-      } else if ('result' in message) {
-        pending.resolve(message.result);
       } else {
-        pending.reject(protocolError('JSON-RPC response has no result'));
+        this.stdoutBuffer += piece;
+        this.stdoutBufferBytes += Buffer.byteLength(piece);
+        if (this.stdoutBufferBytes > MAX_FRAME_BYTES) {
+          this.oversize = {
+            head: this.stdoutBuffer.slice(0, FRAME_EDGE_CHARS),
+            tail: this.stdoutBuffer.slice(-FRAME_EDGE_CHARS),
+          };
+          this.stdoutBuffer = '';
+          this.stdoutBufferBytes = 0;
+        }
       }
+      if (newline < 0) return;
+      const oversize = this.oversize;
+      const line = this.stdoutBuffer.trim();
+      this.oversize = null;
+      this.stdoutBuffer = '';
+      this.stdoutBufferBytes = 0;
+      if (oversize) this.rejectOversize(oversize);
+      else if (line && !this.acceptFrame(line)) return;
     }
+  }
+
+  /** Fail the one read an oversize frame answered; a notification is dropped. */
+  private rejectOversize(frame: { head: string; tail: string }): void {
+    const id = oversizeFrameId(frame);
+    const pending = id === null ? undefined : this.pending.get(id);
+    // No id, or nobody waiting: a notification this read-only adapter never
+    // reads. An unattributable response times out like any lost reply.
+    if (id === null || !pending) return;
+    clearTimeout(pending.timer);
+    this.pending.delete(id);
+    pending.reject(
+      sessionDataError(
+        `${pending.method} response exceeded Exawatt's 2 MiB read limit`
+      )
+    );
+  }
+
+  /** One complete frame. False when it broke the protocol and the connection. */
+  private acceptFrame(line: string): boolean {
+    let message: JsonObject | null = null;
+    try {
+      message = object(JSON.parse(line));
+    } catch {
+      // handled below
+    }
+    if (!message) {
+      this.fail(binaryVerdict('app-server emitted invalid JSON'));
+      return false;
+    }
+    const id = finiteNumber(message.id);
+    if (id === undefined) return true; // notification; this adapter is read-only
+    const pending = this.pending.get(id);
+    if (!pending) return true;
+    clearTimeout(pending.timer);
+    this.pending.delete(id);
+    const error = object(message.error);
+    if (error) {
+      pending.reject(
+        new CodexProtocolReadError(
+          pending.method,
+          finiteNumber(error.code),
+          typeof error.message === 'string'
+            ? error.message
+            : 'Codex app-server request failed'
+        )
+      );
+    } else if ('result' in message) {
+      pending.resolve(message.result);
+    } else {
+      pending.reject(binaryVerdict('JSON-RPC response has no result'));
+    }
+    return true;
   }
 
   private fail(error: Error): void {
@@ -625,6 +739,8 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     this.process = null;
     this.connected = false;
     this.stdoutBuffer = '';
+    this.stdoutBufferBytes = 0;
+    this.oversize = null;
     if (child && !child.killed) child.kill();
     this.rejectPending(error);
   }
@@ -666,11 +782,14 @@ export interface CodexDelegationObserverOptions {
 /**
  * A permanent verdict the observer holds instead of retrying.
  *
- * Keyed to the binary that was judged, by path and on-disk fingerprint, and
- * to the set of Sessions it was judged over. The verdict lifts when either
- * changes: the binary was upgraded or replaced, or a new Codex Session was
- * launched, which is the operator's own moment to have upgraded it. Nothing
- * lifts it on a timer, because a timer is what it replaces.
+ * It is only ever about the BINARY ("this Codex cannot do X"), never about a
+ * Session's data (BUG-183), because holding it stops every Session's reads.
+ * Keyed to the binary that was judged, by path, on-disk fingerprint and the
+ * version it reported, and to the set of Sessions it was judged over. The
+ * verdict lifts when either changes: the binary was upgraded or replaced, or
+ * a new Codex Session was launched, which is the operator's own moment to
+ * have upgraded it. Nothing lifts it on a timer, because a timer is what it
+ * replaces.
  */
 interface CodexDelegationVerdict {
   error: Error;
@@ -753,6 +872,16 @@ export class CodexDelegationObserver {
   private held: { verdict: CodexDelegationVerdict; generation: number } | null =
     null;
   private rootsGeneration = 0;
+  /**
+   * Reads whose failure belongs to one Session's data, keyed by the read
+   * (`lineage:<root>`, `activity:<parent>`), each on its own ladder (BUG-183).
+   * A healthy read deletes its entry and the map empties with the last root,
+   * so it holds at most one entry per failing read of a live Session.
+   */
+  private readonly unreadable = new Map<
+    string,
+    { retryAt: number; retryMs: number; error: Error }
+  >();
 
   constructor(options: CodexDelegationObserverOptions = {}) {
     this.clientFactory =
@@ -811,6 +940,7 @@ export class CodexDelegationObserver {
       this.timer = null;
       this.client?.close();
       this.client = null;
+      this.unreadable.clear();
     }
   }
 
@@ -830,8 +960,12 @@ export class CodexDelegationObserver {
     const client = this.client ?? this.clientFactory();
     this.client = client;
     const roots = [...this.roots.entries()];
+    // Three kinds of failure, three scopes (BUG-183). A verdict about the
+    // binary stops every Session; a failure of one Session's data withdraws
+    // that Session alone and leaves the connection up; anything else is the
+    // attempt failing, which closes the connection and rides the ladder.
     let failed = false;
-    let permanent: Error | null = null;
+    let verdict: Error | null = null;
     try {
       await client.connect();
       const snapshots = await settleConcurrent(
@@ -853,30 +987,43 @@ export class CodexDelegationObserver {
             sessionId,
             snapshot.value.observation
           );
+        } else if (isPermanentVerdict(snapshot.reason)) {
+          verdict = snapshot.reason;
         } else {
           this.withdraw(sessionId, snapshot.reason, client.version);
-          failed = true;
-          if (isPermanentVerdict(snapshot.reason)) permanent = snapshot.reason;
+          if (!isSessionDataError(snapshot.reason)) failed = true;
         }
       }
     } catch (error) {
       if (this.client !== client) return;
-      failed = true;
-      if (isPermanentVerdict(error)) permanent = error;
-      for (const [sessionId, root] of roots) {
-        if (this.roots.get(sessionId) === root)
-          this.withdraw(sessionId, error, client.version);
+      if (isPermanentVerdict(error)) {
+        verdict = error;
+      } else {
+        failed = true;
+        for (const [sessionId, root] of roots) {
+          if (this.roots.get(sessionId) === root)
+            this.withdraw(sessionId, error, client.version);
+        }
       }
     } finally {
       this.polling = false;
+      if (verdict !== null && this.client === client) {
+        // A verdict about the binary is about every Session it serves, so
+        // every one is withdrawn, not only the Session whose read met it:
+        // none may keep a census painted from before the verdict.
+        for (const sessionId of this.roots.keys()) {
+          this.withdraw(sessionId, verdict, client.version);
+        }
+        failed = true;
+      }
       if (this.client === client && failed) {
         client.close();
         this.client = null;
       }
-      if (permanent !== null) this.remember(permanent, client);
+      if (verdict !== null) this.remember(verdict, client);
       if (this.autoPoll) {
         this.schedule(
-          permanent !== null
+          verdict !== null
             ? MAX_BACKOFF_MS
             : failed
               ? this.retryMs
@@ -884,9 +1031,37 @@ export class CodexDelegationObserver {
         );
       }
       this.retryMs =
-        failed && permanent === null
+        failed && verdict === null
           ? Math.min(MAX_BACKOFF_MS, this.retryMs * 2)
           : 1_000;
+    }
+  }
+
+  /**
+   * One read whose failure can belong to a Session's data. While its ladder
+   * runs, the read is not sent and its last data error answers instead, so a
+   * page that is over Exawatt's limit is not re-read every poll; the first
+   * read that succeeds clears it.
+   */
+  private async dataRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+    const backoff = this.unreadable.get(key);
+    if (backoff && backoff.retryAt > Date.now()) throw backoff.error;
+    try {
+      const value = await read();
+      this.unreadable.delete(key);
+      return value;
+    } catch (error) {
+      if (isSessionDataError(error)) {
+        const retryMs = backoff
+          ? Math.min(MAX_BACKOFF_MS, backoff.retryMs * 2)
+          : 1_000;
+        this.unreadable.set(key, {
+          retryAt: Date.now() + retryMs,
+          retryMs,
+          error,
+        });
+      }
+      throw error;
     }
   }
 
@@ -952,7 +1127,9 @@ export class CodexDelegationObserver {
   ): Promise<ObservedCensus> {
     // Failure of lineage invalidates the root. Lifecycle reads only invalidate
     // their child (or the ambiguous siblings sharing one parent activity read).
-    const descendants = await client.listDescendants(root.threadId);
+    const descendants = await this.dataRead(`lineage:${root.threadId}`, () =>
+      client.listDescendants(root.threadId)
+    );
     const children = new Map<string, ObservedChild>();
     const unresolved: { thread: CodexChildThread; observed: ObservedChild }[] =
       [];
@@ -997,9 +1174,11 @@ export class CodexDelegationObserver {
       parents,
       MAX_CHILD_READS,
       ([parent, items]) =>
-        client.latestSubagentActivity(
-          parent,
-          items.map(item => item.thread.id)
+        this.dataRead(`activity:${parent}`, () =>
+          client.latestSubagentActivity(
+            parent,
+            items.map(item => item.thread.id)
+          )
         )
     );
     for (let index = 0; index < parents.length; index += 1) {
@@ -1028,9 +1207,11 @@ export class CodexDelegationObserver {
           : 'complete',
         reason: failures.includes('unsupported')
           ? 'unsupported'
-          : failures.length
-            ? 'read-failed'
-            : null,
+          : failures.includes('unreadable')
+            ? 'unreadable'
+            : failures.length
+              ? 'read-failed'
+              : null,
         version: client.version ?? null,
         observedAt: Date.now(),
       },

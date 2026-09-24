@@ -71,6 +71,8 @@ export type {
   SessionLink,
 } from './roadmap/types';
 export * from './consumption/index';
+// Decision 0039: the one anchor every age-bounded persisted collection uses.
+export * from './retention-anchor';
 export * from './operator-stats/index';
 export * from './demo/index';
 export * from './launch-configurations';

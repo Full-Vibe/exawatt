@@ -7,6 +7,7 @@ import type {
   AgentSourceSnapshot,
   AgentSourceState,
 } from '@exawatt/core';
+import { RETENTION_ANCHOR_FUTURE_TOLERANCE_MS } from '@exawatt/core';
 import {
   AgentSourceObservationStore,
   OBSERVATION_MAX_AGE_MS,
@@ -15,6 +16,9 @@ import {
 import { agentSourceDeclaration } from './generated-agent-source-declarations';
 
 const FISH = '/opt/homebrew/bin/fish';
+/** Wall time for the pure bound; well past every fixture row. */
+const WALL = 1_800_000_000_000;
+const DAY = 24 * 60 * 60_000;
 const ZSH = '/bin/zsh';
 
 function snapshot(
@@ -163,7 +167,7 @@ describe('evictObservationRows (decision 0039 bound)', () => {
         },
       },
     };
-    expect(evictObservationRows(file, { shell: FISH })).toBe(1);
+    expect(evictObservationRows(file, { shell: FISH, nowMs: WALL })).toBe(1);
     expect(Object.keys(file.rows)).toEqual(['codex']);
   });
 
@@ -175,8 +179,61 @@ describe('evictObservationRows (decision 0039 bound)', () => {
       },
     });
     const sweep = rows();
-    expect(evictObservationRows(sweep, { shell: null })).toBe(0);
+    expect(evictObservationRows(sweep, { shell: null, nowMs: WALL })).toBe(0);
     const write = rows();
-    expect(evictObservationRows(write, { shell: FISH })).toBe(1);
+    expect(evictObservationRows(write, { shell: FISH, nowMs: WALL })).toBe(1);
+  });
+});
+
+// BUG-182, the sibling of BUG-141's consumption clamp (decision 0039
+// amendment). One observation stamped while the clock ran two years fast
+// used to become the anchor: every real row more than thirty days behind it
+// was deleted, and every later real observation was refused as "older".
+describe('a future-dated observation (decision 0039 future tolerance)', () => {
+  const file = (rows: Record<string, number>) => ({
+    schemaVersion: 1,
+    rows: Object.fromEntries(
+      Object.entries(rows).map(([adapterId, observedAt]) => [
+        adapterId,
+        {
+          shell: FISH,
+          observedAt,
+          snapshot: snapshot(adapterId as AgentSourceAdapterId, { observedAt }),
+        },
+      ])
+    ),
+  });
+
+  it('does not let one fast-clock row evict the real rows behind it', () => {
+    const rows = file({ claude: WALL + 730 * DAY, codex: WALL - DAY });
+    evictObservationRows(rows, { shell: FISH, nowMs: WALL });
+    expect(Object.keys(rows.rows)).toContain('codex');
+    // The misdated row itself cannot be dated honestly, so it goes.
+    expect(Object.keys(rows.rows)).not.toContain('claude');
+  });
+
+  it('keeps an ordinary clock skew inside the tolerance', () => {
+    const rows = file({
+      claude: WALL + RETENTION_ANCHOR_FUTURE_TOLERANCE_MS / 2,
+      codex: WALL - DAY,
+    });
+    expect(evictObservationRows(rows, { shell: FISH, nowMs: WALL })).toBe(0);
+  });
+
+  it('remembers a real observation over a row stamped in the future', async () => {
+    for (const ahead of [730 * DAY, RETENTION_ANCHOR_FUTURE_TOLERANCE_MS / 2]) {
+      await fs.promises.writeFile(
+        path.join(directory, 'agent-source-observations.json'),
+        JSON.stringify(file({ claude: WALL + ahead }))
+      );
+      const store = new AgentSourceObservationStore(() => directory, () => WALL);
+      await store.remember(
+        FISH,
+        snapshot('claude', { observedAt: WALL, state: 'not-installed' })
+      );
+      const remembered = (await store.read(FISH)).get('claude');
+      expect(remembered?.observedAt, `ahead=${ahead}`).toBe(WALL);
+      expect(remembered?.state).toBe('not-installed');
+    }
   });
 });
