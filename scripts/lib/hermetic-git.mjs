@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 
@@ -112,6 +112,26 @@ export function gitBytes(cwd, args, extra = {}) {
     maxBuffer: MAX_BUFFER,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+/**
+ * Runs git and reports how it ended rather than throwing, with both streams.
+ * For a command whose output on stderr is the result under test, such as a
+ * push that a hook reports on or refuses.
+ */
+export function gitOutcome(cwd, args, extra = {}) {
+  const result = spawnSync('git', args, {
+    cwd,
+    env: hermeticGitEnv(extra),
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error) throw result.error;
+  return {
+    status: result.status,
+    output: `${result.stdout}${result.stderr}`,
+  };
 }
 
 const execFileAsync = promisify(execFile);

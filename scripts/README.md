@@ -19,6 +19,7 @@ operating contract:
 | Prefix                                     | Purpose                                                   |
 | ------------------------------------------ | --------------------------------------------------------- |
 | `agent:*`, `worktree:*`                    | isolated agent setup and queued delivery                  |
+| `docs:*`, `hooks:*`                        | docs checks and the versioned pre-push hook               |
 | `test:*`, `type-check`, `lint`, `exports:*` | repository verification                                  |
 | `qa:*`                                     | browser-environment diagnosis and smoke checks            |
 | `eval:*`                                   | bounded product or architecture evaluators                |

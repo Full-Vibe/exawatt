@@ -71,6 +71,14 @@
       "exclude": []
     },
     {
+      "id": "repository-git-hooks-public",
+      "classification": "PUBLIC",
+      "include": [
+        ".githooks/**"
+      ],
+      "exclude": []
+    },
+    {
       "id": "public-source-spine",
       "classification": "PUBLIC",
       "include": [
@@ -160,6 +168,7 @@
         "scripts/company-proof.mjs",
         "scripts/contribution-pull.mjs",
         "scripts/discard-electron-snapshot.mjs",
+        "scripts/docs-check.mjs",
         "scripts/dogfood-worker.mjs",
         "scripts/electron-dev.mjs",
         "scripts/electron-packaged-smoke.mjs",

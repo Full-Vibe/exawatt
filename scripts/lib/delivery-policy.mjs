@@ -686,6 +686,37 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
   return [...repositoryOwned.values()];
 }
 
+/**
+ * The floor checks a documentation change can fail, taken from the floor's
+ * own definitions so `pnpm docs:check` cannot drift from what a landing runs
+ * (BUG-195).
+ */
+const DOCS_FLOOR_CHECK_IDS = new Set([
+  'open-source:paths:check',
+  'content:scan',
+  'roadmap-contract',
+]);
+
+/**
+ * The public-variant renderer contract. The floor runs this file inside
+ * `test:agent-delivery`, which is far too slow for a pre-push check, so the
+ * docs subset names it on its own.
+ */
+export const RECIPE_RENDERERS_CHECK = Object.freeze({
+  id: 'recipe-renderers',
+  command: 'node',
+  args: ['--test', 'scripts/recipe-renderers.test.mjs'],
+});
+
+export function classifyDocsChecks(changedPaths) {
+  return [
+    RECIPE_RENDERERS_CHECK,
+    ...classifyDeliveryPolicy(changedPaths).filter(check =>
+      DOCS_FLOOR_CHECK_IDS.has(check.id)
+    ),
+  ];
+}
+
 /** The reporter pair every rerunnable vitest check runs under: the default
  *  reporter still prints for the human, and the JSON one is the machine
  *  channel. Human reporter text is never parsed. */

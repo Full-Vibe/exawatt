@@ -1,0 +1,13 @@
+#!/bin/sh
+# Versioned pre-push hook (BUG-195), installed by `pnpm hooks:install`.
+#
+# A push to origin's master that changes docs runs `pnpm docs:check` first and
+# is refused when it fails. Every push that does not target a master ref
+# returns here without starting node; `scripts/docs-check.mjs` decides the rest.
+updates=$(cat)
+case "$updates" in
+  *" refs/heads/master "*) ;;
+  *) exit 0 ;;
+esac
+root=$(cd "$(dirname "$0")/.." && pwd) || exit 1
+printf '%s\n' "$updates" | node "$root/scripts/docs-check.mjs" --pre-push "$1" "$2"

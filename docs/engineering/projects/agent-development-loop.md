@@ -301,6 +301,32 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-23, BUG-195: the docs-only in-place path to `master` is sanctioned
+  so the operator's question is answered before any landing, and it ran no
+  landing check at all. Three pushes on it broke things the floor would have
+  refused: `e4b35dcf` and `23a6b2f8` wrote public-variant directives the
+  projector rejects (BUG-131), and `0cbcb226` doubled one blank line before
+  `### BUG-163`, so the public roadmap rendered with a seam, recipe-renderers
+  failed eight subtests on master's own roadmap, and every queued landing
+  failed its rebase checks until `594df51c`. The latency reason stands; the
+  missing piece was a guard fast enough to sit in front of a push.
+  `pnpm docs:check` runs the floor's own docs checks (`classifyDocsChecks`:
+  recipe renderers, the roadmap contract, path classification, and the public
+  content scan of the changed paths) in parallel and unslotted, about five
+  seconds with the renderer test as the critical path. The versioned
+  `.githooks/pre-push`, installed by `pnpm hooks:install` into the common
+  config and re-asserted by `worktree:setup`, runs it on any push to origin's
+  `master` that changes docs, and refuses it naming the failing check. It
+  refuses before checking when the pushed commit is not the checkout or the
+  checkout is dirty, since a pass over other files proves nothing.
+  `agent:land` excuses exactly the SHA its floor verified, and `--direct` is
+  not excused. `scripts/docs-check.test.mjs` pushes to a local bare remote
+  through the real hook: the recreated `0cbcb226` seam is refused on
+  `recipe-renderers` and the remote does not move, a clean roadmap edit
+  passes, a push with no docs changes never starts the check, and a floor
+  signal for a different SHA does not excuse the seam. Disabling the hook
+  turns the seam test red.
+
 - 2026-09-23, H18 follow-up (BUG-160): the first thing the delivery-script
   pins caught once BUG-136 put them in CI was a fixture more capable on the
   operator's machine than on the runner. A test committed in a clone of its

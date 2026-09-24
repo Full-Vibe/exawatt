@@ -1,7 +1,7 @@
 /**
  * Run the required fresh-worktree bootstrap stages. The environment stage is
- * deliberately optional; dependency installation, browser identity, native
- * bindings, and Electron compilation are not.
+ * deliberately optional; dependency installation, the versioned git hooks,
+ * browser identity, native bindings, and Electron compilation are not.
  */
 export function runWorktreeSetup({
   platform,
@@ -12,6 +12,11 @@ export function runWorktreeSetup({
 }) {
   say('pnpm install');
   run('pnpm install --prefer-offline');
+
+  // One setting in the common git config, so it covers the main checkout and
+  // every worktree, each running its own tree's hooks (BUG-195).
+  say('installing versioned git hooks (core.hooksPath=.githooks)');
+  run('pnpm hooks:install');
 
   if (platform === 'darwin') {
     say('verifying stable signed QA browser identity');

@@ -30,6 +30,7 @@ import {
   delay,
   processExists,
 } from './lib/delivery-state.mjs';
+import { FLOOR_VERIFIED_ENV } from './lib/docs-check.mjs';
 
 const execFileAsync = promisify(execFile);
 const HEARTBEAT_INTERVAL_MS = 5_000;
@@ -544,7 +545,12 @@ async function main() {
         console.log('[agent-land] integrate: fast-forward origin/master');
         let integrated = false;
         try {
-          await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root);
+          // The floor just verified this exact SHA, so the docs pre-push hook
+          // (BUG-195) excuses it rather than re-running a subset of the floor.
+          // `--direct` never sets it: that path skips the floor.
+          await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root, {
+            [FLOOR_VERIFIED_ENV]: integrationSha,
+          });
           integrated = true;
         } catch (error) {
           await run('git', ['fetch', 'origin', 'master'], root);

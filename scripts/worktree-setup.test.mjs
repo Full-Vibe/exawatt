@@ -41,6 +41,7 @@ test('community setup skips optional env and still runs every required stage', (
   assert.equal(setup.execute().pullStatus, 'not-configured');
   assert.deepEqual(setup.calls, [
     'pnpm install --prefer-offline',
+    'pnpm hooks:install',
     'pnpm qa:browser:doctor',
     'environment',
     'pnpm electron:rebuild',
@@ -56,6 +57,7 @@ test('an existing native binding skips only the rebuild', () => {
   setup.execute();
   assert.deepEqual(setup.calls, [
     'pnpm install --prefer-offline',
+    'pnpm hooks:install',
     'environment',
     'pnpm distribution:prepare',
     'pnpm electron:compile',
@@ -85,6 +87,7 @@ for (const [name, environment] of [
     setup.execute();
     assert.deepEqual(setup.calls, [
       'pnpm install --prefer-offline',
+      'pnpm hooks:install',
       'pnpm qa:browser:doctor',
       'environment',
       'pnpm electron:rebuild',
@@ -97,6 +100,7 @@ for (const [name, environment] of [
 
 for (const requiredStage of [
   'pnpm install --prefer-offline',
+  'pnpm hooks:install',
   'pnpm qa:browser:doctor',
   'pnpm electron:rebuild',
   'pnpm distribution:prepare',
