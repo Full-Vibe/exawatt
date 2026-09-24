@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AGENT_HARNESSES } from '@exawatt/core';
 import {
   commandPaletteConfigurationKey,
   commandPaletteConfigurationRequest,
@@ -10,23 +11,18 @@ describe('command palette launch configurations', () => {
   it('offers source defaults and Shell when no shared selector is supplied', () => {
     const rows = commandPaletteLaunchConfigurations();
 
+    // One default per declared local harness, in contract order, then Shell.
     expect(rows.map(row => row.configuration.kind)).toEqual([
-      'agent',
-      'agent',
-      'agent',
-      'agent',
+      ...AGENT_HARNESSES.map(() => 'agent'),
       'shell',
     ]);
     expect(
       rows.flatMap(row =>
         row.configuration.kind === 'agent' ? [row.configuration.source] : []
       )
-    ).toEqual(['claude', 'codex', 'opencode', 'grok']);
+    ).toEqual([...AGENT_HARNESSES]);
     expect(rows.map(commandPaletteConfigurationKey)).toEqual([
-      'claude',
-      'codex',
-      'opencode',
-      'grok',
+      ...AGENT_HARNESSES,
       'shell',
     ]);
   });
