@@ -24,7 +24,7 @@ import {
 } from './workspace-model';
 
 /** A group about to open: its identity, before it has a colour or tabs. */
-export type ProjectSeed = Pick<Project, 'dir' | 'name'> &
+type ProjectSeed = Pick<Project, 'dir' | 'name'> &
   Partial<Pick<Project, 'rootPath' | 'registryId'>>;
 
 /**

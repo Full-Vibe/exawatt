@@ -131,7 +131,7 @@ export function unresolvedGoalVisual(visual: GoalVisualRef): GoalVisual {
  * merge. Main will not re-broadcast them, so a stale snapshot must not
  * overwrite what they said.
  */
-export interface SeedRaces {
+interface SeedRaces {
   /** attention cleared since the snapshot */
   attentionCleared: ReadonlySet<string>;
   /** activity went quiet since the snapshot (D29) */
@@ -140,7 +140,7 @@ export interface SeedRaces {
   settled: ReadonlySet<string>;
 }
 
-export interface SessionStoreSeeds {
+interface SessionStoreSeeds {
   summaries: Record<string, string>;
   goalVisuals: Record<string, GoalVisual>;
   attention: Record<string, PtyAttention>;
@@ -200,14 +200,14 @@ export function seedSessionStores(
   return seeds;
 }
 
-export interface RestoreContext {
+interface RestoreContext {
   /** Provider identities main announced before React committed their tabs. */
   observedIdentities: ReadonlyMap<string, string>;
   /** The previous run ended without a clean shutdown checkpoint. */
   previousRunInterrupted: boolean;
 }
 
-export interface RestoredLayout extends WorkspaceLayout {
+interface RestoredLayout extends WorkspaceLayout {
   recentProjects: RecentProject[];
 }
 
