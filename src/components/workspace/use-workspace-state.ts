@@ -15,14 +15,7 @@
  *   an exact saved provider ID after an explicit operator action; a renderer
  *   reload re-adopts still-live PTYs.
  */
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  useEffect,
-  useLayoutEffect,
-} from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -58,28 +51,9 @@ import { useWorkspacePersistence } from './workspace-state/use-workspace-persist
 import { useSessionLaunch } from './workspace-state/use-session-launch';
 import { useRecentlyClosed } from './workspace-state/use-recently-closed';
 import { useSessionRuntime } from './workspace-state/use-session-runtime';
-import {
-  moveProjectInList,
-  moveTabWithinProject,
-  nextTabInRing,
-  placeProjectBeside,
-  placeTabBeside,
-  tabAtOrdinal,
-  type RingAnchor,
-} from './tab-ring';
-import { nextPin } from './split-layout';
-import type { PtyHarness } from '@exawatt/core';
-import {
-  SESSION_JUMP_EVENT,
-  TAB_SELECT_EVENT,
-  LAUNCH_EVENT,
-  OPEN_PROJECT_EVENT,
-  TOGGLE_SPLIT_EVENT,
-  consumePendingSessionJump,
-  consumePendingTabSelect,
-  consumePendingLaunch,
-  consumePendingOpenProject,
-} from './session-jump';
+import { useWorkspaceNavigation } from './workspace-state/use-workspace-navigation';
+import { useWorkspaceRequests } from './workspace-state/use-workspace-requests';
+import { useAttentionFocus } from './workspace-state/use-attention-focus';
 
 // The workspace model, its persisted shapes, and its verbs live in
 // `workspace-state/`; this module composes them and stays the one entry point
@@ -420,195 +394,26 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     updateTab,
     setError,
   });
-  const selectProject = useCallback(
-    (index: number): boolean => {
-      const g = stateRef.current.projects[index];
-      if (!g) return false;
-      moveOperator(g.dir, null);
-      return true;
-    },
-    [moveOperator, stateRef]
-  );
-
-  /** Activate a tab by live PTY, stable tab, or durable Session identity. */
-  const activateSession = useCallback(
-    (sessionRef: string): boolean => {
-      const { projects: gs } = stateRef.current;
-      for (const g of gs) {
-        const tab = g.tabs.find(t =>
-          isSessionTab(t)
-            ? t.sessionId === sessionRef ||
-              t.id === sessionRef ||
-              t.durableSessionId === sessionRef
-            : // A coworker answers to its tab id only. The other two names are
-              // Session identities it does not have.
-              t.id === sessionRef
-        );
-        if (tab) {
-          moveOperator(g.dir, tab.id);
-          return true;
-        }
-      }
-      return false;
-    },
-    [moveOperator, stateRef]
-  );
-
-  /** ⌘D: pin the active tab for a split ("watch one, drive one") — the
-   *  pinned tab stays visible beside whatever becomes active; ⌘D unpins.
-   *  The pin follows the TAB, not the PTY (D26): a pinned pane survives
-   *  its session's exit (retained scrollback stays watched), so ⌘D on a
-   *  stopped pin still just unpins. The decision table is pure and
-   *  unit-tested in split-layout.ts. */
-  const togglePin = useCallback((): boolean => {
-    const { projects: gs, activeDir: ad, pinnedTabId: pin } = stateRef.current;
-    const active = gs.find(g => g.dir === ad);
-    const { pin: next, applied } = nextPin({
-      tabs: gs.flatMap(g => g.tabs),
-      activeTabId: active?.activeTabId ?? null,
-      pinnedTabId: pin,
-    });
-    setPinnedTabId(next);
-    return applied;
-  }, [setPinnedTabId, stateRef]);
-
-  /** pin/unpin a SPECIFIC tab in the split (D27 context menu); the ⌘D
-   *  toggle for the active tab remains togglePin */
-  const togglePinTab = useCallback(
-    (tabId: string) => {
-      setPinnedTabId(cur => (cur === tabId ? null : tabId));
-    },
-    [setPinnedTabId]
-  );
-
-  /** back/forward tab application (D27): select only if it still exists */
-  const selectExistingTab = useCallback(
-    (dir: string, tabId: string) => {
-      const { projects: gs } = stateRef.current;
-      const g = gs.find(x => x.dir === dir);
-      if (!g || !g.tabs.some(t => t.id === tabId)) return;
-      moveOperator(dir, tabId);
-    },
-    [moveOperator, stateRef]
-  );
-
-  const selectTab = useCallback(
-    (dir: string, tabId: string) => moveOperator(dir, tabId),
-    [moveOperator]
-  );
-
-  /** ⌘⇧[/]: rotate through every visible section in display order, crossing
-   *  project boundaries (operator, 2026-07-03) — the strip is one global
-   *  ring. Open zero-tab Projects are real stops (D19): landing on one
-   *  activates its empty state (the Agent composer) instead of skipping it.
-   *  The ring math is pure and unit-tested in tab-ring.ts (D18).
-   *
-   *  DISPLAY order is a parameter, because it is not the same at every
-   *  altitude (BUG-021). The strip shows the durable manual arrangement
-   *  (D20) and is the default; Team shows S6.3's Started or Activity sort
-   *  and passes that instead, so one press moves one tile in whichever
-   *  order the operator is actually looking at. The ring math stays the one
-   *  owner either way — only what it is asked about changes. */
-  const cycleTab = useCallback(
-    (
-      delta: 1 | -1,
-      navigation?: {
-        displayed?: readonly Project[];
-        anchor?: RingAnchor;
-      }
-    ): RingAnchor | null => {
-      const { projects: gs, activeDir: ad } = stateRef.current;
-      const next = nextTabInRing(
-        navigation?.displayed ?? gs,
-        ad,
-        delta,
-        navigation?.anchor
-      );
-      if (!next) return null;
-      moveOperator(next.dir, next.tab?.id ?? null);
-      return { dir: next.dir, tabId: next.tab?.id ?? null };
-    },
-    [moveOperator, stateRef]
-  );
-
-  /** ⌘1–⌘9: jump straight to the Nth tab of the global ring (D18 — the
-   *  highest-frequency switch gets the cheapest chord, browser-style). */
-  const selectTabByOrdinal = useCallback(
-    (index: number): boolean => {
-      const target = tabAtOrdinal(stateRef.current.projects, index);
-      if (!target) return false;
-      moveOperator(target.dir, target.tab.id);
-      return true;
-    },
-    [moveOperator, stateRef]
-  );
-
-  // ── Arrangement (D20): order is an interface once ⌘digit ordinals
-  // exist. Tabs arrange within their Project; Projects arrange globally.
-  // Order persists with the layout; Project order also pushes best-effort
-  // to the registry's sort_order so it syncs across machines.
-  const applyProjectOrder = useCallback(
-    (next: Project[] | null): boolean => {
-      if (!next) return false;
-      setProjects(next);
-      syncProjectOrder(next);
-      return true;
-    },
-    [setProjects, syncProjectOrder]
-  );
-
-  /** ⌘⌥[/⌘⌥]: nudge the ACTIVE tab one slot within its Project */
-  const moveActiveTab = useCallback(
-    (delta: 1 | -1): boolean => {
-      const { projects: gs, activeDir: ad } = stateRef.current;
-      const active = gs.find(g => g.dir === ad);
-      if (!active?.activeTabId) return false;
-      const next = moveTabWithinProject(gs, active.activeTabId, delta);
-      if (!next) return false;
-      setProjects(next);
-      return true;
-    },
-    [setProjects, stateRef]
-  );
-
-  /** ⌘⌥⇧[/⌘⌥⇧]: nudge the ACTIVE Project one slot in the strip */
-  const moveActiveProject = useCallback(
-    (delta: 1 | -1): boolean => {
-      const { projects: gs, activeDir: ad } = stateRef.current;
-      if (!ad) return false;
-      return applyProjectOrder(moveProjectInList(gs, ad, delta));
-    },
-    [applyProjectOrder, stateRef]
-  );
-
-  /** drag-and-drop: drop a tab beside a sibling in the same Project */
-  const reorderTab = useCallback(
-    (
-      tabId: string,
-      targetTabId: string,
-      place: 'before' | 'after'
-    ): boolean => {
-      const next = placeTabBeside(
-        stateRef.current.projects,
-        tabId,
-        targetTabId,
-        place
-      );
-      if (!next) return false;
-      setProjects(next);
-      return true;
-    },
-    [setProjects, stateRef]
-  );
-
-  /** drag-and-drop: drop a Project group beside another */
-  const reorderProject = useCallback(
-    (dir: string, targetDir: string, place: 'before' | 'after'): boolean =>
-      applyProjectOrder(
-        placeProjectBeside(stateRef.current.projects, dir, targetDir, place)
-      ),
-    [applyProjectOrder, stateRef]
-  );
+  const {
+    selectProject,
+    selectTab,
+    activateSession,
+    cycleTab,
+    selectTabByOrdinal,
+    selectExistingTab,
+    moveActiveTab,
+    moveActiveProject,
+    reorderTab,
+    reorderProject,
+    togglePin,
+    togglePinTab,
+  } = useWorkspaceNavigation({
+    stateRef,
+    moveOperator,
+    syncProjectOrder,
+    setProjects,
+    setPinnedTabId,
+  });
 
   const activeProject = projects.find(g => g.dir === activeDir) ?? null;
   /** operator naming (W0.4): titles/names persist via the layout save; the
@@ -638,108 +443,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activeProject?.tabs.find(t => t.id === activeProject.activeTabId) ?? null;
 
   // ---- palette requests (S2) and their replay once the layout has loaded ----
-  // ---- palette requests (S2): the ⌘K switcher lives at the app root and
-  // asks the workspace to activate a session / launch a harness. Live events
-  // handle the mounted-and-ready case; before ready the pending slot is left
-  // alone so the ready-effect below applies it against the LOADED layout
-  // (acting early would fail against empty state and lose the request).
-  useEffect(() => {
-    const onJump = (e: Event) => {
-      if (!readyRef.current) return;
-      consumePendingSessionJump();
-      activateSession((e as CustomEvent<string>).detail);
-    };
-    // back/forward (D27): select a tab by identity when it still exists —
-    // a closed tab simply stays a dead stop in the history
-    const onTabSelect = (e: Event) => {
-      if (!readyRef.current) return;
-      consumePendingTabSelect();
-      const { dir, tabId } =
-        (e as CustomEvent<{ dir: string; tabId: string }>).detail ?? {};
-      selectExistingTab(dir, tabId);
-    };
-    const onLaunch = (e: Event) => {
-      if (!readyRef.current) return;
-      consumePendingLaunch();
-      launchHere((e as CustomEvent<PtyHarness>).detail);
-    };
-    const onToggleSplit = () => {
-      if (readyRef.current) togglePin();
-    };
-    // JUMP_ATTENTION_EVENT is owned by WorkspaceClient: it composes PTY and
-    // roadmap signals before deriving both the visible marker and jump queue.
-    const onOpenProject = (e: Event) => {
-      if (!readyRef.current) return;
-      consumePendingOpenProject();
-      void openProject((e as CustomEvent<string>).detail);
-    };
-    window.addEventListener(SESSION_JUMP_EVENT, onJump);
-    window.addEventListener(TAB_SELECT_EVENT, onTabSelect);
-    window.addEventListener(LAUNCH_EVENT, onLaunch);
-    window.addEventListener(OPEN_PROJECT_EVENT, onOpenProject);
-    window.addEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
-    return () => {
-      window.removeEventListener(SESSION_JUMP_EVENT, onJump);
-      window.removeEventListener(TAB_SELECT_EVENT, onTabSelect);
-      window.removeEventListener(LAUNCH_EVENT, onLaunch);
-      window.removeEventListener(OPEN_PROJECT_EVENT, onOpenProject);
-      window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
-    };
-  }, [
+  useWorkspaceRequests({
+    ready,
+    readyRef,
     activateSession,
+    selectExistingTab,
     launchHere,
     openProject,
-    readyRef,
-    selectExistingTab,
     togglePin,
-  ]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const jump = consumePendingSessionJump();
-    if (jump) activateSession(jump);
-    // ⌘[ from another route (D27): the tab half of the location fired
-    // before this workspace mounted — apply it against the loaded layout
-    const tabSel = consumePendingTabSelect();
-    if (tabSel) selectExistingTab(tabSel.dir, tabSel.tabId);
-    const harness = consumePendingLaunch();
-    if (harness) launchHere(harness);
-    const proj = consumePendingOpenProject();
-    if (proj) void openProject(proj);
-  }, [ready, activateSession, selectExistingTab, launchHere, openProject]);
+  });
 
   // ---- attention focus contract (S1) ----
   const activeSessionId =
     activeTab && isSessionTab(activeTab) ? activeTab.sessionId : null;
-  useEffect(() => {
-    setReentryRecap(current =>
-      current?.id === activeSessionId ? current : null
-    );
-  }, [activeSessionId, setReentryRecap]);
-
-  // A selected, visible tab is acknowledged before paint. A passive effect
-  // used to leave one rendered frame where the newly active tab still wore
-  // its old attention marker; main then confirmed the clear over IPC.
-  useLayoutEffect(() => {
-    if (activeSessionId && document.hasFocus()) {
-      setAttention(prev => {
-        if (!(activeSessionId in prev)) return prev;
-        const next = { ...prev };
-        delete next[activeSessionId];
-        return next;
-      });
-    }
-  }, [activeSessionId, setAttention]);
-
-  useEffect(() => {
-    const api = window.electron?.pty;
-    if (!api?.focus) return;
-    void api.focus(activeSessionId);
-    // Main remains authoritative for background-window attention and
-    // broadcasts the confirmed clear to every renderer on focus.
-    // leaving the workspace (unmount) unfocuses — flags accumulate again
-    return () => void api.focus(null);
-  }, [activeSessionId]);
+  useAttentionFocus({ activeSessionId, setReentryRecap, setAttention });
 
   return {
     projects,
