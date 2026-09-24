@@ -12,12 +12,9 @@ import {
   ipcMain,
   systemPreferences,
 } from 'electron';
-import { spawn, type ChildProcess } from 'child_process';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
-import nodeNet from 'net';
-import http from 'http';
 import path from 'path';
 import {
   assertTrustedIpcSender,
@@ -72,7 +69,7 @@ import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
-import { stopChildProcess } from './child-process-lifecycle';
+import { createRendererServer } from './renderer-server';
 import {
   availabilityMenuCommands,
   buildApplicationMenuTemplate,
@@ -155,9 +152,6 @@ const safeThemeLaunch = process.argv.includes('--safe-theme');
 
 let mainWindow: BrowserWindow | null = null;
 let pendingDeepLinkUrl: string | null = null;
-let rendererServer: ChildProcess | null = null;
-let rendererOrigin: string | null = null;
-let activeRendererCacheKey: string | null = null;
 let rendererReadyPromise: Promise<string> | null = null;
 let rendererWasWarmAtLaunch = false;
 let bootstrapExitInProgress = false;
@@ -326,173 +320,29 @@ if (!isDev) {
   });
 }
 
-async function availableLoopbackPort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = nodeNet.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') {
-        server.close();
-        reject(new Error('Could not allocate a renderer port'));
-        return;
-      }
-      server.close(error => (error ? reject(error) : resolve(address.port)));
-    });
-  });
-}
-
-async function waitForRenderer(url: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    const ready = await new Promise<boolean>(resolve => {
-      const request = http.get(url, response => {
-        response.resume();
-        resolve(response.statusCode !== undefined && response.statusCode < 500);
-      });
-      request.once('error', () => resolve(false));
-      request.setTimeout(1_000, () => {
-        request.destroy();
-        resolve(false);
-      });
-    });
-    if (ready) return;
-    if (rendererServer?.exitCode !== null) {
-      throw new Error(
-        `Packaged renderer exited with ${rendererServer?.exitCode}`
-      );
-    }
-    await new Promise(resolve => setTimeout(resolve, 40));
-  }
-  throw new Error('Timed out starting the packaged renderer');
-}
-
-async function startPackagedRenderer(): Promise<string> {
-  const port = await availableLoopbackPort();
-  const packagedRenderer = path.join(process.resourcesPath, 'renderer');
-  const archive = path.join(packagedRenderer, 'renderer.zip');
-  const archiveHash = (
-    await fs.promises.readFile(
-      path.join(packagedRenderer, 'renderer.sha256'),
-      'utf8'
-    )
-  ).trim();
-  activeRendererCacheKey = archiveHash;
-  const cacheRoot = path.join(
-    app.getPath('userData'),
-    'renderer-cache',
-    distributionIdentity.cacheNamespace
-  );
-  const versionRoot = path.join(cacheRoot, archiveHash);
-  const standaloneRoot = path.join(versionRoot, 'dist-renderer');
-  try {
-    await fs.promises.access(path.join(standaloneRoot, 'server.js'));
-  } catch {
-    const staging = `${versionRoot}.staging-${process.pid}`;
-    await fs.promises.rm(staging, { recursive: true, force: true });
-    await fs.promises.mkdir(staging, { recursive: true });
-    await execFileAsync('/usr/bin/ditto', ['-x', '-k', archive, staging]);
-    await fs.promises.mkdir(cacheRoot, { recursive: true });
-    await fs.promises.rename(staging, versionRoot).catch(async error => {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      await fs.promises.rm(staging, { recursive: true, force: true });
-    });
-  }
-  const serverEntry = path.join(standaloneRoot, 'server.js');
-  rendererServer = spawn(process.execPath, [serverEntry], {
-    cwd: standaloneRoot,
-    env: {
-      ...distributionChildEnvironment(distribution, process.env),
-      ELECTRON_RUN_AS_NODE: '1',
-      HOSTNAME: '127.0.0.1',
-      PORT: String(port),
-      NODE_ENV: 'production',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  rendererServer.stdout?.on('data', data => {
-    if (process.env.EXAWATT_RENDERER_LOGS === '1') process.stdout.write(data);
-  });
-  rendererServer.stderr?.on('data', data => process.stderr.write(data));
-  const origin = `http://127.0.0.1:${port}`;
-  await waitForRenderer(`${origin}/workspace`);
-  rendererOrigin = origin;
-  return origin;
-}
-
-function pruneRendererCache(): void {
-  const cacheRoot = path.join(
-    app.getPath('userData'),
-    'renderer-cache',
-    distributionIdentity.cacheNamespace
-  );
-  const keep = activeRendererCacheKey;
-  if (!keep) return;
-  const delay = process.env.EXAWATT_TEST === '1' ? 250 : 15_000;
-  setTimeout(() => {
-    void fs.promises
-      .readdir(cacheRoot, { withFileTypes: true })
-      .then(entries =>
-        Promise.all(
-          entries
-            .filter(entry => entry.name !== keep)
-            .map(entry =>
-              fs.promises.rm(path.join(cacheRoot, entry.name), {
-                recursive: true,
-                force: true,
-              })
-            )
-        )
-      )
-      .catch(error => {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[startup] could not prune renderer cache', error);
-        }
-      });
-  }, delay).unref?.();
-}
-
-function hasWarmRendererCache(): boolean {
-  try {
-    const packagedRenderer = path.join(process.resourcesPath, 'renderer');
-    const key = fs
-      .readFileSync(path.join(packagedRenderer, 'renderer.sha256'), 'utf8')
-      .trim();
-    return fs.existsSync(
-      path.join(
-        app.getPath('userData'),
-        'renderer-cache',
-        distributionIdentity.cacheNamespace,
-        key,
-        'dist-renderer',
-        'server.js'
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
-async function stopRendererServer(): Promise<void> {
-  const server = rendererServer;
-  if (!server) return;
-  await stopChildProcess(server, {
-    forceAfterMs: isTest ? 250 : 1_500,
-    failAfterMs: isTest ? 2_000 : 5_000,
-    failureMessage: 'Packaged renderer did not stop during shutdown',
-  });
-  // Clear ownership only after the process is truthfully stopped. A rejection
-  // leaves the same handle available to the next shutdown attempt.
-  if (rendererServer === server) rendererServer = null;
-}
+const rendererServer = createRendererServer({
+  resourcesPath: process.resourcesPath,
+  userDataPath: () => app.getPath('userData'),
+  cacheNamespace: distributionIdentity.cacheNamespace,
+  execPath: process.execPath,
+  pid: process.pid,
+  isTest,
+  childEnvironment: () =>
+    distributionChildEnvironment(distribution, process.env),
+  forwardStdout: process.env.EXAWATT_RENDERER_LOGS === '1',
+  spawn,
+  extractArchive: async (archive, destination) => {
+    await execFileAsync('/usr/bin/ditto', ['-x', '-k', archive, destination]);
+  },
+});
 
 // A cached renderer uses only Node APIs and can boot before Electron's ready
 // event, overlapping its server start with Chromium initialization. A cold
 // renderer intentionally waits until the launch frame exists so archive I/O
 // cannot delay the first visible acknowledgement.
-rendererWasWarmAtLaunch = !isDev && hasWarmRendererCache();
+rendererWasWarmAtLaunch = !isDev && rendererServer.hasWarmCache();
 if (rendererWasWarmAtLaunch) {
-  rendererReadyPromise = startPackagedRenderer();
+  rendererReadyPromise = rendererServer.start();
   // bootstrapCommandSurface awaits and reports this same promise. Attach an
   // early observer so a very fast failure cannot become an unhandled rejection
   // before app.whenReady resolves.
@@ -625,7 +475,7 @@ async function completeElectronAuth(code: string): Promise<void> {
 }
 
 function workspaceUrl(): string {
-  return isDev ? DEV_URL : `${rendererOrigin}/workspace`;
+  return isDev ? DEV_URL : `${rendererServer.origin}/workspace`;
 }
 
 function isWorkspaceTarget(target: string): boolean {
@@ -1321,7 +1171,7 @@ async function checkpointRenderer(
 async function cleanupForExit(): Promise<void> {
   disposeRoadmapWatchers();
   await disposePty();
-  await stopRendererServer();
+  await rendererServer.stop();
   fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json'));
 }
 
@@ -1346,7 +1196,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   const rendererReady = (
     isDev
       ? Promise.resolve(DEV_URL)
-      : (rendererReadyPromise ??= startPackagedRenderer())
+      : (rendererReadyPromise ??= rendererServer.start())
   ).then(url => {
     // The trusted origin is established by the step that establishes the
     // origin. It used to be set at the tail of bootstrap, which meant the
@@ -1595,7 +1445,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   if (productUpdatesEnabled) {
     runtime.updater.startProductUpdater(buildInfo.delivery === 'signed');
   }
-  if (!isDev) pruneRendererCache();
+  if (!isDev) rendererServer.pruneCache();
 }
 
 /**
@@ -1746,7 +1596,8 @@ app.on('before-quit', event => {
     if (bootstrapExitInProgress) return;
     event.preventDefault();
     bootstrapExitInProgress = true;
-    void stopRendererServer()
+    void rendererServer
+      .stop()
       .catch(error => console.error('[shutdown] renderer stop failed', error))
       .finally(() => app.quit());
     return;
