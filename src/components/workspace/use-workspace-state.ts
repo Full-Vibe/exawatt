@@ -26,10 +26,6 @@ import {
 import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
 import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
 import {
-  sessionCanResume,
-  sessionLifecyclePresentation,
-} from '@exawatt/ui-model';
-import {
   useSessionScope,
   useSessionScopeRelease,
   useSessionScopedIdSet,
@@ -67,7 +63,6 @@ import {
   sessionDelegationBusy,
   sessionGlyphState,
   sessionReportedBlocked,
-  type SessionGlyphState,
 } from './session-status';
 import { loadTerminalFont } from './terminal-font';
 import { useClosedSessionCount } from './use-closed-session-count';
@@ -105,6 +100,77 @@ import type {
   SessionDelegation,
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
+import {
+  REVIVE_FAILED,
+  applyWorkspaceDraftPatch,
+  isLegacyCatalogTitleLeak,
+  isRemoteAgentTab,
+  isSessionTab,
+  newDurableSessionId,
+  newTabId,
+  projectRootPath,
+  remoteAgentGroupDir,
+  resumableAgentTabsInProject,
+  tabCanResumeAsAgent,
+  tabFromPtySession,
+  tabIsLive,
+  type CloseOutcome,
+  type Project,
+  type RemoteAgentOpenRef,
+  type RemoteAgentTab,
+  type ResumeBatchProgress,
+  type SessionTab,
+  type WorkspaceDraftPatch,
+  type WorkspaceLayout,
+  type WorkspaceTab,
+} from './workspace-state/workspace-model';
+import {
+  dropDetachedRemoteTabs,
+  parsePersisted,
+  type PersistedTab,
+  type PersistedV6,
+  type PersistedV7,
+} from './workspace-state/persisted-layout';
+
+// The workspace model and its persisted shapes live in `workspace-state/`;
+// this module stays the one entry point every caller imports them from.
+export {
+  REVIVE_FAILED,
+  applyWorkspaceDraftPatch,
+  isRemoteAgentTab,
+  isSessionTab,
+  projectRootPath,
+  remoteAgentGroupDir,
+  resumableAgentTabsInProject,
+  tabCanResumeAsAgent,
+  tabFromPtySession,
+  tabIsLive,
+  tabNeedsReconnection,
+} from './workspace-state/workspace-model';
+export type {
+  CloseOutcome,
+  Project,
+  RemoteAgentOpenRef,
+  RemoteAgentTab,
+  ResumeBatchProgress,
+  ResumeState,
+  SessionLifecycle,
+  SessionTab,
+  TabTitleKind,
+  WorkspaceDraftPatch,
+  WorkspaceTab,
+} from './workspace-state/workspace-model';
+export {
+  dropDetachedRemoteTabs,
+  parsePersisted,
+} from './workspace-state/persisted-layout';
+export type {
+  PersistedRemoteAgentTab,
+  PersistedSessionTab,
+  PersistedTab,
+  PersistedV6,
+  PersistedV7,
+} from './workspace-state/persisted-layout';
 
 /**
  * The layout's share of a goal visual: its identity, never its pixels
@@ -123,770 +189,6 @@ function persistedGoalVisual(
 }
 
 /**
- * A local PTY Session's tab.
- *
- * Everything on it describes a process this machine owns: a working directory,
- * a harness, an incarnation, an exit code, a resume identity. None of that is
- * true of a connected coworker, which is why `RemoteAgentTab` is a second kind
- * rather than these fields with empty values in them.
- */
-export interface SessionTab {
-  launchModel?: string;
-  launchEffort?: string;
-  kind: 'session';
-  /** stable across revives (sessionId changes when a tab is re-launchd) */
-  id: string;
-  /** stable logical Session identity, distinct from tab/PTY/provider IDs */
-  durableSessionId: string;
-  harness: PtyHarness;
-  title: string;
-  /** Ownership of the strip title. Provider/catalog labels never become
-   * tab titles: only an explicit operator rename earns visible title copy. */
-  titleKind: TabTitleKind;
-  cwd: string;
-  sessionId: string | null;
-  harnessSessionId: string | null;
-  resumeState: ResumeState;
-  lifecycle: SessionLifecycle;
-  /** null = running; number = exit code; REVIVE_FAILED = revive error */
-  exitCode: number | null;
-  /** The signal that ended the process (`SIGKILL`), null when none did.
-   *  Absent on a record written before exits carried it (BUG-186), which
-   *  the lifecycle owner refuses to read as a clean exit. */
-  exitSignal?: string | null;
-  /** roadmap item declared at launch (ENG-017 S4) — a machine-local view
-   *  annotation per decision 0010; overrides link inference, never synced */
-  roadmapItemId: string | null;
-  /** the composer's goal statement (D21): persists with the layout and
-   *  re-anchors the context summarizer when the Session resumes */
-  initialTask: string | null;
-  /** PTY incarnation start time; present while live for roadmap elapsed time. */
-  startedAt?: number | null;
-  /** draft tabs only (D24): the source the summon requested (palette
-   *  "Start Agent with X"); null = use the recommendation */
-  draftSource?: AgentSourceId | null;
-  /** draft tabs only (D28): the composer's typed task — the draft's
-   *  work-in-progress belongs to the TAB, so it survives the pane
-   *  unmounting on tab/Project switches and (with content) restarts */
-  draftTask?: string | null;
-  /** draft tabs only: the source model resolved or explicitly selected for
-   * this launch. It travels with the draft, never mutates harness config. */
-  draftModel?: string | null;
-  /** draft tabs only: the reasoning effort paired with the selected model. */
-  draftEffort?: string | null;
-  /** True only after an operator changes the composer. Background catalog
-   * hydration must not make an untouched new-tab page durable. */
-  draftTouched?: boolean;
-  /** Draft launch options travel with the tab just like task/model choices. */
-  draftWorktree?: boolean;
-  draftBranch?: string | null;
-  draftRoadmapItemId?: string | null;
-}
-
-/**
- * A connected coworker's tab (ENG-033 H2).
- *
- * Identity, and deliberately nothing else. The conversation, the work stack,
- * and the coworker's own state live on someone else's machine; Exawatt reads
- * them through the source and never caches them in the layout. What persists
- * is which coworker this tab is a view of.
- *
- * `title` and `projectLabel` are last-known copies of names the source owns,
- * kept so the strip can say who a restored tab is before the roster answers.
- * Neither is authority: the roster overrides both the moment it arrives.
- *
- * Closing this tab closes the view. It never reaches the remote worker, which
- * is why nothing here names a process, a directory, or a lifecycle.
- */
-export interface RemoteAgentTab {
-  kind: 'remote-agent';
-  /** stable across roster refreshes and across a relaunch */
-  id: string;
-  /** last-known coworker name; the source owns the real one */
-  title: string;
-  /** the configured Agent Source this coworker is observed through */
-  sourceId: string;
-  /** the Agent's own id on that source */
-  nativeAgentId: string;
-  /** Exawatt's id for the projected coworker — what the bridge is addressed by */
-  agentId: string;
-  /** last-known Project label from the mapping */
-  projectLabel: string;
-}
-
-/**
- * The two honest kinds of tab.
- *
- * The shared members are `kind`, `id`, and `title`: identity and the strip's
- * label. Everything else belongs to one kind, so any consumer that assumes
- * PTY-ness has to say what it means for a coworker before it compiles.
- */
-export type WorkspaceTab = SessionTab | RemoteAgentTab;
-
-export function isRemoteAgentTab(tab: WorkspaceTab): tab is RemoteAgentTab {
-  return tab.kind === 'remote-agent';
-}
-
-export function isSessionTab(tab: WorkspaceTab): tab is SessionTab {
-  return tab.kind === 'session';
-}
-
-/** What `openRemoteAgent` needs from the roster to open a coworker. */
-export interface RemoteAgentOpenRef {
-  /** Exawatt's id for the projected coworker */
-  agentId: string;
-  nativeAgentId: string;
-  sourceId: string;
-  /** the coworker's name, as its source configured it */
-  displayName: string;
-  /** the Project this Agent was mapped to at Connect time */
-  projectId: string;
-  projectLabel: string;
-}
-
-/**
- * The Project group a coworker's tab belongs to.
- *
- * Mapping is an explicit Connect-flow decision, so the group is the mapped
- * Project — by identity, never by resemblance. A mapping that names no
- * Project at all falls back to the source, which is the only other true thing
- * about where this coworker came from; it never lands in whichever Project the
- * operator happens to be standing in.
- */
-export function remoteAgentGroupDir(ref: {
-  projectId: string;
-  sourceId: string;
-}): string {
-  return ref.projectId.trim() || `source:${ref.sourceId}`;
-}
-
-export interface WorkspaceDraftPatch {
-  draftTask?: string;
-  draftSource?: AgentSourceId;
-  draftModel?: string | null;
-  draftEffort?: string | null;
-  draftTouched?: boolean;
-  draftWorktree?: boolean;
-  draftBranch?: string | null;
-  draftRoadmapItemId?: string | null;
-}
-
-export function applyWorkspaceDraftPatch(
-  tab: SessionTab,
-  patch: WorkspaceDraftPatch
-): SessionTab {
-  const sourceChanged =
-    patch.draftSource !== undefined &&
-    patch.draftSource !== (tab.draftSource ?? null);
-  return {
-    ...tab,
-    draftTask:
-      patch.draftTask === undefined ? (tab.draftTask ?? null) : patch.draftTask,
-    draftSource:
-      patch.draftSource === undefined
-        ? (tab.draftSource ?? null)
-        : patch.draftSource,
-    draftModel:
-      patch.draftModel === undefined
-        ? sourceChanged
-          ? null
-          : (tab.draftModel ?? null)
-        : patch.draftModel,
-    draftEffort:
-      patch.draftEffort === undefined
-        ? sourceChanged
-          ? null
-          : (tab.draftEffort ?? null)
-        : patch.draftEffort,
-    draftTouched:
-      patch.draftTouched === undefined
-        ? (tab.draftTouched ?? false)
-        : patch.draftTouched,
-    draftWorktree:
-      patch.draftWorktree === undefined
-        ? (tab.draftWorktree ?? false)
-        : patch.draftWorktree,
-    draftBranch:
-      patch.draftBranch === undefined
-        ? (tab.draftBranch ?? null)
-        : patch.draftBranch,
-    draftRoadmapItemId:
-      patch.draftRoadmapItemId === undefined
-        ? (tab.draftRoadmapItemId ?? null)
-        : patch.draftRoadmapItemId,
-  };
-}
-
-export type TabTitleKind = 'default' | 'operator';
-
-export type SessionLifecycle =
-  | 'running'
-  | 'stopped-clean'
-  | 'interrupted'
-  | 'exited'
-  | 'resuming'
-  | 'failed'
-  /** ⌘T new-tab page (D24): a real strip tab whose pane is the composer;
-   *  no process yet, discarded by ⌘W without ceremony. Typed draft work
-   *  rides on the tab and persists with the layout (D28); an EMPTY draft
-   *  still vanishes with the run. */
-  | 'draft';
-
-export type ResumeState =
-  | 'live'
-  | 'ended-resumable'
-  | 'identity-missing'
-  | 'resuming'
-  | 'resumed'
-  | 'failed';
-
-export interface ResumeBatchProgress {
-  completed: number;
-  total: number;
-}
-
-/** what a close attempt did (D27) — the UI narrates each differently */
-export type CloseOutcome =
-  | { kind: 'noop' }
-  /** A started live agent needs the in-app confirm; re-call with force. The
-   *  turn state rides along so the dialog can name the actual consequence —
-   *  an interrupted turn and a discarded question are not the same loss. */
-  | { kind: 'needs-confirm'; turn: SessionGlyphState }
-  | { kind: 'discarded' }
-  | { kind: 'closed'; entry: ClosedSessionEntry }
-  /** A coworker's view closed. Nothing was stopped, archived, or asked of the
-   *  source: the remote worker never learns Exawatt looked away. */
-  | { kind: 'view-closed'; title: string };
-
-/**
- * A PTY incarnation this machine owns is running behind the tab.
- *
- * False for a coworker, and not because Exawatt is disconnected: a remote
- * Agent has no local process at all, so this question has one answer for it
- * forever. What that coworker is DOING is its own D40 work state, which the
- * roster reports and this predicate must never be mistaken for.
- */
-export function tabIsLive(tab: WorkspaceTab): boolean {
-  if (isRemoteAgentTab(tab)) return false;
-  return tab.resumeState === 'live' || tab.resumeState === 'resumed';
-}
-
-/**
- * Resume starts a new local process for a saved provider conversation. There
- * is nothing to start for a coworker, and asking its source to would be a
- * command Exawatt does not hold.
- *
- * Past "a local process is gone", the answer is the lifecycle owner's
- * (BUG-185): the same derivation that decides whether the tab may say
- * Paused. Every count, verb and refusal about resuming reads this.
- */
-export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
-  if (isRemoteAgentTab(tab)) return false;
-  return (
-    !tabIsLive(tab) && tab.resumeState !== 'resuming' && sessionCanResume(tab)
-  );
-}
-
-/** A stopped Agent whose verb is reconnect: its conversation must be chosen
- *  before it can resume. The complement of `tabCanResumeAsAgent` among
- *  stopped Agents, from the same owner. */
-export function tabNeedsReconnection(tab: WorkspaceTab): boolean {
-  if (isRemoteAgentTab(tab)) return false;
-  return (
-    !tabIsLive(tab) &&
-    tab.resumeState !== 'resuming' &&
-    sessionLifecyclePresentation(tab).verb === 'reconnect'
-  );
-}
-
-/** Re-adopt a main-process PTY without overstating its lifecycle. This also
- * reconstructs a stopped tab when persistence lagged behind process exit. */
-export function tabFromPtySession(
-  session: PtySessionRecord,
-  id: string,
-  roadmapItemId: string | null = null,
-  initialTask: string | null = null
-): SessionTab {
-  return {
-    kind: 'session',
-    id,
-    durableSessionId: session.durableSessionId,
-    harness: session.harness,
-    title: session.title,
-    titleKind: isDefaultHarnessTitle(session.harness, session.title)
-      ? 'default'
-      : 'operator',
-    cwd: session.cwd,
-    sessionId: session.exited ? null : session.id,
-    harnessSessionId: session.harnessSessionId,
-    resumeState: session.exited
-      ? session.harnessSessionId
-        ? 'ended-resumable'
-        : 'identity-missing'
-      : 'live',
-    lifecycle: session.exited ? 'exited' : 'running',
-    exitCode: session.exited ? (session.exitCode ?? 0) : null,
-    exitSignal: session.exited ? session.exitSignal : null,
-    roadmapItemId,
-    initialTask,
-    startedAt: session.startedAt,
-    launchModel: session.launchModel,
-    launchEffort: session.launchEffort,
-  };
-}
-
-export interface Project {
-  /** Workspace grouping key: root path for legacy/local groups, Project id for folderless groups. */
-  dir: string;
-  /** Local folder binding. Null is a valid folderless Project; absent is legacy `dir`. */
-  rootPath?: string | null;
-  name: string;
-  /** distinct per-project hue (least-used at creation; operator can pick) */
-  color: string;
-  /** the synced registry row id (S5 P3): links this group to Supabase for
-   *  name/color sync. Derived from the registry on load / launch, not persisted. */
-  registryId?: string | null;
-  tabs: WorkspaceTab[];
-  activeTabId: string | null;
-}
-
-/** Folder-dependent verbs go through this boundary, never through identity. */
-export function projectRootPath(project: Project): string | null {
-  return project.rootPath === undefined ? project.dir : project.rootPath;
-}
-
-export function resumableAgentTabsInProject(
-  projects: Project[],
-  projectDir: string
-): WorkspaceTab[] {
-  return (
-    projects
-      .find(project => project.dir === projectDir)
-      ?.tabs.filter(tabCanResumeAsAgent) ?? []
-  );
-}
-
-/** v6 layout on disk: every tab was a local Session. */
-export interface PersistedV6 {
-  v: 6;
-  lastUsedDir: string;
-  activeDir: string | null;
-  /** split view (S2): tab pinned beside the active one; optional (pre-S2
-   *  layouts lack it) */
-  pinnedTabId?: string | null;
-  /** durable recency record (ENG-016 D8): a Project whose tabs all closed
-   *  stays reachable from ⌘K even offline or signed out; most recent first,
-   *  capped. Optional — pre-D8 layouts lack it. */
-  recentProjects?: Array<{
-    dir: string;
-    name: string;
-    color?: string;
-    lastOpenedAt: number;
-  }>;
-  projects: Array<{
-    dir: string;
-    /** Added without a schema bump: absent layouts used `dir` as their path. */
-    rootPath?: string | null;
-    name: string;
-    color?: string;
-    activeTabId: string | null;
-    /** Written by pre-D45 builds; read by nothing now that the ribbon has
-     *  exactly three presentations. Kept in the shape so existing layouts
-     *  stay valid without a migration. */
-    ribbonExpanded?: boolean;
-    tabs: Array<{
-      id: string;
-      durableSessionId: string;
-      harness: PtyHarness;
-      title: string;
-      titleKind: TabTitleKind;
-      cwd: string;
-      sessionId: string | null;
-      harnessSessionId: string | null;
-      roadmapItemId: string | null;
-      lifecycle: SessionLifecycle;
-      exitCode: number | null;
-      /** Added without a schema bump (BUG-186): absent on every record
-       *  written before it, and absence means "not recorded", never clean. */
-      exitSignal?: string | null;
-      /** goal statement + last goal subtitle (D21) — optional: pre-D21
-       *  layouts lack them; both restore the context layer on relaunch */
-      initialTask?: string | null;
-      startedAt?: number | null;
-      contextSummary?: string | null;
-      /**
-       * REFERENCE to the last accepted visual; transitional states do not
-       * persist. The pixels live in main's content-addressed side store
-       * (BUG-031) — a layout that inlined them was 4.84 MB, of which 4.81 MB
-       * was nineteen base64 JPEGs on a keystroke-debounced write path.
-       * Layouts written before that change still carry `dataUrl`; main strips
-       * it on load, so this type stays a superset of what it accepts.
-       */
-      goalVisual?: GoalVisualRef | null;
-      /** Draft new-tab composer state: any operator-authored launch choice
-       * persists; an untouched ⌘T tile still vanishes without ceremony. */
-      draftTask?: string | null;
-      draftSource?: string | null;
-      launchModel?: string;
-      launchEffort?: string;
-      draftModel?: string | null;
-      draftEffort?: string | null;
-      draftTouched?: boolean;
-      draftWorktree?: boolean;
-      draftBranch?: string | null;
-      draftRoadmapItemId?: string | null;
-    }>;
-  }>;
-}
-
-/** A local Session's tab on disk. v7 is the first shape that says so. */
-export type PersistedSessionTab = {
-  kind: 'session';
-} & PersistedV6['projects'][number]['tabs'][number];
-
-/**
- * A connected coworker's tab on disk (ENG-033 H2).
- *
- * Identity only. No transcript, no work stack, no coworker state: all of that
- * belongs to the source and is re-read on open, so a layout can never present
- * yesterday's conversation as current.
- */
-export interface PersistedRemoteAgentTab {
-  kind: 'remote-agent';
-  id: string;
-  title: string;
-  sourceId: string;
-  nativeAgentId: string;
-  agentId: string;
-  projectLabel: string;
-}
-
-export type PersistedTab = PersistedSessionTab | PersistedRemoteAgentTab;
-
-/** Current persisted layout (v7): two honest kinds of tab. */
-export interface PersistedV7 extends Omit<PersistedV6, 'v' | 'projects'> {
-  v: 7;
-  projects: Array<
-    Omit<PersistedV6['projects'][number], 'tabs'> & { tabs: PersistedTab[] }
-  >;
-}
-
-/** v5 layout on disk: v6 before tab-title ownership was explicit. */
-type PersistedV5 = Omit<PersistedV6, 'v' | 'projects'> & {
-  v: 5;
-  projects: Array<
-    Omit<PersistedV6['projects'][number], 'tabs'> & {
-      tabs: Array<
-        Omit<PersistedV6['projects'][number]['tabs'][number], 'titleKind'>
-      >;
-    }
-  >;
-};
-
-/** v4 layout on disk: v5 minus durable identity and lifecycle. */
-type PersistedV4 = Omit<PersistedV5, 'v' | 'projects'> & {
-  v: 4;
-  projects: Array<
-    Omit<PersistedV5['projects'][number], 'tabs'> & {
-      tabs: Array<
-        Omit<
-          PersistedV5['projects'][number]['tabs'][number],
-          'durableSessionId' | 'lifecycle' | 'exitCode'
-        >
-      >;
-    }
-  >;
-};
-
-/** v3 layout on disk: v4 minus the per-tab declared roadmap link. */
-type PersistedV3 = Omit<PersistedV4, 'v' | 'projects'> & {
-  v: 3;
-  projects: Array<
-    Omit<PersistedV4['projects'][number], 'tabs'> & {
-      tabs: Array<
-        Omit<PersistedV4['projects'][number]['tabs'][number], 'roadmapItemId'>
-      >;
-    }
-  >;
-};
-
-type PersistedV2 = Omit<PersistedV3, 'v' | 'projects'> & {
-  v: 2;
-  projects: Array<
-    Omit<PersistedV3['projects'][number], 'tabs'> & {
-      tabs: Array<
-        Omit<
-          PersistedV3['projects'][number]['tabs'][number],
-          'harnessSessionId'
-        >
-      >;
-    }
-  >;
-};
-
-/** v1 layout on disk: identical v2 shape under the old `initiatives` key. */
-type PersistedV1 = Omit<PersistedV2, 'v' | 'projects'> & {
-  v: 1;
-  initiatives: PersistedV2['projects'];
-};
-
-export const REVIVE_FAILED = -999;
-
-let tabCounter = 0;
-function newTabId(): string {
-  return `tab-${Date.now().toString(36)}-${++tabCounter}`;
-}
-
-function newDurableSessionId(): string {
-  return `session-${crypto.randomUUID()}`;
-}
-
-const LEGACY_CATALOG_TITLE_MAX_CHARS = 72;
-
-/** D31 briefly leaked a bounded catalog fallback (the first operator prompt)
- * into a tab title. This shape is deliberately narrow: repair the known
- * migration artifact once without guessing away ordinary operator renames. */
-function isLegacyCatalogTitleLeak(candidate: {
-  harness: PtyHarness;
-  title: string;
-  harnessSessionId: string | null;
-  initialTask?: string | null;
-  semanticSummary?: string | null;
-  draft?: boolean;
-}): boolean {
-  return (
-    candidate.harness !== 'shell' &&
-    !candidate.draft &&
-    typeof candidate.harnessSessionId === 'string' &&
-    typeof candidate.initialTask === 'string' &&
-    !!candidate.initialTask.trim() &&
-    typeof candidate.semanticSummary === 'string' &&
-    !!candidate.semanticSummary.trim() &&
-    candidate.title.trim().length <= LEGACY_CATALOG_TITLE_MAX_CHARS &&
-    candidate.title.trim().endsWith('…') &&
-    candidate.title.trim().split(/\s+/).length > 6
-  );
-}
-
-function upgradeV5TabTitle(
-  tab: PersistedV5['projects'][number]['tabs'][number]
-): Pick<
-  PersistedV6['projects'][number]['tabs'][number],
-  'title' | 'titleKind'
-> {
-  const isDraft = tab.lifecycle === 'draft';
-  if (
-    isDraft ||
-    isDefaultHarnessTitle(tab.harness, tab.title) ||
-    isLegacyCatalogTitleLeak({
-      ...tab,
-      semanticSummary: tab.contextSummary,
-      draft: isDraft,
-    })
-  ) {
-    return {
-      title: isDraft ? tab.title : HARNESS_META[tab.harness].label,
-      titleKind: 'default',
-    };
-  }
-  return { title: tab.title, titleKind: 'operator' };
-}
-
-/** A persisted remote tab is identity, so any missing piece of it is fatal:
- *  a coworker tab that cannot say which Agent on which source it is a view of
- *  is not a tab, and restoring it would mint an empty pane nothing can fill. */
-function readRemoteAgentTab(tab: unknown): PersistedRemoteAgentTab | null {
-  if (!tab || typeof tab !== 'object') return null;
-  const record = tab as Record<string, unknown>;
-  const text = (value: unknown): string | null =>
-    typeof value === 'string' && value.trim().length > 0 && value.length <= 512
-      ? value
-      : null;
-  const id = text(record.id);
-  const sourceId = text(record.sourceId);
-  const nativeAgentId = text(record.nativeAgentId);
-  const agentId = text(record.agentId);
-  if (!id || !sourceId || !nativeAgentId || !agentId) return null;
-  return {
-    kind: 'remote-agent',
-    id,
-    sourceId,
-    nativeAgentId,
-    agentId,
-    // Names are the source's to own. A layout that lost them still restores;
-    // the roster puts the real ones back the moment it answers.
-    title: text(record.title) ?? nativeAgentId,
-    projectLabel: text(record.projectLabel) ?? '',
-  };
-}
-
-/** A persisted signal name, or null, or absent when the record has none.
- *  Anything else is unreadable and reads as absent, never as clean. */
-function persistedExitSignal(value: unknown): string | null | undefined {
-  if (value === null) return null;
-  return typeof value === 'string' &&
-    /^(?:SIG[A-Z0-9+]{1,16}|signal \d{1,3})$/.test(value)
-    ? value
-    : undefined;
-}
-
-/** Read the persisted layout, upgrading older shapes in place: v1 (key
- *  `initiatives`) → v2 (key `projects`) → v3 (exact provider IDs) → v4
- *  (declared roadmap links) → v5 (durable lifecycle) → v6 (title ownership)
- *  → v7 (two kinds of tab). */
-export function parsePersisted(raw: unknown): PersistedV7 | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
-  const toV5 = (p: PersistedV4): PersistedV5 => ({
-    ...p,
-    v: 5,
-    projects: p.projects.map(project => ({
-      ...project,
-      tabs: project.tabs.map(tab => ({
-        ...tab,
-        durableSessionId: tab.id,
-        lifecycle: 'stopped-clean' as const,
-        exitCode: null,
-      })),
-    })),
-  });
-  const toV6 = (p: PersistedV5): PersistedV6 => ({
-    ...p,
-    v: 6,
-    projects: p.projects.map(project => ({
-      ...project,
-      tabs: project.tabs.map(tab => ({
-        ...tab,
-        ...upgradeV5TabTitle(tab),
-      })),
-    })),
-  });
-  const toV7 = (p: PersistedV6): PersistedV7 => ({
-    ...p,
-    v: 7,
-    // Every tab a v6 file holds is a local Session; that is what v6 could say.
-    projects: p.projects.map(project => ({
-      ...project,
-      tabs: project.tabs.map(tab => ({ kind: 'session' as const, ...tab })),
-    })),
-  });
-  const normalizeV7 = (parsed: PersistedV7): PersistedV7 => {
-    const seen = new Set<string>();
-    return {
-      ...parsed,
-      projects: parsed.projects.map(project => ({
-        ...project,
-        tabs: project.tabs.flatMap<PersistedTab>(tab => {
-          if ((tab as { kind?: unknown }).kind === 'remote-agent') {
-            const remote = readRemoteAgentTab(tab);
-            return remote ? [remote] : [];
-          }
-          // Anything else is a Session tab, including one written by a v6
-          // build straight into a v7 file by a hand edit.
-          const session = tab as PersistedSessionTab;
-          let durableSessionId = session.durableSessionId || session.id;
-          if (seen.has(durableSessionId))
-            durableSessionId = `${session.id}-session`;
-          seen.add(durableSessionId);
-          const lifecycle: SessionLifecycle = [
-            'running',
-            'stopped-clean',
-            'interrupted',
-            'exited',
-            'resuming',
-            'failed',
-            'draft',
-          ].includes(session.lifecycle)
-            ? session.lifecycle
-            : 'stopped-clean';
-          return [
-            {
-              ...session,
-              launchModel:
-                typeof session.launchModel === 'string' &&
-                session.launchModel.length <= 512 &&
-                !/[\s\u0000-\u001f\u007f]/.test(session.launchModel)
-                  ? session.launchModel
-                  : undefined,
-              launchEffort:
-                typeof session.launchEffort === 'string' &&
-                /^[a-z][a-z0-9_-]{0,31}$/.test(session.launchEffort)
-                  ? session.launchEffort
-                  : undefined,
-              kind: 'session' as const,
-              durableSessionId,
-              titleKind:
-                session.titleKind === 'default' ||
-                session.titleKind === 'operator'
-                  ? session.titleKind
-                  : isDefaultHarnessTitle(session.harness, session.title)
-                    ? 'default'
-                    : 'operator',
-              lifecycle,
-              exitCode: session.exitCode ?? null,
-              exitSignal: persistedExitSignal(session.exitSignal),
-            },
-          ];
-        }),
-      })),
-    };
-  };
-  const normalizeV6 = (parsed: PersistedV6): PersistedV7 =>
-    normalizeV7(toV7(parsed));
-  if (d.v === 7 && Array.isArray(d.projects)) {
-    return normalizeV7(raw as PersistedV7);
-  }
-  if (d.v === 6 && Array.isArray(d.projects)) {
-    return normalizeV6(raw as PersistedV6);
-  }
-  if (d.v === 5 && Array.isArray(d.projects))
-    return normalizeV6(toV6(raw as PersistedV5));
-  if (d.v === 4 && Array.isArray(d.projects))
-    return normalizeV6(toV6(toV5(raw as PersistedV4)));
-  const toV4 = (p: Omit<PersistedV3, 'v'>): PersistedV4 => ({
-    ...p,
-    v: 4 as const,
-    projects: p.projects.map(project => ({
-      ...project,
-      tabs: project.tabs.map(tab => ({ ...tab, roadmapItemId: null })),
-    })),
-  });
-  if (d.v === 3 && Array.isArray(d.projects)) {
-    const { v: _v, ...rest } = raw as PersistedV3;
-    return normalizeV6(toV6(toV5(toV4(rest))));
-  }
-  const upgrade = (
-    projects: PersistedV2['projects'],
-    rest: Omit<PersistedV2, 'v' | 'projects'>
-  ) =>
-    normalizeV6(
-      toV6(
-        toV5(
-          toV4({
-            ...rest,
-            projects: projects.map(project => ({
-              ...project,
-              tabs: project.tabs.map(tab => ({
-                ...tab,
-                harnessSessionId: null,
-              })),
-            })),
-          })
-        )
-      )
-    );
-  if (d.v === 2 && Array.isArray(d.projects)) {
-    const { projects, v: _v, ...rest } = raw as PersistedV2;
-    return upgrade(projects, rest);
-  }
-  if (d.v === 1 && Array.isArray(d.initiatives)) {
-    const { initiatives, v: _v, ...rest } = raw as PersistedV1;
-    return upgrade(initiatives, rest);
-  }
-  return null;
-}
-
-/**
  * The ids of the sources Exawatt still has a record of.
  *
  * `null` means Exawatt could not ask — no desktop bridge, or a read that
@@ -902,33 +204,6 @@ async function readConfiguredSourceIds(): Promise<ReadonlySet<string> | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Drop coworker tabs whose source Exawatt no longer has a record of.
- *
- * Detach is an operator decision that removes Exawatt's projection, so its
- * tabs must not come back with the layout. An Agent the roster stops reporting
- * is a different question entirely, and one this function refuses to answer:
- * a source that is merely unreachable reports nothing, and losing the
- * connection is never evidence the coworker is gone. That tab survives and
- * resolves to a missing state on screen.
- */
-export function dropDetachedRemoteTabs(
-  persisted: PersistedV7 | null,
-  configuredSourceIds: ReadonlySet<string> | null
-): PersistedV7 | null {
-  if (!persisted || configuredSourceIds === null) return persisted;
-  return {
-    ...persisted,
-    projects: persisted.projects.map(project => ({
-      ...project,
-      tabs: project.tabs.filter(
-        tab =>
-          tab.kind !== 'remote-agent' || configuredSourceIds.has(tab.sourceId)
-      ),
-    })),
-  };
 }
 
 export interface LaunchOptions {
@@ -1053,7 +328,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     null
   );
   const dismissReentryRecap = useCallback(() => setReentryRecap(null), []);
-  const stateRef = useRef({ projects, activeDir, lastUsedDir, pinnedTabId });
+  const stateRef = useRef<WorkspaceLayout>({
+    projects,
+    activeDir,
+    lastUsedDir,
+    pinnedTabId,
+  });
   stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
   /** One projected Agent can have one tab-opening transaction at a time. */
   const remoteAgentOpenInFlightRef = useRef<
