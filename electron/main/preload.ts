@@ -1,15 +1,45 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AgentHarness, AgentSourceAdapterId } from '@exawatt/core';
-import type { ElectronAppearanceBootstrapSnapshot } from './appearance';
+import type {
+  DesktopBridge,
+  DesktopBridgeArgs,
+  DesktopBridgePush,
+  DesktopBridgePushChannel,
+  DesktopBridgeRequestChannel,
+  DesktopBridgeResult,
+  DesktopBridgeSyncChannel,
+  DesktopBridgeSyncRequests,
+  DesktopProductUpdatesApi,
+} from '@exawatt/core/desktop-bridge';
+
+/**
+ * `window.electron`, built from the desktop bridge contract
+ * (`@exawatt/core/desktop-bridge`). Preload runs sandboxed and may require
+ * nothing but `electron`, so the contract is types only here: every channel
+ * name below is a literal the contract checks, and the exposed object
+ * `satisfies` the contract's `DesktopBridge`.
+ */
+
+/** One request channel, with the contract's arguments and answer. */
+const invoke = <C extends DesktopBridgeRequestChannel>(
+  channel: C,
+  ...args: DesktopBridgeArgs<C>
+): Promise<DesktopBridgeResult<C>> => ipcRenderer.invoke(channel, ...args);
+
+/** One synchronous read, answered before any document script runs. */
+const sendSync = <C extends DesktopBridgeSyncChannel>(
+  channel: C
+): DesktopBridgeSyncRequests[C]['result'] => ipcRenderer.sendSync(channel);
 
 /** one subscribe-shape for every main→renderer event channel: wraps the
  *  handler, registers it, returns a disposer that removes ONLY it (never
  *  removeAllListeners — that clobbers sibling subscribers) */
 const subscribe =
-  <T>(channel: string) =>
-  (handler: (payload: T) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: T) =>
-      handler(payload);
+  <C extends DesktopBridgePushChannel>(channel: C) =>
+  (handler: (payload: DesktopBridgePush<C>) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: DesktopBridgePush<C>
+    ) => handler(payload);
     ipcRenderer.on(channel, listener);
     return () => {
       ipcRenderer.removeListener(channel, listener);
@@ -18,47 +48,29 @@ const subscribe =
 
 // This value is captured synchronously on every top-level navigation so the
 // first document script never has to guess from a possibly stale web mirror.
-const bootstrapAppearance = ipcRenderer.sendSync(
-  'app:appearance-bootstrap'
-) as ElectronAppearanceBootstrapSnapshot;
+const bootstrapAppearance = sendSync('app:appearance-bootstrap');
 const productUpdatesEnabled = process.argv.includes(
   '--exawatt-capability-updates'
 );
-const productUpdates = productUpdatesEnabled
-  ? {
-      getStatus: () => ipcRenderer.invoke('app:get-update-status'),
-      check: () => ipcRenderer.invoke('app:check-for-updates'),
-      restart: () => ipcRenderer.invoke('app:restart-update'),
-      onStatus: subscribe<{
-        phase:
-          | 'idle'
-          | 'checking'
-          | 'available'
-          | 'downloading'
-          | 'downloaded'
-          | 'error';
-        currentVersion: string;
-        availableVersion: string | null;
-        percent: number | null;
-        liveSessions: number;
-        error: string | null;
-      }>('app:update-status'),
-    }
-  : undefined;
+const productUpdates: DesktopProductUpdatesApi | undefined =
+  productUpdatesEnabled
+    ? {
+        getStatus: () => invoke('app:get-update-status'),
+        check: () => invoke('app:check-for-updates'),
+        restart: () => invoke('app:restart-update'),
+        onStatus: subscribe('app:update-status'),
+      }
+    : undefined;
 
-contextBridge.exposeInMainWorld('electron', {
+const bridge = {
   isElectron: true,
   platform: process.platform,
   agentSources: {
-    onDelegation: subscribe<unknown>('agent-sources:delegation'),
-    list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
-      ipcRenderer.invoke('agent-sources:list', scope, refresh),
-    remembered: (scope: 'all' | 'launch' = 'all') =>
-      ipcRenderer.invoke('agent-sources:remembered', scope),
-    act: (
-      adapterId: AgentSourceAdapterId,
-      action: 'authenticate' | 'choose-model' | 'install-guide'
-    ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
+    onDelegation: subscribe('agent-sources:delegation'),
+    list: (scope = 'all', refresh = false) =>
+      invoke('agent-sources:list', scope, refresh),
+    remembered: (scope = 'all') => invoke('agent-sources:remembered', scope),
+    act: (adapterId, action) => invoke('agent-sources:act', adapterId, action),
   },
   // ENG-010 C1. Configured sources are saved connections to a Gateway, local
   // or hosted. The renderer sees names and health; SSH material and the OS
@@ -70,12 +82,12 @@ contextBridge.exposeInMainWorld('electron', {
   // id rather than a session key, so no renderer call can address any context
   // other than that coworker's primary conversation.
   connectedSources: {
-    list: () => ipcRenderer.invoke('connected-sources:list'),
+    list: () => invoke('connected-sources:list'),
     /** Passive: reads SSH config text, never contacts a server. */
-    sshAliases: () => ipcRenderer.invoke('connected-sources:ssh-aliases'),
-    add: (input: unknown) => ipcRenderer.invoke('connected-sources:add', input),
-    rename: (id: string, displayName: string) =>
-      ipcRenderer.invoke('connected-sources:rename', id, displayName),
+    sshAliases: () => invoke('connected-sources:ssh-aliases'),
+    add: input => invoke('connected-sources:add', input),
+    rename: (id, displayName) =>
+      invoke('connected-sources:rename', id, displayName),
     /**
      * The operator act that reaches a server. Read-only end to end.
      *
@@ -86,452 +98,276 @@ contextBridge.exposeInMainWorld('electron', {
      * `onChanged` below, which already broadcasts every phase the session
      * enters, per source.
      */
-    connect: (id: string) =>
-      ipcRenderer.invoke('connected-sources:connect', id),
+    connect: id => invoke('connected-sources:connect', id),
     /** Per-source observation freshness. Never a claim about remote work. */
-    status: () => ipcRenderer.invoke('connected-sources:status'),
+    status: () => invoke('connected-sources:status'),
     /** The projected coworkers, for the roster. */
-    agents: () => ipcRenderer.invoke('connected-sources:agents'),
+    agents: () => invoke('connected-sources:agents'),
     /** Exawatt-side Project/name decisions. Issues no Gateway call. */
-    mapAgents: (id: string, mappings: unknown) =>
-      ipcRenderer.invoke('connected-sources:map-agents', id, mappings),
+    mapAgents: (id, mappings) =>
+      invoke('connected-sources:map-agents', id, mappings),
     /** Stops observing. The remote installation keeps working. */
-    disconnect: (id: string) =>
-      ipcRenderer.invoke('connected-sources:disconnect', id),
+    disconnect: id => invoke('connected-sources:disconnect', id),
     /** Removes Exawatt's record only. The remote installation is untouched. */
-    detach: (id: string) => ipcRenderer.invoke('connected-sources:detach', id),
+    detach: id => invoke('connected-sources:detach', id),
     /**
      * Which source moved, which phase it is in, and how fresh it is — never a
      * topology payload. Also the connect flow's progress channel: the phases
      * a session passes through on its way to a snapshot are the steps the
      * operator is watching.
      */
-    onChanged: subscribe<unknown>('connected-sources:changed'),
+    onChanged: subscribe('connected-sources:changed'),
     /** What Exawatt may do with each source. Never a freshness signal. */
-    commandAuthority: () =>
-      ipcRenderer.invoke('connected-sources:command-authority'),
+    commandAuthority: () => invoke('connected-sources:command-authority'),
     /** Asks the source to raise Exawatt from observation to conversation. */
-    requestCommandAuthority: (id: string) =>
-      ipcRenderer.invoke('connected-sources:request-command-authority', id),
-    approveCommandAuthority: (id: string) =>
-      ipcRenderer.invoke('connected-sources:approve-command-authority', id),
+    requestCommandAuthority: id =>
+      invoke('connected-sources:request-command-authority', id),
+    approveCommandAuthority: id =>
+      invoke('connected-sources:approve-command-authority', id),
     /** Hands write access back; observation continues. */
-    relinquishCommandAuthority: (id: string) =>
-      ipcRenderer.invoke('connected-sources:relinquish-command-authority', id),
+    relinquishCommandAuthority: id =>
+      invoke('connected-sources:relinquish-command-authority', id),
     /** One coworker's primary conversation, bounded. A read, not a command. */
-    conversation: (agentId: string, request?: unknown) =>
-      ipcRenderer.invoke('connected-sources:conversation', agentId, request),
+    conversation: (agentId, request?) =>
+      invoke('connected-sources:conversation', agentId, request),
     /**
      * Sends to that coworker's primary conversation. There is no session-key
      * parameter by design: the address follows from the Agent, so no caller
      * can aim a message at a cron run, a helper context, or a delegated child.
      */
-    send: (agentId: string, text: string, options?: unknown) =>
-      ipcRenderer.invoke('connected-sources:send', agentId, text, options),
+    send: (agentId, text, options?) =>
+      invoke('connected-sources:send', agentId, text, options),
     /** Bounded, ordered reply updates keyed by Agent and run. */
-    onConversationUpdate: subscribe<unknown>(
-      'connected-sources:conversation-updated'
-    ),
+    onConversationUpdate: subscribe('connected-sources:conversation-updated'),
   },
   operatorStats: {
-    plan: (request: unknown) =>
-      ipcRenderer.invoke('operator-stats:plan', request),
-    record: (event: unknown) =>
-      ipcRenderer.invoke('operator-stats:record', event),
+    plan: request => invoke('operator-stats:plan', request),
+    record: event => invoke('operator-stats:record', event),
   },
   // BUG-016: the command engine's own state. Every other member of this bridge
   // is a service that only exists once bootstrap succeeded; this one reports
   // whether it did, so a surface can tell a dead local engine from a machine
   // that has no desktop bridge at all.
   commandEngine: {
-    phase: () => ipcRenderer.invoke('app:command-engine'),
-    onChanged: subscribe<string>('app:command-engine-changed'),
+    phase: () => invoke('app:command-engine'),
+    onChanged: subscribe('app:command-engine-changed'),
   },
   // ENG-008 E5: the live local-consumption seam. Contract types live in
   // @exawatt/core `consumption/live-snapshot.ts`; updates are notification-only
   // (revision + scan state) and the renderer pulls snapshots when it cares.
   consumption: {
-    snapshot: (request?: { sinceMs?: number }) =>
-      ipcRenderer.invoke('consumption:snapshot', request),
-    rescan: () => ipcRenderer.invoke('consumption:rescan'),
-    cancelScan: () => ipcRenderer.invoke('consumption:cancel-scan'),
-    onUpdated: subscribe<unknown>('consumption:updated'),
+    snapshot: request => invoke('consumption:snapshot', request),
+    rescan: () => invoke('consumption:rescan'),
+    cancelScan: () => invoke('consumption:cancel-scan'),
+    onUpdated: subscribe('consumption:updated'),
   },
   pty: {
-    create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
-    pauseSessions: (ids: string[], confirmed?: boolean) =>
-      ipcRenderer.invoke('pty:pause-sessions', ids, confirmed),
-    changeModel: (id: string, choice: unknown) =>
-      ipcRenderer.invoke('pty:change-model', id, choice),
-    listAgentModels: (harness: string, cwd: string, refresh?: boolean) =>
-      ipcRenderer.invoke(
-        'pty:list-agent-models',
-        harness,
-        cwd,
-        refresh === true
-      ),
-    write: (id: string, data: string, operatorEngaged = false) =>
-      ipcRenderer.invoke('pty:write', id, data, operatorEngaged),
-    engage: (id: string) => ipcRenderer.invoke('pty:engage', id),
-    resize: (id: string, cols: number, rows: number) =>
-      ipcRenderer.invoke('pty:resize', id, cols, rows),
-    kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
-    closeSession: (durableSessionId: string, discard = false) =>
-      ipcRenderer.invoke('pty:close-session', durableSessionId, discard),
-    archiveSession: (entry: unknown) =>
-      ipcRenderer.invoke('pty:archive-session', entry),
-    closedSessions: () => ipcRenderer.invoke('pty:closed-sessions'),
-    onClosedSessionsChanged: subscribe<number>('pty:closed-sessions-changed'),
-    reopenSession: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:reopen-session', durableSessionId),
-    rename: (id: string, title: string) =>
-      ipcRenderer.invoke('pty:rename', id, title),
-    focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),
-    setContextAuth: (accessToken: string | null) =>
-      ipcRenderer.invoke('pty:set-context-auth', accessToken),
-    correctContext: (durableSessionId: string, label: string) =>
-      ipcRenderer.invoke('pty:correct-context', durableSessionId, label),
-    restoreContext: (durableSessionId: string, subtitle: string) =>
-      ipcRenderer.invoke('pty:restore-context', durableSessionId, subtitle),
-    restoreGoalVisual: (durableSessionId: string, visual: unknown) =>
-      ipcRenderer.invoke('pty:restore-goal-visual', durableSessionId, visual),
-    list: () => ipcRenderer.invoke('pty:list'),
-    buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
-    bufferSnapshot: (id: string) =>
-      ipcRenderer.invoke('pty:buffer-snapshot', id),
-    bufferSince: (id: string, cursor: number) =>
-      ipcRenderer.invoke('pty:buffer-since', id, cursor),
-    retainedHistoryMeta: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:retained-history-meta', durableSessionId),
-    cloneContext: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:clone-context', durableSessionId),
-    retainedTranscript: (durableSessionId: string, maxLines?: number) =>
-      ipcRenderer.invoke('pty:retained-transcript', durableSessionId, maxLines),
-    pasteClipboard: (id: string) =>
-      ipcRenderer.invoke('pty:paste-clipboard', id),
-    clipboardRead: () => ipcRenderer.invoke('pty:clipboard-read'),
-    copyText: (text: string) => ipcRenderer.invoke('pty:copy-text', text),
-    openExternal: (url: string) => ipcRenderer.invoke('pty:open-external', url),
-    openPath: (
-      filePath: string,
-      cwd: string,
-      options?: { contain?: boolean }
-    ) => ipcRenderer.invoke('pty:open-path', filePath, cwd, options),
-    createWorktree: (repoDir: string, branch: string) =>
-      ipcRenderer.invoke('pty:worktree', repoDir, branch),
-    listResumeCandidates: (harness: string, cwd: string) =>
-      ipcRenderer.invoke('pty:list-resume-candidates', harness, cwd),
-    reconcileResumeIdentities: (
-      hints: Array<{
-        durableSessionId: string;
-        harness: AgentHarness;
-        cwd: string;
-        initialTask: string | null;
-        harnessSessionId: string | null;
-      }>
-    ) => ipcRenderer.invoke('pty:reconcile-resume-identities', hints),
-    listRecentConversations: (cwd: string) =>
-      ipcRenderer.invoke('pty:list-recent-conversations', cwd),
-    enrichRecentConversations: (cwd: string, accessToken: string) =>
-      ipcRenderer.invoke('pty:enrich-recent-conversations', cwd, accessToken),
-    onData: subscribe<{
-      id: string;
-      durableSessionId: string;
-      data: string;
-      cursor: number;
-    }>('pty:data'),
-    onExit: subscribe<{
-      id: string;
-      durableSessionId: string;
-      exitCode: number;
-      exitSignal: string | null;
-    }>('pty:exit'),
-    onIdentity: subscribe<{
-      id: string;
-      durableSessionId: string;
-      harnessSessionId: string;
-    }>('pty:identity'),
-    onContext: subscribe<{ durableSessionId: string; summary: string }>(
-      'pty:context'
-    ),
-    onGoalVisual: subscribe<{ durableSessionId: string; visual: unknown }>(
-      'pty:goal-visual'
-    ),
-    onRecap: subscribe<{
-      id: string;
-      text: string;
-      awayMs: number;
-      generatedAt: number;
-    }>('pty:recap'),
-    onAttention: subscribe<{ id: string; attention: unknown }>('pty:attention'),
-    onActivity: subscribe<{ id: string; working: boolean }>('pty:activity'),
-    onEngaged: subscribe<{ id: string }>('pty:engaged'),
-    onDelegation: subscribe<{ id: string; delegation: unknown }>(
-      'pty:delegation'
-    ),
-    onNotificationClick: subscribe<{ id: string }>('pty:notification-click'),
+    create: options => invoke('pty:create', options),
+    pauseSessions: (ids, confirmed?) =>
+      invoke('pty:pause-sessions', ids, confirmed),
+    changeModel: (id, choice) => invoke('pty:change-model', id, choice),
+    listAgentModels: (harness, cwd, refresh?) =>
+      invoke('pty:list-agent-models', harness, cwd, refresh === true),
+    write: (id, data, operatorEngaged = false) =>
+      invoke('pty:write', id, data, operatorEngaged),
+    engage: id => invoke('pty:engage', id),
+    resize: (id, cols, rows) => invoke('pty:resize', id, cols, rows),
+    kill: id => invoke('pty:kill', id),
+    closeSession: (durableSessionId, discard = false) =>
+      invoke('pty:close-session', durableSessionId, discard),
+    archiveSession: entry => invoke('pty:archive-session', entry),
+    closedSessions: () => invoke('pty:closed-sessions'),
+    onClosedSessionsChanged: subscribe('pty:closed-sessions-changed'),
+    reopenSession: durableSessionId =>
+      invoke('pty:reopen-session', durableSessionId),
+    rename: (id, title) => invoke('pty:rename', id, title),
+    focus: id => invoke('pty:focus', id),
+    setContextAuth: accessToken => invoke('pty:set-context-auth', accessToken),
+    correctContext: (durableSessionId, label) =>
+      invoke('pty:correct-context', durableSessionId, label),
+    restoreContext: (durableSessionId, subtitle) =>
+      invoke('pty:restore-context', durableSessionId, subtitle),
+    restoreGoalVisual: (durableSessionId, visual) =>
+      invoke('pty:restore-goal-visual', durableSessionId, visual),
+    list: () => invoke('pty:list'),
+    buffer: id => invoke('pty:buffer', id),
+    bufferSnapshot: id => invoke('pty:buffer-snapshot', id),
+    bufferSince: (id, cursor) => invoke('pty:buffer-since', id, cursor),
+    retainedHistoryMeta: durableSessionId =>
+      invoke('pty:retained-history-meta', durableSessionId),
+    cloneContext: durableSessionId =>
+      invoke('pty:clone-context', durableSessionId),
+    retainedTranscript: (durableSessionId, maxLines?) =>
+      invoke('pty:retained-transcript', durableSessionId, maxLines),
+    pasteClipboard: id => invoke('pty:paste-clipboard', id),
+    clipboardRead: () => invoke('pty:clipboard-read'),
+    copyText: text => invoke('pty:copy-text', text),
+    openExternal: url => invoke('pty:open-external', url),
+    openPath: (filePath, cwd, options) =>
+      invoke('pty:open-path', filePath, cwd, options),
+    createWorktree: (repoDir, branch) =>
+      invoke('pty:worktree', repoDir, branch),
+    listResumeCandidates: (harness, cwd) =>
+      invoke('pty:list-resume-candidates', harness, cwd),
+    reconcileResumeIdentities: hints =>
+      invoke('pty:reconcile-resume-identities', hints),
+    listRecentConversations: cwd =>
+      invoke('pty:list-recent-conversations', cwd),
+    enrichRecentConversations: (cwd, accessToken) =>
+      invoke('pty:enrich-recent-conversations', cwd, accessToken),
+    onData: subscribe('pty:data'),
+    onExit: subscribe('pty:exit'),
+    onIdentity: subscribe('pty:identity'),
+    onContext: subscribe('pty:context'),
+    onGoalVisual: subscribe('pty:goal-visual'),
+    onRecap: subscribe('pty:recap'),
+    onAttention: subscribe('pty:attention'),
+    onActivity: subscribe('pty:activity'),
+    onEngaged: subscribe('pty:engaged'),
+    onDelegation: subscribe('pty:delegation'),
+    onNotificationClick: subscribe('pty:notification-click'),
   },
   workspace: {
-    load: () => ipcRenderer.invoke('workspace:load'),
-    save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
-    recovery: () => ipcRenderer.invoke('workspace:recovery'),
-    storageRecovery: () => ipcRenderer.invoke('workspace:storage-recovery'),
-    retryRecovery: () => ipcRenderer.invoke('workspace:retry-recovery'),
-    revealRecovery: () => ipcRenderer.invoke('workspace:reveal-recovery'),
-    onChanged: subscribe<unknown>('workspace:changed'),
+    load: () => invoke('workspace:load'),
+    save: state => invoke('workspace:save', state),
+    recovery: () => invoke('workspace:recovery'),
+    storageRecovery: () => invoke('workspace:storage-recovery'),
+    retryRecovery: () => invoke('workspace:retry-recovery'),
+    revealRecovery: () => invoke('workspace:reveal-recovery'),
+    onChanged: subscribe('workspace:changed'),
   },
   roadmap: {
-    read: (projectDir: string) =>
-      ipcRenderer.invoke('roadmap:read', projectDir),
-    sessionEvidence: (cwd: string) =>
-      ipcRenderer.invoke('roadmap:session-evidence', cwd),
-    activity: (projectDir: string) =>
-      ipcRenderer.invoke('roadmap:activity', projectDir),
-    writeState: (request: unknown) =>
-      ipcRenderer.invoke('roadmap:write-state', request),
-    undoState: (token: string) =>
-      ipcRenderer.invoke('roadmap:undo-state', token),
-    watch: (projectDir: string) =>
-      ipcRenderer.invoke('roadmap:watch', projectDir),
-    unwatch: (projectDir: string) =>
-      ipcRenderer.invoke('roadmap:unwatch', projectDir),
-    onFileChanged: subscribe<{ projectDir: string }>('roadmap:file-changed'),
+    read: projectDir => invoke('roadmap:read', projectDir),
+    sessionEvidence: cwd => invoke('roadmap:session-evidence', cwd),
+    activity: projectDir => invoke('roadmap:activity', projectDir),
+    writeState: request => invoke('roadmap:write-state', request),
+    undoState: token => invoke('roadmap:undo-state', token),
+    watch: projectDir => invoke('roadmap:watch', projectDir),
+    unwatch: projectDir => invoke('roadmap:unwatch', projectDir),
+    onFileChanged: subscribe('roadmap:file-changed'),
   },
   settings: {
-    get: () => ipcRenderer.invoke('settings:get'),
-    setAppearance: (appearance: unknown) =>
-      ipcRenderer.invoke('settings:set-appearance', appearance),
-    setAttentionNotifications: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-attention-notifications', enabled),
-    setDockBadge: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-dock-badge', enabled),
-    setHostedContextLabels: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-hosted-context-labels', enabled),
-    setHostedConversationSummaries: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-hosted-conversation-summaries', enabled),
-    setGoalVisualsEnabled: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-goal-visuals', enabled),
-    setKeyboardShortcuts: (overrides: unknown) =>
-      ipcRenderer.invoke('settings:set-keyboard-shortcuts', overrides),
-    setReentryRecap: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-reentry-recap', enabled),
-    setClaudePlanWindows: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-claude-plan-windows', enabled),
-    setOperatorAutoPublish: (enabled: boolean) =>
-      ipcRenderer.invoke('settings:set-operator-auto-publish', enabled),
-    recordOperatorProfileState: (state: {
-      startedAt?: string;
-      lastSyncedAt?: string;
-      profileEnabled?: boolean;
-    }) => ipcRenderer.invoke('settings:record-operator-profile-state', state),
-    recordAgentSourceUse: (
-      projectDir: string,
-      source: string,
-      usedAt: number
-    ) =>
-      ipcRenderer.invoke(
-        'settings:record-agent-source-use',
-        projectDir,
-        source,
-        usedAt
-      ),
-    setAgentPermissionMode: (
-      projectDir: string,
-      source: string,
-      permissionMode: string
-    ) =>
-      ipcRenderer.invoke(
+    get: () => invoke('settings:get'),
+    setAppearance: appearance => invoke('settings:set-appearance', appearance),
+    setAttentionNotifications: enabled =>
+      invoke('settings:set-attention-notifications', enabled),
+    setDockBadge: enabled => invoke('settings:set-dock-badge', enabled),
+    setHostedContextLabels: enabled =>
+      invoke('settings:set-hosted-context-labels', enabled),
+    setHostedConversationSummaries: enabled =>
+      invoke('settings:set-hosted-conversation-summaries', enabled),
+    setGoalVisualsEnabled: enabled =>
+      invoke('settings:set-goal-visuals', enabled),
+    setKeyboardShortcuts: overrides =>
+      invoke('settings:set-keyboard-shortcuts', overrides),
+    setReentryRecap: enabled => invoke('settings:set-reentry-recap', enabled),
+    setClaudePlanWindows: enabled =>
+      invoke('settings:set-claude-plan-windows', enabled),
+    setOperatorAutoPublish: enabled =>
+      invoke('settings:set-operator-auto-publish', enabled),
+    recordOperatorProfileState: state =>
+      invoke('settings:record-operator-profile-state', state),
+    recordAgentSourceUse: (projectDir, source, usedAt) =>
+      invoke('settings:record-agent-source-use', projectDir, source, usedAt),
+    setAgentPermissionMode: (projectDir, source, permissionMode) =>
+      invoke(
         'settings:set-agent-permission-mode',
         projectDir,
         source,
         permissionMode
       ),
-    recordLaunchConfigurationSuccess: (projectDir: string, target: unknown) =>
-      ipcRenderer.invoke(
+    recordLaunchConfigurationSuccess: (projectDir, target) =>
+      invoke(
         'settings:record-launch-configuration-success',
         projectDir,
         target
       ),
-    saveNamedLaunchConfiguration: (configuration: unknown, name: string) =>
-      ipcRenderer.invoke(
-        'settings:save-named-launch-configuration',
-        configuration,
-        name
-      ),
-    renameLaunchConfiguration: (id: string, name: string) =>
-      ipcRenderer.invoke('settings:rename-launch-configuration', id, name),
-    deleteLaunchConfiguration: (id: string) =>
-      ipcRenderer.invoke('settings:delete-launch-configuration', id),
-    setLaunchConfigurationPinned: (
-      projectDir: string,
-      id: string,
-      pinned: boolean
-    ) =>
-      ipcRenderer.invoke(
+    saveNamedLaunchConfiguration: (configuration, name) =>
+      invoke('settings:save-named-launch-configuration', configuration, name),
+    renameLaunchConfiguration: (id, name) =>
+      invoke('settings:rename-launch-configuration', id, name),
+    deleteLaunchConfiguration: id =>
+      invoke('settings:delete-launch-configuration', id),
+    setLaunchConfigurationPinned: (projectDir, id, pinned) =>
+      invoke(
         'settings:set-launch-configuration-pinned',
         projectDir,
         id,
         pinned
       ),
-    onChanged: subscribe<{
-      terminal?: {
-        fontFamily?: string;
-        fontSize?: number;
-        lineHeight?: number;
-        letterSpacing?: number;
-        fontStrokeWidth?: number;
-      };
-      notifications?: { attention: boolean; dockBadge?: boolean };
-      contextLabels?: { hosted: boolean };
-      conversationSummaries?: { hosted: boolean };
-      goalVisuals?: { enabled: boolean };
-      reentryRecap?: { enabled: boolean };
-      operatorProfile?: {
-        autoPublish: boolean;
-        startedAt?: string;
-        lastSyncedAt?: string;
-        profileEnabled?: boolean;
-      };
-      agentSources?: {
-        projectLastUsed: Record<string, string>;
-        sourceRecency: Record<string, number>;
-        projectPermissionModes: Record<string, Record<string, string>>;
-      };
-      launchConfigurations?: import('@exawatt/core').LaunchConfigurationPoolV1;
-      appearance?: {
-        schemaVersion: 1;
-        selection:
-          | { mode: 'manual'; themeId: string }
-          | { mode: 'auto'; lightThemeId: string; darkThemeId: string };
-        autoPair?: { lightThemeId: string; darkThemeId: string };
-        accentSource: 'theme' | 'system';
-        interfaceFont: 'theme' | 'system' | 'geist';
-        interfaceScale: 90 | 100 | 110 | 120;
-        contrast: 'system' | 'enhanced';
-        transparency: 'system' | 'reduced';
-      };
-    }>('settings:changed'),
+    onChanged: subscribe('settings:changed'),
   },
   app: {
     bootstrapAppearance,
-    getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
-    getDiagnosticsReport: (signedIn: boolean) =>
-      ipcRenderer.invoke('app:get-diagnostics-report', signedIn),
-    saveDiagnosticsReport: (signedIn: boolean) =>
-      ipcRenderer.invoke('app:save-diagnostics-report', signedIn),
-    reportRenderError: (report: {
-      message: string;
-      stack?: string | null;
-      digest?: string | null;
-      pathname?: string | null;
-    }) =>
-      ipcRenderer
-        .invoke('app:report-render-error', report)
+    getBuildInfo: () => invoke('app:get-build-info'),
+    getDiagnosticsReport: signedIn =>
+      invoke('app:get-diagnostics-report', signedIn),
+    saveDiagnosticsReport: signedIn =>
+      invoke('app:save-diagnostics-report', signedIn),
+    reportRenderError: report =>
+      invoke('app:report-render-error', report)
         .then(() => undefined)
         .catch(() => undefined),
-    accentColor: () => ipcRenderer.invoke('app:accent-color'),
-    appearance: () => ipcRenderer.invoke('app:appearance'),
-    onAppearanceChanged: subscribe<{
-      dark: boolean;
-      highContrast: boolean;
-      invertedColors: boolean;
-      systemAccent: string | null;
-      safeTheme: boolean;
-    }>('app:appearance-changed'),
+    accentColor: () => invoke('app:accent-color'),
+    appearance: () => invoke('app:appearance'),
+    onAppearanceChanged: subscribe('app:appearance-changed'),
     ...(productUpdates ? { updates: productUpdates } : {}),
-    setWorkspaceCheckpointOwner: (ownsWorkspaceState: boolean) =>
-      ipcRenderer.invoke(
-        'app:set-workspace-checkpoint-owner',
-        ownsWorkspaceState
-      ),
-    completeCheckpoint: (requestId: string, ok: boolean) =>
-      ipcRenderer.invoke('app:complete-checkpoint', requestId, ok),
-    onCheckpointRequest: subscribe<{
-      requestId: string;
-      reason: 'quit' | 'update';
-      stage: 'pre-stop' | 'stopped';
-    }>('app:checkpoint-request'),
-    onShutdownStatus: subscribe<{
-      phase:
-        | 'idle'
-        | 'confirming'
-        | 'checkpointing'
-        | 'stopping'
-        | 'finalizing';
-      agents: number;
-      shells: number;
-    }>('app:shutdown-status'),
-    onUpdateReady: subscribe<{
-      currentSha: string;
-      installedSha: string;
-    }>('app:update-ready'),
+    setWorkspaceCheckpointOwner: ownsWorkspaceState =>
+      invoke('app:set-workspace-checkpoint-owner', ownsWorkspaceState),
+    completeCheckpoint: (requestId, ok) =>
+      invoke('app:complete-checkpoint', requestId, ok),
+    onCheckpointRequest: subscribe('app:checkpoint-request'),
+    onShutdownStatus: subscribe('app:shutdown-status'),
+    onUpdateReady: subscribe('app:update-ready'),
   },
   auth: {
-    startGoogle: (config: {
-      supabaseUrl: string;
-      supabaseAnonKey: string;
-      redirectTo: string;
-    }) => ipcRenderer.invoke('auth:start-google', config),
-    linkGithub: (config: {
-      supabaseUrl: string;
-      supabaseAnonKey: string;
-      redirectTo: string;
-      // `linkIdentity` needs a live session; the renderer is where one exists.
-      session?: { accessToken: string; refreshToken: string };
-    }) => ipcRenderer.invoke('auth:link-github', config),
-    onComplete: subscribe<void>('auth:complete'),
-    onError: subscribe<{
-      name: string;
-      message: string;
-      status?: number;
-      code?: string;
-    }>('auth:error'),
+    startGoogle: config => invoke('auth:start-google', config),
+    // `linkIdentity` needs a live session; the renderer is where one exists.
+    linkGithub: config => invoke('auth:link-github', config),
+    onComplete: subscribe('auth:complete'),
+    onError: subscribe('auth:error'),
     // An identity-link verdict, closed-vocabulary and already vetted by main.
     // Successes ride this channel too — "already linked" is not an error.
-    onLinkOutcome: subscribe<string>('auth:link-outcome'),
+    onLinkOutcome: subscribe('auth:link-outcome'),
     ...(process.env.EXAWATT_TEST === '1'
       ? {
           installTestSession: (
-            config: { supabaseUrl: string; supabaseAnonKey: string },
-            tokens: { accessToken: string; refreshToken: string }
-          ) => ipcRenderer.invoke('auth:install-test-session', config, tokens),
+            config: DesktopBridgeArgs<'auth:install-test-session'>[0],
+            tokens: DesktopBridgeArgs<'auth:install-test-session'>[1]
+          ) => invoke('auth:install-test-session', config, tokens),
         }
       : {}),
   },
   dialog: {
-    openDirectory: (title?: string): Promise<string | null> =>
-      ipcRenderer.invoke('dialog:openDirectory', title),
-    pathExists: (path: string): Promise<boolean> =>
-      ipcRenderer.invoke('dialog:pathExists', path),
+    openDirectory: title => invoke('dialog:openDirectory', title),
+    pathExists: path => invoke('dialog:pathExists', path),
   },
   projects: {
-    resolve: (path: string) => ipcRenderer.invoke('projects:resolve', path),
-    scanDirectory: (path: string) =>
-      ipcRenderer.invoke('projects:scan-directory', path),
+    resolve: path => invoke('projects:resolve', path),
+    scanDirectory: path => invoke('projects:scan-directory', path),
   },
   menu: {
-    onCommand: subscribe<string>('menu:command'),
-    syncAccelerators: (map: Record<string, string>) =>
-      ipcRenderer.invoke('menu:sync-accelerators', map),
-    syncAvailability: (map: Record<string, boolean>) =>
-      ipcRenderer.invoke('menu:sync-availability', map),
+    onCommand: subscribe('menu:command'),
+    syncAccelerators: map => invoke('menu:sync-accelerators', map),
+    syncAvailability: map => invoke('menu:sync-availability', map),
   },
   feedback: {
-    setAuthenticated: (authenticated: boolean) =>
-      ipcRenderer.invoke('feedback:set-authenticated', authenticated),
-    captureScreenshot: () => ipcRenderer.invoke('feedback:capture-screenshot'),
+    setAuthenticated: authenticated =>
+      invoke('feedback:set-authenticated', authenticated),
+    captureScreenshot: () => invoke('feedback:capture-screenshot'),
     ...(process.env.EXAWATT_TEST === '1' ? { testMode: true } : {}),
   },
   shortcuts: {
-    systemHotkeys: () => ipcRenderer.invoke('shortcuts:system-hotkeys'),
+    systemHotkeys: () => invoke('shortcuts:system-hotkeys'),
   },
   // ENG-030 OS1.5b: the renderer end of the main-process analytics bridge.
   // Drain returns main's queued typed events; the renderer feeds them through
   // the allowlisted captureAnalyticsEvent path (which no-ops when analytics
   // are off, so an opted-out renderer drains and drops).
   analytics: {
-    drainMainProcessEvents: () =>
-      ipcRenderer.invoke('analytics:drain-main-events'),
-    onMainProcessEvents: subscribe<null>('analytics:main-process-events'),
+    drainMainProcessEvents: () => invoke('analytics:drain-main-events'),
+    onMainProcessEvents: subscribe('analytics:main-process-events'),
   },
-});
+} satisfies DesktopBridge;
+
+contextBridge.exposeInMainWorld('electron', bridge);
