@@ -1328,7 +1328,7 @@ say “landed.” Inspect ancestry at pickup, do not cherry-pick or alter their 
 | Candidate lane | Reuse boundary |
 | --- | --- |
 | `agent/delegation-census` (`85bfd314` at research) / D7, BUG-081 | Shared lifecycle census/expiry owner. D6 consumes/reconciles that owner after integration; it must not create another lifecycle reducer. `agent/quick-update` also carries this work; establish its current delivery state first. |
-| `agent/fix-renderer-blockers` (`900a8a00`) / BUG-145 | Corrects unreported **parent** status counts in selection. Preserve it in the common summary; it does not fix BUG-134. Its BUG-133 metadata repair must survive roadmap reconciliation. |
+| `agent/fix-renderer-blockers` (`900a8a00`) / BUG-151 | Corrects unreported **parent** status counts in selection. Preserve it in the common summary; it does not fix BUG-134. Its BUG-133 metadata repair must survive roadmap reconciliation. |
 | `agent/fleet-excellence` / ENG-004 | Filter-empty versus fleet-empty behavior and keyboard ownership are adjacent candidates. Reuse after reconciliation; do not recut their UX. |
 | `agent/command-surfaces`, `agent/lifecycle-vocabulary` | Resolve new inspection/navigation entry points through the current command and lifecycle contracts rather than adding local menu or status derivations. |
 
@@ -1585,7 +1585,7 @@ required before production wiring.
 
 | Milestone / owner | Scope and files | Dependencies and acceptance |
 | --- | --- | --- |
-| D6.1 — evidence model owner | `core/src/types/agent.ts`, local/Demo transports, existing delegation/observation owners, Codex normalization. Preserve identity, root vs immediate-parent lineage, full roster and scoped coverage. | Reconcile D7 and BUG-145 candidates first. Fixtures prove collision-free identity, unknown ancestry, metadata/coverage propagation, zero-vs-unknown, no invented completion; no renderer changes required. |
+| D6.1 — evidence model owner | `core/src/types/agent.ts`, local/Demo transports, existing delegation/observation owners, Codex normalization. Preserve identity, root vs immediate-parent lineage, full roster and scoped coverage. | Reconcile D7 and BUG-151 candidates first. Fixtures prove collision-free identity, unknown ancestry, metadata/coverage propagation, zero-vs-unknown, no invented completion; no renderer changes required. |
 | D6.2 — query/model owner | Focused pure census/query/summary selectors in `ui-model`; migrate parent-only `filterFleetState` use at Fleet deliberately rather than changing unrelated consumers silently. | D6.1 contract stable. Match/context sets, scope summaries and conservation tests pass for parents and children; Consumption/command semantics unchanged. |
 | D6.3 — UX owner | Shared-fixture DOM/R3F gallery, existing selection/overflow/full-roster paths and source-detail return journey. | Can prototype against D6.1 contract while D6.2 develops. Operator review chooses the new visual/interaction grammar. No new production visuals before acceptance. |
 | D6.4 — integration owner | `spatial-fleet-client`, board projection/target resolution, existing DOM panel, keyboard and canvas consumers. | D6.2 + accepted D6.3. Remove capped-geometry semantic reads and bare-ID lookup. Prove identical match membership and census at every budget/altitude in Live and Demo. BUG-134 and BUG-094 close only against this proof. |
@@ -1757,3 +1757,19 @@ D6/D8 work, rather than treating this as another timeout adjustment. Acceptance:
 background work alone never asserts input required; actual approval/input
 requests remain visible. A richer mixed running/input-ready state is explicitly
 deferred by the operator, not a prerequisite for correcting false attention.
+
+### 2026-09-23 — BUG-145 execution contract
+
+Restore truthful attention through one shared activity owner. The provider's
+background-work census must represent non-Agent work independently of delegated
+Agents: a monitor is work, not an invented child. Authoritative census replacement
+and Session exit own its lifetime; silence alone cannot prove a monitor ended.
+Actual approval and input requests keep precedence over background activity.
+
+The activity lane owns provider normalization, shared turn truth and downstream
+projections, with behavioral checks for silent monitors, census replacement,
+Session exit and explicit gates. In parallel, BUG-144 repairs the shared menu
+portal boundary and BUG-143 repairs Spatial viewport ownership in their existing
+project docs. Integration reviews the boundaries together, runs the relevant
+real-browser/Electron checks, and lands one verified batch before cleanup.
+No new mixed-state glyph or delegated population model is part of this repair.

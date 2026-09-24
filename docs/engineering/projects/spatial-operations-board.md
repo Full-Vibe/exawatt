@@ -2620,3 +2620,12 @@ fix; queued, not reproduced. The capture wrapper names the desktop workspace,
 so reproduce the reported hosted route separately. Acceptance: the shared
 Spatial viewport fills the available application height on deep-link load and
 resize, without clipping controls or creating a second layout owner.
+
+### 2026-09-23 — BUG-143 execution contract
+
+Give the route one available-height owner across loading, Demo and Live states.
+The board consumes the space below the actual toolbar; a selected inspector
+scrolls within its allocated row or column rather than extending the viewport.
+The layout lane owns route/client geometry and direct-entry/resize regression
+coverage, including no selection, invalid selection and stacked/side layouts.
+No camera or Canvas sizing workaround belongs in this repair.

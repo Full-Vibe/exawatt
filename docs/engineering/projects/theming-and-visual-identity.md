@@ -975,3 +975,11 @@ avatar Theme submenu hidden behind its parent menu. Classified small fix;
 queued, not reproduced. Inspect shared portal, stacking and collision ownership
 before adding local z-index overrides. Acceptance: submenu remains visible and
 keyboard reachable at narrow and wide viewports, with dismissal/focus restored.
+
+### 2026-09-23 — BUG-144 execution contract
+
+Make nested menus share the root menu's portal and collision ownership rather
+than escaping clipping through local stacking overrides. The menu lane owns the
+shared primitive and browser regression coverage. Acceptance exercises pointer
+hit testing, keyboard selection, Escape/focus return, and narrow/wide viewport
+reachability on the existing Theme control; DOM presence alone is insufficient.
