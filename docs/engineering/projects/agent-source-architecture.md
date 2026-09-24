@@ -916,10 +916,10 @@ costs a fraction of S4.
 
 | Lane | Scope | Files owned | Acceptance | Status |
 | --- | --- | --- | --- | --- |
-| L1 Source ids from the contract | The generator emits the harness and adapter id lists from `contracts/agent-sources.json`. Core exports `isAgentHarness` and `isAgentSourceAdapterId`. Hand-written membership chains and preload unions use them. Notification copy reads the declaration label. | `packages/core/src/agent-sources.ts`, the generator and its outputs, `pty-ipc.ts`, `agent-sources-ipc.ts`, `session-identity-store.ts`, `preload.ts`, `notification-policy.ts` | Adding an id to the contract is the only edit these sites need. `agent-sources:check` covers every generated file. | in progress |
-| L2 One presentation registry | One icon registry and declaration labels for every renderer surface. The launch caption derives from the label. | `harness-icons.tsx`, `agent-sources-settings.tsx`, `connected-sources-section.tsx`, `site/harness-mark.tsx`, `session-overview-card.tsx`, `harnesses.ts`, `agent-types/page.tsx`, consumption labels | Four icon switches become one. Screens look the same. | in progress |
-| L3 Exhaustive behavior tables | Per-harness dispatch (probe, model catalog, resume candidates, conversation catalog) becomes typed tables, so a new harness fails type-check at every site that needs its own code. | `agent-source-registry.ts`, `agent-models.ts`, `resume-candidates.ts`, `conversation-catalog.ts`, dispatch in `session-manager.ts` | The compiler names every missing implementation. | in progress |
-| L4 Gemini CLI probe | Measure the installed Gemini CLI 0.45.0 against the source contracts; desk-check Qwen Code. | none (report) | Verdict recorded here. | in progress |
+| L1 Source ids from the contract | The generator emits the harness and adapter id lists from `contracts/agent-sources.json`. Core exports `isAgentHarness` and `isAgentSourceAdapterId`. Hand-written membership chains and preload unions use them. Notification copy reads the declaration label. | `packages/core/src/agent-sources.ts`, the generator and its outputs, `pty-ipc.ts`, `agent-sources-ipc.ts`, `session-identity-store.ts`, `preload.ts`, `notification-policy.ts` | Adding an id to the contract is the only edit these sites need. `agent-sources:check` covers every generated file. | landed 2026-09-24 in `7caf4240` |
+| L2 One presentation registry | One icon registry and declaration labels for every renderer surface. The launch caption derives from the label. | `harness-icons.tsx`, `agent-sources-settings.tsx`, `connected-sources-section.tsx`, `site/harness-mark.tsx`, `session-overview-card.tsx`, `harnesses.ts`, `agent-types/page.tsx`, consumption labels | Four icon switches become one. Screens look the same. | landed 2026-09-24 in `7caf4240` |
+| L3 Exhaustive behavior tables | Per-harness dispatch (probe, model catalog, resume candidates, conversation catalog) becomes typed tables, so a new harness fails type-check at every site that needs its own code. | `agent-source-registry.ts`, `agent-models.ts`, `resume-candidates.ts`, `conversation-catalog.ts`, dispatch in `session-manager.ts` | The compiler names every missing implementation. | landed 2026-09-24 in `7caf4240` |
+| L4 Gemini CLI probe | Measure the installed Gemini CLI 0.45.0 against the source contracts; desk-check Qwen Code. | none (report) | Verdict recorded here. | done: Gemini CLI amber and parked; resequenced to Qwen Code |
 
 Wave 2, after wave 1 lands: measure and record the "adding a source"
 checklist against the tree, then S5.2 Gemini CLI if L4 is green. S5.3 needs
@@ -999,3 +999,70 @@ has it installed and used it in June.
   with the harness home pointed at a scratch path.
 - Gemini CLI: parked with the evidence above. Revisit if the operator gets an
   eligible credential or a user asks for it.
+
+### 2026-09-24 — S5.3 probe verdict: Antigravity CLI fits the terminal shape, with partial status
+
+Measured against Antigravity CLI (`agy`) 1.2.9 in a sandboxed home with
+self-update off and no model calls; the operator's installed copy is 1.0.4
+and will self-update on its next launch. No file outside the scratch
+directory was written.
+
+| Contract | Antigravity CLI 1.2.9 |
+| --- | --- |
+| Launch | Yes: `--model`, `--effort low\|medium\|high`, `-i "<task>"`, `--mode accept-edits\|plan` (default is review), `--dangerously-skip-permissions`. No cwd flag; the PTY pins it. |
+| Fresh identity | No: there is no flag to allocate an id (upstream issue #7 is open). Identity is learned from the first hook's `conversationId`. |
+| Exact resume | Yes: `--conversation=<uuid>`. |
+| Native history | `conversations/<uuid>.db` (SQLite with protobuf blobs) and `brain/<uuid>/.system_generated/logs/transcript.jsonl`; `history.jsonl` maps prompts to conversations. |
+| Usage | Partial: one protobuf row per model call in `gen_metadata`; no published schema. |
+| Sign-in check | Partial: credentials live in the macOS keychain, and both `agy models` and `/usage` make network calls that can refresh the token. |
+| Model catalog | Yes on 1.2.x: `agy models` (JSON since 1.1.12), a network call. |
+| Hooks | Partial: `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop` (with `fullyIdle`); command hooks only; no permission or question event, so "needs you" cannot be reported. |
+| Per-launch hooks | Unverified: no flag or environment variable. The candidate seam is an Exawatt directory passed with `--add-dir` carrying `.agents/hooks.json`; the global `~/.gemini/config` is shared with the Antigravity IDE and must not be written. |
+| Delegation | Partial: `invoke_subagent` runs children in the background with a start event and no completion event. |
+| ACP | No. |
+
+Recommended shape: a real terminal launched with `agy -i`, resumed with
+`--conversation=<id>`, identity learned from the first hook, turn truth from
+`PreInvocation` and `Stop` when the `--add-dir` seam verifies, and "needs you"
+declared absent. The next step needs one signed-in 1.2.x run on the
+operator's account. Never call `agy install` (it rewrites shell profiles) or
+the hidden `--gemini_dir` flag (it relocates settings and history).
+
+Operator hygiene finding: `~/.gemini/antigravity-cli/history.jsonl` stores
+prompts verbatim, including API keys pasted into prompts. Exawatt must never
+surface that file's contents.
+
+### 2026-09-24 — S5.1 and S5.2 progress
+
+- S5.1 and S5.2 landed together on 2026-09-24 as `7caf4240`, one queue pass
+  instead of four, with every declared gate green (agent sources, delegation,
+  launcher, recents, lifecycle and idempotency on a packaged build) and the
+  public projection published. The proof arrived with the
+  next harness: adding Qwen Code made the compiler name exactly three missing
+  implementations, and the renderer needed no production change beyond the
+  icon registry entry. Settings had been drawing Grok Build with a generic
+  sparkle, because one of the four icon copies never learned it; one
+  registry fixed that.
+- S5.2 Qwen Code: launch, allocated identity and exact
+  resume, sign-in and models read from its settings, native history, a
+  Qwen-specific hook normalizer injected through
+  `QWEN_CODE_SYSTEM_DEFAULTS_PATH`, and a per-launch session filter. Two
+  general launch improvements came with it: a hook document that cannot be
+  built now launches the Agent unsubscribed instead of failing the launch,
+  and a source can scope its channel to its own harness session.
+- Qwen ships without its logo: Qwen's terms forbid displaying its marks
+  without Alibaba's prior written consent (`LICENSES/brand/harness-marks.md`).
+- Found and recorded, not changed: operator stats and the hosted leaderboard
+  accept only Claude Code and Codex samples by design (V1 allowlist), so
+  Grok Build and Qwen Code runs do not count there until that schema widens.
+  Consumption keeps its own source ids (`claude-code`, `codex`, `grok`); Qwen
+  Code has no consumption reader yet, although its transcripts carry
+  per-message token counts.
+
+Next, each needing the operator:
+
+- Qwen Code daily use needs a sign-in: its free OAuth tier ended on
+  2026-04-15, so `/auth` inside Qwen Code with an API-key provider.
+- S5.3 Antigravity CLI needs one signed-in 1.2.x run to verify the `--add-dir`
+  hook seam before building.
+- Qwen's mark needs Alibaba's written consent before it can be drawn.
