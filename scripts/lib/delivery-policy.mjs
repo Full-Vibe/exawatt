@@ -98,7 +98,7 @@ export const SURFACE_GATES = [
     match: file =>
       /^src\/components\/workspace\/(?:tab-strip|project-ribbon-[^/]*|natural-width)\.tsx?$/.test(
         file
-      ),
+      ) || file === 'scripts/ribbon-dogfood-bench-eval.mjs',
   },
   {
     gate: 'eval:workspace:chrome',
@@ -110,7 +110,8 @@ export const SURFACE_GATES = [
       /^src\/components\/(?:ui\/dropdown-menu|nav\/site-header-nav)\.tsx?$/.test(
         file
       ) ||
-      file === 'scripts/lib/account-theme-menu-eval.mjs',
+      file === 'scripts/lib/account-theme-menu-eval.mjs' ||
+      file === 'scripts/workspace-chrome-layout-eval.mjs',
   },
   {
     gate: 'eval:workspace:split',
@@ -122,7 +123,7 @@ export const SURFACE_GATES = [
     match: file =>
       /^src\/components\/workspace\/(?:workspace-client|split-layout|terminal-pane|session-restore-panel)\.tsx?$/.test(
         file
-      ),
+      ) || file === 'scripts/workspace-split-eval.mjs',
   },
   {
     gate: 'eval:navigation',
@@ -130,14 +131,15 @@ export const SURFACE_GATES = [
     match: file =>
       /^src\/components\/nav\/(?:command-navigation-provider|command-altitude[^/]*|nav-history|surfaces)\.tsx?$/.test(
         file
-      ),
+      ) || file === 'scripts/command-altitude-eval.mjs',
   },
   {
     gate: 'eval:theme-system',
     why: 'appearance resolution decides every surface colour, including whether a default action still reads as one',
     match: file =>
       /^src\/lib\/appearance\/(?:color|resolve-appearance)\.ts$/.test(file) ||
-      /^themes\/v1\/.+\.json$/.test(file),
+      /^themes\/v1\/.+\.json$/.test(file) ||
+      file === 'scripts/theme-system-eval.mjs',
   },
   {
     gate: 'eval:workspace:paused',
@@ -146,7 +148,8 @@ export const SURFACE_GATES = [
       /^src\/components\/workspace\/paused-agent-record\.tsx?$/.test(file) ||
       /^electron\/main\/pty\/(?:transcript-lines|transcript-window|scrollback-store|session-history-store)\.ts$/.test(
         file
-      ),
+      ) ||
+      file === 'scripts/paused-agent-record-eval.mjs',
   },
   {
     gate: 'eval:workspace:team',
@@ -154,7 +157,7 @@ export const SURFACE_GATES = [
     match: file =>
       /^src\/components\/workspace\/(?:expose-overlay|team-order[^/]*|team-grid-nav|use-flip-tiles)\.tsx?$/.test(
         file
-      ),
+      ) || file === 'scripts/team-order-eval.mjs',
   },
   {
     gate: 'eval:navigation:spine',
@@ -213,6 +216,14 @@ export const SURFACE_GATES = [
       file === 'src/components/nav/command-navigation-provider.tsx' ||
       file === 'src/components/feedback/product-feedback-provider.tsx' ||
       file === 'src/components/ui/dialog.tsx' ||
+      // BUG-211: the gate asserts each surface's document title, and the
+      // BUG-207 sweep moved the title template's separator off the em dash in
+      // `src/app/layout.tsx`, a file this list did not name, so that landing
+      // was never asked for this gate and master went red. The template and
+      // the two titles the script reads are on its surface now.
+      file === 'src/app/layout.tsx' ||
+      file === 'src/app/workspace/page.tsx' ||
+      file === 'src/app/fleet/spatial/layout.tsx' ||
       // The gate's own script, for the reason `eval:electron:packaged` already
       // names `electron-packaged-smoke.mjs` and `eval:electron:project-agent`
       // names `lib/electron-eval.mjs`: a change to how a gate asserts must run
@@ -297,7 +308,8 @@ export const SURFACE_GATES = [
     match: file =>
       file.startsWith('src/components/workspace/launcher/') ||
       file === 'src/components/ui/option-menu.tsx' ||
-      file === 'src/components/ui/option-menu-keyboard.ts',
+      file === 'src/components/ui/option-menu-keyboard.ts' ||
+      file === 'scripts/agent-launcher-bench-shot.mjs',
   },
   {
     gate: 'eval:electron:project-agent',
@@ -334,9 +346,23 @@ export const SURFACE_GATES = [
     // regressed; the empty state was healthy and the eval was reading a
     // DIFFERENT Project's rail, so the quarantine is lifted and the gate is
     // enforced. Every rail read now names the Project it is about.
+    //
+    // BUG-210: the gate went red on master with nothing under
+    // `src/components/roadmap/` changed. Its declare-at-launch step crosses the
+    // launcher and main's pre-launch gate, and Qwen Code's arrival made that
+    // gate re-probe every harness on each Start while Qwen was signed out, so
+    // the rail was read before the Session it should show existed. The
+    // product half is repaired at its owner and pinned there by
+    // `agent-source-registry-cache.test.ts`; what joins here is the step's
+    // own contract: the control that declares the item, the projection that
+    // turns a live declared tab into a rail link, and the script itself, for
+    // the reason the spine gate names its own.
     match: file =>
       file.startsWith('src/components/roadmap/') ||
-      file.startsWith('electron/main/roadmap/'),
+      file.startsWith('electron/main/roadmap/') ||
+      file === 'src/components/workspace/launch-controls.tsx' ||
+      file === 'src/components/workspace/roadmap-lens-input.ts' ||
+      file === 'scripts/roadmap-rail-eval.mjs',
   },
   {
     gate: 'eval:electron:recents',
@@ -348,7 +374,8 @@ export const SURFACE_GATES = [
     // lifecycle now and the gate is enforced.
     match: file =>
       file === 'src/components/workspace/recent-conversations.tsx' ||
-      file === 'electron/main/pty/conversation-catalog.ts',
+      file === 'electron/main/pty/conversation-catalog.ts' ||
+      file === 'scripts/electron-recent-conversations-eval.mjs',
   },
   {
     gate: 'eval:electron:agent-sources',
@@ -369,7 +396,11 @@ export const SURFACE_GATES = [
       file === 'src/components/workspace/connect-source-dialog.tsx' ||
       file === 'src/components/workspace/agent-sources.ts' ||
       file === 'electron/main/agent-sources-ipc.ts' ||
-      file === 'electron/main/pty/agent-models.ts',
+      file === 'electron/main/pty/agent-models.ts' ||
+      // The script reproduces Grok Build's session-directory encoding to lay
+      // out its fixture corpus, so the shipped encoder can break it.
+      file === 'packages/core/src/consumption/grok-paths.ts' ||
+      file === 'scripts/electron-agent-sources-eval.mjs',
   },
   {
     gate: 'eval:electron:connect-flow',
@@ -422,7 +453,204 @@ export const SURFACE_GATES = [
     // in `workspace-client` and this gate is enforced again.
     match: file =>
       file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
-      file === 'electron/main/pty/session-manager.ts',
+      file === 'electron/main/pty/session-manager.ts' ||
+      file === 'scripts/electron-rehydration-idempotency-eval.mjs',
+  },
+
+  // BUG-211: the routing audit. Every verification command is classified in
+  // `VERIFICATION_ROUTES` below, and these evals had a package command, a
+  // surface, and nothing that ever ran them. The green ones are enforced from
+  // here on; the ones red on master for reasons of their own are quarantined
+  // against the id that repairs each, so their surfaces are announced as
+  // owing evidence instead of silently needing none.
+  {
+    gate: 'eval:hero-board',
+    why: 'the homepage hero has a hard at-rest budget: frames while parked, draw calls, DPR, changed pixels, and a reduced-motion poster',
+    match: file =>
+      file.startsWith('src/components/site/hero-board/') ||
+      file.startsWith('src/app/eval/t12-hero-board/') ||
+      file === 'scripts/hero-board-idle-eval.mjs',
+  },
+  {
+    gate: 'eval:typography-stability',
+    why: 'public typography must resolve once and hold through the home-to-Architecture navigation and appearance churn',
+    match: file =>
+      file.startsWith('src/app/architecture/') ||
+      file === 'src/app/layout.tsx' ||
+      file === 'src/lib/appearance/bootstrap-script.ts' ||
+      file === 'src/lib/appearance/dom-adapter.ts' ||
+      file === 'src/components/nav/site-footer.tsx' ||
+      file === 'scripts/typography-stability-eval.mjs',
+  },
+  {
+    gate: 'eval:navigation-paint',
+    why: 'the home-to-Architecture path must never paint a light frame between two dark grounds',
+    quarantined: 'BUG-212',
+    match: file =>
+      file.startsWith('src/app/architecture/') ||
+      file === 'src/components/nav/site-header-nav.tsx' ||
+      file === 'src/components/nav/site-footer.tsx' ||
+      file === 'src/components/site/site-links.ts' ||
+      file === 'scripts/navigation-paint-eval.mjs',
+  },
+  {
+    gate: 'eval:spatial',
+    why: 'the Spatial Command regimes and the altitude handoff must hold on the full route, not only in the r3f tasks',
+    match: file =>
+      file === 'src/components/fleet/spatial/spatial-fleet-client.tsx' ||
+      file === 'src/components/fleet/spatial/spatial-navigation-state.ts' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-surface.tsx' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      file.startsWith('src/app/eval/t11-altitude-handoff/') ||
+      file === 'scripts/r3f-eval/spatial.mjs',
+  },
+  {
+    gate: 'eval:spatial:pointer',
+    why: 'drag band-selects, wheel pans, pinch zooms at the cursor, and a click still drills a zone',
+    match: file =>
+      file === 'src/components/fleet/spatial/spatial-fleet-client.tsx' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      file === 'scripts/spatial-pointer-eval.mjs',
+  },
+  {
+    gate: 'qa:browser:smoke',
+    why: 'the signed-browser boundary every browser eval launches through must still reach a served page',
+    match: file =>
+      file === 'scripts/lib/qa-browser.mjs' ||
+      file === 'scripts/qa-browser-smoke.mjs',
+  },
+  {
+    gate: 'eval:electron:offline',
+    why: 'the app must stay navigable and honest about its state with the network gone',
+    match: file =>
+      file === 'src/proxy.ts' ||
+      file === 'src/components/nav/command-navigation-provider.tsx' ||
+      file === 'src/components/nav/command-altitude.ts' ||
+      file === 'scripts/electron-offline-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:delegation',
+    why: 'delegated runs must be observed from source-reported lifecycle events and drawn where the operator reads them',
+    match: file =>
+      file.startsWith('electron/main/harness-events/') ||
+      file === 'src/components/workspace/status-glyphs.tsx' ||
+      file === 'src/app/settings/agent-sources-settings.tsx' ||
+      file === 'scripts/lib/harness-event-fixture.mjs' ||
+      file === 'scripts/electron-delegation-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:turn-truth',
+    why: 'a turn is working, done or waiting only when the source reported it, through the real hook channel',
+    match: file =>
+      file === 'electron/main/harness-events/turn-truth.ts' ||
+      file === 'electron/main/harness-events/claude-hooks.ts' ||
+      file === 'electron/main/harness-events/channel.ts' ||
+      file === 'electron/main/pty/attention-monitor.ts' ||
+      file === 'src/components/workspace/status-glyphs.tsx' ||
+      file === 'scripts/lib/harness-event-fixture.mjs' ||
+      file === 'scripts/electron-turn-truth-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:tenancy',
+    why: "a Workspace never shows another tenant's data, and Demo Mode stays its own tenant",
+    match: file =>
+      file.startsWith('src/lib/tenancy/') ||
+      file.startsWith('src/lib/demo-workspace/') ||
+      file === 'src/components/nav/site-header-nav.tsx' ||
+      file === 'scripts/electron-workspace-tenancy-eval.mjs',
+  },
+  {
+    gate: 'eval:community:network',
+    why: 'a packaged community build must resolve no hostname and open no socket off loopback while it is used',
+    // The observation behind ENG-030 OS4: the build, runtime and closure
+    // checks are statements about source; this launches the package and
+    // watches it. Like `eval:electron:packaged`, it builds its own package and
+    // needs no dev server, so the floor can run it unattended.
+    match: file =>
+      file.startsWith('packages/core/src/distribution/') ||
+      file === 'electron/main/consumption/claude-plan-account.ts' ||
+      file === 'scripts/lib/packaged-app.mjs' ||
+      file === 'scripts/community-network-observatory.mjs',
+  },
+  {
+    gate: 'eval:navigation:electron',
+    why: 'Sessions cards and the Spatial selection panel share one typography and one navigation path',
+    quarantined: 'BUG-213',
+    match: file =>
+      file === 'src/components/workspace/session-overview-card.tsx' ||
+      file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      file === 'src/components/nav/command-altitude-nav.tsx' ||
+      file === 'scripts/electron-navigation-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:grok-source',
+    why: 'Grok Build is named, launched and resumed from what its own CLI reports',
+    quarantined: 'BUG-214',
+    match: file =>
+      file === 'electron/main/pty/harness-registry.ts' ||
+      file === 'electron/main/pty/agent-models.ts' ||
+      file === 'packages/core/src/consumption/grok-paths.ts' ||
+      file === 'packages/core/src/consumption/parse-grok.ts' ||
+      file === 'scripts/electron-grok-source-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:appearance',
+    why: 'a fresh or saved appearance resolves before first paint in every launch scenario',
+    quarantined: 'BUG-215',
+    match: file =>
+      file === 'electron/main/appearance.ts' ||
+      file === 'src/components/appearance/appearance-provider.tsx' ||
+      file === 'src/lib/appearance/bootstrap-script.ts' ||
+      file === 'src/lib/appearance/preference-source.ts' ||
+      file === 'src/lib/appearance/preferences.ts' ||
+      file === 'scripts/electron-appearance-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:context-labels',
+    why: 'context labels restore across a relaunch and their feedback path follows the distribution contract',
+    quarantined: 'BUG-216',
+    match: file =>
+      file === 'electron/main/pty/context-summarizer.ts' ||
+      file === 'src/components/feedback/context-label-feedback.tsx' ||
+      file === 'src/lib/context-labels/contract.ts' ||
+      file === 'electron/main/application-menu.ts' ||
+      file === 'scripts/electron-context-label-feedback-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:resume',
+    why: 'an exact resume reopens the provider conversation it names, through the packaged app',
+    quarantined: 'BUG-217',
+    match: file =>
+      file === 'src/components/workspace/resume-recovery-bar.tsx' ||
+      file === 'electron/main/workspace-store.ts' ||
+      file === 'electron/main/pty/session-manager.ts' ||
+      file === 'scripts/electron-exact-resume-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:chrome',
+    why: 'the packaged window chrome and its shortcuts behave as the dev build does',
+    quarantined: 'BUG-217',
+    match: file =>
+      file === 'src/components/workspace/workspace-client.tsx' ||
+      file === 'src/components/workspace/use-workspace-shortcuts.ts' ||
+      file === 'scripts/electron-chrome-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:session-parity',
+    why: 'a Session reads the same in the Sessions card and the Spatial selection panel',
+    quarantined: 'BUG-217',
+    match: file =>
+      file === 'src/components/workspace/expose-overlay.tsx' ||
+      file === 'src/components/workspace/session-overview-card.tsx' ||
+      file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      file === 'scripts/electron-session-spatial-parity-eval.mjs',
   },
 ];
 
@@ -579,6 +807,63 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       args: ['run', 'copy:check'],
     });
   }
+  // BUG-208: `theme:check` was fixed on 2026-08-17 (BUG-059) and red again
+  // the next day, because nothing ran it; 18 raw colours accumulated over
+  // five weeks. It proves the themes are valid, the generated theme artifacts
+  // are current, and no production source invents a colour, all whole-tree in
+  // about two seconds, so any change to a theme, its generator, its ratchet,
+  // or the code that paints with it runs it.
+  if (
+    paths.some(
+      file =>
+        file.startsWith('src/') ||
+        file.startsWith('themes/') ||
+        file.startsWith('packages/ui-model/') ||
+        file === 'scripts/generate-themes.mjs' ||
+        file === 'scripts/check-production-theme-literals.mjs'
+    )
+  ) {
+    checks.push({
+      id: 'theme:check',
+      command: 'pnpm',
+      args: ['run', 'theme:check'],
+    });
+  }
+  // BUG-211: two more committed-artifact checks of the same shape, equally
+  // unrouted: the generated Agent Source declarations and the app icons must
+  // match their one editable source. Seconds each, so the source, the
+  // generator, or a hand edit to an output runs the check.
+  if (
+    paths.some(
+      file =>
+        file === 'contracts/agent-sources.json' ||
+        file === 'scripts/generate-agent-source-declarations.mjs' ||
+        file === 'packages/core/src/generated/agent-source-ids.ts' ||
+        file === 'src/generated/agent-source-declarations.ts' ||
+        file === 'electron/main/pty/generated-agent-source-declarations.ts'
+    )
+  ) {
+    checks.push({
+      id: 'agent-sources:check',
+      command: 'pnpm',
+      args: ['run', 'agent-sources:check'],
+    });
+  }
+  if (
+    paths.some(
+      file =>
+        file.startsWith('electron/resources/icon') ||
+        file === 'public/icon-community.png' ||
+        file === 'scripts/generate-app-icon.mjs' ||
+        file === 'scripts/lib/app-icon.mjs'
+    )
+  ) {
+    checks.push({
+      id: 'icon:check',
+      command: 'pnpm',
+      args: ['run', 'icon:check'],
+    });
+  }
   if (renderer.some(file => file.startsWith('src/'))) {
     checks.push({
       id: 'stale-async-ratchet',
@@ -665,6 +950,27 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       id: 'verify:community-runtime',
       command: 'pnpm',
       args: ['run', 'verify:community-runtime'],
+    });
+  }
+
+  // BUG-211: the composition proof (ENG-030 WP3) states that composing a
+  // profile twice yields the same tree, and that every hosted-web target stays
+  // out of the public tree and the desktop build. Nothing ran it. It takes
+  // about thirteen seconds and no dev server, so a change to what the overlay
+  // declares or to how trees are composed runs it.
+  if (
+    paths.some(
+      file =>
+        file.startsWith('company/') ||
+        file === 'scripts/lib/company-composition.mjs' ||
+        file === 'scripts/company-compose.mjs' ||
+        file === 'scripts/company-proof.mjs'
+    )
+  ) {
+    checks.push({
+      id: 'company:proof',
+      command: 'pnpm',
+      args: ['run', 'company:proof'],
     });
   }
 
@@ -808,6 +1114,219 @@ export function classifyDocsChecks(changedPaths) {
     ),
   ];
 }
+
+/**
+ * Which package commands are verification: the name says it checks, tests,
+ * evaluates, verifies, audits or scans something. `VERIFICATION_ROUTES` must
+ * classify every one (BUG-208).
+ */
+export function isVerificationScript(name) {
+  return (
+    name === 'lint' ||
+    /^(?:test|type-check)(?::|$)/u.test(name) ||
+    /^(?:eval|verify|qa|security):/u.test(name) ||
+    /:(?:check|audit|scan|proof)$/u.test(name)
+  );
+}
+
+const LANDING = Object.freeze({ route: 'landing' });
+const GATE = Object.freeze({ route: 'gate' });
+const CI = Object.freeze({ route: 'ci' });
+const manual = reason => Object.freeze({ route: 'manual', reason });
+
+/**
+ * What runs every verification command (BUG-208).
+ *
+ * `theme:check` was repaired on 2026-08-17 (BUG-059) and red again on
+ * 2026-08-18, and stayed red for five weeks, because no landing check, gate or
+ * CI step ran it. The same session that found that found
+ * `eval:electron:project-agent`, `eval:navigation:spine` and the stale-async
+ * ratchet red on master for the same reason: a check existed and nothing was
+ * routed to it, or the routing could not see what broke it. A check nobody
+ * runs is worse than no check, because its existence reads as coverage.
+ *
+ * So every verification command is exactly one of:
+ *
+ * - `landing` — the landing floor runs it, unconditionally or by changed path
+ *   (`classifyDeliveryPolicy`), or it runs inside something that does, or the
+ *   pre-push hook every landing passes runs it;
+ * - `gate` — a declared surface gate in `SURFACE_GATES`;
+ * - `ci` — `.github/workflows/ci.yml` runs it, directly, through
+ *   `publication:check`, or as a subset of a suite CI runs whole;
+ * - `manual` — nothing runs it, on purpose, and the entry says why.
+ *
+ * A command the floor runs is `landing` even when CI runs it too: the first
+ * of those that applies is its route. `delivery-policy.test.mjs` derives the
+ * truth from the floor, the gate map, the hook and `ci.yml`, and fails when a
+ * verification command is unclassified, when an entry names a command that no
+ * longer exists, or when an entry claims a route that does not run it. Moving
+ * a check between routes is therefore an edit here, reviewed in the same
+ * change that moves it.
+ */
+export const VERIFICATION_ROUTES = Object.freeze({
+  // (a) The landing checks.
+  lint: LANDING,
+  'type-check': LANDING,
+  'type-check:electron-tests': LANDING,
+  'test:agent-delivery': LANDING,
+  'test:related': LANDING,
+  'open-source:paths:check': LANDING,
+  'content:scan': LANDING,
+  'docs:check': LANDING,
+  'exports:check': LANDING,
+  'copy:check': LANDING,
+  'theme:check': LANDING,
+  'verify:community-build': LANDING,
+  'verify:community-runtime': LANDING,
+  'test:service-conformance': LANDING,
+  'qa:browser:doctor': LANDING,
+  'eval:r3f': LANDING,
+  'test:exact-public': LANDING,
+  'test:release-publication': LANDING,
+  'test:workflows': LANDING,
+  'test:screen-copy': LANDING,
+  'test:theme-literals': LANDING,
+  'test:fonts': LANDING,
+  'test:export-consumers': LANDING,
+  'test:public-metadata': LANDING,
+  'test:worktree-setup': LANDING,
+  'test:scripts-layout': LANDING,
+  'test:github-security': LANDING,
+  'agent-sources:check': LANDING,
+  'icon:check': LANDING,
+  'company:proof': LANDING,
+
+  // (b) Declared surface gates.
+  'eval:electron:project-pause': GATE,
+  'eval:electron:clone-context': GATE,
+  'eval:electron:model-change': GATE,
+  'eval:workspace:ribbon:bench': GATE,
+  'eval:workspace:chrome': GATE,
+  'eval:workspace:split': GATE,
+  'eval:navigation': GATE,
+  'eval:theme-system': GATE,
+  'eval:workspace:paused': GATE,
+  'eval:workspace:team': GATE,
+  'eval:navigation:spine': GATE,
+  'eval:electron:packaged': GATE,
+  'eval:spatial:viewport': GATE,
+  'eval:electron:connected-fleet': GATE,
+  'eval:workspace:launcher': GATE,
+  'eval:electron:project-agent': GATE,
+  'eval:roadmap:rail': GATE,
+  'eval:electron:recents': GATE,
+  'eval:electron:agent-sources': GATE,
+  'eval:electron:connect-flow': GATE,
+  'eval:electron:lifecycle': GATE,
+  'eval:electron:idempotency': GATE,
+  'eval:hero-board': GATE,
+  'eval:typography-stability': GATE,
+  'eval:spatial': GATE,
+  'eval:spatial:pointer': GATE,
+  'qa:browser:smoke': GATE,
+  'eval:electron:offline': GATE,
+  'eval:electron:delegation': GATE,
+  'eval:electron:turn-truth': GATE,
+  'eval:electron:tenancy': GATE,
+  'eval:community:network': GATE,
+  // Quarantined in `SURFACE_GATES`: owed and announced, repaired under the id
+  // each entry there carries.
+  'eval:navigation-paint': GATE,
+  'eval:navigation:electron': GATE,
+  'eval:electron:grok-source': GATE,
+  'eval:electron:appearance': GATE,
+  'eval:electron:context-labels': GATE,
+  'eval:electron:resume': GATE,
+  'eval:electron:chrome': GATE,
+  'eval:electron:session-parity': GATE,
+
+  // (c) CI.
+  'test:ci': CI,
+  'publication:check': CI,
+  'security:audit:prod': CI,
+  'licenses:check': CI,
+  'assets:check': CI,
+  'community:check': CI,
+  'test:publication': CI,
+  'test:asset-provenance': CI,
+  'test:contracts': CI,
+  'test:distribution': CI,
+  'test:enrichment-distribution': CI,
+  'eval:context-labels': CI,
+  // The suite's local runners: whatever they select, `test:ci` runs whole.
+  test: CI,
+  'test:ui': CI,
+  'test:run': CI,
+  'test:changed': CI,
+  'test:alone': CI,
+  'test:coverage': CI,
+  'security:secrets': CI,
+
+  // (d) Manual, each with the reason nothing runs it.
+  'open-source:metadata:audit': manual(
+    'certifies a clone of the public projection; this history fails it by design'
+  ),
+  'security:github:check': manual(
+    'reads live GitHub repository and org security settings with gh credentials'
+  ),
+  'eval:consumption-scan': manual(
+    "measures the scanner against the operator's real ~/.claude and ~/.codex corpus"
+  ),
+  'eval:goal-visuals-stability': manual(
+    'a diagnostic frame probe for a /hud-gallery study, not a regression gate'
+  ),
+  'eval:spatial:scale': manual(
+    'layout, cadence and heap figures at 150, 1k and 10k Agents follow host load'
+  ),
+  'eval:spatial:motion': manual(
+    'rAF hitch and latency budgets follow host load; advisory by standing rule'
+  ),
+  'eval:workspace:ribbon': manual(
+    'motion timed in 240 to 280 ms windows follows host load; the ribbon bench gates it'
+  ),
+  'eval:electron:interaction-performance': manual(
+    'an interaction timing baseline that follows host load'
+  ),
+  'eval:electron:startup': manual(
+    'a launch-timing measurement; eval:electron:packaged gates boot health'
+  ),
+  'eval:electron:terminal': manual(
+    "overwrites the operator's system clipboard on every run"
+  ),
+  'eval:workspace:draft': manual(
+    "overwrites the operator's system clipboard on every run"
+  ),
+  'eval:navigation:native': manual(
+    'takes window focus and drives the real pointer; needs Accessibility permission'
+  ),
+  'eval:context-labels:gold': manual(
+    'paid live Anthropic API calls scored against gold cases'
+  ),
+  'eval:feedback:database': manual(
+    'writes rows to the hosted Supabase project with service-role credentials'
+  ),
+  'eval:quota:ceilings': manual(
+    'needs a throwaway loopback Postgres 17, which no landing host carries'
+  ),
+  'eval:electron:auth-session': manual(
+    'signs in a real test user with production Supabase admin keys'
+  ),
+  'eval:electron:real-harness': manual(
+    'drives real signed-in Claude Code and Codex CLIs through paid provider turns'
+  ),
+  'eval:electron:connected-fleet:live': manual(
+    'drives two real customer-hosted OpenClaw Gateways over SSH'
+  ),
+  'eval:electron:code-identity': manual(
+    'needs a Developer ID-signed package and its certificate in the keychain'
+  ),
+  'eval:electron:update': manual(
+    'needs a signed baseline app, a published update feed and an /Applications install'
+  ),
+  'eval:electron:operator-stats': manual(
+    "reads the operator's real ~/.claude and ~/.codex history; HOME is not isolated"
+  ),
+});
 
 /** The reporter pair every rerunnable vitest check runs under: the default
  *  reporter still prints for the human, and the JSON one is the machine

@@ -54,6 +54,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          # The secret scan reads every commit, not just the tip (BUG-211).
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
@@ -83,6 +85,17 @@ jobs:
 
       - name: Run type check
         run: pnpm type-check
+
+      # Committed artifacts that must match their one editable source, and the
+      # ratchet that stops a surface inventing a colour. Each takes seconds.
+      # The landing floor runs them by changed path; this run reads a tree no
+      # single landing touched all of, which is how `theme:check` sat red for
+      # five weeks with nothing running it (BUG-208).
+      - name: Check generated sources and theme paint
+        run: |
+          pnpm theme:check
+          pnpm agent-sources:check
+          pnpm icon:check
 
       # `tsconfig.json` excludes `electron/`, so `type-check` proves the Next
       # application and nothing about the desktop main process. Without this
@@ -116,6 +129,13 @@ jobs:
       # run that reads a file nobody touched.
       - name: Run publication gates
         run: pnpm publication:check
+
+      # The same pinned gitleaks and ruleset `gitleaks.yml` runs on the public
+      # repository, over this repository's whole history. That workflow only
+      # runs where the repository is public, so until now nothing scanned the
+      # private history at all (BUG-211). Seconds, with the binary checksummed.
+      - name: Scan history for secrets
+        run: pnpm security:secrets
 
       # With no EXAWATT_DISTRIBUTION_CONFIG_JSON this is the COMMUNITY build,
       # and that is deliberate: it is the composition every reader of the

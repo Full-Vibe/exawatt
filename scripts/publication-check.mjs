@@ -98,20 +98,34 @@ export function stdinPathList(paths) {
   return paths.map(entry => `${entry}\0`).join('');
 }
 
+/**
+ * The package commands this composite runs, in order. Named here rather than
+ * inline so the verification-route registry can see that CI runs them
+ * through `publication:check` (BUG-208), instead of reading them as checks
+ * nothing runs.
+ */
+export const PUBLICATION_GATES = Object.freeze([
+  'open-source:paths:check',
+  'content:scan',
+  'security:audit:prod',
+  'licenses:check',
+  'assets:check',
+  'community:check',
+  'test:publication',
+]);
+
 export async function runPublicationChecks(options = {}) {
   const root = options.root ?? ROOT;
   const run = options.run ?? execute;
   const log = options.log ?? (line => process.stdout.write(`${line}\n`));
   const paths = await (options.trackedPaths ?? trackedPaths)(root);
-  const checks = [
-    ['open-source:paths:check', []],
-    ['content:scan', ['--', '--stdin0'], { input: stdinPathList(paths) }],
-    ['security:audit:prod', []],
-    ['licenses:check', []],
-    ['assets:check', []],
-    ['community:check', []],
-    ['test:publication', []],
-  ];
+  // The content scanner reads the whole tracked tree from stdin (incident
+  // `0022`); every other gate takes no arguments.
+  const checks = PUBLICATION_GATES.map(script =>
+    script === 'content:scan'
+      ? [script, ['--', '--stdin0'], { input: stdinPathList(paths) }]
+      : [script, []]
+  );
 
   for (const [script, args, extra = {}] of checks) {
     log(`[publication] ${script}`);

@@ -122,10 +122,13 @@ page.on('console', message => {
 
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load', timeout: 30_000 });
-  // The sticky header is the ONLY route from `/` to `/architecture` now: the
-  // fold carries no call to action of its own (operator, 2026-08-17), so this
-  // is the real reader's path rather than a convenient handle.
-  const command = page.locator('#site-header a[href="/architecture"]');
+  // The footer is the ONLY route from `/` to `/architecture` now: ENG-031 W6
+  // took Architecture out of the header's primary navigation and the fold
+  // carries no call to action of its own (operator, 2026-08-17), so this is
+  // the real reader's path rather than a convenient handle. Reading the
+  // header's link instead is what left this eval red for five weeks with
+  // nothing running it (BUG-211).
+  const command = page.locator('#site-footer a[href="/architecture"]');
   await command.waitFor({ state: 'visible' });
   await page.waitForFunction(
     () => document.documentElement.dataset.exaTheme === 'exawatt-air-light'

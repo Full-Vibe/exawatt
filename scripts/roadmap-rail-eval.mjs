@@ -202,6 +202,20 @@ await withElectronApp(
       }
     };
 
+    // A declared link exists only for a LIVE Session (`projectDeclaredLinks`),
+    // so the rail can only be asked about one after Start has produced a
+    // running tab. Wait for that effect, not for a number of milliseconds
+    // (BUG-210): the launch passes main's pre-launch gate first, and a fixed
+    // 1.5 s read a slow gate as a rail that ignored the declaration.
+    const liveAgentTabs = page.locator(
+      '[data-tab-harness]:not([data-tab-harness="shell"])[data-tab-lifecycle="running"]'
+    );
+    const startAndWaitForLiveAgent = async () => {
+      const before = await liveAgentTabs.count();
+      await page.getByRole('button', { name: 'Start' }).click();
+      await liveAgentTabs.nth(before).waitFor({ timeout: 60_000 });
+    };
+
     await page.locator('[data-workspace-chrome]').waitFor();
     await page.waitForTimeout(1200);
     // S12: the Terminal view carries NO rail and no strip — the lens lives
@@ -335,8 +349,7 @@ await withElectronApp(
     // second control row; the new Agent shows as a SOLID (declared) chip in
     // the Sessions rail
     await declareRoadmapItem(page, 'ACME-007');
-    await page.getByRole('button', { name: 'Start' }).click();
-    await page.waitForTimeout(1500);
+    await startAndWaitForLiveAgent();
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
     await rail(page, healthy).waitFor();
@@ -360,8 +373,7 @@ await withElectronApp(
     // S8: declare a session on the BLOCKED item — its tab badge goes amber
     // through the same needs-you pipeline as terminal bells
     await declareRoadmapItem(page, 'ACME-009');
-    await page.getByRole('button', { name: 'Start' }).click();
-    await page.waitForTimeout(1500);
+    await startAndWaitForLiveAgent();
     // A provider can exit before the attention projection settles in the
     // isolated eval runtime; capture it for inspection without turning an
     // unavailable provider into a roadmap-lens failure.

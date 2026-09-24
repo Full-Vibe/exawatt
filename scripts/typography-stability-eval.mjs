@@ -443,10 +443,11 @@ async function sampleThemeChurnIsolation() {
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load' });
   await page.evaluate(() => window.__resetExaTypographyEarlyProbe());
-  // The sticky header is the only route from `/` to `/architecture`: the fold
-  // carries no call to action of its own (operator, 2026-08-17).
+  // The footer is the only route from `/` to `/architecture` since ENG-031
+  // W6 took Architecture out of the header; the fold carries no call to
+  // action of its own (operator, 2026-08-17). BUG-211.
   await page
-    .locator('#site-header a[href="/architecture"]')
+    .locator('#site-footer a[href="/architecture"]')
     .click({ noWaitAfter: true });
   await page.waitForURL('**/architecture');
   const clientNavigation = await sampleTypography('home-to-architecture');

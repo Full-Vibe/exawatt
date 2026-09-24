@@ -245,11 +245,24 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 | Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm lint`, `pnpm type-check`, and `pnpm test:agent-delivery` |
 | Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted), then the related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing |
 | Renderer source (`src/**`, `packages/ui-model/src/**`, the company overlay's `web/src/**`) | `pnpm copy:check` (no em dash in screen copy, BUG-207); for `src/**`, the stale-async ratchet (`src/hooks/use-latest-request.ratchet.test.ts`, BUG-206). Both read the whole tree and import nothing they check, so related-test selection cannot pick them |
+| Anything that paints or decides paint (`src/**`, `themes/**`, `packages/ui-model/**`, the theme generator and ratchet) | `pnpm theme:check` (themes valid, generated artifacts current, no production source invents a colour, BUG-208) |
+| `contracts/agent-sources.json`, its generator or a generated declaration; the app icon masters or their generator | `pnpm agent-sources:check`; `pnpm icon:check` (committed outputs match their one editable source, BUG-211) |
+| `company/**` or the composition scripts                                                   | `pnpm company:proof` (composition is deterministic and no hosted-web target reaches the public or desktop tree, BUG-211) |
 | `electron/**`, `packages/core/**`, Electron builder config, or Electron/dogfood scripts | `pnpm electron:compile`                                                                                       |
 | Playwright or stable-browser boundary                                                   | `pnpm qa:browser:doctor`                                                                                      |
 | Fleet spatial or R3F evaluation code                                                    | `pnpm eval:r3f`                                                                                               |
 | `docs/engineering/**`                                                                   | canonical roadmap parser/link tests                                                                           |
 | Each caller `--verify <script>`                                                         | that package script, once, as additional candidate evidence                                                   |
+
+Every verification command in `package.json` (`lint`, `type-check*`,
+`test*`, `eval:*`, `verify:*`, `qa:*`, `security:*`, and `*:check`, `*:audit`,
+`*:scan`, `*:proof`) is classified in `VERIFICATION_ROUTES` in the same module
+as exactly one of: run by this floor, a declared surface gate, run in CI, or
+manual with a one-line reason (BUG-208, BUG-211). `delivery-policy.test.mjs`
+derives what actually runs each command from this floor, `SURFACE_GATES`, the
+pre-push hook and `ci.yml`, and fails on an unclassified command, a stale
+entry, or a route that does not run it. Adding a check therefore means routing
+it in the same change.
 
 The command rejects an unknown extra script and forbids recursive delivery or
 dogfood installation as verification scripts. Verification must not dirty the

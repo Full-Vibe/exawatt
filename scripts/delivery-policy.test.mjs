@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   chmod,
   mkdtemp,
@@ -13,21 +13,28 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { parse as parseYaml } from 'yaml';
+
 import {
   classifyDeliveryPolicy,
   failedVitestFiles,
   inconclusiveRerunReport,
+  isVerificationScript,
   missingSurfaceGates,
   quarantinedSurfaceGates,
   reproducedFailureReport,
   rerunTooWideReport,
   rerunVerdict,
   runDeliveryChecks,
+  SURFACE_GATES,
   suspectedFlakeReport,
   surfaceGateMessage,
   unnamedFailureReport,
+  VERIFICATION_ROUTES,
   vitestReportArgs,
 } from './lib/delivery-policy.mjs';
+import { git } from './lib/hermetic-git.mjs';
+import { PUBLICATION_GATES } from './publication-check.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -62,6 +69,7 @@ test('the cheap changed-file floor cannot be weakened by the caller', () => {
     'exports:check',
     'vitest-related',
     'copy:check',
+    'theme:check',
     'stale-async-ratchet',
     'test:fonts',
   ]);
@@ -110,6 +118,7 @@ test('provider composition changes receive related consumer tests', () => {
       'exports:check',
       'vitest-related',
       'copy:check',
+      'theme:check',
       'stale-async-ratchet',
     ]
   );
@@ -149,6 +158,28 @@ test('renderer changes run the screen-copy guard and the stale-async ratchet', (
     const routed = ids([file]);
     assert.ok(!routed.includes('copy:check'), `${file} renders no screen copy`);
     assert.ok(!routed.includes('stale-async-ratchet'));
+  }
+});
+
+// BUG-208: the theme gate was repaired on 2026-08-17 and red again the next
+// day because nothing ran it. Anything that paints, or decides paint, owes it.
+test('theme, generator, ratchet and renderer changes run theme:check', () => {
+  for (const file of [
+    'src/components/status-light/protocol.ts',
+    'src/app/page.tsx',
+    'themes/v1/exawatt-air-light.json',
+    'themes/contract.mjs',
+    'packages/ui-model/src/roadmap-strip.ts',
+    'scripts/generate-themes.mjs',
+    'scripts/check-production-theme-literals.mjs',
+  ]) {
+    assert.ok(ids([file]).includes('theme:check'), `${file} owes theme:check`);
+  }
+  for (const file of [
+    'docs/engineering/design-system.md',
+    'electron/main/main.ts',
+  ]) {
+    assert.ok(!ids([file]).includes('theme:check'), `${file} paints nothing`);
   }
 });
 
@@ -205,6 +236,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'exports:check',
     'vitest-related',
     'copy:check',
+    'theme:check',
     'stale-async-ratchet',
     'verify:community-build',
     'verify:community-runtime',
@@ -299,6 +331,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
       'exports:check',
       'vitest-related',
       'copy:check',
+      'theme:check',
       'stale-async-ratchet',
       'electron:compile',
       'qa:browser:doctor',
@@ -1014,4 +1047,366 @@ test('changed source files owe the consumer-less export check', () => {
     'the cheap check runs before the related suite'
   );
   assert.ok(!ids(['docs/a.md']).includes('exports:check'));
+});
+
+// ── Verification routes (BUG-208). `theme:check` was repaired on 2026-08-17
+// and red again the next day, and three gates were found red on master in
+// one session, each for the same reason: a check existed and nothing ran it.
+// `VERIFICATION_ROUTES` names what runs every verification command, and these
+// tests hold it to the truth by deriving, from the landing floor, the gate
+// map, the pre-push hook and `ci.yml`, what actually runs each one.
+
+function packageScripts() {
+  return JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
+    .scripts;
+}
+
+/** Split a package command into its `&&`-joined steps, each reduced to the
+ *  command it runs: environment prefixes and the machine-slot wrapper are
+ *  QoS around a step, not the step. */
+function commandSteps(body) {
+  return body.split(/\s*(?:&&|;)\s*/u).map(step => {
+    const tokens = step.trim().split(/\s+/u).filter(Boolean);
+    for (;;) {
+      if (/^[A-Z][A-Z0-9_]*=/u.test(tokens[0] ?? '')) tokens.shift();
+      else if (tokens[0] === 'env') {
+        tokens.shift();
+        while (tokens[0] === '-u') tokens.splice(0, 2);
+      } else if (
+        tokens[0] === 'node' &&
+        tokens[1] === 'scripts/with-machine-slot.mjs'
+      ) {
+        tokens.splice(0, tokens.indexOf('--') + 1);
+      } else break;
+    }
+    return tokens;
+  });
+}
+
+/** What one step is: a call to another package command, a Node test list,
+ *  a Vitest run, build setup, or an opaque program only a direct caller can
+ *  vouch for. */
+function stepKind(tokens, scripts) {
+  if (tokens[0] === 'pnpm' && tokens[1] === '--filter')
+    return { kind: 'setup' };
+  if (tokens[0] === 'pnpm') {
+    const name = tokens[1] === 'run' ? tokens[2] : tokens[1];
+    if (name in scripts) return { kind: 'call', name };
+  }
+  if (tokens[0] === 'node' && tokens[1] === '--test') {
+    return { kind: 'node-test', files: tokens.slice(2) };
+  }
+  if (tokens[0] === 'vitest') {
+    const config = tokens.find(token => token.startsWith('--config'));
+    const files = tokens
+      .slice(1)
+      .filter(token => /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(token));
+    // `vitest related` and `--changed` choose their files at run time, so
+    // they are a selection from the suite, never the suite itself.
+    const selection =
+      tokens[1] === 'related' ||
+      tokens.some(token => token.startsWith('--changed'));
+    return {
+      kind: 'vitest',
+      files,
+      wholeSuite: files.length === 0 && config === undefined && !selection,
+    };
+  }
+  return { kind: 'opaque' };
+}
+
+/** The default Vitest suite as its configs declare it, so "these files run in
+ *  CI" is read from the configuration rather than restated here. */
+function defaultVitestSuite() {
+  const strings = source =>
+    [...source.matchAll(/'([^']+)'/gu)].map(match => match[1]);
+  const arrayAfter = (source, key) => {
+    const start = source.indexOf(`${key}: [`);
+    if (start === -1) return [];
+    return strings(source.slice(start, source.indexOf(']', start)));
+  };
+  const globToRegExp = glob =>
+    new RegExp(
+      `^${glob
+        .replace(/[.+^$()|\\]/gu, '\\$&')
+        .replace(
+          /\{([^}]+)\}/gu,
+          (_, list) => `(?:${list.split(',').join('|')})`
+        )
+        .replace(/\*\*\//gu, '\u0000')
+        .replace(/\*\*/gu, '.*')
+        .replace(/\*/gu, '[^/]*')
+        .replace(/\u0000/gu, '(?:.*/)?')}$`,
+      'u'
+    );
+  const rootConfig = readFileSync(path.join(root, 'vitest.config.ts'), 'utf8');
+  const projects = arrayAfter(rootConfig, 'projects').map(project => {
+    const configPath = path.join(root, project);
+    const source = readFileSync(configPath, 'utf8');
+    const base = path.relative(root, path.dirname(configPath));
+    const scoped = glob => globToRegExp(base ? `${base}/${glob}` : glob);
+    return {
+      include: arrayAfter(source, 'include').map(scoped),
+      exclude: arrayAfter(source, 'exclude').map(scoped),
+    };
+  });
+  assert.ok(projects.length > 0, 'vitest.config.ts declares its projects');
+  return file =>
+    projects.some(
+      project =>
+        project.include.some(pattern => pattern.test(file)) &&
+        !project.exclude.some(pattern => pattern.test(file))
+    );
+}
+
+/**
+ * Every package command a route runs: the seeds it names, what those call in
+ * turn, and every command whose steps are all contained in what already runs
+ * (a Node test list inside a larger one, a Vitest subset inside a suite the
+ * route runs whole).
+ */
+function routeReach(seeds, scripts, inSuite) {
+  const reached = new Set();
+  const visit = name => {
+    if (reached.has(name) || !(name in scripts)) return;
+    reached.add(name);
+    for (const step of commandSteps(scripts[name])) {
+      const kind = stepKind(step, scripts);
+      if (kind.kind === 'call') visit(kind.name);
+    }
+  };
+  for (const seed of seeds) visit(seed);
+
+  for (let grew = true; grew; ) {
+    grew = false;
+    const nodeTests = new Set();
+    let wholeSuite = false;
+    for (const name of reached) {
+      for (const step of commandSteps(scripts[name])) {
+        const kind = stepKind(step, scripts);
+        if (kind.kind === 'node-test')
+          kind.files.forEach(file => nodeTests.add(file));
+        if (kind.kind === 'vitest' && kind.wholeSuite) wholeSuite = true;
+      }
+    }
+    for (const [name, body] of Object.entries(scripts)) {
+      if (reached.has(name)) continue;
+      const steps = commandSteps(body)
+        .map(step => stepKind(step, scripts))
+        .filter(kind => kind.kind !== 'setup');
+      const contained =
+        steps.length > 0 &&
+        steps.every(kind => {
+          if (kind.kind === 'call') return reached.has(kind.name);
+          if (kind.kind === 'node-test')
+            return kind.files.every(file => nodeTests.has(file));
+          if (kind.kind === 'vitest')
+            return wholeSuite && kind.files.every(inSuite);
+          return false;
+        });
+      if (contained) {
+        reached.add(name);
+        grew = true;
+      }
+    }
+  }
+  return reached;
+}
+
+async function actualRoutes() {
+  const scripts = packageScripts();
+  const inSuite = defaultVitestSuite();
+  const tracked = git(root, ['ls-files']).split('\n').filter(Boolean);
+
+  // (a) The landing floor over every tracked path, which is the union of its
+  // unconditional and changed-path checks, plus the pre-push hook every
+  // landing's final push passes through.
+  const landingSeeds = classifyDeliveryPolicy(tracked)
+    .filter(check => check.command === 'pnpm' && check.args[0] === 'run')
+    .map(check => check.args[1]);
+  const hook = readFileSync(path.join(root, '.githooks/pre-push'), 'utf8');
+  for (const [name, body] of Object.entries(scripts)) {
+    const entry = /^node (scripts\/[\w./-]+\.mjs)$/u.exec(body)?.[1];
+    if (entry && hook.includes(entry)) landingSeeds.push(name);
+  }
+
+  // (c) Every `pnpm` step in `ci.yml`, and the gates `publication:check` runs.
+  const workflow = parseYaml(
+    readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8')
+  );
+  const ciSeeds = Object.values(workflow.jobs)
+    .flatMap(job => job.steps ?? [])
+    .flatMap(step => (step.run ?? '').split('\n'))
+    .map(line => /^pnpm (?:run )?([\w:-]+)/u.exec(line.trim())?.[1])
+    .filter(Boolean);
+  if (ciSeeds.includes('publication:check')) ciSeeds.push(...PUBLICATION_GATES);
+
+  return {
+    scripts,
+    landing: routeReach(landingSeeds, scripts, inSuite),
+    gate: new Set(SURFACE_GATES.map(entry => entry.gate)),
+    ci: routeReach(ciSeeds, scripts, inSuite),
+    inSuite,
+  };
+}
+
+test('every verification command has a route (BUG-208)', () => {
+  const scripts = packageScripts();
+  const unclassified = Object.keys(scripts)
+    .filter(isVerificationScript)
+    .filter(name => !Object.hasOwn(VERIFICATION_ROUTES, name));
+  assert.deepEqual(
+    unclassified,
+    [],
+    'classify each in VERIFICATION_ROUTES (scripts/lib/delivery-policy.mjs): landing, gate, ci, or manual with its reason'
+  );
+  for (const name of Object.keys(VERIFICATION_ROUTES)) {
+    assert.ok(
+      isVerificationScript(name),
+      `${name} is classified but is not a verification command by name`
+    );
+  }
+});
+
+test('a manual route says why nothing runs it', () => {
+  for (const [name, route] of Object.entries(VERIFICATION_ROUTES)) {
+    assert.ok(
+      ['landing', 'gate', 'ci', 'manual'].includes(route.route),
+      `${name} has an unknown route`
+    );
+    if (route.route !== 'manual') continue;
+    assert.ok(
+      typeof route.reason === 'string' &&
+        route.reason.length >= 12 &&
+        !route.reason.includes('\n'),
+      `${name} is manual and must state its reason in one line`
+    );
+  }
+});
+
+// The projected public tree omits company-only commands from package.json and
+// their tests from its suites, so what a route reaches there is a subset by
+// construction. This tree is where the table is maintained and proven.
+test('no route names a command that no longer exists', async t => {
+  if (await isProjectedPublicTree()) {
+    t.skip('the public projection omits company-only commands');
+    return;
+  }
+  const scripts = packageScripts();
+  assert.deepEqual(
+    Object.keys(VERIFICATION_ROUTES).filter(name => !(name in scripts)),
+    [],
+    'remove the stale entries from VERIFICATION_ROUTES'
+  );
+});
+
+test('every route is what actually runs the command', async t => {
+  if (await isProjectedPublicTree()) {
+    t.skip('the public projection omits company-only commands');
+    return;
+  }
+  const actual = await actualRoutes();
+  const wrong = [];
+  for (const [name, claimed] of Object.entries(VERIFICATION_ROUTES)) {
+    // The first route that runs it is its route: a check the landing floor
+    // runs is a landing check even when CI also runs it.
+    const truth =
+      ['landing', 'gate', 'ci'].find(route => actual[route].has(name)) ??
+      'manual';
+    if (truth !== claimed.route) {
+      wrong.push(`${name}: classified ${claimed.route}, actually ${truth}`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test('a Vitest subset names files the default suite runs', async t => {
+  if (await isProjectedPublicTree()) {
+    t.skip('the public projection omits company-only commands');
+    return;
+  }
+  const { scripts, inSuite } = await actualRoutes();
+  for (const [name, body] of Object.entries(scripts)) {
+    for (const step of commandSteps(body)) {
+      const kind = stepKind(step, scripts);
+      if (kind.kind !== 'vitest') continue;
+      for (const file of kind.files) {
+        assert.ok(
+          existsSync(path.join(root, file)),
+          `${name} names missing ${file}`
+        );
+        assert.ok(
+          inSuite(file),
+          `${name} names ${file}, which no Vitest project includes`
+        );
+      }
+    }
+  }
+});
+
+test('the route derivation sees what the floor, the hook and CI run', async () => {
+  const actual = await actualRoutes();
+  // One witness per mechanism, so a derivation that silently stopped seeing
+  // one cannot make every route read `manual`.
+  assert.ok(actual.landing.has('lint'), 'unconditional floor check');
+  assert.ok(actual.landing.has('theme:check'), 'changed-path floor check');
+  assert.ok(
+    actual.landing.has('type-check:electron-tests'),
+    'a call inside a floor check'
+  );
+  assert.ok(actual.landing.has('docs:check'), 'the pre-push hook');
+  assert.ok(
+    actual.landing.has('test:screen-copy'),
+    'a Node test list inside test:agent-delivery'
+  );
+  assert.ok(actual.ci.has('test:ci'), 'a ci.yml step');
+  assert.ok(actual.ci.has('licenses:check'), 'a gate publication:check runs');
+  assert.ok(
+    actual.ci.has('test:contracts'),
+    'a Vitest subset of the suite CI runs whole'
+  );
+  assert.ok(
+    !actual.landing.has('test:contracts'),
+    'a selection is not the whole suite'
+  );
+});
+
+// BUG-211: a gate's map is written from the surface it is nominally about,
+// and its script asserts more than that surface. `nav-history.ts` (BUG-035),
+// `workspace-client.tsx` (BUG-041), the ⌘⇧F owners (BUG-058) and the title
+// template in `src/app/layout.tsx` each broke a gate that was never asked
+// for. Two parts of that are mechanical, so they are held here: a gate owns
+// its own script, and a gate owns every repository source file its script
+// names, which is how an author records "this step depends on that file".
+test('a surface gate owns its script and every source file the script names', () => {
+  const scripts = packageScripts();
+  for (const entry of SURFACE_GATES) {
+    const script = /scripts\/[\w./-]+\.mjs/u.exec(
+      scripts[entry.gate] ?? ''
+    )?.[0];
+    assert.ok(script, `${entry.gate} has a package command that runs a script`);
+    assert.ok(
+      entry.match(script),
+      `${entry.gate} must be owed by a change to ${script}`
+    );
+    const source = readFileSync(path.join(root, script), 'utf8');
+    const named = new Set(
+      [
+        ...source.matchAll(
+          /(?:src|electron|packages|themes)\/[\w./@[\]-]+\.(?:[cm]?[jt]sx?|json|css)/gu
+        ),
+      ]
+        .map(match => match[0])
+        // A test file cannot break what the eval observes, so a script that
+        // points its reader at one owes nothing for it.
+        .filter(file => !/\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(file))
+        .filter(file => existsSync(path.join(root, file)))
+    );
+    for (const file of named) {
+      assert.ok(
+        entry.match(file),
+        `${script} names ${file}, so ${entry.gate} must be owed by a change to it`
+      );
+    }
+  }
 });

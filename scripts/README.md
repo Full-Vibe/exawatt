@@ -29,8 +29,11 @@ operating contract:
 | `feedback:*`                               | product-feedback ingestion and triage                     |
 
 An evaluator is not automatically a landing gate. Surface-to-gate ownership is
-declared in `lib/delivery-policy.mjs`; adding a package command does not add it
-to that policy.
+declared in `SURFACE_GATES` in `lib/delivery-policy.mjs`, and every
+verification command is classified in `VERIFICATION_ROUTES` beside it: run by
+the landing floor, a declared gate, run in CI, or manual with its reason. A new
+`eval:*`, `test:*` or `*:check` command fails `pnpm test:agent-delivery` until
+it has a route (BUG-208, BUG-211).
 
 ## Layout contract
 
