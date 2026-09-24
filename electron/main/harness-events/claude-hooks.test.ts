@@ -273,7 +273,12 @@ describe('claudeHookEvent census', () => {
       description: 'Wait 60 seconds in background',
       command: 'sleep 60',
     },
-    { id: 'done1', type: 'subagent', status: 'completed', agent_type: 'Explore' },
+    {
+      id: 'done1',
+      type: 'subagent',
+      status: 'completed',
+      agent_type: 'Explore',
+    },
     { id: 'dead1', type: 'subagent', status: 'failed', agent_type: 'Explore' },
   ];
 
@@ -298,6 +303,7 @@ describe('claudeHookEvent census', () => {
           },
         ],
         completed: ['done1'],
+        backgroundTasks: [{ id: 'b45hgpvbg', type: 'shell' }],
         at: 7,
       },
     });
@@ -314,7 +320,10 @@ describe('claudeHookEvent census', () => {
       },
       7
     );
-    expect(event).toMatchObject({ kind: 'child-end', childId: 'ad50fdae07f15e180' });
+    expect(event).toMatchObject({
+      kind: 'child-end',
+      childId: 'ad50fdae07f15e180',
+    });
     expect(
       event && 'census' in event ? event.census?.live.map(c => c.id) : null
     ).toEqual(['a1d18df24598be411']);
@@ -347,5 +356,39 @@ describe('claudeHookEvent census', () => {
     const live = event && 'census' in event ? event.census?.live : undefined;
     expect(live?.map(c => c.id)).toEqual(['ok']);
     expect([...(live?.[0].description ?? '')].length).toBe(140);
+  });
+});
+
+it('keeps only non-Agent identity and type, including future running task kinds', () => {
+  const event = claudeHookEvent(
+    {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        {
+          id: 'watch',
+          type: 'monitor',
+          status: 'running',
+          description: 'PRIVATE',
+          command: 'PRIVATE',
+        },
+        { id: 'next', type: 'future-kind', status: 'pending' },
+        { id: 'ended', type: 'monitor', status: 'completed' },
+        { id: 'failed', type: 'shell', status: 'failed' },
+        { id: 'watch', type: 'monitor', status: 'running' },
+      ],
+    },
+    1
+  );
+  expect(event).toEqual({
+    kind: 'turn-end',
+    census: {
+      live: [],
+      completed: [],
+      at: 1,
+      backgroundTasks: [
+        { id: 'watch', type: 'monitor' },
+        { id: 'next', type: 'future-kind' },
+      ],
+    },
   });
 });

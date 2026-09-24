@@ -100,7 +100,8 @@ export class DelegationMonitor extends EventEmitter {
     const visible =
       before.ownTurn !== after.ownTurn ||
       before.blockedOn !== after.blockedOn ||
-      before.children !== after.children;
+      before.children !== after.children ||
+      before.backgroundTasks !== after.backgroundTasks;
     if (visible) {
       const projected = this.projection(sessionId);
       this.emit(
@@ -166,13 +167,17 @@ export class DelegationMonitor extends EventEmitter {
       cached &&
       cached.ownTurn === ledger.ownTurn &&
       cached.blockedOn === ledger.blockedOn &&
-      cached.children === ledger.children
+      cached.children === ledger.children &&
+      cached.backgroundTasks === ledger.backgroundTasks
     )
       return cached;
     const next: SessionDelegation = {
       ownTurn: ledger.ownTurn,
       blockedOn: ledger.blockedOn,
       children: ledger.children,
+      ...(ledger.backgroundTasks
+        ? { backgroundTasks: ledger.backgroundTasks }
+        : {}),
     };
     this.projections.set(sessionId, next);
     return next;
@@ -193,7 +198,7 @@ export class DelegationMonitor extends EventEmitter {
     return delegationIsLive(current) ? current : null;
   }
 
-  /** "The team is working" — outstanding delegated children. */
+  /** Outstanding delegated Agents or non-Agent background work. */
   isBusy(sessionId: string): boolean {
     return delegationBusy(this.state.get(sessionId));
   }

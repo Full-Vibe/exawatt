@@ -1,3 +1,7 @@
+import {
+  sessionHasBackgroundWork,
+  type SessionBackgroundTask,
+} from '@exawatt/core';
 /**
  * Delegation state (ENG-023 D1) — the two-fact model.
  *
@@ -53,6 +57,7 @@ export interface CensusChild {
  */
 export interface ReportedChildCensus {
   live: CensusChild[];
+  backgroundTasks?: SessionBackgroundTask[];
   completed: string[];
   /** when the census was taken; the start time adopted for a child met here */
   at: number;
@@ -115,6 +120,8 @@ export interface SessionDelegation {
   blockedOn: SessionBlockedReason | null;
   /** live children, oldest first */
   children: DelegatedChild[];
+  /** Non-Agent work reported by the source; absent on older providers. */
+  backgroundTasks?: SessionBackgroundTask[];
 }
 
 /**
@@ -203,17 +210,17 @@ export function delegationIsLive(
 ): boolean {
   return (
     !!delegation &&
-    (delegation.children.length > 0 ||
+    (sessionHasBackgroundWork(delegation) ||
       delegation.ownTurn === 'generating' ||
       !!delegation.blockedOn)
   );
 }
 
-/** The Session has outstanding delegated work — "the team is working". */
+/** The Session has outstanding source-reported background work. */
 export function delegationBusy(
   delegation: SessionDelegation | null | undefined
 ): boolean {
-  return !!delegation && delegation.children.length > 0;
+  return sessionHasBackgroundWork(delegation);
 }
 
 function sameChild(a: DelegatedChild, b: DelegatedChild): boolean {
@@ -260,12 +267,28 @@ export function reconcileCensus(
   const unchanged =
     live.length === state.children.length &&
     live.every((child, index) => sameChild(child, state.children[index]));
+  const nextTasks = census.backgroundTasks ?? state.backgroundTasks;
+  const backgroundTasks =
+    nextTasks?.length === state.backgroundTasks?.length &&
+    (nextTasks?.every(
+      (task, index) =>
+        task.id === state.backgroundTasks?.[index]?.id &&
+        task.type === state.backgroundTasks?.[index]?.type
+    ) ??
+      true)
+      ? state.backgroundTasks
+      : nextTasks;
   const endedChildIds = state.endedChildIds.filter(id => !seen.has(id));
-  if (unchanged && endedChildIds.length === state.endedChildIds.length)
+  if (
+    unchanged &&
+    backgroundTasks === state.backgroundTasks &&
+    endedChildIds.length === state.endedChildIds.length
+  )
     return state;
   return {
     ...state,
     children: unchanged ? state.children : live,
+    ...(backgroundTasks ? { backgroundTasks } : {}),
     endedChildIds,
   };
 }

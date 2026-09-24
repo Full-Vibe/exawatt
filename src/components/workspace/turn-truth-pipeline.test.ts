@@ -24,7 +24,11 @@ import {
   wireReportedTurnTruth,
 } from '../../../electron/main/harness-events/turn-truth';
 import type { StatusLightState } from '@/components/status-light/protocol';
-import { sessionGlyphState, sessionStatusLightState } from './session-status';
+import {
+  sessionGlyphState,
+  sessionStatusLightState,
+  sessionDelegationBusy,
+} from './session-status';
 
 const SESSION = 'a';
 const OTHER = 'b';
@@ -81,7 +85,7 @@ function harness() {
         working: attention.isWorking(SESSION),
         agent: true,
         started: true,
-        delegatedBusy: (reported?.children.length ?? 0) > 0,
+        delegatedBusy: sessionDelegationBusy(reported),
         blocked: !!reported?.blockedOn,
         ownTurn: reported?.ownTurn,
       }),
@@ -93,10 +97,10 @@ function harness() {
     attention,
     delegation,
     expiries,
+    manager,
     hook,
     light,
-    stream: (bytes: number) =>
-      manager.emit('data', SESSION, 'x'.repeat(bytes)),
+    stream: (bytes: number) => manager.emit('data', SESSION, 'x'.repeat(bytes)),
     advance: (ms: number) => {
       clock += ms;
       attention.sweepNow();
@@ -118,7 +122,10 @@ function harness() {
 }
 
 const ask = { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion' };
-const answered = { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' };
+const answered = {
+  hook_event_name: 'PostToolUse',
+  tool_name: 'AskUserQuestion',
+};
 const submit = { hook_event_name: 'UserPromptSubmit' };
 const stop = { hook_event_name: 'Stop' };
 
@@ -266,7 +273,9 @@ describe('turn truth: what the operator sees', () => {
       h.render(60);
       expect(h.light()).toBe('active');
       expect(h.attention.get(SESSION)).toBeNull();
-      expect(h.delegation.get(SESSION)?.children.map(c => c.id)).toEqual(['c1']);
+      expect(h.delegation.get(SESSION)?.children.map(c => c.id)).toEqual([
+        'c1',
+      ]);
     }
     expect(h.expiries).toEqual([]);
 
@@ -332,7 +341,10 @@ describe('turn truth: what the operator sees', () => {
     h.advance(13_000);
     expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
     expect(h.light()).toBe('result');
-    expect(h.expiries[0]).toMatchObject({ childIds: ['c1'], ownTurn: 'available' });
+    expect(h.expiries[0]).toMatchObject({
+      childIds: ['c1'],
+      ownTurn: 'available',
+    });
   });
 
   it("a lost SubagentStop cannot outlive the parent's next boundary", () => {
@@ -575,12 +587,18 @@ describe('claudeHookEvent normalization', () => {
     ],
     [
       'permission prompts are gates',
-      { hook_event_name: 'Notification', notification_type: 'permission_prompt' },
+      {
+        hook_event_name: 'Notification',
+        notification_type: 'permission_prompt',
+      },
       { kind: 'blocked', reason: 'permission' },
     ],
     [
       'MCP elicitation is a gate',
-      { hook_event_name: 'Notification', notification_type: 'elicitation_dialog' },
+      {
+        hook_event_name: 'Notification',
+        notification_type: 'elicitation_dialog',
+      },
       { kind: 'blocked', reason: 'elicitation' },
     ],
     [
@@ -613,4 +631,60 @@ describe('claudeHookEvent normalization', () => {
   it.each(cases)('%s', (_name, payload, expected) => {
     expect(claudeHookEvent(payload, 1)).toEqual(expected);
   });
+});
+
+describe('source-reported background work (BUG-145)', () => {
+  const monitor = { id: 'monitor-1', type: 'monitor', status: 'running' };
+  it('keeps a silent monitor active without inventing an Agent, until the source withdraws it', () => {
+    const h = harness();
+    h.hook({ hook_event_name: 'UserPromptSubmit' });
+    h.stream(2000);
+    h.manager.emit('data', SESSION, '\x07');
+    expect(h.attention.get(SESSION)?.kind).toBe('bell');
+    h.hook({ hook_event_name: 'Stop', background_tasks: [monitor] });
+    expect(h.delegation.getLive(SESSION)?.children).toEqual([]);
+    expect(h.light()).toBe('active');
+    h.advance(600_000);
+    h.manager.emit('data', SESSION, '\x07');
+    expect(h.attention.get(SESSION)).toBeNull();
+    expect(h.light()).toBe('active');
+    h.focus();
+    expect(h.light()).toBe('active');
+    h.unfocus();
+    h.hook({ hook_event_name: 'Stop', background_tasks: [] });
+    expect(h.light()).toBe('result');
+    expect(h.delegation.getLive(SESSION)).toBeNull();
+    expect(h.expiries).toEqual([]);
+  });
+
+  it('keeps actual questions visible while a background monitor runs', () => {
+    const h = harness();
+    h.hook({ hook_event_name: 'Stop', background_tasks: [monitor] });
+    h.hook(ask);
+    expect(h.light()).toBe('needs-you');
+    h.focus();
+    expect(h.light()).toBe('needs-you');
+    h.hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' });
+    expect(h.light()).toBe('active');
+  });
+
+  it('does not lose background evidence to a legacy boundary, and drops it with the Session', () => {
+    const h = harness();
+    h.hook({ hook_event_name: 'Stop', background_tasks: [monitor] });
+    h.hook({ hook_event_name: 'Stop' });
+    expect(h.light()).toBe('active');
+    h.delegation.drop(SESSION);
+    expect(h.delegation.getLive(SESSION)).toBeNull();
+  });
+});
+
+it('lets protocol snapshots correct an ambient bell without a synthetic turn boundary', () => {
+  const h = harness();
+  h.manager.emit('data', SESSION, '\x07');
+  expect(h.attention.get(SESSION)?.kind).toBe('bell');
+  h.delegation.reconcileReportedChildren(SESSION, [
+    { id: 'remote-child', agentType: null, description: null, startedAt: 1 },
+  ]);
+  expect(h.attention.get(SESSION)).toBeNull();
+  expect(h.light()).toBe('active');
 });

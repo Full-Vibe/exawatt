@@ -213,13 +213,19 @@ describe('DelegationMonitor census', () => {
     expect(reclaimed.withdrawn.map(child => child.id)).toEqual(['c1', 'c2']);
     expect(published.length).toBe(broadcasts + 1);
     expect(published[published.length - 1]).toBeNull();
-    expect(monitor.get('pty-1')).toMatchObject({ ownTurn: 'available', children: [] });
+    expect(monitor.get('pty-1')).toMatchObject({
+      ownTurn: 'available',
+      children: [],
+    });
     expect(lifecycle.filter(event => event.kind === 'child-end')).toEqual([]);
   });
 
   it('reclaiming an unreported Session is inert', () => {
     const { monitor, published } = harness();
-    expect(monitor.reclaimStaleReport('pty-1', 1)).toEqual({ ownTurn: null, withdrawn: [] });
+    expect(monitor.reclaimStaleReport('pty-1', 1)).toEqual({
+      ownTurn: null,
+      withdrawn: [],
+    });
     expect(published).toEqual([]);
   });
 
@@ -241,7 +247,14 @@ describe('DelegationMonitor census', () => {
     send({
       kind: 'turn-end',
       census: {
-        live: [{ id: 'named', agentType: 'Explore', description: null, startedAt: null }],
+        live: [
+          {
+            id: 'named',
+            agentType: 'Explore',
+            description: null,
+            startedAt: null,
+          },
+        ],
         completed: [],
         at: 2,
       },
@@ -266,4 +279,26 @@ describe('DelegationMonitor census', () => {
     });
     expect(ends).toEqual(['c1']);
   });
+});
+
+it('withdraws a background task census on process exit and rejects late reports', () => {
+  const { monitor, manager, send } = harness();
+  const event = {
+    kind: 'turn-end' as const,
+    census: {
+      live: [],
+      completed: [],
+      at: 1,
+      backgroundTasks: [{ id: 'monitor', type: 'monitor' }],
+    },
+  };
+  send(event);
+  expect(monitor.isBusy('pty-1')).toBe(true);
+  const projection = monitor.getLive('pty-1');
+  send(event);
+  expect(monitor.getLive('pty-1')).toBe(projection);
+  manager.emit('exit', 'pty-1');
+  send(event);
+  expect(monitor.get('pty-1')).toBeNull();
+  expect(monitor.isBusy('pty-1')).toBe(false);
 });

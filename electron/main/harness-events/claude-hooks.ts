@@ -93,7 +93,10 @@ const SUBSCRIBED_EVENTS: readonly Subscription[] = [
   // the moment of handoff. NOT a per-tool subscription — the matcher scopes
   // delivery to the delegation tools alone (a measured property, see D4).
   { event: 'PreToolUse', matcher: AGENT_TOOLS_MATCHER },
-  { event: 'Notification', matcher: Object.keys(BLOCKING_NOTIFICATIONS).join('|') },
+  {
+    event: 'Notification',
+    matcher: Object.keys(BLOCKING_NOTIFICATIONS).join('|'),
+  },
   { event: 'Notification', matcher: [...RELEASING_NOTIFICATIONS].join('|') },
   { event: 'ElicitationResult' },
   // The gate-release backstop for a granted permission, which reports no event
@@ -172,15 +175,23 @@ function claudeCensus(
   if (!Array.isArray(tasks)) return null;
   const live: CensusChild[] = [];
   const completed: string[] = [];
+  const backgroundTasks: NonNullable<ReportedChildCensus['backgroundTasks']> =
+    [];
   const seen = new Set<string>();
   for (const task of tasks) {
     if (!task || typeof task !== 'object') continue;
     const entry = task as Record<string, unknown>;
-    if (readString(entry, 'type') !== 'subagent') continue;
+    const type = readString(entry, 'type');
+    if (!type) continue;
     const id = readString(entry, 'id');
     if (!id || id === excludeId || seen.has(id)) continue;
     seen.add(id);
     const status = readString(entry, 'status');
+    if (type !== 'subagent') {
+      if (status === 'running' || status === 'pending')
+        backgroundTasks.push({ id, type });
+      continue;
+    }
     if (status === 'completed') {
       completed.push(id);
       continue;
@@ -194,7 +205,7 @@ function claudeCensus(
       startedAt: null,
     });
   }
-  return { live, completed, at };
+  return { live, completed, at, backgroundTasks };
 }
 
 /**

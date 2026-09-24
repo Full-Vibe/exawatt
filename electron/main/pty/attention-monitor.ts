@@ -1,4 +1,8 @@
 import { EventEmitter } from 'events';
+import {
+  sessionHasBackgroundWork,
+  type SessionBackgroundTask,
+} from '@exawatt/core';
 import type { PtySessionManager } from './session-manager';
 
 /**
@@ -46,6 +50,7 @@ export interface ReportedTurn {
   ownTurn: 'generating' | 'available';
   blockedOn: string | null;
   children: readonly unknown[];
+  backgroundTasks?: readonly SessionBackgroundTask[];
 }
 
 /**
@@ -296,6 +301,14 @@ export class AttentionMonitor extends EventEmitter {
     this.raise(id, 'turn-end');
   }
 
+  /** Source work corrects an inferred bell/result even if its census arrived
+   * after the terminal nudge. Explicit operator gates remain independent. */
+  noteReportedBackgroundWork(id: string): void {
+    if (this.disabled || !this.teamWorkingWithoutGate(id)) return;
+    const kind = this.attention.get(id)?.kind;
+    if (kind === 'bell' || kind === 'turn-end') this.clear(id);
+  }
+
   /**
    * Teach the monitor what the harness reported (ENG-023).
    *
@@ -318,12 +331,12 @@ export class AttentionMonitor extends EventEmitter {
     return (
       report.ownTurn === 'generating' ||
       !!report.blockedOn ||
-      report.children.length > 0
+      sessionHasBackgroundWork(report)
     );
   }
 
   private delegatedBusy(id: string): boolean {
-    return (this.reportedTurn(id)?.children.length ?? 0) > 0;
+    return sessionHasBackgroundWork(this.reportedTurn(id));
   }
 
   /**
@@ -353,7 +366,7 @@ export class AttentionMonitor extends EventEmitter {
   private teamWorkingWithoutGate(id: string): boolean {
     const report = this.reportedTurn(id);
     if (!report) return false;
-    return !report.blockedOn && report.children.length > 0;
+    return !report.blockedOn && sessionHasBackgroundWork(report);
   }
 
   /**
@@ -394,7 +407,10 @@ export class AttentionMonitor extends EventEmitter {
   private reclaimStaleReportedTurn(id: string, quietFor: number): boolean {
     if (quietFor < this.reportedTurnStaleMs) return false;
     const report = this.reportedTurn(id);
-    if (!report || report.blockedOn) return false;
+    // A monitor or background tool may be legitimately silent indefinitely.
+    // Only the source census or process exit can withdraw that evidence.
+    if (!report || report.blockedOn || report.backgroundTasks?.length)
+      return false;
     if (report.ownTurn !== 'generating' && report.children.length === 0)
       return false;
     const evidence: StaleReportEvidence = {

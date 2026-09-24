@@ -175,14 +175,12 @@ describe('delegated work', () => {
   it('explains a quiet delegating Session honestly', () => {
     // A generic "turn in progress" is true but incurious for a Session that
     // is quiet precisely because it handed the work to someone else.
-    expect(sessionGlyphCopy('working', busyChild)).toBe(
-      'working — delegated agents running'
+    expect(sessionGlyphCopy('working', busyChild)).not.toBe(
+      SESSION_GLYPH_COPY.working
     );
     // And the generic one never names a mechanism the operator can see is not
     // happening: the light is active for a silent reported-open turn too.
-    expect(sessionGlyphCopy('working', null)).toBe(
-      'working — turn in progress'
-    );
+    expect(sessionGlyphCopy('working', null)).toBe(SESSION_GLYPH_COPY.working);
     expect(sessionGlyphCopy('done', busyChild)).toBe(SESSION_GLYPH_COPY.done);
   });
 

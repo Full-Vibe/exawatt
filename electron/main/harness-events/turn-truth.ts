@@ -65,6 +65,12 @@ export function wireReportedTurnTruth({
   // (D4's operator gate) corrects inference without a second wire.
   attention.setReportedTurnSource(id => delegation.get(id));
 
+  // Snapshot adapters apply their census directly, without a harness-event.
+  // Correct inference whenever published truth changes, for every source.
+  delegation.on('delegation', (id: string) => {
+    attention.noteReportedBackgroundWork(id);
+  });
+
   delegation.on('harness-event', (id: string, event: HarnessEvent) => {
     // A reported turn boundary is stronger evidence than inferred quiescence,
     // and it arrives 6–7 s sooner. Turn-start also matters for the turn a

@@ -505,3 +505,27 @@ describe('delegation in the fleet projection', () => {
     expect(emptied).not.toHaveProperty('delegation');
   });
 });
+
+it('projects non-Agent background work as active without inventing delegation children', () => {
+  const snapshot = snap({
+    delegation: {
+      children: [],
+      ownTurn: 'available',
+      backgroundTasks: [{ id: 'watch', type: 'monitor' }],
+    },
+  });
+  const agent = sessionToAgent(snapshot, 0, 1_000_000, 15_000);
+  expect(agent.status).toBe('working');
+  expect(agent.delegation).toBeUndefined();
+  expect(
+    sessionStatus(
+      {
+        ...snapshot,
+        delegation: { ...snapshot.delegation!, blockedOn: 'permission' },
+      },
+      0,
+      1_000_000,
+      15_000
+    )
+  ).toBe('blocked');
+});

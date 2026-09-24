@@ -1773,3 +1773,43 @@ portal boundary and BUG-143 repairs Spatial viewport ownership in their existing
 project docs. Integration reviews the boundaries together, runs the relevant
 real-browser/Electron checks, and lands one verified batch before cleanup.
 No new mixed-state glyph or delegated population model is part of this repair.
+
+### 2026-09-23 — Background work and delegated Agents are distinct (BUG-145 implementation)
+
+**A source-reported monitor keeps the Session active without becoming an Agent.**
+The Claude adapter discarded every `background_tasks` entry except `subagent`.
+The installed 2.1.281 hook schema explicitly includes monitor, shell, workflow
+and future task kinds; the operator screenshot shows a Monitor task after the
+foreground reply. The missing fact let both Stop and the idle BEL produce
+attention despite remaining work. No terminal text parser or timeout change
+repairs this boundary.
+
+The source census now retains running/pending non-Agent tasks as identity/type records, separate from children, with no commands,
+labels or output copied. `sessionHasBackgroundWork` in core feeds main-process guards,
+Session glyphs and Local Sessions Fleet projection. Delivery order is covered:
+a later census retires an earlier inferred bell/result, while real reported
+input gates still win. Quiet non-Agent work cannot expire by the old continuous-
+footer assumption; only the next source census or Session exit withdraws it.
+This deliberately preserves the source's last observation between boundaries;
+it does not add a task observer or claim independent live polling coverage.
+
+Regression evidence exercises the actual adapter → reducer → attention → status
+pipeline, silent monitoring, focus invariance, explicit questions, legacy
+missing-field behavior, withdrawal and process-record cleanup. No additional
+status lamp, child dot or review interaction is introduced.
+
+Source coverage limit: a monitor quietly stopped via the manual /tasks UI
+outside a foreground turn may remain last-reported active until the next
+Stop/SubagentStop census or Session exit. The
+[public lifecycle hooks](https://code.claude.com/docs/en/hooks) do not provide a
+universal background-task-ended hook. TaskCompleted is the work-list task contract, not a monitor
+termination event; conflating these would invent completion. The implementation
+does not claim continuous monitor observation.
+
+Installed 2.1.281 lifecycle inspection: successful TaskStop runs in a foreground
+turn whose Stop supplies a refreshed census. Monitor expiry sends a housekeeping
+notification, and shell-monitor exit publishes a terminal notification; these
+can wake another foreground turn. Quiet stop paths and manual task UI do not
+guarantee that boundary. The conservative last report also blocks Apply and
+resume until a new boundary refreshes it; explicit pause/interrupt remains
+available. No arbitrary silence interval can prove a silent monitor ended.

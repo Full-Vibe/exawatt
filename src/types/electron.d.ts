@@ -1,3 +1,4 @@
+import type { SessionBackgroundTask } from '@exawatt/core';
 import type {
   AgentHarness,
   AgentPermissionMode,
@@ -317,6 +318,8 @@ export interface SessionDelegation {
    *  gate reported" rather than as a type error in the renderer. */
   blockedOn?: SessionBlockedReason | null;
   children: DelegatedChild[];
+  /** Non-Agent work reported by the source; absent on older providers. */
+  backgroundTasks?: SessionBackgroundTask[];
 }
 
 export type WorktreeResult =

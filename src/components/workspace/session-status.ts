@@ -552,12 +552,12 @@ export function sessionStateWord(input: {
  */
 export const DELEGATION_DOT_CAP = 5;
 
-/** Whether a Session has delegated work outstanding. `null`/absent delegation
+/** Whether a Session has delegated or non-Agent background work. `null`/absent delegation
  *  means the source does not report it — absent, never zero. */
 export function sessionDelegationBusy(
   delegation?: SessionDelegation | null
 ): boolean {
-  return !!delegation && delegation.children.length > 0;
+  return sessionHasBackgroundWork(delegation);
 }
 
 /** The harness reported an open operator gate (ENG-023 D4). */
@@ -669,10 +669,13 @@ export function sessionGlyphCopy(
     return SESSION_BLOCKED_COPY[delegation.blockedOn];
   }
   if (state === 'working' && sessionDelegationBusy(delegation)) {
-    return 'working — delegated agents running';
+    return delegation?.children.length
+      ? 'working · delegated agents running'
+      : 'working · background tasks running';
   }
   return SESSION_GLYPH_COPY[state];
 }
+import { sessionHasBackgroundWork } from '@exawatt/core';
 import {
   deriveStatusLightState,
   statusLightWord,

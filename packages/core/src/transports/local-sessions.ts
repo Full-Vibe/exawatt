@@ -21,6 +21,10 @@
  * detection) — the fleet surfaces show the SAME result-vs-needs-you truth the
  * tab strip does. Quiet completion is not promoted into the blocker queue.
  */
+import {
+  sessionHasBackgroundWork,
+  type SessionBackgroundTask,
+} from '../session-background-work';
 import type {
   AgentBlocker,
   AgentDelegation,
@@ -58,6 +62,7 @@ export interface LocalSessionSnapshot {
   delegation?:
     | (AgentDelegation & {
         ownTurn?: 'generating' | 'available';
+        backgroundTasks?: SessionBackgroundTask[];
         blockedOn?: string | null;
       })
     | null;
@@ -129,7 +134,7 @@ export function sessionStatus(
   if (session.attention && session.attention.kind !== 'turn-end')
     return 'blocked';
   if (session.delegation?.blockedOn) return 'blocked';
-  if ((session.delegation?.children.length ?? 0) > 0) return 'working';
+  if (sessionHasBackgroundWork(session.delegation)) return 'working';
   if (session.delegation?.ownTurn === 'generating') return 'working';
   if (session.delegation?.ownTurn === 'available') return 'complete';
   if (session.working !== undefined) {

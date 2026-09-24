@@ -469,7 +469,22 @@ expiry, not a latch (ENG-023 D7): between boundaries the parent PTY's
 continuous task-footer rendering is the coverage, and silence past the stale
 bound with no operator gate open withdraws the census, never completes it, on
 the same instant a bare reported turn is reclaimed, leaving a
-`delegation.census-expired` line in `logs/main.jsonl`. Poll generations reject stale identity responses; one failed
+`delegation.census-expired` line in `logs/main.jsonl`.
+
+Non-Agent background work is an independent fact (BUG-145): the same source
+census retains running/pending monitors, shells, workflows and future task kinds
+as identity/type-only `backgroundTasks`, never as delegated Agent children.
+`@exawatt/core`'s `sessionHasBackgroundWork` owns their shared busy predicate for
+main-process attention, Session glyphs and Fleet projection. A foreground Stop
+or ambient bell cannot imply operator input while that work remains reported;
+a later census also corrects an earlier inferred bell/result. Explicit reported
+questions and approvals keep precedence. Silence cannot expire these tasks:
+monitors may intentionally produce no output until an event. A source census
+replaces them atomically; Session exit drops them. Missing census fields preserve
+the last observation, and no claim of task completion is invented. This narrows
+the PTY-silence expiry rule to Sessions without reported non-Agent work.
+
+Poll generations reject stale identity responses; one failed
 Session read cannot withdraw another Session's successful census. Child read
 failures also cannot withdraw independently verified siblings: ambiguous
 children share only their immediate parent's activity-read failure domain.
