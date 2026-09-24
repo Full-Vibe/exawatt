@@ -13,6 +13,10 @@
 //   - Always drive the app through `withElectronApp`, which GUARANTEES the
 //     Electron tree is killed on success, hang, throw, or signal.
 //   - Run evals SERIALLY; never overlap two Electron launches from the harness.
+//   - A packaged launch passes `packaged: await ensurePackagedApp()`, never an
+//     `executablePath`; a fake harness comes from `writeFakeHarness`. The
+//     launcher refuses both shortcuts, and `scripts/eval-boundaries.test.mjs`
+//     refuses an eval that launches Electron any other way (BUG-213, BUG-217).
 
 import { _electron as electron } from 'playwright-core';
 import {
@@ -33,11 +37,14 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import {
   assertCompiledElectronMain,
   assertNodePtyBuilt,
 } from './native-preflight.mjs';
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
+import { assertFixtureHarnesses } from './harness-probe-fixture.mjs';
+import { ensuredExecutable } from './packaged-app.mjs';
 
 /** Kill any orphaned playwright Electron left by a prior SIGKILLed run of THIS
  *  worktree, so a stale orphan can't poison this launch.
@@ -138,15 +145,6 @@ function realpathOrSelf(value) {
   }
 }
 
-/**
- * Launch the packaged/dev Electron app, run `body(app, page)`, and GUARANTEE
- * the Electron process tree is torn down afterward — on success, throw, hang,
- * or Ctrl-C. Returns whatever `body` returns.
- *
- * @param {import('playwright-core').ElectronApplication['launch'] extends never ? never : object} launchOpts
- * @param {(app: any, page: any) => Promise<any>} body
- * @param {{ maxMs?: number, firstWindowMs?: number }} [opts]
- */
 /** With parallel agent worktrees, the port an eval points at may serve a
  *  DIFFERENT checkout — the eval then silently exercises the wrong code.
  *  Every dev-server-backed launch verifies /api/dev-identity (dev-only
@@ -293,14 +291,49 @@ function isExternalTeardown(error) {
   );
 }
 
-export async function withElectronApp(launchOpts, body, opts = {}) {
+/**
+ * A packaged launch names its package, not a path (BUG-217). `packaged` is
+ * what `ensurePackagedApp()` returned; a bare `executablePath` is refused,
+ * because the three gates that took one launched a package nothing had built.
+ */
+function packagedLaunchOptions({ packaged, ...launchOpts }) {
+  if (launchOpts.executablePath) {
+    throw new Error(
+      'withElectronApp takes `packaged: await ensurePackagedApp()` ' +
+        '(scripts/lib/packaged-app.mjs), not an executablePath.'
+    );
+  }
+  return packaged
+    ? { ...launchOpts, executablePath: ensuredExecutable(packaged) }
+    : launchOpts;
+}
+
+/**
+ * Launch the packaged/dev Electron app, run `body(app, page, launch)`, and
+ * GUARANTEE the Electron process tree is torn down afterward — on success,
+ * throw, hang, or Ctrl-C. Returns whatever `body` returns.
+ *
+ * A dev launch passes Playwright's options (`args: ['.']`, `cwd`, `env`); a
+ * packaged launch passes `packaged: await ensurePackagedApp()` instead of an
+ * executable path. `launch` carries `performance.now()` stamps taken around
+ * the launch (`startedAt`, `connectedAt`, `firstWindowAt`).
+ *
+ * @param {object} requested
+ * @param {(app: any, page: any, launch: { startedAt: number, connectedAt: number, firstWindowAt: number }) => Promise<any>} body
+ * @param {{ maxMs?: number, firstWindowMs?: number, gracefulMs?: number, attempts?: number }} [opts]
+ */
+export async function withElectronApp(requested, body, opts = {}) {
   const maxMs = opts.maxMs ?? 90_000;
   const firstWindowMs = opts.firstWindowMs ?? 25_000;
   const gracefulMs = opts.gracefulMs ?? 8_000;
+  const launchOpts = packagedLaunchOptions(requested);
   const evalRoot = launchOpts.cwd ?? process.cwd();
   // fail BEFORE launch with the real cause, not a per-spawn
   // "posix_spawnp failed." banner deep inside the app
   assertNodePtyBuilt(evalRoot);
+  // A fake harness that answers none of the product's probes leaves every
+  // probe hanging to its deadline (BUG-217); refuse one before it can.
+  assertFixtureHarnesses(launchOpts.env);
   const devUrl = launchOpts.env?.EXAWATT_DEV_URL;
   if (devUrl) {
     await assertDevServerServesTree(devUrl, evalRoot);
@@ -405,6 +438,9 @@ async function runElectronAttempt({
 }) {
   sweepOrphans(evalRoot);
 
+  // What a launch-timing eval measures, from the same clock, so it can run
+  // through this launcher like every other eval instead of beside it.
+  const launch = { startedAt: performance.now() };
   let app;
   try {
     app = await electron.launch({ timeout: 30_000, ...launchOpts });
@@ -419,8 +455,10 @@ async function runElectronAttempt({
     );
     sweepOrphans(evalRoot);
     await new Promise(resolve => setTimeout(resolve, 1500));
+    launch.startedAt = performance.now();
     app = await electron.launch({ timeout: 30_000, ...launchOpts });
   }
+  launch.connectedAt = performance.now();
   const pid = app.process().pid;
   let done = false;
 
@@ -468,11 +506,49 @@ async function runElectronAttempt({
 
   try {
     const page = await app.firstWindow({ timeout: firstWindowMs });
-    return await body(anchorMainEvaluate(app), page);
+    launch.firstWindowAt = performance.now();
+    return await body(anchorMainEvaluate(app), page, launch);
   } finally {
     await shutdown();
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
+  }
+}
+
+/**
+ * Wait until `condition(arg)`, evaluated in the page, returns something
+ * truthy, and return it.
+ *
+ * `page.waitForFunction` is for SYNCHRONOUS predicates. Playwright tests what
+ * the predicate returns for truthiness, and a Promise is truthy, so an async
+ * predicate ends the wait on its first poll having awaited nothing. Every
+ * `waitForFunction(async () => (await window.electron.pty.list())…)` in these
+ * evals was that: `eval:navigation:electron` logged "PTY launched" before the
+ * PTY existed and then failed one step later reading an empty list (BUG-213).
+ * A condition that has to ask main (IPC) or await anything is polled here
+ * instead, through `page.evaluate`, which does await it. A navigation that
+ * destroys the context mid-poll is retried, as `waitForFunction` would.
+ */
+export async function waitForPageCondition(
+  page,
+  condition,
+  arg,
+  { timeout = 30_000, interval = 100, label = 'a page condition' } = {}
+) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    try {
+      const value = await page.evaluate(condition, arg);
+      if (value) return value;
+    } catch (error) {
+      if (!/Execution context was destroyed|navigat/i.test(String(error))) {
+        throw error;
+      }
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`TIMED OUT after ${timeout}ms waiting for ${label}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, interval));
   }
 }
 

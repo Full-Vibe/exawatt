@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   openShellFromLauncher,
+  waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
-import { packagedExecutable } from './lib/packaged-app.mjs';
+import { ensurePackagedApp } from './lib/packaged-app.mjs';
 
-// The packaged bundle is named by the distribution contract, not by a literal
-// (BUG-043): the default community contract packages `Exawatt Community.app`.
-const executable = await packagedExecutable();
+// This tree's package, built when absent or stale (BUG-217).
+const packaged = await ensurePackagedApp({ label: 'session-parity' });
 const root = mkdtempSync(join(tmpdir(), 'exawatt-session-spatial-parity-'));
 const userData = join(root, 'userData');
 const projectDir = join(root, 'project');
@@ -31,7 +31,8 @@ async function sessions(page) {
 }
 
 async function waitForSessionCount(page, count) {
-  await page.waitForFunction(
+  await waitForPageCondition(
+    page,
     async expected =>
       ((await window.electron?.pty?.list()) ?? []).length === expected,
     count
@@ -40,21 +41,25 @@ async function waitForSessionCount(page, count) {
 }
 
 async function waitForWorkspaceTabCount(page, count) {
-  await page.waitForFunction(async expected => {
-    const layout = await window.electron?.workspace?.load();
-    return (
-      layout?.projects?.reduce(
-        (total, project) => total + project.tabs.length,
-        0
-      ) === expected
-    );
-  }, count);
+  await waitForPageCondition(
+    page,
+    async expected => {
+      const layout = await window.electron?.workspace?.load();
+      return (
+        layout?.projects?.reduce(
+          (total, project) => total + project.tabs.length,
+          0
+        ) === expected
+      );
+    },
+    count
+  );
 }
 
 try {
   await withElectronApp(
     {
-      executablePath: executable,
+      packaged,
       env: {
         ...process.env,
         EXAWATT_TEST: '1',
@@ -90,22 +95,30 @@ try {
         async id => await window.electron?.pty?.write(id, 'exit\n'),
         firstSession.id
       );
-      await page.waitForFunction(async id => {
-        const current = (await window.electron?.pty?.list()) ?? [];
-        return current.some(session => session.id === id && session.exited);
-      }, firstSession.id);
-      await page.waitForFunction(async durableSessionId => {
-        const layout = await window.electron?.workspace?.load();
-        const tabs = layout?.projects?.flatMap(project => project.tabs) ?? [];
-        return (
-          tabs.length === 2 &&
-          tabs.some(
-            tab =>
-              tab.durableSessionId === durableSessionId &&
-              tab.lifecycle === 'exited'
-          )
-        );
-      }, firstSession.durableSessionId);
+      await waitForPageCondition(
+        page,
+        async id => {
+          const current = (await window.electron?.pty?.list()) ?? [];
+          return current.some(session => session.id === id && session.exited);
+        },
+        firstSession.id
+      );
+      await waitForPageCondition(
+        page,
+        async durableSessionId => {
+          const layout = await window.electron?.workspace?.load();
+          const tabs = layout?.projects?.flatMap(project => project.tabs) ?? [];
+          return (
+            tabs.length === 2 &&
+            tabs.some(
+              tab =>
+                tab.durableSessionId === durableSessionId &&
+                tab.lifecycle === 'exited'
+            )
+          );
+        },
+        firstSession.durableSessionId
+      );
       await page.keyboard.press('Control+Meta+2');
       await page.locator('[data-expose-tile]').first().waitFor();
       const selected = page.locator('[data-expose-tile][data-selected="true"]');

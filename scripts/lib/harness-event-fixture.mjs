@@ -5,14 +5,14 @@
 // from Claude Code 2.1.206. Everything from the settings file to the rendered
 // strip is production code — only the model is replaced, so a permutation
 // costs nothing and lands on an exact boundary instead of a plausible one.
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   startAgentFromLauncher,
   waitForWorkspaceReady,
 } from './electron-eval.mjs';
-import { claudeProbeJs, codexProbeJs } from './harness-probe-fixture.mjs';
+import { writeFakeHarness } from './harness-probe-fixture.mjs';
 
 /**
  * Commands the fixture Claude accepts on stdin:
@@ -85,18 +85,15 @@ export function createHarnessFixture(prefix, { codexProtocol = false } = {}) {
     })
   );
 
-  writeFileSync(
-    join(fakeBin, 'claude'),
-    `#!/usr/bin/env node
-const fs = require('fs');
+  // `writeFakeHarness` answers the product's PROBES and exits; only an
+  // interactive launch reaches this behaviour and holds the process open.
+  // Without that every `claude --version` and `auth status` the registry runs
+  // hangs forever, and each eval run LEAKS those processes (observed
+  // accumulating across runs and degrading the machine for every later run).
+  writeFakeHarness(fakeBin, 'claude', {
+    runtime: 'node',
+    launch: `const fs = require('fs');
 const argv = process.argv.slice(2);
-// Answer the product's PROBES and exit. Only an interactive launch holds the
-// process open. Without this every \`claude --version\` and \`auth status\` the
-// registry runs hangs forever, and each eval run LEAKS those processes —
-// observed accumulating across runs and degrading the machine for every later
-// run. The answers live in \`harness-probe-fixture.mjs\` so every fixture gives
-// the same ones.
-${claudeProbeJs()}
 const settingsPath = argv[argv.indexOf('--settings') + 1];
 process.stdout.write('FAKE_CLAUDE_SETTINGS:' + (settingsPath || 'NONE') + '\\n');
 let endpoint = null;
@@ -224,9 +221,8 @@ async function handle(chunk) {
   }
 }
 setInterval(() => {}, 1 << 30);
-`
-  );
-  chmodSync(join(fakeBin, 'claude'), 0o755);
+`,
+  });
 
   // The opt-in Codex side is a wire fixture, not an Exawatt mock: Electron
   // launches it through the exact app-server JSON-RPC boundary and must first
@@ -235,13 +231,14 @@ setInterval(() => {}, 1 << 30);
   // inference control. Common version, auth, and model-catalog answers stay in
   // harness-probe-fixture so this wire fixture cannot drift from every other
   // launcher eval (BUG-014).
-  writeFileSync(
-    join(fakeBin, 'codex'),
-    `#!/usr/bin/env node
-const fs = require('fs');
+  writeFakeHarness(fakeBin, 'codex', {
+    runtime: 'node',
+    // The protocol fixture IS the app-server, so it answers that handshake
+    // itself; the default fixture declines it.
+    answers: codexProtocol ? { appServer: false } : {},
+    launch: `const fs = require('fs');
 const path = require('path');
 const cargv = process.argv.slice(2);
-${codexProbeJs({ appServer: codexProtocol })}
 const protocolEnabled = ${JSON.stringify(codexProtocol)};
 const protocolStatePath = ${JSON.stringify(codexState)};
 const sessionsRoot = ${JSON.stringify(codexSessions)};
@@ -402,9 +399,8 @@ process.stdin.on('data', chunk => {
 });
 setInterval(() => {}, 1 << 30);
 }
-`
-  );
-  chmodSync(join(fakeBin, 'codex'), 0o755);
+`,
+  });
 
   return {
     root,

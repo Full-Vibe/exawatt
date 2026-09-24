@@ -15,6 +15,7 @@
  * uses and the same `resolveDistributionIdentity` the builder config is
  * projected through, so a third distribution cannot break the evals again.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -254,9 +255,97 @@ export function assertPackagedSource(appPath, expectedSha) {
   return buildInfo;
 }
 
-/** The executable path, for the evals that only need somewhere to launch. */
-export async function packagedExecutable(options) {
-  return (await resolvePackagedApp(options)).executablePath;
+/** Packages `ensurePackagedApp` verified in this process. `withElectronApp`
+ *  launches only these, so an eval cannot reach a package any other way. */
+const ENSURED = new WeakSet();
+
+async function resolveOrNull(root) {
+  try {
+    return await resolvePackagedApp({ root });
+  } catch {
+    // The resolver needs the built `@exawatt/core` runtime, which a tree that
+    // has never built anything does not have. Building produces it, so the
+    // caller resolves again on the other side rather than refuse.
+    return null;
+  }
+}
+
+function packagedTreeError(candidate, expectedSha) {
+  if (!candidate || !existsSync(candidate.executablePath)) {
+    return new Error('no local package');
+  }
+  try {
+    assertPackagedContract(candidate.appPath, candidate.digest);
+    assertPackagedSource(candidate.appPath, expectedSha);
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
+/**
+ * The package a packaged eval launches: the one this tree's contract and
+ * source produce, built first when it is absent or stale (BUG-217).
+ *
+ * Three packaged gates used to launch whatever `release/` held, or nothing,
+ * because only `eval:electron:connected-fleet`, `eval:electron:packaged` and
+ * `eval:community:network` knew how to build one, each with its own copy of
+ * the steps. On a fresh worktree the others failed before their first
+ * assertion; on an old one they tested an older tree. This is those steps,
+ * once. The cache key is the pair the package already carries and the two
+ * assertions check: the distribution digest the contract resolves to, and the
+ * source SHA embedded in `app.asar` (`EXAWATT_BUILD_SOURCE_SHA`, else `HEAD`).
+ * A package that matches both is reused, so a run of several packaged evals on
+ * one tree builds once.
+ *
+ * `EXAWATT_APP_PATH` moves the bundle and never builds: a package supplied on
+ * purpose is proved against the same pair and refused when it differs.
+ *
+ * Launch the result with `withElectronApp({ packaged, env }, body)`.
+ */
+export async function ensurePackagedApp({
+  root = process.cwd(),
+  label = 'packaged-app',
+} = {}) {
+  const expectedSha =
+    process.env.EXAWATT_BUILD_SOURCE_SHA ??
+    execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+  let packaged = await resolveOrNull(root);
+  let stale = packagedTreeError(packaged, expectedSha);
+  if (stale && !process.env.EXAWATT_APP_PATH) {
+    console.log(`[${label}] ${stale.message}; building the exact current tree`);
+    execFileSync('pnpm', ['electron:build:dir'], { cwd: root, stdio: 'inherit' });
+    // Packaging stages dist-electron/node_modules onto the DEVELOPMENT module
+    // resolution path (incident 0012). Leaving it behind poisons every dev
+    // Electron eval that runs after this one in the same tree.
+    execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+    packaged = await resolvePackagedApp({ root });
+    stale = packagedTreeError(packaged, expectedSha);
+  }
+  // Nothing to build (EXAWATT_APP_PATH) and no resolution: surface the
+  // resolver's own error instead of the null.
+  if (!packaged) packaged = await resolvePackagedApp({ root });
+  if (stale) throw stale;
+  ENSURED.add(packaged);
+  return packaged;
+}
+
+/** The executable of a package `ensurePackagedApp` verified, for the launcher. */
+export function ensuredExecutable(packaged) {
+  if (!ENSURED.has(packaged)) {
+    throw new Error(
+      'A packaged launch takes the package ensurePackagedApp() returned ' +
+        '(scripts/lib/packaged-app.mjs): it builds this tree when the package ' +
+        'is absent or stale and proves its contract and source.'
+    );
+  }
+  return packaged.executablePath;
 }
 
 /** The bundle path, for the evals that inspect the .app rather than run it. */

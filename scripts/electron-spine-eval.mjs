@@ -14,6 +14,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -448,8 +449,8 @@ await withElectronApp(
   // the same assertion until it holds or the ceiling expires: a layout that
   // genuinely loses the seeded Project never satisfies it, so nothing is
   // relaxed — only a read taken too early is.
-  const persistedRecents = await page
-    .waitForFunction(
+  const persistedRecents = await waitForPageCondition(
+      page,
       async () => {
         const layout = await window.electron.workspace.load();
         return (

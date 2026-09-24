@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -14,12 +13,8 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-import { withElectronApp } from './lib/electron-eval.mjs';
-import {
-  assertPackagedContract,
-  assertPackagedSource,
-  resolvePackagedApp,
-} from './lib/packaged-app.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import { ensurePackagedApp } from './lib/packaged-app.mjs';
 import { ConnectedGatewayFixture } from './lib/connected-gateway-fixture.mjs';
 
 const LIVE = process.env.EXAWATT_FLEET_PACKAGED_LIVE === '1';
@@ -35,41 +30,6 @@ function check(name, condition, detail = '') {
     `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`
   );
   assert.ok(condition, name);
-}
-
-async function packageForCurrentTree() {
-  const expectedSha = execFileSync('git', ['rev-parse', 'HEAD'], {
-    encoding: 'utf8',
-  }).trim();
-  const overridden = Boolean(process.env.EXAWATT_APP_PATH);
-  let packaged = await resolvePackagedApp();
-  const usable = () => {
-    if (!existsSync(packaged.executablePath)) return false;
-    try {
-      assertPackagedContract(packaged.appPath, packaged.digest);
-      assertPackagedSource(packaged.appPath, expectedSha);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  if (!usable()) {
-    if (overridden) {
-      assertPackagedContract(packaged.appPath, packaged.digest);
-      assertPackagedSource(packaged.appPath, expectedSha);
-    }
-    console.log(
-      '[connected-fleet] no exact package; building the current tree'
-    );
-    execFileSync('pnpm', ['electron:build:dir'], { stdio: 'inherit' });
-    execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
-      stdio: 'inherit',
-    });
-    packaged = await resolvePackagedApp();
-  }
-  assertPackagedContract(packaged.appPath, packaged.digest);
-  assertPackagedSource(packaged.appPath, expectedSha);
-  return packaged;
 }
 
 function localSource(gateway) {
@@ -519,7 +479,8 @@ async function proveOneSourceOutage(
   healthySourceId
 ) {
   await failedGateway.goAway();
-  await page.waitForFunction(
+  await waitForPageCondition(
+    page,
     async ({ failed, healthy }) => {
       const statuses = await window.electron?.connectedSources?.status();
       const down = statuses?.find(status => status.sourceId === failed);
@@ -545,7 +506,8 @@ async function proveOneSourceOutage(
   );
 
   await failedGateway.comeBack();
-  await page.waitForFunction(
+  await waitForPageCondition(
+    page,
     async sourceId => {
       const statuses = await window.electron?.connectedSources?.status();
       return (
@@ -559,9 +521,9 @@ async function proveOneSourceOutage(
   check('the failed source recovers to a fresh observation', true);
 }
 
-async function firstLaunch({ executablePath, env, sources, gateways }) {
+async function firstLaunch({ packaged, env, sources, gateways }) {
   return withElectronApp(
-    { executablePath, cwd: process.cwd(), env },
+    { packaged, cwd: process.cwd(), env },
     async (_app, page) => {
       await preparePage(page);
       const configured = await configureSources(page, sources);
@@ -604,9 +566,9 @@ async function firstLaunch({ executablePath, env, sources, gateways }) {
   );
 }
 
-async function secondLaunch({ executablePath, env, expected }) {
+async function secondLaunch({ packaged, env, expected }) {
   return withElectronApp(
-    { executablePath, cwd: process.cwd(), env },
+    { packaged, cwd: process.cwd(), env },
     async (_app, page) => {
       await preparePage(page);
       const roster = await waitForRoster(page);
@@ -643,7 +605,7 @@ mkdirSync(fakeHome, { recursive: true });
 const gateways = [];
 let liveDevicesBefore = null;
 try {
-  const packaged = await packageForCurrentTree();
+  const packaged = await ensurePackagedApp({ label: 'connected-fleet' });
   let sources;
   let openClawStateDir;
   if (LIVE) {
@@ -692,13 +654,13 @@ try {
       : {}),
   };
   const first = await firstLaunch({
-    executablePath: packaged.executablePath,
+    packaged,
     env,
     sources,
     gateways,
   });
   await secondLaunch({
-    executablePath: packaged.executablePath,
+    packaged,
     env,
     expected: first,
   });

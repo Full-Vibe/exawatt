@@ -30,6 +30,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import {
+  waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -356,7 +357,7 @@ async function measureGesture(page, gesture, refreshIntervalMs) {
 }
 
 async function waitForSessionCount(page, count) {
-  await page.waitForFunction(
+  await waitForPageCondition(page,
     async expected =>
       ((await window.electron?.pty?.list()) ?? []).length === expected,
     count

@@ -70,7 +70,7 @@
  *     regression rather than a standing disclosure.
  */
 
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createServer } from 'node:net';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -78,12 +78,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import { withElectronApp } from './lib/electron-eval.mjs';
-import {
-  assertPackagedContract,
-  assertPackagedSource,
-  resolvePackagedApp,
-} from './lib/packaged-app.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import { ensurePackagedApp } from './lib/packaged-app.mjs';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -302,51 +298,8 @@ function startSocketSampler(bundlePath) {
 /* the package under observation                                       */
 /* ------------------------------------------------------------------ */
 
-const expectedSourceSha =
-  process.env.EXAWATT_BUILD_SOURCE_SHA ??
-  execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-
-function packagedTreeError(candidate) {
-  if (!candidate || !existsSync(candidate.executablePath)) {
-    return new Error('no local package');
-  }
-  try {
-    assertPackagedContract(candidate.appPath, candidate.digest);
-    assertPackagedSource(candidate.appPath, expectedSourceSha);
-    return null;
-  } catch (error) {
-    return error;
-  }
-}
-
-async function resolveOrNull() {
-  try {
-    return await resolvePackagedApp();
-  } catch {
-    return null; // `@exawatt/core` runtime is a build product; try again after
-  }
-}
-
-let packaged = await resolveOrNull();
-let treeError = packagedTreeError(packaged);
-if (!process.env.EXAWATT_APP_PATH && treeError) {
-  console.log(
-    `[observatory] ${treeError.message}; building the exact current tree`
-  );
-  execFileSync('pnpm', ['electron:build:dir'], { stdio: 'inherit' });
-  // Packaging stages dist-electron/node_modules onto the DEVELOPMENT module
-  // resolution path (incident 0012). Leaving it behind poisons every dev
-  // Electron eval that runs after this gate in the same tree.
-  execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
-    stdio: 'inherit',
-  });
-  packaged = await resolvePackagedApp();
-  treeError = packagedTreeError(packaged);
-}
-if (!packaged) packaged = await resolvePackagedApp();
-if (treeError) throw treeError;
-assertPackagedContract(packaged.appPath, packaged.digest);
-assertPackagedSource(packaged.appPath, expectedSourceSha);
+// This tree's package, built when absent or stale (BUG-217).
+const packaged = await ensurePackagedApp({ root: ROOT, label: 'observatory' });
 
 // Observing the wrong composition would make every absence below meaningless
 // in exactly the way incident `0015` was written about, so the run states the
@@ -393,7 +346,7 @@ let failure = null;
 try {
   const observed = await withElectronApp(
     {
-      executablePath: packaged.executablePath,
+      packaged,
       cwd: ROOT,
       args: [
         // Every name to the sink, with loopback excluded so the app's own
@@ -477,10 +430,14 @@ try {
       await page.evaluate(async id => {
         await window.electron?.pty?.write(id, "printf 'OBSERVATORY_OK\\n'\n");
       }, created.session.id);
-      await page.waitForFunction(async id => {
-        const buffer = await window.electron?.pty?.buffer(id);
-        return buffer?.includes('OBSERVATORY_OK');
-      }, created.session.id);
+      await waitForPageCondition(
+        page,
+        async id => {
+          const buffer = await window.electron?.pty?.buffer(id);
+          return buffer?.includes('OBSERVATORY_OK');
+        },
+        created.session.id
+      );
       steps.push('launch round trip');
 
       // Idle out the rest of the window: a periodic timer is exactly the kind

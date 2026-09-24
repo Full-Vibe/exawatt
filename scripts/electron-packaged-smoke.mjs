@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { _electron as electron } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  assertPackagedContract,
-  assertPackagedSource,
-  resolvePackagedApp,
-} from './lib/packaged-app.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import { ensurePackagedApp } from './lib/packaged-app.mjs';
 import { icnsImageSlices } from './lib/app-icon.mjs';
 
 // The gate must be correct under EVERY distribution this repository can build,
@@ -20,69 +16,14 @@ import { icnsImageSlices } from './lib/app-icon.mjs';
 // `resolveDistributionIdentity` for the bundle, `contract.updates` for the
 // updater group — which is the same source `prepare-electron-builder-config`
 // projects electron-builder's config from.
-async function resolveOrNull() {
-  try {
-    return await resolvePackagedApp();
-  } catch {
-    // The resolver needs the built `@exawatt/core` runtime, which a tree that
-    // has never built anything does not have. Building produces it, so resolve
-    // again on the other side rather than refuse.
-    return null;
-  }
-}
-
-let packaged = await resolveOrNull();
-const expectedSourceSha =
-  process.env.EXAWATT_BUILD_SOURCE_SHA ??
-  execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-const appPathOverride = process.env.EXAWATT_APP_PATH;
-
-function packagedTreeError(candidate) {
-  if (!candidate || !existsSync(candidate.executablePath)) {
-    return new Error('no local package');
-  }
-  try {
-    assertPackagedContract(candidate.appPath, candidate.digest);
-    assertPackagedSource(candidate.appPath, expectedSourceSha);
-    return null;
-  } catch (error) {
-    return error;
-  }
-}
-
-let treeError = packagedTreeError(packaged);
-
-// This is the only Electron eval that needs no dev server, which is what makes
-// it usable as a delivery gate (`SURFACE_GATES`) — but it does need a package,
-// and a fresh agent worktree has none. Build one rather than fail as though the
-// app were broken. BUG-036 shipped a renderer that could not start precisely
+//
+// This needs no dev server, which is what makes it usable as a delivery gate
+// (`SURFACE_GATES`), but it does need a package, and a fresh agent worktree
+// has none. `ensurePackagedApp` builds one rather than fail as though the app
+// were broken: BUG-036 shipped a renderer that could not start precisely
 // because the oracle that proves it could not be routed to unattended.
-if (!appPathOverride && treeError) {
-  console.log(
-    `[packaged-smoke] ${treeError.message}; building the exact current tree`
-  );
-  execFileSync('pnpm', ['electron:build:dir'], { stdio: 'inherit' });
-  // Packaging stages dist-electron/node_modules, and that snapshot sits on the
-  // DEVELOPMENT module resolution path (incident 0012). Leaving it behind would
-  // poison every dev Electron eval that runs after this gate in the same tree.
-  execFileSync('node', ['scripts/discard-electron-snapshot.mjs'], {
-    stdio: 'inherit',
-  });
-  // The build produced `@exawatt/core`, so a first attempt that failed for its
-  // absence can now answer. It resolves the same ambient contract the build just
-  // packaged from, so this cannot disagree with the artifact.
-  packaged = await resolvePackagedApp();
-  treeError = packagedTreeError(packaged);
-}
-// No package to build (EXAWATT_APP_PATH) and no resolution: surface the real
-// error instead of the null.
-if (!packaged) packaged = await resolvePackagedApp();
-if (treeError) throw treeError;
-
-const executable = packaged.executablePath;
+const packaged = await ensurePackagedApp({ label: 'packaged-smoke' });
 const { productUpdatesEnabled } = packaged;
-assertPackagedContract(packaged.appPath, packaged.digest);
-assertPackagedSource(packaged.appPath, expectedSourceSha);
 const expectedWebIcon = icnsImageSlices(
   readFileSync(resolve(packaged.identity.iconPath))
 )[0];
@@ -103,17 +44,16 @@ const expectedVersion = JSON.parse(
   readFileSync(resolve('package.json'), 'utf8')
 ).version;
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-packaged-smoke-'));
-function launchPackaged() {
-  return electron.launch({
-    executablePath: executable,
-    env: {
-      ...process.env,
-      EXAWATT_TEST: '1',
-      EXAWATT_USER_DATA: userData,
-      EXAWATT_RENDERER_LOGS: '1',
-    },
-  });
-}
+const launchOptions = {
+  packaged,
+  env: {
+    ...process.env,
+    EXAWATT_TEST: '1',
+    EXAWATT_USER_DATA: userData,
+    EXAWATT_RENDERER_LOGS: '1',
+  },
+};
+const launchLimits = { maxMs: 120_000, firstWindowMs: 45_000 };
 
 /** The pid listening on a loopback port, or null when nothing is. */
 function listenerOn(port) {
@@ -150,283 +90,309 @@ async function waitUntil(condition, failure, deadlineMs = 10_000) {
   throw new Error(`${failure} (TIMED OUT after ${deadlineMs / 1000}s)`);
 }
 
-let app = await launchPackaged();
-
+let firstOrigin = null;
+let marker = null;
 try {
-  const page = await app.firstWindow({ timeout: 45_000 });
-  page.setDefaultTimeout(20_000);
-  const backgroundState = await app.evaluate(({ app, BrowserWindow }) => {
-    const windows = BrowserWindow.getAllWindows();
-    return {
-      visible: windows.some(window => window.isVisible()),
-      focused: windows.some(window => window.isFocused()),
-      dockVisible:
-        process.platform === 'darwin' ? (app.dock?.isVisible() ?? true) : null,
-    };
-  });
-  if (
-    backgroundState.visible ||
-    backgroundState.focused ||
-    backgroundState.dockVisible === true
-  ) {
-    throw new Error(
-      `Automated Electron launch activated its UI: ${JSON.stringify(backgroundState)}`
-    );
-  }
-  const errors = [];
-  page.on('pageerror', error => errors.push(String(error.message || error)));
-  page.on('console', message => {
-    if (message.type() === 'error') errors.push(message.text());
-  });
+  await withElectronApp(
+    launchOptions,
+    async (app, page) => {
+      page.setDefaultTimeout(20_000);
+      const backgroundState = await app.evaluate(({ app, BrowserWindow }) => {
+        const windows = BrowserWindow.getAllWindows();
+        return {
+          visible: windows.some(window => window.isVisible()),
+          focused: windows.some(window => window.isFocused()),
+          dockVisible:
+            process.platform === 'darwin'
+              ? (app.dock?.isVisible() ?? true)
+              : null,
+        };
+      });
+      if (
+        backgroundState.visible ||
+        backgroundState.focused ||
+        backgroundState.dockVisible === true
+      ) {
+        throw new Error(
+          `Automated Electron launch activated its UI: ${JSON.stringify(backgroundState)}`
+        );
+      }
+      const errors = [];
+      page.on('pageerror', error =>
+        errors.push(String(error.message || error))
+      );
+      page.on('console', message => {
+        if (message.type() === 'error') errors.push(message.text());
+      });
 
-  await page.locator('[data-command-altitude]').waitFor();
-  const url = new URL(page.url());
-  if (url.hostname !== '127.0.0.1' || url.pathname !== '/workspace') {
-    throw new Error(
-      `Expected packaged /workspace on loopback; got ${page.url()}`
-    );
-  }
-  // The community projection deliberately omits Next's conventional
-  // `src/app/icon.png`, because that file is the official Exawatt mark. The
-  // header used to infer `/icon.png` from electron-builder's `iconPath`, which
-  // made an otherwise healthy community package emit a 400 on every page. Read
-  // the URLs the packaged renderer actually chose and demand usable bytes from
-  // both browser metadata and visible chrome. This checks the distribution
-  // boundary rather than a filename: official and community packages may use
-  // different URLs, but neither may point at an absent asset.
-  const brandAssets = await page.evaluate(async expectedDigest => {
-    const candidates = [
-      ...document.querySelectorAll('link[rel~="icon"]'),
-      ...document.querySelectorAll('[data-chrome-brand] img'),
-    ];
-    const urls = [
-      ...new Set(
-        candidates
-          .map(element => {
-            const selected =
-              element instanceof HTMLImageElement
-                ? element.currentSrc || element.src
-                : element instanceof HTMLLinkElement
-                  ? element.href
-                  : '';
-            if (!selected) return '';
-            const selectedUrl = new URL(selected, window.location.href);
-            // `next/image` wraps the declared source in its optimization route.
-            // The distribution contract owns the source bytes, so unwrap that
-            // URL and verify the input rather than coupling this gate to a
-            // negotiated WebP/AVIF transformation.
-            if (selectedUrl.pathname === '/_next/image') {
-              const source = selectedUrl.searchParams.get('url');
-              return source ? new URL(source, window.location.href).href : '';
+      await page.locator('[data-command-altitude]').waitFor();
+      const url = new URL(page.url());
+      if (url.hostname !== '127.0.0.1' || url.pathname !== '/workspace') {
+        throw new Error(
+          `Expected packaged /workspace on loopback; got ${page.url()}`
+        );
+      }
+      // The community projection deliberately omits Next's conventional
+      // `src/app/icon.png`, because that file is the official Exawatt mark. The
+      // header used to infer `/icon.png` from electron-builder's `iconPath`, which
+      // made an otherwise healthy community package emit a 400 on every page. Read
+      // the URLs the packaged renderer actually chose and demand usable bytes from
+      // both browser metadata and visible chrome. This checks the distribution
+      // boundary rather than a filename: official and community packages may use
+      // different URLs, but neither may point at an absent asset.
+      const brandAssets = await page.evaluate(async expectedDigest => {
+        const candidates = [
+          ...document.querySelectorAll('link[rel~="icon"]'),
+          ...document.querySelectorAll('[data-chrome-brand] img'),
+        ];
+        const urls = [
+          ...new Set(
+            candidates
+              .map(element => {
+                const selected =
+                  element instanceof HTMLImageElement
+                    ? element.currentSrc || element.src
+                    : element instanceof HTMLLinkElement
+                      ? element.href
+                      : '';
+                if (!selected) return '';
+                const selectedUrl = new URL(selected, window.location.href);
+                // `next/image` wraps the declared source in its optimization route.
+                // The distribution contract owns the source bytes, so unwrap that
+                // URL and verify the input rather than coupling this gate to a
+                // negotiated WebP/AVIF transformation.
+                if (selectedUrl.pathname === '/_next/image') {
+                  const source = selectedUrl.searchParams.get('url');
+                  return source
+                    ? new URL(source, window.location.href).href
+                    : '';
+                }
+                return selectedUrl.href;
+              })
+              .filter(Boolean)
+          ),
+        ];
+        return await Promise.all(
+          urls.map(async assetUrl => {
+            try {
+              const response = await fetch(assetUrl);
+              const bytes = await response.arrayBuffer();
+              const digest = [
+                ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+              ]
+                .map(byte => byte.toString(16).padStart(2, '0'))
+                .join('');
+              return {
+                url: assetUrl,
+                status: response.status,
+                digest,
+                expectedDigest,
+              };
+            } catch (error) {
+              return { url: assetUrl, status: 0, error: String(error) };
             }
-            return selectedUrl.href;
           })
-          .filter(Boolean)
-      ),
-    ];
-    return await Promise.all(
-      urls.map(async assetUrl => {
-        try {
-          const response = await fetch(assetUrl);
-          const bytes = await response.arrayBuffer();
-          const digest = [
-            ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
-          ]
-            .map(byte => byte.toString(16).padStart(2, '0'))
-            .join('');
-          return {
-            url: assetUrl,
-            status: response.status,
-            digest,
-            expectedDigest,
-          };
-        } catch (error) {
-          return { url: assetUrl, status: 0, error: String(error) };
+        );
+      }, expectedWebIconDigest);
+      if (brandAssets.length === 0) {
+        throw new Error(
+          'Packaged renderer declared no distribution brand asset'
+        );
+      }
+      const brokenBrandAssets = brandAssets.filter(
+        asset =>
+          asset.status < 200 ||
+          asset.status >= 400 ||
+          asset.digest !== asset.expectedDigest
+      );
+      if (brokenBrandAssets.length > 0) {
+        throw new Error(
+          `Packaged distribution brand asset failed: ${JSON.stringify(brokenBrandAssets)}`
+        );
+      }
+      const hasPty = await page.evaluate(() => !!window.electron?.pty);
+      if (!hasPty) throw new Error('Packaged renderer has no PTY preload');
+      // Product updates are an OPTIONAL grouped preload capability (WP2a): `main.ts`
+      // passes `--exawatt-capability-updates` only when `contract.updates !== null`,
+      // and the preload omits the whole group otherwise. So the gate pins BOTH
+      // directions rather than asserting one and checking neither. Asserting the
+      // absence is the half that matters most: a community package that somehow
+      // exposed an updater would be reaching a feed its contract does not declare,
+      // which is precisely the neutrality the seam exists to guarantee.
+      const updates = await page.evaluate(async () => {
+        const api = window.electron?.app;
+        if (!api || !('updates' in api))
+          return { exposed: false, status: null };
+        return { exposed: true, status: await api.updates.getStatus() };
+      });
+      const initialUpdate = updates.status;
+      if (productUpdatesEnabled) {
+        if (
+          initialUpdate?.phase !== 'idle' ||
+          initialUpdate.currentVersion !== expectedVersion
+        ) {
+          throw new Error(
+            `Packaged updater IPC is invalid: ${JSON.stringify(initialUpdate)}`
+          );
         }
-      })
-    );
-  }, expectedWebIconDigest);
-  if (brandAssets.length === 0) {
-    throw new Error('Packaged renderer declared no distribution brand asset');
-  }
-  const brokenBrandAssets = brandAssets.filter(
-    asset =>
-      asset.status < 200 ||
-      asset.status >= 400 ||
-      asset.digest !== asset.expectedDigest
-  );
-  if (brokenBrandAssets.length > 0) {
-    throw new Error(
-      `Packaged distribution brand asset failed: ${JSON.stringify(brokenBrandAssets)}`
-    );
-  }
-  const hasPty = await page.evaluate(() => !!window.electron?.pty);
-  if (!hasPty) throw new Error('Packaged renderer has no PTY preload');
-  // Product updates are an OPTIONAL grouped preload capability (WP2a): `main.ts`
-  // passes `--exawatt-capability-updates` only when `contract.updates !== null`,
-  // and the preload omits the whole group otherwise. So the gate pins BOTH
-  // directions rather than asserting one and checking neither. Asserting the
-  // absence is the half that matters most: a community package that somehow
-  // exposed an updater would be reaching a feed its contract does not declare,
-  // which is precisely the neutrality the seam exists to guarantee.
-  const updates = await page.evaluate(async () => {
-    const api = window.electron?.app;
-    if (!api || !('updates' in api)) return { exposed: false, status: null };
-    return { exposed: true, status: await api.updates.getStatus() };
-  });
-  const initialUpdate = updates.status;
-  if (productUpdatesEnabled) {
-    if (
-      initialUpdate?.phase !== 'idle' ||
-      initialUpdate.currentVersion !== expectedVersion
-    ) {
-      throw new Error(
-        `Packaged updater IPC is invalid: ${JSON.stringify(initialUpdate)}`
+      } else if (updates.exposed) {
+        throw new Error(
+          'Packaged preload exposed window.electron.app.updates, but this ' +
+            'distribution contract declares no update feed. The package would ' +
+            'offer an updater with nothing to update from.'
+        );
+      }
+      const buildInfo = await page.evaluate(() =>
+        window.electron?.app?.getBuildInfo()
       );
-    }
-  } else if (updates.exposed) {
-    throw new Error(
-      'Packaged preload exposed window.electron.app.updates, but this ' +
-        'distribution contract declares no update feed. The package would ' +
-        'offer an updater with nothing to update from.'
-    );
-  }
-  const buildInfo = await page.evaluate(() =>
-    window.electron?.app?.getBuildInfo()
-  );
-  // Orthogonal to the contract: `delivery` is the release CHANNEL, and
-  // `startProductUpdater` only goes live on `signed`. A local package that
-  // recorded `signed` would start checking a feed from a developer's machine.
-  if (buildInfo?.delivery !== 'dogfood') {
-    throw new Error(
-      `Local package recorded the signed release channel: ${JSON.stringify(buildInfo)}`
-    );
-  }
-  const buildUpdatesEnabled =
-    buildInfo.distribution.capabilities.updates === true;
-  if (buildUpdatesEnabled !== productUpdatesEnabled) {
-    throw new Error(
-      `Build-info update capability disagrees with the packaged contract: ${JSON.stringify({ buildUpdatesEnabled, productUpdatesEnabled })}`
-    );
-  }
-  const hasUpdateMenu = await app.evaluate(({ Menu }) =>
-    Boolean(
-      Menu.getApplicationMenu()?.items.some(item =>
-        item.submenu?.items.some(child => child.label === 'Check for Updates…')
-      )
-    )
-  );
-  if (hasUpdateMenu !== productUpdatesEnabled) {
-    throw new Error(
-      `Native update menu disagrees with the distribution capability: ${JSON.stringify({ hasUpdateMenu, productUpdatesEnabled })}`
-    );
-  }
-  const diagnostics = await page.evaluate(() =>
-    window.electron?.app?.getDiagnosticsReport(false)
-  );
-  if (!productUpdatesEnabled) {
-    const updaterLog = diagnostics.logs.find(
-      log => log.name === 'updater.jsonl'
-    );
-    if (diagnostics.update !== null || updaterLog?.present) {
-      throw new Error(
-        `Capability-absent package initialized updater state: ${JSON.stringify({ update: diagnostics.update, updaterLog })}`
+      // Orthogonal to the contract: `delivery` is the release CHANNEL, and
+      // `startProductUpdater` only goes live on `signed`. A local package that
+      // recorded `signed` would start checking a feed from a developer's machine.
+      if (buildInfo?.delivery !== 'dogfood') {
+        throw new Error(
+          `Local package recorded the signed release channel: ${JSON.stringify(buildInfo)}`
+        );
+      }
+      const buildUpdatesEnabled =
+        buildInfo.distribution.capabilities.updates === true;
+      if (buildUpdatesEnabled !== productUpdatesEnabled) {
+        throw new Error(
+          `Build-info update capability disagrees with the packaged contract: ${JSON.stringify({ buildUpdatesEnabled, productUpdatesEnabled })}`
+        );
+      }
+      const hasUpdateMenu = await app.evaluate(({ Menu }) =>
+        Boolean(
+          Menu.getApplicationMenu()?.items.some(item =>
+            item.submenu?.items.some(
+              child => child.label === 'Check for Updates…'
+            )
+          )
+        )
       );
-    }
-  }
-
-  const created = await page.evaluate(async () => {
-    return await window.electron?.pty?.create({
-      harness: 'shell',
-      cwd: '/tmp',
-    });
-  });
-  if (!created?.ok) {
-    throw new Error(`Packaged shell failed: ${created?.error ?? 'no result'}`);
-  }
-  const sessionId = created.session.id;
-  await page.evaluate(async id => {
-    await window.electron?.pty?.write(id, "printf 'EXAWATT_PACKAGED_OK\\n'\n");
-  }, sessionId);
-  await page.waitForFunction(async id => {
-    const buffer = await window.electron?.pty?.buffer(id);
-    return buffer?.includes('EXAWATT_PACKAGED_OK');
-  }, sessionId);
-  if (productUpdatesEnabled) {
-    const updateWithSession = await page.evaluate(() =>
-      window.electron?.app?.updates?.getStatus()
-    );
-    if (updateWithSession?.liveSessions !== 1) {
-      throw new Error(
-        'Updater status did not report restart impact from the live PTY'
+      if (hasUpdateMenu !== productUpdatesEnabled) {
+        throw new Error(
+          `Native update menu disagrees with the distribution capability: ${JSON.stringify({ hasUpdateMenu, productUpdatesEnabled })}`
+        );
+      }
+      const diagnostics = await page.evaluate(() =>
+        window.electron?.app?.getDiagnosticsReport(false)
       );
-    }
-  }
+      if (!productUpdatesEnabled) {
+        const updaterLog = diagnostics.logs.find(
+          log => log.name === 'updater.jsonl'
+        );
+        if (diagnostics.update !== null || updaterLog?.present) {
+          throw new Error(
+            `Capability-absent package initialized updater state: ${JSON.stringify({ update: diagnostics.update, updaterLog })}`
+          );
+        }
+      }
 
-  if (errors.length > 0) {
-    throw new Error(`Packaged Electron errors: ${errors.join(' | ')}`);
-  }
+      const created = await page.evaluate(async () => {
+        return await window.electron?.pty?.create({
+          harness: 'shell',
+          cwd: '/tmp',
+        });
+      });
+      if (!created?.ok) {
+        throw new Error(
+          `Packaged shell failed: ${created?.error ?? 'no result'}`
+        );
+      }
+      const sessionId = created.session.id;
+      await page.evaluate(async id => {
+        await window.electron?.pty?.write(
+          id,
+          "printf 'EXAWATT_PACKAGED_OK\\n'\n"
+        );
+      }, sessionId);
+      await waitForPageCondition(
+        page,
+        async id => {
+          const buffer = await window.electron?.pty?.buffer(id);
+          return buffer?.includes('EXAWATT_PACKAGED_OK');
+        },
+        sessionId
+      );
+      if (productUpdatesEnabled) {
+        const updateWithSession = await page.evaluate(() =>
+          window.electron?.app?.updates?.getStatus()
+        );
+        if (updateWithSession?.liveSessions !== 1) {
+          throw new Error(
+            'Updater status did not report restart impact from the live PTY'
+          );
+        }
+      }
 
-  // BUG-022: a second launch of the same install serves the same origin, so
-  // what the renderer stored per origin is still there. The port used to be
-  // picked at random every launch, which made `localStorage` a per-launch
-  // store on the desktop.
-  const firstOrigin = new URL(page.url()).origin;
-  const marker = `relaunch-${Date.now()}`;
-  await page.evaluate(
-    value => localStorage.setItem('exawatt.eval.relaunch-marker', value),
-    marker
-  );
-  await app.close();
-  app = null;
-  app = await launchPackaged();
-  const relaunched = await app.firstWindow({ timeout: 45_000 });
-  relaunched.setDefaultTimeout(20_000);
-  await relaunched.locator('[data-command-altitude]').waitFor();
-  const secondOrigin = new URL(relaunched.url()).origin;
-  if (secondOrigin !== firstOrigin) {
-    throw new Error(
-      `The second launch moved the renderer origin: ${firstOrigin} -> ${secondOrigin}`
-    );
-  }
-  const survived = await relaunched.evaluate(() =>
-    localStorage.getItem('exawatt.eval.relaunch-marker')
-  );
-  if (survived !== marker) {
-    throw new Error(
-      `localStorage did not survive a relaunch on ${secondOrigin}: expected ${marker}, read ${survived}`
-    );
-  }
+      if (errors.length > 0) {
+        throw new Error(`Packaged Electron errors: ${errors.join(' | ')}`);
+      }
 
-  // BUG-070: the renderer server ends with Electron main however main ends.
-  // SIGKILL runs no shutdown code at all, so only the child's own lifeline to
-  // main can end it; before that lifeline the server reparented to launchd and
-  // kept its port, its memory, and a Dock icon of its own.
-  const rendererPort = Number(new URL(relaunched.url()).port);
-  const serverPid = listenerOn(rendererPort);
-  if (!serverPid) {
-    throw new Error(
-      `Nothing is listening on the renderer port ${rendererPort}`
-    );
-  }
-  const mainExited = new Promise(resolve =>
-    app.process().once('exit', resolve)
-  );
-  app.process().kill('SIGKILL');
-  await mainExited;
-  app = null;
-  await waitUntil(
-    () => !isAlive(serverPid) && listenerOn(rendererPort) === null,
-    `The renderer server (pid ${serverPid}) outlived a SIGKILLed Electron main and still holds port ${rendererPort}`
+      // BUG-022: a second launch of the same install serves the same origin, so
+      // what the renderer stored per origin is still there. The port used to be
+      // picked at random every launch, which made `localStorage` a per-launch
+      // store on the desktop.
+      firstOrigin = new URL(page.url()).origin;
+      marker = `relaunch-${Date.now()}`;
+      await page.evaluate(
+        value => localStorage.setItem('exawatt.eval.relaunch-marker', value),
+        marker
+      );
+    },
+    launchLimits
   );
 
-  console.log(
-    `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
-      'local renderer + capability-shaped preload/menu/diagnostics + PTY round trip + contract-declared updater ' +
-      `${productUpdatesEnabled ? 'present' : 'absent'} + one origin and its storage across a relaunch + ` +
-      'renderer server ends with a killed main'
+  await withElectronApp(
+    launchOptions,
+    async (app, relaunched) => {
+      relaunched.setDefaultTimeout(20_000);
+      await relaunched.locator('[data-command-altitude]').waitFor();
+      const secondOrigin = new URL(relaunched.url()).origin;
+      if (secondOrigin !== firstOrigin) {
+        throw new Error(
+          `The second launch moved the renderer origin: ${firstOrigin} -> ${secondOrigin}`
+        );
+      }
+      const survived = await relaunched.evaluate(() =>
+        localStorage.getItem('exawatt.eval.relaunch-marker')
+      );
+      if (survived !== marker) {
+        throw new Error(
+          `localStorage did not survive a relaunch on ${secondOrigin}: expected ${marker}, read ${survived}`
+        );
+      }
+
+      // BUG-070: the renderer server ends with Electron main however main ends.
+      // SIGKILL runs no shutdown code at all, so only the child's own lifeline to
+      // main can end it; before that lifeline the server reparented to launchd and
+      // kept its port, its memory, and a Dock icon of its own.
+      const rendererPort = Number(new URL(relaunched.url()).port);
+      const serverPid = listenerOn(rendererPort);
+      if (!serverPid) {
+        throw new Error(
+          `Nothing is listening on the renderer port ${rendererPort}`
+        );
+      }
+      const mainExited = new Promise(resolve =>
+        app.process().once('exit', resolve)
+      );
+      app.process().kill('SIGKILL');
+      await mainExited;
+      await waitUntil(
+        () => !isAlive(serverPid) && listenerOn(rendererPort) === null,
+        `The renderer server (pid ${serverPid}) outlived a SIGKILLed Electron main and still holds port ${rendererPort}`
+      );
+
+      console.log(
+        `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
+          'local renderer + capability-shaped preload/menu/diagnostics + PTY round trip + contract-declared updater ' +
+          `${productUpdatesEnabled ? 'present' : 'absent'} + one origin and its storage across a relaunch + ` +
+          'renderer server ends with a killed main'
+      );
+    },
+    launchLimits
   );
 } finally {
-  if (app) await app.close();
   rmSync(userData, { recursive: true, force: true });
 }

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {
-  chmodSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -12,9 +11,11 @@ import { join, resolve } from 'node:path';
 import {
   openSetupDrawer,
   waitForLauncherToSettle,
+  waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'exawatt-project-launcher-'));
 const userData = join(root, 'userData');
@@ -40,41 +41,36 @@ for (const directory of [projectA, projectB, projectC]) {
   writeFileSync(join(directory, 'package.json'), '{}');
 }
 
+// Each engine answers the product's probes through the shared fixture, with
+// the catalogs this eval selects from; after them it echoes its argv and
+// stdin like a live Session.
+const FIXTURE_ANSWERS = {
+  claude: {
+    version: '2.1.220 (Claude Code)',
+    authStatus:
+      '{"loggedIn":true,"email":"operator@example.com","subscriptionType":"max"}',
+    catalog:
+      '{"type":"control_response","response":{"subtype":"success","request_id":"exawatt-model-catalog","response":{"models":[{"value":"default","displayName":"Account default","description":"Claude Code chooses the recommended model for your account.","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},{"value":"eval-claude-fable","displayName":"Eval Claude Fable","description":"Frontier evaluator model.","supportsEffort":true,"supportedEffortLevels":["high","max"]}]}}}',
+  },
+  codex: {
+    version: 'codex-cli 0.146.0',
+    loginStatus: 'Logged in using ChatGPT',
+    catalog:
+      '{"models":[{"slug":"eval-codex-sol","display_name":"Eval Codex Sol","description":"Frontier evaluator model.","visibility":"list","priority":1,"default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]},{"slug":"eval-codex-terra","display_name":"Eval Codex Terra","description":"Balanced evaluator model.","visibility":"list","priority":2,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"medium","description":"Balanced evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]}]}',
+  },
+};
 for (const source of ['claude', 'codex']) {
-  const executable = join(fakeBin, source);
-  writeFileSync(
-    executable,
-    `#!/bin/sh
-if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
-  printf '%s\\n' '{"models":[{"slug":"eval-codex-sol","display_name":"Eval Codex Sol","description":"Frontier evaluator model.","visibility":"list","priority":1,"default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]},{"slug":"eval-codex-terra","display_name":"Eval Codex Terra","description":"Balanced evaluator model.","visibility":"list","priority":2,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"medium","description":"Balanced evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]}]}'
-  exit 0
-fi
-if [ "$1" = "--safe-mode" ]; then
-  printf '%s\\n' '{"type":"control_response","response":{"subtype":"success","request_id":"exawatt-model-catalog","response":{"models":[{"value":"default","displayName":"Account default","description":"Claude Code chooses the recommended model for your account.","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},{"value":"eval-claude-fable","displayName":"Eval Claude Fable","description":"Frontier evaluator model.","supportsEffort":true,"supportedEffortLevels":["high","max"]}]}}}'
-  exit 0
-fi
-if [ "$1" = "--version" ]; then
-  printf '${source === 'claude' ? '2.1.220 (Claude Code)' : 'codex-cli 0.146.0'}\\n'
-  exit 0
-fi
-if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
-  printf '%s\\n' '{"loggedIn":true,"email":"operator@example.com","subscriptionType":"max"}'
-  exit 0
-fi
-if [ "$1" = "login" ] && [ "$2" = "status" ]; then
-  printf 'Logged in using ChatGPT\\n'
-  exit 0
-fi
-if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
-printf 'FAKE_${source.toUpperCase()}_ARGS:'
-printf '<%s>' "$@"
-printf '\n'
-while true; do
-  if IFS= read -r line; then printf '%s\n' "$line"; else /bin/sleep 1; fi
-done
-`
-  );
-  chmodSync(executable, 0o755);
+  writeFakeHarness(fakeBin, source, {
+    answers: FIXTURE_ANSWERS[source],
+    launch: [
+      `printf 'FAKE_${source.toUpperCase()}_ARGS:'`,
+      `printf '<%s>' "$@"`,
+      `printf '\\n'`,
+      'while true; do',
+      `  if IFS= read -r line; then printf '%s\\n' "$line"; else /bin/sleep 1; fi`,
+      'done',
+    ].join('\n'),
+  });
 }
 
 const failures = [];
@@ -231,7 +227,7 @@ async function closeTab(page, title) {
 }
 
 async function waitForBuffer(page, sessionId, fragment) {
-  await page.waitForFunction(
+  await waitForPageCondition(page,
     async ({ id, text }) =>
       ((await window.electron?.pty?.buffer(id)) ?? '').includes(text),
     { id: sessionId, text: fragment }
@@ -1145,7 +1141,7 @@ try {
       // neither restore may spawn a process.
       await page.keyboard.press('Meta+Shift+KeyT');
       await page.keyboard.press('Meta+Shift+KeyT');
-      await page.waitForFunction(async () => {
+      await waitForPageCondition(page, async () => {
         const closed = (await window.electron?.pty?.closedSessions?.()) ?? [];
         return closed.length === 0;
       });

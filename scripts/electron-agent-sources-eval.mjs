@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {
-  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -17,6 +16,7 @@ import {
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 /**
  * Grok Build's `sessions/<dir>` component, reproduced here rather than
@@ -121,48 +121,99 @@ writeFileSync(
   })
 );
 
-const fixtures = {
-  claude: `#!/bin/sh
-if [ "$1" = "--version" ]; then printf '2.1.220 (Claude Code)\\n'; exit 0; fi
-if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
-  printf '%s\\n' '{"loggedIn":true,"email":"operator@example.com","subscriptionType":"max","orgId":"private-org"}'
-  exit 0
-fi
-if [ "$1" = "--safe-mode" ]; then
-  printf '%s\\n' '{"type":"control_response","response":{"subtype":"success","request_id":"exawatt-model-catalog","response":{"commands":[],"agents":[],"models":[{"value":"default","displayName":"Default (recommended)","description":"Claude Code account default","supportsEffort":true,"supportedEffortLevels":["low","high"]},{"value":"eval-claude","displayName":"Eval Claude","description":"Fixture model","supportsEffort":true,"supportedEffortLevels":["high"]}]}}}'
-  exit 0
-fi
-exit 1
-`,
-  codex: `#!/bin/sh
-if [ "$1" = "--version" ]; then printf 'codex-cli 0.146.0\\n'; exit 0; fi
-if [ "$1" = "login" ] && [ "$2" = "status" ]; then printf 'Logged in using ChatGPT\\n'; exit 0; fi
-if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
-  printf '%s\\n' '{"models":[{"slug":"eval-sol","display_name":"Eval Sol","description":"Eval frontier model.","visibility":"list","priority":1,"default_reasoning_level":"high","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"}]}]}'
-  exit 0
-fi
-exit 1
-`,
-  opencode: `#!/bin/sh
-if [ "$1" = "--version" ]; then printf '1.3.4\n'; exit 0; fi
-if [ "$1" = "auth" ] && [ "$2" = "list" ]; then
-  printf '\\033[0m\n┌  Credentials\n│\n●  Fixture Provider api\n│\n└  1 credential\n'
-  exit 0
-fi
-if [ "$1" = "models" ] && [ "$2" = "--verbose" ]; then
-  printf '%s\n' 'fixture/eval-model' '{' '  "id": "eval-model",' '  "providerID": "fixture",' '  "name": "Eval Open Model",' '  "family": "eval",' '  "variants": {"low": {}, "high": {}}' '}'
-  exit 0
-fi
-state="$EXAWATT_TEST_HARNESS_BIN/opencode-session.json"
+// Each source answers the product's probes through the shared fixture, with
+// the versions, sign-in shapes and catalogs this eval asserts against; only
+// the launch behaviour after them is this eval's own.
+writeFakeHarness(fakeBin, 'claude', {
+  answers: {
+    version: '2.1.220 (Claude Code)',
+    authStatus: JSON.stringify({
+      loggedIn: true,
+      email: 'operator@example.com',
+      subscriptionType: 'max',
+      orgId: 'private-org',
+    }),
+    catalog: JSON.stringify({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: 'exawatt-model-catalog',
+        response: {
+          commands: [],
+          agents: [],
+          models: [
+            {
+              value: 'default',
+              displayName: 'Default (recommended)',
+              description: 'Claude Code account default',
+              supportsEffort: true,
+              supportedEffortLevels: ['low', 'high'],
+            },
+            {
+              value: 'eval-claude',
+              displayName: 'Eval Claude',
+              description: 'Fixture model',
+              supportsEffort: true,
+              supportedEffortLevels: ['high'],
+            },
+          ],
+        },
+      },
+    }),
+  },
+});
+writeFakeHarness(fakeBin, 'codex', {
+  answers: {
+    version: 'codex-cli 0.146.0',
+    loginStatus: 'Logged in using ChatGPT',
+    catalog: JSON.stringify({
+      models: [
+        {
+          slug: 'eval-sol',
+          display_name: 'Eval Sol',
+          description: 'Eval frontier model.',
+          visibility: 'list',
+          priority: 1,
+          default_reasoning_level: 'high',
+          supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }],
+        },
+      ],
+    }),
+  },
+});
+writeFakeHarness(fakeBin, 'opencode', {
+  answers: {
+    version: '1.3.4',
+    // The reset sequence leads, as the real CLI's colour output does.
+    authList: [
+      '\u001b[0m',
+      '┌  Credentials',
+      '│',
+      '●  Fixture Provider api',
+      '│',
+      '└  1 credential',
+    ],
+    models: [
+      'fixture/eval-model',
+      '{',
+      '  "id": "eval-model",',
+      '  "providerID": "fixture",',
+      '  "name": "Eval Open Model",',
+      '  "family": "eval",',
+      '  "variants": {"low": {}, "high": {}}',
+      '}',
+    ],
+  },
+  launch: `state="$EXAWATT_TEST_HARNESS_BIN/opencode-session.json"
 agent_state="$EXAWATT_TEST_HARNESS_BIN/opencode-session-agent.txt"
 if [ "$1" = "--pure" ] && [ "$2" = "session" ] && [ "$3" = "list" ]; then
-  if [ -f "$state" ]; then cat "$state"; else printf '[]\n'; fi
+  if [ -f "$state" ]; then cat "$state"; else printf '[]\\n'; fi
   exit 0
 fi
 if [ "$1" = "--pure" ] && [ "$2" = "export" ]; then
   if [ ! -f "$agent_state" ]; then exit 1; fi
   agent="$(cat "$agent_state")"
-  printf '{"info":{"id":"%s"},"messages":[{"info":{"role":"user","agent":"%s"},"parts":[]}]}\n' "$3" "$agent"
+  printf '{"info":{"id":"%s"},"messages":[{"info":{"role":"user","agent":"%s"},"parts":[]}]}\\n' "$3" "$agent"
   exit 0
 fi
 now="$(date +%s)000"
@@ -171,48 +222,46 @@ for argument in "$@"; do
   if [ "$previous" = "--agent" ]; then printf '%s' "$argument" > "$agent_state"; break; fi
   previous="$argument"
 done
-printf '[{"id":"ses_eval_opencode_1234","title":"Agent Source launch eval","directory":"%s","created":%s,"updated":%s}]\n' "$PWD" "$now" "$now" > "$state"
+printf '[{"id":"ses_eval_opencode_1234","title":"Agent Source launch eval","directory":"%s","created":%s,"updated":%s}]\\n' "$PWD" "$now" "$now" > "$state"
 printf 'FAKE_OPENCODE_ARGS:'
 printf ' <%s>' "$@"
-printf '\nFAKE_OPENCODE_CONFIG_CONTENT:%s\n' "$OPENCODE_CONFIG_CONTENT"
-while IFS= read -r input; do printf 'FAKE_OPENCODE_INPUT:%s\n' "$input"; done
-`,
-  openclaw: `#!/bin/sh
-if [ "$1" = "--version" ]; then printf 'OpenClaw 2026.8.0-eval\\n'; exit 0; fi
-exit 1
-`,
-  // Mirrors the real `grok 1.0.3` surfaces Exawatt reads: the version string,
-  // the `grok models` banner + listing, and an interactive launch that echoes
-  // its argv so the eval can assert the exact composed command.
-  // Mirrors Qwen Code 0.24.4: a bare version string, and an interactive
-  // launch that echoes its argv and the settings layer Exawatt points it at.
-  qwen: `#!/bin/sh
-if [ "$1" = "--version" ]; then printf '0.24.4\n'; exit 0; fi
-printf 'FAKE_QWEN_ARGS:'
+printf '\\nFAKE_OPENCODE_CONFIG_CONTENT:%s\\n' "$OPENCODE_CONFIG_CONTENT"
+while IFS= read -r input; do printf 'FAKE_OPENCODE_INPUT:%s\\n' "$input"; done`,
+});
+writeFakeHarness(fakeBin, 'openclaw');
+// Mirrors Qwen Code 0.24.4: a bare version string, and an interactive launch
+// that echoes its argv and the settings layer Exawatt points it at.
+writeFakeHarness(fakeBin, 'qwen', {
+  answers: { version: '0.24.4' },
+  launch: `printf 'FAKE_QWEN_ARGS:'
 printf ' <%s>' "$@"
-printf '\nFAKE_QWEN_DEFAULTS:%s\n' "\${QWEN_CODE_SYSTEM_DEFAULTS_PATH-unset}"
+printf '\\nFAKE_QWEN_DEFAULTS:%s\\n' "\${QWEN_CODE_SYSTEM_DEFAULTS_PATH-unset}"
 if [ -n "$QWEN_CODE_SYSTEM_DEFAULTS_PATH" ] && [ -f "$QWEN_CODE_SYSTEM_DEFAULTS_PATH" ]; then
-  printf 'FAKE_QWEN_HOOK_URLS:%s\n' "$(grep -c '127.0.0.1' "$QWEN_CODE_SYSTEM_DEFAULTS_PATH")"
+  printf 'FAKE_QWEN_HOOK_URLS:%s\\n' "$(grep -c '127.0.0.1' "$QWEN_CODE_SYSTEM_DEFAULTS_PATH")"
 fi
-while IFS= read -r input; do printf 'FAKE_QWEN_INPUT:%s\n' "$input"; done
-`,
-  grok: `#!/bin/sh
-if [ "$1" = "--version" ]; then printf 'grok 1.0.3 (evalbuild)\n'; exit 0; fi
-if [ "$1" = "models" ]; then
-  printf '%s\n' 'You are logged in with grok.com.' '' 'Default model: eval-grok-4.5' '' 'Available models:' '  * eval-grok-4.5 (default)' '  - eval-grok-code'
-  exit 0
-fi
-printf 'FAKE_GROK_ARGS:'
+while IFS= read -r input; do printf 'FAKE_QWEN_INPUT:%s\\n' "$input"; done`,
+});
+// Mirrors the real `grok 1.0.3` surfaces Exawatt reads: the version string,
+// the `grok models` banner + listing, and an interactive launch that echoes
+// its argv so the eval can assert the exact composed command.
+writeFakeHarness(fakeBin, 'grok', {
+  answers: {
+    version: 'grok 1.0.3 (evalbuild)',
+    models: [
+      'You are logged in with grok.com.',
+      '',
+      'Default model: eval-grok-4.5',
+      '',
+      'Available models:',
+      '  * eval-grok-4.5 (default)',
+      '  - eval-grok-code',
+    ],
+  },
+  launch: `printf 'FAKE_GROK_ARGS:'
 printf ' <%s>' "$@"
-printf '\nFAKE_GROK_HOME:%s\n' "\${GROK_HOME-unset}"
-while IFS= read -r input; do printf 'FAKE_GROK_INPUT:%s\n' "$input"; done
-`,
-};
-for (const [name, fixture] of Object.entries(fixtures)) {
-  const executable = join(fakeBin, name);
-  writeFileSync(executable, fixture);
-  chmodSync(executable, 0o755);
-}
+printf '\\nFAKE_GROK_HOME:%s\\n' "\${GROK_HOME-unset}"
+while IFS= read -r input; do printf 'FAKE_GROK_INPUT:%s\\n' "$input"; done`,
+});
 
 const failures = [];
 const check = (name, ok, detail = '') => {

@@ -710,7 +710,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:navigation:electron',
     why: 'Sessions cards and the Spatial selection panel share one typography and one navigation path',
-    quarantined: 'BUG-213',
     match: file =>
       file === 'src/components/workspace/session-overview-card.tsx' ||
       file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
@@ -743,7 +742,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:context-labels',
     why: 'context labels restore across a relaunch and their feedback path follows the distribution contract',
-    quarantined: 'BUG-216',
     match: file =>
       file === 'electron/main/pty/context-summarizer.ts' ||
       file === 'src/components/feedback/context-label-feedback.tsx' ||
@@ -754,7 +752,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:resume',
     why: 'an exact resume reopens the provider conversation it names, through the packaged app',
-    quarantined: 'BUG-217',
     match: file =>
       file === 'src/components/workspace/resume-recovery-bar.tsx' ||
       file === 'electron/main/workspace-store.ts' ||
@@ -766,7 +763,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:chrome',
     why: 'the packaged window chrome and its shortcuts behave as the dev build does',
-    quarantined: 'BUG-217',
     match: file =>
       file === 'src/components/workspace/workspace-client.tsx' ||
       file === 'src/components/workspace/use-workspace-shortcuts.ts' ||
@@ -775,7 +771,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:electron:session-parity',
     why: 'a Session reads the same in the Sessions card and the Spatial selection panel',
-    quarantined: 'BUG-217',
     match: file =>
       file === 'src/components/workspace/expose-overlay.tsx' ||
       file === 'src/components/workspace/session-overview-card.tsx' ||
@@ -1368,18 +1363,19 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:turn-truth': GATE,
   'eval:electron:tenancy': GATE,
   'eval:community:network': GATE,
-  // Quarantined in `SURFACE_GATES`: owed and announced, repaired under the id
-  // each entry there carries.
-  'eval:navigation-paint': GATE,
+  // Repaired and enforced (BUG-213, BUG-216, BUG-217).
   'eval:navigation:electron': GATE,
-  'eval:electron:grok-source': GATE,
   'eval:electron:source-power': GATE,
   'eval:electron:device-power': GATE,
-  'eval:electron:appearance': GATE,
   'eval:electron:context-labels': GATE,
   'eval:electron:resume': GATE,
   'eval:electron:chrome': GATE,
   'eval:electron:session-parity': GATE,
+  // Quarantined in `SURFACE_GATES`: owed and announced, repaired under the id
+  // each entry there carries.
+  'eval:navigation-paint': GATE,
+  'eval:electron:grok-source': GATE,
+  'eval:electron:appearance': GATE,
 
   // (c) CI.
   'test:ci': CI,

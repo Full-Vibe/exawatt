@@ -5,11 +5,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
   realpathSync,
 } from 'node:fs';
@@ -19,7 +22,16 @@ import {
   assertNodePtyBuilt,
   nodePtyBindingPath,
 } from './lib/native-preflight.mjs';
-import { assertDevServerServesTree } from './lib/electron-eval.mjs';
+import {
+  assertDevServerServesTree,
+  waitForPageCondition,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
+import {
+  assertFixtureHarnesses,
+  FAKE_HARNESSES,
+  writeFakeHarness,
+} from './lib/harness-probe-fixture.mjs';
 import {
   RUNTIME_PACKAGES,
   assertNoPackagingSnapshot,
@@ -208,7 +220,9 @@ test('a nested node_modules is never runtime payload, at any depth', () => {
   assert.equal(isRuntimePayloadPath('node_modules/.bin/tsc'), false);
   // node-gyp writes build stamps under a nested path of the same shape.
   assert.equal(
-    isRuntimePayloadPath('build/Release/node-addon-api@7.1.1/node_modules/x.stamp'),
+    isRuntimePayloadPath(
+      'build/Release/node-addon-api@7.1.1/node_modules/x.stamp'
+    ),
     false
   );
   assert.equal(isRuntimePayloadPath('dist-cjs/index.js'), true);
@@ -233,7 +247,8 @@ test('only the target platform prebuilt binaries are runtime payload', () => {
 
 test('the runtime closure is exactly the declared roots plus production deps', () => {
   const closure = resolveRuntimeClosure(process.cwd());
-  for (const name of RUNTIME_PACKAGES) assert.ok(closure.has(name), `missing ${name}`);
+  for (const name of RUNTIME_PACKAGES)
+    assert.ok(closure.has(name), `missing ${name}`);
   // Everything else in the closure must be reachable through a `dependencies`
   // edge, so nothing enters the payload by being installed nearby.
   const reachable = new Set(RUNTIME_PACKAGES);
@@ -245,7 +260,8 @@ test('the runtime closure is exactly the declared roots plus production deps', (
       reachable.add(dependency);
     }
   }
-  for (const name of closure.keys()) assert.ok(reachable.has(name), `stray ${name}`);
+  for (const name of closure.keys())
+    assert.ok(reachable.has(name), `stray ${name}`);
   assert.equal(closure.has('typescript'), false);
   assert.equal(closure.has('vitest'), false);
 });
@@ -282,6 +298,136 @@ test('the launcher eval drives the composer through the shared settle owner', ()
     'the eval must wait for the launcher to settle before reading setup state'
   );
   // Every read of the selected configuration is settle-dependent.
-  const radioReads = evalSource.split('[role="radio"][aria-checked="true"]').length - 1;
-  assert.ok(radioReads > 0, 'expected the eval to assert on the selected setup');
+  const radioReads =
+    evalSource.split('[role="radio"][aria-checked="true"]').length - 1;
+  assert.ok(
+    radioReads > 0,
+    'expected the eval to assert on the selected setup'
+  );
+});
+
+// ── The launcher's boundaries (BUG-213, BUG-216, BUG-217). The static half
+// lives in `eval-boundaries.test.mjs`; these hold the runtime half, which
+// refuses before anything launches.
+
+test('a packaged launch is refused without the package ensurePackagedApp proved', async () => {
+  const body = async () => assert.fail('the launcher launched');
+  await assert.rejects(
+    withElectronApp({ executablePath: '/nowhere/Exawatt' }, body),
+    /packaged: await ensurePackagedApp\(\)/
+  );
+  await assert.rejects(
+    withElectronApp({ packaged: { executablePath: '/nowhere/Exawatt' } }, body),
+    /the package ensurePackagedApp\(\) returned/
+  );
+});
+
+function runFake(executable, args) {
+  const result = spawnSync(executable, args, { encoding: 'utf8', input: '' });
+  return { status: result.status, stdout: result.stdout };
+}
+
+test('every fake harness answers its version probe and then behaves as told', t => {
+  const bin = mkdtempSync(join(tmpdir(), 'exawatt-fake-harness-'));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  for (const harness of FAKE_HARNESSES) {
+    const executable = writeFakeHarness(bin, harness, {
+      launch: 'printf "LAUNCHED:%s\\n" "$*"',
+    });
+    const version = runFake(executable, ['--version']);
+    assert.equal(version.status, 0, `${harness} --version`);
+    assert.ok(version.stdout.trim().length > 0, `${harness} --version`);
+    assert.equal(
+      runFake(executable, ['--resume', 'abc']).stdout,
+      'LAUNCHED:--resume abc\n',
+      `${harness} launch`
+    );
+  }
+});
+
+test('a fake harness takes answers the product asks for and refuses others', t => {
+  const bin = mkdtempSync(join(tmpdir(), 'exawatt-fake-harness-'));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const codex = writeFakeHarness(bin, 'codex', {
+    answers: { version: 'codex-cli 1.2.3', loginStatus: null },
+  });
+  assert.equal(runFake(codex, ['--version']).stdout, 'codex-cli 1.2.3\n');
+  assert.equal(runFake(codex, ['login', 'status']).status, 1);
+  assert.equal(runFake(codex, ['app-server', '--stdio']).status, 0);
+  const node = writeFakeHarness(bin, 'claude', {
+    runtime: 'node',
+    answers: { version: 'claude 1.2.3' },
+  });
+  assert.equal(runFake(node, ['--version']).stdout, 'claude 1.2.3\n');
+  assert.throws(
+    () => writeFakeHarness(bin, 'codex', { answers: { weather: 'sunny' } }),
+    /asks codex no "weather" question/
+  );
+  assert.throws(
+    () => writeFakeHarness(bin, 'nonesuch'),
+    /No fixture probes for harness "nonesuch"/
+  );
+});
+
+test('the launcher refuses a hand-rolled fake harness in a fixture bin', t => {
+  const bin = mkdtempSync(join(tmpdir(), 'exawatt-fake-harness-'));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFakeHarness(bin, 'codex');
+  assert.doesNotThrow(() =>
+    assertFixtureHarnesses({ EXAWATT_TEST_HARNESS_BIN: bin, PATH: bin })
+  );
+  // The shape `eval:electron:resume` used: a `claude` on a temp PATH entry
+  // that answers no probe at all.
+  writeFileSync(
+    join(bin, 'claude'),
+    '#!/bin/sh\nwhile read -r l; do :; done\n'
+  );
+  chmodSync(join(bin, 'claude'), 0o755);
+  assert.throws(
+    () => assertFixtureHarnesses({ PATH: `${bin}:/usr/bin` }),
+    /fake claude that writeFakeHarness did not write/
+  );
+  assert.throws(
+    () => assertFixtureHarnesses({ EXAWATT_TEST_HARNESS_BIN: bin }),
+    /fake claude that writeFakeHarness did not write/
+  );
+});
+
+test('an async page condition is awaited and polled until it holds', async () => {
+  let calls = 0;
+  const page = {
+    evaluate: async (condition, arg) => {
+      calls += 1;
+      if (calls === 1) throw new Error('Execution context was destroyed');
+      return condition(arg);
+    },
+  };
+  const value = await waitForPageCondition(
+    page,
+    async target => (calls >= target ? 'held' : false),
+    3,
+    { interval: 0 }
+  );
+  assert.equal(value, 'held');
+  assert.equal(calls, 3);
+});
+
+test('an async page condition that never holds names what it waited for', async () => {
+  const page = { evaluate: async condition => condition() };
+  await assert.rejects(
+    waitForPageCondition(page, async () => false, undefined, {
+      timeout: 0,
+      label: 'the fixture Session',
+    }),
+    /TIMED OUT after 0ms waiting for the fixture Session/
+  );
+  const broken = {
+    evaluate: async () => {
+      throw new Error('window.electron is undefined');
+    },
+  };
+  await assert.rejects(
+    waitForPageCondition(broken, async () => true),
+    /window\.electron is undefined/
+  );
 });

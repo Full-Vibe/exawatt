@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import {
-  chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-context-eval-user-'));
 const projectDir = mkdtempSync(join(tmpdir(), 'exawatt-context-eval-project-'));
@@ -19,29 +21,68 @@ const screenshotDir =
   process.env.CONTEXT_SCREENSHOT_DIR || '/tmp/exawatt-context-label-eval';
 mkdirSync(screenshotDir, { recursive: true });
 
+// The Help menu's feedback row, named by the verb manifest main builds the
+// menu from. A community build carries no row at all, so reading the Help
+// menu by position read the next item instead (BUG-216); the id cannot move.
+const { getCommandVerb } = createRequire(import.meta.url)('@exawatt/core');
+const feedbackVerb = getCommandVerb('submit-feedback').menu;
+
 // Since agent-source truth fails closed (e21b4a2), a launchable fake harness
-// must answer the readiness probes (--version, auth status) before falling
-// through to the interactive echo loop the PTY scenes rely on.
-const harnessProbes = {
-  codex: `if [ "$1" = "--version" ]; then printf 'codex-cli 0.146.0\\n'; exit 0; fi
-if [ "$1" = "login" ] && [ "$2" = "status" ]; then printf 'Logged in using ChatGPT\\n'; exit 0; fi
-if [ "$1" = "debug" ] && [ "$2" = "models" ]; then exit 0; fi`,
-  claude: `if [ "$1" = "--version" ]; then printf '2.1.220 (Claude Code)\\n'; exit 0; fi
-if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
-  printf '%s\\n' '{"loggedIn":true,"email":"operator@example.com","subscriptionType":"max","orgId":"private-org"}'
-  exit 0
-fi`,
-};
+// must answer the readiness probes before falling through to the interactive
+// echo loop the PTY scenes rely on; the shared fixture owns those answers.
 for (const harness of ['codex', 'claude']) {
-  const executable = join(harnessDir, harness);
-  writeFileSync(
-    executable,
-    `#!/bin/sh\n${harnessProbes[harness]}\nprintf "fake harness ready\\n"\nwhile IFS= read -r line; do printf "%s\\n" "$line"; done\n`,
-    { mode: 0o700 }
-  );
-  chmodSync(executable, 0o700);
+  writeFakeHarness(harnessDir, harness, {
+    launch: [
+      'printf "fake harness ready\\n"',
+      'while IFS= read -r line; do printf "%s\\n" "$line"; done',
+    ].join('\n'),
+  });
 }
 
+// Two stopped Sessions with persisted labels, seeded before the app first
+// runs. The eval used to write this layout through `workspace.save` into a
+// LIVE renderer and reload; the renderer's own debounced save of the Sessions
+// it had just launched could land after it, so the relaunch found a layout
+// without either tab and timed out on the restored chip (BUG-216). While the
+// app runs, the renderer is the layout's only writer.
+const CORRECTED = 'Improve agent context summaries';
+const fixtureTab = (id, task) => ({
+  id: `tab-context-${id}`,
+  durableSessionId: `persisted-context-${id}`,
+  harness: 'codex',
+  title: 'Codex',
+  titleKind: 'default',
+  cwd: projectDir,
+  sessionId: null,
+  harnessSessionId: `provider-context-${id}`,
+  roadmapItemId: null,
+  lifecycle: 'stopped-clean',
+  exitCode: null,
+  initialTask: task,
+  contextSummary: task,
+});
+writeFileSync(
+  join(userData, 'workspace.json'),
+  JSON.stringify({
+    v: 6,
+    lastUsedDir: projectDir,
+    activeDir: projectDir,
+    pinnedTabId: null,
+    recentProjects: [],
+    projects: [
+      {
+        dir: projectDir,
+        name: 'Exawatt',
+        color: '#F34A9D',
+        activeTabId: 'tab-context-a',
+        tabs: [
+          fixtureTab('a', CORRECTED),
+          fixtureTab('b', 'Fix auth redirect loop'),
+        ],
+      },
+    ],
+  })
+);
 const requests = [];
 const server = createServer(async (request, response) => {
   if (request.method !== 'POST') {
@@ -134,20 +175,20 @@ try {
       }
       const hostedLabelsConfigured = configuredContextEndpoint === endpoint;
       const feedbackConfigured = contract.services.productFeedback !== null;
-      const signedOutMenu = await app.evaluate(({ Menu }) => {
-        const help = Menu.getApplicationMenu()?.items.find(
-          item => item.label === 'Help'
-        );
-        const feedback = help?.submenu?.items[0];
-        return { label: feedback?.label, enabled: feedback?.enabled };
-      });
+      const feedbackMenuItem = () =>
+        app.evaluate(({ Menu }, id) => {
+          const item = Menu.getApplicationMenu()?.getMenuItemById(id);
+          return item ? { label: item.label, enabled: item.enabled } : null;
+        }, feedbackVerb.commandId);
+      const signedOutMenu = await feedbackMenuItem();
       check(
         feedbackConfigured
           ? 'signed-out Help menu names the sign-in requirement and is disabled'
-          : 'community contract keeps Help feedback unavailable',
-        signedOutMenu.enabled === false &&
-          (!feedbackConfigured ||
-            signedOutMenu.label?.includes('Sign in required'))
+          : 'community contract publishes no Help feedback item',
+        feedbackConfigured
+          ? signedOutMenu?.enabled === false &&
+              signedOutMenu.label.includes('Sign in required')
+          : signedOutMenu === null
       );
 
       await page.evaluate(() => {
@@ -158,21 +199,15 @@ try {
         );
       });
       await page.waitForTimeout(100);
-      const menuAfterTestAuth = await app.evaluate(({ Menu }) => {
-        const help = Menu.getApplicationMenu()?.items.find(
-          item => item.label === 'Help'
-        );
-        const feedback = help?.submenu?.items[0];
-        return { label: feedback?.label, enabled: feedback?.enabled };
-      });
+      const menuAfterTestAuth = await feedbackMenuItem();
       check(
         feedbackConfigured
           ? 'signed-in Help menu enables Submit Feedback'
           : 'community contract ignores the feedback test-auth bridge',
         feedbackConfigured
-          ? menuAfterTestAuth.enabled === true &&
-              menuAfterTestAuth.label === 'Submit Feedback…'
-          : menuAfterTestAuth.enabled === false
+          ? menuAfterTestAuth?.enabled === true &&
+              menuAfterTestAuth.label === feedbackVerb.label
+          : menuAfterTestAuth === null
       );
 
       const first = await page.evaluate(async cwd => {
@@ -185,14 +220,15 @@ try {
         if (!result.ok) throw new Error(result.error);
         return result.session;
       }, projectDir);
-      await page.waitForFunction(async durableId => {
-        const session = (await window.electron.pty.list()).find(
-          item => item.durableSessionId === durableId
-        );
-        return (
-          session?.contextSummary === 'Implement cmd+shift+t to reopen tabs'
-        );
-      }, first.durableSessionId);
+      await waitForPageCondition(
+        page,
+        async durableId =>
+          (await window.electron.pty.list()).find(
+            item => item.durableSessionId === durableId
+          )?.contextSummary === 'Implement cmd+shift+t to reopen tabs',
+        first.durableSessionId,
+        { label: 'the launch label' }
+      );
 
       const beforePassive = requests.length;
       await page.evaluate(
@@ -216,12 +252,15 @@ try {
         { id: first.id }
       );
       if (hostedLabelsConfigured) {
-        await page.waitForFunction(async durableId => {
-          const session = (await window.electron.pty.list()).find(
-            item => item.durableSessionId === durableId
-          );
-          return session?.contextSummary === 'Improve agent context summaries';
-        }, first.durableSessionId);
+        await waitForPageCondition(
+          page,
+          async durableId =>
+            (await window.electron.pty.list()).find(
+              item => item.durableSessionId === durableId
+            )?.contextSummary === 'Improve agent context summaries',
+          first.durableSessionId,
+          { label: 'the hosted label "Improve agent context summaries"' }
+        );
         check(
           'submitted pivot replaces the stale reopen-tabs label',
           requests.some(
@@ -263,12 +302,15 @@ try {
             ),
           { id: first.id }
         );
-        await page.waitForFunction(async durableId => {
-          const session = (await window.electron.pty.list()).find(
-            item => item.durableSessionId === durableId
-          );
-          return session?.contextSummary === 'MVP of Widget Checkout';
-        }, first.durableSessionId);
+        await waitForPageCondition(
+          page,
+          async durableId =>
+            (await window.electron.pty.list()).find(
+              item => item.durableSessionId === durableId
+            )?.contextSummary === 'MVP of Widget Checkout',
+          first.durableSessionId,
+          { label: 'the hosted label "MVP of Widget Checkout"' }
+        );
       } else {
         await page.waitForTimeout(250);
         const localSummary = await page.evaluate(
@@ -334,59 +376,6 @@ try {
           }),
         });
       });
-      await page.evaluate(
-        ({ cwd }) =>
-          window.electron.workspace.save({
-            v: 6,
-            lastUsedDir: cwd,
-            activeDir: cwd,
-            pinnedTabId: null,
-            recentProjects: [],
-            projects: [
-              {
-                dir: cwd,
-                name: 'Exawatt',
-                color: '#F34A9D',
-                activeTabId: 'tab-context-a',
-                tabs: [
-                  {
-                    id: 'tab-context-a',
-                    durableSessionId: 'persisted-context-a',
-                    harness: 'codex',
-                    title: 'Codex',
-                    titleKind: 'default',
-                    cwd,
-                    sessionId: null,
-                    harnessSessionId: 'provider-context-a',
-                    roadmapItemId: null,
-                    lifecycle: 'stopped-clean',
-                    exitCode: null,
-                    initialTask: 'Improve agent context summaries',
-                    contextSummary: 'Improve agent context summaries',
-                  },
-                  {
-                    id: 'tab-context-b',
-                    durableSessionId: 'persisted-context-b',
-                    harness: 'codex',
-                    title: 'Codex',
-                    titleKind: 'default',
-                    cwd,
-                    sessionId: null,
-                    harnessSessionId: 'provider-context-b',
-                    roadmapItemId: null,
-                    lifecycle: 'stopped-clean',
-                    exitCode: null,
-                    initialTask: 'Fix auth redirect loop',
-                    contextSummary: 'Fix auth redirect loop',
-                  },
-                ],
-              },
-            ],
-          }),
-        { cwd: projectDir }
-      );
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.locator('[data-workspace-stage]').waitFor();
       if (feedbackConfigured) {
         // The provider's auth listener mounts in an effect after hydration; a
         // single early dispatch can be missed, so re-dispatch (idempotent)
@@ -543,10 +532,21 @@ try {
           acceptedCorrection === 'Improve agent context summaries' &&
             feedbackPayloads.length === 0
         );
-        // Let the context event reach renderer state and its debounced
-        // workspace persistence before the full relaunch proof below.
-        await page.waitForTimeout(600);
       }
+      // The relaunch reads what the layout persisted, so wait for the
+      // correction to reach it rather than for a number of milliseconds.
+      await waitForPageCondition(
+        page,
+        async label => {
+          const layout = await window.electron.workspace.load();
+          const tabs = layout?.projects?.flatMap(project => project.tabs) ?? [];
+          return ['tab-context-a', 'tab-context-b'].every(
+            id => tabs.find(tab => tab.id === id)?.contextSummary === label
+          );
+        },
+        CORRECTED,
+        { label: 'the corrected label in the persisted layout' }
+      );
 
       check(
         'renderer emitted no uncaught page errors',
@@ -574,7 +574,45 @@ try {
       const restoredChips = page.locator(
         '[data-tab-id] [aria-label*="Improve agent context summaries"]'
       );
-      await restoredChips.first().waitFor();
+      await restoredChips
+        .first()
+        .waitFor()
+        .catch(async error => {
+          const layout = (() => {
+            try {
+              return JSON.parse(
+                readFileSync(join(userData, 'workspace.json'), 'utf8')
+              );
+            } catch (readError) {
+              return { unreadable: String(readError) };
+            }
+          })();
+          const ribbon = await page.evaluate(() => ({
+            url: location.href,
+            tabs: Array.from(document.querySelectorAll('[data-tab-id]')).map(
+              tab => ({
+                id: tab.getAttribute('data-tab-id'),
+                labels: Array.from(tab.querySelectorAll('[aria-label]')).map(
+                  node => node.getAttribute('aria-label')
+                ),
+              })
+            ),
+          }));
+          throw new Error(
+            `No restored chip carries the corrected context. Persisted: ${JSON.stringify(
+              layout.projects?.map(project => ({
+                dir: project.dir,
+                active: project.activeTabId,
+                tabs: project.tabs?.map(tab => ({
+                  id: tab.id,
+                  summary: tab.contextSummary,
+                  lifecycle: tab.lifecycle,
+                })),
+              })) ?? layout
+            )}; activeDir ${layout.activeDir}; rendered: ${JSON.stringify(ribbon)}`,
+            { cause: error }
+          );
+        });
       check(
         'corrected context survives a full Electron relaunch',
         (await restoredChips.count()) >= 2

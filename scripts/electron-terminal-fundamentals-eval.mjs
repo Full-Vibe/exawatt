@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   openShellFromLauncher,
+  waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -274,7 +275,7 @@ await withElectronApp(
         window.electron?.pty?.write(id, `echo "EDIT ${relative} SEE ${url}"\n`),
       { id: sessionId, relative: MISSING_RELATIVE, url: EVAL_URL }
     );
-    await page.waitForFunction(
+    await waitForPageCondition(page,
       async ({ id, needle }) =>
         (await window.electron?.pty?.buffer(id))?.includes(needle),
       { id: sessionId, needle: EVAL_URL }
@@ -494,7 +495,7 @@ await withElectronApp(
     );
     await textarea.focus();
     await textarea.press('Meta+v');
-    await page.waitForFunction(
+    await waitForPageCondition(page,
       async ({ id, marker }) => {
         const buffer = await window.electron?.pty?.buffer(id);
         return buffer?.includes(marker);
@@ -586,7 +587,7 @@ await withElectronApp(
       mobile: false,
     });
     const assertFitted = async id => {
-      await page.waitForFunction(async sessionId => {
+      await waitForPageCondition(page, async sessionId => {
         const term = window.__XTERMS__?.[sessionId];
         const pane = term?.element?.closest('.terminal-pane');
         const screen = term?.element?.querySelector('.xterm-screen');

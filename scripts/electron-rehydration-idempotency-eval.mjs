@@ -17,17 +17,15 @@
  *     across the NEXT quit (journal/compaction stability over generations)
  *   - the stopped shell tab persists as a tab but is never auto-resumed
  *
- * Requires a packaged app (release/mac-arm64) like the other ENG-018 evals.
+ * Launches this tree's package, which `ensurePackagedApp` builds when it is
+ * absent or stale, like the other ENG-018 evals.
  */
-import { _electron as electron } from 'playwright-core';
 import {
-  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
-  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,18 +33,15 @@ import {
   openShellFromLauncher,
   startAgentFromLauncher,
   waitForWorkspaceReady,
+  withElectronApp,
 } from './lib/electron-eval.mjs';
-import {
-  claudeProbeSh,
-  codexProbeSh,
-} from './lib/harness-probe-fixture.mjs';
-import { packagedExecutable } from './lib/packaged-app.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
+import { ensurePackagedApp } from './lib/packaged-app.mjs';
 
 const GENERATIONS = Number(process.env.EXAWATT_IDEMPOTENCY_GENERATIONS || 3);
 
-// The packaged bundle is named by the distribution contract, not by a literal
-// (BUG-043): the default community contract packages `Exawatt Community.app`.
-const executable = await packagedExecutable();
+// This tree's package, built when absent or stale (BUG-217).
+const packaged = await ensurePackagedApp({ label: 'idem' });
 const root = mkdtempSync(join(tmpdir(), 'exawatt-idem-'));
 const userData = join(root, 'userData');
 const fakeHome = join(root, 'home');
@@ -57,55 +52,42 @@ for (const dir of [userData, fakeHome, fakeBin, pidDir, projectDir]) {
   mkdirSync(dir, { recursive: true });
 }
 
-const fakeClaude = join(fakeBin, 'claude');
-writeFileSync(
-  fakeClaude,
-  `#!/bin/sh
-${claudeProbeSh()}
-id="unknown"
+writeFakeHarness(fakeBin, 'claude', {
+  launch: `id="unknown"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--session-id" ] || [ "$prev" = "--resume" ]; then id="$arg"; fi
   prev="$arg"
 done
-printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
-printf 'FAKE_CLAUDE:%s\n' "$*"
-while IFS= read -r line; do printf '%s\n' "$line"; done
-`
-);
-chmodSync(fakeClaude, 0o755);
+printf '%s\\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
+printf 'FAKE_CLAUDE:%s\\n' "$*"
+while IFS= read -r line; do printf '%s\\n' "$line"; done`,
+});
 
-const fakeCodex = join(fakeBin, 'codex');
-writeFileSync(
-  fakeCodex,
-  `#!/bin/sh
-${codexProbeSh()}
-id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+writeFakeHarness(fakeBin, 'codex', {
+  launch: `id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
 fresh=1
 previous=""
 for arg in "$@"; do
   if [ "$previous" = "resume" ]; then id="$arg"; fresh=0; break; fi
   previous="$arg"
 done
-printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
-printf 'FAKE_CODEX:%s\n' "$*"
+printf '%s\\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
+printf 'FAKE_CODEX:%s\\n' "$*"
 if [ "$fresh" = "1" ]; then
   dir="$HOME/.codex/sessions/fixture"
   /bin/mkdir -p "$dir"
-  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
+  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
   fresh=0
 fi
 while IFS= read -r line; do
-  printf '%s\n' "$line"
-done
-`
-);
-chmodSync(fakeCodex, 0o755);
+  printf '%s\\n' "$line"
+done`,
+});
 
 function launch() {
-  return electron.launch({
-    executablePath: executable,
-    timeout: 45_000,
+  return {
+    packaged,
     env: {
       ...process.env,
       HOME: fakeHome,
@@ -116,11 +98,14 @@ function launch() {
       EXAWATT_TEST_HARNESS_BIN: fakeBin,
       EXAWATT_TEST_QUIT_RESPONSES: 'confirm',
     },
-  });
+  };
 }
 
-async function pageFor(app) {
-  const page = await app.firstWindow({ timeout: 45_000 });
+/** Every generation ends with the app's own confirmed quit, so the harness's
+ *  teardown only has to reap what is already gone. */
+const launchLimits = { maxMs: 180_000, firstWindowMs: 45_000 };
+
+async function prepare(page) {
   page.setDefaultTimeout(25_000);
   await page.locator('[data-command-altitude]').waitFor();
   await page.waitForFunction(
@@ -141,7 +126,6 @@ async function pageFor(app) {
   // that "spawned nothing" means nothing until the layout has restored
   // (BUG-221).
   await waitForWorkspaceReady(page);
-  return page;
 }
 
 const sessions = page =>
@@ -206,111 +190,119 @@ async function quitAndWaitClosed(app, page) {
   }
 }
 
-let app = null;
+let baselineAgents = [];
 try {
   console.log(`[idem] generation 0: build the fixture workspace`);
-  app = await launch();
-  let page = await pageFor(app);
-  await page.evaluate(dir => {
-    window.dispatchEvent(
-      new CustomEvent('exawatt:open-project', { detail: dir })
-    );
-  }, projectDir);
-  await page
-    .locator(
-      '[data-agent-composer], [data-composer-toggle], button:has-text("New Agent")'
-    )
-    .first()
-    .waitFor();
+  await withElectronApp(
+    launch(),
+    async (app, page) => {
+      await prepare(page);
+      await page.evaluate(dir => {
+        window.dispatchEvent(
+          new CustomEvent('exawatt:open-project', { detail: dir })
+        );
+      }, projectDir);
+      await page
+        .locator(
+          '[data-agent-composer], [data-composer-toggle], button:has-text("New Agent")'
+        )
+        .first()
+        .waitFor();
 
-  await startAgent(page, 'Claude Code');
-  await waitFor(
-    page,
-    async () => (await sessions(page)).length === 1,
-    'first agent'
-  );
-  await startAgent(page, 'Claude Code');
-  await waitFor(
-    page,
-    async () => (await sessions(page)).length === 2,
-    'second agent'
-  );
-  await startAgent(
-    page,
-    'Codex',
-    'Verify launch-time identity survives repeated relaunches'
-  );
-  await waitFor(
-    page,
-    async () => (await sessions(page)).length === 3,
-    'third agent'
-  );
-  await openShellFromLauncher(page);
-  await waitFor(page, async () => (await sessions(page)).length === 4, 'shell');
+      await startAgent(page, 'Claude Code');
+      await waitFor(
+        page,
+        async () => (await sessions(page)).length === 1,
+        'first agent'
+      );
+      await startAgent(page, 'Claude Code');
+      await waitFor(
+        page,
+        async () => (await sessions(page)).length === 2,
+        'second agent'
+      );
+      await startAgent(
+        page,
+        'Codex',
+        'Verify launch-time identity survives repeated relaunches'
+      );
+      await waitFor(
+        page,
+        async () => (await sessions(page)).length === 3,
+        'third agent'
+      );
+      await openShellFromLauncher(page);
+      await waitFor(
+        page,
+        async () => (await sessions(page)).length === 4,
+        'shell'
+      );
 
-  // The Codex task was submitted through the composer/CLI argument. Identity
-  // must exist before any later terminal write; this is the production path
-  // that used to persist a convincing history pane with no resumable identity.
-  try {
-    await waitFor(
-      page,
-      async () =>
-        (await sessions(page))
-          .filter(session => session.harness !== 'shell')
-          .every(session => Boolean(session.harnessSessionId)),
-      'launch-time provider identities'
-    );
-  } catch (error) {
-    console.error(
-      '[idem] identity capture debug',
-      JSON.stringify(
-        {
-          sessions: await sessions(page),
-          candidates: await page.evaluate(
-            async cwd =>
-              window.electron?.pty?.listResumeCandidates('codex', cwd),
-            projectDir
-          ),
-        },
-        null,
-        2
-      )
-    );
-    throw error;
-  }
-
-  const initial = await sessions(page);
-  for (const [index, session] of initial.entries()) {
-    const marker = `IDEM_G0_${index + 1}`;
-    await page.evaluate(
-      async ({ id, text }) =>
-        window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
-      { id: session.id, text: marker }
-    );
-    await waitFor(
-      page,
-      async () =>
-        (
-          await page.evaluate(
-            async id => window.electron?.pty?.buffer(id),
-            session.id
+      // The Codex task was submitted through the composer/CLI argument. Identity
+      // must exist before any later terminal write; this is the production path
+      // that used to persist a convincing history pane with no resumable identity.
+      try {
+        await waitFor(
+          page,
+          async () =>
+            (await sessions(page))
+              .filter(session => session.harness !== 'shell')
+              .every(session => Boolean(session.harnessSessionId)),
+          'launch-time provider identities'
+        );
+      } catch (error) {
+        console.error(
+          '[idem] identity capture debug',
+          JSON.stringify(
+            {
+              sessions: await sessions(page),
+              candidates: await page.evaluate(
+                async cwd =>
+                  window.electron?.pty?.listResumeCandidates('codex', cwd),
+                projectDir
+              ),
+            },
+            null,
+            2
           )
-        )?.includes(marker),
-      `marker ${marker}`
-    );
-  }
-  await page.waitForTimeout(700);
+        );
+        throw error;
+      }
 
-  const baselineAgents = (await sessions(page))
-    .filter(session => session.harness !== 'shell')
-    .map(session => session.harnessSessionId)
-    .sort();
-  if (baselineAgents.length !== 3 || new Set(baselineAgents).size !== 3) {
-    throw new Error(`Expected 3 distinct agent ids: ${baselineAgents}`);
-  }
+      const initial = await sessions(page);
+      for (const [index, session] of initial.entries()) {
+        const marker = `IDEM_G0_${index + 1}`;
+        await page.evaluate(
+          async ({ id, text }) =>
+            window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
+          { id: session.id, text: marker }
+        );
+        await waitFor(
+          page,
+          async () =>
+            (
+              await page.evaluate(
+                async id => window.electron?.pty?.buffer(id),
+                session.id
+              )
+            )?.includes(marker),
+          `marker ${marker}`
+        );
+      }
+      await page.waitForTimeout(700);
 
-  await quitAndWaitClosed(app, page);
-  app = null;
+      baselineAgents = (await sessions(page))
+        .filter(session => session.harness !== 'shell')
+        .map(session => session.harnessSessionId)
+        .sort();
+      if (baselineAgents.length !== 3 || new Set(baselineAgents).size !== 3) {
+        throw new Error(`Expected 3 distinct agent ids: ${baselineAgents}`);
+      }
+
+      await quitAndWaitClosed(app, page);
+    },
+    launchLimits
+  );
   const baselineWorkspace = readWorkspace();
   if (baselineWorkspace.v !== 7) {
     throw new Error(`Workspace is not v7: ${baselineWorkspace.v}`);
@@ -325,66 +317,76 @@ try {
 
   for (let generation = 1; generation <= GENERATIONS; generation++) {
     console.log(`[idem] generation ${generation}: relaunch`);
-    app = await launch();
-    page = await pageFor(app);
+    await withElectronApp(
+      launch(),
+      async (app, page) => {
+        await prepare(page);
 
-    const spawned = await sessions(page);
-    if (spawned.length !== 0) {
-      throw new Error(
-        `g${generation}: relaunch spawned ${spawned.length} sessions`
-      );
-    }
-    const banner = page.getByRole('region', { name: 'Saved Agent recovery' });
-    await banner.waitFor();
-    await banner.getByRole('button', { name: /Resume 3 agents in /i }).click();
-    await waitFor(
-      page,
-      async () => (await sessions(page)).length === 3,
-      `g${generation} resume`
-    );
+        const spawned = await sessions(page);
+        if (spawned.length !== 0) {
+          throw new Error(
+            `g${generation}: relaunch spawned ${spawned.length} sessions`
+          );
+        }
+        const banner = page.getByRole('region', {
+          name: 'Saved Agent recovery',
+        });
+        await banner.waitFor();
+        await banner
+          .getByRole('button', { name: /Resume 3 agents in /i })
+          .click();
+        await waitFor(
+          page,
+          async () => (await sessions(page)).length === 3,
+          `g${generation} resume`
+        );
 
-    const resumed = await sessions(page);
-    const resumedIds = resumed.map(session => session.harnessSessionId).sort();
-    if (JSON.stringify(resumedIds) !== JSON.stringify(baselineAgents)) {
-      throw new Error(
-        `g${generation}: resumed ids drifted: ${resumedIds} != ${baselineAgents}`
-      );
-    }
-    if (resumed.some(session => session.harness === 'shell')) {
-      throw new Error(`g${generation}: workspace recovery started a shell`);
-    }
+        const resumed = await sessions(page);
+        const resumedIds = resumed
+          .map(session => session.harnessSessionId)
+          .sort();
+        if (JSON.stringify(resumedIds) !== JSON.stringify(baselineAgents)) {
+          throw new Error(
+            `g${generation}: resumed ids drifted: ${resumedIds} != ${baselineAgents}`
+          );
+        }
+        if (resumed.some(session => session.harness === 'shell')) {
+          throw new Error(`g${generation}: workspace recovery started a shell`);
+        }
 
-    // prior generations' history must have survived the round trip, and this
-    // generation adds its own marker to the first agent
-    const target = resumed[0];
-    const buffer = await page.evaluate(
-      async id => window.electron?.pty?.buffer(id),
-      target.id
-    );
-    if (!buffer?.includes('resuming exact')) {
-      throw new Error(`g${generation}: no exact-resume marker in buffer`);
-    }
-    const marker = `IDEM_G${generation}`;
-    await page.evaluate(
-      async ({ id, text }) =>
-        window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
-      { id: target.id, text: marker }
-    );
-    await waitFor(
-      page,
-      async () =>
-        (
-          await page.evaluate(
-            async id => window.electron?.pty?.buffer(id),
-            target.id
-          )
-        )?.includes(marker),
-      `g${generation} marker`
-    );
-    await page.waitForTimeout(600);
+        // prior generations' history must have survived the round trip, and this
+        // generation adds its own marker to the first agent
+        const target = resumed[0];
+        const buffer = await page.evaluate(
+          async id => window.electron?.pty?.buffer(id),
+          target.id
+        );
+        if (!buffer?.includes('resuming exact')) {
+          throw new Error(`g${generation}: no exact-resume marker in buffer`);
+        }
+        const marker = `IDEM_G${generation}`;
+        await page.evaluate(
+          async ({ id, text }) =>
+            window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
+          { id: target.id, text: marker }
+        );
+        await waitFor(
+          page,
+          async () =>
+            (
+              await page.evaluate(
+                async id => window.electron?.pty?.buffer(id),
+                target.id
+              )
+            )?.includes(marker),
+          `g${generation} marker`
+        );
+        await page.waitForTimeout(600);
 
-    await quitAndWaitClosed(app, page);
-    app = null;
+        await quitAndWaitClosed(app, page);
+      },
+      launchLimits
+    );
 
     const workspace = readWorkspace();
     if (workspace.v !== 7) {
@@ -415,55 +417,41 @@ try {
 
   // final relaunch: cumulative history markers from every generation are
   // retained for the first agent's durable Session
-  app = await launch();
-  page = await pageFor(app);
-  const finalWorkspace = readWorkspace();
-  const firstAgentTab = finalWorkspace.projects
-    .flatMap(project => project.tabs)
-    .find(tab => tab.harness !== 'shell');
-  // Through the boundary the renderer actually has. `retainedHistory` returns
-  // the whole transcript and lives in MAIN on purpose (BUG-012, incident
-  // 0008): opening a paused Agent used to JSON-parse megabytes across IPC and
-  // freeze the app, so the preload publishes `retainedTranscript`, already
-  // rendered and bounded. This eval kept calling the removed name and died on
-  // `retainedHistory is not a function` at its last step.
-  const retained = await page.evaluate(
-    async durableId =>
-      (
-        (await window.electron?.pty?.retainedTranscript(durableId, 5_000))
-          ?.lines ?? []
-      ).join('\n'),
-    firstAgentTab.durableSessionId
-  );
-  for (let generation = 1; generation <= GENERATIONS; generation++) {
-    if (!retained.includes(`IDEM_G${generation}`)) {
-      throw new Error(
-        `Retained history lost generation ${generation}'s marker`
+  await withElectronApp(
+    launch(),
+    async (app, page) => {
+      await prepare(page);
+      const finalWorkspace = readWorkspace();
+      const firstAgentTab = finalWorkspace.projects
+        .flatMap(project => project.tabs)
+        .find(tab => tab.harness !== 'shell');
+      // Through the boundary the renderer actually has. `retainedHistory` returns
+      // the whole transcript and lives in MAIN on purpose (BUG-012, incident
+      // 0008): opening a paused Agent used to JSON-parse megabytes across IPC and
+      // freeze the app, so the preload publishes `retainedTranscript`, already
+      // rendered and bounded. This eval kept calling the removed name and died on
+      // `retainedHistory is not a function` at its last step.
+      const retained = await page.evaluate(
+        async durableId =>
+          (
+            (await window.electron?.pty?.retainedTranscript(durableId, 5_000))
+              ?.lines ?? []
+          ).join('\n'),
+        firstAgentTab.durableSessionId
       );
-    }
-  }
-  await quitAndWaitClosed(app, page);
-  app = null;
+      for (let generation = 1; generation <= GENERATIONS; generation++) {
+        if (!retained.includes(`IDEM_G${generation}`)) {
+          throw new Error(
+            `Retained history lost generation ${generation}'s marker`
+          );
+        }
+      }
+      await quitAndWaitClosed(app, page);
+    },
+    launchLimits
+  );
 
   console.log(`\nREHYDRATION IDEMPOTENCY PASSED (${GENERATIONS} generations)`);
 } finally {
-  if (app) {
-    try {
-      const pid = app.process().pid;
-      await Promise.race([
-        app.close().catch(() => {}),
-        new Promise(resolveClose => setTimeout(resolveClose, 8000)),
-      ]);
-      if (pid) {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch {
-          /* already gone */
-        }
-      }
-    } catch {
-      /* torn down */
-    }
-  }
   rmSync(root, { recursive: true, force: true });
 }

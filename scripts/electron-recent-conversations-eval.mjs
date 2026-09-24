@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {
-  chmodSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -9,8 +8,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
-import { claudeProbeSh, codexProbeSh } from './lib/harness-probe-fixture.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'exawatt-recent-conversations-'));
 const userData = join(root, 'userData');
@@ -37,20 +36,16 @@ writeFileSync(join(project, 'package.json'), '{}');
 // an unanswered `--version` leaves the source unlaunchable and a resume that
 // never starts, with nothing in the eval output naming the cause.
 for (const source of ['claude', 'codex']) {
-  const executable = join(fakeBin, source);
-  writeFileSync(
-    executable,
-    `#!/bin/sh
-${source === 'claude' ? claudeProbeSh() : codexProbeSh()}
-printf 'FAKE_${source.toUpperCase()}_ARGS:'
-printf '<%s>' "$@"
-printf '\n'
-while true; do
-  if IFS= read -r line; then printf '%s\n' "$line"; else /bin/sleep 1; fi
-done
-`
-  );
-  chmodSync(executable, 0o755);
+  writeFakeHarness(fakeBin, source, {
+    launch: [
+      `printf 'FAKE_${source.toUpperCase()}_ARGS:'`,
+      `printf '<%s>' "$@"`,
+      `printf '\\n'`,
+      'while true; do',
+      `  if IFS= read -r line; then printf '%s\\n' "$line"; else /bin/sleep 1; fi`,
+      'done',
+    ].join('\n'),
+  });
 }
 
 const targetId = '6e3a2161-9d9c-445e-85a4-cca87896b071';
@@ -449,7 +444,7 @@ try {
           name: 'Resume Audit consent state from Project history in Codex',
         })
         .click();
-      await page.waitForFunction(async () =>
+      await waitForPageCondition(page, async () =>
         ((await window.electron?.pty?.list()) ?? []).some(
           session =>
             session.durableSessionId === 'session-project-owned-provider' &&

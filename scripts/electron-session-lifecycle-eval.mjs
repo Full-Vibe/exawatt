@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
-import { _electron as electron } from 'playwright-core';
 import {
-  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -17,13 +15,13 @@ import {
   openShellFromLauncher,
   startAgentFromLauncher,
   waitForWorkspaceReady,
+  withElectronApp,
 } from './lib/electron-eval.mjs';
-import { claudeProbeSh, codexProbeSh } from './lib/harness-probe-fixture.mjs';
-import { packagedExecutable } from './lib/packaged-app.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
+import { ensurePackagedApp } from './lib/packaged-app.mjs';
 
-// The packaged bundle is named by the distribution contract, not by a literal
-// (BUG-043): the default community contract packages `Exawatt Community.app`.
-const executable = await packagedExecutable();
+// This tree's package, built when absent or stale (BUG-217).
+const packaged = await ensurePackagedApp({ label: 'eng-018' });
 const root = mkdtempSync(join(tmpdir(), 'exawatt-lifecycle-'));
 const userData = join(root, 'userData');
 const fakeHome = join(root, 'home');
@@ -42,54 +40,42 @@ for (const directory of [
   mkdirSync(directory, { recursive: true });
 }
 
-const fakeClaude = join(fakeBin, 'claude');
-writeFileSync(
-  fakeClaude,
-  `#!/bin/sh
-${claudeProbeSh()}
-id="unknown"
+writeFakeHarness(fakeBin, 'claude', {
+  launch: `id="unknown"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--session-id" ] || [ "$prev" = "--resume" ]; then id="$arg"; fi
   prev="$arg"
 done
-printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
-printf 'FAKE_CLAUDE:%s\n' "$*"
-while IFS= read -r line; do printf '%s\n' "$line"; done
-`
-);
-chmodSync(fakeClaude, 0o755);
+printf '%s\\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
+printf 'FAKE_CLAUDE:%s\\n' "$*"
+while IFS= read -r line; do printf '%s\\n' "$line"; done`,
+});
 
-const fakeCodex = join(fakeBin, 'codex');
-writeFileSync(
-  fakeCodex,
-  `#!/bin/sh
-${codexProbeSh()}
-id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+writeFakeHarness(fakeBin, 'codex', {
+  launch: `id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
 fresh=1
 previous=""
 for arg in "$@"; do
   if [ "$previous" = "resume" ]; then id="$arg"; fresh=0; break; fi
   previous="$arg"
 done
-printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
-printf 'FAKE_CODEX:%s\n' "$*"
+printf '%s\\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
+printf 'FAKE_CODEX:%s\\n' "$*"
 if [ "$fresh" = "1" ]; then
   dir="$HOME/.codex/sessions/fixture"
   /bin/mkdir -p "$dir"
-  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
+  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
   fresh=0
 fi
 while IFS= read -r line; do
-  printf '%s\n' "$line"
-done
-`
-);
-chmodSync(fakeCodex, 0o755);
+  printf '%s\\n' "$line"
+done`,
+});
 
 function launch(responses = 'confirm') {
-  return electron.launch({
-    executablePath: executable,
+  return {
+    packaged,
     env: {
       ...process.env,
       HOME: fakeHome,
@@ -100,11 +86,14 @@ function launch(responses = 'confirm') {
       EXAWATT_TEST_HARNESS_BIN: fakeBin,
       EXAWATT_TEST_QUIT_RESPONSES: responses,
     },
-  });
+  };
 }
 
-async function pageFor(app) {
-  const page = await app.firstWindow({ timeout: 45_000 });
+/** Every launch here ends the app itself (a quit, or a SIGKILL), so the
+ *  harness's teardown only has to reap what is already gone. */
+const launchLimits = { maxMs: 180_000, firstWindowMs: 45_000 };
+
+async function prepare(page) {
   page.setDefaultTimeout(25_000);
   await page.locator('[data-command-altitude]').waitFor();
   await page.waitForFunction(
@@ -121,7 +110,6 @@ async function pageFor(app) {
   // that "spawned nothing" means nothing until the layout has restored
   // (BUG-221).
   await waitForWorkspaceReady(page);
-  return page;
 }
 
 async function sessions(page) {
@@ -216,60 +204,67 @@ function waitForClose(app) {
   return new Promise(resolve => app.once('close', resolve));
 }
 
-let app = null;
+let exactIds = [];
 try {
   console.log('[eng-018] launch fixture');
-  app = await launch('cancel,confirm');
-  let page = await pageFor(app);
-  console.log('[eng-018] workspace ready');
-  await openProject(page, projectDir);
-  for (let i = 0; i < 2; i++) {
-    await startAgent(page, 'Claude Code');
-    await waitForSessions(page, i + 1);
-  }
-  for (let i = 0; i < 2; i++) {
-    await startAgent(page, 'Codex');
-    await waitForSessions(page, i + 3);
-  }
-  await openShell(page);
-  await waitForSessions(page, 5);
-  await waitForAgentIdentities(page, 4);
-  let original = await sessions(page);
-  console.log('[eng-018] five sessions launched');
+  await withElectronApp(
+    launch('cancel,confirm'),
+    async (app, page) => {
+      await prepare(page);
+      console.log('[eng-018] workspace ready');
+      await openProject(page, projectDir);
+      for (let i = 0; i < 2; i++) {
+        await startAgent(page, 'Claude Code');
+        await waitForSessions(page, i + 1);
+      }
+      for (let i = 0; i < 2; i++) {
+        await startAgent(page, 'Codex');
+        await waitForSessions(page, i + 3);
+      }
+      await openShell(page);
+      await waitForSessions(page, 5);
+      await waitForAgentIdentities(page, 4);
+      let original = await sessions(page);
+      console.log('[eng-018] five sessions launched');
 
-  for (const [index, session] of original.entries()) {
-    const marker = `ENG018_HISTORY_${index + 1}`;
-    await page.evaluate(
-      async ({ id, text }) =>
-        window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
-      { id: session.id, text: marker }
-    );
-    await waitForBuffer(page, session.id, marker);
-  }
-  original = await sessions(page);
-  const agents = original.filter(session => session.harness !== 'shell');
-  if (agents.some(session => !session.harnessSessionId)) {
-    throw new Error(`Provider identity missing: ${JSON.stringify(agents)}`);
-  }
-  const shell = original.find(session => session.harness === 'shell');
-  await page.evaluate(
-    async ({ id, file }) =>
-      window.electron?.pty?.write(id, `printf '%s' $$ > '${file}'\n`),
-    { id: shell.id, file: join(pidDir, 'shell.pid') }
+      for (const [index, session] of original.entries()) {
+        const marker = `ENG018_HISTORY_${index + 1}`;
+        await page.evaluate(
+          async ({ id, text }) =>
+            window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
+          { id: session.id, text: marker }
+        );
+        await waitForBuffer(page, session.id, marker);
+      }
+      original = await sessions(page);
+      const agents = original.filter(session => session.harness !== 'shell');
+      if (agents.some(session => !session.harnessSessionId)) {
+        throw new Error(`Provider identity missing: ${JSON.stringify(agents)}`);
+      }
+      const shell = original.find(session => session.harness === 'shell');
+      await page.evaluate(
+        async ({ id, file }) =>
+          window.electron?.pty?.write(id, `printf '%s' $$ > '${file}'\n`),
+        { id: shell.id, file: join(pidDir, 'shell.pid') }
+      );
+      await page.waitForTimeout(500);
+
+      await requestQuit(app);
+      await page.waitForTimeout(500);
+      console.log('[eng-018] cancel verified');
+      if (
+        (await sessions(page)).length !== 5 ||
+        pids().some(pid => !alive(pid))
+      ) {
+        throw new Error('Cancel did not leave all five processes running');
+      }
+
+      const closed = waitForClose(app);
+      await requestQuit(app);
+      await closed;
+    },
+    launchLimits
   );
-  await page.waitForTimeout(500);
-
-  await requestQuit(app);
-  await page.waitForTimeout(500);
-  console.log('[eng-018] cancel verified');
-  if ((await sessions(page)).length !== 5 || pids().some(pid => !alive(pid))) {
-    throw new Error('Cancel did not leave all five processes running');
-  }
-
-  const closed = waitForClose(app);
-  await requestQuit(app);
-  await closed;
-  app = null;
   console.log('[eng-018] confirmed quit completed');
 
   const persisted = JSON.parse(
@@ -294,7 +289,7 @@ try {
       `Clean lifecycle checkpoint mismatch: ${JSON.stringify(tabs)}`
     );
   }
-  const exactIds = tabs
+  exactIds = tabs
     .filter(tab => tab.harness !== 'shell')
     .map(tab => tab.harnessSessionId);
   if (
@@ -332,133 +327,156 @@ try {
     '{corrupt'
   );
 
-  app = await launch();
-  page = await pageFor(app);
-  console.log('[eng-018] clean restore ready');
-  if ((await sessions(page)).length !== 0)
-    throw new Error('Relaunch spawned work silently');
-  const ready = page.getByRole('region', { name: 'Saved Agent recovery' });
-  await ready.waitFor();
-  await page.getByText('Shell', { exact: true }).last().click();
-  // A paused Session shows a RECORD, not a replayed terminal (BUG-013,
-  // incident 0008), and an unreadable transcript SAYS so rather than swapping
-  // in an empty pane. The pre-record pane's 'Retained history unavailable'
-  // line has not existed in the product since; this eval was still waiting
-  // 25s for it.
-  const transcriptButton = page.locator('[data-show-transcript]');
-  await transcriptButton.waitFor();
-  await transcriptButton.click();
-  // The contract is the notice, not its wording (ENG-015 S6.4).
-  await page.locator('[data-paused-history-unreadable]').waitFor();
-  await page.screenshot({ path: join(screenshots, 'restored-1400x900.png') });
-  await page.setViewportSize({ width: 800, height: 600 });
-  await page.screenshot({ path: join(screenshots, 'restored-800x600.png') });
-  await page.getByRole('button', { name: 'Start new shell' }).click();
-  await waitForSessions(page, 1);
-  await ready.getByRole('button', { name: /Resume 4 agents in /i }).click();
-  await waitForSessions(page, 5);
-  console.log('[eng-018] workspace Agent recovery completed');
-  const resumed = await sessions(page);
-  const resumedAgents = resumed.filter(session => session.harness !== 'shell');
-  if (resumed.filter(session => session.harness === 'shell').length !== 1) {
-    throw new Error(
-      'The explicit shell action did not start exactly one shell'
-    );
-  }
-  if (
-    JSON.stringify(resumedAgents.map(item => item.harnessSessionId).sort()) !==
-    JSON.stringify([...exactIds].sort())
-  ) {
-    throw new Error(
-      `Workspace recovery identity mismatch: expected ${JSON.stringify(exactIds)}, got ${JSON.stringify(resumedAgents.map(item => item.harnessSessionId))}`
-    );
-  }
-  const cleanClose = waitForClose(app);
-  await requestQuit(app);
-  await cleanClose;
-  app = null;
+  await withElectronApp(
+    launch(),
+    async (app, page) => {
+      await prepare(page);
+      console.log('[eng-018] clean restore ready');
+      if ((await sessions(page)).length !== 0)
+        throw new Error('Relaunch spawned work silently');
+      const ready = page.getByRole('region', { name: 'Saved Agent recovery' });
+      await ready.waitFor();
+      await page.getByText('Shell', { exact: true }).last().click();
+      // A paused Session shows a RECORD, not a replayed terminal (BUG-013,
+      // incident 0008), and an unreadable transcript SAYS so rather than swapping
+      // in an empty pane. The pre-record pane's 'Retained history unavailable'
+      // line has not existed in the product since; this eval was still waiting
+      // 25s for it.
+      const transcriptButton = page.locator('[data-show-transcript]');
+      await transcriptButton.waitFor();
+      await transcriptButton.click();
+      // The contract is the notice, not its wording (ENG-015 S6.4).
+      await page.locator('[data-paused-history-unreadable]').waitFor();
+      await page.screenshot({
+        path: join(screenshots, 'restored-1400x900.png'),
+      });
+      await page.setViewportSize({ width: 800, height: 600 });
+      await page.screenshot({
+        path: join(screenshots, 'restored-800x600.png'),
+      });
+      await page.getByRole('button', { name: 'Start new shell' }).click();
+      await waitForSessions(page, 1);
+      await ready.getByRole('button', { name: /Resume 4 agents in /i }).click();
+      await waitForSessions(page, 5);
+      console.log('[eng-018] workspace Agent recovery completed');
+      const resumed = await sessions(page);
+      const resumedAgents = resumed.filter(
+        session => session.harness !== 'shell'
+      );
+      if (resumed.filter(session => session.harness === 'shell').length !== 1) {
+        throw new Error(
+          'The explicit shell action did not start exactly one shell'
+        );
+      }
+      if (
+        JSON.stringify(
+          resumedAgents.map(item => item.harnessSessionId).sort()
+        ) !== JSON.stringify([...exactIds].sort())
+      ) {
+        throw new Error(
+          `Workspace recovery identity mismatch: expected ${JSON.stringify(exactIds)}, got ${JSON.stringify(resumedAgents.map(item => item.harnessSessionId))}`
+        );
+      }
+      const cleanClose = waitForClose(app);
+      await requestQuit(app);
+      await cleanClose;
+    },
+    launchLimits
+  );
   console.log('[eng-018] resumed sessions stopped cleanly');
 
-  app = await launch('confirm');
-  page = await pageFor(app);
-  console.log('[eng-018] crash fixture ready');
-  await openProject(page, projectDir);
-  await openShell(page);
-  const withCrashShell = await waitForSessions(page, 1);
-  await page.evaluate(
-    async id =>
-      window.electron?.pty?.write(id, "printf 'ENG018_CRASH_HISTORY\\n'\n"),
-    withCrashShell[0].id
-  );
-  // A SIGKILL runs no checkpoint, so the interrupted relaunch restores what
-  // the debounced save wrote: wait for that save to carry the shell's tab
-  // rather than for a number of milliseconds (BUG-221).
-  const crashShellId = withCrashShell[0].durableSessionId;
-  const layoutDeadline = Date.now() + 20_000;
-  const savedCrashShell = () => {
-    try {
-      return JSON.parse(
-        readFileSync(join(userData, 'workspace.json'), 'utf8')
-      ).projects.some(project =>
-        project.tabs.some(tab => tab.durableSessionId === crashShellId)
+  await withElectronApp(
+    launch('confirm'),
+    async (app, page) => {
+      await prepare(page);
+      console.log('[eng-018] crash fixture ready');
+      await openProject(page, projectDir);
+      await openShell(page);
+      const withCrashShell = await waitForSessions(page, 1);
+      await page.evaluate(
+        async id =>
+          window.electron?.pty?.write(id, "printf 'ENG018_CRASH_HISTORY\\n'\n"),
+        withCrashShell[0].id
       );
-    } catch {
-      return false;
-    }
-  };
-  while (!savedCrashShell()) {
-    if (Date.now() > layoutDeadline) {
-      throw new Error('The crash shell tab never reached the saved layout');
-    }
-    await page.waitForTimeout(100);
-  }
-  const crashed = waitForClose(app);
-  app.process().kill('SIGKILL');
-  await crashed;
-  app = null;
-
-  app = await launch();
-  page = await pageFor(app);
-  console.log('[eng-018] interrupted restore ready');
-  await page.getByText('Interrupted', { exact: true }).last().waitFor();
-  await page.screenshot({
-    path: join(screenshots, 'interrupted-1400x900.png'),
-  });
-  await page.locator('[data-command-altitude-level="spatial"]').click();
-  await page.waitForURL(/\/fleet\/spatial/);
-  // BUG-050: tell a quit that PROMPTS from a quit that is merely slow. This
-  // step used to read "did not close within 2.5s" as "a native modal is up",
-  // and a loaded machine made an honest quit slower than that. Every native
-  // dialog the shutdown sequence can open now names itself on main's console
-  // first (`shutdown-sequence.ts`), so a prompt fails this step at once and
-  // by name, and the close only has to happen within the eval's usual bound.
-  const nativeDialog = new Promise((_, reject) =>
-    app.on('console', message => {
-      const text = message.text();
-      if (text.includes('[shutdown] native dialog')) {
-        reject(new Error(`Non-workspace quit opened a native modal: ${text}`));
+      // A SIGKILL runs no checkpoint, so the interrupted relaunch restores what
+      // the debounced save wrote: wait for that save to carry the shell's tab
+      // rather than for a number of milliseconds (BUG-221).
+      const crashShellId = withCrashShell[0].durableSessionId;
+      const layoutDeadline = Date.now() + 20_000;
+      const savedCrashShell = () => {
+        try {
+          return JSON.parse(
+            readFileSync(join(userData, 'workspace.json'), 'utf8')
+          ).projects.some(project =>
+            project.tabs.some(tab => tab.durableSessionId === crashShellId)
+          );
+        } catch {
+          return false;
+        }
+      };
+      while (!savedCrashShell()) {
+        if (Date.now() > layoutDeadline) {
+          throw new Error('The crash shell tab never reached the saved layout');
+        }
+        await page.waitForTimeout(100);
       }
-    })
+      const crashed = waitForClose(app);
+      app.process().kill('SIGKILL');
+      await crashed;
+    },
+    launchLimits
   );
-  const finalClose = waitForClose(app);
-  const quitRequestedAt = Date.now();
-  await requestQuit(app);
-  await Promise.race([
-    finalClose,
-    nativeDialog,
-    new Promise((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new Error('Non-workspace quit did not close (TIMED OUT after 25s)')
-          ),
-        25_000
-      )
-    ),
-  ]);
-  app = null;
-  console.log(
-    `[eng-018] non-workspace quit closed in ${Date.now() - quitRequestedAt}ms without a native modal`
+
+  await withElectronApp(
+    launch(),
+    async (app, page) => {
+      await prepare(page);
+      console.log('[eng-018] interrupted restore ready');
+      await page.getByText('Interrupted', { exact: true }).last().waitFor();
+      await page.screenshot({
+        path: join(screenshots, 'interrupted-1400x900.png'),
+      });
+      await page.locator('[data-command-altitude-level="spatial"]').click();
+      await page.waitForURL(/\/fleet\/spatial/);
+      // BUG-050: tell a quit that PROMPTS from a quit that is merely slow. This
+      // step used to read "did not close within 2.5s" as "a native modal is up",
+      // and a loaded machine made an honest quit slower than that. Every native
+      // dialog the shutdown sequence can open now names itself on main's console
+      // first (`shutdown-sequence.ts`), so a prompt fails this step at once and
+      // by name, and the close only has to happen within the eval's usual bound.
+      const nativeDialog = new Promise((_, reject) =>
+        app.on('console', message => {
+          const text = message.text();
+          if (text.includes('[shutdown] native dialog')) {
+            reject(
+              new Error(`Non-workspace quit opened a native modal: ${text}`)
+            );
+          }
+        })
+      );
+      const finalClose = waitForClose(app);
+      const quitRequestedAt = Date.now();
+      await requestQuit(app);
+      await Promise.race([
+        finalClose,
+        nativeDialog,
+        new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'Non-workspace quit did not close (TIMED OUT after 25s)'
+                )
+              ),
+            25_000
+          )
+        ),
+      ]);
+      console.log(
+        `[eng-018] non-workspace quit closed in ${Date.now() - quitRequestedAt}ms without a native modal`
+      );
+    },
+    launchLimits
   );
 
   console.log(
@@ -466,14 +484,6 @@ try {
   );
   console.log(`[eng-018] screenshots: ${screenshots}`);
 } finally {
-  if (app) {
-    const forced = waitForClose(app);
-    app.process().kill('SIGKILL');
-    await Promise.race([
-      forced,
-      new Promise(resolve => setTimeout(resolve, 2_000)),
-    ]);
-  }
   if (!process.env.EXAWATT_KEEP_EVAL) {
     // A throw from `finally` replaces the step's own error, and a SIGKILLed
     // app's helpers can still be writing `userData` here (ENOTEMPTY). The

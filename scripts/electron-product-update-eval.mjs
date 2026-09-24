@@ -2,13 +2,11 @@
 
 import { chromium } from 'playwright-core';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
-  writeFileSync,
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -19,10 +17,7 @@ import {
   startAgentFromLauncher,
   waitForWorkspaceReady,
 } from './lib/electron-eval.mjs';
-import {
-  claudeProbeSh,
-  codexProbeSh,
-} from './lib/harness-probe-fixture.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 const sourceApp = process.env.EXAWATT_BASE_APP_PATH
   ? resolve(process.env.EXAWATT_BASE_APP_PATH)
@@ -56,50 +51,38 @@ mkdirSync(fakeBin, { recursive: true });
 mkdirSync(pidDir, { recursive: true });
 mkdirSync(projectDir, { recursive: true });
 
-const fakeClaude = join(fakeBin, 'claude');
-writeFileSync(
-  fakeClaude,
-  `#!/bin/sh
-${claudeProbeSh()}
-id="unknown"
+writeFakeHarness(fakeBin, 'claude', {
+  launch: `id="unknown"
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--session-id" ] || [ "$prev" = "--resume" ]; then id="$arg"; fi
   prev="$arg"
 done
-printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
-printf 'UPDATE_CLAUDE:%s\n' "$*"
-while IFS= read -r line; do printf '%s\n' "$line"; done
-`
-);
-chmodSync(fakeClaude, 0o755);
+printf '%s\\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
+printf 'UPDATE_CLAUDE:%s\\n' "$*"
+while IFS= read -r line; do printf '%s\\n' "$line"; done`,
+});
 
-const fakeCodex = join(fakeBin, 'codex');
-writeFileSync(
-  fakeCodex,
-  `#!/bin/sh
-${codexProbeSh()}
-if [ "$1" = "resume" ]; then
+writeFakeHarness(fakeBin, 'codex', {
+  launch: `if [ "$1" = "resume" ]; then
   id="$2"
   fresh=0
 else
   id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
   fresh=1
 fi
-printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
-printf 'UPDATE_CODEX:%s\n' "$*"
+printf '%s\\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
+printf 'UPDATE_CODEX:%s\\n' "$*"
 while IFS= read -r line; do
   if [ "$fresh" = "1" ]; then
     dir="$HOME/.codex/sessions/fixture"
     /bin/mkdir -p "$dir"
-    printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
+    printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
     fresh=0
   fi
-  printf '%s\n' "$line"
-done
-`
-);
-chmodSync(fakeCodex, 0o755);
+  printf '%s\\n' "$line"
+done`,
+});
 
 function resetShipIt() {
   try {

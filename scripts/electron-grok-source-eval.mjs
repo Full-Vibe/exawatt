@@ -18,7 +18,6 @@
  *   4. consumption: `updates.jsonl` becomes rows under the `grok` source
  */
 import {
-  chmodSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -27,6 +26,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
+import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 /**
  * Grok Build's `sessions/<dir>` component. Reproduced here rather than
@@ -66,24 +66,27 @@ writeFileSync(join(project, 'package.json'), '{}');
 // Mirrors the surfaces Exawatt reads on the real `grok 1.0.3`: the version
 // string, the `grok models` banner + listing, and an interactive launch that
 // echoes its argv and its view of the state home.
-writeFileSync(
-  join(fakeBin, 'grok'),
-  `#!/bin/sh
-if [ "$1" = "--version" ]; then printf 'grok 1.0.3 (evalbuild)\\n'; exit 0; fi
-if [ "$1" = "models" ]; then
-  printf '%s\\n' 'You are logged in with grok.com.' '' 'Default model: eval-grok-4.5' '' 'Available models:' '  * eval-grok-4.5 (default)' '  - eval-grok-code'
-  exit 0
-fi
-printf 'FAKE_GROK_ARGS:'
+writeFakeHarness(fakeBin, 'grok', {
+  answers: {
+    version: 'grok 1.0.3 (evalbuild)',
+    models: [
+      'You are logged in with grok.com.',
+      '',
+      'Default model: eval-grok-4.5',
+      '',
+      'Available models:',
+      '  * eval-grok-4.5 (default)',
+      '  - eval-grok-code',
+    ],
+  },
+  launch: `printf 'FAKE_GROK_ARGS:'
 printf ' <%s>' "$@"
 printf '\\nFAKE_GROK_HOME:%s\\n' "\${GROK_HOME-unset}"
 printf 'FAKE_GROK_AUTH_PATH:%s\\n' "\${GROK_AUTH_PATH-unset}"
 while true; do
   if IFS= read -r line; then printf 'FAKE_GROK_INPUT:%s\\n' "$line"; else /bin/sleep 1; fi
-done
-`
-);
-chmodSync(join(fakeBin, 'grok'), 0o755);
+done`,
+});
 
 const RESUME_ID = '018f2c11-4b2a-7c3d-9e4f-5a6b7c8d9e0f';
 const now = Date.now();

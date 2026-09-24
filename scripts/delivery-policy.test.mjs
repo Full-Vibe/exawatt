@@ -439,11 +439,16 @@ test('a deliberate waiver satisfies it too, and is the caller saying so', () => 
 });
 
 test('the Team altitude owes its ordering gate', () => {
+  // BUG-217 released the Session-parity gate, which reads the same overlay.
   assert.deepEqual(
     missingSurfaceGates(['src/components/workspace/expose-overlay.tsx']).map(
       entry => entry.gate
     ),
-    ['eval:workspace:team', 'eval:electron:connected-fleet']
+    [
+      'eval:workspace:team',
+      'eval:electron:connected-fleet',
+      'eval:electron:session-parity',
+    ]
   );
   assert.deepEqual(
     missingSurfaceGates(['src/components/workspace/use-flip-tiles.ts']).map(
