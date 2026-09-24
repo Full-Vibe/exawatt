@@ -14,7 +14,7 @@
  *     leaked for exactly that reason.
  */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceState } from './use-workspace-state';
@@ -478,13 +478,22 @@ describe('retained Session operation ownership', () => {
 });
 
 describe('Session-keyed renderer state is declared through one owner', () => {
+  // The hook composes focused modules under `workspace-state/`; a keyed store
+  // declared in any of them is as much the workspace's as one declared in the
+  // hook itself, so the reflection reads all of them.
   const source = readFileSync(
     path.join(__dirname, 'use-workspace-state.ts'),
     'utf8'
   );
-  const body = source.slice(
-    source.indexOf('export function useWorkspaceState')
-  );
+  const modules = readdirSync(path.join(__dirname, 'workspace-state'))
+    .filter(file => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+    .map(file =>
+      readFileSync(path.join(__dirname, 'workspace-state', file), 'utf8')
+    );
+  const body = [
+    source.slice(source.indexOf('export function useWorkspaceState')),
+    ...modules,
+  ].join('\n');
 
   it('declares no keyed record state outside the owner', () => {
     // Every `Record<string, …>` this hook has ever held is keyed by a Session

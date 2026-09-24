@@ -533,3 +533,10 @@ export interface WorkspaceLayout {
   lastUsedDir: string;
   pinnedTabId: string | null;
 }
+
+/** A read-only view of a value its owner keeps current across renders: how a
+ *  focused hook reads the latest layout (or store) from a callback without
+ *  being able to write it. */
+export interface Latest<T> {
+  readonly current: T;
+}

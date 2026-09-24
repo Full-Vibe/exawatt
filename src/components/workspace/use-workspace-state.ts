@@ -17,14 +17,12 @@
  */
 import {
   useCallback,
-  useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useEffect,
+  useLayoutEffect,
 } from 'react';
-import type { WorkspaceLoadFailure } from './workspace-storage-recovery';
-import { HARNESS_META } from './harnesses';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -32,10 +30,80 @@ import {
   useSessionScopedMap,
   useSessionScopedRecord,
 } from './session-scoped-state';
+import { useClosedSessionCount } from './use-closed-session-count';
+import type {
+  GoalVisual,
+  PtyAttention,
+  PtyReentryRecap,
+  PtySessionRecord,
+  SessionDelegation,
+  ClosedSessionEntry,
+  SessionModelChange,
+} from '@exawatt/core/desktop-bridge';
+import {
+  isRemoteAgentTab,
+  isSessionTab,
+  newTabId,
+  tabFromPtySession,
+  tabIsLive,
+  type ObservedExit,
+  type Project,
+  type SessionTab,
+  type WorkspaceLayout,
+  applyWorkspaceDraftPatch,
+  newDraftTab,
+  newDurableSessionId,
+  projectRootPath,
+  type WorkspaceDraftPatch,
+  tabFromClosedEntry,
+  type CloseOutcome,
+  REVIVE_FAILED,
+  resumableAgentTabsInProject,
+  runtimeAdoptionPatch,
+  tabCanResumeAsAgent,
+  type ResumeBatchProgress,
+  type WorkspaceTab,
+} from './workspace-state/workspace-model';
+import {
+  patchSessionTab,
+  placeTab,
+  appendTab,
+  patchDraft,
+  replaceTab,
+  reseedDraft,
+  removeTab,
+} from './workspace-state/project-list';
+import { RecentProjects } from './workspace-state/recent-projects';
+import { SessionOperations } from './workspace-state/session-operations';
+import { useWorkspaceProjects } from './workspace-state/use-workspace-projects';
+import { useWorkspaceHydration } from './workspace-state/use-workspace-hydration';
+import { useWorkspacePersistence } from './workspace-state/use-workspace-persistence';
 import {
   operatorPosition,
   type OperatorMoveClaim,
 } from '@/components/nav/operator-position';
+import { recordLaunchConfigurationSuccess } from '@/lib/launch-configurations';
+import type { AgentPermissionMode, PtyHarness } from '@exawatt/core';
+import { HARNESS_META } from './harnesses';
+import {
+  DEFAULT_AGENT_PERMISSION_MODE,
+  isAgentSourceId,
+  loadAgentModelCatalog,
+  loadAgentSourcePreferences,
+  loadAgentSourceRegistry,
+  permissionModeFor,
+} from './agent-sources';
+import {
+  cloneTargetSourceReady,
+  sessionClonePrompt,
+  tabCanClone,
+  type CloneSessionTarget,
+} from './session-clone';
+import {
+  sessionDelegationBusy,
+  sessionGlyphState,
+  sessionReportedBlocked,
+} from './session-status';
 import {
   moveProjectInList,
   moveTabWithinProject,
@@ -57,114 +125,10 @@ import {
   consumePendingLaunch,
   consumePendingOpenProject,
 } from './session-jump';
-import {
-  sessionDelegationBusy,
-  sessionGlyphState,
-  sessionReportedBlocked,
-} from './session-status';
-import { loadTerminalFont } from './terminal-font';
-import { useClosedSessionCount } from './use-closed-session-count';
-import { useLatestRequest } from '@/hooks/use-latest-request';
-import {
-  DEFAULT_AGENT_PERMISSION_MODE,
-  isAgentSourceId,
-  loadAgentSourcePreferences,
-  loadAgentSourceRegistry,
-  loadAgentModelCatalog,
-  permissionModeFor,
-} from './agent-sources';
-import {
-  cloneTargetSourceReady,
-  sessionClonePrompt,
-  tabCanClone,
-  type CloneSessionTarget,
-} from './session-clone';
-import { recordLaunchConfigurationSuccess } from '@/lib/launch-configurations';
-import {
-  openRepositoryProject,
-  listProjects,
-  renameProject as registryRenameProject,
-  reorderProjects as registryReorderProjects,
-  setProjectColor as registrySetProjectColor,
-} from '@/lib/projects/registry';
-import type { AgentPermissionMode, PtyHarness } from '@exawatt/core';
-import type {
-  ClosedSessionEntry,
-  GoalVisual,
-  PtyAttention,
-  PtyReentryRecap,
-  PtySessionRecord,
-  SessionDelegation,
-  SessionModelChange,
-} from '@exawatt/core/desktop-bridge';
-import {
-  REVIVE_FAILED,
-  applyWorkspaceDraftPatch,
-  isRemoteAgentTab,
-  isSessionTab,
-  newDraftTab,
-  newDurableSessionId,
-  newTabId,
-  runtimeAdoptionPatch,
-  tabFromClosedEntry,
-  projectRootPath,
-  remoteAgentGroupDir,
-  resumableAgentTabsInProject,
-  tabCanResumeAsAgent,
-  tabFromPtySession,
-  tabIsLive,
-  type CloseOutcome,
-  type Project,
-  type RemoteAgentOpenRef,
-  type RemoteAgentTab,
-  type ResumeBatchProgress,
-  type SessionTab,
-  type WorkspaceDraftPatch,
-  type WorkspaceLayout,
-  type WorkspaceTab,
-} from './workspace-state/workspace-model';
-import {
-  dropDetachedRemoteTabs,
-  parsePersisted,
-  type PersistedV7,
-} from './workspace-state/persisted-layout';
-import {
-  persistedContextSummaries,
-  persistedGoalVisualRefs,
-  restoreLayout,
-  resumeIdentityHints,
-  seedSessionStores,
-  unresolvedGoalVisual,
-  withReconciledIdentities,
-} from './workspace-state/layout-restore';
-import {
-  serializeLayout,
-  shutdownTargets,
-  withLiveHarnessIdentities,
-} from './workspace-state/layout-serialize';
-import { RecentProjects } from './workspace-state/recent-projects';
-import {
-  adoptObservedIdentity,
-  appendTab,
-  closeEmptyProjectGroup,
-  linkRegistryProject,
-  markPtyExited,
-  openContextGroup,
-  openProjectGroup,
-  openProjectGroups,
-  patchDraft,
-  patchSessionTab,
-  pendingRegistryEdits,
-  placeTab,
-  reconcileRegistry,
-  removeTab,
-  renameRemoteAgentViews,
-  replaceTab,
-  reseedDraft,
-} from './workspace-state/project-list';
 
-// The workspace model and its persisted shapes live in `workspace-state/`;
-// this module stays the one entry point every caller imports them from.
+// The workspace model, its persisted shapes, and its verbs live in
+// `workspace-state/`; this module composes them and stays the one entry point
+// every caller imports from.
 export {
   REVIVE_FAILED,
   applyWorkspaceDraftPatch,
@@ -202,24 +166,6 @@ export type {
   PersistedV6,
   PersistedV7,
 } from './workspace-state/persisted-layout';
-
-/**
- * The ids of the sources Exawatt still has a record of.
- *
- * `null` means Exawatt could not ask — no desktop bridge, or a read that
- * failed. That is not the same answer as "no sources", and the caller must not
- * treat it as one.
- */
-async function readConfiguredSourceIds(): Promise<ReadonlySet<string> | null> {
-  const api = window.electron?.connectedSources;
-  if (!api?.list) return null;
-  try {
-    const sources = await api.list();
-    return new Set(sources.map(source => source.id));
-  } catch {
-    return null;
-  }
-}
 
 export interface LaunchOptions {
   /** Preserve the initiating gesture's focus authority across preparation. */
@@ -271,37 +217,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** split view (S2): this tab renders beside the active one ("watch one,
    *  drive one"); null = no split */
   const [pinnedTabId, setPinnedTabId] = useState<string | null>(null);
-  /**
-   * How many drafts have been thrown away (BUG-041).
-   *
-   * The empty-Project composer and the draft tab that continues it are ONE
-   * React element, so materialising that tab must not remount the surface the
-   * operator is mid-gesture in. That continuity has to end somewhere, and a
-   * DISCARDED draft is the only place it should: the composer that replaces a
-   * thrown-away draft is a new one and must not inherit its task or its setup.
-   *
-   * Deliberately a count, not a Record keyed by Project. Only the active
-   * Project's composer is ever mounted, and a draft can only be closed from
-   * the Project it belongs to, so a per-Project key would buy precision no
-   * reachable interaction can observe — while making this hook hold a
-   * `Record<string, …>` that is not keyed by a Session identity, which is the
-   * one thing `session-scope.test.tsx` asks it never to do (BUG-037).
-   */
-  const [draftDiscards, setDraftDiscards] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [resumeBatchProgress, setResumeBatchProgress] =
-    useState<ResumeBatchProgress | null>(null);
   const [ready, setReady] = useState(false);
-  const [workspaceLoadFailure, setWorkspaceLoadFailure] =
-    useState<WorkspaceLoadFailure | null>(null);
-  const [hydrationAttempt, setHydrationAttempt] = useState(0);
-  const retryWorkspaceLoad = useCallback(async () => {
-    if (workspaceLoadFailure?.required) {
-      await window.electron?.workspace?.retryRecovery();
-    }
-    setWorkspaceLoadFailure(null);
-    setHydrationAttempt(attempt => attempt + 1);
-  }, [workspaceLoadFailure]);
   /**
    * Every store below is keyed by a Session identity and is declared through
    * ONE owner (BUG-037, the renderer half of main's BUG-025). The owner also
@@ -350,37 +267,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     pinnedTabId,
   });
   stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
-  /** One projected Agent can have one tab-opening transaction at a time. */
-  const remoteAgentOpenInFlightRef = useRef<
-    Array<{ agentId: string; task: Promise<string> }>
-  >([]);
-  // dirs whose identity the operator edited locally — the reconcile-on-load
-  // must not clobber a rename/recolor made while the registry fetch was still
-  // in flight (its snapshot is already stale), and instead pushes it up.
-  const editedDirsRef = useRef<Set<string>>(new Set());
-  /** durable Project recency (ENG-016 D8) — loaded from the persisted layout,
-   *  re-merged on every save so closed Projects survive */
-  const [recents] = useState(() => new RecentProjects());
   const readyRef = useRef(ready);
   readyRef.current = ready;
-  /** Clone requests currently spawning, keyed `tabId:targetId`. A ref, not
-   *  state: it exists to make a duplicate request a no-op, and re-rendering
-   *  the workspace on it would only add churn. Not Session-keyed, and every
-   *  entry is deleted by the request that added it. */
-  const cloningRef = useRef(new Set<string>());
-  const sessionOperationsRef = useRef<Set<string>>(new Set());
   // Exits can precede the IPC reply that introduces a replacement runtime.
   // Keep them only for the lifetime of the corresponding operation.
   const operationExitsRef =
-    useSessionScopedMap<
-      Record<string, { exitCode: number; exitSignal: string | null }>
-    >(sessionScope);
-  /** Close/archive work is tracked so browser-style reopen cannot race the
-   * optimistic strip removal and read the ledger before the entry lands. */
-  const closeInFlightRef = useRef<Set<Promise<CloseOutcome>>>(new Set());
-  /** Repeated ⌘⇧T requests are a FIFO queue over a LIFO ledger: each request
-   * waits for the previous take, then restores the next-newest entry. */
-  const reopenLastClosedQueueRef = useRef<Promise<void>>(Promise.resolve());
+    useSessionScopedMap<Record<string, ObservedExit>>(sessionScope);
   /** Durable Session ids parked by the shutdown checkpoint. */
   const shutdownTargetsRef = useSessionScopedIdSet(sessionScope);
   /** Identity can arrive before React has committed a newly launched/restored
@@ -402,27 +294,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [projects]
   );
   useSessionScopeRelease(sessionScope, sessionScopeLayout);
-
-  const syncProjectIdentity = useCallback(
-    (ref: { rootPath: string; name: string }) => {
-      void openRepositoryProject(ref)
-        .then(proj => {
-          setProjects(prev => linkRegistryProject(prev, proj));
-          if (!proj.color) {
-            const group = stateRef.current.projects.find(
-              project => project.dir === proj.root_path
-            );
-            if (group) {
-              void registrySetProjectColor(proj.id, group.color).catch(
-                () => {}
-              );
-            }
-          }
-        })
-        .catch(() => {});
-    },
-    []
-  );
+  /** durable Project recency (ENG-016 D8) — loaded from the persisted layout,
+   *  re-merged on every save so closed Projects survive */
+  const [recents] = useState(() => new RecentProjects());
+  /** resume, model change, and Project pause in flight, with the exits that
+   *  raced their replies */
+  const [operations] = useState(() => new SessionOperations(operationExitsRef));
 
   /**
    * The ONE door selection goes through (BUG-018).
@@ -506,333 +383,51 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [updateTab]
   );
 
+  const {
+    syncProjectIdentity,
+    reconcileWithRegistry,
+    syncProjectOrder,
+    openProject,
+    openRemoteAgent,
+    openContextProject,
+    importProjects,
+    closeProject,
+    renameProject,
+    setProjectColor,
+  } = useWorkspaceProjects({
+    stateRef,
+    recents,
+    setProjects,
+    setActiveDir,
+    setLastUsedDir,
+    setError,
+    moveOperator,
+  });
+
   // ---- mount: adopt live sessions, restore ended layout without spawning ----
-  /** One hydration read per mount (or per retry); a newer one, or unmount,
-   *  supersedes it. */
-  const hydrationRequests = useLatestRequest();
-  useEffect(() => {
-    const api = window.electron?.pty;
-    const ws = window.electron?.workspace;
-    if (!api) return;
-    const hydration = hydrationRequests.begin();
-    // flags cleared by events BETWEEN the pty:list snapshot resolving and
-    // the seed merge must stay cleared — main won't re-broadcast for them
-    const clearedBeforeSeed = new Set<string>();
-    // Same race guard for D29's working ride-along: a quiet transition after
-    // main captured the list must not be overwritten by the stale snapshot.
-    const quietBeforeSeed = new Set<string>();
-    // And for delegation (ENG-023 D3a): the last child ending between the
-    // snapshot and the seed merge publishes null, which deletes nothing from
-    // an empty map — without this guard the stale snapshot then resurrects a
-    // rail no future event will clear until the next spawn.
-    const settledBeforeSeed = new Set<string>();
+  const { workspaceLoadFailure, retryWorkspaceLoad } = useWorkspaceHydration({
+    stateRef,
+    observedIdentitiesRef,
+    operations,
+    recents,
+    setProjects,
+    setActiveDir,
+    setLastUsedDir,
+    setPinnedTabId,
+    setReady,
+    setSummaries,
+    setGoalVisuals,
+    setAttention,
+    setActivity,
+    setEngaged,
+    setDelegation,
+    setReentryRecap,
+    addSession,
+    reconcileWithRegistry,
+  });
 
-    void (async () => {
-      // the font settles here too: the revive loop below reads the spawn
-      // size via getInitialSize, whose cell metrics come from the resolved
-      // font — spawning with defaults while a custom font loads recreates
-      // the TUI init-width race
-      const [live, persistedRaw, recovery, configuredSourceIds] =
-        await Promise.all([
-          api.list(),
-          ws?.load() ?? Promise.resolve(null),
-          ws?.recovery() ?? Promise.resolve({ previousRunInterrupted: false }),
-          // Which sources are still configured. A DETACHED source is gone by
-          // operator decision, and its coworker tabs must not come back with
-          // the layout. Only an ANSWERED list decides that: a read that failed,
-          // or a build with no connected-sources capability at all, is not
-          // evidence that anything was detached, so the tabs stay and the pane
-          // says what it could not read (BUG-063's rule).
-          readConfiguredSourceIds(),
-          loadTerminalFont(),
-        ]);
-      if (!hydration.current) return;
-      const decoded = parsePersisted(persistedRaw);
-      if (persistedRaw !== null && persistedRaw !== undefined && !decoded) {
-        throw new Error('Saved workspace format is not supported');
-      }
-      let persisted = dropDetachedRemoteTabs(decoded, configuredSourceIds);
-      if (persisted && api.reconcileResumeIdentities) {
-        const hints = resumeIdentityHints(persisted);
-        if (hints.some(tab => !tab.harnessSessionId)) {
-          try {
-            const reconciled = await api.reconcileResumeIdentities(hints);
-            if (!hydration.current) return;
-            persisted = withReconciledIdentities(persisted, reconciled);
-          } catch (cause) {
-            console.warn('Session identity reconciliation failed', cause);
-          }
-        }
-      }
-      // goal subtitles (D21) and their last ready visual: the persisted
-      // layout restores each Session's goal first, through main's stores.
-      let restoredSummaries: ReadonlyArray<readonly [string, string | null]> =
-        [];
-      let restoredGoalVisuals: ReadonlyArray<
-        readonly [string, GoalVisual | null]
-      > = [];
-      if (persisted) {
-        const persistedSummaries = persistedContextSummaries(persisted);
-        const restoreContext = api.restoreContext;
-        restoredSummaries = restoreContext
-          ? await Promise.all(
-              persistedSummaries.map(
-                async ([durableSessionId, summary]) =>
-                  [
-                    durableSessionId,
-                    await restoreContext(durableSessionId, summary),
-                  ] as const
-              )
-            )
-          : persistedSummaries;
-        if (!hydration.current) return;
-        const persistedGoalVisuals = persistedGoalVisualRefs(persisted);
-        const restoreGoalVisual = api.restoreGoalVisual;
-        restoredGoalVisuals = restoreGoalVisual
-          ? await Promise.all(
-              persistedGoalVisuals.map(
-                async ([durableSessionId, visual]) =>
-                  [
-                    durableSessionId,
-                    await restoreGoalVisual(durableSessionId, visual),
-                  ] as const
-              )
-            )
-          : persistedGoalVisuals.map(
-              ([durableSessionId, visual]) =>
-                [durableSessionId, unresolvedGoalVisual(visual)] as const
-            );
-        if (!hydration.current) return;
-      }
-      const seeds = seedSessionStores(
-        live,
-        { summaries: restoredSummaries, goalVisuals: restoredGoalVisuals },
-        {
-          attentionCleared: clearedBeforeSeed,
-          quiet: quietBeforeSeed,
-          settled: settledBeforeSeed,
-        }
-      );
-      if (Object.keys(seeds.summaries).length > 0) {
-        setSummaries(prev => ({ ...seeds.summaries, ...prev }));
-      }
-      if (Object.keys(seeds.goalVisuals).length > 0) {
-        setGoalVisuals(prev => ({ ...seeds.goalVisuals, ...prev }));
-      }
-      if (Object.keys(seeds.attention).length > 0) {
-        setAttention(prev => ({ ...seeds.attention, ...prev }));
-      }
-      if (Object.keys(seeds.activity).length > 0) {
-        setActivity(prev => ({ ...seeds.activity, ...prev }));
-      }
-      if (Object.keys(seeds.engaged).length > 0) {
-        setEngaged(prev => ({ ...seeds.engaged, ...prev }));
-      }
-      if (Object.keys(seeds.delegation).length > 0) {
-        setDelegation(prev => ({ ...seeds.delegation, ...prev }));
-      }
-      const { restored, unclaimed } = restoreLayout(persisted, live, {
-        observedIdentities: observedIdentitiesRef.current,
-        previousRunInterrupted: recovery.previousRunInterrupted,
-      });
-      /** where the restored layout put the operator, if anywhere */
-      let restoredActiveDir: string | null = null;
-      if (restored) {
-        setProjects(restored.projects);
-        restoredActiveDir = restored.activeDir;
-        setActiveDir(restoredActiveDir);
-        setLastUsedDir(restored.lastUsedDir);
-        recents.replace(restored.recentProjects);
-        if (restored.pinnedTabId) setPinnedTabId(restored.pinnedTabId);
-      }
-      // PTY incarnations unknown to the persisted layout (e.g. created or
-      // exited since the last save) — or the whole fresh-start case. Exited
-      // entries reconstruct an honest stopped tab; dropping them here would
-      // make Terminal disagree with the local Fleet/Spatial inventory.
-      //
-      // Adoption appends and moves nobody. Only a workspace with no restored
-      // position needs one, and it lands on the FIRST adopted Session rather
-      // than on whichever one happened to be enumerated last.
-      for (const s of unclaimed) {
-        addSession(s, s.exited ? s.durableSessionId : undefined);
-      }
-      if (!restoredActiveDir) {
-        const [firstAdopted] = unclaimed;
-        if (firstAdopted) setActiveDir(firstAdopted.projectDir);
-      }
-      setReady(true);
-      // reconcile durable identity (S5 P3) — async, so a slow/offline registry
-      // never delays the terminal: adopt each Project's synced name/color (a
-      // rename/recolor made on another machine or a prior run shows here) and
-      // link the group to its registry row for future syncs.
-      void listProjects()
-        .then(registry => {
-          if (!hydration.current || registry.length === 0) return;
-          // A rename/recolor made during this async window must win over
-          // the now-stale registry snapshot: link the row but keep the
-          // local edit (it's pushed up below so it still syncs). Otherwise
-          // adopt the synced name/color.
-          const editedDirs = editedDirsRef.current;
-          setProjects(prev => reconcileRegistry(prev, registry, editedDirs));
-          // Edits made before the row's id was known couldn't sync (the verbs
-          // guard on registryId); now that we have the ids, push them up.
-          for (const edit of pendingRegistryEdits(
-            stateRef.current.projects,
-            registry,
-            editedDirs
-          )) {
-            if (edit.name !== undefined) {
-              void registryRenameProject(edit.id, edit.name).catch(() => {});
-            }
-            if (edit.color !== undefined) {
-              void registrySetProjectColor(edit.id, edit.color).catch(() => {});
-            }
-          }
-        })
-        .catch(() => {});
-    })().catch(async () => {
-      // Failed reads are not first launch. Keep every save/checkpoint gated
-      // behind readiness until the operator can load the preserved layout.
-      const recovery = await ws?.storageRecovery?.().catch(() => undefined);
-      if (!hydration.current) return;
-      setWorkspaceLoadFailure(recovery ?? { required: false });
-    });
-
-    const offExit = api.onExit(
-      ({ id, durableSessionId, exitCode, exitSignal }) => {
-        if (
-          stateRef.current.projects.some(project =>
-            project.tabs.some(
-              tab =>
-                isSessionTab(tab) &&
-                tab.durableSessionId === durableSessionId &&
-                sessionOperationsRef.current.has(tab.id)
-            )
-          )
-        ) {
-          operationExitsRef.current.set(durableSessionId, {
-            ...operationExitsRef.current.get(durableSessionId),
-            [id]: { exitCode, exitSignal },
-          });
-        }
-        setProjects(prev => markPtyExited(prev, { id, exitCode, exitSignal }));
-      }
-    );
-    const offIdentity = api.onIdentity?.(
-      ({ id, durableSessionId, harnessSessionId }) => {
-        observedIdentitiesRef.current.set(durableSessionId, harnessSessionId);
-        setProjects(prev =>
-          adoptObservedIdentity(prev, {
-            id,
-            durableSessionId,
-            harnessSessionId,
-          })
-        );
-      }
-    );
-    const offContext = api.onContext?.(({ durableSessionId, summary }) => {
-      setSummaries(prev => ({ ...prev, [durableSessionId]: summary }));
-    });
-    const offGoalVisual = api.onGoalVisual?.(({ durableSessionId, visual }) => {
-      setGoalVisuals(prev => ({ ...prev, [durableSessionId]: visual }));
-    });
-    const offRecap = api.onRecap?.(next => {
-      const { projects: groups, activeDir: dir } = stateRef.current;
-      const active = groups.find(group => group.dir === dir);
-      const tab = active?.tabs.find(
-        candidate => candidate.id === active.activeTabId
-      );
-      if (tab && isSessionTab(tab) && tab.sessionId === next.id) {
-        setReentryRecap(next);
-      }
-    });
-    const offActivity = api.onActivity?.(({ id, working }) => {
-      if (working) quietBeforeSeed.delete(id);
-      else quietBeforeSeed.add(id);
-      setActivity(prev => {
-        if (working) return prev[id] ? prev : { ...prev, [id]: true };
-        if (!(id in prev)) return prev;
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    });
-    const offEngaged = api.onEngaged?.(({ id }) => {
-      setEngaged(prev => (prev[id] ? prev : { ...prev, [id]: true }));
-    });
-    // Harness-reported delegation (ENG-023). A Session that finishes its last
-    // child drops out of the record entirely, so surfaces read "no delegated
-    // work" rather than "zero children" — absent is not the same as none.
-    const offDelegation = api.onDelegation?.(({ id, delegation: next }) => {
-      if (next) settledBeforeSeed.delete(id);
-      else settledBeforeSeed.add(id);
-      // Main decides what is worth publishing and sends null otherwise, so
-      // the liveness rule lives in exactly one place. Re-deriving it here is
-      // what let the switcher and the strip disagree about one Session.
-      setDelegation(prev => {
-        if (!next) {
-          if (!(id in prev)) return prev;
-          const cleared = { ...prev };
-          delete cleared[id];
-          return cleared;
-        }
-        return { ...prev, [id]: next };
-      });
-    });
-    const offAttention = api.onAttention?.(({ id, attention: att }) => {
-      if (att) clearedBeforeSeed.delete(id);
-      else clearedBeforeSeed.add(id);
-      setAttention(prev => {
-        if (att) return { ...prev, [id]: att };
-        if (!(id in prev)) return prev;
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    });
-    return () => {
-      hydrationRequests.invalidate();
-      offExit();
-      offIdentity?.();
-      offContext?.();
-      offGoalVisual?.();
-      offRecap?.();
-      offActivity?.();
-      offEngaged?.();
-      offDelegation?.();
-      offAttention?.();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrationAttempt]);
-
-  const serializeWorkspace = useCallback(
-    (cleanShutdown = false): PersistedV7 => {
-      const layout = stateRef.current;
-      return serializeLayout(layout, {
-        recentProjects: recents.mergeOpen(layout.projects, Date.now()),
-        summaries: summariesRef.current,
-        goalVisuals: goalVisualsRef.current,
-        cleanShutdown,
-        shutdownTargets: shutdownTargetsRef.current,
-      });
-    },
-    [goalVisualsRef, recents, shutdownTargetsRef, summariesRef]
-  );
-
-  // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
-  // Goal subtitles and their last ready visual persist with the layout so a
-  // relaunch restores identity instead of re-deriving it from scrollback.
-  useEffect(() => {
-    if (!ready) return;
-    const ws = window.electron?.workspace;
-    if (!ws) return;
-    const handle = setTimeout(() => {
-      void ws
-        .save(serializeWorkspace())
-        .catch(error => console.error('Workspace persistence failed', error));
-    }, 400);
-    return () => clearTimeout(handle);
-  }, [
+  // ---- persistence: debounced, on unmount, and at the shutdown checkpoint ----
+  useWorkspacePersistence({
     projects,
     activeDir,
     lastUsedDir,
@@ -840,49 +435,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     summaries,
     goalVisuals,
     ready,
-    serializeWorkspace,
-  ]);
+    readyRef,
+    stateRef,
+    recents,
+    summariesRef,
+    goalVisualsRef,
+    shutdownTargetsRef,
+  });
 
-  // Route changes can unmount Terminal before the debounce fires (for example,
-  // opening an empty Project and immediately pressing Command-3). Flush the
-  // latest catalog on unmount so Spatial cannot observe the previous layout.
-  useEffect(
-    () => () => {
-      if (!readyRef.current) return;
-      // The shutdown coordinator already owns a clean two-stage checkpoint.
-      if (shutdownTargetsRef.current.size > 0) return;
-      const ws = window.electron?.workspace;
-      if (!ws) return;
-      void ws
-        .save(serializeWorkspace())
-        .catch(error => console.error('Workspace unmount save failed', error));
-    },
-    [serializeWorkspace, shutdownTargetsRef]
-  );
-
-  useEffect(() => {
-    if (!ready) return;
-    const appApi = window.electron?.app;
-    const ws = window.electron?.workspace;
-    const ptyApi = window.electron?.pty;
-    if (!appApi || !ws || !ptyApi) return;
-    void appApi.setWorkspaceCheckpointOwner(true);
-    const offCheckpoint = appApi.onCheckpointRequest(({ requestId, stage }) => {
-      if (stage === 'pre-stop') {
-        shutdownTargetsRef.current = shutdownTargets(stateRef.current.projects);
-      }
-      const state = serializeWorkspace(stage === 'stopped');
-      void ptyApi
-        .list()
-        .then(live => ws.save(withLiveHarnessIdentities(state, live)))
-        .then(() => appApi.completeCheckpoint(requestId, true))
-        .catch(() => appApi.completeCheckpoint(requestId, false));
-    });
-    return () => {
-      offCheckpoint();
-      void appApi.setWorkspaceCheckpointOwner(false);
-    };
-  }, [ready, serializeWorkspace, shutdownTargetsRef]);
+  // ---- verbs ----
+  /** Clone requests currently spawning, keyed `tabId:targetId`. A ref, not
+   *  state: it exists to make a duplicate request a no-op, and re-rendering
+   *  the workspace on it would only add churn. Not Session-keyed, and every
+   *  entry is deleted by the request that added it. */
+  const cloningRef = useRef(new Set<string>());
 
   // ---- verbs ----
   const launch = useCallback(
@@ -1056,7 +622,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
     },
-    [addSession, moveOperator, observedIdentitiesRef, syncProjectIdentity]
+    [
+      addSession,
+      moveOperator,
+      observedIdentitiesRef,
+      setError,
+      setLastUsedDir,
+      setProjects,
+      sizeRef,
+      stateRef,
+      syncProjectIdentity,
+    ]
   );
 
   /**
@@ -1182,7 +758,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       return cloned;
     },
-    [engagedRef, launch, summariesRef]
+    [engagedRef, launch, setError, stateRef, summariesRef]
   );
 
   const cloneSession = useCallback(
@@ -1201,7 +777,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         cloningRef.current.delete(inFlightKey);
       }
     },
-    [cloneSessionOnce]
+    [cloneSessionOnce, setError]
+  );
+
+  /** launch in the active project's directory (fallback: last used) —
+   *  the one dir-resolution path for ⌘T, palette commands, and buttons */
+  const launchHere = useCallback(
+    (harness: PtyHarness): boolean => {
+      const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
+      const activeProject = gs.find(group => group.dir === ad);
+      const dir = activeProject ? projectRootPath(activeProject) : lu || null;
+      if (!dir) {
+        setError('Choose a Project directory for this session.');
+        return false;
+      }
+      void launch({ harness, dir });
+      return true;
+    },
+    [launch, setError, stateRef]
   );
 
   /** ⌘T (D24): a new tab exists the moment you ask for it — a draft tab
@@ -1240,7 +833,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       moveOperator(g.dir, seededTab.id);
       return seededTab.id;
     },
-    [moveOperator]
+    [moveOperator, setProjects, stateRef]
   );
 
   /** the composer reports its work-in-progress here (D28): the draft tab
@@ -1251,15 +844,42 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     (tabId: string, patch: WorkspaceDraftPatch) => {
       setProjects(prev => patchDraft(prev, tabId, patch));
     },
-    []
+    [setProjects]
   );
+  /**
+   * How many drafts have been thrown away (BUG-041).
+   *
+   * The empty-Project composer and the draft tab that continues it are ONE
+   * React element, so materialising that tab must not remount the surface the
+   * operator is mid-gesture in. That continuity has to end somewhere, and a
+   * DISCARDED draft is the only place it should: the composer that replaces a
+   * thrown-away draft is a new one and must not inherit its task or its setup.
+   *
+   * Deliberately a count, not a Record keyed by Project. Only the active
+   * Project's composer is ever mounted, and a draft can only be closed from
+   * the Project it belongs to, so a per-Project key would buy precision no
+   * reachable interaction can observe — while making this hook hold a
+   * `Record<string, …>` that is not keyed by a Session identity, which is the
+   * one thing `session-scope.test.tsx` asks it never to do (BUG-037).
+   */
+  const [draftDiscards, setDraftDiscards] = useState(0);
+  /** Close/archive work is tracked so browser-style reopen cannot race the
+   * optimistic strip removal and read the ledger before the entry lands. */
+  const closeInFlightRef = useRef<Set<Promise<CloseOutcome>>>(new Set());
+
+  /** Repeated ⌘⇧T requests are a FIFO queue over a LIFO ledger: each request
+   * waits for the previous take, then restores the next-newest entry. */
+  const reopenLastClosedQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   /** remove a tab from the layout (shared by every close path); closing
    *  the active tab activates its right neighbor, like Chrome (D24) */
-  const removeTabFromLayout = useCallback((tabId: string) => {
-    setPinnedTabId(cur => (cur === tabId ? null : cur));
-    setProjects(prev => removeTab(prev, tabId));
-  }, []);
+  const removeTabFromLayout = useCallback(
+    (tabId: string) => {
+      setPinnedTabId(cur => (cur === tabId ? null : cur));
+      setProjects(prev => removeTab(prev, tabId));
+    },
+    [setPinnedTabId, setProjects]
+  );
 
   /** Close grammar (D27): ⌘W CLOSES, like Chrome. A started live agent
    *  gets ONE in-app confirm (the caller renders it and re-calls with
@@ -1286,10 +906,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         // the PTY bridge; closing a coworker's view never did.
         const api = window.electron?.pty;
         if (!api) return { kind: 'noop' };
-        if (
-          tab.resumeState === 'resuming' ||
-          sessionOperationsRef.current.has(tabId)
-        ) {
+        if (tab.resumeState === 'resuming' || operations.isBusy(tabId)) {
           return { kind: 'noop' };
         }
         if (tab.lifecycle === 'draft') {
@@ -1376,7 +993,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       beginPendingClose,
       delegationRef,
       engagedRef,
+      operations,
       removeTabFromLayout,
+      setError,
+      stateRef,
       summariesRef,
     ]
   );
@@ -1418,7 +1038,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (mayMove) moveOperator(entry.projectDir, tab.id);
       return true;
     },
-    [moveOperator, setSummaries]
+    [moveOperator, setProjects, setSummaries, stateRef]
   );
 
   const listClosedSessions = useCallback(
@@ -1449,8 +1069,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setError('Could not reopen the last closed tab.');
     });
     return true;
-  }, [listClosedSessions, reopenClosedSession]);
-
+  }, [listClosedSessions, readyRef, reopenClosedSession, setError]);
+  const [resumeBatchProgress, setResumeBatchProgress] =
+    useState<ResumeBatchProgress | null>(null);
   /** A replacement belongs to the retained Session, never to whichever tab
    * happens to be selected when the process responds. Close wins over adoption. */
   const adoptSessionRuntime = useCallback(
@@ -1466,13 +1087,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         await window.electron?.pty?.closeSession(session.durableSessionId);
         return false;
       }
-      const observedExit = operationExitsRef.current.get(
-        tab.durableSessionId
-      )?.[session.id];
+      const observedExit = operations.observedExit(
+        tab.durableSessionId,
+        session.id
+      );
       updateTab(tab.id, runtimeAdoptionPatch(tab, session, observedExit));
       return true;
     },
-    [operationExitsRef, updateTab]
+    [operations, stateRef, updateTab]
   );
 
   const resumeTab = useCallback(
@@ -1487,7 +1109,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         !tab ||
         tabIsLive(tab) ||
         tab.resumeState === 'resuming' ||
-        sessionOperationsRef.current.has(tabId)
+        operations.isBusy(tabId)
       )
         return false;
       const exactId = selectedHarnessId ?? tab.harnessSessionId;
@@ -1498,7 +1120,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
       // Admission precedes every await, including preference loading.
-      sessionOperationsRef.current.add(tabId);
+      operations.begin(tabId);
       updateTab(tabId, {
         resumeState: 'resuming',
         lifecycle: 'resuming',
@@ -1568,11 +1190,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setError(`Could not resume ${tab.title}${detail}`);
         return false;
       } finally {
-        sessionOperationsRef.current.delete(tabId);
-        operationExitsRef.current.delete(tab.durableSessionId);
+        operations.end(tabId, tab.durableSessionId);
       }
     },
-    [adoptSessionRuntime, operationExitsRef, summariesRef, updateTab]
+    [
+      adoptSessionRuntime,
+      operations,
+      setError,
+      sizeRef,
+      stateRef,
+      summariesRef,
+      updateTab,
+    ]
   );
 
   const changeSessionModel = useCallback(
@@ -1583,19 +1212,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         .find(item => item.id === tabId);
       if (!api || !tab || !isSessionTab(tab) || !tab.sessionId)
         throw new Error('Session is no longer running.');
-      if (sessionOperationsRef.current.has(tabId))
+      if (operations.isBusy(tabId))
         throw new Error('A Session operation is already in progress.');
-      sessionOperationsRef.current.add(tabId);
+      operations.begin(tabId);
       try {
         const result = await api.changeModel(tab.sessionId, choice);
         if (!result.ok) throw new Error(result.error);
         await adoptSessionRuntime(tab, result.session);
       } finally {
-        sessionOperationsRef.current.delete(tabId);
-        operationExitsRef.current.delete(tab.durableSessionId);
+        operations.end(tabId, tab.durableSessionId);
       }
     },
-    [adoptSessionRuntime, operationExitsRef]
+    [adoptSessionRuntime, operations, stateRef]
   );
 
   const pauseProject = useCallback(
@@ -1615,9 +1243,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const sessionIds = targets.map(tab => tab.durableSessionId);
       const api = window.electron?.pty;
       if (!api?.pauseSessions) throw new Error('Project pause is unavailable.');
-      if (targets.some(tab => sessionOperationsRef.current.has(tab.id)))
+      if (targets.some(tab => operations.isBusy(tab.id)))
         throw new Error('A Session operation is already in progress.');
-      targets.forEach(tab => sessionOperationsRef.current.add(tab.id));
+      targets.forEach(tab => operations.begin(tab.id));
       try {
         const result = await api.pauseSessions(
           sessionIds,
@@ -1641,13 +1269,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         return { ...result, sessionIds };
       } finally {
-        targets.forEach(tab => {
-          sessionOperationsRef.current.delete(tab.id);
-          operationExitsRef.current.delete(tab.durableSessionId);
-        });
+        targets.forEach(tab => operations.end(tab.id, tab.durableSessionId));
       }
     },
-    [operationExitsRef, updateTab]
+    [operations, stateRef, updateTab]
   );
 
   const resumeTabs = useCallback(
@@ -1674,12 +1299,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
       }
     },
-    [resumeTab]
+    [resumeTab, setError]
   );
 
   const resumeAll = useCallback(() => {
     void resumeTabs(stateRef.current.projects.flatMap(project => project.tabs));
-  }, [resumeTabs]);
+  }, [resumeTabs, stateRef]);
 
   const resumeProject = useCallback(
     (projectDir: string) => {
@@ -1687,242 +1312,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         resumableAgentTabsInProject(stateRef.current.projects, projectDir)
       );
     },
-    [resumeTabs]
+    [resumeTabs, stateRef]
   );
-
-  /** launch in the active project's directory (fallback: last used) —
-   *  the one dir-resolution path for ⌘T, palette commands, and buttons */
-  const launchHere = useCallback(
-    (harness: PtyHarness): boolean => {
-      const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
-      const activeProject = gs.find(group => group.dir === ad);
-      const dir = activeProject ? projectRootPath(activeProject) : lu || null;
-      if (!dir) {
-        setError('Choose a Project directory for this session.');
-        return false;
-      }
-      void launch({ harness, dir });
-      return true;
-    },
-    [launch]
-  );
-
-  /** Open a Project independently of Sessions. Main-process resolution keeps
-   *  git worktrees grouped under the same durable Project identity. */
-  const openProject = useCallback(
-    async (dir: string): Promise<boolean> => {
-      const claim = operatorPosition.claimHere();
-      const result = await window.electron?.projects?.resolve(dir);
-      if (!result) return false;
-      if (!result.ok) {
-        setError(result.error);
-        return false;
-      }
-      const canonicalDir = result.projectDir;
-      const mayMove = claim.stillCurrent();
-      setProjects(prev =>
-        openProjectGroup(prev, {
-          dir: canonicalDir,
-          name: result.projectName,
-        })
-      );
-      // The Project is registered either way; going to it needs the ask to
-      // still be his (the resolve is a main-process round trip).
-      if (mayMove) moveOperator(canonicalDir, null);
-      setLastUsedDir(canonicalDir);
-      setError(null);
-      syncProjectIdentity({
-        rootPath: canonicalDir,
-        name: result.projectName,
-      });
-      return true;
-    },
-    [moveOperator, syncProjectIdentity]
-  );
-
-  /**
-   * Open a connected coworker's conversation (ENG-033 H2).
-   *
-   * The same gesture as opening a local Session, and the same result: a tab in
-   * the strip, selected. Asking twice returns to the tab that already exists
-   * rather than opening a second view of one coworker.
-   *
-   * Opening reaches nothing. No Gateway call, no command, no state change on
-   * the source: the tab is a view, and the surface it renders is what reads
-   * the conversation.
-   *
-   * A caller that awaited anything before asking (a roster read, most often)
-   * passes the claim it took BEFORE that await (BUG-192). Without one, the
-   * claim is taken here, which is only right for a synchronous gesture.
-   */
-  const openRemoteAgent = useCallback(
-    (
-      ref: RemoteAgentOpenRef,
-      focusClaim?: OperatorMoveClaim
-    ): Promise<string> => {
-      const inFlight = remoteAgentOpenInFlightRef.current.find(
-        entry => entry.agentId === ref.agentId
-      );
-      if (inFlight) return inFlight.task;
-      const claim = focusClaim ?? operatorPosition.claimHere();
-      const task = (async () => {
-        const registryProject = await listProjects()
-          .then(
-            rows => rows.find(project => project.id === ref.projectId) ?? null
-          )
-          .catch(() => null);
-        const currentProject = stateRef.current.projects.find(
-          project =>
-            project.registryId === ref.projectId ||
-            project.dir === ref.projectId ||
-            (registryProject?.root_path !== null &&
-              registryProject?.root_path !== undefined &&
-              projectRootPath(project) === registryProject.root_path)
-        );
-        const dir =
-          currentProject?.dir ??
-          registryProject?.root_path ??
-          remoteAgentGroupDir(ref);
-        const existing = stateRef.current.projects
-          .flatMap(project =>
-            project.tabs.map(tab => ({ dir: project.dir, tab }))
-          )
-          .find(
-            entry =>
-              isRemoteAgentTab(entry.tab) && entry.tab.agentId === ref.agentId
-          );
-        if (existing) {
-          // The source owns the names; a rename there shows here on next open.
-          setProjects(prev => renameRemoteAgentViews(prev, ref));
-          if (claim.stillCurrent()) moveOperator(existing.dir, existing.tab.id);
-          return existing.tab.id;
-        }
-        const tab: RemoteAgentTab = {
-          kind: 'remote-agent',
-          id: newTabId(),
-          title: ref.displayName,
-          sourceId: ref.sourceId,
-          nativeAgentId: ref.nativeAgentId,
-          agentId: ref.agentId,
-          projectLabel: ref.projectLabel,
-        };
-        // The Project this Agent was mapped to at Connect time may not be
-        // open. It is still where the coworker belongs, so the group opens
-        // with the mapping's own label rather than the coworker landing in
-        // whichever Project the operator happens to be standing in.
-        setProjects(prev =>
-          placeTab(
-            prev,
-            {
-              dir,
-              rootPath: registryProject?.root_path ?? null,
-              registryId: registryProject?.id ?? ref.projectId,
-              name: ref.projectLabel || ref.displayName,
-            },
-            tab
-          )
-        );
-        if (claim.stillCurrent()) moveOperator(dir, tab.id);
-        return tab.id;
-      })();
-      const transaction = { agentId: ref.agentId, task };
-      remoteAgentOpenInFlightRef.current.push(transaction);
-      const release = () => {
-        remoteAgentOpenInFlightRef.current =
-          remoteAgentOpenInFlightRef.current.filter(
-            entry => entry !== transaction
-          );
-      };
-      task.then(
-        () => release(),
-        () => release()
-      );
-      return task;
-    },
-    [moveOperator]
-  );
-
-  /** Open a durable Context Group whose local folder binding is absent. */
-  const openContextProject = useCallback(
-    (ref: { id: string; name: string; color: string | null }): void => {
-      setProjects(prev => openContextGroup(prev, ref));
-      moveOperator(ref.id, null);
-    },
-    [moveOperator]
-  );
-
-  /** Curated import adds inert Projects in one state transition. Every path is
-   *  resolved again at the trust boundary even when it came from our scanner. */
-  const importProjects = useCallback(
-    async (directories: string[]): Promise<boolean> => {
-      const unique = [...new Set(directories)];
-      if (unique.length === 0) return false;
-      const claim = operatorPosition.claimHere();
-      const resolved = await Promise.all(
-        unique.map(directory => window.electron?.projects?.resolve(directory))
-      );
-      const failedIndex = resolved.findIndex(result => !result || !result.ok);
-      if (failedIndex >= 0) {
-        const failed = resolved[failedIndex];
-        setError(
-          failed && 'error' in failed
-            ? failed.error
-            : 'Project discovery is unavailable in this app build.'
-        );
-        return false;
-      }
-      const refs = resolved.filter(
-        (result): result is Extract<NonNullable<typeof result>, { ok: true }> =>
-          !!result && result.ok
-      );
-      if (refs.length === 0) return false;
-      const mayMove = claim.stillCurrent();
-      setProjects(prev =>
-        openProjectGroups(
-          prev,
-          refs.map(ref => ({ dir: ref.projectDir, name: ref.projectName }))
-        )
-      );
-      const first = refs[0];
-      if (mayMove) moveOperator(first.projectDir, null);
-      setLastUsedDir(first.projectDir);
-      setError(null);
-      for (const ref of refs) {
-        syncProjectIdentity({
-          rootPath: ref.projectDir,
-          name: ref.projectName,
-        });
-      }
-      return true;
-    },
-    [moveOperator, syncProjectIdentity]
-  );
-
-  /**
-   * Remove an EMPTY Project from the open workspace without deleting its
-   * durable registry/library identity. Callers own any Agent close flow first;
-   * this guard prevents a Project close from orphaning a live PTY off-screen.
-   */
-  const closeProject = useCallback(
-    (dir: string): boolean => {
-      const { projects: groups, activeDir: currentDir } = stateRef.current;
-      const index = groups.findIndex(project => project.dir === dir);
-      const project = groups[index];
-      if (!project || project.tabs.length > 0) return false;
-
-      // A just-opened Project may not have reached the debounced layout save.
-      // Seed recency synchronously so ⌘N can always bring a closed group back.
-      recents.recordClosed(project, Date.now());
-
-      setProjects(previous => closeEmptyProjectGroup(previous, dir));
-      if (currentDir === dir) {
-        setActiveDir(groups[index + 1]?.dir ?? groups[index - 1]?.dir ?? null);
-      }
-      return true;
-    },
-    [recents]
-  );
-
   const selectProject = useCallback(
     (index: number): boolean => {
       const g = stateRef.current.projects[index];
@@ -1930,7 +1321,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       moveOperator(g.dir, null);
       return true;
     },
-    [moveOperator]
+    [moveOperator, stateRef]
   );
 
   /** Activate a tab by live PTY, stable tab, or durable Session identity. */
@@ -1954,7 +1345,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       return false;
     },
-    [moveOperator]
+    [moveOperator, stateRef]
   );
 
   /** ⌘D: pin the active tab for a split ("watch one, drive one") — the
@@ -1973,13 +1364,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     });
     setPinnedTabId(next);
     return applied;
-  }, []);
+  }, [setPinnedTabId, stateRef]);
 
   /** pin/unpin a SPECIFIC tab in the split (D27 context menu); the ⌘D
    *  toggle for the active tab remains togglePin */
-  const togglePinTab = useCallback((tabId: string) => {
-    setPinnedTabId(cur => (cur === tabId ? null : tabId));
-  }, []);
+  const togglePinTab = useCallback(
+    (tabId: string) => {
+      setPinnedTabId(cur => (cur === tabId ? null : tabId));
+    },
+    [setPinnedTabId]
+  );
 
   /** back/forward tab application (D27): select only if it still exists */
   const selectExistingTab = useCallback(
@@ -1989,7 +1383,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!g || !g.tabs.some(t => t.id === tabId)) return;
       moveOperator(dir, tabId);
     },
-    [moveOperator]
+    [moveOperator, stateRef]
   );
 
   const selectTab = useCallback(
@@ -2028,22 +1422,25 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       moveOperator(next.dir, next.tab?.id ?? null);
       return { dir: next.dir, tabId: next.tab?.id ?? null };
     },
-    [moveOperator]
+    [moveOperator, stateRef]
   );
 
   /** ⌘1–⌘9: jump straight to the Nth tab of the global ring (D18 — the
    *  highest-frequency switch gets the cheapest chord, browser-style). */
+  const selectTabByOrdinal = useCallback(
+    (index: number): boolean => {
+      const target = tabAtOrdinal(stateRef.current.projects, index);
+      if (!target) return false;
+      moveOperator(target.dir, target.tab.id);
+      return true;
+    },
+    [moveOperator, stateRef]
+  );
+
   // ── Arrangement (D20): order is an interface once ⌘digit ordinals
   // exist. Tabs arrange within their Project; Projects arrange globally.
   // Order persists with the layout; Project order also pushes best-effort
   // to the registry's sort_order so it syncs across machines.
-  const syncProjectOrder = useCallback((ordered: Project[]) => {
-    const ids = ordered
-      .map(project => project.registryId)
-      .filter((id): id is string => !!id);
-    if (ids.length > 1) void registryReorderProjects(ids).catch(() => {});
-  }, []);
-
   const applyProjectOrder = useCallback(
     (next: Project[] | null): boolean => {
       if (!next) return false;
@@ -2051,19 +1448,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       syncProjectOrder(next);
       return true;
     },
-    [syncProjectOrder]
+    [setProjects, syncProjectOrder]
   );
 
   /** ⌘⌥[/⌘⌥]: nudge the ACTIVE tab one slot within its Project */
-  const moveActiveTab = useCallback((delta: 1 | -1): boolean => {
-    const { projects: gs, activeDir: ad } = stateRef.current;
-    const active = gs.find(g => g.dir === ad);
-    if (!active?.activeTabId) return false;
-    const next = moveTabWithinProject(gs, active.activeTabId, delta);
-    if (!next) return false;
-    setProjects(next);
-    return true;
-  }, []);
+  const moveActiveTab = useCallback(
+    (delta: 1 | -1): boolean => {
+      const { projects: gs, activeDir: ad } = stateRef.current;
+      const active = gs.find(g => g.dir === ad);
+      if (!active?.activeTabId) return false;
+      const next = moveTabWithinProject(gs, active.activeTabId, delta);
+      if (!next) return false;
+      setProjects(next);
+      return true;
+    },
+    [setProjects, stateRef]
+  );
 
   /** ⌘⌥⇧[/⌘⌥⇧]: nudge the ACTIVE Project one slot in the strip */
   const moveActiveProject = useCallback(
@@ -2072,7 +1472,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!ad) return false;
       return applyProjectOrder(moveProjectInList(gs, ad, delta));
     },
-    [applyProjectOrder]
+    [applyProjectOrder, stateRef]
   );
 
   /** drag-and-drop: drop a tab beside a sibling in the same Project */
@@ -2092,7 +1492,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setProjects(next);
       return true;
     },
-    []
+    [setProjects, stateRef]
   );
 
   /** drag-and-drop: drop a Project group beside another */
@@ -2101,17 +1501,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       applyProjectOrder(
         placeProjectBeside(stateRef.current.projects, dir, targetDir, place)
       ),
-    [applyProjectOrder]
-  );
-
-  const selectTabByOrdinal = useCallback(
-    (index: number): boolean => {
-      const target = tabAtOrdinal(stateRef.current.projects, index);
-      if (!target) return false;
-      moveOperator(target.dir, target.tab.id);
-      return true;
-    },
-    [moveOperator]
+    [applyProjectOrder, stateRef]
   );
 
   const activeProject = projects.find(g => g.dir === activeDir) ?? null;
@@ -2138,33 +1528,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [updateTab]
   );
 
-  const setProjectColor = useCallback((dir: string, color: string) => {
-    editedDirsRef.current.add(dir);
-    setProjects(prev => prev.map(g => (g.dir === dir ? { ...g, color } : g)));
-    // sync to the durable registry so the recolor persists + syncs (best-effort)
-    const g = stateRef.current.projects.find(p => p.dir === dir);
-    if (g?.registryId) {
-      void registrySetProjectColor(g.registryId, color).catch(() => {});
-    }
-  }, []);
-
-  const renameProject = useCallback((dir: string, name: string) => {
-    const next = name.trim();
-    if (!next) return;
-    editedDirsRef.current.add(dir);
-    setProjects(prev =>
-      prev.map(g => (g.dir === dir ? { ...g, name: next } : g))
-    );
-    // sync to the durable registry so the rename persists + syncs (best-effort)
-    const g = stateRef.current.projects.find(p => p.dir === dir);
-    if (g?.registryId) {
-      void registryRenameProject(g.registryId, next).catch(() => {});
-    }
-  }, []);
-
   const activeTab =
     activeProject?.tabs.find(t => t.id === activeProject.activeTabId) ?? null;
 
+  // ---- palette requests (S2) and their replay once the layout has loaded ----
   // ---- palette requests (S2): the ⌘K switcher lives at the app root and
   // asks the workspace to activate a session / launch a harness. Live events
   // handle the mounted-and-ready case; before ready the pending slot is left
@@ -2212,7 +1579,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       window.removeEventListener(OPEN_PROJECT_EVENT, onOpenProject);
       window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
     };
-  }, [activateSession, selectExistingTab, launchHere, openProject, togglePin]);
+  }, [
+    activateSession,
+    launchHere,
+    openProject,
+    readyRef,
+    selectExistingTab,
+    togglePin,
+  ]);
 
   useEffect(() => {
     if (!ready) return;
@@ -2228,16 +1602,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     if (proj) void openProject(proj);
   }, [ready, activateSession, selectExistingTab, launchHere, openProject]);
 
-  // ---- attention focus contract (S1): tell main which session the operator
-  // is looking at — the focused session never flags, and focusing clears.
-  // The local record clears optimistically; main confirms via pty:attention.
+  // ---- attention focus contract (S1) ----
   const activeSessionId =
     activeTab && isSessionTab(activeTab) ? activeTab.sessionId : null;
   useEffect(() => {
     setReentryRecap(current =>
       current?.id === activeSessionId ? current : null
     );
-  }, [activeSessionId]);
+  }, [activeSessionId, setReentryRecap]);
 
   // A selected, visible tab is acknowledged before paint. A passive effect
   // used to leave one rendered frame where the newly active tab still wore
