@@ -52,6 +52,28 @@ const REFUSAL =
   /(?:refusing a non-fast-forward projection|refusing public delivery|non-fast-forward|fetch first)/iu;
 const UNRENDERED_SHOWN = 6;
 const ENTRY_SHOWN = 3;
+/** Where the operator-only execute half of the recovery is written down. */
+export const PUBLIC_CATCHUP_RUNBOOK =
+  'docs/engineering/agent-delivery.md#reviewed-public-catch-up';
+
+/**
+ * Whether retrying can clear a projection failure (BUG-197).
+ *
+ * `deterministic` is claimed only when it is proven: a renderer refused a
+ * private blob (a render is a pure function of the commit's bytes), or the
+ * public remote refused a non-fast-forward. Everything else is `transient`
+ * (network, remote outage, tooling), the only kind a retry can clear. Before
+ * this, a render refusal was recorded as `pending`, which reads as a push
+ * that did not happen, so nobody could tell it would never clear.
+ */
+function classifyProjectionFailure(error, message) {
+  const unrenderable = error?.renderRefusal ?? null;
+  return {
+    failure:
+      unrenderable || REFUSAL.test(message) ? 'deterministic' : 'transient',
+    unrenderable: unrenderable ? { ...unrenderable } : null,
+  };
+}
 
 /**
  * The public remote's push refspec. Deliberately force-free and exported so a
@@ -355,18 +377,91 @@ export async function repairPublicProjectionBlocker(
     warn,
   });
   if (repair.state !== 'published') {
-    if (repair.state === 'refused') {
-      throw new Error(
-        '[public-delivery] deterministic public catch-up refusal latched ' +
-          'private master before the new candidate'
-      );
-    }
-    throw new Error(
-      '[public-delivery] pending public projection catch-up did not publish; ' +
-        'private master remains latched before the new candidate'
-    );
+    const latch = describePublicLatch(repair, {
+      sourceSha: integratedSha,
+      publicSha: remoteTip,
+    });
+    const error = new Error(latch.message);
+    error.publicLatch = latch.record;
+    throw error;
   }
   return repair;
+}
+
+function recoveryCommand(sourceSha, publicSha) {
+  return (
+    'pnpm open-source:catchup -- --source ' +
+    sourceSha +
+    ' --expected-public-sha ' +
+    (publicSha ?? '<public master SHA>')
+  );
+}
+
+/**
+ * The refusal a latched landing prints, and the same facts as a record the
+ * thrown error carries (`publicLatch`) for whatever reports the latch
+ * (BUG-197). It names what an operator needs and no more: the private commit
+ * that cannot render with the file and check that refused it, whether a retry
+ * can clear it, and for a deterministic failure the exact recovery preview
+ * with the real SHAs filled in.
+ */
+function describePublicLatch(repair, { sourceSha, publicSha }) {
+  const failure =
+    repair.failure ??
+    (repair.state === 'refused' ? 'deterministic' : 'transient');
+  const unrenderable = repair.unrenderable ?? null;
+  const check =
+    unrenderable?.check ??
+    (repair.state === 'refused' ? 'non-fast-forward' : null);
+  const record = {
+    state: repair.state,
+    failure,
+    privateSha: unrenderable?.privateSha ?? null,
+    path: unrenderable?.path ?? null,
+    check,
+    reason: repair.reason ?? null,
+    sourceSha,
+    publicSha: publicSha ?? null,
+    recovery:
+      failure === 'deterministic'
+        ? {
+            preview: recoveryCommand(sourceSha, publicSha),
+            execute: PUBLIC_CATCHUP_RUNBOOK,
+          }
+        : { retry: 'the next landing retries this catch-up' },
+  };
+  const what = unrenderable
+    ? `private commit ${String(unrenderable.privateSha ?? sourceSha).slice(0, 12)} ` +
+      `cannot render ${unrenderable.path} (check ${check})`
+    : repair.state === 'refused'
+      ? `the projection of private ${sourceSha.slice(0, 12)} does not ` +
+        `descend from public ${String(publicSha).slice(0, 12)} (check ${check})`
+      : `private ${sourceSha.slice(0, 12)} did not publish`;
+  const reason = repair.reason ?? 'none recorded';
+  const message = (
+    failure === 'deterministic'
+      ? [
+          '[public-delivery] public catch-up refused deterministically; ' +
+            'private master remains latched before the new candidate.',
+          `  cause:    ${what}`,
+          '  failure:  deterministic. The projection is a pure function of ' +
+            'private history, so every retry refuses the same way; only a ' +
+            'reviewed catch-up publishes past it.',
+          `  recovery: ${record.recovery.preview}`,
+          '            (a preview; executing it with --execute under a ' +
+            `maintenance hold is operator-only: ${PUBLIC_CATCHUP_RUNBOOK})`,
+          `  reason:   ${reason}`,
+        ]
+      : [
+          '[public-delivery] pending public projection catch-up did not ' +
+            'publish; private master remains latched before the new candidate.',
+          `  cause:    ${what}`,
+          '  failure:  transient. The next landing retries it; if the same ' +
+            'reason repeats, it is not transient, so diagnose it first.',
+          `  reason:   ${reason}`,
+        ]
+  ).join('\n');
+  return { message, record };
 }
 
 export async function discardPreparedPublicProjection(prepared) {
@@ -400,7 +495,13 @@ async function recordProjectionSummary(
             entryBoundaries: summary.entryBoundaries,
             unrenderedOutputs: summary.unrenderedOutputs,
           }
-        : { reason: summary.reason }),
+        : {
+            reason: summary.reason,
+            ...(summary.failure ? { failure: summary.failure } : {}),
+            ...(summary.unrenderable
+              ? { unrenderable: summary.unrenderable }
+              : {}),
+          }),
     });
     summary.recorded = true;
   } catch (error) {
@@ -412,6 +513,8 @@ async function recordProjectionSummary(
     privateSha: summary.privateSha,
     publicSha: summary.publicSha ?? null,
     durationMs: summary.durationMs,
+    ...(summary.failure ? { failure: summary.failure } : {}),
+    ...(summary.unrenderable ? { unrenderable: summary.unrenderable } : {}),
   }).catch(() => {});
 
   if (summary.state === 'published') {
@@ -435,7 +538,9 @@ async function recordProjectionSummary(
   } else {
     warn(
       '[public-delivery] the private landing is integrated and the public ' +
-        `projection did not publish (recorded public=pending): ${summary.reason}`
+        'projection did not publish (recorded public=pending' +
+        (summary.failure ? `, ${summary.failure}` : '') +
+        `): ${summary.reason}`
     );
   }
   return summary;
@@ -461,6 +566,7 @@ export async function recordPublicProjectionFailure(
       publicRepository: (await resolvePublicRemote(root))?.url ?? null,
       startedAt: Date.now(),
       reason: message,
+      ...classifyProjectionFailure(error, message),
     },
     { log, warn, record }
   );
@@ -545,6 +651,7 @@ export async function publishPreparedPublicProjection(
     const message = String(error?.stderr ?? error?.message ?? error).trim();
     summary = {
       state: REFUSAL.test(message) ? 'refused' : 'pending',
+      ...classifyProjectionFailure(error, message),
       privateSha: prepared.privateSha,
       publicSha: prepared.publicSha,
       publicRepository: prepared.remote.url,

@@ -19,6 +19,7 @@ import {
   PRIVATE_DISTRIBUTION_PATHS,
   applyPublicVariantDirectives,
   applyPublicVariantJsonDirectives,
+  lintPublicMarkdown,
   renderRecipe,
   rendersOutput,
   unrenderedReason,
@@ -122,6 +123,291 @@ test('a Markdown replacement drops the delimited comment on both sides', () => {
     applyPublicVariantDirectives(source, { path: 'fixture.md' }),
     'Public sentence.\nEvidence: a partner conversation.\n\nSecond line.\n'
   );
+});
+
+/**
+ * The seam rule, BUG-196. A public Markdown document is refused only for a
+ * seam its public-variant directives CREATED; one the private author wrote is
+ * the docs checks' business (`lintPublicMarkdown`), not publication's.
+ */
+const DOCUMENT_SET = Object.freeze({
+  recipeId: 'public-document-set',
+  kind: 'render-public-document-set',
+});
+
+function renderDocument(lines, file = 'docs/fixture.md') {
+  return renderRecipeOutput({
+    ...DOCUMENT_SET,
+    path: file,
+    source: Buffer.from(lines.join('\n'), 'utf8'),
+  }).toString('utf8');
+}
+
+function lintDocument(lines, file = 'docs/fixture.md') {
+  return lintPublicMarkdown({
+    ...DOCUMENT_SET,
+    path: file,
+    source: Buffer.from(lines.join('\n'), 'utf8'),
+  });
+}
+
+function refusal(lines) {
+  try {
+    renderDocument(lines);
+  } catch (error) {
+    return error;
+  }
+  return assert.fail('expected the render to be refused');
+}
+
+test('an authored double blank line publishes, and the docs lint names its line', () => {
+  const lines = ['# Title', '', 'First.', '', '', '## Next', '', 'Body.', ''];
+  assert.match(renderDocument(lines), /First\.\n\n\n## Next/u);
+  assert.deepEqual(
+    lintDocument(lines).map(finding => finding.message),
+    [
+      'docs/fixture.md line 4 has two blank lines in a row, which the ' +
+        'public document renders as a blank-line seam; delete one',
+    ]
+  );
+});
+
+test('an authored heading with no blank line under it publishes, and the docs lint names it', () => {
+  const lines = ['# Title', '', '## Section', 'Body.', ''];
+  assert.match(renderDocument(lines), /## Section\nBody\./u);
+  assert.deepEqual(
+    lintDocument(lines).map(finding => [finding.line, finding.kind]),
+    [[3, 'unspaced-heading']]
+  );
+});
+
+test('the recreated 0cbcb226 hunk is no longer a publication refusal', () => {
+  // The exact shape: a paragraph, then one extra blank line before a new
+  // backlog heading, in a region no directive touches.
+  const lines = [
+    '# Roadmap',
+    '',
+    'Richer mixed-state presentation remains deferred.',
+    '',
+    '',
+    '### BUG-163 Spatial ⌘J cannot focus Fleet Agents',
+    '',
+    'Status: bug · ENG-004',
+    '',
+  ];
+  assert.doesNotThrow(() => renderDocument(lines, 'docs/engineering/roadmap.md'));
+  assert.deepEqual(
+    lintDocument(lines, 'docs/engineering/roadmap.md').map(
+      finding => finding.message
+    ),
+    [
+      'docs/engineering/roadmap.md line 4 has two blank lines in a row, ' +
+        'which the public document renders as a blank-line seam; delete one',
+    ]
+  );
+});
+
+test('a region removed with a blank line on each side is still refused', () => {
+  const uneven = [
+    '# Title',
+    '',
+    'Public before.',
+    '',
+    '<!-- exawatt:public-omit-begin private detail -->',
+    'Private detail.',
+    '<!-- exawatt:public-omit-end -->',
+    '',
+    'Public after.',
+    '',
+  ];
+  const error = refusal(uneven);
+  assert.equal(error.check, 'markdown-seam');
+  assert.match(
+    error.message,
+    /docs\/fixture\.md has a blank-line seam at line \d+ that its public-variant directives created: it joins source line 4 to source line 8/u
+  );
+  assert.equal(
+    error.renderRefusal.check,
+    'render-public-document-set/markdown-seam'
+  );
+  // An authored seam elsewhere must not mask the one the render created,
+  // which is what a count of seams in source and output would let happen.
+  const masked = refusal(['# Title', '', 'Authored.', '', '', ...uneven.slice(1)]);
+  assert.match(masked.message, /that its public-variant directives created/u);
+  // And the docs lint does not claim a created seam as authored.
+  assert.deepEqual(
+    lintDocument(['# Title', '', 'Authored.', '', '', '## Next', '']).map(
+      finding => finding.line
+    ),
+    [4]
+  );
+});
+
+test('a region that pulls text up under a heading is still refused', () => {
+  const error = refusal([
+    '## Heading',
+    '<!-- exawatt:public-omit-begin private detail -->',
+    'Private detail.',
+    '',
+    '<!-- exawatt:public-omit-end -->',
+    'Public text.',
+    '',
+  ]);
+  assert.match(
+    error.message,
+    /a heading with no blank line under it at line \d+ that its public-variant directives created: it joins source line 1 to source line 6/u
+  );
+});
+
+test('a replacement that renders a double blank line is refused', () => {
+  // Adjacent in the source, but as two comment lines, not two blank lines:
+  // the source does not have a double blank line at that spot.
+  const inside = refusal([
+    '# Title',
+    '',
+    '<!-- exawatt:public-replace-begin private sentence -->',
+    'Private sentence.',
+    '<!-- exawatt:public-replace-with -->',
+    '<!-- Public sentence. -->',
+    '<!-- -->',
+    '<!-- -->',
+    '<!-- Public after. -->',
+    '<!-- exawatt:public-replace-end -->',
+    '',
+  ]);
+  assert.equal(inside.check, 'markdown-seam');
+  // Beside a source blank line: not adjacent in the source at all.
+  const error = refusal([
+    '# Title',
+    '',
+    '<!-- exawatt:public-replace-begin private sentence -->',
+    'Private sentence.',
+    '<!-- exawatt:public-replace-with -->',
+    '<!-- Public sentence. -->',
+    '<!-- -->',
+    '<!-- exawatt:public-replace-end -->',
+    '',
+    'After.',
+    '',
+  ]);
+  assert.equal(error.check, 'markdown-seam');
+  assert.match(error.message, /blank-line seam/u);
+});
+
+test('a created seam right after an authored one is still found', () => {
+  // Four newlines are two seams, and a heading can sit hard under another
+  // heading. A search that resumed after each match would stop at the
+  // authored seam and miss the created one beside it.
+  const blank = refusal([
+    'A.',
+    '',
+    '',
+    '<!-- exawatt:public-omit-begin private detail -->',
+    'Private detail.',
+    '<!-- exawatt:public-omit-end -->',
+    '',
+    'B.',
+    '',
+  ]);
+  assert.match(blank.message, /joins source line 3 to source line 7/u);
+  const heading = refusal([
+    '# Title',
+    '## Section',
+    '<!-- exawatt:public-omit-begin private detail -->',
+    'Private detail.',
+    '<!-- exawatt:public-omit-end -->',
+    'Text.',
+    '',
+  ]);
+  assert.match(heading.message, /joins source line 2 to source line 6/u);
+});
+
+/**
+ * The rule that published every public commit before BUG-196, frozen here so
+ * the property below keeps holding if the live rule ever changes again.
+ */
+function formerSeamRuleRefuses(rendered) {
+  return /\n{3}/u.test(rendered) || /^#{1,6} .*\n[^\n]/mu.test(rendered);
+}
+
+/** The former text-level notice placement, frozen for the same reason. */
+function formerRendering(source) {
+  const notice =
+    '<!-- Generated for the public repository by the "public-document-set" recipe. -->';
+  const lines = applyPublicVariantDirectives(source, {
+    path: 'docs/fixture.md',
+  }).split('\n');
+  if (lines[0] === '---') {
+    const close = lines.indexOf('---', 1);
+    return [...lines.slice(0, close + 1), notice, ...lines.slice(close + 1)].join(
+      '\n'
+    );
+  }
+  return [notice, ...lines].join('\n');
+}
+
+function seededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+test('the seam rule only relaxes: nothing the former rule published renders differently or is refused', () => {
+  // Publication replays history, so a rule change that refused, or rendered
+  // differently, any document the former rule published would make already
+  // published history unreproducible. Generated documents cover the edges
+  // (CR, leading and trailing blanks, four newlines in a row, headings inside
+  // replacements) far more densely than the tracked tree does.
+  const random = seededRandom(20260924);
+  const pick = values => values[Math.floor(random() * values.length)];
+  const plain = ['', '', '', 'Text.', '# H', '## H', '#no heading', 'CR\r', ''];
+  let published = 0;
+  let newlyPublished = 0;
+  for (let round = 0; round < 4000; round += 1) {
+    const lines =
+      random() < 0.2 ? ['---', 'exawatt-roadmap: v2', '---'] : [];
+    const length = 1 + Math.floor(random() * 12);
+    for (let index = 0; index < length; index += 1) {
+      const shape = random();
+      if (shape < 0.15) {
+        lines.push(
+          '<!-- exawatt:public-omit-begin x -->',
+          pick(plain),
+          pick(plain),
+          '<!-- exawatt:public-omit-end -->'
+        );
+      } else if (shape < 0.25) {
+        lines.push(
+          '<!-- exawatt:public-replace-begin x -->',
+          pick(plain),
+          '<!-- exawatt:public-replace-with -->',
+          pick(['<!-- -->', '<!-- Text. -->', '<!-- ## H -->']),
+          '<!-- exawatt:public-replace-end -->'
+        );
+      } else {
+        lines.push(pick(plain));
+      }
+    }
+    const source = lines.join('\n');
+    const former = formerRendering(source);
+    let current = null;
+    try {
+      current = renderDocument(lines);
+    } catch (error) {
+      assert.equal(error.check, 'markdown-seam', error.message);
+    }
+    if (!formerSeamRuleRefuses(former)) {
+      published += 1;
+      assert.equal(current, former, JSON.stringify(source));
+    } else if (current !== null) {
+      newlyPublished += 1;
+      assert.equal(current, former, JSON.stringify(source));
+    }
+  }
+  assert.ok(published > 500, `only ${published} documents exercised the equality`);
+  assert.ok(newlyPublished > 100, `only ${newlyPublished} authored seams exercised`);
 });
 
 test('a JSON document declares its public variant in a reserved member', () => {
@@ -331,13 +617,9 @@ test('a rendered source file still parses', async () => {
         assert.ok(JSON.parse(bytes.toString('utf8')), file);
         continue;
       }
-      if (file.endsWith('.md')) {
-        const text = bytes.toString('utf8');
-        // A removed region must not leave a seam a reader can see.
-        assert.doesNotMatch(text, /\n{3}/u, file);
-        assert.doesNotMatch(text, /^#{1,6} .*\n[^\n]/mu, file);
-        continue;
-      }
+      // A seam a removed region created already refused the render above;
+      // an authored one is the docs lint's, in the next test (BUG-196).
+      if (file.endsWith('.md')) continue;
       const candidate = path.join(scratch, path.basename(file));
       writeFileSync(candidate, bytes);
       assert.doesNotThrow(
@@ -348,6 +630,63 @@ test('a rendered source file still parses', async () => {
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+/** Every Markdown output of the public document set, with its private source. */
+async function publicMarkdownSources() {
+  const declared = await manifest();
+  const sources = [];
+  for (const [recipeId, recipe] of Object.entries(declared.recipes)) {
+    for (const output of recipe.outputs) {
+      if (!rendersOutput(recipe.kind, output.path)) continue;
+      if (!output.path.endsWith('.md')) continue;
+      sources.push({
+        recipeId,
+        kind: recipe.kind,
+        path: output.path,
+        source: await readFile(path.join(ROOT, output.path)),
+      });
+    }
+  }
+  return sources;
+}
+
+test('no public Markdown source carries an authored seam', async () => {
+  // The authoring lint, where `pnpm docs:check` and the landing checks run
+  // it. A finding here refuses a docs change before it reaches master; it can
+  // no longer latch publication, which is what an authored double blank line
+  // did on 2026-09-23 (BUG-196).
+  const findings = [];
+  for (const input of await publicMarkdownSources()) {
+    findings.push(...lintPublicMarkdown(input).map(entry => entry.message));
+  }
+  assert.deepEqual(findings, []);
+});
+
+test('an extra blank line before a public roadmap heading publishes and is linted', async t => {
+  const input = (await publicMarkdownSources()).find(
+    entry => entry.path === 'docs/engineering/roadmap.md'
+  );
+  if (!input) {
+    t.skip('the projected public tree renders no recipes');
+    return;
+  }
+  const lines = input.source.toString('utf8').split('\n');
+  const heading = lines.findIndex(
+    (line, index) => /^### /u.test(line) && lines[index - 1] === ''
+  );
+  assert.ok(heading > 0, 'expected a public roadmap heading to seam before');
+  lines.splice(heading, 0, '');
+  const source = Buffer.from(lines.join('\n'), 'utf8');
+  assert.doesNotThrow(() => renderRecipeOutput({ ...input, source }));
+  // Only the inserted line is new; line numbers after it shift by one.
+  const before = lintPublicMarkdown(input).map(entry =>
+    entry.line > heading ? entry.line + 1 : entry.line
+  );
+  assert.deepEqual(
+    lintPublicMarkdown({ ...input, source }).map(entry => entry.line),
+    [...before, heading].sort((left, right) => left - right)
+  );
 });
 
 test('the community electron-builder template publishes no private feed', async () => {

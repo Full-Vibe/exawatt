@@ -53,8 +53,18 @@ const DIRECTIVES = [
   REPLACE_END,
 ];
 
-function fail(message) {
-  throw new Error('[recipe-renderers] ' + message);
+/**
+ * Every refusal names the rule that refused (`check`), so a publication latch
+ * can say which check a private commit failed rather than only quoting prose.
+ */
+function fail(message, check = 'renderer-contract') {
+  const error = new Error('[recipe-renderers] ' + message);
+  error.check = check;
+  throw error;
+}
+
+function failDirective(message) {
+  fail(message, 'public-variant-directive');
 }
 
 function directiveOn(line) {
@@ -63,14 +73,16 @@ function directiveOn(line) {
   // No directive is a substring of another, so more than one match means the
   // line names two directives at once, which has no defined meaning.
   if (found.length !== 1) {
-    fail('line names ' + found.length + ' public-variant directives: ' + line);
+    failDirective(
+      'line names ' + found.length + ' public-variant directives: ' + line
+    );
   }
   return found[0];
 }
 
 function decodeText(buffer, path) {
   if (buffer.subarray(0, Math.min(buffer.length, 8192)).includes(0)) {
-    fail('cannot render binary content at ' + path);
+    fail('cannot render binary content at ' + path, 'binary-content');
   }
   return buffer.toString('utf8');
 }
@@ -88,7 +100,9 @@ function commentToken(line, path, at) {
   const match =
     /^(\s*)(\S+)[ \t]+exawatt:public-replace-with[ \t]*(\S*)[ \t]*$/u.exec(line);
   if (!match) {
-    fail(path + ':' + at + ' must write ' + REPLACE_WITH + ' after a comment');
+    failDirective(
+      path + ':' + at + ' must write ' + REPLACE_WITH + ' after a comment'
+    );
   }
   return { open: match[2], close: match[3] };
 }
@@ -99,7 +113,7 @@ function uncomment(line, token, path, at) {
     'u'
   ).exec(line);
   if (!match) {
-    fail(
+    failDirective(
       path + ':' + at + ' replacement line does not start with ' + token.open
     );
   }
@@ -110,7 +124,7 @@ function uncomment(line, token, path, at) {
       'u'
     ).exec(body);
     if (!closed) {
-      fail(
+      failDirective(
         path + ':' + at + ' replacement line does not end with ' + token.close
       );
     }
@@ -142,25 +156,41 @@ function uncomment(line, token, path, at) {
  * the comment token — throws rather than guessing.
  */
 export function applyPublicVariantDirectives(source, { path = 'input' } = {}) {
-  const lines = source.split('\n');
-  const output = [];
+  return applyDirectiveLines(source, { path }).lines.join('\n');
+}
+
+/**
+ * The directive pass itself. Besides the public lines, it records where each
+ * one came from: `origins[i]` is the zero-based source line that rendered line
+ * `i` was copied (or, inside a replacement, uncommented) from. The directive
+ * pass is the only place that knows which lines a removed region joined, so
+ * it writes that down instead of leaving a later check to guess it back from
+ * the output (see `markdownSeams`).
+ */
+function applyDirectiveLines(source, { path }) {
+  const sourceLines = source.split('\n');
+  const lines = [];
+  const origins = [];
   let mode = 'copy';
   let token = null;
   let openedAt = 0;
 
-  for (const [index, line] of lines.entries()) {
+  for (const [index, line] of sourceLines.entries()) {
     const at = index + 1;
     const directive = directiveOn(line);
     if (directive === null) {
-      if (mode === 'copy') output.push(line);
-      else if (mode === 'replace-with') {
-        output.push(uncomment(line, token, path, at));
+      if (mode === 'copy') {
+        lines.push(line);
+        origins.push(index);
+      } else if (mode === 'replace-with') {
+        lines.push(uncomment(line, token, path, at));
+        origins.push(index);
       }
       continue;
     }
     if (directive === OMIT_BEGIN || directive === REPLACE_BEGIN) {
       if (mode !== 'copy') {
-        fail(
+        failDirective(
           path + ':' + at + ' opens a public-variant region inside another one'
         );
       }
@@ -170,32 +200,41 @@ export function applyPublicVariantDirectives(source, { path = 'input' } = {}) {
     }
     if (directive === REPLACE_WITH) {
       if (mode !== 'replace-omit') {
-        fail(path + ':' + at + ' has ' + REPLACE_WITH + ' outside a replace');
+        failDirective(
+          path + ':' + at + ' has ' + REPLACE_WITH + ' outside a replace'
+        );
       }
       token = commentToken(line, path, at);
       mode = 'replace-with';
       continue;
     }
     if (directive === OMIT_END) {
-      if (mode !== 'omit') fail(path + ':' + at + ' closes an unopened omit');
+      if (mode !== 'omit') {
+        failDirective(path + ':' + at + ' closes an unopened omit');
+      }
       mode = 'copy';
       continue;
     }
     if (mode !== 'replace-with') {
-      fail(path + ':' + at + ' closes a replace with no ' + REPLACE_WITH);
+      failDirective(
+        path + ':' + at + ' closes a replace with no ' + REPLACE_WITH
+      );
     }
     mode = 'copy';
     token = null;
   }
 
   if (mode !== 'copy') {
-    fail(path + ':' + openedAt + ' opens a public-variant region never closed');
+    failDirective(
+      path + ':' + openedAt + ' opens a public-variant region never closed'
+    );
   }
-  const rendered = output.join('\n');
-  if (rendered.includes(DIRECTIVE_NAMESPACE)) {
-    fail('rendered variant of ' + path + ' still carries a directive marker');
+  if (lines.some(line => line.includes(DIRECTIVE_NAMESPACE))) {
+    failDirective(
+      'rendered variant of ' + path + ' still carries a directive marker'
+    );
   }
-  return rendered;
+  return { sourceLines, lines, origins };
 }
 
 /**
@@ -203,28 +242,184 @@ export function applyPublicVariantDirectives(source, { path = 'input' } = {}) {
  * that this file is a projection output. It goes after a shebang, because a
  * shebang is only a shebang on line one, and after YAML front matter, because
  * `exawatt-roadmap: v2` is only front matter when the document opens with it.
+ *
+ * The notice has no source line, so its origin is `null`.
  */
-function withGeneratedNotice(text, { comment, recipeId }) {
+function withGeneratedNotice(variant, { comment, recipeId }) {
   const notice =
     comment.open +
     ' Generated for the public repository by the "' +
     recipeId +
     '" recipe.' +
     (comment.close === '' ? '' : ' ' + comment.close);
-  const lines = text.split('\n');
+  // A variant with no lines at all (every line omitted) was, as text, the
+  // empty string, which splits into ONE empty line; the notice has always
+  // been followed by it. Byte identity with published history depends on
+  // keeping that.
+  const { lines, origins } =
+    variant.lines.length === 0 ? { lines: [''], origins: [null] } : variant;
+  let at = 0;
   if (lines[0]?.startsWith('#!')) {
-    return [lines[0], notice, ...lines.slice(1)].join('\n');
-  }
-  if (lines[0] === '---') {
+    at = 1;
+  } else if (lines[0] === '---') {
     const close = lines.indexOf('---', 1);
     if (close === -1) fail('front matter opened but never closed');
-    return [
-      ...lines.slice(0, close + 1),
-      notice,
-      ...lines.slice(close + 1),
-    ].join('\n');
+    at = close + 1;
   }
-  return [notice, ...lines].join('\n');
+  return {
+    ...variant,
+    lines: [...lines.slice(0, at), notice, ...lines.slice(at)],
+    origins: [...origins.slice(0, at), null, ...origins.slice(at)],
+  };
+}
+
+const BLANK_LINE_SEAM = /\n{3}/gu;
+const UNSPACED_HEADING = /^#{1,6} .*\n[^\n]/gmu;
+
+/**
+ * Every blank-line seam and every heading with no blank line under it in a
+ * rendered Markdown document, each attributed to whoever made it.
+ *
+ * Detection is the two patterns this renderer has always refused, run over
+ * the exact rendered text, so this can only ever find what the old rule
+ * found. Attribution is the new part. Each finding names the two rendered
+ * lines it consists of, and `authored` is true only when the source already
+ * carries those same two lines, verbatim and adjacent, at the recorded
+ * origin: two blank lines in a row, or a heading with its next line hard
+ * under it. Then the private author wrote it and the render only copied it.
+ * Anything else (lines a removed region brought together, a replacement line,
+ * the generated notice) is a seam the rendering created.
+ *
+ * Why lookup rather than inference: counting seams in the source and the
+ * output lets an authored seam elsewhere mask a created one, and a text diff
+ * has to guess how blank lines (the least distinctive lines there are) align
+ * across a removed region. The directive pass already knows; asking it is
+ * exact and local.
+ */
+function markdownSeams({ text, lines, origins, sourceLines }) {
+  const newlineOffsets = [];
+  for (let offset = 0; offset < text.length; offset += 1) {
+    if (text.charCodeAt(offset) === 10) newlineOffsets.push(offset);
+  }
+  // The rendered line an offset sits on: how many newlines precede it.
+  const lineAt = offset => {
+    let low = 0;
+    let high = newlineOffsets.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (newlineOffsets[middle] < offset) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
+  const seams = [];
+  const attribute = (kind, first, second) => {
+    const from = origins[first];
+    const to = origins[second];
+    const authored =
+      from !== null &&
+      to === from + 1 &&
+      sourceLines[from] === lines[first] &&
+      sourceLines[to] === lines[second];
+    seams.push({
+      kind,
+      renderedLine: first + 1,
+      sourceLines: [from === null ? null : from + 1, to === null ? null : to + 1],
+      authored,
+    });
+  };
+  // Matches may overlap (four newlines are two seams), so each search resumes
+  // one character after the previous match rather than after its end.
+  for (const match of overlappingMatches(BLANK_LINE_SEAM, text)) {
+    // The first newline ends line L; lines L+1 and L+2 are the blank pair.
+    const line = lineAt(match.index);
+    attribute('blank-line-seam', line + 1, line + 2);
+  }
+  for (const match of overlappingMatches(UNSPACED_HEADING, text)) {
+    const line = lineAt(match.index);
+    attribute('unspaced-heading', line, line + 1);
+  }
+  return seams;
+}
+
+function* overlappingMatches(pattern, text) {
+  const search = new RegExp(pattern.source, pattern.flags);
+  let match;
+  while ((match = search.exec(text)) !== null) {
+    yield match;
+    search.lastIndex = match.index + 1;
+  }
+}
+
+const SEAM_DESCRIPTION = {
+  'blank-line-seam': 'a blank-line seam',
+  'unspaced-heading': 'a heading with no blank line under it',
+};
+
+function describeSourceLine(line) {
+  return line === null ? 'the generated notice' : 'source line ' + line;
+}
+
+/**
+ * The publication half of the seam rule: refuse only a seam the rendering
+ * created. An authored one is the private file's own whitespace, which the
+ * render copied faithfully; `lintPublicMarkdown` reports it to the author, in
+ * the docs checks, where it cannot latch publication.
+ */
+function refuseCreatedSeams(rendering, path) {
+  const created = markdownSeams(rendering).find(seam => !seam.authored);
+  if (!created) return;
+  const [from, to] = created.sourceLines;
+  fail(
+    'rendered ' +
+      path +
+      ' has ' +
+      SEAM_DESCRIPTION[created.kind] +
+      ' at line ' +
+      created.renderedLine +
+      ' that its public-variant directives created: it joins ' +
+      describeSourceLine(from) +
+      ' to ' +
+      describeSourceLine(to) +
+      ', which the source does not carry as ' +
+      (created.kind === 'blank-line-seam'
+        ? 'two adjacent blank lines'
+        : 'a heading and the line directly under it') +
+      '. Move the marker so the region consumes exactly the blank lines it ' +
+      'should',
+    'markdown-seam'
+  );
+}
+
+/**
+ * The authoring half of the seam rule, for the docs checks rather than for
+ * publication: the seams a public Markdown document carries because its
+ * private source already has them, named by source line.
+ *
+ * Returns `[]` for any output the document-set renderer does not render as
+ * Markdown. Throws, as rendering would, when the directives are malformed.
+ */
+export function lintPublicMarkdown({ recipeId, kind, path, source }) {
+  if (kind !== 'render-public-document-set' || !path.endsWith('.md')) {
+    return [];
+  }
+  const rendering = renderTextLines(source, { path, recipeId });
+  return markdownSeams(rendering)
+    .filter(seam => seam.authored)
+    .map(seam => {
+      const line = seam.sourceLines[0];
+      return {
+        path,
+        line,
+        kind: seam.kind,
+        message:
+          seam.kind === 'blank-line-seam'
+            ? `${path} line ${line} has two blank lines in a row, which the ` +
+              'public document renders as a blank-line seam; delete one'
+            : `${path} line ${line} is a heading with no blank line under ` +
+              'it; add one',
+      };
+    });
 }
 
 function assertAbsent(text, forbidden, { path, why }) {
@@ -242,7 +437,8 @@ function assertAbsent(text, forbidden, { path, why }) {
           '; ' +
           why +
           '. Declare the difference with public-variant directives in the ' +
-          'private file.'
+          'private file.',
+        'forbidden-reference'
       );
     }
   }
@@ -328,13 +524,29 @@ const PRIVATE_COMPANY_REFERENCES = Object.freeze(
   PRIVATE_COMPANY_PATH_PREFIXES.map(literal)
 );
 
-function renderText(source, { path, recipeId, forbidden = [], why }) {
-  const rendered = withGeneratedNotice(
-    applyPublicVariantDirectives(decodeText(source, path), { path }),
+/**
+ * A text output as rendered lines, their source origins, and the source lines
+ * themselves, so a check can compare the rendering against the source it came
+ * from instead of re-deriving it.
+ */
+function renderTextLines(source, { path, recipeId }) {
+  const rendering = withGeneratedNotice(
+    applyDirectiveLines(decodeText(source, path), { path }),
     { comment: commentSyntaxFor(path), recipeId }
   );
-  if (forbidden.length > 0) assertAbsent(rendered, forbidden, { path, why });
-  return Buffer.from(rendered, 'utf8');
+  return { ...rendering, text: rendering.lines.join('\n') };
+}
+
+function renderText(
+  source,
+  { path, recipeId, forbidden = [], why, inspect = null }
+) {
+  const rendering = renderTextLines(source, { path, recipeId });
+  if (forbidden.length > 0) {
+    assertAbsent(rendering.text, forbidden, { path, why });
+  }
+  inspect?.(rendering);
+  return Buffer.from(rendering.text, 'utf8');
 }
 
 function commentSyntaxFor(path) {
@@ -368,7 +580,7 @@ function unescapePointerSegment(segment) {
  */
 function resolvePointer(document, pointer, path) {
   if (!pointer.startsWith('/')) {
-    fail(path + ' public-variant pointer must start with "/": ' + pointer);
+    failDirective(path + ' public-variant pointer must start with "/": ' + pointer);
   }
   const segments = pointer.slice(1).split('/').map(unescapePointerSegment);
   let container = document;
@@ -378,7 +590,7 @@ function resolvePointer(document, pointer, path) {
       typeof container !== 'object' ||
       !Object.hasOwn(container, segment)
     ) {
-      fail(path + ' public-variant pointer matches nothing: ' + pointer);
+      failDirective(path + ' public-variant pointer matches nothing: ' + pointer);
     }
     container = container[segment];
   }
@@ -388,7 +600,7 @@ function resolvePointer(document, pointer, path) {
     typeof container !== 'object' ||
     !Object.hasOwn(container, key)
   ) {
-    fail(path + ' public-variant pointer matches nothing: ' + pointer);
+    failDirective(path + ' public-variant pointer matches nothing: ' + pointer);
   }
   return { container, key };
 }
@@ -419,7 +631,7 @@ export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
   }
   const directive = document[JSON_DIRECTIVE_KEY];
   if (directive === undefined) {
-    fail(
+    failDirective(
       path +
         ' must declare its public variant in a "' +
         JSON_DIRECTIVE_KEY +
@@ -435,14 +647,16 @@ export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
   for (const [pointer, entry] of Object.entries(directive.replace ?? {})) {
     const { container, key } = resolvePointer(document, pointer, path);
     if (!Object.hasOwn(entry ?? {}, 'value')) {
-      fail(path + ' public-variant replace needs a "value": ' + pointer);
+      failDirective(path + ' public-variant replace needs a "value": ' + pointer);
     }
     container[key] = entry.value;
   }
 
   const rendered = JSON.stringify(document, null, 2) + '\n';
   if (rendered.includes(DIRECTIVE_NAMESPACE)) {
-    fail('rendered variant of ' + path + ' still carries a directive marker');
+    failDirective(
+      'rendered variant of ' + path + ' still carries a directive marker'
+    );
   }
   return rendered;
 }
@@ -489,7 +703,8 @@ const RENDERERS = new Map([
             'rendered ' +
               path +
               ' must declare least-privilege `permissions:` rather than ' +
-              'inherit the repository default'
+              'inherit the repository default',
+            'least-privilege-permissions'
           );
         }
         return rendered;
@@ -556,7 +771,7 @@ const RENDERERS = new Map([
       unrenderable: () => null,
       render: (path, source, recipeId) => {
         const render = path.endsWith('.json') ? renderJson : renderText;
-        const rendered = render(source, {
+        return render(source, {
           path,
           recipeId,
           forbidden: [
@@ -570,30 +785,18 @@ const RENDERERS = new Map([
             'application, and what describes the public or official client’s ' +
             'observable behaviour, but never company canon, private evidence, ' +
             'production topology, or release custody (decision `0036` §2)',
+          // A removed region must leave the document it came from intact, not
+          // a seam: a directive that swallows content on one side of a blank
+          // line and not the other is exactly the mistake a reviewer of the
+          // private diff cannot see. Only a seam the RENDERING created is
+          // refused here. Until BUG-196 this refused every seam in the output,
+          // so an authored double blank line (`0cbcb226`) read as a botched
+          // removal, could not project, and latched every landing; authored
+          // whitespace is `lintPublicMarkdown`'s job, in the docs checks.
+          inspect: path.endsWith('.md')
+            ? rendering => refuseCreatedSeams(rendering, path)
+            : null,
         });
-        // A removed region must leave the document it came from intact, not a
-        // seam. Three newlines in a row means a directive swallowed content on
-        // one side of a blank line and not the other, which is exactly the
-        // mistake a reviewer of the private diff cannot see.
-        if (path.endsWith('.md')) {
-          const text = rendered.toString('utf8');
-          const seam = /\n{3}/u.test(text)
-            ? 'a blank-line seam'
-            : /^#{1,6} .*\n[^\n]/mu.test(text)
-              ? 'a heading with no blank line under it'
-              : null;
-          if (seam !== null) {
-            fail(
-              'rendered ' +
-                path +
-                ' has ' +
-                seam +
-                ' where a public-variant region was removed; move the marker ' +
-                'so the region consumes exactly the blank lines it should'
-            );
-          }
-        }
-        return rendered;
       },
     },
   ],
@@ -807,7 +1010,21 @@ export function renderRecipeOutput({ recipeId, kind, path, source }) {
   if (!Buffer.isBuffer(source)) {
     fail('renderer input for ' + path + ' must be a Buffer');
   }
-  return renderer.render(path, source, recipeId);
+  try {
+    return renderer.render(path, source, recipeId);
+  } catch (error) {
+    // A render is a pure function of these bytes, so a refusal here is
+    // deterministic: the same blob refuses the same way on every retry. The
+    // projector adds the private commit that carried the blob.
+    if (error instanceof Error && error.renderRefusal === undefined) {
+      error.renderRefusal = {
+        path,
+        recipeId,
+        check: kind + '/' + (error.check ?? 'renderer-contract'),
+      };
+    }
+    throw error;
+  }
 }
 
 /**

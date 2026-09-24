@@ -301,6 +301,35 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-197: **a latched landing now names the commit that latched
+  it, whether a retry can clear it, and the exact recovery.** Tickets 452 to
+  456 were refused with "pending public projection catch-up did not publish;
+  private master remains latched before the new candidate" and nothing else,
+  and several sessions spent real time working out what it meant. The cause
+  was a renderer refusal inside the catch-up's replay of `0cbcb226`, but
+  `recordPublicProjectionFailure` recorded every failure that was not a
+  non-fast-forward as `pending`, the state for a push that did not happen, so
+  the source lock implied a retry would clear it and nothing named the commit.
+  Now every renderer refusal carries its check (`markdown-seam`,
+  `public-variant-directive`, `forbidden-reference`, and so on),
+  `renderRecipeOutput` adds the path and recipe, and the projector adds the
+  private commit whose blob refused (in `applyPublicCommitChanges` and
+  `materializePublicSnapshot`, which between them cover replay, the tip,
+  anchor verification and catch-up). A failure is `deterministic` only when
+  that is proven, by a render refusal or a non-fast-forward, and `transient`
+  otherwise. The refusal gives one fact per line: the commit, file and check;
+  the failure class; for a deterministic failure the exact
+  `pnpm open-source:catchup -- --source <origin/master> --expected-public-sha <public tip>`
+  preview and a pointer to the operator-only execute step; and the renderer's
+  own reason. The source-lock record (still `pending`, since the latch policy
+  is unchanged) and the `public_projection` metric carry `failure` and
+  `unrenderable`, and the thrown error carries the whole record as
+  `publicLatch`, for the queue hold that will report it on `STATUS` and in the
+  ticket's terminal metric. `public-delivery.test.mjs` builds tonight's shape
+  in a fixture (one direct push that cannot render, a second that repairs the
+  tree, then a normal landing) and asserts every field; each is
+  mutation-verified.
+
 - 2026-09-23, BUG-195: the docs-only in-place path to `master` is sanctioned
   so the operator's question is answered before any landing, and it ran no
   landing check at all. Three pushes on it broke things the floor would have

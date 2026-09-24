@@ -97,6 +97,18 @@ export const PUBLIC_PROJECTION_CONTRACT_ID =
  * decided, and `entryBoundaries` reports every path whose entry moved.
  */
 
+/**
+ * Names the private commit whose bytes a render refused. The renderer knows
+ * the path and the check; only the projector knows which commit carried the
+ * blob, and a publication latch has to name that commit to be actionable.
+ */
+function attributeRenderRefusal(error, privateSha) {
+  if (error?.renderRefusal && error.renderRefusal.privateSha === undefined) {
+    error.renderRefusal.privateSha = privateSha;
+  }
+  return error;
+}
+
 function fail(message) {
   throw new Error('[public-projection] ' + message);
 }
@@ -1125,12 +1137,17 @@ async function materializePublicSnapshot({
     const cacheKey = `${output.kind}\0${output.path}\0${output.sourceObject}`;
     let object = renderedObjectCache.get(cacheKey);
     if (!object) {
-      const rendered = renderRecipeOutput({
-        recipeId: output.recipe,
-        kind: output.kind,
-        path: output.path,
-        source,
-      });
+      let rendered;
+      try {
+        rendered = renderRecipeOutput({
+          recipeId: output.recipe,
+          kind: output.kind,
+          path: output.path,
+          source,
+        });
+      } catch (error) {
+        throw attributeRenderRefusal(error, sourceSha);
+      }
       object = await hashBlob(projectionRepo, rendered);
       renderedObjectCache.set(cacheKey, object);
     }
@@ -1241,15 +1258,18 @@ async function applyPublicCommitChanges({
       const cacheKey = `${recipe.kind}\0${output.path}\0${entry.object}`;
       let object = renderedObjectCache.get(cacheKey);
       if (!object) {
-        object = await hashBlob(
-          projectionRepo,
-          renderRecipeOutput({
+        let rendered;
+        try {
+          rendered = renderRecipeOutput({
             recipeId,
             kind: recipe.kind,
             path: output.path,
             source,
-          })
-        );
+          });
+        } catch (error) {
+          throw attributeRenderRefusal(error, commit);
+        }
+        object = await hashBlob(projectionRepo, rendered);
         renderedObjectCache.set(cacheKey, object);
       }
       outputMap.set(output.path, {

@@ -8,12 +8,14 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import {
+  PUBLIC_CATCHUP_RUNBOOK,
   describeEntryBoundaries,
   describeUnrendered,
   preparePublicProjection,
   projectToPublicRemote,
   publishPreparedPublicProjection,
   publicPushArgs,
+  repairPublicProjectionBlocker,
   resolvePublicRemote,
 } from './lib/public-delivery.mjs';
 import {
@@ -30,9 +32,12 @@ import {
 } from './lib/public-maintenance-hold.mjs';
 import { git, gitAsync, hermeticGitEnv } from './lib/hermetic-git.mjs';
 import {
+  WORKFLOW_PATH,
   createPrivateFixture,
+  fixtureWorkflow,
   writeFastPnpm,
 } from './lib/public-repository-fixture.mjs';
+import { readDeliveryMetrics } from './lib/delivery-state.mjs';
 import {
   latestPublishedPair,
   recordSourceLock,
@@ -537,10 +542,15 @@ test('a pending public split is retried before the next private landing', async 
     const second = fixture.agentWorktree('agent/pending-second', {
       'src/c.ts': 'export const c = 3;\n',
     });
-    await assert.rejects(
-      land(second, writeFastPnpm(fixture.parent)),
-      /pending public projection catch-up did not publish/u
-    );
+    await assert.rejects(land(second, writeFastPnpm(fixture.parent)), error => {
+      const said = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+      assert.match(said, /pending public projection catch-up did not publish/u);
+      // A push the remote refused can clear on a retry, so the latch says so
+      // and offers no recovery beyond the next landing (BUG-197).
+      assert.match(said, /failure: {2}transient/u);
+      assert.doesNotMatch(said, /open-source:catchup/u);
+      return true;
+    });
     assert.equal(
       git(fixture.origin, ['rev-parse', 'master']),
       integratedBeforeSecond,
@@ -561,6 +571,113 @@ test('a pending public split is retried before the next private landing', async 
       git(fixture.origin, ['rev-parse', 'master'])
     );
     assert.equal(candidate.publicSha, git(remote, ['rev-parse', 'master']));
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// BUG-197, the 2026-09-24 shape: a commit pushed straight to private master
+// cannot render, a second direct commit repairs the tree, and every later
+// landing is refused by a catch-up that must replay the broken commit. Several
+// sessions spent real time on a refusal that named none of what follows.
+test('a deterministic catch-up refusal names the commit, the check, and the exact recovery', async () => {
+  const fixture = createPrivateFixture('exawatt-projector-latch-explains-');
+  try {
+    const remote = fixture.configurePublicRemote(fixture.publicRemote());
+    const first = fixture.agentWorktree('agent/latch-first', {
+      'src/b.ts': 'export const b = 2;\n',
+    });
+    assert.match(
+      await land(first, writeFastPnpm(fixture.parent)),
+      /public=published/u
+    );
+    const publicTip = git(remote, ['rev-parse', 'master']);
+
+    git(fixture.root, ['pull', '--quiet', '--ff-only', 'origin', 'master']);
+    const workflow = path.join(fixture.root, WORKFLOW_PATH);
+    writeFileSync(
+      workflow,
+      fixtureWorkflow().replace('on:\n', 'on:\n  pull_request_target:\n')
+    );
+    git(fixture.root, ['commit', '--quiet', '-am', 'direct: unrenderable']);
+    const unrenderable = git(fixture.root, ['rev-parse', 'HEAD']);
+    writeFileSync(workflow, fixtureWorkflow());
+    git(fixture.root, ['commit', '--quiet', '-am', 'direct: repair the tree']);
+    git(fixture.root, ['push', '--quiet', 'origin', 'master']);
+    const privateMaster = git(fixture.origin, ['rev-parse', 'master']);
+
+    const candidate = fixture.agentWorktree('agent/latch-candidate', {
+      'src/c.ts': 'export const c = 3;\n',
+    });
+    const check = 'render-public-ci/forbidden-reference';
+    const preview =
+      `pnpm open-source:catchup -- --source ${privateMaster} ` +
+      `--expected-public-sha ${publicTip}`;
+    await assert.rejects(
+      land(candidate, writeFastPnpm(fixture.parent)),
+      error => {
+        const said = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        assert.match(said, /refused deterministically/u);
+        assert.ok(
+          said.includes(
+            `private commit ${unrenderable.slice(0, 12)} cannot render ` +
+              `${WORKFLOW_PATH} (check ${check})`
+          ),
+          said
+        );
+        assert.match(said, /failure: {2}deterministic/u);
+        assert.ok(said.includes(`recovery: ${preview}`), said);
+        assert.ok(said.includes(PUBLIC_CATCHUP_RUNBOOK), said);
+        return true;
+      }
+    );
+    assert.equal(git(fixture.origin, ['rev-parse', 'master']), privateMaster);
+    assert.equal(git(remote, ['rev-parse', 'master']), publicTip);
+
+    // The same facts, machine-readable, for whatever reports the latch.
+    await assert.rejects(
+      repairPublicProjectionBlocker(fixture.root, {
+        integratedSha: privateMaster,
+        log: () => {},
+        warn: () => {},
+      }),
+      error => {
+        assert.deepEqual(
+          { ...error.publicLatch, reason: typeof error.publicLatch.reason },
+          {
+            state: 'pending',
+            failure: 'deterministic',
+            privateSha: unrenderable,
+            path: WORKFLOW_PATH,
+            check,
+            reason: 'string',
+            sourceSha: privateMaster,
+            publicSha: publicTip,
+            recovery: { preview, execute: PUBLIC_CATCHUP_RUNBOOK },
+          }
+        );
+        return true;
+      }
+    );
+
+    // The latch policy is unchanged: the record still latches as `pending`;
+    // it now also says it will never clear by itself, and the delivery
+    // metric carries the same facts.
+    const record = (await readSourceLock(fixture.root)).at(-1);
+    assert.equal(record.status, 'pending');
+    assert.equal(record.privateSha, privateMaster);
+    assert.equal(record.failure, 'deterministic');
+    assert.deepEqual(record.unrenderable, {
+      privateSha: unrenderable,
+      path: WORKFLOW_PATH,
+      recipeId: 'public-ci',
+      check,
+    });
+    const metric = (await readDeliveryMetrics(fixture.root))
+      .filter(event => event.type === 'public_projection')
+      .at(-1);
+    assert.equal(metric.failure, 'deterministic');
+    assert.equal(metric.unrenderable.privateSha, unrenderable);
   } finally {
     fixture.cleanup();
   }
