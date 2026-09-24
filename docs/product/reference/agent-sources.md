@@ -11,6 +11,7 @@ Examples:
 - Claude Code
 - OpenCode
 - Grok Build
+- Qwen Code
 - custom harnesses
 - Demo Scenario Source
 
@@ -21,7 +22,7 @@ OpenClaw is the first implementation target, not the product boundary.
 Settings owns an Agent Source registry: a compact list of configured source
 instances and a selected-source detail view. A user may eventually connect
 multiple instances of one source type, so the row identifies both the adapter
-(`Claude Code`, `Codex`, `OpenCode`, `Grok Build`, `OpenClaw`, or `Demo Mode`)
+(for example `Claude Code`, `Qwen Code`, `OpenClaw`, or `Demo Mode`)
 and the configured source
 (`Personal`, `Work gateway`, or another user-chosen name).
 
@@ -45,7 +46,7 @@ editable projection:
 - one configured OpenClaw Agent → one durable Exawatt Agent;
 - its main, channel, cron, helper, and spawned Sessions → subordinate context
   and execution records;
-- one current Claude Code, Codex, OpenCode, or Grok Build launch → one
+- one current launch of a local CLI source → one
   mission-bound Exawatt Agent backed by its provider Session;
 - one true, separately addressable delegate → a child Agent only when it is
   operationally meaningful.
@@ -70,8 +71,7 @@ required`, `degraded`, `unavailable`, `not installed`, `incompatible`, and
 that, for example, installed-but-signed-out never collapses into a vague
 offline state.
 
-For every local CLI source — Claude Code, Codex, OpenCode, Grok Build —
-authentication remains source-owned.
+For every local CLI source, authentication remains source-owned.
 Exawatt may launch the harness's supported sign-in command and recheck status,
 but does not collect or store the provider token. Gateway and future custom
 source credentials may be stored as narrowly scoped connection material in the
@@ -103,11 +103,11 @@ connection that looks broken.
 
 ### Current desktop implementation
 
-Settings now auto-discovers six built-in records through one Electron-main
-registry boundary: local Claude Code, local Codex, local OpenCode, local Grok
-Build, the local OpenClaw gateway, and Demo Mode. Claude Code, Codex, OpenCode,
-and Grok Build can launch from the Agent composer when their installation and
-source-owned authentication are ready. OpenClaw's local
+Settings auto-discovers every built-in record through one Electron-main
+registry boundary: each local CLI source in the table below, the local
+OpenClaw gateway, and Demo Mode. Each record is declared once, in
+`contracts/agent-sources.json`. A local CLI source can launch from the Agent
+composer when its installation and source-owned authentication are ready. OpenClaw's local
 installation and gateway configuration are reported independently, but
 reachability and authentication become ready only after its protocol-level
 gateway status command succeeds. Config presence and a listening port are not
@@ -165,7 +165,7 @@ active Project's frecency. Selection, editing, naming, failed starts, and
 abandoned work do not train rank. Pins are Project-local and remain above the
 learned order.
 
-Near-term Claude Code, Codex, OpenCode, and Grok Build Sessions are PTY-backed. That
+Sessions of every local CLI source are PTY-backed. That
 transport is an implementation detail, not a requirement for future sources.
 Shells remain
 secondary Project tools even though Shell appears as a peer ribbon and `⌘K`
@@ -303,12 +303,13 @@ The registry fails closed: a capability is declared only where Exawatt verified
 a mechanism on a real install, and an unverified one is reported absent rather
 than optimistically enabled.
 
-| Source      | Model catalog        | Reasoning effort               | Delegation reported          | Plan window          |
-| ----------- | -------------------- | ------------------------------ | ---------------------------- | -------------------- |
-| Claude Code | live, per Project    | live, per model                | yes, through lifecycle hooks | no local record      |
-| Codex       | live, per Project    | live, per model                | no                           | yes, source-reported |
-| OpenCode    | live, per Project    | live, exact per-model variants | not through its PTY          | no local record      |
-| Grok Build  | live (`grok models`) | source-owned — see below       | not through its PTY          | no local record      |
+| Source      | Model catalog              | Reasoning effort               | Delegation reported          | Plan window          |
+| ----------- | -------------------------- | ------------------------------ | ---------------------------- | -------------------- |
+| Claude Code | live, per Project          | live, per model                | yes, through lifecycle hooks | no local record      |
+| Codex       | live, per Project          | live, per model                | no                           | yes, source-reported |
+| OpenCode    | live, per Project          | live, exact per-model variants | not through its PTY          | no local record      |
+| Grok Build  | live (`grok models`)       | source-owned — see below       | not through its PTY          | no local record      |
+| Qwen Code   | configured in its settings | source-owned (no effort flag)  | yes, through lifecycle hooks | no local record      |
 
 Two Grok Build facts are worth stating plainly because both are absences with
 reasons, not gaps waiting to be filled:
@@ -326,6 +327,24 @@ reasons, not gaps waiting to be filled:
   and entire session history with it, so Exawatt injects nothing and the
   Session's status rides the same inference Codex and OpenCode use. Its
   delegation dots are therefore absent, not empty.
+
+Three Qwen Code facts, for the same reason:
+
+- **Sign-in and models are read from its settings, not asked of it.** Qwen
+  Code has no sign-in status command and no model list command; both live only
+  inside its session. Settings therefore reports a configured credential as
+  configured, never as working, and offers only the models its settings name.
+  With none configured, Qwen Code chooses and Exawatt pins nothing. Sign-in is
+  `/auth` inside Qwen Code.
+- **Status comes from its own hooks, injected per launch.** Exawatt points one
+  launch at a settings document through `QWEN_CODE_SYSTEM_DEFAULTS_PATH`, the
+  lowest-precedence layer, so the operator's own hooks keep firing and
+  `~/.qwen` is never written. Qwen Code's hooks share Claude Code's names but
+  not their meanings: a cancel or a rejected permission ends the turn without
+  `Stop`, so its return to the prompt is what ends a turn here.
+- **Posts from any other Qwen session are ignored.** The subscription travels
+  in the launch environment, so a `qwen` the Agent runs inside its own shell
+  would inherit it; only posts naming the Session's own id are read.
 
 Grok-the-model has been launchable through OpenCode since that source landed;
 Grok Build is the native harness — its own TUI, plan mode, subagents, and

@@ -570,7 +570,10 @@ incompatible, failed checks); a remembered negative and a sign-in negative
 inform and never veto (decision `0043`). Surfaces render `checking`,
 `known`, `stale` and `unobserved` as different things, by age. The separate OpenClaw live transport uses an opaque, owner-bound
 Electron-main capability rather than returning config or credentials to the
-renderer. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local records. Local
+renderer. Every local CLI source declared in `contracts/agent-sources.json` is a launch-capable
+local record; the contract is the one place a source is declared, and generated id lists, runtime
+guards and exhaustive per-harness tables (inspector, model catalog, native history, launch
+descriptor) make the compiler name every implementation a new source still owes (ENG-003 S5.1). Local
 OpenClaw reachability is established only by a successful gateway protocol
 status command, not by config presence or an open TCP port. Demo Mode is a
 built-in record whose facts use simulated provenance. The renderer receives
@@ -762,7 +765,7 @@ Provider/runtime boundaries:
 - Agent Source / Harness adapters
 - local OpenClaw gateway
 - customer-hosted and Exawatt-hosted OpenClaw gateways
-- Codex / Claude Code / OpenCode / Grok Build adapters
+- Codex / Claude Code / OpenCode / Grok Build / Qwen Code adapters
 - Demo Harness / Demo Scenario Source
 - custom harnesses
 - local machine
@@ -851,7 +854,7 @@ Built:
   this application surface. The scene wrapper isolates in-world DOM label
   stacking beneath sibling board controls.
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
-  xterm.js for Claude Code, Codex, OpenCode, Grok Build, and shells, behind a session-manager boundary
+  xterm.js for every local CLI source and for shells, behind a session-manager boundary
 - Electron-main turn-state ownership that distinguishes Agent work from PTY
   transport noise: output may establish working before a turn settles, while a
   quiet/BEL boundary latches finished until guaranteed operator engagement.
@@ -888,6 +891,13 @@ Built:
   permission modes map one-to-one onto the source's own
   `default`/`auto`/`bypassPermissions`, and the launch pins the Exawatt
   directory with `--cwd` so a login-shell `cd` cannot relocate the Session.
+  Qwen Code has neither a model list nor a sign-in status command, so both are
+  read from its own settings file and reported as configured values, never as
+  a working credential or an entitlement; its hooks are injected per launch
+  through `QWEN_CODE_SYSTEM_DEFAULTS_PATH` and read by a Qwen-specific
+  normalizer, because the event names match Claude Code's but their meanings
+  do not, and a per-launch session filter drops posts from any other Qwen
+  session that inherits the launch environment.
   Environment-owned effort constraints remain visible and non-editable because
   they outrank session flags. Successful launches alone train a Project-ranked
   app-wide Launch Configuration pool; Project pins, All/Customize, exact

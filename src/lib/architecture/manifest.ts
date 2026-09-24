@@ -144,7 +144,7 @@ export const architectureManifest = {
           id: 'third-party-sources',
           label: 'Third-party harnesses',
           summary:
-            'Codex, Claude Code, OpenCode, Grok Build, custom harnesses, and partner agent sources.',
+            'Codex, Claude Code, OpenCode, Grok Build, Qwen Code, custom harnesses, and partner agent sources.',
           layer: 'infrastructure',
           x: 830,
           y: 380,
@@ -198,7 +198,7 @@ export const architectureManifest = {
           id: 'agent-infrastructure-layer',
           label: 'Agent Infrastructure Layer',
           summary:
-            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, OpenCode, Grok Build, custom harnesses, gateways, and credentials.',
+            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, OpenCode, Grok Build, Qwen Code, custom harnesses, gateways, and credentials.',
           layer: 'infrastructure',
           x: 115,
           y: 555,
@@ -443,7 +443,7 @@ export const architectureManifest = {
         {
           id: 'harness-fleet',
           label:
-            'OpenClaw / Codex / Claude Code / OpenCode / Grok Build / Custom',
+            'OpenClaw / Codex / Claude Code / OpenCode / Grok Build / Qwen Code / Custom',
           summary:
             'The set of local, hosted, third-party, and custom execution backends.',
           layer: 'infrastructure',

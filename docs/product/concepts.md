@@ -449,6 +449,7 @@ Examples:
 - Claude Code
 - OpenCode
 - Grok Build
+- Qwen Code
 - custom harness
 - Demo Scenario Source
 
