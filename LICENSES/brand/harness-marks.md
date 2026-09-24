@@ -187,6 +187,26 @@ Every URL below was fetched on **2026-08-18**.
 
 ---
 
+## Qwen Code, no mark shipped
+
+- **Vendor / product:** Alibaba Group. Qwen Code, the Qwen terminal harness.
+- **Why no mark:** Qwen's Terms of Service (`https://qwen.ai/termsservice`,
+  read on 2026-09-24) state: "Under no circumstances shall you use, without
+  authorization, any of the Company's trademarks, service marks, trade names,
+  domain names, website names, or other distinctive brand features
+  (collectively referred to as "Marks"), including "Qwen" and "Alibaba".
+  Without the Company's prior written consent, you may not display or use the
+  foregoing marks". Unlike the vendors above, whose terms permit nominative
+  use and restrict alteration, this bars display outright without consent.
+- **What ships instead:** `SOURCE_MARKS.qwen` is `null`, so every surface
+  draws its own fallback beside the plain-text product name, and the source's
+  identity colour does the rest.
+- **Remedy:** obtain written consent from Alibaba, then add the mark with its
+  provenance here. A monochrome rendition exists in LobeHub Icons
+  (`packages/static-svg/icons/qwen.svg`, MIT); it was evaluated and not used.
+
+---
+
 ## If a vendor objects
 
 Delete the component and fall back to the text label beside it. Nothing in the UI depends on a

@@ -296,11 +296,38 @@ export const GROK_MODEL_CATALOG: AgentModelCatalog = {
   selectionAction: null,
 };
 
+/** The shape `qwenModelCatalog` returns for settings naming one model: Qwen
+ *  Code has no model list command, so its catalog is configuration. */
+const QWEN_MODEL_CATALOG: AgentModelCatalog = {
+  harness: 'qwen',
+  effectiveModel: 'qwen3-coder-plus',
+  effectiveModelLabel: 'Qwen3 Coder Plus',
+  effectiveModelSource: 'config',
+  effectiveEffort: null,
+  effectiveEffortLabel: 'Source default',
+  effectiveEffortSource: 'unavailable',
+  effortLocked: false,
+  models: [
+    {
+      id: 'qwen3-coder-plus',
+      label: 'Qwen3 Coder Plus',
+      description: 'Configured in Qwen Code settings (openai).',
+      defaultEffort: null,
+      efforts: [],
+    },
+  ],
+  catalogMode: 'configured-values',
+  catalogProvenance: 'Qwen Code settings · modelProviders',
+  observedAt: 1,
+  selectionAction: null,
+};
+
 const MODEL_CATALOGS: Record<AgentSourceId, AgentModelCatalog> = {
   claude: CLAUDE_MODEL_CATALOG,
   codex: CODEX_MODEL_CATALOG,
   opencode: OPENCODE_MODEL_CATALOG,
   grok: GROK_MODEL_CATALOG,
+  qwen: QWEN_MODEL_CATALOG,
 };
 
 export function installComposerTestHarness() {

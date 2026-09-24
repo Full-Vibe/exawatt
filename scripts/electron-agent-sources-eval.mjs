@@ -47,6 +47,14 @@ const grokSessionsDir = join(
   encodeGrokCwdDirname(projectDir)
 );
 const output = resolve('.artifacts', 'agent-sources');
+/** Expectations derive from the one declaration, never a hand-kept count. */
+const contract = JSON.parse(
+  readFileSync(resolve('contracts', 'agent-sources.json'), 'utf8')
+);
+const declaredSourceIds = contract.sources.map(source => source.adapterId);
+const declaredHarnessIds = contract.sources
+  .filter(source => source.harness !== null)
+  .map(source => source.adapterId);
 const previewThemes = [
   'exawatt-air-light',
   'exawatt-night-dark',
@@ -83,6 +91,23 @@ writeFileSync(
   ).join('\n')
 );
 writeFileSync(join(projectDir, 'package.json'), '{}');
+/** Qwen Code keeps sign-in and models in its own settings (ENG-003 S5.2):
+ *  a configured credential and one configured default model. */
+const qwenHome = join(fakeHome, '.qwen');
+const qwenChatsDir = join(
+  qwenHome,
+  'projects',
+  projectDir.replace(/[^A-Za-z0-9]/g, '-'),
+  'chats'
+);
+mkdirSync(qwenChatsDir, { recursive: true });
+writeFileSync(
+  join(qwenHome, 'settings.json'),
+  JSON.stringify({
+    security: { auth: { selectedType: 'openai' } },
+    model: { name: 'eval-qwen-coder' },
+  })
+);
 writeFileSync(
   join(fakeHome, '.openclaw', 'openclaw.json'),
   JSON.stringify({
@@ -158,6 +183,18 @@ exit 1
   // Mirrors the real `grok 1.0.3` surfaces Exawatt reads: the version string,
   // the `grok models` banner + listing, and an interactive launch that echoes
   // its argv so the eval can assert the exact composed command.
+  // Mirrors Qwen Code 0.24.4: a bare version string, and an interactive
+  // launch that echoes its argv and the settings layer Exawatt points it at.
+  qwen: `#!/bin/sh
+if [ "$1" = "--version" ]; then printf '0.24.4\n'; exit 0; fi
+printf 'FAKE_QWEN_ARGS:'
+printf ' <%s>' "$@"
+printf '\nFAKE_QWEN_DEFAULTS:%s\n' "\${QWEN_CODE_SYSTEM_DEFAULTS_PATH-unset}"
+if [ -n "$QWEN_CODE_SYSTEM_DEFAULTS_PATH" ] && [ -f "$QWEN_CODE_SYSTEM_DEFAULTS_PATH" ]; then
+  printf 'FAKE_QWEN_HOOK_URLS:%s\n' "$(grep -c '127.0.0.1' "$QWEN_CODE_SYSTEM_DEFAULTS_PATH")"
+fi
+while IFS= read -r input; do printf 'FAKE_QWEN_INPUT:%s\n' "$input"; done
+`,
   grok: `#!/bin/sh
 if [ "$1" = "--version" ]; then printf 'grok 1.0.3 (evalbuild)\n'; exit 0; fi
 if [ "$1" = "models" ]; then
@@ -373,8 +410,9 @@ try {
         window.electron?.agentSources?.list('all')
       );
       check(
-        'registry returns six normalized source records',
-        registry?.sources.length === 6,
+        'registry returns one normalized record per declared source',
+        JSON.stringify(registry?.sources.map(source => source.adapterId)) ===
+          JSON.stringify(declaredSourceIds),
         JSON.stringify(registry?.sources.map(source => source.adapterId))
       );
       const claude = registry?.sources.find(
@@ -436,6 +474,19 @@ try {
         grok?.capabilities.delegationObservation.includes('cannot inject') ===
           true && grok?.capabilities.effortSelection === 'source-owned',
         JSON.stringify(grok?.capabilities)
+      );
+      const qwen = registry?.sources.find(
+        source => source.adapterId === 'qwen'
+      );
+      const qwenReady =
+        qwen?.state === 'ready' &&
+        qwen?.facts.authentication.value === 'Configured: openai' &&
+        qwen?.facts.authentication.provenance.kind === 'source-config' &&
+        qwen?.facts.modelDiscovery.value === 'Default model configured';
+      check(
+        'Qwen Code is ready from its own settings, claiming a configured credential only',
+        qwenReady,
+        qwenReady ? '' : JSON.stringify(qwen)
       );
       check(
         'configured unreachable OpenClaw is degraded, not disconnected/absent',
@@ -595,7 +646,9 @@ try {
       );
       check(
         'composer scope contains only interactive local sources',
-        launchRegistry?.sources.length === 4 &&
+        JSON.stringify(
+          launchRegistry?.sources.map(source => source.adapterId)
+        ) === JSON.stringify(declaredHarnessIds) &&
           launchRegistry.sources.every(source => source.harness !== null),
         JSON.stringify(launchRegistry?.sources.map(source => source.adapterId))
       );
@@ -873,13 +926,126 @@ try {
         grokResumed?.buffer ?? 'No resumed Grok session'
       );
 
+      // ---- Qwen Code (ENG-003 S5.2) ----------------------------------------
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-qwen'
+        );
+      });
+      await waitForSelectedEngine(page, 'Qwen Code');
+      await openSetupDrawer(page);
+      check(
+        'the configured Qwen model is pinned and no effort control is offered',
+        (await launcherAxis(page, 'model').innerText()).includes(
+          'Eval Qwen Coder'
+        ) && (await launcherAxis(page, 'thinking').isDisabled()),
+        await launcherAxis(page, 'model').innerText()
+      );
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .fill('Verify the Qwen Code launch adapter');
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      const qwenLaunched = await page.evaluate(async () => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(item => item.harness === 'qwen');
+          const buffer = session
+            ? await window.electron?.pty?.buffer(session.id)
+            : '';
+          if (session?.harnessSessionId && buffer.includes('FAKE_QWEN_ARGS'))
+            return { session, buffer };
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      });
+      const qwenBuffer = qwenLaunched?.buffer ?? '';
+      const qwenIdentity = qwenLaunched?.session.harnessSessionId ?? '';
+      check(
+        'Exawatt allocates the Qwen session identity and keeps the task interactive',
+        /^[0-9a-f-]{36}$/.test(qwenIdentity) &&
+          qwenBuffer.includes(`<--session-id> <${qwenIdentity}>`) &&
+          qwenBuffer.includes('<-i> <Verify the Qwen Code launch adapter>') &&
+          qwenBuffer.includes('<-m> <eval-qwen-coder>') &&
+          qwenBuffer.includes('<--approval-mode>'),
+        qwenBuffer
+      );
+      check(
+        'Qwen hooks ride the lowest settings layer, never the user config',
+        /FAKE_QWEN_DEFAULTS:\/\S+/.test(qwenBuffer) &&
+          !qwenBuffer.includes('FAKE_QWEN_DEFAULTS:unset') &&
+          /FAKE_QWEN_HOOK_URLS:[1-9]/.test(qwenBuffer),
+        qwenBuffer
+      );
+
+      // Qwen Code writes its own transcript; the recent row must come from
+      // that file and resume only its exact identity.
+      writeFileSync(
+        join(qwenChatsDir, `${qwenIdentity}.jsonl`),
+        `${JSON.stringify({
+          uuid: 'eval-qwen-first',
+          parentUuid: null,
+          sessionId: qwenIdentity,
+          timestamp: new Date().toISOString(),
+          type: 'user',
+          provenance: 'real_user',
+          cwd: projectDir,
+          version: '0.24.4',
+          message: { role: 'user', parts: [{ text: 'Qwen Code launch eval' }] },
+        })}\n`
+      );
+      await page.waitForTimeout(10_500);
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-qwen'
+        );
+      });
+      const recentQwen = page.locator(
+        `[data-conversation-id="${qwenIdentity}"]`
+      );
+      await recentQwen.waitFor();
+      check(
+        'the Qwen transcript appears as a native provider conversation',
+        (await recentQwen.getAttribute('data-continuation')) === 'provider' &&
+          (await recentQwen.getAttribute('data-title-source')) === 'native' &&
+          (await recentQwen.innerText()).includes('Qwen Code launch eval')
+      );
+      await recentQwen.locator('button').first().click();
+      const qwenResumed = await page.evaluate(async originalSessionId => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(
+            item => item.harness === 'qwen' && item.id !== originalSessionId
+          );
+          const buffer = session
+            ? await window.electron?.pty?.buffer(session.id)
+            : '';
+          if (session?.harnessSessionId && buffer.includes('FAKE_QWEN_ARGS'))
+            return { session, buffer };
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      }, qwenLaunched?.session.id ?? '');
+      check(
+        'the Qwen recent row resumes only its exact identity',
+        qwenResumed?.session.harnessSessionId === qwenIdentity &&
+          qwenResumed.buffer.includes(`<--resume> <${qwenIdentity}>`) &&
+          !qwenResumed.buffer.includes('<--continue>'),
+        qwenResumed?.buffer ?? 'No resumed Qwen session'
+      );
+
       check(
         'renderer emitted no uncaught page errors',
         pageErrors.length === 0,
         pageErrors.join('; ')
       );
     },
-    { maxMs: 150_000 }
+    // Each launchable source's launch-and-resume section costs about 15s,
+    // most of it the recent-conversation refresh; the budget scales with them.
+    { maxMs: 180_000 }
   );
 } finally {
   rmSync(root, { recursive: true, force: true });

@@ -134,6 +134,9 @@ const SOURCE_MARKS = {
   codex: OpenAIIcon,
   opencode: OpenCodeIcon,
   grok: GrokIcon,
+  // Not drawn: Qwen's terms forbid displaying its marks without Alibaba's
+  // prior written consent. See LICENSES/brand/harness-marks.md.
+  qwen: null,
   openclaw: OpenClawIcon,
   demo: null,
 } as const satisfies Record<AgentSourceAdapterId, SourceMarkComponent | null>;

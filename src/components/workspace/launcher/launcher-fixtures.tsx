@@ -366,6 +366,7 @@ const ENGINE_DESCRIPTION: Record<AgentSourceId, string> = {
   codex: 'OpenAI models',
   opencode: 'Multi-provider and local models',
   grok: 'xAI models',
+  qwen: 'Qwen and OpenAI-compatible models',
 };
 
 /** The engine axis carries the same brand glyphs the chips do (finding 7). */
