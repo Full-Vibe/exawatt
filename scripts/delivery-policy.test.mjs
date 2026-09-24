@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import {
   chmod,
   mkdtemp,
@@ -451,6 +451,52 @@ test('the Team altitude owes its ordering gate', () => {
     ),
     ['eval:workspace:team']
   );
+});
+
+test('the workspace state owes the evals that drive it (BUG-220)', () => {
+  const owed = file => missingSurfaceGates([file]).map(entry => entry.gate);
+  const dir = 'src/components/workspace/workspace-state';
+  const modules = readdirSync(path.join(root, dir))
+    .filter(name => /\.tsx?$/u.test(name) && !/\.test\.tsx?$/u.test(name))
+    .map(name => `${dir}/${name}`);
+  assert.ok(modules.length > 0);
+  // Every module, including one added later, owes the eval that drives them all.
+  for (const file of [
+    'src/components/workspace/use-workspace-state.ts',
+    ...modules,
+  ]) {
+    assert.ok(
+      owed(file).includes('eval:electron:project-agent'),
+      `${file} owes eval:electron:project-agent`
+    );
+  }
+  assert.ok(
+    owed('src/components/workspace/use-workspace-state.ts').includes(
+      'eval:electron:recents'
+    )
+  );
+  assert.ok(
+    owed(`${dir}/use-recently-closed.ts`).includes('eval:electron:recents')
+  );
+  for (const gate of [
+    'eval:workspace:split',
+    'eval:electron:lifecycle',
+    'eval:electron:idempotency',
+  ]) {
+    assert.ok(owed(`${dir}/layout-restore.ts`).includes(gate), gate);
+    assert.ok(owed(`${dir}/use-workspace-hydration.ts`).includes(gate), gate);
+  }
+  assert.ok(
+    owed(`${dir}/use-session-launch.ts`).includes('eval:electron:clone-context')
+  );
+  for (const gate of [
+    'eval:electron:project-pause',
+    'eval:electron:model-change',
+  ]) {
+    assert.ok(owed(`${dir}/use-session-runtime.ts`).includes(gate), gate);
+  }
+  // A unit test beside the modules changes nothing an eval observes.
+  assert.deepEqual(owed(`${dir}/layout-restore.test.ts`), []);
 });
 
 test('the packaged customer-hosted fleet owns its end-to-end gate', () => {

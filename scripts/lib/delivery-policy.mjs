@@ -70,19 +70,47 @@ const MAX_RERUN_FILES = 25;
  * and carries the backlog id that will repair it. Deleting the entry instead
  * would throw away the knowledge that the surface owes evidence at all.
  */
+/**
+ * The workspace state (BUG-220). ENG-039 split `use-workspace-state.ts` into
+ * focused modules under `workspace-state/`: hydration, persistence, restore,
+ * Recently closed, launch and runtime. No gate named the hook or any module,
+ * so a change to restore, reopen or launch never asked for an Electron eval.
+ * Each gate below names the modules its script drives; only
+ * `eval:electron:project-agent` drives all of them. Unit tests beside the
+ * modules change nothing an eval observes.
+ */
+const WORKSPACE_STATE_HOOK = 'src/components/workspace/use-workspace-state.ts';
+const WORKSPACE_STATE_DIR = 'src/components/workspace/workspace-state/';
+const isWorkspaceState = file =>
+  file === WORKSPACE_STATE_HOOK ||
+  (file.startsWith(WORKSPACE_STATE_DIR) && !/\.test\.tsx?$/.test(file));
+const workspaceStateModule = (file, ...modules) =>
+  modules.some(module => file === `${WORKSPACE_STATE_DIR}${module}.ts`);
+
 export const SURFACE_GATES = [
   {
     gate: 'eval:electron:project-pause',
     why: 'Project pause must confirm interruption and preserve exact resumable Sessions through the real UI and IPC',
     match: file =>
       /(?:project-pause|pause-project|session-pause)/.test(file) ||
-      file === 'src/components/workspace/close-confirm.tsx',
+      file === 'src/components/workspace/close-confirm.tsx' ||
+      // Pause and Resume Agents are runtime verbs, refused while an operation
+      // is in flight, and the eval reads the persisted tab back (BUG-220).
+      workspaceStateModule(
+        file,
+        'use-session-runtime',
+        'session-operations',
+        'use-workspace-persistence',
+        'layout-serialize'
+      ),
   },
   {
     gate: 'eval:electron:clone-context',
     why: 'Clone must launch a distinct Agent from current owned context through the existing one-gesture action',
     match: file =>
       /(?:session-clone|session-clone-context)\.tsx?$/.test(file) ||
+      // Clone is a launch verb (BUG-220).
+      workspaceStateModule(file, 'use-session-launch') ||
       file === 'scripts/electron-clone-context-eval.mjs',
   },
   {
@@ -90,6 +118,15 @@ export const SURFACE_GATES = [
     why: 'applying a model must preserve conversation identity and launch policy through the real control and IPC',
     match: file =>
       /session-model-(?:change|control)\.tsx?$/.test(file) ||
+      // The model change is a runtime verb, and the eval reads the persisted
+      // launch model back (BUG-220).
+      workspaceStateModule(
+        file,
+        'use-session-runtime',
+        'session-operations',
+        'use-workspace-persistence',
+        'layout-serialize'
+      ) ||
       file === 'scripts/electron-model-change-eval.mjs',
   },
   {
@@ -123,7 +160,19 @@ export const SURFACE_GATES = [
     match: file =>
       /^src\/components\/workspace\/(?:workspace-client|split-layout|terminal-pane|session-restore-panel)\.tsx?$/.test(
         file
-      ) || file === 'scripts/workspace-split-eval.mjs',
+      ) ||
+      // It restores a seeded layout, pins and switches Projects, launches a
+      // shell and a draft, and watches the pinned Session exit (BUG-220).
+      workspaceStateModule(
+        file,
+        'use-workspace-hydration',
+        'persisted-layout',
+        'layout-restore',
+        'use-workspace-navigation',
+        'use-session-launch',
+        'project-list'
+      ) ||
+      file === 'scripts/workspace-split-eval.mjs',
   },
   {
     gate: 'eval:navigation',
@@ -332,6 +381,10 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/components/workspace/launch-controls.tsx' ||
       file === 'src/components/workspace/tab-strip.tsx' ||
+      // BUG-220: the script opens Projects, launches, closes and reopens,
+      // jumps to attention, drives palette requests, and reloads and
+      // relaunches, so it crosses every workspace-state module.
+      isWorkspaceState(file) ||
       file === 'scripts/lib/electron-eval.mjs' ||
       file === 'scripts/lib/harness-probe-fixture.mjs' ||
       file === 'scripts/electron-project-agent-launcher-eval.mjs',
@@ -375,6 +428,19 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/components/workspace/recent-conversations.tsx' ||
       file === 'electron/main/pty/conversation-catalog.ts' ||
+      // BUG-220: it relaunches a Recently-closed row exactly, asserts the
+      // ledger and the draft are consumed only after launch, and reads the
+      // persisted layout back.
+      file === WORKSPACE_STATE_HOOK ||
+      workspaceStateModule(
+        file,
+        'workspace-model',
+        'use-recently-closed',
+        'use-session-launch',
+        'project-list',
+        'use-workspace-persistence',
+        'layout-serialize'
+      ) ||
       file === 'scripts/electron-recent-conversations-eval.mjs',
   },
   {
@@ -444,6 +510,13 @@ export const SURFACE_GATES = [
       file === 'src/components/workspace/workspace-client.tsx' ||
       file === 'electron/main/pty/session-manager.ts' ||
       file === 'electron/main/shutdown-sequence.ts' ||
+      // The restore half: a relaunch hydrates the saved layout (BUG-220).
+      workspaceStateModule(
+        file,
+        'use-workspace-hydration',
+        'persisted-layout',
+        'layout-restore'
+      ) ||
       file === 'scripts/electron-session-lifecycle-eval.mjs',
   },
   {
@@ -454,6 +527,13 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/components/workspace/launcher/agent-launcher.tsx' ||
       file === 'electron/main/pty/session-manager.ts' ||
+      // Rehydration itself (BUG-220).
+      workspaceStateModule(
+        file,
+        'use-workspace-hydration',
+        'persisted-layout',
+        'layout-restore'
+      ) ||
       file === 'scripts/electron-rehydration-idempotency-eval.mjs',
   },
 
@@ -626,6 +706,8 @@ export const SURFACE_GATES = [
       file === 'src/components/workspace/resume-recovery-bar.tsx' ||
       file === 'electron/main/workspace-store.ts' ||
       file === 'electron/main/pty/session-manager.ts' ||
+      // The resume verbs and the restored tabs they resume (BUG-220).
+      workspaceStateModule(file, 'use-session-runtime', 'layout-restore') ||
       file === 'scripts/electron-exact-resume-eval.mjs',
   },
   {
