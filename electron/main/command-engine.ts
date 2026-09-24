@@ -18,9 +18,6 @@ import { broadcastToWindows } from './window-broadcast';
 import { handleTrusted } from './ipc-security';
 import type { CommandEnginePhase } from '@exawatt/core/desktop-bridge';
 
-export const COMMAND_ENGINE_CHANNEL = 'app:command-engine';
-export const COMMAND_ENGINE_CHANGED_CHANNEL = 'app:command-engine-changed';
-
 interface BroadcastWindow {
   isDestroyed: () => boolean;
   webContents: { send: (channel: string, payload: unknown) => void };
@@ -34,12 +31,12 @@ let windows: () => readonly BroadcastWindow[] = () => [];
 export function setCommandEnginePhase(next: CommandEnginePhase): void {
   if (phase === next) return;
   phase = next;
-  broadcastToWindows(windows(), COMMAND_ENGINE_CHANGED_CHANNEL, phase);
+  broadcastToWindows(windows(), 'app:command-engine-changed', phase);
 }
 
 export function registerCommandEngineIPC(
   allWindows: () => readonly BroadcastWindow[]
 ): void {
   windows = allWindows;
-  handleTrusted(COMMAND_ENGINE_CHANNEL, () => phase);
+  handleTrusted('app:command-engine', () => phase);
 }

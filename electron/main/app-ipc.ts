@@ -24,10 +24,16 @@ import {
 import { registerTrustedChannels, type TrustedChannels } from './ipc-table';
 import type { ElectronAppearancePreferencesV1 } from './settings-store';
 import type {
+  BuildInfo,
+  DesktopBridgeSyncChannel,
+  DesktopBridgeSyncRequests,
   DiagnosticsReport,
   ElectronAuthLinkConfig,
   ElectronAuthStartConfig,
+  ExawattBuildInfo,
 } from '@exawatt/core/desktop-bridge';
+import type { DistributionIdentity } from '@exawatt/core/distribution';
+import { pushToRenderer } from './window-broadcast';
 
 /**
  * Main's own channels, as tables keyed by channel name (`ipc-table.ts`):
@@ -199,7 +205,7 @@ interface CapturableWindow {
 }
 
 export function appChannels(deps: {
-  buildInfo: () => unknown;
+  buildInfo: () => ExawattBuildInfo;
   reports: ReturnType<typeof createDiagnosticsReports>;
   record: DiagnosticRecorder;
   windowFor: (sender: WebContents) => CapturableWindow | null;
@@ -259,6 +265,10 @@ interface AppearanceWindow {
   webContents: { send(channel: string, ...args: unknown[]): void };
 }
 
+/** What the synchronous first-paint read answers, per the contract. */
+type BootstrapAnswer =
+  DesktopBridgeSyncRequests['app:appearance-bootstrap']['result'];
+
 /**
  * The OS appearance, read three ways: a synchronous first-paint snapshot the
  * preload takes before any renderer pixel is chosen, two trusted reads, and a
@@ -280,7 +290,10 @@ export function createAppearanceIpc(deps: {
   channels: TrustedChannels;
   /** The synchronous first-paint read and the OS-change broadcast. */
   register(
-    onSync: (channel: string, listener: (event: IpcMainEvent) => void) => void
+    onSync: (
+      channel: DesktopBridgeSyncChannel,
+      listener: (event: IpcMainEvent) => void
+    ) => void
   ): void;
 } {
   const { nativeTheme } = deps;
@@ -319,17 +332,19 @@ export function createAppearanceIpc(deps: {
         // rejected sender here (e.g. querying event.senderFrame
         // mid-navigation) must fail closed into the renderer's existing
         // first-paint recovery theme instead.
+        const refused: BootstrapAnswer = undefined;
         try {
           deps.assertTrustedSender(event);
         } catch {
-          event.returnValue = undefined;
+          event.returnValue = refused;
           return;
         }
-        event.returnValue = rendererAppearanceBootstrapSnapshot(
+        const answer: BootstrapAnswer = rendererAppearanceBootstrapSnapshot(
           deps.appearancePreference(),
           deps.safeTheme,
           nativeTheme.shouldUseDarkColors
         );
+        event.returnValue = answer;
       });
       nativeTheme.on('updated', () => {
         refreshNativeWindowBackgrounds(
@@ -341,7 +356,7 @@ export function createAppearanceIpc(deps: {
         const snapshot = appearanceSnapshot();
         for (const win of deps.allWindows()) {
           if (!win.isDestroyed()) {
-            win.webContents.send('app:appearance-changed', snapshot);
+            pushToRenderer(win.webContents, 'app:appearance-changed', snapshot);
           }
         }
       });
@@ -367,7 +382,10 @@ interface MainChannelsElectron {
   nativeTheme: Parameters<typeof createAppearanceIpc>[0]['nativeTheme'];
   systemPreferences: { getAccentColor?: () => string };
   ipcMain: {
-    on(channel: string, listener: (event: IpcMainEvent) => void): unknown;
+    on(
+      channel: DesktopBridgeSyncChannel,
+      listener: (event: IpcMainEvent) => void
+    ): unknown;
   };
 }
 
@@ -383,9 +401,9 @@ export function registerMainChannels(deps: {
   handle: Parameters<typeof registerTrustedChannels>[1];
   assertTrustedSender: (event: IpcMainEvent) => void;
   build: {
-    buildInfo: DiagnosticsReportInput['build'];
+    buildInfo: BuildInfo;
     distribution: ResolvedDistribution;
-    identity: unknown;
+    identity: DistributionIdentity;
   };
   runtime: {
     readonly authCoordinator: AuthCoordinatorPort | null;

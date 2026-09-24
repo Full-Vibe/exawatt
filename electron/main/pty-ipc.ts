@@ -67,14 +67,18 @@ import {
   nativeNotificationCopy,
   shouldDeliverNativeNotification,
 } from './notification-policy';
-import { broadcastToWindows } from './window-broadcast';
+import { broadcastToWindows, pushToRenderer } from './window-broadcast';
 import { isAgentHarness, type AgentPermissionMode } from '@exawatt/core';
 import type { DistributionContractV2 } from '@exawatt/core/distribution';
 import type {
   ClosedSessionEntry,
+  DesktopBridgePush,
+  DesktopBridgePushChannel,
   GoalVisual,
   PtyAttention,
   PtyCreateOptions,
+  PtySessionInfo,
+  PtySessionRecord,
   ResumeIdentityHint,
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
@@ -102,8 +106,15 @@ export function registerPtyIPC(
 ): void {
   const contextSummarizer = new ContextSummarizer({ distribution });
   activeContextSummarizer = contextSummarizer;
-  const broadcast = (channel: string, payload: unknown) => {
-    broadcastToWindows(BrowserWindow.getAllWindows(), channel, payload);
+  const broadcast = <C extends DesktopBridgePushChannel>(
+    channel: C,
+    payload: DesktopBridgePush<C>
+  ) => {
+    broadcastToWindows<DesktopBridgePushChannel>(
+      BrowserWindow.getAllWindows(),
+      channel,
+      payload
+    );
   };
   const closedLedger = new ClosedSessionLedger(
     path.join(app.getPath('userData'), 'closed-sessions.json'),
@@ -189,22 +200,16 @@ export function registerPtyIPC(
   contextSummarizer.start();
   // goal subtitles are durable-Session truth (D21): renderers key by
   // durableSessionId so a subtitle survives PTY replacement and restarts
-  contextSummarizer.on(
-    'context',
-    (durableSessionId: string, summary: string) => {
-      broadcast('pty:context', { durableSessionId, summary });
-    }
-  );
-  contextSummarizer.on(
-    'goal-visual',
-    (durableSessionId: string, visual: unknown) => {
-      // The pixels land in the content store as soon as they exist; the
-      // layout only ever persists the reference (BUG-031).
-      void retainGoalVisual(visual as GoalVisual).catch(() => undefined);
-      broadcast('pty:goal-visual', { durableSessionId, visual });
-    }
-  );
-  contextSummarizer.on('recap', (recap: unknown) => {
+  contextSummarizer.on('context', (durableSessionId, summary) => {
+    broadcast('pty:context', { durableSessionId, summary });
+  });
+  contextSummarizer.on('goal-visual', (durableSessionId, visual) => {
+    // The pixels land in the content store as soon as they exist; the
+    // layout only ever persists the reference (BUG-031).
+    void retainGoalVisual(visual).catch(() => undefined);
+    broadcast('pty:goal-visual', { durableSessionId, visual });
+  });
+  contextSummarizer.on('recap', recap => {
     broadcast('pty:recap', recap);
   });
 
@@ -224,7 +229,7 @@ export function registerPtyIPC(
     harnessOf: id =>
       ptySessions.list().find(session => session.id === id)?.harness ?? null,
   });
-  delegationMonitor.on('delegation', (id: string, delegation: unknown) => {
+  delegationMonitor.on('delegation', (id, delegation) => {
     broadcast('pty:delegation', { id, delegation });
   });
 
@@ -258,14 +263,14 @@ export function registerPtyIPC(
     contextSummarizer.setWindowFocused(false);
   });
   // working/quiet transitions (D18): the tab strip's live status glyphs
-  attentionMonitor.on('activity', (id: string, working: boolean) => {
+  attentionMonitor.on('activity', (id, working) => {
     broadcast('pty:activity', { id, working });
   });
   // started/unstarted truth (D22) — fires once per session, first work given
-  attentionMonitor.on('engaged', (id: string) => {
+  attentionMonitor.on('engaged', id => {
     broadcast('pty:engaged', { id });
   });
-  attentionMonitor.on('attention', (id: string, attention: unknown) => {
+  attentionMonitor.on('attention', (id, attention) => {
     broadcast('pty:attention', { id, attention });
     const count = attentionMonitor.count();
     if (app.dock) {
@@ -279,14 +284,11 @@ export function registerPtyIPC(
     }
     nativeNotifications.get(id)?.close();
     nativeNotifications.delete(id);
-    const typedAttention = attention as
-      | PtyAttention
-      | null;
     if (
       !shouldDeliverNativeNotification(
         loadSettings().notifications?.attention ?? false,
         BrowserWindow.getFocusedWindow() !== null,
-        typedAttention
+        attention
       ) ||
       !Notification.isSupported()
     ) {
@@ -304,7 +306,7 @@ export function registerPtyIPC(
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
-      win.webContents.send('pty:notification-click', { id });
+      pushToRenderer(win.webContents, 'pty:notification-click', { id });
     });
     notice.on('close', () => {
       if (nativeNotifications.get(id) === notice)
@@ -591,19 +593,21 @@ export function registerPtyIPC(
   handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);
   });
-  handleTrusted('pty:list', () =>
-    ptySessions.list().map(s => ({
-      ...s,
-      contextSummary: contextSummarizer.getSummary(s.durableSessionId),
-      goalVisual: contextSummarizer.getGoalVisual(s.durableSessionId),
-      attention: attentionMonitor.get(s.id),
-      engaged: attentionMonitor.isEngaged(s.id),
-      working: attentionMonitor.isWorking(s.id),
-      // Ride-along so a reload or late attach sees live children immediately
-      // instead of waiting for the next delegation change (ENG-023).
-      delegation: delegationMonitor.getLive(s.id),
-    }))
-  );
+  /** One `pty:list` row: what the PTY owner knows, plus main's live
+   *  observations of the Session, so a reload or a late attach sees them at
+   *  once instead of waiting for the next push. */
+  const sessionInfo = (record: PtySessionRecord): PtySessionInfo => ({
+    ...record,
+    contextSummary: contextSummarizer.getSummary(record.durableSessionId),
+    goalVisual: contextSummarizer.getGoalVisual(record.durableSessionId),
+    attention: attentionMonitor.get(record.id),
+    engaged: attentionMonitor.isEngaged(record.id),
+    working: attentionMonitor.isWorking(record.id),
+    // Ride-along so a reload or late attach sees live children immediately
+    // instead of waiting for the next delegation change (ENG-023).
+    delegation: delegationMonitor.getLive(record.id),
+  });
+  handleTrusted('pty:list', () => ptySessions.list().map(sessionInfo));
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
   handleTrusted('pty:buffer-snapshot', (_event, id: string) =>
     ptySessions.bufferSnapshot(id)

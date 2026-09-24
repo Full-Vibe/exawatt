@@ -1,20 +1,26 @@
-import type { handleTrusted } from './ipc-security';
+import type { DesktopBridgeRequestChannel } from '@exawatt/core/desktop-bridge';
+import type { TrustedHandler } from './ipc-security';
 
 /**
  * How main's IPC is registered: as data the composition root iterates.
  *
  * A channel table is keyed by the channel's name and holds its handler, and
  * every entry goes through `handleTrusted`, the one door that checks the
- * sender's origin. This module deliberately declares no channel names and no
- * payload types: those belong to the desktop-bridge contract that main,
- * preload and the renderer's types will share, and a table keyed by name can
- * adopt that contract without changing shape.
+ * sender's origin. The names and payloads are the desktop bridge contract's
+ * (`@exawatt/core/desktop-bridge`): a key the contract does not declare, or a
+ * handler whose arguments or answer drift from it, fails `tsc`.
  */
 
-type TrustedHandler = Parameters<typeof handleTrusted>[1];
+/** Handlers keyed by channel name, each typed by its channel. */
+export type TrustedChannels = {
+  readonly [C in DesktopBridgeRequestChannel]?: TrustedHandler<C>;
+};
 
-/** Handlers keyed by channel name. */
-export type TrustedChannels = Readonly<Record<string, TrustedHandler>>;
+/** The one door every table entry is registered through. */
+type RegisterTrusted = <C extends DesktopBridgeRequestChannel>(
+  channel: C,
+  handler: TrustedHandler<C>
+) => void;
 
 /** A module that owns its own channels and registers them itself. */
 interface IpcModuleRegistration {
@@ -30,7 +36,7 @@ interface IpcModuleRegistration {
  */
 export function registerTrustedChannels(
   tables: readonly TrustedChannels[],
-  handle: (channel: string, handler: TrustedHandler) => void
+  handle: RegisterTrusted
 ): void {
   const claimed = new Set<string>();
   for (const table of tables) {
@@ -42,8 +48,10 @@ export function registerTrustedChannels(
     }
   }
   for (const table of tables) {
-    for (const [channel, handler] of Object.entries(table)) {
-      handle(channel, handler);
+    // Each key and its handler were checked together where the table was
+    // written; iteration only loses the correlation, not the check.
+    for (const channel of Object.keys(table) as DesktopBridgeRequestChannel[]) {
+      handle(channel, table[channel] as TrustedHandler<typeof channel>);
     }
   }
 }

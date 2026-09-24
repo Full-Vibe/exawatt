@@ -6,6 +6,7 @@ import {
   type ApplicationMenuContext,
 } from './application-menu';
 import type { TrustedChannels } from './ipc-table';
+import { pushToRenderer } from './window-broadcast';
 
 /**
  * The native application menu's live state: which accelerators it shows,
@@ -67,7 +68,8 @@ export function createMenuController(
    *  aware), so items show their combo with `registerAccelerator: false` and
    *  only ⌘, — a chrome-level macOS invariant — registers for real. */
   function sendMenuCommand(command: string): void {
-    deps.commandTarget()?.webContents.send('menu:command', command);
+    const target = deps.commandTarget();
+    if (target) pushToRenderer(target.webContents, 'menu:command', command);
   }
 
   function createMenu(): void {

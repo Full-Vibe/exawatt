@@ -348,7 +348,14 @@ export function consumeOperatorInput(
   return { buffer, submissions };
 }
 
-export class ContextSummarizer extends EventEmitter {
+/** What the summarizer announces; each one is relayed to the renderer. */
+type ContextSummarizerEvents = {
+  context: [durableSessionId: string, summary: string];
+  'goal-visual': [durableSessionId: string, visual: GoalVisual];
+  recap: [recap: PtyReentryRecap];
+};
+
+export class ContextSummarizer extends EventEmitter<ContextSummarizerEvents> {
   private manager: PtySessionManager | null = null;
   /**
    * Everything below keyed by a durable Session id is created through this

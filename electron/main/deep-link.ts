@@ -1,5 +1,6 @@
 import path from 'path';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
+import { pushToRenderer } from './window-broadcast';
 
 /**
  * `exawatt://` deep links: protocol registration, and routing a link to the
@@ -123,7 +124,11 @@ export function createDeepLinkRouter(
           }
           if (mainWindow.isMinimized()) mainWindow.restore();
           mainWindow.focus();
-          mainWindow.webContents.send('auth:link-outcome', linkOutcome);
+          pushToRenderer(
+            mainWindow.webContents,
+            'auth:link-outcome',
+            linkOutcome
+          );
           recordAuthDiagnostic('auth.callback.link_outcome_sent', {
             outcome: linkOutcome,
           });
@@ -152,7 +157,7 @@ export function createDeepLinkRouter(
       if (!authCoordinator) throw new Error('Authentication is not ready.');
       await authCoordinator.exchangeCode(code);
       if (!win.isDestroyed()) {
-        win.webContents.send('auth:complete');
+        pushToRenderer(win.webContents, 'auth:complete');
         recordAuthDiagnostic('auth.renderer_completion_sent');
       } else {
         recordAuthDiagnostic('auth.renderer_completion_skipped_destroyed');
@@ -161,7 +166,8 @@ export function createDeepLinkRouter(
       const safeError = deps.safeAuthError(error);
       recordAuthDiagnostic('auth.completion_failure', { error: safeError });
       logError('[auth] Electron OAuth code exchange failed', safeError);
-      if (!win.isDestroyed()) win.webContents.send('auth:error', safeError);
+      if (!win.isDestroyed())
+        pushToRenderer(win.webContents, 'auth:error', safeError);
     }
   }
 

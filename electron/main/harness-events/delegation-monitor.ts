@@ -59,7 +59,14 @@ export interface DelegationReportSink {
  *  reused, so this only needs to cover plausibly-in-flight stragglers. */
 const DROPPED_CAP = 256;
 
-export class DelegationMonitor extends EventEmitter {
+/** What the monitor announces: projected delegation for the renderer, and
+ *  every applied harness event for the turn-truth wiring. */
+type DelegationMonitorEvents = {
+  delegation: [sessionId: string, delegation: SessionDelegation | null];
+  'harness-event': [sessionId: string, event: HarnessEvent];
+};
+
+export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
   private state = new Map<string, DelegationLedger>();
   /** Cached published shape per Session, so unchanged truth keeps an
    *  unchanged reference and consumers can compare cheaply. */

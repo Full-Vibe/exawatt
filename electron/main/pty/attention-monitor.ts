@@ -128,7 +128,15 @@ const OSC_CARRY_LIMIT = 4096;
  */
 const REPORTED_TURN_STALE_FACTOR = 3;
 
-export class AttentionMonitor extends EventEmitter {
+/** What the monitor announces; all but the stale report reach the renderer. */
+type AttentionMonitorEvents = {
+  activity: [id: string, working: boolean];
+  attention: [id: string, attention: PtyAttention | null];
+  engaged: [id: string];
+  'reported-turn-stale': [id: string, evidence: StaleReportEvidence];
+};
+
+export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   private manager: PtySessionManager | null = null;
   private attention = new Map<string, PtyAttention>();
   private lastDataAt = new Map<string, number>();

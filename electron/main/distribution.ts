@@ -8,6 +8,7 @@ import {
   serializeDistributionContract,
   type DistributionContractV2,
 } from '@exawatt/core/distribution';
+import type { DesktopBridgeRequestChannel } from '@exawatt/core/desktop-bridge';
 
 export interface ResolvedDistribution {
   contract: DistributionContractV2;
@@ -127,7 +128,11 @@ export function distributionIpcCapabilities(contract: DistributionContractV2) {
   return {
     updates: contract.updates !== null,
     updateIpcChannels: contract.updates
-      ? ['app:get-update-status', 'app:check-for-updates', 'app:restart-update']
+      ? ([
+          'app:get-update-status',
+          'app:check-for-updates',
+          'app:restart-update',
+        ] satisfies DesktopBridgeRequestChannel[])
       : [],
     protocolScheme: identity.protocolScheme,
   } as const;

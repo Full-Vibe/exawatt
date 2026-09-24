@@ -8,31 +8,38 @@ import {
 describe('registerTrustedChannels', () => {
   it('registers every channel of every table through the one door', () => {
     const registered: string[] = [];
-    const first: TrustedChannels = { 'a:one': () => 1, 'a:two': () => 2 };
-    const second: TrustedChannels = { 'b:one': () => 3 };
+    const first: TrustedChannels = {
+      'pty:buffer': () => 'text',
+      'pty:kill': () => undefined,
+    };
+    const second: TrustedChannels = { 'menu:sync-accelerators': () => {} };
 
     registerTrustedChannels([first, second], channel =>
       registered.push(channel)
     );
 
-    expect(registered).toEqual(['a:one', 'a:two', 'b:one']);
+    expect(registered).toEqual([
+      'pty:buffer',
+      'pty:kill',
+      'menu:sync-accelerators',
+    ]);
   });
 
   it('refuses a channel two tables both claim, before registering anything', () => {
     const registered: string[] = [];
     expect(() =>
       registerTrustedChannels(
-        [{ 'a:one': () => 1 }, { 'a:one': () => 2 }],
+        [{ 'pty:buffer': () => 'a' }, { 'pty:buffer': () => 'b' }],
         channel => registered.push(channel)
       )
-    ).toThrow('IPC channel a:one is registered twice');
+    ).toThrow('IPC channel pty:buffer is registered twice');
     expect(registered).toEqual([]);
   });
 
   it('hands each handler over unchanged', () => {
     const handler = () => 'answer';
     let received: unknown = null;
-    registerTrustedChannels([{ 'a:one': handler }], (_channel, given) => {
+    registerTrustedChannels([{ 'pty:buffer': handler }], (_channel, given) => {
       received = given;
     });
     expect(received).toBe(handler);

@@ -1,13 +1,25 @@
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
+import type {
+  DesktopBridgeArgs,
+  DesktopBridgeRequestChannel,
+  DesktopBridgeResult,
+} from '@exawatt/core/desktop-bridge';
 import {
   beginMainThreadActivity,
   endMainThreadActivity,
 } from './main-thread-stall-trace';
 
-type TrustedHandler = (
+/**
+ * The handler for one request channel, typed by the desktop bridge contract:
+ * it receives what preload sends and must resolve to what the renderer is
+ * told to expect. A handler may accept wider arguments than the contract
+ * names (`unknown`, then validated), never narrower ones, and never answer
+ * with something else.
+ */
+export type TrustedHandler<C extends DesktopBridgeRequestChannel> = (
   event: IpcMainInvokeEvent,
-  ...args: never[]
-) => unknown | Promise<unknown>;
+  ...args: DesktopBridgeArgs<C>
+) => DesktopBridgeResult<C> | Promise<DesktopBridgeResult<C>>;
 
 let trustedOrigin: string | null = null;
 
@@ -36,7 +48,10 @@ export function assertTrustedIpcSender(
  * sites. `begin`/`end` are a Map write and a Map delete when the trace is on,
  * and a returned 0 when it is off.
  */
-export function handleTrusted(channel: string, handler: TrustedHandler): void {
+export function handleTrusted<C extends DesktopBridgeRequestChannel>(
+  channel: C,
+  handler: TrustedHandler<C>
+): void {
   ipcMain.handle(channel, (event, ...args) => {
     assertTrustedIpcSender(event);
     const token = beginMainThreadActivity(channel);
@@ -47,7 +62,9 @@ export function handleTrusted(channel: string, handler: TrustedHandler): void {
       endMainThreadActivity(token);
     };
     try {
-      const result = handler(event, ...(args as never[]));
+      // The contract types what a well-behaved renderer sends; what arrives
+      // is whatever the sender put on the wire, which the handler validates.
+      const result = handler(event, ...(args as DesktopBridgeArgs<C>));
       if (result && typeof (result as Promise<unknown>).then === 'function') {
         return (result as Promise<unknown>).then(
           value => {

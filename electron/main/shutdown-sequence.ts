@@ -4,10 +4,13 @@ import type { PtySessionManager } from './pty/session-manager';
 import type {
   LiveProcessCounts,
   ShutdownDependencies,
-  ShutdownIntent,
   shutdownCopy as ShutdownCopy,
 } from './shutdown-coordinator';
-import type { ShutdownPhase } from '@exawatt/core/desktop-bridge';
+import { pushToRenderer } from './window-broadcast';
+import type {
+  ShutdownIntent,
+  ShutdownPhase,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * What quit, restart and update-restart DO, step by step. The order of
@@ -77,7 +80,7 @@ export function createCheckpointBroker(deps: {
         };
         const timeout = setTimeout(() => finish(false), timeoutMs);
         pendingCheckpoints.set(requestId, finish);
-        win.webContents.send('app:checkpoint-request', {
+        pushToRenderer(win.webContents, 'app:checkpoint-request', {
           requestId,
           reason: intent,
           stage,
@@ -184,7 +187,10 @@ export function createShutdownSequence(
   ): void {
     for (const win of deps.allWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send('app:shutdown-status', { phase, ...counts });
+        pushToRenderer(win.webContents, 'app:shutdown-status', {
+          phase,
+          ...counts,
+        });
       }
     }
   }

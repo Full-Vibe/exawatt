@@ -11,6 +11,7 @@ import type {
   ProductUpdateStatus,
   UpdaterDisabledReason,
 } from '@exawatt/core/desktop-bridge';
+import { broadcastToWindows } from './window-broadcast';
 
 let status: ProductUpdateStatus = {
   phase: 'idle',
@@ -39,9 +40,11 @@ let record: DiagnosticRecorder = () => {};
 
 function broadcast(): void {
   status = { ...status, liveSessions: liveSessionCount() };
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send('app:update-status', status);
-  }
+  broadcastToWindows(
+    BrowserWindow.getAllWindows(),
+    'app:update-status',
+    status
+  );
 }
 
 function setStatus(patch: Partial<ProductUpdateStatus>): void {

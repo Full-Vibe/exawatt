@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { pushToRenderer } from './window-broadcast';
 
 /**
  * Tells every window when a newer build has been installed underneath the
@@ -29,7 +30,7 @@ export function watchInstalledBuild(options: {
       if (state.installedSha && state.installedSha !== currentSha) {
         for (const win of options.allWindows()) {
           if (!win.isDestroyed()) {
-            win.webContents.send('app:update-ready', {
+            pushToRenderer(win.webContents, 'app:update-ready', {
               currentSha,
               installedSha: state.installedSha,
             });
