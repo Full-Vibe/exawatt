@@ -331,3 +331,30 @@ cleanup. Catch-up preserves existing history and attribution, applies the new
 metadata policy to new commits, and does not claim old metadata was removed.
 Historical erasure remains separately reviewed work; this recovery selects no
 rewrite, purge, or repository-replacement method.
+
+## 2026-09-23 amendment — An identity change ships its bridge first
+
+**Every clause of the signed app's designated requirement is part of the update
+contract.** Squirrel.Mac installs an update only when the downloaded bundle
+carries the running app's bundle identifier and satisfies the running app's
+designated requirement. So a bundle identifier, a Team ID, or any other clause
+of that requirement cannot change within one update feed. If it does, every
+installed copy downloads the update and then refuses to install it.
+
+§6's identity cutover (`com.exawatt.app` to `ai.exawatt.desktop`) recorded a
+migration only for the dogfood installer. Releases under the new identity
+publish to the same feed the last `com.exawatt.app` release reads, so every
+`0.1.10` install is offered each new release and can install none of them
+(incident `0026`).
+
+**Every future identity change ships its bridge before it ships:**
+
+1. The new identity gets its own feed URL. Nothing under it is ever published
+   to the old feed.
+2. The old feed's last release is a bridge: a build under the old identity
+   whose job is to move users to the new identity, or at least to tell them how
+   inside the product.
+3. Only then does a release under the new identity ship.
+
+Release notes are not a bridge. A stranded client shows its user only the
+update it refuses.
