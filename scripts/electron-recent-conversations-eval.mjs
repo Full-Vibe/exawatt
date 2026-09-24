@@ -363,13 +363,19 @@ try {
           ) &&
           !(await activeTab.innerText()).includes('Move patient identifiers')
       );
-      await page.waitForTimeout(500);
-      const persistedTitleOwnership = await page.evaluate(async id => {
-        const workspace = await window.electron?.workspace?.load();
-        const tabs =
-          workspace?.projects?.flatMap(project => project.tabs) ?? [];
-        return tabs.find(tab => tab.harnessSessionId === id);
-      }, targetId);
+      // The first save that carries the resumed tab answers the check; a
+      // sleep stood in for a debounce that restarts on every change (BUG-221).
+      const persistedDeadline = Date.now() + 20_000;
+      let persistedTitleOwnership;
+      while (!persistedTitleOwnership && Date.now() < persistedDeadline) {
+        persistedTitleOwnership = await page.evaluate(async id => {
+          const workspace = await window.electron?.workspace?.load();
+          const tabs =
+            workspace?.projects?.flatMap(project => project.tabs) ?? [];
+          return tabs.find(tab => tab.harnessSessionId === id);
+        }, targetId);
+        if (!persistedTitleOwnership) await page.waitForTimeout(100);
+      }
       check(
         'workspace v6 persists default-versus-operator title ownership',
         persistedTitleOwnership?.title === 'Claude Code' &&

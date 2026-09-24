@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path';
 import {
   openSetupDrawer,
   waitForLauncherToSettle,
+  waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 
@@ -146,6 +147,19 @@ async function nativeSessionMenu(app) {
         enabled: item.enabled,
       }))
   );
+}
+
+/** The native Session menu once `settled(menu)` holds, or after 10 s. The
+ *  workspace publishes command availability from an effect, so a menu read a
+ *  fixed interval after a reload or route change can precede it (BUG-221). */
+async function nativeSessionMenuWhen(app, settled) {
+  const deadline = Date.now() + 10_000;
+  let menu = await nativeSessionMenu(app);
+  while (!settled(menu) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    menu = await nativeSessionMenu(app);
+  }
+  return menu;
 }
 
 async function waitForSessionCount(page, count) {
@@ -745,36 +759,34 @@ try {
         'native Session commands reset while renderer truth reloads',
         menuDuringReload.every(item => item.enabled === false)
       );
-      await page.locator('[data-command-altitude]').waitFor();
-      await page.waitForFunction(async () => {
-        const api = window.electron?.pty;
-        return ((await api?.list()) ?? []).length > 0;
-      });
-      await page.waitForTimeout(100);
-      const menuAfterReload = await nativeSessionMenu(app);
+      await waitForWorkspaceReady(page);
+      const closeEnabled = menu =>
+        menu?.find(item => item.label === 'Close Tab or Empty Project')
+          ?.enabled === true;
+      const menuAfterReload = await nativeSessionMenuWhen(app, closeEnabled);
       check(
         'native Session commands republish after workspace hydration',
-        menuAfterReload?.find(
-          item => item.label === 'Close Tab or Empty Project'
-        )?.enabled === true
+        closeEnabled(menuAfterReload)
       );
 
       await page.keyboard.press('Control+Meta+3');
       await page.waitForURL(url => url.pathname === '/fleet/spatial');
-      await page.waitForTimeout(100);
-      const spatialSessionMenu = await nativeSessionMenu(app);
-      check(
-        'native Session menu disables workspace-local commands in Spatial',
+      const workspaceLocalDisabled = menu =>
         [
           'Rename Session',
           'Split: Pin / Unpin',
           'Close Tab or Empty Project',
           'Jump to Session Needing You',
         ].every(
-          label =>
-            spatialSessionMenu?.find(item => item.label === label)?.enabled ===
-            false
-        )
+          label => menu?.find(item => item.label === label)?.enabled === false
+        );
+      const spatialSessionMenu = await nativeSessionMenuWhen(
+        app,
+        workspaceLocalDisabled
+      );
+      check(
+        'native Session menu disables workspace-local commands in Spatial',
+        workspaceLocalDisabled(spatialSessionMenu)
       );
       await page.keyboard.press('Control+Meta+1');
       await page.waitForURL(url => url.pathname === '/workspace');
@@ -1322,7 +1334,9 @@ try {
     launch(),
     async (app, page) => {
       page.setDefaultTimeout(20_000);
-      await page.locator('[data-command-altitude]').waitFor();
+      // A saved layout exists on this relaunch: a Project the chooser opens
+      // before hydration is replaced when the layout restores (BUG-221).
+      await waitForWorkspaceReady(page);
       await stubDirectoryPicker(app, importRoot);
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();

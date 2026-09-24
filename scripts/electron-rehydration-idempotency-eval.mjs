@@ -34,6 +34,7 @@ import { join } from 'node:path';
 import {
   openShellFromLauncher,
   startAgentFromLauncher,
+  waitForWorkspaceReady,
 } from './lib/electron-eval.mjs';
 import {
   claudeProbeSh,
@@ -136,6 +137,10 @@ async function pageFor(app) {
       { timeout: 25_000 }
     );
   }
+  // Hydrated: the open-project event is ignored before this, and a relaunch
+  // that "spawned nothing" means nothing until the layout has restored
+  // (BUG-221).
+  await waitForWorkspaceReady(page);
   return page;
 }
 
@@ -206,7 +211,6 @@ try {
   console.log(`[idem] generation 0: build the fixture workspace`);
   app = await launch();
   let page = await pageFor(app);
-  await page.getByRole('button', { name: 'Open Project' }).first().waitFor();
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   openShellFromLauncher,
+  waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 import { packagedExecutable } from './lib/packaged-app.mjs';
@@ -68,7 +69,7 @@ try {
         errors.push(String(error.message || error))
       );
 
-      await page.locator('[data-command-altitude]').waitFor();
+      await waitForWorkspaceReady(page);
       await page.evaluate(dir => {
         window.dispatchEvent(
           new CustomEvent('exawatt:open-project', { detail: dir })

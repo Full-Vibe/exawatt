@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import {
   openShellFromLauncher,
   startAgentFromLauncher,
+  waitForWorkspaceReady,
 } from './lib/electron-eval.mjs';
 import { claudeProbeSh, codexProbeSh } from './lib/harness-probe-fixture.mjs';
 import { packagedExecutable } from './lib/packaged-app.mjs';
@@ -116,12 +117,10 @@ async function pageFor(app) {
       () => !document.body.innerText.includes('Loading…')
     );
   }
-  await page
-    .locator(
-      '[data-agent-composer], [data-composer-toggle], button:has-text("Open Project")'
-    )
-    .first()
-    .waitFor();
+  // Hydrated: the open-project event is ignored before this, and a relaunch
+  // that "spawned nothing" means nothing until the layout has restored
+  // (BUG-221).
+  await waitForWorkspaceReady(page);
   return page;
 }
 
@@ -391,7 +390,28 @@ try {
       window.electron?.pty?.write(id, "printf 'ENG018_CRASH_HISTORY\\n'\n"),
     withCrashShell[0].id
   );
-  await page.waitForTimeout(700);
+  // A SIGKILL runs no checkpoint, so the interrupted relaunch restores what
+  // the debounced save wrote: wait for that save to carry the shell's tab
+  // rather than for a number of milliseconds (BUG-221).
+  const crashShellId = withCrashShell[0].durableSessionId;
+  const layoutDeadline = Date.now() + 20_000;
+  const savedCrashShell = () => {
+    try {
+      return JSON.parse(
+        readFileSync(join(userData, 'workspace.json'), 'utf8')
+      ).projects.some(project =>
+        project.tabs.some(tab => tab.durableSessionId === crashShellId)
+      );
+    } catch {
+      return false;
+    }
+  };
+  while (!savedCrashShell()) {
+    if (Date.now() > layoutDeadline) {
+      throw new Error('The crash shell tab never reached the saved layout');
+    }
+    await page.waitForTimeout(100);
+  }
   const crashed = waitForClose(app);
   app.process().kill('SIGKILL');
   await crashed;

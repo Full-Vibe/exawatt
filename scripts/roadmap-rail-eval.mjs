@@ -12,6 +12,7 @@ import {
   declareRoadmapItem,
   openShellFromLauncher,
   summonComposer,
+  waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 
@@ -216,8 +217,7 @@ await withElectronApp(
       await liveAgentTabs.nth(before).waitFor({ timeout: 60_000 });
     };
 
-    await page.locator('[data-workspace-chrome]').waitFor();
-    await page.waitForTimeout(1200);
+    await waitForWorkspaceReady(page);
     // S12: the Terminal view carries NO rail and no strip — the lens lives
     // at the Sessions altitude
     results.terminalHasNoRail =

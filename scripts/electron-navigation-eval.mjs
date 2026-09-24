@@ -4,7 +4,10 @@ import { _electron as electron } from 'playwright-core';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openShellFromLauncher } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  waitForWorkspaceReady,
+} from './lib/electron-eval.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const SCREENSHOT_DIR =
@@ -38,7 +41,7 @@ try {
     }
   });
 
-  await page.locator('[data-command-altitude]').waitFor();
+  await waitForWorkspaceReady(page);
   console.log('[electron-navigation] workspace ready');
   await page.evaluate(dir => {
     window.dispatchEvent(

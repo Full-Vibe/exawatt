@@ -17,6 +17,7 @@ import { basename, join, resolve } from 'node:path';
 import {
   openShellFromLauncher,
   startAgentFromLauncher,
+  waitForWorkspaceReady,
 } from './lib/electron-eval.mjs';
 import {
   claudeProbeSh,
@@ -232,6 +233,7 @@ async function waitForSessions(page, count) {
 }
 
 async function openProject(page, dir) {
+  await waitForWorkspaceReady(page);
   await page.evaluate(projectDir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: projectDir })
@@ -397,7 +399,7 @@ try {
   launched = await launch();
   browser = launched.browser;
   page = launched.page;
-  await page.locator('[data-command-altitude]').waitFor();
+  await waitForWorkspaceReady(page);
   const verified = await page.evaluate(
     async () =>
       (await window.electron?.app?.updates?.getStatus())?.currentVersion

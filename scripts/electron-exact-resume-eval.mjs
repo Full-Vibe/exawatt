@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { waitForWorkspaceReady } from './lib/electron-eval.mjs';
 import { packagedExecutable } from './lib/packaged-app.mjs';
 
 // The packaged bundle is named by the distribution contract, not by a literal
@@ -95,7 +96,7 @@ try {
       () => !document.body.innerText.includes('Loading…')
     );
   }
-  await page.getByRole('button', { name: 'Open Project' }).first().waitFor();
+  await waitForWorkspaceReady(page);
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })

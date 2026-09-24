@@ -13,7 +13,10 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  waitForWorkspaceReady,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 import { resolvePackagedApp } from './lib/packaged-app.mjs';
 
 const OUT = process.env.NAV_SCREENSHOT_DIR || '/tmp/exawatt-spine-eval';
@@ -391,13 +394,12 @@ await withElectronApp(
     'Leaderboard keeps public route presentation after palette navigation',
     await page.locator('#site-footer').isVisible()
   );
-  await page.goBack({ waitUntil: 'domcontentloaded' });
-  await page.waitForURL('**/workspace');
-  await page.locator('[data-command-altitude]').waitFor();
-
   // Recents survive independently of live PTYs. Seed one stopped Session in
   // the isolated workspace store; reload proves the durable navigation state
-  // without depending on the host login shell remaining alive.
+  // without depending on the host login shell remaining alive. Seed it HERE,
+  // while the workspace is unmounted and its last save already sent: seeded
+  // from a mounted workspace, the app's own save 400 ms after hydration could
+  // land after the seed and replace it (BUG-221).
   await page.evaluate(() =>
     window.electron.workspace.save({
       v: 5,
@@ -435,8 +437,12 @@ await withElectronApp(
       ],
     })
   );
+  await page.goBack({ waitUntil: 'domcontentloaded' });
+  await page.waitForURL('**/workspace');
+  await waitForWorkspaceReady(page);
+
   await page.reload({ waitUntil: 'networkidle' });
-  await page.locator('[data-command-altitude]').waitFor();
+  await waitForWorkspaceReady(page);
   // The reloaded app rehydrates and writes its own layout back, so a single
   // read races that boot write rather than testing durability (BUG-058). Poll
   // the same assertion until it holds or the ceiling expires: a layout that

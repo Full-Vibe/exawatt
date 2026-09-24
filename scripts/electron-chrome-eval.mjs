@@ -4,7 +4,10 @@ import { _electron as electron } from 'playwright-core';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openShellFromLauncher } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  waitForWorkspaceReady,
+} from './lib/electron-eval.mjs';
 import { packagedExecutable } from './lib/packaged-app.mjs';
 
 // The packaged bundle is named by the distribution contract, not by a literal
@@ -37,7 +40,7 @@ try {
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(20_000);
   await page.setViewportSize({ width: 800, height: 600 });
-  await page.locator('[data-command-altitude]').waitFor();
+  await waitForWorkspaceReady(page);
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })

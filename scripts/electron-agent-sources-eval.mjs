@@ -14,6 +14,7 @@ import {
   launcherAxis,
   openSetupDrawer,
   selectedLauncherSetup,
+  waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 
@@ -616,7 +617,7 @@ try {
       );
 
       await page.goto(`${base}/workspace`);
-      await page.locator('[data-command-altitude]').waitFor();
+      await waitForWorkspaceReady(page);
       await page.evaluate(dir => {
         window.dispatchEvent(
           new CustomEvent('exawatt:open-project', { detail: dir })

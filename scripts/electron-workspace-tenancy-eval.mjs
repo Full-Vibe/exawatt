@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   openShellFromLauncher,
+  waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 
@@ -100,18 +101,9 @@ try {
     },
     async (app, page) => {
       page.setDefaultTimeout(25_000);
-      await page.locator('[data-command-altitude]').waitFor();
-      await page.waitForFunction(
-        () => !document.body.innerText.includes('Loading…')
-      );
-      // the open-project listener belongs to the workspace client — wait for
-      // the shell to be interactive before dispatching at it
-      await page
-        .locator(
-          '[data-agent-composer], [data-composer-toggle], button:has-text("Open Project")'
-        )
-        .first()
-        .waitFor();
+      // the open-project listener belongs to the workspace client, and it
+      // ignores the event until the workspace has hydrated (BUG-221)
+      await waitForWorkspaceReady(page);
       console.log('[tenancy] workspace shell ready');
 
       // register an available non-personal tenant (dev-only event)

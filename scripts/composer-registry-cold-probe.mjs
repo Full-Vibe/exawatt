@@ -41,7 +41,7 @@ const outputPath =
   process.env.COMPOSER_COLD_PROBE_OUTPUT ??
   join(repo, '.artifacts', 'readiness-probe', 'composer-registry-cold.json');
 mkdirSync(dirname(outputPath), { recursive: true });
-const { withElectronApp } = await import(
+const { waitForWorkspaceReady, withElectronApp } = await import(
   pathToFileURL(join(repo, 'scripts/lib/electron-eval.mjs')).href
 );
 
@@ -242,10 +242,10 @@ try {
     },
     async (app, page) => {
       page.setDefaultTimeout(60_000);
-      await page.locator('[data-command-altitude]').waitFor();
       // The restored layout lands on the Shell tab; ⌘T mounts a fresh draft
-      // composer, which is the operator's gesture after a restart.
-      await page.waitForTimeout(500);
+      // composer, which is the operator's gesture after a restart. Pressed
+      // before hydration it opens the Project chooser instead (BUG-221).
+      await waitForWorkspaceReady(page);
       await arm(page, 'restart-first-keyT');
       const pressedAt = Date.now();
       await page.keyboard.press('Meta+KeyT');

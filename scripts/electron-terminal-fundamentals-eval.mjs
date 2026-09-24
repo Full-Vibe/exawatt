@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   openShellFromLauncher,
+  waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 
@@ -122,7 +123,7 @@ await withElectronApp(
   },
   async (app, page) => {
     page.setDefaultTimeout(30_000);
-    await page.locator('[data-command-altitude]').waitFor();
+    await waitForWorkspaceReady(page);
     // xterm's OSC 8 default pops `confirm('Do you want to navigate to …')`
     // and then a `window.open()` Electron denies. Record instead of block so
     // the assertion is "the dialog never happened", not a hung eval.
@@ -347,13 +348,20 @@ await withElectronApp(
         '/usr/bin/awk \'BEGIN { for (i = 1; i <= 20000; i++) printf "EXAWATT_LINE_%05d\\n", i }\'\n'
       );
     }, sessionId);
-    await page.waitForFunction(async id => {
-      const buffer = await window.electron?.pty?.buffer(id);
+    // awk prints its last line once and the typed command never contains it,
+    // so that line reaching xterm's own buffer is the effect to wait for. The
+    // old predicate demanded two copies, which only a redraw could supply, and
+    // being async it never waited at all: a 3 s sleep did (BUG-221).
+    await page.waitForFunction(id => {
+      const buffer = window.__XTERMS__?.[id]?.buffer.active;
       if (!buffer) return false;
-      const marker = 'EXAWATT_LINE_20000';
-      return buffer.indexOf(marker) !== buffer.lastIndexOf(marker);
+      const last = Math.max(0, buffer.length - 200);
+      for (let y = buffer.length - 1; y >= last; y -= 1) {
+        const line = buffer.getLine(y)?.translateToString(true) ?? '';
+        if (line.includes('EXAWATT_LINE_20000')) return true;
+      }
+      return false;
     }, sessionId);
-    await page.waitForTimeout(3_000);
     if (process.env.EXAWATT_EVAL_SCREENSHOT) {
       await page.screenshot({ path: process.env.EXAWATT_EVAL_SCREENSHOT });
     }
@@ -395,10 +403,14 @@ await withElectronApp(
       id => window.__XTERMS__[id].buffer.active.viewportY,
       sessionId
     );
-    const bufferBeforeMenu = await page.evaluate(
-      async id => window.electron?.pty?.buffer(id),
-      sessionId
-    );
+    // What the terminal would send the PTY while the menu is open, recorded
+    // at xterm's own onData (BUG-221).
+    await page.evaluate(id => {
+      window.__menuInput = [];
+      window.__menuInputSubscription = window.__XTERMS__[id].onData(data =>
+        window.__menuInput.push(data)
+      );
+    }, sessionId);
     await page
       .locator('.terminal-pane')
       .click({ button: 'right', position: { x: 40, y: 80 } });
@@ -442,19 +454,21 @@ await withElectronApp(
       afterEscape.viewportY === viewportBefore,
       `${afterEscape.viewportY} vs ${viewportBefore}`
     );
-    // Wait for the effect, never a number: a stray ESC would echo nothing at
-    // a fish prompt, so the oracle is the buffer being byte-identical after
-    // the PTY has had a turn to answer the keys the terminal did receive.
-    await page.evaluate(id => window.electron?.pty?.write(id, ''), sessionId);
-    await page.waitForTimeout(250);
-    const bufferAfterMenu = await page.evaluate(
-      async id => window.electron?.pty?.buffer(id),
-      sessionId
-    );
+    // The oracle is the terminal's INPUT, not the shell's output: a stray ESC
+    // echoes nothing at a fish prompt, and a prompt repaint changes the output
+    // with no key at all. xterm emits onData synchronously as it handles a
+    // key, so every byte the menu's keys produced is already recorded. Focus
+    // reports are the terminal's own, not a key the menu consumed.
+    const menuInput = await page.evaluate(() => {
+      window.__menuInputSubscription.dispose();
+      return window.__menuInput.filter(
+        data => data !== '\x1b[I' && data !== '\x1b[O'
+      );
+    });
     check(
       'no key the menu consumed reached the PTY',
-      bufferAfterMenu === bufferBeforeMenu,
-      `${(bufferAfterMenu ?? '').length - (bufferBeforeMenu ?? '').length} bytes`
+      menuInput.length === 0,
+      JSON.stringify(menuInput)
     );
     // The keyboard's right-click: ⇧F10 from inside the terminal.
     await page.keyboard.press('Shift+F10');

@@ -29,7 +29,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  waitForWorkspaceReady,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const SCHEMA_VERSION = 1;
 const ACK_BUDGET_MS = 80;
@@ -479,7 +482,7 @@ try {
       page.on('pageerror', error =>
         pageErrors.push(String(error.message || error))
       );
-      await page.locator('[data-command-altitude]').waitFor();
+      await waitForWorkspaceReady(page);
       await page.evaluate(dir => {
         window.dispatchEvent(
           new CustomEvent('exawatt:open-project', { detail: dir })

@@ -8,7 +8,10 @@
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startAgentFromLauncher } from './electron-eval.mjs';
+import {
+  startAgentFromLauncher,
+  waitForWorkspaceReady,
+} from './electron-eval.mjs';
 import { claudeProbeJs, codexProbeJs } from './harness-probe-fixture.mjs';
 
 /**
@@ -432,17 +435,11 @@ export async function openFixtureSession(page, fixture) {
   await page.setViewportSize({ width: 1200, height: 760 });
   // A cold dev server compiles the workspace route on first hit; only these
   // first waits get that headroom so real failures still surface fast.
-  await page.locator('[data-command-altitude]').waitFor({ timeout: 90_000 });
   // The open-project event is deliberately ignored until workspace state is
-  // ready. Community distributions do not configure the hosted account and
-  // the resulting best-effort preference lookup can settle after the
-  // command-altitude chrome has painted, so dispatch only once the ready verb is
-  // visible. Otherwise an eval can lose the event and time out on a composer
-  // that the product was never asked to create.
-  await page
-    .getByRole('button', { name: 'Open Project', exact: true })
-    .first()
-    .waitFor({ timeout: 90_000 });
+  // ready, and nothing replays a raw dispatch, so wait for hydration itself.
+  // The "Open Project" button stood in for it, but it renders whenever no
+  // Project is active, hydrated or not (BUG-221).
+  await waitForWorkspaceReady(page, { timeout: 90_000 });
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })

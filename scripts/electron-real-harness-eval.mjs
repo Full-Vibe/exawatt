@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from 'playwright-core';
-import { startAgentFromLauncher } from './lib/electron-eval.mjs';
+import {
+  startAgentFromLauncher,
+  waitForWorkspaceReady,
+} from './lib/electron-eval.mjs';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -87,7 +90,7 @@ try {
   });
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(30_000);
-  await page.locator('[data-command-altitude]').waitFor();
+  await waitForWorkspaceReady(page);
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })
@@ -126,12 +129,16 @@ try {
   }
   console.log('[real-harness] both interactive prompts ready');
   await page.waitForTimeout(10_000);
+  // The reply token never appears in the prompt, so its presence in a
+  // Session's output is the reply. Counting it at least three times, when the
+  // prompt carried it, let the prompt's echo and input-line repaints stand in
+  // for a reply that never came (BUG-221).
   const marker = 'EXAWATT_REAL_PROVIDER_OK';
   for (const session of [claude, startingCodex]) {
     await typeIntoPty(
       page,
       session.id,
-      `Reply with exactly ${marker}. Do not use tools or modify files.`
+      'Reply with exactly EXAWATT_REAL_PROVIDER and OK joined by one underscore, and nothing else. Do not use tools or modify files.'
     );
     console.log(`[real-harness] prompt submitted to ${session.harness}`);
   }
@@ -154,7 +161,7 @@ try {
         buffer(page, claude.id),
         buffer(page, codex.id),
       ]);
-      return outputs.every(output => output.split(marker).length >= 3);
+      return outputs.every(output => output.includes(marker));
     },
     'real Claude and Codex replies',
     180_000
