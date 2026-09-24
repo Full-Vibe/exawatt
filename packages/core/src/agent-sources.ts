@@ -298,7 +298,7 @@ export function agentSourceFactFreshness(input: {
 }
 
 /** A fact the source cannot repair by running, so a LIVE one refuses. */
-export type AgentSourceBlockingFact =
+type AgentSourceBlockingFact =
   | 'not-installed'
   | 'incompatible'
   | 'failed-checks';
