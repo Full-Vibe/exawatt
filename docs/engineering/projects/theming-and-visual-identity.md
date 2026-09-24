@@ -983,3 +983,19 @@ than escaping clipping through local stacking overrides. The menu lane owns the
 shared primitive and browser regression coverage. Acceptance exercises pointer
 hit testing, keyboard selection, Escape/focus return, and narrow/wide viewport
 reachability on the existing Theme control; DOM presence alone is insufficient.
+
+### 2026-09-23 — Shared popup boundary verification (BUG-144)
+
+The account submenu had valid DOM geometry but failed browser hit-testing:
+`DropdownMenuSubContent` lived inside the scrolling/material parent popup.
+Each shared dropdown popup now owns a Radix portal, with one shared width/height
+budget derived from Radix collision space. The same budget prevents a flipped
+submenu extending beyond a narrow viewport. Focus, pointer grace, selection and
+dismissal remain Radix-owned; there are no account-specific offsets or z-index
+patches. The design-system Menus rung records that ownership.
+
+Signed Brave reproduced the original invisible target, then verified pointer
+selection, committed radio selection, keyboard traversal, focus restoration,
+and visible hit-testable last items at 1312×700 and 420×480. The strengthened
+`eval:workspace:chrome` passes and is required by delivery policy for shared
+dropdown or account-menu changes. Nine existing account-menu tests also pass.

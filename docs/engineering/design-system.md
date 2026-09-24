@@ -259,6 +259,14 @@ its caller restores focus synchronously on keyboard close. Closing a terminal
 menu must never forward the close key to the PTY. Use `text-chrome-label`, HUD
 semantic text, existing overlay material and the dense chrome spacing rung.
 
+The account menu's Radix dropdown family gives every popup, including each
+submenu, its own portal. The shared primitive constrains width and height to
+Radix's available collision space and scrolls overflow; consumers must not
+repair clipping with local z-index or positioning overrides. Radix retains
+pointer grace, keyboard traversal, dismissal and focus restoration across
+these portal boundaries. Real-browser checks must exercise hit-testing, since
+DOM visibility alone does not prove an item can be reached (BUG-144).
+
 The command palette keeps the same row typography and materials. Its shared
 `palette-groups` model orders current Sessions and Projects ahead of Workspace
 switches. Workspace switches cannot become the empty-query opening selection or

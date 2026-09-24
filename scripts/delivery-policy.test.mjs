@@ -329,6 +329,20 @@ test('a gated surface owes its gate', () => {
   ]);
 });
 
+test('shared dropdown changes owe real pointer and keyboard coverage', () => {
+  for (const file of [
+    'src/components/ui/dropdown-menu.tsx',
+    'src/components/nav/site-header-nav.tsx',
+    'scripts/lib/account-theme-menu-eval.mjs',
+  ]) {
+    assert.ok(
+      missingSurfaceGates([file]).some(
+        entry => entry.gate === 'eval:workspace:chrome'
+      )
+    );
+  }
+});
+
 test('declaring the gate through --verify satisfies it', () => {
   assert.deepEqual(
     missingSurfaceGates(

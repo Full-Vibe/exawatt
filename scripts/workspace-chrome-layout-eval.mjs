@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { chromium } from 'playwright-core';
+import { verifyAccountThemeMenu } from './lib/account-theme-menu-eval.mjs';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -1517,6 +1518,8 @@ try {
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'stopped-pane-read-only.png'),
   });
+
+  await verifyAccountThemeMenu(page);
 
   if (errors.length > 0) {
     throw new Error(`Renderer errors:\n${errors.join('\n')}`);

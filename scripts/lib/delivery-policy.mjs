@@ -102,11 +102,15 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:workspace:chrome',
-    why: 'workspace chrome layout is height-sensitive; a shift resizes every terminal',
+    why: 'workspace chrome geometry and shared account menus must remain visible and operable',
     match: file =>
       /^src\/components\/workspace\/(?:workspace-client|split-layout|terminal-pane)\.tsx?$/.test(
         file
-      ),
+      ) ||
+      /^src\/components\/(?:ui\/dropdown-menu|nav\/site-header-nav)\.tsx?$/.test(
+        file
+      ) ||
+      file === 'scripts/lib/account-theme-menu-eval.mjs',
   },
   {
     gate: 'eval:workspace:split',
