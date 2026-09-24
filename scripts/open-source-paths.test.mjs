@@ -14,6 +14,7 @@ import {
   validatePathManifest,
   validateTrackedPathCoverage,
 } from './lib/open-source-paths.mjs';
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -119,9 +120,7 @@ test('compatible-service server helpers remain in the public projection', async 
   );
   const projectedClassify = createPathClassifier(JSON.parse(stdout));
   for (const file of files) {
-    await execFileAsync('git', ['cat-file', '-e', `HEAD:${file}`], {
-      cwd: root,
-    });
+    await gitAsync(root, ['cat-file', '-e', `HEAD:${file}`]);
     assert.equal(projectedClassify(file).classification, 'PUBLIC', file);
   }
 });

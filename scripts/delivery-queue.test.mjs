@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import {
   allocateTicket,
@@ -15,14 +13,11 @@ import {
   queueHead,
 } from './lib/delivery-queue.mjs';
 import { summarizeDeliveryMetrics } from './lib/delivery-state.mjs';
-
-const execFileAsync = promisify(execFile);
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 async function repository() {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-fifo-'));
-  await execFileAsync('git', ['init', '--initial-branch=master'], {
-    cwd: root,
-  });
+  await gitAsync(root, ['init', '--initial-branch=master']);
   return root;
 }
 

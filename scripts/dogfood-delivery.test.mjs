@@ -1,11 +1,9 @@
 // Generated for the public repository by the "public-dogfood-tooling" recipe.
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import { acquireDeliveryLock, deliveryLockPath } from './lib/delivery-lock.mjs';
 import {
@@ -13,17 +11,15 @@ import {
   recoverAtomicDogfoodSwap,
 } from './lib/dogfood-install-transaction.mjs';
 import { createGitBuildSnapshot } from './lib/git-build-snapshot.mjs';
+import { gitAsync } from './lib/hermetic-git.mjs';
 import { atomicSwapPaths } from './lib/macos-atomic-swap.mjs';
-
-const execFileAsync = promisify(execFile);
 
 function delay(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
 async function git(cwd, ...args) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
-  return stdout.trim();
+  return gitAsync(cwd, args);
 }
 
 async function createRepository(prefix = 'exawatt-delivery-test-') {

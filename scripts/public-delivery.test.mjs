@@ -28,9 +28,9 @@ import {
   enablePublicMaintenanceHold,
   readPublicMaintenanceHold,
 } from './lib/public-maintenance-hold.mjs';
+import { git, gitAsync, hermeticGitEnv } from './lib/hermetic-git.mjs';
 import {
   createPrivateFixture,
-  git,
   writeFastPnpm,
 } from './lib/public-repository-fixture.mjs';
 import {
@@ -71,7 +71,7 @@ async function land(worktree, environment) {
     [landScript],
     {
       cwd: worktree,
-      env: { ...process.env, ...environment },
+      env: hermeticGitEnv(environment),
       maxBuffer: 32 * 1024 * 1024,
     }
   );
@@ -663,13 +663,9 @@ test('an accepted push with a lost client response is recorded as published', as
         log() {},
         warn() {},
         push: async candidate => {
-          await execFileAsync(
-            'git',
-            publicPushArgs({ url: candidate.remote.url }),
-            {
-              cwd: candidate.projection.destination,
-              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-            }
+          await gitAsync(
+            candidate.projection.destination,
+            publicPushArgs({ url: candidate.remote.url })
           );
           throw new Error('injected lost client response after acceptance');
         },

@@ -9,11 +9,11 @@ import {
   parseRepositorySlug,
   pullContribution,
 } from './contribution-pull.mjs';
+import { git } from './lib/hermetic-git.mjs';
 import { projectPublicHistory } from './lib/public-projection.mjs';
 import {
   FIXTURE_CONTRIBUTOR,
   createPrivateFixture,
-  git,
 } from './lib/public-repository-fixture.mjs';
 
 /**

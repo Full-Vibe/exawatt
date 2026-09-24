@@ -13,6 +13,7 @@ import {
   createPathClassifier,
   readPathManifest,
 } from './lib/open-source-paths.mjs';
+import { git, gitBytes } from './lib/hermetic-git.mjs';
 import {
   PRIVATE_COMPANY_PATH_PREFIXES,
   PRIVATE_DISTRIBUTION_PATHS,
@@ -236,13 +237,7 @@ test('rendering the source tree is deterministic and the projected tree is final
   if (isProjectedPublicManifest(declared)) {
     assert.equal(first.size, 0, 'a projected tree must not publish recipes');
     const classify = createPathClassifier(declared);
-    const tracked = execFileSync('git', ['ls-files', '-z'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    })
-      .split('\0')
-      .filter(Boolean);
+    const tracked = git(ROOT, ['ls-files', '-z']).split('\0').filter(Boolean);
     assert.ok(tracked.length > 1_000, 'expected a full projected tree');
     assert.deepEqual(
       tracked.filter(file => classify(file).classification !== 'PUBLIC'),
@@ -261,13 +256,7 @@ test('rendering the source tree is deterministic and the projected tree is final
 test('no rendered output reaches a PRIVATE path', async () => {
   const declared = await manifest();
   const classify = createPathClassifier(declared);
-  const tracked = execFileSync('git', ['ls-files', '-z'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\0')
-    .filter(Boolean);
+  const tracked = git(ROOT, ['ls-files', '-z']).split('\0').filter(Boolean);
   const privatePaths = tracked.filter(
     file => classify(file).classification === 'PRIVATE'
   );
@@ -529,9 +518,7 @@ test('the rendered manifest is valid FOR the public tree, not just well formed',
     sourceSha: 'HEAD',
   });
   const manifestPath = 'scripts/open-source-paths.manifest.json';
-  const source = execFileSync('git', ['show', `HEAD:${manifestPath}`], {
-    cwd: ROOT,
-  });
+  const source = gitBytes(ROOT, ['show', `HEAD:${manifestPath}`]);
   const output = plan.renderedOutputs.find(
     entry => entry.path === manifestPath
   );

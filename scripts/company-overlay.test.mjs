@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import {
   access,
   mkdir,
@@ -12,7 +11,6 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import {
   COMPANY_COMPOSITION_RECORD,
@@ -24,12 +22,10 @@ import {
   resolveCompositionSource,
   validateCompanyOverlayManifest,
 } from './lib/company-composition.mjs';
-
-const execFileAsync = promisify(execFile);
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 async function git(repo, args) {
-  const { stdout } = await execFileAsync('git', args, { cwd: repo });
-  return stdout;
+  return gitAsync(repo, args);
 }
 
 async function writeTree(root, files) {

@@ -1,18 +1,14 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import { inspectDelivery } from './agent-stop-check.mjs';
-
-const execFileAsync = promisify(execFile);
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 async function git(cwd, ...args) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
-  return stdout.trim();
+  return gitAsync(cwd, args);
 }
 
 test('advises once for dirty or unintegrated agent work', async () => {

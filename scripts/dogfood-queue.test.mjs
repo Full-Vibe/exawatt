@@ -1,16 +1,14 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { runDogfoodWorker } from './lib/dogfood-queue.mjs';
 import { deliveryStateRoot, writeJsonAtomic } from './lib/delivery-state.mjs';
+import { gitAsync } from './lib/hermetic-git.mjs';
 
-const execFileAsync = promisify(execFile);
 const repositoryRoot = path.dirname(
   path.dirname(fileURLToPath(import.meta.url))
 );
@@ -27,9 +25,7 @@ async function isProjectedPublicTree() {
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-dogfood-queue-'));
-  await execFileAsync('git', ['init', '--initial-branch=master'], {
-    cwd: root,
-  });
+  await gitAsync(root, ['init', '--initial-branch=master']);
   const requestPath = path.join(
     await deliveryStateRoot(root),
     'dogfood-request.json'

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+
+import { git } from './lib/hermetic-git.mjs';
 
 const FONT_ASSETS = [
   {
@@ -89,12 +90,14 @@ test('the layout preserves the three typography variables and variable weights',
 });
 
 test('application sources have no remote Google font build or runtime dependency', () => {
-  const tracked = execFileSync(
-    'git',
-    ['ls-files', '--', 'src', 'electron', 'packages', 'next.config.*'],
-    { encoding: 'utf8' }
-  )
-    .trim()
+  const tracked = git(process.cwd(), [
+    'ls-files',
+    '--',
+    'src',
+    'electron',
+    'packages',
+    'next.config.*',
+  ])
     .split('\n')
     .filter(Boolean)
     .filter(file => SOURCE_EXTENSIONS.has(file.slice(file.lastIndexOf('.'))));

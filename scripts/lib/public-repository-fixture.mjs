@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   mkdirSync,
@@ -8,6 +7,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { git } from './hermetic-git.mjs';
 
 /**
  * Shared fixture for the two-repository delivery tests (ENG-030 WP6-D).
@@ -112,44 +113,12 @@ const FLOOR_SCRIPTS = {
   'test:related': 'node -e "process.exit(0)"',
 };
 
-export const FIXTURE_AUTHOR = {
-  GIT_AUTHOR_NAME: 'Fixture Author',
-  GIT_AUTHOR_EMAIL: 'fixture@example.test',
-  GIT_COMMITTER_NAME: 'Fixture Author',
-  GIT_COMMITTER_EMAIL: 'fixture@example.test',
-};
-
 export const FIXTURE_CONTRIBUTOR = {
   GIT_AUTHOR_NAME: 'Outside Contributor',
   GIT_AUTHOR_EMAIL: 'outside@example.test',
   GIT_COMMITTER_NAME: 'Outside Contributor',
   GIT_COMMITTER_EMAIL: 'outside@example.test',
 };
-
-/**
- * Repository scripts and Git both read ambient configuration, so the child
- * environment is stated rather than inherited (see suite-environment.test.mjs).
- */
-export function gitEnv(extra = {}) {
-  return {
-    PATH: process.env.PATH ?? '/usr/bin:/bin',
-    HOME: process.env.HOME ?? '/tmp',
-    LANG: 'en_US.UTF-8',
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_TERMINAL_PROMPT: '0',
-    ...FIXTURE_AUTHOR,
-    ...extra,
-  };
-}
-
-export function git(cwd, args, extra = {}) {
-  return execFileSync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    env: gitEnv(extra),
-  }).trim();
-}
 
 export function write(root, file, contents) {
   const absolute = path.join(root, file);

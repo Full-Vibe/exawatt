@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import {
   CONVENTION_FILE_PATTERNS,
@@ -13,12 +11,10 @@ import {
   findNewUnconsumedExports,
   namedExports,
 } from './export-consumers-check.mjs';
-
-const execFileAsync = promisify(execFile);
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 async function git(cwd, ...args) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
-  return stdout.trim();
+  return gitAsync(cwd, args);
 }
 
 async function write(root, file, content) {

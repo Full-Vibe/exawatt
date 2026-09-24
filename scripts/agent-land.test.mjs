@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   chmod,
   mkdir,
@@ -11,22 +11,16 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, parseWorktrees } from './agent-land.mjs';
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
+import { gitAsync, hermeticGitEnv } from './lib/hermetic-git.mjs';
 
-const execFileAsync = promisify(execFile);
 const script = fileURLToPath(new URL('./agent-land.mjs', import.meta.url));
 
-async function command(commandName, args, cwd) {
-  const { stdout } = await execFileAsync(commandName, args, { cwd });
-  return stdout.trim();
-}
-
 async function git(cwd, ...args) {
-  return command('git', args, cwd);
+  return gitAsync(cwd, args);
 }
 
 function runStreaming(commandName, args, cwd, env = {}) {
@@ -35,7 +29,7 @@ function runStreaming(commandName, args, cwd, env = {}) {
   const child = spawn(commandName, args, {
     cwd,
     detached: ownsProcessGroup,
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
   });
   let settled = false;
   child.stdout.on('data', chunk => {

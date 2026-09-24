@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import {
   CI_BATCH_MIN_INTERVAL_MS,
@@ -17,12 +15,10 @@ import {
   runCiBatchWorker,
 } from './lib/ci-batch.mjs';
 import { deliveryStateRoot, writeJsonAtomic } from './lib/delivery-state.mjs';
-
-const execFileAsync = promisify(execFile);
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 async function git(cwd, ...args) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
-  return stdout.trim();
+  return gitAsync(cwd, args);
 }
 
 async function fixture() {

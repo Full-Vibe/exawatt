@@ -15,14 +15,10 @@ import {
   runRecertificationProcess,
   runExactPublicRecertification,
 } from './lib/exact-public-recertification.mjs';
+import { gitAsync } from './lib/hermetic-git.mjs';
 
 const execFileAsync = promisify(execFile);
-const GIT_ENV = {
-  PATH: process.env.PATH ?? '/usr/bin:/bin',
-  HOME: process.env.HOME ?? tmpdir(),
-  LANG: 'en_US.UTF-8',
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
+const FIXTURE_IDENTITY = {
   GIT_AUTHOR_NAME: 'Exact Public Fixture',
   GIT_AUTHOR_EMAIL: 'fixture@example.test',
   GIT_COMMITTER_NAME: 'Exact Public Fixture',
@@ -30,11 +26,7 @@ const GIT_ENV = {
 };
 
 async function git(root, args) {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd: root,
-    env: GIT_ENV,
-  });
-  return stdout.trim();
+  return gitAsync(root, args, FIXTURE_IDENTITY);
 }
 
 async function write(root, relative, contents) {
@@ -102,8 +94,8 @@ async function createFixture() {
     };
 
   async function clone(source, destination) {
-    await execFileAsync(
-      'git',
+    await gitAsync(
+      tmpdir(),
       [
         'clone',
         '--quiet',
@@ -115,7 +107,7 @@ async function createFixture() {
         source,
         destination,
       ],
-      { env: GIT_ENV }
+      FIXTURE_IDENTITY
     );
   }
 

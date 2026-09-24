@@ -20,6 +20,11 @@ import {
   projectPublicCatchup,
   resolveEntryBoundary,
 } from './lib/public-projection.mjs';
+import {
+  git as hermeticGit,
+  gitBytes,
+  hermeticGitEnv,
+} from './lib/hermetic-git.mjs';
 import { renderRecipeOutput } from './lib/recipe-renderers.mjs';
 import {
   findImageMetadataFindings,
@@ -71,29 +76,13 @@ const CONTRIBUTOR = {
   GIT_COMMITTER_DATE: '2026-02-02T00:00:00+00:00',
 };
 
-/**
- * Repository scripts and Git both read ambient configuration, so the child
- * environment is stated rather than inherited (see suite-environment.test.mjs).
- */
+/** Every fixture commit carries the fixed author and date unless a test says otherwise. */
 function gitEnv(extra = {}) {
-  return {
-    PATH: process.env.PATH ?? '/usr/bin:/bin',
-    HOME: process.env.HOME ?? '/tmp',
-    LANG: 'en_US.UTF-8',
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_TERMINAL_PROMPT: '0',
-    ...AUTHOR,
-    ...extra,
-  };
+  return hermeticGitEnv({ ...AUTHOR, ...extra });
 }
 
 function git(cwd, args, extra = {}) {
-  return execFileSync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    env: gitEnv(extra),
-  }).trim();
+  return hermeticGit(cwd, args, { ...AUTHOR, ...extra });
 }
 
 const MANIFEST_PATH = 'scripts/open-source-paths.manifest.json';
@@ -1188,11 +1177,11 @@ test('every rendered output passes the checks the content gate applies', async (
 
     const findings = [];
     for (const output of projection.renderedOutputs) {
-      const bytes = execFileSync('git', ['show', `master:${output.path}`], {
-        cwd: projection.destination,
-        env: gitEnv(),
-        maxBuffer: 64 * 1024 * 1024,
-      });
+      const bytes = gitBytes(
+        projection.destination,
+        ['show', `master:${output.path}`],
+        AUTHOR
+      );
       findings.push(...findImageMetadataFindings(bytes, output.path));
       findings.push(
         ...findTextFindings(

@@ -1,28 +1,25 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
+import { gitAsync } from './lib/hermetic-git.mjs';
 import {
   collectRoster,
   printWorktreeRoster,
   renderRoster,
 } from './lib/worktree-roster.mjs';
 
-const execFileAsync = promisify(execFile);
-
 async function git(cwd, ...args) {
-  await execFileAsync('git', args, { cwd });
+  await gitAsync(cwd, args);
 }
 
 async function repository(t) {
   const parent = await mkdtemp(path.join(tmpdir(), 'exawatt-roster-'));
   t.after(() => rm(parent, { recursive: true, force: true }));
   const root = path.join(parent, 'repo');
-  await execFileAsync('git', ['init', '--initial-branch=master', root]);
+  await gitAsync(parent, ['init', '--initial-branch=master', root]);
   await git(root, 'config', 'user.email', 'test@example.com');
   await git(root, 'config', 'user.name', 'Roster Test');
   await writeFile(path.join(root, 'seed.txt'), 'seed\n');

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { git as hermeticGit } from './lib/hermetic-git.mjs';
 import {
   PUBLIC_METADATA_POLICY_ID,
   PUBLIC_METADATA_POLICY_VERSION,
@@ -460,23 +460,15 @@ test('annotated tagger identities obey the same consent policy', () => {
 });
 
 function git(root, args, environment = {}) {
-  return execFileSync('git', args, {
-    cwd: root,
-    encoding: 'utf8',
-    env: {
-      PATH: process.env.PATH ?? '/usr/bin:/bin',
-      HOME: process.env.HOME ?? '/tmp',
-      GIT_CONFIG_GLOBAL: '/dev/null',
-      GIT_CONFIG_SYSTEM: '/dev/null',
-      GIT_AUTHOR_NAME: AUTHOR.name,
-      GIT_AUTHOR_EMAIL: AUTHOR.email,
-      GIT_AUTHOR_DATE: FIXTURE_DATE,
-      GIT_COMMITTER_NAME: PUBLIC_PROJECTOR_IDENTITY.name,
-      GIT_COMMITTER_EMAIL: PUBLIC_PROJECTOR_IDENTITY.email,
-      GIT_COMMITTER_DATE: FIXTURE_DATE,
-      ...environment,
-    },
-  }).trim();
+  return hermeticGit(root, args, {
+    GIT_AUTHOR_NAME: AUTHOR.name,
+    GIT_AUTHOR_EMAIL: AUTHOR.email,
+    GIT_AUTHOR_DATE: FIXTURE_DATE,
+    GIT_COMMITTER_NAME: PUBLIC_PROJECTOR_IDENTITY.name,
+    GIT_COMMITTER_EMAIL: PUBLIC_PROJECTOR_IDENTITY.email,
+    GIT_COMMITTER_DATE: FIXTURE_DATE,
+    ...environment,
+  });
 }
 
 test('repository audit previews a reseed and redacts commit and tag findings', async () => {
