@@ -22,10 +22,6 @@ import {
   setTrustedRendererOrigin,
 } from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
-import {
-  buildDiagnosticsReport,
-  type DiagnosticsReport,
-} from './diagnostics-report';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { registerConsumptionIPC } from './consumption-ipc';
 import { ConsumptionScannerService } from './consumption/scanner-service';
@@ -60,16 +56,25 @@ import type {
   ShutdownPhase,
 } from './shutdown-coordinator';
 import type { RunStateStore } from './run-state';
-import type {
-  ElectronAuthCoordinator,
-  ElectronAuthLinkConfig,
-  ElectronAuthStartConfig,
-} from './auth-coordinator';
+import type { ElectronAuthCoordinator } from './auth-coordinator';
 import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
+import {
+  appChannels,
+  authChannels,
+  createAppearanceIpc,
+  createDiagnosticsReports,
+  dialogChannels,
+} from './app-ipc';
 import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
+import {
+  registerIpcModules,
+  registerTrustedChannels,
+  type TrustedChannels,
+} from './ipc-table';
+import { createMenuController } from './menu-controller';
 import {
   createMainWindowController,
   createStartupScreen,
@@ -78,16 +83,9 @@ import {
 } from './window';
 import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
-import {
-  availabilityMenuCommands,
-  buildApplicationMenuTemplate,
-  defaultMenuAccelerators,
-} from './application-menu';
 import { isClaudePlanWindowsEnabled, loadSettings } from './settings-store';
 import {
   applyNativeAppearancePreference,
-  refreshNativeWindowBackgrounds,
-  rendererAppearanceBootstrapSnapshot,
   type NativeAppearanceResolution,
 } from './appearance';
 import {
@@ -181,55 +179,6 @@ let checkForUpdatesFromMenu: () => Promise<void> = async () => {};
  *  inventing an idle status (ENG-025 F5). */
 let currentUpdateStatus: () => Record<string, unknown> | null = () => null;
 
-/**
- * ENG-025 F5 — assemble the anonymized diagnostics bundle from whatever main
- * currently knows. Deliberately tolerant: a report from a half-started or
- * broken app is exactly the report worth having, so every source degrades to
- * a null or a zero rather than throwing.
- */
-function collectDiagnosticsReport(signedIn: boolean): DiagnosticsReport {
-  return buildDiagnosticsReport({
-    build: buildInfo,
-    appVersion: app.getVersion(),
-    packaged: app.isPackaged,
-    installPath: app.getAppPath(),
-    logDirectory: path.join(app.getPath('userData'), 'logs'),
-    updateStatus: currentUpdateStatus(),
-    signedIn,
-    liveSessions: ptySessions
-      ? ptySessions.list().filter(session => !session.exited).length
-      : 0,
-    locale: app.getLocale(),
-  });
-}
-
-/**
- * The signed-out path. ⌘⇧F is a no-op without an account and a broken install
- * is disproportionately signed out, so the report has to be obtainable with
- * no network and no session: write it next to the user's other downloads and
- * put a Finder window in front of them.
- */
-async function saveDiagnosticsReport(
-  signedIn: boolean
-): Promise<{ ok: boolean; filePath: string | null }> {
-  try {
-    const report = collectDiagnosticsReport(signedIn);
-    const stamp = report.generatedAt.replace(/[:.]/g, '-');
-    const filePath = path.join(
-      app.getPath('downloads'),
-      `exawatt-diagnostics-${stamp}.json`
-    );
-    await fs.promises.writeFile(
-      filePath,
-      `${JSON.stringify(report, null, 2)}\n`,
-      { encoding: 'utf8', mode: 0o600 }
-    );
-    shell.showItemInFolder(filePath);
-    return { ok: true, filePath };
-  } catch {
-    return { ok: false, filePath: null };
-  }
-}
 let shutdownCopy: typeof import('./shutdown-coordinator').shutdownCopy;
 let safeElectronAuthError: (error: unknown) => {
   name: string;
@@ -370,7 +319,7 @@ const mainWindow = createMainWindowController({
   promoteToRegularApp: () => {
     if (process.platform === 'darwin') app.setActivationPolicy('regular');
   },
-  onNavigationReset: () => resetMenuAvailability(),
+  onNavigationReset: () => menu.resetAvailability(),
   onCheckpointOwnerLost: id => workspaceCheckpointOwners.delete(id),
   onLaunchScreenLoaded: () => startupScreen.repaint(),
   onWorkspaceLoaded: url => deepLinks.deliverPending(url),
@@ -423,318 +372,108 @@ function applyNativeAppearance(): NativeAppearanceResolution {
   );
 }
 
-/** Send a named command to the focused renderer. Menu items are the
- *  discoverable, always-current cheat sheet for the app's shortcuts; the
- *  renderer stays the single keyboard authority (rebindable, terminal-focus
- *  aware), so items show their combo with `registerAccelerator: false` and
- *  only ⌘, — a chrome-level macOS invariant — registers for real. */
-function sendMenuCommand(command: string): void {
-  const win =
-    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-  win?.webContents.send('menu:command', command);
-}
-
-/** Display accelerators per menu command (D10): seeded from the command-verb
- *  manifest's own bindings, overwritten when the renderer syncs the registry's
- *  effective bindings — a rebind updates what the menus show instead of
- *  letting them lie. An empty string clears the column (e.g. a verb rebound
- *  to a chord). */
-const menuAccelerators: Record<string, string> = defaultMenuAccelerators();
-
-/** Renderer-owned context projected into native menu enablement. Commands
- *  start unavailable until the restored workspace publishes real targets;
- *  which commands those are is a manifest fact, not a list kept by hand. */
-const menuAvailability: Record<string, boolean> = Object.fromEntries(
-  availabilityMenuCommands().map(command => [command, false])
-);
-
-function resetMenuAvailability(): void {
-  let changed = false;
-  for (const command of Object.keys(menuAvailability)) {
-    if (menuAvailability[command]) {
-      menuAvailability[command] = false;
-      changed = true;
-    }
-  }
-  if (changed) createMenu();
-}
-
-let feedbackAuthenticated = false;
 const menuCapabilities = commandVerbCapabilities(distribution.contract);
-
-const ACCELERATOR_PATTERN =
-  /^((Command|Control|Alt|Shift)\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|[\[\]\\;',./`=-]|Enter|Escape|Tab|Space|Backspace|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown)$/;
-
-function registerMenuIPC(): void {
-  handleTrusted('menu:sync-accelerators', async (_event, map: unknown) => {
-    if (!map || typeof map !== 'object') return;
-    for (const [command, value] of Object.entries(map)) {
-      if (!Object.prototype.hasOwnProperty.call(menuAccelerators, command))
-        continue;
-      if (value === '') {
-        menuAccelerators[command] = '';
-      } else if (typeof value === 'string' && ACCELERATOR_PATTERN.test(value)) {
-        menuAccelerators[command] = value;
-      }
-    }
-    createMenu();
-  });
-  handleTrusted('menu:sync-availability', async (_event, map: unknown) => {
-    if (!map || typeof map !== 'object') return;
-    let changed = false;
-    for (const [command, value] of Object.entries(map)) {
-      if (!Object.prototype.hasOwnProperty.call(menuAvailability, command)) {
-        continue;
-      }
-      if (typeof value !== 'boolean') continue;
-      if (menuAvailability[command] !== value) {
-        menuAvailability[command] = value;
-        changed = true;
-      }
-    }
-    if (changed) createMenu();
-  });
-  handleTrusted(
-    'feedback:set-authenticated',
-    async (_event, value: boolean) => {
-      if (typeof value !== 'boolean') throw new Error('Invalid auth state');
-      if (feedbackAuthenticated === value) return;
-      feedbackAuthenticated = value;
-      createMenu();
-    }
-  );
-  handleTrusted('feedback:capture-screenshot', async event => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win || win.isDestroyed()) throw new Error('Window unavailable');
-    const image = await win.capturePage();
-    const size = image.getSize();
-    const bounded =
-      size.width > 1600
-        ? image.resize({
-            width: 1600,
-            height: Math.max(1, Math.round((size.height * 1600) / size.width)),
-            quality: 'better',
-          })
-        : image;
-    return `data:image/jpeg;base64,${bounded.toJPEG(78).toString('base64')}`;
-  });
-}
-
-function createMenu(): void {
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate(
-      buildApplicationMenuTemplate({
-        appName: app.name,
-        version: app.getVersion(),
-        buildSha: buildInfo.sha.slice(0, 12),
-        isDev,
-        feedbackAuthenticated,
-        capabilities: menuCapabilities,
-        accelerators: menuAccelerators,
-        availability: menuAvailability,
-        onCommand: sendMenuCommand,
-        onCheckForUpdates: productUpdatesEnabled
-          ? () => void checkForUpdatesFromMenu()
-          : undefined,
-        onWindowManagementHelp: () => void promptWindowManagementRestart(),
-      })
-    )
-  );
-}
-
-function registerAuthIPC(): void {
-  handleTrusted(
-    'auth:start-google',
-    async (_event, config: ElectronAuthStartConfig) => {
-      if (!authCoordinator) throw new Error('Authentication is not ready.');
-      try {
-        await authCoordinator.startGoogle(config);
-      } catch (error) {
-        recordAuthDiagnostic('auth.start_ipc_failure', {
-          error: safeElectronAuthError(error),
-        });
-        throw error;
-      }
-    }
-  );
-  handleTrusted(
-    'auth:link-github',
-    async (_event, config: ElectronAuthLinkConfig) => {
-      if (!authCoordinator) throw new Error('Authentication is not ready.');
-      try {
-        await authCoordinator.linkGithub(config);
-      } catch (error) {
-        recordAuthDiagnostic('auth.link_github_ipc_failure', {
-          error: safeElectronAuthError(error),
-        });
-        throw error;
-      }
-    }
-  );
-  handleTrusted(
-    'auth:install-test-session',
-    async (
-      _event,
-      config: Pick<ElectronAuthStartConfig, 'supabaseUrl' | 'supabaseAnonKey'>,
-      tokens: { accessToken: string; refreshToken: string }
-    ) => {
-      if (
-        process.env.EXAWATT_TEST !== '1' ||
-        process.env.EXAWATT_TEST_AUTH !== '1'
-      ) {
-        throw new Error('Test authentication is disabled.');
-      }
-      if (!authCoordinator) throw new Error('Authentication is not ready.');
-      await authCoordinator.installSession(config, tokens);
-    }
-  );
-}
-
-/** Native "Open project directory" picker (ENG-015 S5 P4) — lets the operator
- *  browse to a project instead of typing a path. Returns the chosen absolute
- *  path, or null if cancelled. */
-function registerDialogIPC(): void {
-  handleTrusted(
-    'dialog:openDirectory',
-    async (event, requestedTitle?: string) => {
-      // test hook: skip the native modal (which automation can't drive) and
-      // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
-      // Double-gated (like the userData redirect) so a stray env var in a normal
-      // launch can never silently replace the real folder picker.
-      if (process.env.EXAWATT_TEST && process.env.EXAWATT_TEST_DIR) {
-        return process.env.EXAWATT_TEST_DIR;
-      }
-      return openDirectoryPicker(
-        BrowserWindow.fromWebContents(event.sender),
-        requestedTitle
-      );
-    }
-  );
-  // does a path exist on THIS machine? — detects a synced Project whose
-  // directory is absent here (ENG-015 S5 P5 "locate on this machine")
-  handleTrusted('dialog:pathExists', (_event, p: string) => {
-    try {
-      return typeof p === 'string' && p.length > 0 && fs.existsSync(p);
-    } catch {
-      return false;
-    }
-  });
-}
-
-function registerAppIPC(): void {
-  // Preload executes before the document's inline first-paint script. A tiny
-  // synchronous read is intentional here: it lets Electron's durable settings,
-  // including one-launch safe mode, win before any renderer pixels are chosen.
-  ipcMain.on('app:appearance-bootstrap', event => {
-    // Unlike handleTrusted (ipcMain.handle), Electron does not catch a throw
-    // from a plain ipcMain.on listener — it becomes an uncaught main-process
-    // exception and surfaces as the native crash dialog. A rejected sender
-    // here (e.g. querying event.senderFrame mid-navigation) must fail closed
-    // into the renderer's existing first-paint recovery theme instead.
-    try {
-      assertTrustedIpcSender(event);
-    } catch {
-      event.returnValue = undefined;
-      return;
-    }
-    event.returnValue = rendererAppearanceBootstrapSnapshot(
-      loadSettings().appearance,
-      safeThemeLaunch,
-      nativeTheme.shouldUseDarkColors
-    );
-  });
-  handleTrusted('app:get-build-info', () => ({
-    ...buildInfo,
-    // marketed version alongside the exact sha (ENG-025 feedback stamping)
+const menu = createMenuController({
+  context: () => ({
+    appName: app.name,
     version: app.getVersion(),
-    distribution: {
-      contract: distribution.contract,
-      digest: distribution.digest,
-      identity: distributionIdentity,
-      capabilities: distributionIpcCapabilities(distribution.contract),
-    },
-  }));
-  // ENG-025 F5. `signedIn` is renderer-supplied because the Supabase session
-  // lives there; it is a self-report in a self-reported bundle, not a claim
-  // main can make on its own.
-  handleTrusted('app:get-diagnostics-report', (_event, signedIn?: boolean) =>
-    collectDiagnosticsReport(Boolean(signedIn))
+    buildSha: buildInfo.sha.slice(0, 12),
+    isDev,
+    capabilities: menuCapabilities,
+    onCheckForUpdates: productUpdatesEnabled
+      ? () => void checkForUpdatesFromMenu()
+      : undefined,
+    onWindowManagementHelp: () => void promptWindowManagementRestart(),
+  }),
+  install: template =>
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template)),
+  commandTarget: () =>
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0],
+});
+
+const diagnosticsReports = createDiagnosticsReports({
+  input: () => ({
+    build: buildInfo,
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    installPath: app.getAppPath(),
+    logDirectory: path.join(app.getPath('userData'), 'logs'),
+    updateStatus: currentUpdateStatus(),
+    liveSessions: ptySessions
+      ? ptySessions.list().filter(session => !session.exited).length
+      : 0,
+    locale: app.getLocale(),
+  }),
+  downloadsPath: () => app.getPath('downloads'),
+  showItemInFolder: filePath => shell.showItemInFolder(filePath),
+});
+const appearanceIpc = createAppearanceIpc({
+  nativeTheme,
+  getAccentColor: systemPreferences.getAccentColor
+    ? () => systemPreferences.getAccentColor()
+    : undefined,
+  appearancePreference: () => loadSettings().appearance,
+  safeTheme: safeThemeLaunch,
+  allWindows: () => BrowserWindow.getAllWindows(),
+  assertTrustedSender: event => assertTrustedIpcSender(event),
+});
+/** The renderer that owns mutable workspace state answers checkpoints. */
+const checkpointChannels: TrustedChannels = {
+  'app:set-workspace-checkpoint-owner': (
+    event,
+    ownsWorkspaceState: boolean
+  ) => {
+    if (typeof ownsWorkspaceState !== 'boolean') return;
+    if (ownsWorkspaceState) workspaceCheckpointOwners.add(event.sender.id);
+    else workspaceCheckpointOwners.delete(event.sender.id);
+  },
+  'app:complete-checkpoint': (_event, requestId: string, ok: boolean) => {
+    if (typeof requestId !== 'string' || typeof ok !== 'boolean') return;
+    const complete = pendingCheckpoints.get(requestId);
+    if (!complete) return;
+    pendingCheckpoints.delete(requestId);
+    complete(ok);
+  },
+};
+
+/** Main's own channels, keyed by name, through the one trusted door. */
+function registerMainChannels(): void {
+  registerTrustedChannels(
+    [
+      authChannels({
+        coordinator: () => authCoordinator,
+        record: (event, fields) => recordAuthDiagnostic(event, fields),
+        safeAuthError: error => safeElectronAuthError(error),
+        env: process.env,
+      }),
+      dialogChannels({
+        openDirectoryPicker,
+        windowFor: sender => BrowserWindow.fromWebContents(sender),
+        env: process.env,
+      }),
+      appChannels({
+        buildInfo: () => ({
+          ...buildInfo,
+          // marketed version alongside the exact sha (ENG-025 feedback stamping)
+          version: app.getVersion(),
+          distribution: {
+            contract: distribution.contract,
+            digest: distribution.digest,
+            identity: distributionIdentity,
+            capabilities: distributionIpcCapabilities(distribution.contract),
+          },
+        }),
+        reports: diagnosticsReports,
+        record: (event, fields) => mainDiagnostics(event, fields),
+        windowFor: sender => BrowserWindow.fromWebContents(sender),
+      }),
+      appearanceIpc.channels,
+      checkpointChannels,
+      menu.channels,
+    ],
+    handleTrusted
   );
-  // A route's error boundary caught a render exception the app otherwise
-  // recovers from silently — no crash dialog, no process death, nothing in
-  // `render-process-gone` for `app_crashed` to observe. Without this the only
-  // record was ever the operator's own screenshot; this makes the actual
-  // message and stack readable from `logs/main.jsonl` next time instead of
-  // requiring live reproduction. `redactDiagnosticValue` (inside
-  // `mainDiagnostics`) still clips and scrubs every field before it lands.
-  handleTrusted('app:report-render-error', (_event, payload?: unknown) => {
-    const report =
-      payload && typeof payload === 'object'
-        ? (payload as Record<string, unknown>)
-        : {};
-    mainDiagnostics('renderer.error-boundary', {
-      message: typeof report.message === 'string' ? report.message : null,
-      stack: typeof report.stack === 'string' ? report.stack : null,
-      digest: typeof report.digest === 'string' ? report.digest : null,
-      pathname: typeof report.pathname === 'string' ? report.pathname : null,
-    });
-  });
-  handleTrusted(
-    'app:save-diagnostics-report',
-    async (_event, signedIn?: boolean) =>
-      saveDiagnosticsReport(Boolean(signedIn))
-  );
-  // Optional ENG-032 action overlay input: '#RRGGBB' or null off-macOS.
-  // The selected theme remains the default and Project identity stays separate.
-  const systemAccentColor = () => {
-    try {
-      const accent = systemPreferences.getAccentColor?.();
-      return accent ? `#${accent.slice(0, 6)}` : null;
-    } catch {
-      return null;
-    }
-  };
-  const appearanceSnapshot = () => ({
-    dark: nativeTheme.shouldUseDarkColors,
-    highContrast: nativeTheme.shouldUseHighContrastColors,
-    invertedColors: nativeTheme.shouldUseInvertedColorScheme,
-    systemAccent: systemAccentColor(),
-    safeTheme: safeThemeLaunch,
-  });
-  handleTrusted('app:accent-color', systemAccentColor);
-  handleTrusted('app:appearance', appearanceSnapshot);
-  nativeTheme.on('updated', () => {
-    refreshNativeWindowBackgrounds(
-      loadSettings().appearance,
-      nativeTheme,
-      BrowserWindow.getAllWindows(),
-      { safeTheme: safeThemeLaunch }
-    );
-    const snapshot = appearanceSnapshot();
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send('app:appearance-changed', snapshot);
-      }
-    }
-  });
-  handleTrusted(
-    'app:set-workspace-checkpoint-owner',
-    (event, ownsWorkspaceState: boolean) => {
-      if (typeof ownsWorkspaceState !== 'boolean') return;
-      if (ownsWorkspaceState) workspaceCheckpointOwners.add(event.sender.id);
-      else workspaceCheckpointOwners.delete(event.sender.id);
-    }
-  );
-  handleTrusted(
-    'app:complete-checkpoint',
-    (_event, requestId: string, ok: boolean) => {
-      if (typeof requestId !== 'string' || typeof ok !== 'boolean') return;
-      const complete = pendingCheckpoints.get(requestId);
-      if (!complete) return;
-      pendingCheckpoints.delete(requestId);
-      complete(ok);
-    }
-  );
+  appearanceIpc.register((channel, listener) => ipcMain.on(channel, listener));
 }
 
 function watchInstalledBuild(): void {
@@ -1087,68 +826,94 @@ async function bootstrapCommandSurface(): Promise<void> {
     detail: 'Durable local state is ready',
   });
 
-  runtime.agentSourcesIpc.registerAgentSourcesIPC();
-  runtime.connectedSourcesIpc.registerConnectedSourcesIPC();
-  runtime.ptyIpc.registerPtyIPC(
-    distribution.contract,
-    recovery.previousRunInterrupted,
-    // Late-bound on purpose: a recorder captured by value would be whatever
-    // `mainDiagnostics` held at registration, not the log it holds later.
-    (event, fields) => mainDiagnostics(event, fields)
-  );
-  runtime.roadmapIpc.registerRoadmapIPC();
-  runtime.projectIpc.registerProjectIPC();
-  registerAuthIPC();
-  registerDialogIPC();
-  registerAppIPC();
-  registerMenuIPC();
-  registerSystemShortcutIPC();
-  consumptionScanner = new ConsumptionScannerService({
-    stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
-    identities: () => ptySessions.listProviderIdentities(),
-    // BUG-032: samples are a bounded collection. The default horizon is 14
-    // days; an ACTIVE Operator-profile publication widens it to its opt-in
-    // anchor, so a republish (a new Run derivation, a long outage) can still
-    // cover everything since consent. Publication can no longer be HARMED
-    // by a narrower horizon — it never claims dates at or before the prune
-    // line (BUG-164) — but it can only republish what is retained. The read
-    // is LIVE, not a boot-time snapshot: the anchor is written by the
-    // renderer's first sync minutes from now (BUG-141).
-    // `sampleRetentionPolicy` is the one owner both hydrate and compaction
-    // consult.
-    sampleHorizonMs: sampleRetentionPolicy(),
-  });
-  registerOperatorStatsIPC(consumptionScanner, (event, fields) =>
-    mainDiagnostics(event, fields)
-  );
-  // ENG-038: the credentialed Claude plan-account read — a SIBLING of the
-  // scanner (the local parse stays credential- and network-free), merged
-  // behind the same IPC seam by the composite.
-  claudePlanAccount = new ClaudePlanAccountService({
-    stateDir: path.join(app.getPath('userData'), 'consumption-plan'),
-    enabled: isClaudePlanWindowsEnabled(loadSettings()),
-    // Chromium owns the request in installed builds, so Little Snitch sees
-    // a stable Developer ID instead of Node or an ad-hoc Electron helper.
-    // WHICH builds those are is the distribution's declaration, not
-    // `app.isPackaged` — an ad-hoc community package is packaged too
-    // (BUG-060, decision `0036` §6). Routine unpackaged and automated test
-    // launches stay local; the narrow override deliberately exercises this
-    // exact account integration.
-    remoteReadAllowed: isClaudePlanRemoteReadAllowed({
-      stableSignedIdentity:
-        distribution.contract.ownAccount?.claudePlanUsage === 'stable-signed',
-      packaged: app.isPackaged,
-      testMode: isTest,
-      developmentOptIn: process.env.EXAWATT_DEV_CLAUDE_PLAN_NETWORK,
-    }),
-    fetchFn: electronNetworkFetch,
-  });
-  registerConsumptionIPC(
-    () => BrowserWindow.getAllWindows(),
-    new ProviderPlanCompositeSource(consumptionScanner, claudePlanAccount),
-    claudePlanAccount
-  );
-  registerAnalyticsIPC();
+  // Registration is data: one row per module that owns channels, in the
+  // order they must exist. Adding a module's channels is a row here; adding
+  // one of main's own channels is an entry in its table (`ipc-table.ts`).
+  registerIpcModules([
+    {
+      id: 'agent-sources',
+      register: () => runtime.agentSourcesIpc.registerAgentSourcesIPC(),
+    },
+    {
+      id: 'connected-sources',
+      register: () => runtime.connectedSourcesIpc.registerConnectedSourcesIPC(),
+    },
+    {
+      id: 'pty',
+      register: () =>
+        runtime.ptyIpc.registerPtyIPC(
+          distribution.contract,
+          recovery.previousRunInterrupted,
+          // Late-bound on purpose: a recorder captured by value would be whatever
+          // `mainDiagnostics` held at registration, not the log it holds later.
+          (event, fields) => mainDiagnostics(event, fields)
+        ),
+    },
+    { id: 'roadmap', register: () => runtime.roadmapIpc.registerRoadmapIPC() },
+    { id: 'projects', register: () => runtime.projectIpc.registerProjectIPC() },
+    { id: 'main', register: registerMainChannels },
+    { id: 'system-shortcuts', register: registerSystemShortcutIPC },
+    {
+      id: 'operator-stats',
+      register: () => {
+        consumptionScanner = new ConsumptionScannerService({
+          stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
+          identities: () => ptySessions.listProviderIdentities(),
+          // BUG-032: samples are a bounded collection. The default horizon is 14
+          // days; an ACTIVE Operator-profile publication widens it to its opt-in
+          // anchor, so a republish (a new Run derivation, a long outage) can still
+          // cover everything since consent. Publication can no longer be HARMED
+          // by a narrower horizon — it never claims dates at or before the prune
+          // line (BUG-164) — but it can only republish what is retained. The read
+          // is LIVE, not a boot-time snapshot: the anchor is written by the
+          // renderer's first sync minutes from now (BUG-141).
+          // `sampleRetentionPolicy` is the one owner both hydrate and compaction
+          // consult.
+          sampleHorizonMs: sampleRetentionPolicy(),
+        });
+        registerOperatorStatsIPC(consumptionScanner, (event, fields) =>
+          mainDiagnostics(event, fields)
+        );
+      },
+    },
+    {
+      id: 'consumption',
+      register: () => {
+        // ENG-038: the credentialed Claude plan-account read — a SIBLING of the
+        // scanner (the local parse stays credential- and network-free), merged
+        // behind the same IPC seam by the composite.
+        claudePlanAccount = new ClaudePlanAccountService({
+          stateDir: path.join(app.getPath('userData'), 'consumption-plan'),
+          enabled: isClaudePlanWindowsEnabled(loadSettings()),
+          // Chromium owns the request in installed builds, so Little Snitch sees
+          // a stable Developer ID instead of Node or an ad-hoc Electron helper.
+          // WHICH builds those are is the distribution's declaration, not
+          // `app.isPackaged` — an ad-hoc community package is packaged too
+          // (BUG-060, decision `0036` §6). Routine unpackaged and automated test
+          // launches stay local; the narrow override deliberately exercises this
+          // exact account integration.
+          remoteReadAllowed: isClaudePlanRemoteReadAllowed({
+            stableSignedIdentity:
+              distribution.contract.ownAccount?.claudePlanUsage ===
+              'stable-signed',
+            packaged: app.isPackaged,
+            testMode: isTest,
+            developmentOptIn: process.env.EXAWATT_DEV_CLAUDE_PLAN_NETWORK,
+          }),
+          fetchFn: electronNetworkFetch,
+        });
+        registerConsumptionIPC(
+          () => BrowserWindow.getAllWindows(),
+          new ProviderPlanCompositeSource(
+            consumptionScanner!,
+            claudePlanAccount
+          ),
+          claudePlanAccount
+        );
+      },
+    },
+    { id: 'analytics', register: registerAnalyticsIPC },
+  ]);
   shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {
       const live = ptySessions.list().filter(session => !session.exited);
@@ -1184,7 +949,7 @@ async function bootstrapCommandSurface(): Promise<void> {
       () => shutdownCoordinator!.request('update')
     );
   }
-  createMenu();
+  menu.rebuild();
   startupScreen.update({
     progress: 0.94,
     label: 'Entering workspace',

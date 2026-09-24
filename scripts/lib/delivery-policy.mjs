@@ -201,6 +201,10 @@ export const SURFACE_GATES = [
     // file that can break it here in the same change.
     match: file =>
       file === 'electron/main/application-menu.ts' ||
+      // ENG-039 M1: the menu's runtime state (synced accelerators, published
+      // availability, feedback sign-in) moved out of main.ts into its own
+      // owner, and this eval reads exactly that state off the real menu.
+      file === 'electron/main/menu-controller.ts' ||
       file === 'packages/core/src/shortcuts/command-verbs.ts' ||
       file === 'src/components/shortcuts/shortcut-provider.tsx' ||
       file === 'src/components/shortcuts/command-palette.tsx' ||
