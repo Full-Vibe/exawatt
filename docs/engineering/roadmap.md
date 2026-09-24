@@ -2494,6 +2494,56 @@ timeout and are now one test per item. Under 12 concurrent copies at load 13
 to 93 they had timed out in 21 and 23 of 24 runs; after, zero failures.
 Mutation-checked. [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-219 A queue rebase left `node_modules` behind the lockfile
+
+Status: done · ENG-022 · found 2026-09-24 by ticket 476; resolved 2026-09-24.
+
+Ticket 476's head rebase brought in `e3115004`'s jsdom lockfile bump, nothing
+reinstalled, and its re-check failed `test:agent-delivery` against the
+pre-bump `node_modules`. Every worktree-lane floor run, the candidate's before
+admission and the head's after each rebase, now runs
+`pnpm install --frozen-lockfile --prefer-offline` when
+`node_modules/.pnpm/lock.yaml` is not the checked-out lockfile, believes it
+only when they then match, and rebuilds node-pty if the install removed its
+binding. The lockfile also covers workspace package links and the patched
+`cmdk`. Each reinstall records `install_refreshed` and prints
+`reinstalled=<phase>` on the status line; a frozen install that fails stops
+the landing before a ticket exists, naming the remedy. The docs lane never
+installs. Proven in `scripts/landing-reinstall.test.mjs`, mutation-checked.
+[Findings](projects/agent-development-loop.md#findings-log).
+
+### BUG-220 No surface gate covered the workspace state
+
+Status: done · ENG-022 · found 2026-09-24 after the ENG-039 workspace state split; resolved 2026-09-24.
+
+`use-workspace-state.ts` and its `workspace-state/` modules (hydration,
+persistence, restore, Recently closed, launch, runtime) matched no
+`SURFACE_GATES` entry, so a change to restore, reopen or launch owed no
+Electron eval. Each gate now names the modules its script drives:
+`eval:electron:project-agent` all of them, `eval:electron:recents` the hook,
+the closed ledger, launch and persistence, `eval:workspace:split` hydration,
+restore, navigation, launch and exit, project-pause and model-change the
+runtime verbs and the persisted layout, clone-context launch, and lifecycle
+and idempotency restore. Unit tests beside the modules owe nothing. Proven in
+`scripts/delivery-policy.test.mjs`, mutation-checked.
+[Findings](projects/agent-development-loop.md#findings-log).
+
+### BUG-221 Workspace evals acted before hydration and counted redrawable text
+
+Status: bug · ENG-022 · found 2026-09-24; `eval:workspace:split` and `eval:workspace:draft` repaired 2026-09-24.
+
+`eval:workspace:split` wrote its seed layout from the page and reloaded; the
+app's first save, 400 ms after hydration, could land after it, so the reload
+restored no Projects and ⌘⌥T opened nothing. `eval:workspace:draft` shared
+that race and counted pastes in terminal output, where a line-editor repaint
+showed one written paste three times. The stage now carries
+`data-workspace-ready` once hydration lands; `waitForWorkspaceReady()` and
+`seedWorkspaceLayout()` in `scripts/lib/electron-eval.mjs` replace the page
+seed and every fixed sleep in both, and the draft eval counts pastes in the
+PTY's input as `cat` receives it. Open: other scripts share one of the two
+shapes, most by dispatching `exawatt:open-project` before hydration, which
+drops it. [Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

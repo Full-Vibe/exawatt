@@ -301,6 +301,88 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-24, BUG-221: **two workspace evals acted before the workspace
+  had loaded, and one counted text a redraw can repeat.** Measured, not
+  inferred. A probe replaying `eval:workspace:split`'s old sequence (seed
+  written with `workspace.save` from the page, `page.reload`, wait for
+  `[data-workspace-stage]`, press ⌘⌥T) at load 19 lost its seed in 1 of 4
+  runs: the saved layout read back `[]`, the reload restored no Projects, and
+  ⌘⌥T had no Project to open a shell in. The app's own first save fires
+  400 ms after hydration (`use-workspace-persistence.ts`) and the old page
+  keeps running while `reload` fetches the new document, so that save can
+  land after the seed. `[data-workspace-stage]` and `[data-command-altitude]`
+  both render before hydration, so neither is a readiness signal.
+  `eval:workspace:draft` had the same seed race, pressed ⌘⌥1 on relaunch right
+  after the stage rendered, and counted pastes in `pty.buffer`, which is
+  terminal OUTPUT: a second probe wrote one paste once while zsh owned the
+  line, moved the cursor, and read it three times in the buffer. Its fixed
+  sleeps (1.5 s for the shell, 0.5 s for `cat`, 0.75 s twice to settle, 0.9 s
+  for the debounced save) stood in for all of it. Repair: the stage carries
+  `data-workspace-ready` once hydration lands and the load-failure panel
+  `data-workspace-load-failure`; `waitForWorkspaceReady()` in
+  `scripts/lib/electron-eval.mjs` waits for either and fails naming a load
+  failure, and `seedWorkspaceLayout()` writes `workspace.json` before launch
+  (an external-teardown retry re-applies it). Both evals seed on disk and
+  wait for the marker. The draft eval hands the PTY to
+  `stty -echo -icanon && cat > <file>` once the shell has printed, waits for
+  the file, counts each paste in that recording, and settles on a sentinel
+  written through `pty.write` after the paste (writes from one renderer reach
+  main in order, and a text paste writes in the task that receives it). Its
+  empty-draft check opens the Empty Project's draft first and reads the first
+  save that carries the Alpha draft's text, which is necessarily a later
+  save. Mutation-checked: a second write of the paste fails "⌘V pastes
+  exactly once". Evidence: each eval five times in a row, all green, at load
+  12 to 22 and again at load 3 to 4. A read-only audit of every eval found
+  the same shapes elsewhere, chiefly `exawatt:open-project` dispatched after
+  a pre-hydration marker: `use-workspace-requests.ts` drops the event until
+  the workspace is ready, and only the product's `requestOpenProject` sets
+  the slot that replays it. Those follow.
+
+- 2026-09-24, BUG-220: **no surface gate covered the workspace state.** The
+  ENG-039 split moved hydration, persistence, restore, Recently closed,
+  launch and runtime out of `use-workspace-state.ts` into
+  `workspace-state/`, and neither the hook nor any module matched a
+  `SURFACE_GATES` entry, so a restore or reopen change owed no Electron eval.
+  Each module is now routed to the gates whose scripts drive it, read from
+  the scripts rather than from the gates' names: project-agent opens,
+  launches, closes and reopens, jumps to attention, drives palette requests,
+  and reloads and relaunches, so it owes every module; recents seeds
+  `closed-sessions.json`, relaunches a row exactly, asserts the ledger and the
+  draft are consumed only after launch, and reads the saved layout back;
+  split restores a seeded layout, pins, switches Projects, launches and
+  watches an exit; project-pause and model-change drive the runtime verbs and
+  read `workspace.json`; clone-context is a launch; lifecycle and idempotency
+  are the relaunch evals, so they own hydration and restore; the quarantined
+  exact-resume gate owns the resume verbs. `eval:workspace:draft` stays
+  manual because it overwrites the system clipboard. Unit tests beside the
+  modules owe nothing. A new `delivery-policy.test.mjs` case derives the
+  module list from the directory, so a module added later owes project-agent
+  without an edit; mutation-checked by removing that route.
+
+- 2026-09-24, BUG-219: **the landing now reinstalls before any floor checks a
+  stale tree.** Ticket 476 (the ENG-039 split) was admitted on
+  `ea23a4a9`, rebased at the head onto `45418b49`, which carried
+  `e3115004`'s jsdom 27.4 lockfile bump, and failed `test:agent-delivery` in
+  the rebase re-check; the same change integrated as ticket 477 minutes
+  later. Nothing between the rebase and the re-check compared the install
+  with the lockfile, although `install-freshness.mjs` already could.
+  `reinstallWhenStale` now does, for the worktree lane only: before the
+  candidate floor (so a submitter's stale install is repaired, or refused
+  before a ticket exists) and after every head rebase. It runs the frozen
+  install `install-dogfood.mjs` uses, re-checks, and rebuilds node-pty when
+  the install removed a binding the tree had, as `worktree:setup` would.
+  Workspace links and pnpm patches need nothing extra: they are the
+  lockfile's `importers` and `patchedDependencies` hash, and the built
+  `@exawatt/core` types are rebuilt by `type-check` and `electron:compile`
+  themselves. The docs lane is excluded because its checkout borrows another
+  checkout's `node_modules`. `scripts/landing-reinstall.test.mjs` drives real
+  queues with a `pnpm` stand-in whose checks fail on a stale install: a queue
+  rebase that changes the lockfile reinstalls exactly once, before the
+  re-check, and passes; one that does not reinstalls nothing; a stale
+  submission reinstalls before its first check; an unsatisfiable lockfile
+  stops before admission. With the reinstall removed, the first case fails
+  exactly as ticket 476 did.
+
 - 2026-09-24, BUG-208, BUG-210, BUG-211 (H20): **every verification
   command has a route, and a test says so.** `theme:check` was repaired on
   2026-08-17 (BUG-059) and red again on 2026-08-18 (`f4de31cb`), and it stayed
