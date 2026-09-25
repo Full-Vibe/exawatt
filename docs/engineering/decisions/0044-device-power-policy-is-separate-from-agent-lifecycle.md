@@ -112,10 +112,19 @@ This is implementation evidence for BUG-227, not a blanket control claim.
 | Source inspected | Supported control and remaining gate |
 | --- | --- |
 | Claude Code 2.1.282 | No supported opt-out found in current official settings. Native inhibitor remains uncontrolled. |
-| Codex 0.156.1 | Official configuration documents `features.prevent_idle_sleep`; `--disable prevent_idle_sleep` overrides an explicit true in local CLI configuration probing. A real turn on the Exawatt TUI/shared-daemon path must still prove assertion ownership before a launch is classified controlled. Existing processes cannot inherit a new launch flag. |
+| Codex 0.156.1 | Official configuration documents `features.prevent_idle_sleep`; `--disable prevent_idle_sleep` overrides an explicit true in local CLI configuration probing. Native TUI real-task controls now verify the opt-out on this build: 15/15 active-task samples held its own assertion when enabled; 0/16 did with the disable flag. Pinned source places the inhibitor in the local TUI regardless of backend. Actual shared-daemon attachment remains untested. Existing processes cannot inherit a new launch flag. |
 | Qwen Code 0.24.4 | Official `general.preventSystemSleep: false` is supported and read once at startup. The current Exawatt defaults injection has the lowest precedence and cannot enforce it. A supported per-launch integration must preserve administrator configuration and verify effective precedence. |
 | OpenCode 1.18.30 / Grok Build | OpenCode schema and targeted binary search found no sleep setting/inhibitor identifiers; that is not proof of absence. Grok was unavailable in the audited PATH. Both remain unknown. |
 | Remote / Demo | No local assertion authority inferred from a gateway address; Demo creates none. |
+
+A Codex launch opt-out is **applied-at-launch evidence**, not immutable
+runtime enforcement: the source's own experimental-settings UI can enable the
+feature later. Any Exawatt setting/status must describe Exawatt's owned
+assertion and disclose independent source/other-app overrides; it must never
+promise that the whole machine can sleep. Version-pinned ownership and runtime
+setting behavior are in [constructor.rs](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/tui/src/chatwidget/constructor.rs),
+[turn_lifecycle.rs](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/tui/src/chatwidget/turn_lifecycle.rs),
+and [settings.rs](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/tui/src/chatwidget/settings.rs).
 
 The first implemented boundary is observational: native host facts drive Fleet
 rendering only. Settings and app-owned assertions remain gated on verified

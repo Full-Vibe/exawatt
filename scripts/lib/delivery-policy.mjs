@@ -1323,6 +1323,8 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:packaged': GATE,
   'eval:spatial:viewport': GATE,
   'eval:electron:connected-fleet': GATE,
+  'eval:electron:host-power': GATE,
+  'eval:spatial:emergence': GATE,
   'eval:workspace:launcher': GATE,
   'eval:electron:project-agent': GATE,
   'eval:roadmap:rail': GATE,

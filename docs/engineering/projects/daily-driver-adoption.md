@@ -7514,9 +7514,17 @@ and `--dogfood`. Read delivery state before treating a staged app as installed.
   Electron bridge/canvas under synthetic events records active motion versus
   zero locked/battery render passes; resume refreshes native facts. No lock or
   sleep of the operator's desktop, no Session signals, no sleep assertion.
-- Next incomplete slice: prove Codex's documented override on an actual local
-  TUI/shared-daemon turn, then implement source capability plus per-launch
-  ownership and the supported device keep-awake policy. Qwen needs a supported,
+- Next slice: Codex 0.156.1 native-TUI opt-out is now verified by positive and
+  negative real-task controls (15/15 versus 0/16 active-task assertion samples).
+  Pinned source places the owner in the TUI independently of backend; actual
+  shared-daemon attachment remains untested. Integrate version/feature-probed
+  launch wiring and per-process applied-at-launch evidence before adding the
+  device policy. Codex can re-enable the feature from its own experimental UI;
+  describe owned assertions honestly, never immutable system-sleep enforcement.
+  The source integration is proceeding on `agent/power-host-facts` in sibling
+  `exawatt-power-host-facts`; inspect its in-flight state before duplicating.
+  Metadata-only native evidence is retained under the common Git directory at
+  `exawatt-diagnostics/battery-2026-09-25/codex-power-{positive,negative}.json`. Qwen needs a supported,
   merge-preserving higher-precedence launch configuration. Claude needs an
   upstream supported opt-out; no process interception or invented env switch.
 - Release acceptance still open: actual AC/unplug, display-lock/off, and
