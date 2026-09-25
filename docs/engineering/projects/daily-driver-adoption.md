@@ -7358,7 +7358,6 @@ master's shape, fails both "quietly" cases. BUG-193 rides the existing
 `focusClaim` test; its call sites live in `workspace-client`, which has no
 unit harness.
 
-
 ### 2026-09-25 — Battery policy execution checkpoint (BUG-227 / BUG-228)
 
 **Approved power policy; Fleet repair is the first implementation slice.**
