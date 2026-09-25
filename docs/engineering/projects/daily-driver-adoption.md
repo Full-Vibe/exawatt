@@ -7388,3 +7388,36 @@ BUG-227/BUG-228 in the singular roadmap own execution.
 Resume here: read decision `0044`, incident `0029`, both backlog rows, this
 checkpoint and the in-flight branch; then continue the first incomplete slice.
 No application code had landed at this checkpoint.
+
+### 2026-09-25 — Battery implementation handoff while verification runs
+
+**Two fixes are verified directly; delivery and scoped control work continue.**
+
+This is a recovery pointer, not a replacement plan for BUG-227/BUG-228 or
+decision `0044`. No application code from this task is integrated yet.
+
+- `agent/battery-fleet-power`, sibling `exawatt-battery-fleet-power`, currently
+  `4c2cf172`: Fleet retirement/ref cleanup plus read-only native host observations
+  and battery/lock rendering suppression. Real board and isolated Electron
+  checks pass; the normal landing floor is running with spatial, emergence,
+  host-power, and connected-fleet gates plus `--dogfood`. Progress log:
+  `/tmp/exawatt-battery-land.log`. Do not start another landing for this branch
+  while its existing process is alive.
+- `agent/power-host-facts`, sibling `exawatt-power-host-facts`: next source slice
+  in progress, exact-version/feature-probed Codex launch opt-out and per-process
+  `powerControl` evidence. Its original host-observation commit is already
+  incorporated into the Fleet branch; do not land it twice. Real Codex 0.156.1
+  native-TUI tasks established positive/negative assertion control. Evidence
+  belongs to launch intent; Codex can change its feature inside its own UI.
+- `agent/battery-device-policy`, sibling `exawatt-battery-device-policy`: the
+  scoped Exawatt assertion controller and Settings integration are in progress,
+  dependent on the source slice. Default AC-only, no display inhibition or
+  Session interruption; status describes Exawatt's assertion and discloses
+  independent sources. Do not claim the setting is integrated or installed.
+- Remaining release acceptance includes real unplug/lock/sleep/wake and
+  assertion ownership. Synthetic host events are not physical transition
+  evidence. Claude's native inhibitor remains uncontrolled.
+
+Resume by inspecting those worktrees, their commits/dirty state, and delivery
+state under the common Git directory before implementing anything again. Keep
+future conclusions in the existing roadmap, decision, incident, and this log.
