@@ -586,11 +586,21 @@ export const SURFACE_GATES = [
       file === 'scripts/r3f-eval/spatial.mjs',
   },
   {
+    gate: 'eval:electron:host-power',
+    why: 'host power facts must cross the real Electron bridge and suppress Fleet ambient frames without changing Sessions',
+    match: file =>
+      file === 'electron/main/host-power.ts' ||
+      file === 'src/lib/host-power/use-host-render-policy.ts' ||
+      file === 'scripts/electron-host-power-eval.mjs',
+  },
+  {
     gate: 'eval:spatial:emergence',
     why: 'departed Agent bodies and status marks must unmount and release the demand loop, including reduced motion',
     match: file =>
-      file === 'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
-      file === 'src/components/fleet/spatial/operations-board/operations-board-emergence.ts' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      file ===
+        'src/components/fleet/spatial/operations-board/operations-board-emergence.ts' ||
       file === 'src/app/eval/t5-operations-board/page.tsx' ||
       file === 'scripts/spatial-emergence-eval.mjs',
   },

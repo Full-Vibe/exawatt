@@ -7487,3 +7487,42 @@ electron:grok-source eval commands (each with its `eval:` prefix). Keep the
 installation separately, then clean only these three task-owned worktrees.
 The combined branch also records the proven eval NetworkService pipe leak
 under incident 0030 / BUG-230; that shared-harness follow-up is separate work.
+
+### 2026-09-25 — Fleet power repair and host observations (BUG-227 / BUG-228)
+
+**Fleet scheduling is repaired; harness sleep control remains open.**
+
+This supersedes the initial execution checkpoint above. Implementation commits
+`0ad9fa78` (retirement cleanup) and `cf5a8f72` (host facts) are on
+`agent/battery-fleet-power`, sibling `exawatt-battery-fleet-power`; the latter
+incorporates the reviewed `agent/power-host-facts` work. Integration proceeds
+through the normal floor with spatial, emergence, and Electron host-power evals
+and `--dogfood`. Read delivery state before treating a staged app as installed.
+
+- Slice 1 implemented and directly verified: final retirements unmount outside
+  the frame loop, detached refs are removed, final scales are applied, and the
+  normal/reduced-motion real board parks at zero render calls across 30 frame
+  opportunities. The original component fails the same first-retirement check.
+  Three repeated removal/return cycles, status changes, and later input pass.
+- Slice 2 audit complete: decision `0044` records Codex's supported disable flag,
+  Qwen's startup setting and precedence gap, Claude's uncontrolled inhibitor,
+  and unknown OpenCode/Grok capability. Do not classify existing processes as
+  controlled based on support in a new version or launch.
+- Slice 3 observations implemented and directly verified: revisioned native
+  power/lock/sleep facts feed the existing Fleet low-power/ambient gates, shared
+  by Demo and Live. Six lifecycle and stale-read/subscription tests pass. Real
+  Electron bridge/canvas under synthetic events records active motion versus
+  zero locked/battery render passes; resume refreshes native facts. No lock or
+  sleep of the operator's desktop, no Session signals, no sleep assertion.
+- Next incomplete slice: prove Codex's documented override on an actual local
+  TUI/shared-daemon turn, then implement source capability plus per-launch
+  ownership and the supported device keep-awake policy. Qwen needs a supported,
+  merge-preserving higher-precedence launch configuration. Claude needs an
+  upstream supported opt-out; no process interception or invented env switch.
+- Release acceptance still open: actual AC/unplug, display-lock/off, and
+  sleep/wake matrix for controlled sources, ownership in `pmset`, and separate
+  renderer/GPU energy measurement. Synthetic host events do not fulfill this.
+
+Resume from decision `0044`, incident `0029`, BUG-227 (open), BUG-228 (repaired),
+this milestone, and the delivery ticket state. No battery-safe setting is
+exposed yet; do not market the original drain as solved.

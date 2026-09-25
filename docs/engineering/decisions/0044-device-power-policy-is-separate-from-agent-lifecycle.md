@@ -105,6 +105,26 @@ BUG-227 owns execution; this is not a second plan.
    hosted control. Keep per-process energy attribution separate from frame
    counts and app CPU.
 
+## Source capability audit (2026-09-25)
+
+This is implementation evidence for BUG-227, not a blanket control claim.
+
+| Source inspected | Supported control and remaining gate |
+| --- | --- |
+| Claude Code 2.1.282 | No supported opt-out found in current official settings. Native inhibitor remains uncontrolled. |
+| Codex 0.156.1 | Official configuration documents `features.prevent_idle_sleep`; `--disable prevent_idle_sleep` overrides an explicit true in local CLI configuration probing. A real turn on the Exawatt TUI/shared-daemon path must still prove assertion ownership before a launch is classified controlled. Existing processes cannot inherit a new launch flag. |
+| Qwen Code 0.24.4 | Official `general.preventSystemSleep: false` is supported and read once at startup. The current Exawatt defaults injection has the lowest precedence and cannot enforce it. A supported per-launch integration must preserve administrator configuration and verify effective precedence. |
+| OpenCode 1.18.30 / Grok Build | OpenCode schema and targeted binary search found no sleep setting/inhibitor identifiers; that is not proof of absence. Grok was unavailable in the audited PATH. Both remain unknown. |
+| Remote / Demo | No local assertion authority inferred from a gateway address; Demo creates none. |
+
+The first implemented boundary is observational: native host facts drive Fleet
+rendering only. Settings and app-owned assertions remain gated on verified
+per-launch source control and the real power-transition matrix above.
+
+Primary audit sources: [Codex sample configuration](https://learn.chatgpt.com/docs/config-file/config-sample),
+[Qwen settings](https://qwenlm.github.io/qwen-code-docs/en/users/configuration/settings/),
+and [OpenCode schema](https://opencode.ai/config.json).
+
 ## Primary references
 
 - [Electron 43 `powerMonitor`](https://www.electronjs.org/docs/latest/api/power-monitor)

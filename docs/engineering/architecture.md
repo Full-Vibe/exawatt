@@ -84,6 +84,24 @@ contract's argument tuple, before a handler runs. The contract lives in core
 because core is already the Electron-free module both processes import by
 package name; it imports nothing outside core.
 
+Electron main also owns read-only host-power observations (`host-power.ts`):
+revisioned AC/battery, screen-lock, and suspend/resume facts on the same typed
+bridge. Unknown lock readings remain unknown; resume refreshes native power
+and lock state. Fleet composes these facts with page visibility, reduced motion,
+and hardware limits: lock/suspend suppress ambient animation; battery selects
+the existing static, no-bloom, lower-DPR path. Demo and Live share this host
+boundary, while hosted browsers retain their visibility/hardware fallback.
+These observations never signal a Session or acquire a sleep assertion.
+Decision `0044` gates a future keep-awake control on supported per-launch source
+control; observing host power is not proof that a harness permits system sleep.
+
+Fleet emergence cleanup belongs to the React lifecycle, outside the demand
+frame loop. Finished departures unmount even if the final active frame was
+skipped; callback refs detach exact mark instances, and body/mark scales sample
+both endpoints. `eval:spatial:emergence` proves final retirement parks the real
+board in normal/reduced motion and later arrivals and interactions still render
+(BUG-228), under the unchanged design-system status/motion rungs.
+
 The desktop artifact's **runtime payload is a declaration, not a copy**
 (BUG-030). electron-builder ships `dist-electron/**/*` and excludes
 `node_modules/**/*`, so the packed main process can require only what a

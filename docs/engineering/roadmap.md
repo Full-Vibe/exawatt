@@ -2680,19 +2680,23 @@ declared host choice across lock, sleep/wake, and power-source transitions with
 no silent Session interruption, or each unowned harness limitation remains
 plainly surfaced and the setting stays scoped. [Decision 0044](decisions/0044-device-power-policy-is-separate-from-agent-lifecycle.md),
 [incident 0029](incidents/0029-battery-drained-with-display-off.md).
-Execution authorized 2026-09-25; [resumable checkpoint](projects/daily-driver-adoption.md#2026-09-25--battery-policy-execution-checkpoint-bug-227--bug-228).
+Read-only Electron host facts now suppress Fleet ambient rendering on battery,
+lock, and suspend, without pausing Agents or acquiring assertions. Codex and Qwen
+have documented source controls; their per-launch integration and real-task
+verification remain open. Claude remains uncontrolled; no global battery-safe
+setting is exposed. Execution authorized 2026-09-25; [resumable checkpoint](projects/daily-driver-adoption.md#2026-09-25--battery-policy-execution-checkpoint-bug-227--bug-228).
 
 ### BUG-228 Completed Fleet retirements can request frames forever
 
-Status: bug · ENG-004 · found 2026-09-25 during battery investigation.
+Status: fixed · ENG-004 · verified 2026-09-25 during battery investigation.
 
-`AgentPieceLayer` skips pruning once the final retirement is no longer active;
-`StatusMarkLayer` retains refs and invalidates for its completed scale 0. The
-scheduling defect reproduces with ordinary and zero-duration transitions;
-its contribution to the reported discharge is unproven. Scope: bound retirement
-cleanup and dispose mark refs. Exit: a real board parks after final retirement,
-including reduced motion, while later arrivals and interactions still render.
-[Evidence and control](incidents/0029-battery-drained-with-display-off.md).
+Lifecycle-owned final retirement cleanup, exact callback-ref disposal, and
+endpoint sampling now release the demand loop. The real-board regression fails
+on the original component at its first retirement in normal and reduced motion;
+the repair records zero parked render calls across repeated retire/reappear,
+status changes, and later interaction. Design-system status/motion rungs are
+unchanged. [Evidence and remaining battery boundary](incidents/0029-battery-drained-with-display-off.md),
+[execution checkpoint](projects/daily-driver-adoption.md#2026-09-25--fleet-power-repair-and-host-observations-bug-227--bug-228).
 
 ### BUG-229 DOM tests lost `localStorage` when the machine moved to Node 26
 
