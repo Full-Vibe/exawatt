@@ -1869,3 +1869,21 @@ and that the diagnostics log records the one click's step without naming a
 server. It gates changes to the Connect dialog and model, the approval
 matcher, and itself. First run: all sixteen checks passed.
 
+
+### 2026-09-25 — Demand: a local fleet outgrows the laptop
+
+Operator feedback `5e792e1e`, product idea. An early-stage founder the operator
+expects to be a first company user has no use for Exawatt yet: running
+several Agents on her Mac drew a macOS memory warning and she had to stop, so
+her next step is Agents on cloud machines. Not raw VMs, but hosted harnesses
+(OpenClaw, Claude Code, Codex, OpenCode, Hermes or any other), with Exawatt as
+the interface over that cloud fleet. Operator direction: combine this with the
+Agent harness work (ENG-003 S5) and investigate cloud options, both build and
+buy.
+
+Recorded as demand for H3 managed placement and for the S5 source kinds a
+remote host needs. A research pass on hosting infrastructure, build versus buy,
+is queued ahead of the H3 design pass; it complements
+`docs/research/market/2026-08-19-cloud-handoff-comps.md`, which covers how
+vendors present their own cloud agents, not where Exawatt would run any
+harness. No scope is shaped and H3 remains not active.
