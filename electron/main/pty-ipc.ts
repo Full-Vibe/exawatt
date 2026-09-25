@@ -21,6 +21,7 @@ import {
 } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
+import { createSafetyGuard } from './safety/safety-guard';
 import { delegationMonitor } from './harness-events/delegation-monitor';
 import { codexDelegationObserver } from './harness-events/codex-app-server';
 import { wireReportedTurnTruth } from './harness-events/turn-truth';
@@ -52,6 +53,7 @@ import {
   recordOperatorProfilePublicationState,
   setReentryRecapEnabled,
   setAppearancePreferences,
+  setSafetyControl,
 } from './settings-store';
 import { applyNativeAppearancePreference } from './appearance';
 import { listResumeCandidates } from './pty/resume-candidates';
@@ -215,6 +217,21 @@ export function registerPtyIPC(
   // stream it here, so "the team is working" stops depending on byte
   // quiescence. A source without the capability simply never publishes.
   delegationMonitor.attach(harnessEventChannel, ptySessions);
+  // ENG-044 safety controls: a launch carries the hooks of the controls that
+  // are on, and the guard answers them against the live settings.
+  ptySessions.setSafetyControls(() => loadSettings().safety ?? {});
+  harnessEventChannel.setGuard(
+    createSafetyGuard({
+      settings: () => loadSettings().safety ?? {},
+      protectedPids: () =>
+        new Set([
+          process.pid,
+          ...app.getAppMetrics().map(metric => metric.pid),
+          ...ptySessions.sessionProcessIds(),
+        ]),
+      record: diagnostics,
+    })
+  );
   codexDelegationObserver.attach(ptySessions, delegationMonitor);
   // Reported truth and inferred truth correct each other through ONE wiring
   // (D4/D7), shared with the turn-truth pipeline contract so what is tested is
@@ -793,6 +810,11 @@ export function registerPtyIPC(
     'settings:set-keyboard-shortcuts',
     (_event, overrides: unknown) => setKeyboardShortcutOverrides(overrides)
   );
+  handleBounded('settings:set-safety-control', (_event, control, enabled) => {
+    const settings = setSafetyControl(control, enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   handleBounded('settings:set-reentry-recap', (_event, enabled) => {
     const settings = setReentryRecapEnabled(enabled);
     // Applied before the write is announced: no scrollback may be read and no

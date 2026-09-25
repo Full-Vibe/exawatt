@@ -1,6 +1,7 @@
 import {
   isAgentHarness,
   isAgentSourceAdapterId,
+  isSafetyControlId,
   type AgentPermissionMode,
   type PtyHarness,
 } from '@exawatt/core';
@@ -335,6 +336,16 @@ export const ARGUMENT_BOUNDARIES = {
   'settings:set-claude-plan-windows': switchSetting(
     'Invalid Claude plan usage setting'
   ),
+  // Only a declared control can be set: an unknown id from the renderer is
+  // refused, never stored as a switch nothing enforces.
+  'settings:set-safety-control': {
+    read([control, enabled]) {
+      if (!isSafetyControlId(control) || typeof enabled !== 'boolean') {
+        throw new Error('Invalid safety control setting');
+      }
+      return [control, enabled];
+    },
+  },
   'settings:record-operator-profile-state': {
     read([state]) {
       return [operatorProfileState(state)];

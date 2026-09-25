@@ -17,6 +17,7 @@ import type { AgentLaunchConfigurationInput } from '../launch-configurations';
 import type { OperatorStatsPublicationPlan } from '../operator-stats/publication';
 import type { OperatorStatsSyncEvent } from '../operator-stats/sync-state';
 import type { KeyboardShortcutOverridesV1 } from '../shortcuts/keyboard-overrides';
+import type { SafetyControlId } from '../safety-controls';
 import type { ConnectedSourceView } from '../sources/connected-source';
 import type {
   AppearanceBootstrapSnapshot,
@@ -361,6 +362,10 @@ interface RequestTable {
   >;
   'settings:set-reentry-recap': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-claude-plan-windows': Call<[enabled: boolean], ExawattSettings>;
+  'settings:set-safety-control': Call<
+    [control: SafetyControlId, enabled: boolean],
+    ExawattSettings
+  >;
   'settings:set-operator-auto-publish': Call<
     [enabled: boolean],
     ExawattSettings

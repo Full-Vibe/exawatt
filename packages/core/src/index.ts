@@ -81,6 +81,7 @@ export * from './release-provenance';
 export * from './surface-names';
 export * from './session-lifecycle-words';
 export * from './session-background-work';
+export * from './safety-controls';
 export * from './shortcuts/command-verbs';
 export * from './shortcuts/accelerator';
 export * from './shortcuts/keyboard-overrides';

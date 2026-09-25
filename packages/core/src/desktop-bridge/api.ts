@@ -236,6 +236,7 @@ export interface DesktopSettingsApi {
   setKeyboardShortcuts: BridgeInvoke<'settings:set-keyboard-shortcuts'>;
   setReentryRecap: BridgeInvoke<'settings:set-reentry-recap'>;
   setClaudePlanWindows: BridgeInvoke<'settings:set-claude-plan-windows'>;
+  setSafetyControl: BridgeInvoke<'settings:set-safety-control'>;
   setOperatorAutoPublish: BridgeInvoke<'settings:set-operator-auto-publish'>;
   recordOperatorProfileState: BridgeInvoke<'settings:record-operator-profile-state'>;
   recordAgentSourceUse: BridgeInvoke<'settings:record-agent-source-use'>;

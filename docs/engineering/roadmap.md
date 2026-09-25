@@ -55,6 +55,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-041 | Public defect communication                       | planned      | UNSHAPED pending a design pass — an industry-standard public way to collect, represent, and communicate defects, replacing the private backlog for outside readers. |
 | ENG-042 | Published research                               | planned      | UNSHAPED pending a design pass — publish the fleet's research and investigations as public articles or guides. |
 | ENG-043 | Documentation information architecture           | planned      | UNSHAPED pending a design pass — organize documentation by reader need, with Diátaxis as the candidate framework. |
+| ENG-044 | Agent safety and governance controls              | planned      | S1 landed: a Settings ▸ Safety home, one default-off control (block broad process kills). The enterprise governance product is UNSHAPED pending a design pass. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
@@ -2259,6 +2260,42 @@ Scope is deliberately not fixed. The first question is which documentation it
 governs: the public guides and reference, the internal engineering canon, or
 both.
 
+### ENG-044 Agent safety and governance controls
+
+Status: planned — S1 landed 2026-09-24; the governance product beyond it is
+deliberately unshaped pending a design pass. Created 2026-09-24 from operator
+direction after incident `0028`.
+
+Direction (operator, 2026-09-24): bundle agent protections into the product as
+"security or safety controls", possibly dovetailing into agent visibility,
+generalizable toward organizations that want strict control over what agents
+run on their machines. "Don't go too big": a home in Settings for default-off
+options like this one, and more like it later.
+
+S1 (landed): Settings ▸ Safety renders every control from `SAFETY_CONTROLS`
+in `@exawatt/core`, the same declaration Electron main enforces from, and
+each one is off until turned on. The first control, **Block broad process
+kills**, adds a `PreToolUse` hook matched to `Bash` to the settings Exawatt
+already injects into each Claude Code launch; Exawatt's loopback channel
+answers it on its own `/guard` path by dry-running the kill (`pgrep`,
+`killall -s`) and refusing matches on installed apps, system processes,
+agent harnesses, Exawatt itself, any live Session, or more than 20 processes.
+Every refusal is recorded as `safety.denied` in `logs/main.jsonl`. Turning a
+control off takes effect at once; turning it on reaches agents started or
+resumed afterwards, because the launch carries the hook. The decision runs
+inside Claude Code's own hook boundary, so it adds no second enforcement
+regime (`docs/product/concepts.md`, Policy). It fails open: a guard that
+cannot answer lets the command run. Proven against a real Claude Code 2.1.282
+run.
+
+Unshaped (for the design pass): which buyer and surface (a personal Settings
+section, a managed Workspace policy an administrator locks, or both); coverage
+beyond Claude Code (Codex, OpenCode, remote Gateways); fail-open versus
+fail-closed for managed policy; an exportable audit of `safety.denied`; the
+next controls (destructive git, credential reads, network egress, allowed
+harnesses and models); and how it meets ENG-006 Approvals and ENG-023
+visibility. Guides are owed under ENG-031.
+
 ## Backlog
 
 ### Public defect-record boundary
@@ -2576,6 +2613,22 @@ targets the focused window; a dead renderer releases checkpoint ownership; and
 the stall trace no longer records system sleep as stalls (which had exhausted
 its budget). Gate: `eval:electron:helper-death`, mutation-checked.
 [Incident `0028`](incidents/0028-stray-pkill-killed-every-chromium-helper.md).
+
+### BUG-224 `eval:electron:idempotency` intermittently times out on its final relaunch
+
+Status: open · ENG-022 · found 2026-09-24 landing ENG-044 S1.
+
+The final relaunch after several clean quit-and-relaunch generations waited
+45 s for `firstWindow` and got none: 2 failures in 15 runs of the ENG-044
+packaged build (once inside the landing, right after the `connected-fleet` and
+`lifecycle` packaged evals; once in back-to-back solo runs), 0 in 11 runs of
+an `origin/master` build, and 0 in 9 consecutive later runs of the same
+ENG-044 build, including 5 interleaved with master under load 9 to 37. Not
+attributable to the change: nothing it adds runs before the first window.
+Passing runs recorded no process deaths in the eval profile's `main.jsonl`.
+Next step: keep the profile of a FAILING run (the eval deletes it) and capture
+the packaged app's stdout at launch, then read `main.jsonl`, whose BUG-223
+records now name any helper or renderer that died.
 
 ## Amendment chain
 

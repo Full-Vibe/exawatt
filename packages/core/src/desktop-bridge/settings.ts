@@ -2,6 +2,7 @@ import type { AgentPermissionMode } from '../agent-sources';
 import type { LaunchConfigurationPoolV1 } from '../launch-configurations';
 import type { OperatorStatsSyncFailureRecord } from '../operator-stats/sync-state';
 import type { KeyboardShortcutOverridesV1 } from '../shortcuts/keyboard-overrides';
+import type { SafetyControlSettings } from '../safety-controls';
 
 /**
  * `userData/settings.json`, as main persists it and the renderer reads it
@@ -92,6 +93,9 @@ export interface ExawattSettings<ThemeId extends string = string> {
      *  off constructs no request and serves no Claude plan windows. */
     enabled: boolean;
   };
+  /** ENG-044 safety controls, declared in `SAFETY_CONTROLS`. Every control
+   *  defaults OFF: only an explicit true applies a limit to an agent. */
+  safety?: SafetyControlSettings;
   operatorProfile?: {
     /** ENG-035 automatic public-profile sync. The one outbound switch that
      *  defaults OFF: publishing is opt-in under decision `0029`, and turning

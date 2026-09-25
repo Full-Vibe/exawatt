@@ -1,5 +1,8 @@
 import type { AgentHarness, AgentPermissionMode } from './harness-types';
-import type { AgentSourceDeclaration } from '@exawatt/core';
+import type {
+  AgentSourceDeclaration,
+  SafetyControlSettings,
+} from '@exawatt/core';
 import { agentSourceDeclaration } from './generated-agent-source-declarations';
 import type { HarnessEventNormalizer } from '../harness-events/channel';
 import {
@@ -23,8 +26,13 @@ import { readQwenAdminDefaults } from './qwen-source';
  * hardcode.
  */
 export interface HarnessEventChannelBinding {
-  /** Build the settings document Exawatt writes for one launch. */
-  settings: (port: number, token: string) => string;
+  /** Build the settings document Exawatt writes for one launch, with the
+   *  safety controls the operator has turned on (ENG-044). */
+  settings: (
+    port: number,
+    token: string,
+    safety: SafetyControlSettings
+  ) => string;
   /** Point the launch at that document. */
   invocation: (invocation: string, settingsPath: string) => string;
   /** Translate this source's payloads into the shared event vocabulary. */

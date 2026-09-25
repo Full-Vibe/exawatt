@@ -73,6 +73,49 @@ describe('HarnessEventChannel', () => {
     ]);
   });
 
+  it('answers a guard post with the guard’s decision and emits nothing (ENG-044)', async () => {
+    const target = await started();
+    const seen = collect(target);
+    const registration = target.register('pty-1', claudeHookEvent)!;
+    const decided: Array<[string, unknown]> = [];
+    target.setGuard(async (sessionId, payload) => {
+      decided.push([sessionId, payload]);
+      return { hookSpecificOutput: { permissionDecision: 'deny' } };
+    });
+    const guardPost = async (body: string, token = registration.token) => {
+      const response = await fetch(
+        `http://127.0.0.1:${registration.port}/guard`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-exawatt-token': token,
+          },
+          body,
+        }
+      );
+      return { status: response.status, body: await response.json() };
+    };
+
+    expect(await guardPost(JSON.stringify({ tool_name: 'Bash' }))).toEqual({
+      status: 200,
+      body: { hookSpecificOutput: { permissionDecision: 'deny' } },
+    });
+    expect(decided).toEqual([['pty-1', { tool_name: 'Bash' }]]);
+    expect(seen).toEqual([]);
+
+    // Anything that goes wrong is "no decision": the harness proceeds.
+    expect((await guardPost('not json')).body).toEqual({});
+    target.setGuard(async () => {
+      throw new Error('listing failed');
+    });
+    expect((await guardPost('{}')).body).toEqual({});
+    target.setGuard(null);
+    expect((await guardPost('{}')).body).toEqual({});
+    // And a stranger's token decides nothing.
+    expect((await guardPost('{}', 'wrong')).status).toBe(404);
+  });
+
   it('keeps two live Sessions apart', async () => {
     const target = await started();
     const seen = collect(target);

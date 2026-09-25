@@ -73,6 +73,7 @@ const FIXTURES: {
   goalVisuals: { enabled: false },
   reentryRecap: { enabled: false },
   claudePlanWindows: { enabled: false },
+  safety: { processKillGuard: true },
   operatorProfile: {
     autoPublish: true,
     startedAt: '2026-08-03T18:00:00.000Z',
@@ -167,5 +168,27 @@ describe('keyboard overrides (BUG-044, read side)', () => {
   it('a device that never stored a choice reads as absent', () => {
     writeSettings({ terminal: { fontSize: 15 } });
     expect(loadSettings().keyboardShortcuts).toBeUndefined();
+  });
+});
+
+describe('safety controls (ENG-044)', () => {
+  it('keeps only explicit choices for declared controls', () => {
+    fs.mkdirSync(electronState.userData, { recursive: true });
+    fs.writeFileSync(
+      settingsFile(),
+      JSON.stringify({
+        safety: { processKillGuard: false, controlFromANewerBuild: true },
+      })
+    );
+    expect(loadSettings().safety).toEqual({ processKillGuard: false });
+  });
+
+  it('reads a malformed choice as no choice, which is off', () => {
+    fs.mkdirSync(electronState.userData, { recursive: true });
+    fs.writeFileSync(
+      settingsFile(),
+      JSON.stringify({ safety: { processKillGuard: 'yes' } })
+    );
+    expect(loadSettings().safety?.processKillGuard).toBeUndefined();
   });
 });

@@ -546,6 +546,16 @@ Examples:
 - approval required before deployment
 - restricted tools
 - allowed context signals
+- a safety control, such as refusing a process kill that would reach other
+  apps or agents
+
+**Safety controls** (ENG-044) are the first Policies the operator sets in the
+product: Settings ▸ Safety, one row per control declared in `SAFETY_CONTROLS`,
+each off until turned on. Each control names the agents it applies to and the
+system that enforces it, and it is enforced inside that Agent Source's own
+boundary (for Claude Code, a `PreToolUse` hook), so it adds no second
+enforcement regime. A managed Workspace that locks controls for a whole
+company is the unshaped next layer.
 
 ## Approval
 

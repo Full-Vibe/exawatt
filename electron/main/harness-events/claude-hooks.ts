@@ -21,10 +21,19 @@ import type {
   ReportedChildCensus,
 } from './delegation-state';
 import type { SessionBlockedReason } from '@exawatt/core/desktop-bridge';
+import {
+  isSafetyControlEnabled,
+  type SafetyControlSettings,
+} from '@exawatt/core';
+import { GUARD_PATH } from './channel';
 
 /** Kept low on purpose: every hook runs INSIDE the harness turn, so this is
  *  the operator's latency, not ours. A dead listener fails open. */
 const HOOK_TIMEOUT_SECONDS = 2;
+
+/** A safety-control hook dry-runs process listings before it answers, so it
+ *  gets longer than an event post; a slow or dead answer still fails open. */
+const GUARD_TIMEOUT_SECONDS = 5;
 
 /**
  * The tool whose whole purpose is to stop and ask the operator. Subscribing
@@ -113,8 +122,18 @@ export const CLAUDE_HOOK_HEADER = 'x-exawatt-token';
  *
  * Additional settings only — it names hooks and nothing else, so it cannot
  * disturb the user's model, permissions, or any other configuration.
+ *
+ * A safety control the operator turned on (ENG-044) adds one DECIDING hook:
+ * `PreToolUse` matched to `Bash`, answered on the guard path. It is the one
+ * per-tool subscription here, and it exists only by the operator's choice; it
+ * reports nothing to any surface, so the no-activity-exhaust boundary above
+ * still holds.
  */
-export function claudeHookSettings(port: number, token: string): string {
+export function claudeHookSettings(
+  port: number,
+  token: string,
+  safety: SafetyControlSettings = {}
+): string {
   const endpoint = {
     type: 'http' as const,
     url: `http://127.0.0.1:${port}/hook`,
@@ -126,6 +145,18 @@ export function claudeHookSettings(port: number, token: string): string {
     (hooks[event] ??= []).push(
       matcher ? { matcher, hooks: [endpoint] } : { hooks: [endpoint] }
     );
+  }
+  if (isSafetyControlEnabled(safety, 'processKillGuard')) {
+    (hooks.PreToolUse ??= []).push({
+      matcher: 'Bash',
+      hooks: [
+        {
+          ...endpoint,
+          url: `http://127.0.0.1:${port}${GUARD_PATH}`,
+          timeout: GUARD_TIMEOUT_SECONDS,
+        },
+      ],
+    });
   }
   return JSON.stringify({ hooks }, null, 2);
 }

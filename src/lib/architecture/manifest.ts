@@ -907,6 +907,7 @@ export const architectureManifest = {
     'Product feedback is explicit authenticated evidence with row ownership and private attachments; inference evidence is not persisted as feedback automatically.',
     'Public operator statistics are an opt-in aggregate projection over the shared local Consumption spine: Electron settings preserve the consent boundary across renderer origins, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
     'Session-continuity diagnostics are local, explainable projections over evidence; hosted systems may aggregate them but never replace their semantics with an opaque health score.',
+    "Safety controls are operator Policies, off until turned on: each is declared once for Settings and enforcement, runs inside its Agent Source's own hook boundary rather than a second regime, records every refusal, and fails open.",
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Public-source publication preserves its published prefix, classifies later commits independently, and requires exact-candidate certification for an explicit snapshot recovery; ordinary publication never rewrites public history.',
     'Distribution services are optional versioned capabilities resolved before build; community identity is isolated and service-neutral, while operator-configured Agent Source WebSockets remain an independent local/customer-owned transport.',

@@ -900,6 +900,12 @@ Built:
   never an inferred empty team or a synthetic child completion; a reported
   child expires when its coverage lapses (the harness census on every
   boundary, the PTY between them) rather than latching until process exit
+- operator safety controls (ENG-044) on the same channel: `SAFETY_CONTROLS`
+  in `@exawatt/core` declares each control once for Settings ▸ Safety and for
+  Electron main; a control that is on adds one DECIDING hook to the launch
+  (Claude Code `PreToolUse` matched to `Bash`), which the channel answers on
+  its own `/guard` path through `electron/main/safety/`, never emits as an
+  event, and fails open. Every refusal is `safety.denied` in `logs/main.jsonl`
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a lightweight task + Launch
   Configuration ribbon + Start composer. Its selected configuration carries an

@@ -10,6 +10,53 @@ import {
  * observed from a live harness during the design pass, not invented.
  */
 
+describe('claudeHookSettings with safety controls (ENG-044)', () => {
+  const guarded = JSON.parse(
+    claudeHookSettings(51234, 'tok-abc', { processKillGuard: true })
+  );
+  const guardGroups = (document: {
+    hooks: {
+      PreToolUse: Array<{ matcher: string; hooks: Array<{ url: string }> }>;
+    };
+  }) =>
+    document.hooks.PreToolUse.filter(group =>
+      group.hooks.some(hook => hook.url.endsWith('/guard'))
+    );
+
+  it('carries no deciding hook unless the operator turned a control on', () => {
+    for (const safety of [undefined, {}, { processKillGuard: false }]) {
+      const document = JSON.parse(claudeHookSettings(51234, 'tok-abc', safety));
+      expect(guardGroups(document)).toEqual([]);
+    }
+  });
+
+  it('adds one deciding hook, matched to shell commands, on the guard path', () => {
+    const [group, ...rest] = guardGroups(guarded);
+    expect(rest).toEqual([]);
+    expect(group.matcher).toBe('Bash');
+    expect(group.hooks).toEqual([
+      expect.objectContaining({
+        type: 'http',
+        url: 'http://127.0.0.1:51234/guard',
+        headers: { 'x-exawatt-token': 'tok-abc' },
+      }),
+    ]);
+  });
+
+  it('leaves every event subscription exactly as it was', () => {
+    const plain = JSON.parse(claudeHookSettings(51234, 'tok-abc'));
+    const withoutGuard = {
+      hooks: {
+        ...guarded.hooks,
+        PreToolUse: guarded.hooks.PreToolUse.filter(
+          (group: { matcher: string }) => group.matcher !== 'Bash'
+        ),
+      },
+    };
+    expect(withoutGuard).toEqual(plain);
+  });
+});
+
 describe('claudeHookSettings', () => {
   const settings = JSON.parse(claudeHookSettings(51234, 'tok-abc'));
 

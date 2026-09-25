@@ -21,10 +21,13 @@ import {
   parseKeyboardShortcutOverrides,
   isCalendarDate,
   parseOperatorStatsSyncFailureRecord,
+  SAFETY_CONTROLS,
   type AgentLaunchConfigurationInput,
   type AgentPermissionMode,
   type LaunchConfigurationPoolV1,
   type OperatorStatsSyncEvent,
+  type SafetyControlId,
+  type SafetyControlSettings,
 } from '@exawatt/core';
 import type {
   AppearanceAutoPairV1,
@@ -491,6 +494,18 @@ const SETTINGS_SCHEMA: {
   // renderer reads back with (BUG-044).
   keyboardShortcuts: raw =>
     raw === undefined ? undefined : parseKeyboardShortcutOverrides(raw),
+  // ENG-044: a safety control is on only when explicitly true. Only declared
+  // controls survive the parse, so a build never enforces an id it does not
+  // know.
+  safety: raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+    const parsed: SafetyControlSettings = {};
+    for (const control of SAFETY_CONTROLS) {
+      const value = explicitBoolean(raw, control.id);
+      if (value !== undefined) parsed[control.id] = value;
+    }
+    return parsed;
+  },
 };
 
 /** Every field the settings file may carry, in schema order. */
@@ -541,6 +556,7 @@ function validStoredSettings(value: unknown): boolean {
     goalVisuals: ['enabled'],
     reentryRecap: ['enabled'],
     claudePlanWindows: ['enabled'],
+    safety: SAFETY_CONTROLS.map(control => control.id),
     operatorProfile: [
       'autoPublish',
       'startedAt',
@@ -829,6 +845,16 @@ export function setReentryRecapEnabled(enabled: boolean): StoredSettings {
 export function setClaudePlanWindowsEnabled(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.claudePlanWindows = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setSafetyControl(
+  control: SafetyControlId,
+  enabled: boolean
+): StoredSettings {
+  const settings = loadSettings();
+  settings.safety = { ...settings.safety, [control]: enabled };
   writeSettings(settings);
   return settings;
 }

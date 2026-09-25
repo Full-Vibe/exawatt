@@ -13,6 +13,7 @@ import { buildHarnessCommand } from './harness-command';
 import type { HarnessLaunchWiring } from './harness-command';
 import { harnessEventChannel } from '../harness-events/channel';
 import { HookSettingsStore } from '../harness-events/hook-settings-store';
+import type { SafetyControlSettings } from '@exawatt/core';
 import {
   SessionHistoryStore,
   type SessionHistorySnapshot,
@@ -166,10 +167,22 @@ export class PtySessionManager extends EventEmitter {
   private pendingProviderIdentities = new Set<Promise<void>>();
   private pendingProviderIdentityBySession = new Map<string, Promise<void>>();
   private productName = 'Exawatt Community';
+  /** ENG-044: the safety controls a launch carries, read at each launch. */
+  private safetyControls: () => SafetyControlSettings = () => ({});
 
   setProductName(productName: string): void {
     if (!productName.trim()) throw new Error('Product name is required');
     this.productName = productName;
+  }
+
+  setSafetyControls(read: () => SafetyControlSettings): void {
+    this.safetyControls = read;
+  }
+
+  /** The root process of every live Session: no agent's command may take
+   *  down its own Session or another's (ENG-044). */
+  sessionProcessIds(): number[] {
+    return [...this.sessions.values()].map(session => session.proc.pid);
   }
 
   async configurePersistence(root: string): Promise<void> {
@@ -221,7 +234,11 @@ export class PtySessionManager extends EventEmitter {
     // terminal, and the launch itself never fails over observation.
     let document: string;
     try {
-      document = channel.settings(registration.port, registration.token);
+      document = channel.settings(
+        registration.port,
+        registration.token,
+        this.safetyControls()
+      );
     } catch (error) {
       console.warn(
         `[session-manager] ${harness} launches without its event channel:`,

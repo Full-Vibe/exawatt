@@ -53,6 +53,7 @@ import {
   Lock,
   RotateCcw,
   Settings2,
+  ShieldCheck,
   SlidersHorizontal,
   TriangleAlert,
 } from 'lucide-react';
@@ -60,8 +61,9 @@ import { ConnectSourceDialog } from '@/components/workspace/connect-source-dialo
 import { AgentSourcesSettings } from './agent-sources-settings';
 import { AppearanceSettings } from './appearance-settings';
 import { PrivacySettings } from './privacy-settings';
+import { SafetySettings } from './safety-settings';
 
-type SettingsSection = 'agent-sources' | 'preferences' | 'privacy';
+type SettingsSection = 'agent-sources' | 'preferences' | 'privacy' | 'safety';
 
 function SettingsNavigation({
   active,
@@ -85,6 +87,11 @@ function SettingsNavigation({
       id: 'privacy' as const,
       label: 'Privacy',
       icon: Lock,
+    },
+    {
+      id: 'safety' as const,
+      label: 'Safety',
+      icon: ShieldCheck,
     },
   ];
   return (
@@ -418,6 +425,7 @@ export function SettingsClient() {
           />
         )}
         {activeSection === 'privacy' && <PrivacySettings />}
+        {activeSection === 'safety' && <SafetySettings />}
         {activeSection === 'preferences' && (
           <section
             aria-labelledby="preferences-heading"

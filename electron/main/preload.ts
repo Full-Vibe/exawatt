@@ -263,6 +263,8 @@ const bridge = {
     setReentryRecap: enabled => invoke('settings:set-reentry-recap', enabled),
     setClaudePlanWindows: enabled =>
       invoke('settings:set-claude-plan-windows', enabled),
+    setSafetyControl: (control, enabled) =>
+      invoke('settings:set-safety-control', control, enabled),
     setOperatorAutoPublish: enabled =>
       invoke('settings:set-operator-auto-publish', enabled),
     recordOperatorProfileState: state =>

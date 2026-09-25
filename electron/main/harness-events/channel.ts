@@ -38,6 +38,20 @@ export interface ChannelRegistration {
   token: string;
 }
 
+/**
+ * ENG-044 safety controls: a hook that DECIDES rather than reports. It answers
+ * one pre-tool payload with the harness's own decision document (or null to
+ * allow), and it is only ever reached on `GUARD_PATH`, so an ordinary event
+ * post can never be held up by, or read as, a decision.
+ */
+export type HarnessGuard = (
+  sessionId: string,
+  payload: unknown
+) => Promise<Record<string, unknown> | null>;
+
+/** The path a safety-control hook posts to; every other path is an event. */
+export const GUARD_PATH = '/guard';
+
 function isLoopback(address: string | undefined): boolean {
   if (!address) return false;
   const host = address.startsWith('::ffff:') ? address.slice(7) : address;
@@ -52,6 +66,7 @@ export class HarnessEventChannel extends EventEmitter {
   /** Exawatt session id -> token (so a relaunch can release the old one) */
   private tokens = new Map<string, string>();
   private normalizers = new Map<string, HarnessEventNormalizer>();
+  private guard: HarnessGuard | null = null;
   private starting: Promise<boolean> | null = null;
   private readonly now: () => number;
 
@@ -139,6 +154,11 @@ export class HarnessEventChannel extends EventEmitter {
     this.normalizers.delete(token);
   }
 
+  /** Install the one guard safety-control hooks are answered by. */
+  setGuard(guard: HarnessGuard | null): void {
+    this.guard = guard;
+  }
+
   private handle(
     request: http.IncomingMessage,
     response: http.ServerResponse
@@ -148,12 +168,12 @@ export class HarnessEventChannel extends EventEmitter {
     // second writeHead throws ERR_HTTP_HEADERS_SENT, and an uncaught throw
     // here would take down the main process over a hook delivery.
     let answered = false;
-    const done = (status: number) => {
+    const done = (status: number, body: Record<string, unknown> = {}) => {
       if (answered || response.writableEnded) return;
       answered = true;
       try {
         response.writeHead(status, { 'content-type': 'application/json' });
-        response.end('{}');
+        response.end(JSON.stringify(body));
       } catch {
         // The client hung up mid-answer. Nothing to do and nothing broken.
       }
@@ -193,6 +213,26 @@ export class HarnessEventChannel extends EventEmitter {
       chunks.push(chunk);
     });
     request.on('error', () => done(400));
+    if (request.url === GUARD_PATH) {
+      // A decision, not an event: answered once the guard has judged, and
+      // never emitted. Anything that goes wrong answers `{}`, which the
+      // harness reads as "no decision" and proceeds with.
+      request.on('end', () => {
+        const guard = this.guard;
+        if (aborted || !guard) return done(200);
+        let payload: unknown;
+        try {
+          payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        } catch {
+          return done(200);
+        }
+        guard(sessionId, payload).then(
+          decision => done(200, decision ?? {}),
+          () => done(200)
+        );
+      });
+      return;
+    }
     request.on('end', () => {
       done(200);
       if (aborted) return;
