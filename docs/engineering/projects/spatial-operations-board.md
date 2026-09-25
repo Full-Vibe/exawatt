@@ -2672,3 +2672,28 @@ should settle how Fleet selection enters follow mode and how keyboard focus is
 returned, while preserving empty-queue behavior and editable/modal ownership.
 This is a bounded ENG-004 keyboard interaction request, queued for execution;
 no new command family or separate attention model is implied.
+
+### 2026-09-24 — Fleet status counts disagree with the board (BUG-225)
+
+Operator feedback `09054d9b-74bc-4c6e-a0aa-f3a890527651` (dogfood 0.1.13,
+`/fleet/spatial`, screenshot attached): "the Working count should count
+subagents as well. Also I see 13 Result ready in the top counts bar, but only
+one green one in the actual view." The screenshot shows the mismatch: the
+counts bar reads Working 8 and Result ready 13, while most result-ready Agents
+render as dashed rings that read as the Idle legend glyph, with a single green
+check. A second capture in `8ee7651d` shows Result ready 17 against a handful
+of checks. Two questions for the execution pass: (1) the bar and the board
+must count and draw one status vocabulary, so a result-ready Agent either
+wears the Result ready glyph or the count names what the dashed ring means;
+(2) whether Working counts delegated children, which is ENG-023's "subagents
+as fleet truth" boundary and must follow its census rather than a separate
+rule. Queued behind the unlanded V4.0 excellence pass on
+`agent/fleet-excellence`, which splits the canvas this touches.
+
+### 2026-09-24 — Zoomed-out overflow marker renders blank (BUG-226)
+
+Operator feedback `8ee7651d-156e-4d01-8e01-e9c5f1b4abf1` (dogfood 0.1.13,
+`/fleet/spatial`): "+3 agent overflow circle shows up as blank in zoomed out
+fleet view." The overflow treatment is V3.4's (delegation composition), whose
+operator visual review of ratio, tether and overflow was still owed. Queued for
+the same pass as BUG-225, after V4.0 lands.

@@ -2630,6 +2630,21 @@ Next step: keep the profile of a FAILING run (the eval deletes it) and capture
 the packaged app's stdout at launch, then read `main.jsonl`, whose BUG-223
 records now name any helper or renderer that died.
 
+### BUG-225 Fleet status counts disagree with the board
+
+Status: bug · ENG-004 · operator product-feedback `09054d9b-74bc-4c6e-a0aa-f3a890527651`, 2026-09-24.
+
+The counts bar's Result ready total does not match the glyphs on the board
+(13 counted, one green check drawn), and Working excludes delegated children.
+Queued after the V4.0 pass lands. [Report and execution notes](projects/spatial-operations-board.md#2026-09-24--fleet-status-counts-disagree-with-the-board-bug-225).
+
+### BUG-226 Zoomed-out Fleet overflow marker renders blank
+
+Status: bug · ENG-004 · operator product-feedback `8ee7651d-156e-4d01-8e01-e9c5f1b4abf1`, 2026-09-24.
+
+The "+3" overflow circle draws empty at overview zoom. Same pass as BUG-225.
+[Report](projects/spatial-operations-board.md#2026-09-24--zoomed-out-overflow-marker-renders-blank-bug-226).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
