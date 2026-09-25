@@ -586,6 +586,15 @@ export const SURFACE_GATES = [
       file === 'scripts/r3f-eval/spatial.mjs',
   },
   {
+    gate: 'eval:spatial:emergence',
+    why: 'departed Agent bodies and status marks must unmount and release the demand loop, including reduced motion',
+    match: file =>
+      file === 'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      file === 'src/components/fleet/spatial/operations-board/operations-board-emergence.ts' ||
+      file === 'src/app/eval/t5-operations-board/page.tsx' ||
+      file === 'scripts/spatial-emergence-eval.mjs',
+  },
+  {
     gate: 'eval:spatial:pointer',
     why: 'drag band-selects, wheel pans, pinch zooms at the cursor, and a click still drills a zone',
     match: file =>

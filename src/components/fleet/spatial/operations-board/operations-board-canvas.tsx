@@ -2288,8 +2288,18 @@ function StatusMarkLayer({
   const rotorRefs = useRef(new Map<string, THREE.Object3D>());
   // Every mark instance a piece owns, so its light scales with its body.
   const markRefs = useRef(new Map<string, Set<THREE.Object3D>>());
-  const collectMark =
-    (pieceId: string) => (instance: THREE.Object3D | null) => {
+  const collectMark = (pieceId: string, rotor = false) => {
+    let attached: THREE.Object3D | null = null;
+    return (instance: THREE.Object3D | null) => {
+      if (attached) {
+        const set = markRefs.current.get(pieceId);
+        set?.delete(attached);
+        if (set?.size === 0) markRefs.current.delete(pieceId);
+        if (rotor && rotorRefs.current.get(pieceId) === attached) {
+          rotorRefs.current.delete(pieceId);
+        }
+      }
+      attached = instance;
       if (!instance) return;
       let set = markRefs.current.get(pieceId);
       if (!set) {
@@ -2297,7 +2307,9 @@ function StatusMarkLayer({
         markRefs.current.set(pieceId, set);
       }
       set.add(instance);
+      if (rotor) rotorRefs.current.set(pieceId, instance);
     };
+  };
   const sizeById = useMemo(
     () => new Map(pieces.map(piece => [piece.id, piece.size])),
     [pieces]
@@ -2320,8 +2332,8 @@ function StatusMarkLayer({
       let emerging = false;
       for (const [pieceId, set] of markRefs.current) {
         const factor = emergenceScale(pieceId, now);
-        if (factor === 1) continue;
-        emerging = true;
+        // Apply both endpoints, but only in-flight scales need another frame.
+        if (factor > 0 && factor < 1) emerging = true;
         const size = (sizeById.get(pieceId) ?? 1) * factor;
         for (const mark of set) mark.scale.set(size, size, 1);
       }
@@ -2342,6 +2354,7 @@ function StatusMarkLayer({
   });
 
   const instance = (piece: SpatialBoardPiece) => ({
+    name: `mark:${piece.id}`,
     ref: collectMark(piece.id),
     position: [piece.x, -piece.y, 0.94] as [number, number, number],
     scale: [piece.size, piece.size, 1] as [number, number, number],
@@ -2497,11 +2510,7 @@ function StatusMarkLayer({
             <Instance
               {...instance(piece)}
               key={`status-rotor:${piece.id}`}
-              ref={(target: THREE.Object3D | null) => {
-                collectMark(piece.id)(target);
-                if (target) rotorRefs.current.set(piece.id, target);
-                else rotorRefs.current.delete(piece.id);
-              }}
+              ref={collectMark(piece.id, true)}
               raycast={() => null}
             />
           ))}
@@ -2759,10 +2768,14 @@ function AgentPieceLayer({
 }) {
   // Aggregate pieces render as the instanced population dot field (V3.1),
   // never as per-piece bodies or DOM count labels.
-  const visible = pieces.filter(
-    piece => piece.visible && piece.kind === 'agent'
+  const visible = useMemo(
+    () => pieces.filter(piece => piece.visible && piece.kind === 'agent'),
+    [pieces]
   );
-  const solid = visible.filter(piece => piece.sessionState !== 'stopped');
+  const solid = useMemo(
+    () => visible.filter(piece => piece.sessionState !== 'stopped'),
+    [visible]
+  );
   // Pieces that appear or disappear while the layer is mounted -- a Project
   // revealing its Agents at scale, or hiding them again -- scale in and out
   // on the board's transition policy instead of popping (V3.7). Departing
@@ -2777,20 +2790,53 @@ function AgentPieceLayer({
   const lastPieceById = useRef(new Map<string, SpatialBoardPiece>());
   for (const piece of solid) lastPieceById.current.set(piece.id, piece);
   const [retiringIds, setRetiringIds] = useState<string[]>([]);
+  const invalidate = useThree(state => state.invalidate);
+  const previousReduced = useRef(reduced);
   useLayoutEffect(() => {
-    const now = performance.now();
-    emergence.current!.reconcile(
-      solid.map(piece => piece.id),
-      now
-    );
-    const next = emergence.current!.retiring(now);
-    setRetiringIds(previous =>
-      previous.length === next.length &&
-      previous.every((id, i) => id === next[i])
-        ? previous
-        : next
-    );
-  }, [solid]);
+    // A changed motion preference snaps existing transitions, including a
+    // departure. It must not inherit the duration captured on first mount.
+    if (previousReduced.current !== reduced) {
+      emergence.current = createEmergenceTracker(
+        solid.map(piece => piece.id),
+        reduced ? 0 : undefined
+      );
+      previousReduced.current = reduced;
+    }
+    const tracker = emergence.current!;
+    tracker.reconcile(solid.map(piece => piece.id), performance.now());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      const now = performance.now();
+      const next = tracker.retiring(now);
+      setRetiringIds(previous =>
+        previous.length === next.length &&
+        previous.every((id, i) => id === next[i])
+          ? previous
+          : next
+      );
+      invalidate();
+      // Cleanup belongs to the React lifecycle, not the frame loop. Even if
+      // rendering was suspended past the deadline, the final commit retires
+      // the pieces. An early timer re-arms for the actual remaining interval.
+      const remaining = tracker.remainingMs(now);
+      if (remaining > 0) timer = setTimeout(settle, remaining);
+    };
+    settle();
+    return () => clearTimeout(timer);
+  }, [solid, reduced, invalidate]);
+  useLayoutEffect(() => {
+    // A completed departure stays at zero until React has detached its refs;
+    // pruning it earlier would briefly restore its default scale of one.
+    emergence.current!.prune(performance.now(), retiringIds);
+    const retained = new Set([
+      ...solid.map(piece => piece.id),
+      ...retiringIds,
+      ...emergence.current!.retiring(performance.now()),
+    ]);
+    for (const id of lastPieceById.current.keys()) {
+      if (!retained.has(id)) lastPieceById.current.delete(id);
+    }
+  }, [solid, retiringIds]);
   const rendered = useMemo(() => {
     const ids = new Set(solid.map(piece => piece.id));
     const retiring: SpatialBoardPiece[] = [];
@@ -2823,7 +2869,6 @@ function AgentPieceLayer({
   );
   const lastBodyRecession = useRef(new Map<string, number>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
-  const invalidate = useThree(state => state.invalidate);
   const pieceGeometry = AGENT_HEX_GEOMETRY;
   // Keep the shipped cursor path local to this layer. The review treatment
   // additionally lifts candidate state to the canvas root so its WebGL and
@@ -2859,21 +2904,15 @@ function AgentPieceLayer({
     {
       const now = performance.now();
       const tracker = emergence.current!;
-      if (tracker.active(now)) {
-        for (const piece of rendered) {
-          const body = bodyRefs.current.get(piece.id);
-          if (!body) continue;
-          const scale = piece.size * tracker.scaleOf(piece.id, now);
-          body.scale.set(scale, scale, 1);
-        }
-        state.invalidate();
-        // Once every departing piece is gone, drop it from the render list.
-        const stillRetiring = tracker.retiring(now);
-        if (stillRetiring.length !== retiringIds.length) {
-          tracker.prune(now);
-          setRetiringIds(stillRetiring);
-        }
+      // Always sample the final frame too: active() is already false at
+      // the endpoint, while bodies may still hold the preceding frame's size.
+      for (const piece of rendered) {
+        const body = bodyRefs.current.get(piece.id);
+        if (!body) continue;
+        const scale = piece.size * tracker.scaleOf(piece.id, now);
+        body.scale.set(scale, scale, 1);
       }
+      if (tracker.active(now)) state.invalidate();
     }
     {
       const now = performance.now();
@@ -2948,6 +2987,7 @@ function AgentPieceLayer({
           return (
             <Instance
               key={piece.id}
+              name={`body:${piece.id}`}
               ref={(instance: THREE.Object3D | null) => {
                 if (instance) bodyRefs.current.set(piece.id, instance);
                 else bodyRefs.current.delete(piece.id);

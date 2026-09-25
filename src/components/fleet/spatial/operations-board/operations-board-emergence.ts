@@ -1,4 +1,7 @@
-import { BOARD_TRANSITION_MS, boardTransitionEase } from './operations-board-transition';
+import {
+  BOARD_TRANSITION_MS,
+  boardTransitionEase,
+} from './operations-board-transition';
 
 /**
  * Piece emergence: how a piece that appears or disappears while the board is
@@ -32,8 +35,10 @@ export interface EmergenceTracker {
   retiring(nowMs: number): string[];
   /** Is anything still in motion? */
   active(nowMs: number): boolean;
-  /** Drop finished records; call once per frame after sampling. */
-  prune(nowMs: number): void;
+  /** Time until the last transition finishes; zero when already settled. */
+  remainingMs(nowMs: number): number;
+  /** Drop finished records after commit, preserving any still-mounted retirees. */
+  prune(nowMs: number, mountedRetirees?: readonly string[]): void;
 }
 
 export function createEmergenceTracker(
@@ -87,7 +92,8 @@ export function createEmergenceTracker(
     retiring(nowMs) {
       const out: string[] = [];
       for (const [id, record] of records) {
-        if (record.kind === 'retiring' && progress(record, nowMs) < 1) out.push(id);
+        if (record.kind === 'retiring' && progress(record, nowMs) < 1)
+          out.push(id);
       }
       return out;
     },
@@ -97,9 +103,21 @@ export function createEmergenceTracker(
       }
       return false;
     },
-    prune(nowMs) {
+    remainingMs(nowMs) {
+      let remaining = 0;
+      for (const record of records.values()) {
+        remaining = Math.max(
+          remaining,
+          durationMs <= 0 ? 0 : record.startedAt + durationMs - nowMs
+        );
+      }
+      return remaining;
+    },
+    prune(nowMs, mountedRetirees = []) {
       for (const [id, record] of records) {
-        if (progress(record, nowMs) >= 1) records.delete(id);
+        if (progress(record, nowMs) >= 1 && !mountedRetirees.includes(id)) {
+          records.delete(id);
+        }
       }
     },
   };

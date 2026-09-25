@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BOARD_TRANSITION_MS } from './operations-board-transition';
-import { EMERGENCE_ARRIVAL_FROM, createEmergenceTracker } from './operations-board-emergence';
+import {
+  EMERGENCE_ARRIVAL_FROM,
+  createEmergenceTracker,
+} from './operations-board-emergence';
 
 describe('piece emergence', () => {
   it('treats the initial set as settled, so mount never animates', () => {
@@ -13,8 +16,12 @@ describe('piece emergence', () => {
     const tracker = createEmergenceTracker(['a']);
     tracker.reconcile(['a', 'b'], 1000);
     expect(tracker.scaleOf('b', 1000)).toBeCloseTo(EMERGENCE_ARRIVAL_FROM, 6);
-    expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS / 2)).toBeGreaterThan(EMERGENCE_ARRIVAL_FROM);
-    expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS / 2)).toBeLessThan(1);
+    expect(
+      tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS / 2)
+    ).toBeGreaterThan(EMERGENCE_ARRIVAL_FROM);
+    expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS / 2)).toBeLessThan(
+      1
+    );
     expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS)).toBe(1);
     expect(tracker.scaleOf('a', 1000)).toBe(1);
   });
@@ -24,7 +31,9 @@ describe('piece emergence', () => {
     tracker.reconcile(['a'], 1000);
     expect(tracker.retiring(1000)).toEqual(['b']);
     expect(tracker.scaleOf('b', 1000)).toBe(1);
-    expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS / 2)).toBeLessThan(1);
+    expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS / 2)).toBeLessThan(
+      1
+    );
     expect(tracker.scaleOf('b', 1000 + BOARD_TRANSITION_MS)).toBe(0);
     expect(tracker.retiring(1000 + BOARD_TRANSITION_MS)).toEqual([]);
     tracker.prune(1000 + BOARD_TRANSITION_MS);
@@ -60,5 +69,22 @@ describe('piece emergence', () => {
     tracker.reconcile(['b'], 1000);
     expect(tracker.retiring(1000)).toEqual([]);
     expect(tracker.active(1000)).toBe(false);
+  });
+  it('cleans up after a skipped final frame without reviving mounted retirees', () => {
+    const tracker = createEmergenceTracker(['a']);
+    tracker.reconcile([], 1000);
+    expect(tracker.remainingMs(1000)).toBeGreaterThan(0);
+    const afterSleep = 1000 + BOARD_TRANSITION_MS * 10;
+    expect(tracker.active(afterSleep)).toBe(false);
+    expect(tracker.remainingMs(afterSleep)).toBe(0);
+    expect(tracker.retiring(afterSleep)).toEqual([]);
+    tracker.prune(afterSleep, ['a']);
+    expect(tracker.scaleOf('a', afterSleep)).toBe(0);
+    tracker.prune(afterSleep);
+    tracker.reconcile(['a'], afterSleep);
+    expect(tracker.scaleOf('a', afterSleep)).toBeCloseTo(
+      EMERGENCE_ARRIVAL_FROM
+    );
+    expect(tracker.remainingMs(afterSleep)).toBeGreaterThan(0);
   });
 });

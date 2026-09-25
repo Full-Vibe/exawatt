@@ -138,6 +138,9 @@ const EVAL_THEME_IDS = {
 declare global {
   interface Window {
     __EVAL_SET_BOARD_THEME__?: (theme: keyof typeof EVAL_THEME_IDS) => void;
+    __EVAL_SET_BOARD_POPULATION__?: (
+      population: { id: string; status: ExawattAgent['status'] }[]
+    ) => void;
   }
 }
 
@@ -147,6 +150,7 @@ export default function OperationsBoardEvalPage() {
   // after mount so the server and first client render agree.
   const [focusedProject, setFocusedProject] = useState<string | null>(null);
   const [fanout, setFanout] = useState(false);
+  const [population, setPopulation] = useState<ExawattAgent[] | null>(null);
   const [themeId, setThemeId] = useState<BuiltInThemeId>(
     'exawatt-classic-dark'
   );
@@ -154,6 +158,11 @@ export default function OperationsBoardEvalPage() {
     const params = new URLSearchParams(window.location.search);
     const fanoutRequested = params.get('fixture') === 'fanout';
     setFanout(fanoutRequested);
+    if (params.get('fixture') === 'emergence') {
+      setPopulation(
+        ['one', 'two', 'three'].map(id => agent(id, id, 'Atlas', 'idle'))
+      );
+    }
     if (params.get('altitude') === 'project') {
       setFocusedProject(
         params.get('project') ??
@@ -166,22 +175,37 @@ export default function OperationsBoardEvalPage() {
     }
   }, []);
   useEffect(() => {
+    window.__EVAL_SET_BOARD_POPULATION__ = entries => {
+      setPopulation(
+        entries.map(({ id, status }) => agent(id, id, 'Atlas', status))
+      );
+    };
     window.__EVAL_SET_BOARD_THEME__ = theme => {
       setThemeId(EVAL_THEME_IDS[theme]);
     };
     return () => {
       delete window.__EVAL_SET_BOARD_THEME__;
+      delete window.__EVAL_SET_BOARD_POPULATION__;
     };
   }, []);
   const layout = useMemo(
     () =>
       selectSpatialBoardLayout(
-        fanout ? fanoutState : state,
+        population
+          ? {
+              ...state,
+              agents: Object.fromEntries(
+                population.map(item => [item.id, item])
+              ),
+            }
+          : fanout
+            ? fanoutState
+            : state,
         focusedProject
           ? { altitude: 'project', focusedProjectId: focusedProject }
           : {}
       ),
-    [fanout, focusedProject]
+    [fanout, focusedProject, population]
   );
   const resolvedAppearance = useMemo(() => {
     const theme = THEME_REGISTRY[themeId];

@@ -86,6 +86,7 @@
     "eval:spatial:viewport": "node scripts/spatial-viewport-eval.mjs",
     "eval:spatial:pointer": "node scripts/spatial-pointer-eval.mjs",
     "eval:spatial:scale": "node scripts/spatial-scale-eval.mjs",
+    "eval:spatial:emergence": "node scripts/spatial-emergence-eval.mjs",
     "eval:spatial:motion": "node scripts/spatial-motion-eval.mjs",
     "eval:navigation": "node scripts/command-altitude-eval.mjs",
     "eval:navigation:electron": "node scripts/electron-navigation-eval.mjs",
