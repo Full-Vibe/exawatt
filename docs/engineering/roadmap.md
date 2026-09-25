@@ -2645,6 +2645,31 @@ Status: bug · ENG-004 · operator product-feedback `8ee7651d-156e-4d01-8e01-e9c
 The "+3" overflow circle draws empty at overview zoom. Same pass as BUG-225.
 [Report](projects/spatial-operations-board.md#2026-09-24--zoomed-out-overflow-marker-renders-blank-bug-226).
 
+### BUG-227 Unattended battery drain with harness sleep inhibitors
+
+Status: bug · ENG-016 · operator report 2026-09-25.
+
+Mac power history shows 65% → 1% while the display was mostly off for 80
+minutes, with recurring `caffeinate` assertions covering virtually the entire
+interval. A live inhibitor was a native Claude child inside Exawatt; historical
+per-process energy attribution remains open. Scope: measure visible, minimized
+and locked workloads separately from source-owned sleep inhibition, then choose
+an explicit battery policy without silently interrupting Sessions. Exit: actual
+frame/CPU and assertion-owner evidence, with a verified remedy or clearly
+recorded upstream limitation. [Incident 0029](incidents/0029-battery-drained-with-display-off.md).
+
+### BUG-228 Completed Fleet retirements can request frames forever
+
+Status: bug · ENG-004 · found 2026-09-25 during battery investigation.
+
+`AgentPieceLayer` skips pruning once the final retirement is no longer active;
+`StatusMarkLayer` retains refs and invalidates for its completed scale 0. The
+scheduling defect reproduces with ordinary and zero-duration transitions;
+its contribution to the reported discharge is unproven. Scope: bound retirement
+cleanup and dispose mark refs. Exit: a real board parks after final retirement,
+including reduced motion, while later arrivals and interactions still render.
+[Evidence and control](incidents/0029-battery-drained-with-display-off.md).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
