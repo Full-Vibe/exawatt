@@ -240,6 +240,44 @@ describe('appChannels', () => {
     ]);
   });
 
+  it('records errors no boundary caught under their own names (BUG-129)', async () => {
+    const { table, recorded } = app(null);
+    await call(table, 'app:report-render-error', {
+      kind: 'error',
+      message: 'x is undefined',
+      source: 'app.js:1:2',
+    });
+    await call(table, 'app:report-render-error', {
+      kind: 'unhandled-rejection',
+      message: 'invoke failed',
+      source: 'dropped for a rejection',
+    });
+    await call(table, 'app:report-render-error', {
+      kind: 'toString',
+      message: 'an unknown kind is a boundary report',
+    });
+    expect(recorded.map(r => r.event)).toEqual([
+      'renderer.error',
+      'renderer.unhandled-rejection',
+      'renderer.error-boundary',
+    ]);
+    expect(recorded[0].fields).toMatchObject({ source: 'app.js:1:2' });
+    expect(recorded[1].fields).not.toHaveProperty('source');
+  });
+
+  it('bounds a renderer stuck in an error loop, whatever the renderer sends', async () => {
+    const { table, recorded } = app(null);
+    for (let i = 0; i < 50; i += 1) {
+      await call(table, 'app:report-render-error', {
+        kind: 'error',
+        message: `loop ${i}`,
+      });
+    }
+    const errors = recorded.filter(r => r.event === 'renderer.error');
+    expect(errors.length).toBeLessThanOrEqual(10);
+    expect(recorded.length).toBeLessThan(50);
+  });
+
   it('bounds a feedback screenshot to 1600 pixels wide', async () => {
     const resized: unknown[] = [];
     const image = {

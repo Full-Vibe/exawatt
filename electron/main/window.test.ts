@@ -96,6 +96,8 @@ function harness(overrides: Partial<MainWindowDependencies> = {}) {
     onWorkspaceLoaded: url => log.push(`workspace:${url}`),
     onRenderProcessGone: (_win, details) =>
       log.push(`renderer-gone:${details.reason}`),
+    onRenderUnresponsive: () => log.push('renderer-unresponsive'),
+    onRenderResponsive: () => log.push('renderer-responsive'),
     ...overrides,
   };
   const controller = createMainWindowController(deps);
@@ -233,6 +235,17 @@ describe('createMainWindowController', () => {
     );
 
     expect(log).toEqual(['menu-reset', 'owner-lost:7', 'renderer-gone:killed']);
+  });
+
+  it('hands a hung renderer, and its recovery, to recovery (BUG-129)', () => {
+    const { controller, windows, log } = harness();
+    controller.open(WORKSPACE, appearance);
+    log.length = 0;
+
+    windows[0].webContents.emit('unresponsive');
+    windows[0].webContents.emit('responsive');
+
+    expect(log).toEqual(['renderer-unresponsive', 'renderer-responsive']);
   });
 
   it('reloads without needing a live renderer to hold focus', () => {

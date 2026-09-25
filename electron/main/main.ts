@@ -53,7 +53,9 @@ import {
   createRendererRecovery,
   createRendererServerSupervisor,
   recordChildProcessGone,
+  rendererHangPrompt,
   rendererRecoveryPrompt,
+  testHangChoice,
 } from './process-recovery';
 import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
@@ -168,6 +170,16 @@ const rendererRecovery = createRendererRecovery({
     );
     return prompt.choice(response);
   },
+  askWhileUnresponsive: async (win, signal) => {
+    // A hidden automation window has no one to ask; the run says the answer.
+    if (isTest) return testHangChoice(env);
+    const prompt = rendererHangPrompt(identity.productName);
+    const { response } = await dialog.showMessageBox(win as BrowserWindow, {
+      ...prompt.options,
+      signal,
+    });
+    return prompt.choice(response);
+  },
   quit: () => app.quit(),
 });
 const mainWindow = createMainWindowController({
@@ -188,6 +200,8 @@ const mainWindow = createMainWindowController({
   onWorkspaceLoaded: url => deepLinks.deliverPending(url),
   onRenderProcessGone: (win, details) =>
     rendererRecovery.rendererGone(win, details),
+  onRenderUnresponsive: win => rendererRecovery.rendererUnresponsive(win),
+  onRenderResponsive: () => rendererRecovery.rendererResponsive(),
 });
 const rendererServerSupervisor = createRendererServerSupervisor({
   record: processDiagnostics,

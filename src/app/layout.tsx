@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
+import { RendererErrorReporter } from '@/components/diagnostics/renderer-error-reporter';
 import { AccountFirstRunCard } from '@/components/auth/account-first-run-card';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
@@ -88,6 +89,8 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
+        {/* Outside every provider, so a provider that throws is still heard. */}
+        <RendererErrorReporter />
         <AppearanceProvider>
           <GoalVisualPreferenceProvider>
             <TooltipProvider>

@@ -11,7 +11,10 @@ import {
   rendererAppearanceBootstrapSnapshot,
 } from './appearance';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
-import type { DiagnosticRecorder } from './diagnostics-log';
+import {
+  boundDiagnosticRecorder,
+  type DiagnosticRecorder,
+} from './diagnostics-log';
 import {
   buildDiagnosticsReport,
   type DiagnosticsReportInput,
@@ -204,12 +207,23 @@ interface CapturableWindow {
   }>;
 }
 
+/** The event each caught render error is recorded under. */
+const RENDER_ERROR_EVENTS = {
+  boundary: 'renderer.error-boundary',
+  error: 'renderer.error',
+  'unhandled-rejection': 'renderer.unhandled-rejection',
+} as const;
+
 export function appChannels(deps: {
   buildInfo: () => ExawattBuildInfo;
   reports: ReturnType<typeof createDiagnosticsReports>;
   record: DiagnosticRecorder;
   windowFor: (sender: WebContents) => CapturableWindow | null;
 }): TrustedChannels {
+  const renderErrors = boundDiagnosticRecorder(deps.record, {
+    perMinute: 10,
+    perRun: 200,
+  });
   return {
     'app:get-build-info': () => deps.buildInfo(),
     // ENG-025 F5. `signedIn` is renderer-supplied because the Supabase session
@@ -224,16 +238,29 @@ export function appChannels(deps: {
     // message and stack readable from `logs/main.jsonl` next time instead of
     // requiring live reproduction. `redactDiagnosticValue` (inside
     // `mainDiagnostics`) still clips and scrubs every field before it lands.
+    //
+    // BUG-129: the same door carries the errors no boundary catches, a
+    // window `error` and an `unhandledrejection`, each under its own event
+    // name. A page stuck in an error loop can post many times a second, so
+    // this channel writes through its own bound, whatever the renderer caps.
     'app:report-render-error': (_event, payload?: unknown) => {
       const report =
         payload && typeof payload === 'object'
           ? (payload as Record<string, unknown>)
           : {};
-      deps.record('renderer.error-boundary', {
-        message: typeof report.message === 'string' ? report.message : null,
-        stack: typeof report.stack === 'string' ? report.stack : null,
-        digest: typeof report.digest === 'string' ? report.digest : null,
-        pathname: typeof report.pathname === 'string' ? report.pathname : null,
+      const kind =
+        typeof report.kind === 'string' &&
+        Object.prototype.hasOwnProperty.call(RENDER_ERROR_EVENTS, report.kind)
+          ? (report.kind as keyof typeof RENDER_ERROR_EVENTS)
+          : 'boundary';
+      const string = (key: string) =>
+        typeof report[key] === 'string' ? (report[key] as string) : null;
+      renderErrors(RENDER_ERROR_EVENTS[kind], {
+        message: string('message'),
+        stack: string('stack'),
+        digest: string('digest'),
+        pathname: string('pathname'),
+        ...(kind === 'error' ? { source: string('source') } : {}),
       });
     },
     'app:save-diagnostics-report': async (_event, signedIn?: boolean) =>

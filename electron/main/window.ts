@@ -138,6 +138,9 @@ export interface MainWindowDependencies {
     win: BrowserWindow,
     details: { reason: string; exitCode: number }
   ) => void;
+  /** The renderer stopped answering input, and started again (BUG-129). */
+  onRenderUnresponsive: (win: BrowserWindow) => void;
+  onRenderResponsive: () => void;
 }
 
 interface MainWindowController {
@@ -240,6 +243,8 @@ export function createMainWindowController(
       clearCheckpointOwner();
       deps.onRenderProcessGone(win, details);
     });
+    win.webContents.on('unresponsive', () => deps.onRenderUnresponsive(win));
+    win.webContents.on('responsive', () => deps.onRenderResponsive());
 
     void win.loadURL(initialUrl);
 

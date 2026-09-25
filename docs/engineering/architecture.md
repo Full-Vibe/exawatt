@@ -1074,8 +1074,13 @@ Built:
   itself; a dead renderer server restarts on its own port; automatic attempts
   are budgeted per minute, past which the renderer asks the operator and the
   server stays down on the record; nothing restarts once shutdown owns the
-  processes. View ▸ Reload targets the focused window, not the focused web
-  contents a crashed renderer can never be;
+  processes. A hung renderer (alive, not answering input) asks the operator
+  to wait or reload, withdraws the question if the page recovers, and on
+  reload ends the stuck renderer so the same recovery brings it back; the
+  page's uncaught errors and unhandled rejections reach `logs/main.jsonl`
+  through the render-error channel, bounded on both sides (BUG-129). View ▸
+  Reload targets the focused window, not the focused web contents a crashed
+  renderer can never be;
 - deep terminal fundamentals and opt-in native attention notifications;
   immediate measured startup feedback backed by real bootstrap milestones,
   deferred command-module loading, warm renderer prestart, and bounded renderer

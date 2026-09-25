@@ -95,6 +95,11 @@ export interface RenderErrorReport {
   stack?: string | null;
   digest?: string | null;
   pathname?: string | null;
+  /** Where it was caught (BUG-129): a route error boundary (the default), the
+   *  window's `error` event, or an `unhandledrejection` nothing awaited. */
+  kind?: 'boundary' | 'error' | 'unhandled-rejection';
+  /** `file:line:column` for a window error, when the browser names one. */
+  source?: string | null;
 }
 
 type ProductUpdatePhase =

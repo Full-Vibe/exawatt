@@ -30,6 +30,11 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  *   asks the operator instead; a server that keeps dying stays down and is
  *   recorded.
  * - **A quit is never fought.** Nothing restarts once shutdown has begun.
+ * - **A hung renderer is the operator's call** (BUG-129). A page stuck in a
+ *   loop never dies, so nothing above would fire: the window just ignores
+ *   every click. When Chromium reports it unresponsive, the operator is asked
+ *   to wait or reload; the question withdraws itself if the page recovers,
+ *   and Reload ends the stuck renderer so the recovery above brings it back.
  */
 
 /** Automatic recoveries allowed per window before recovery asks instead. */
@@ -73,7 +78,36 @@ interface ChildGoneDetails {
 /** The window surface recovery touches, and nothing more. */
 export interface RecoverableWindow {
   isDestroyed(): boolean;
-  webContents: { reload(): void };
+  webContents: { reload(): void; forcefullyCrashRenderer(): void };
+}
+
+export type HangChoice = 'wait' | 'reload';
+
+/** The question asked while the window's renderer is hung. */
+export function rendererHangPrompt(productName: string): {
+  options: MessageBoxOptions;
+  choice(response: number): HangChoice;
+} {
+  return {
+    options: {
+      type: 'warning',
+      message: `${productName} isn't responding`,
+      detail:
+        'The window stopped responding. Your agents and terminals are still running. Wait for it, or reload the window.',
+      buttons: ['Wait', 'Reload Window'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    },
+    choice: response => (response === 1 ? 'reload' : 'wait'),
+  };
+}
+
+/** Automation answers the hang question from the environment, never a dialog. */
+export function testHangChoice(env: NodeJS.ProcessEnv): HangChoice {
+  return env.EXAWATT_TEST_UNRESPONSIVE_RESPONSE === 'reload'
+    ? 'reload'
+    : 'wait';
 }
 
 export type RecoveryChoice = 'reload' | 'quit';
@@ -103,6 +137,11 @@ interface RendererRecoveryDependencies {
   isQuitting: () => boolean;
   /** Asked only when the automatic budget is spent. */
   askToReload: (win: RecoverableWindow) => Promise<RecoveryChoice>;
+  /** Asked while the renderer is hung; `signal` aborts it if the page recovers. */
+  askWhileUnresponsive: (
+    win: RecoverableWindow,
+    signal: AbortSignal
+  ) => Promise<HangChoice>;
   quit: () => void;
   now?: () => number;
   /** Defers the reload out of Chromium's own crash notification. */
@@ -115,11 +154,19 @@ interface RendererRecoveryDependencies {
  */
 export function createRendererRecovery(deps: RendererRecoveryDependencies): {
   rendererGone(win: RecoverableWindow, details: RendererGoneDetails): void;
+  rendererUnresponsive(win: RecoverableWindow): void;
+  rendererResponsive(): void;
 } {
   const now = deps.now ?? Date.now;
   const defer = deps.defer ?? (run => setTimeout(run, 0));
   const budget = createRecoveryBudget(RECOVERY_BUDGET, now);
   let asking = false;
+  /** When the current hang began, while one is open. */
+  let hungSince: number | null = null;
+  let hangQuestion: AbortController | null = null;
+  /** The operator chose Reload for a hung renderer: its death is expected,
+   *  and reloading it spends nothing from the automatic budget. */
+  let reloadRequested = false;
 
   function reload(win: RecoverableWindow): void {
     if (win.isDestroyed() || deps.isQuitting()) return;
@@ -146,11 +193,29 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
       });
   }
 
+  function endHang(): void {
+    hangQuestion?.abort();
+    hangQuestion = null;
+    hungSince = null;
+  }
+
   return {
     rendererGone(win, details) {
       const fields = { reason: details.reason, exitCode: details.exitCode };
+      const requested = reloadRequested;
+      reloadRequested = false;
+      endHang();
       if (win.isDestroyed() || deps.isQuitting()) {
         deps.record('renderer.gone', { ...fields, action: 'none' });
+        return;
+      }
+      if (requested) {
+        deps.record('renderer.gone', {
+          ...fields,
+          action: 'reload',
+          requested,
+        });
+        defer(() => reload(win));
         return;
       }
       if (budget.spend()) {
@@ -160,6 +225,36 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
       }
       deps.record('renderer.gone', { ...fields, action: 'ask' });
       ask(win);
+    },
+
+    rendererUnresponsive(win) {
+      if (win.isDestroyed() || deps.isQuitting() || hangQuestion) return;
+      hungSince = now();
+      deps.record('renderer.unresponsive');
+      const question = new AbortController();
+      hangQuestion = question;
+      void deps
+        .askWhileUnresponsive(win, question.signal)
+        .then(choice => {
+          // The page came back while the question was open: it answered itself.
+          if (question.signal.aborted) return;
+          deps.record('renderer.unresponsive-choice', { choice });
+          if (choice === 'reload' && !win.isDestroyed() && !deps.isQuitting()) {
+            reloadRequested = true;
+            win.webContents.forcefullyCrashRenderer();
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (hangQuestion === question) hangQuestion = null;
+        });
+    },
+
+    rendererResponsive() {
+      if (hungSince !== null) {
+        deps.record('renderer.responsive', { afterMs: now() - hungSince });
+      }
+      endHang();
     },
   };
 }

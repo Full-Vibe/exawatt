@@ -618,6 +618,13 @@ export const SURFACE_GATES = [
       file === 'scripts/electron-helper-death-eval.mjs',
   },
   {
+    gate: 'eval:electron:renderer-errors',
+    why: 'an error no boundary catches, thrown or rejected in the page, must reach logs/main.jsonl (BUG-129)',
+    match: file =>
+      file === 'src/components/diagnostics/renderer-error-reporter.tsx' ||
+      file === 'scripts/electron-renderer-errors-eval.mjs',
+  },
+  {
     gate: 'eval:electron:delegation',
     why: 'delegated runs must be observed from source-reported lifecycle events and drawn where the operator reads them',
     match: file =>
@@ -1312,6 +1319,10 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'qa:browser:smoke': GATE,
   'eval:electron:offline': GATE,
   'eval:electron:helper-death': GATE,
+  'eval:electron:renderer-errors': GATE,
+  'eval:electron:renderer-hang': manual(
+    'Chromium ignores a hung page while a debugger is attached, and every harness eval is one; this drives main through its own inspector and needs a visible window'
+  ),
   'eval:electron:delegation': GATE,
   'eval:electron:turn-truth': GATE,
   'eval:electron:tenancy': GATE,

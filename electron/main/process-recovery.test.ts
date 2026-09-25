@@ -5,6 +5,7 @@ import {
   createRendererRecovery,
   createRendererServerSupervisor,
   recordChildProcessGone,
+  type HangChoice,
   type RecoverableWindow,
   type RecoveryChoice,
 } from './process-recovery';
@@ -24,14 +25,19 @@ function recorder() {
   };
 }
 
-/** The window surface recovery touches: liveness and one reload. */
+/** The window surface recovery touches: liveness, a reload, and ending a
+ *  renderer that is hung (Electron's `forcefullyCrashRenderer`). */
 class FakeWindow implements RecoverableWindow {
   destroyed = false;
   reloads = 0;
+  crashes = 0;
   isDestroyed = () => this.destroyed;
   webContents = {
     reload: () => {
       this.reloads += 1;
+    },
+    forcefullyCrashRenderer: () => {
+      this.crashes += 1;
     },
   };
 }
@@ -44,6 +50,10 @@ function rendererHarness() {
   const log = recorder();
   const asked: RecoverableWindow[] = [];
   const answers: Array<(choice: RecoveryChoice) => void> = [];
+  const hangQuestions: Array<{
+    signal: AbortSignal;
+    answer: (choice: HangChoice) => void;
+  }> = [];
   let quits = 0;
   const deferred: Array<() => void> = [];
   const recovery = createRendererRecovery({
@@ -53,6 +63,8 @@ function rendererHarness() {
       asked.push(win);
       return new Promise(resolve => answers.push(resolve));
     },
+    askWhileUnresponsive: (_win, signal) =>
+      new Promise(resolve => hangQuestions.push({ signal, answer: resolve })),
     quit: () => {
       quits += 1;
     },
@@ -65,6 +77,11 @@ function rendererHarness() {
     asked,
     answer: async (choice: RecoveryChoice) => {
       answers.shift()?.(choice);
+      await new Promise(resolve => setImmediate(resolve));
+    },
+    hangQuestions,
+    answerHang: async (choice: HangChoice) => {
+      hangQuestions.shift()?.answer(choice);
       await new Promise(resolve => setImmediate(resolve));
     },
     quits: () => quits,
@@ -202,6 +219,83 @@ describe('createRendererRecovery', () => {
 
     expect(win.reloads).toBe(RECOVERY_BUDGET.attempts + 1);
     expect(h.asked).toEqual([]);
+  });
+});
+
+describe('a hung renderer (BUG-129)', () => {
+  it('asks the operator once, and records when the hang began', () => {
+    const h = rendererHarness();
+    const win = new FakeWindow();
+
+    h.recovery.rendererUnresponsive(win);
+    h.recovery.rendererUnresponsive(win);
+
+    expect(h.hangQuestions).toHaveLength(1);
+    expect(h.events.map(e => e.event)).toEqual(['renderer.unresponsive']);
+  });
+
+  it('withdraws the question when the page recovers on its own', async () => {
+    const h = rendererHarness();
+    const win = new FakeWindow();
+    h.recovery.rendererUnresponsive(win);
+    h.advance(4_000);
+
+    h.recovery.rendererResponsive();
+    expect(h.hangQuestions[0].signal.aborted).toBe(true);
+    // A late answer from a withdrawn question changes nothing.
+    await h.answerHang('reload');
+
+    expect(win.crashes).toBe(0);
+    expect(h.events[h.events.length - 1]).toEqual({
+      event: 'renderer.responsive',
+      fields: { afterMs: 4_000 },
+    });
+  });
+
+  it('ends the stuck renderer on Reload and reloads it without spending the automatic budget', async () => {
+    const h = rendererHarness();
+    const win = new FakeWindow();
+    // The automatic budget is already spent by earlier deaths.
+    for (let i = 0; i < RECOVERY_BUDGET.attempts; i += 1) {
+      h.recovery.rendererGone(win, killed);
+      h.flush();
+    }
+
+    h.recovery.rendererUnresponsive(win);
+    await h.answerHang('reload');
+    expect(win.crashes).toBe(1);
+
+    // Chromium then reports the renderer it just ended.
+    h.recovery.rendererGone(win, { reason: 'crashed', exitCode: 0 });
+    h.flush();
+
+    expect(win.reloads).toBe(RECOVERY_BUDGET.attempts + 1);
+    expect(h.asked).toEqual([]);
+    expect(h.events[h.events.length - 1].fields).toMatchObject({
+      action: 'reload',
+      requested: true,
+    });
+  });
+
+  it('leaves the window alone on Wait', async () => {
+    const h = rendererHarness();
+    const win = new FakeWindow();
+    h.recovery.rendererUnresponsive(win);
+
+    await h.answerHang('wait');
+
+    expect(win.crashes).toBe(0);
+    expect(h.events.map(e => e.event)).toEqual([
+      'renderer.unresponsive',
+      'renderer.unresponsive-choice',
+    ]);
+  });
+
+  it('never asks while Exawatt is quitting', () => {
+    const h = rendererHarness();
+    h.quitting();
+    h.recovery.rendererUnresponsive(new FakeWindow());
+    expect(h.hangQuestions).toEqual([]);
   });
 });
 
