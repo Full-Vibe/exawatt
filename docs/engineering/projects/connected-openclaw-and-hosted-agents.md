@@ -1887,3 +1887,21 @@ is queued ahead of the H3 design pass; it complements
 `docs/research/market/2026-08-19-cloud-handoff-comps.md`, which covers how
 vendors present their own cloud agents, not where Exawatt would run any
 harness. No scope is shaped and H3 remains not active.
+
+Research landed the same day
+(`docs/research/market/2026-09-25-cloud-harness-hosting-build-vs-buy.md`,
+research input, not canon). Its conclusions for the H3 design pass:
+
+- Every option still needs a small Exawatt process on the remote machine,
+  because status comes from per-launch hooks posting to a loopback listener
+  that a remote harness cannot reach.
+- The recommended first mile is a daemon on a Linux machine the customer
+  rents herself, reached over the SSH transport ENG-010 already uses. It owns
+  the PTYs, runs today's launch plans unchanged, and journals hook events so
+  what happened while the laptop was closed replays on reconnect. Custody
+  stays with the customer, including her own harness sign-in, so H3's
+  billing and credential questions stay closed. A provider-hosted placement
+  later runs the same daemon.
+- Open for the operator: whether the first user will hold her own cloud
+  account, and whether safety-control hooks on a remote Agent fail closed
+  or evaluate policy on the machine.
