@@ -1,7 +1,7 @@
 # 0044 Device power policy is separate from Agent lifecycle
 
 Date: 2026-09-25
-Status: proposed; implementation investigation is BUG-227 (ENG-016)
+Status: accepted by operator 2026-09-25; execution is BUG-227 (ENG-016)
 
 **A locked or dark display never means “pause Agents.” Device sleep is a
 separate, explicitly controlled host-power policy.**
@@ -28,7 +28,7 @@ The incident also found a Fleet frame-scheduling defect (BUG-228), but there
 is no historical frame count or per-process energy sample proving Fleet caused
 the discharge. Fix it on its own evidence.
 
-## Proposed decision
+## Decision
 
 1. **Display state does not own Session state.** Screen lock, display-off,
    window hiding, and losing focus must not pause, signal, or relaunch an Agent.
@@ -36,13 +36,13 @@ the discharge. Fix it on its own evidence.
    its confirmation says unfinished work may need retrying. Automatically
    invoking it from a lock event would silently discard the user's running
    operation.
-2. **The app does not promise unattended work by holding a machine awake by
-   default.** When macOS sleeps, local work is subject to the operating
+2. **Battery defaults permit system sleep; a keep-awake assertion is not an
+   execution guarantee.** When macOS sleeps, local work is subject to the operating
    system's suspension and the source's recovery behavior. Exawatt records and
    presents what happened; it does not relabel OS suspension as a clean Agent
    pause.
 3. **Offer a device-local keep-awake policy, independent of Project and
-   Workspace.** Proposed choices: `Never`, `On AC only` (default), and `On AC
+   Workspace.** Choices: `Never`, `On AC only` (default), and `On AC
    and battery`. It applies only to actively working, locally hosted Sessions
    whose harness exposes a supported way to honor the choice. “On AC only”
    releases Exawatt's assertion immediately on battery transition. “On AC and
@@ -118,6 +118,6 @@ BUG-227 owns execution; this is not a second plan.
 The existing incident establishes the Mac stayed awake under repeated
 assertions and that a current Claude process used one. It does not establish
 that every historical assertion came from Claude or that Fleet was the main
-energy consumer. The product policy stays proposed until the operator reviews
-the AC default and the supported-harness boundary; the implementation gates
-above remain open.
+energy consumer. The operator accepted the AC default and supported-harness boundary on
+2026-09-25 and authorized implementation. The implementation gates above
+remain open; acceptance is not evidence that the controls have shipped.

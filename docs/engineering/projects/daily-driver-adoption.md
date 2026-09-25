@@ -7357,3 +7357,35 @@ asserts he is taken there when he stayed. Moving the claim after the read,
 master's shape, fails both "quietly" cases. BUG-193 rides the existing
 `focusClaim` test; its call sites live in `workspace-client`, which has no
 unit harness.
+
+
+### 2026-09-25 — Battery policy execution checkpoint (BUG-227 / BUG-228)
+
+**Approved power policy; Fleet repair is the first implementation slice.**
+
+The operator accepted decision `0044` and requested implementation with progress
+kept in master so another harness can resume. Decision `0044` owns the policy;
+BUG-227/BUG-228 in the singular roadmap own execution.
+
+- Current implementation checkout: sibling `exawatt-battery-fleet-power`,
+  branch `agent/battery-fleet-power`, based on `98d83946`. Inspect the roster
+  and that branch before duplicating work; never mutate another live worktree.
+- Slice 1 (in progress): fix final Fleet retirement cleanup and stale mark refs,
+  then prove actual demand frames park after removal in normal/reduced motion
+  and later arrivals still render. Preserve design-system status shapes, palette,
+  and motion duration. Run the relevant spatial eval and normal delivery floor,
+  land with `--dogfood`; update this checkpoint with evidence and integrated SHA.
+- Slice 2 (in progress, read-only): audit supported harness sleep controls and
+  identify the main-process host/power seams. Claude 2.1.282 currently owns an
+  uncontrolled inhibitor; no unsupported environment switch, process killer, or
+  PATH shim is authorized. Commit findings before implementing a setting.
+- Slice 3 (pending Slice 2): implement only the supported host-policy boundary
+  and truthful observations. Expose a control only when its actual scope can be
+  guaranteed. Uncontrolled sources must never be claimed battery-safe.
+- Remaining acceptance: actual AC/battery, lock/display-off, and sleep/wake
+  evidence on the supported harness paths. Never automatically interrupt a
+  Session or lock the operator's desktop to run a probe.
+
+Resume here: read decision `0044`, incident `0029`, both backlog rows, this
+checkpoint and the in-flight branch; then continue the first incomplete slice.
+No application code had landed at this checkpoint.
