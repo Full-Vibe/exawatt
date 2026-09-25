@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import type { HostPowerSnapshot } from '@exawatt/core/desktop-bridge';
 
 /** Rendering facts are independent of the Agent source. Demo and Live on
@@ -10,6 +11,7 @@ export function useHostRenderPolicy(hardwareLowPower: boolean): {
   lowPower: boolean;
   visible: boolean;
 } {
+  const reads = useLatestRequest();
   const [host, setHost] = useState<HostPowerSnapshot | null>(null);
   const [pageVisible, setPageVisible] = useState(
     () =>
@@ -21,10 +23,10 @@ export function useHostRenderPolicy(hardwareLowPower: boolean): {
     updateVisibility();
     document.addEventListener('visibilitychange', updateVisibility);
     const app = window.electron?.app;
-    let live = true;
+    const ticket = reads.begin();
     let revision = -1;
     const receive = (snapshot: HostPowerSnapshot) => {
-      if (!live || snapshot.revision < revision) return;
+      if (!ticket.current || snapshot.revision < revision) return;
       revision = snapshot.revision;
       setHost(snapshot);
     };
@@ -38,11 +40,11 @@ export function useHostRenderPolicy(hardwareLowPower: boolean): {
         // An unavailable host observation is not a claim of AC or unlock.
       });
     return () => {
-      live = false;
+      reads.invalidate();
       unsubscribe?.();
       document.removeEventListener('visibilitychange', updateVisibility);
     };
-  }, []);
+  }, [reads]);
   return {
     lowPower: hardwareLowPower || host?.powerSource === 'battery',
     visible:
