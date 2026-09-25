@@ -301,6 +301,8 @@ const bridge = {
   },
   app: {
     bootstrapAppearance,
+    hostPower: () => invoke('app:host-power'),
+    onHostPowerChanged: subscribe('app:host-power-changed'),
     getBuildInfo: () => invoke('app:get-build-info'),
     getDiagnosticsReport: signedIn =>
       invoke('app:get-diagnostics-report', signedIn),

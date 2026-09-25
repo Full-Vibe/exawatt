@@ -66,6 +66,7 @@ import {
   mixBoardZoom,
   settleBoardTransition,
 } from './operations-board-transition';
+import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
 import {
   ALTITUDE_HANDOFF_CROSSFADE_MS,
   ALTITUDE_HANDOFF_FALLBACK_EVENT,
@@ -187,19 +188,6 @@ function useLowPowerMode(): boolean {
     setLowPower(lowPowerLikely());
   }, []);
   return lowPower;
-}
-
-/** V2.4 ambient-motion gate: pulses/rotation run only while the tab is
- *  visible and motion is welcome. Hidden tab or reduced motion ⇒ park. */
-function usePageVisible(): boolean {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const update = () => setVisible(document.visibilityState === 'visible');
-    update();
-    document.addEventListener('visibilitychange', update);
-    return () => document.removeEventListener('visibilitychange', update);
-  }, []);
-  return visible;
 }
 
 export interface OperationsBoardHandle {
@@ -4016,8 +4004,9 @@ export function OperationsBoardCanvas({
   theme: SpatialThemeSnapshot;
 }) {
   const reduced = useReducedMotion();
-  const lowPower = useLowPowerMode();
-  const pageVisible = usePageVisible();
+  const hardwareLowPower = useLowPowerMode();
+  const { lowPower, visible: pageVisible } =
+    useHostRenderPolicy(hardwareLowPower);
   const ambient = !reduced && !lowPower && pageVisible;
   // During a Team→Fleet handoff the lazy postprocessing chunk's shader
   // compile is the single biggest main-thread stall — landing it mid

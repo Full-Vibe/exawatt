@@ -16,6 +16,8 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import { commandVerbCapabilities } from '@exawatt/core';
 import { registerMainChannels } from './app-ipc';
+import { observeHostPower } from './host-power';
+import { broadcastToWindows } from './window-broadcast';
 import {
   applyNativeAppearancePreference,
   testSystemDarkOverride,
@@ -357,6 +359,15 @@ function openMainWindow(workspaceReady: boolean): void {
 
 app.whenReady().then(() => {
   installMainInstrumentation(userDataPath(), mainDiagnostics, powerMonitor);
+  const hostPower = observeHostPower(powerMonitor, snapshot => {
+    broadcastToWindows(
+      BrowserWindow.getAllWindows(),
+      'app:host-power-changed',
+      snapshot
+    );
+  });
+  handleTrusted('app:host-power', () => hostPower.getSnapshot());
+  app.once('will-quit', hostPower.dispose);
   // Registered BEFORE bootstrap so it survives bootstrap failing: this is the
   // channel that reports exactly that (BUG-016).
   registerCommandEngineIPC(() => BrowserWindow.getAllWindows());

@@ -262,6 +262,8 @@ interface DesktopAppApi {
    *  any document script runs; undefined when main refused the read. */
   bootstrapAppearance: AppearanceBootstrapSnapshot | undefined;
   getBuildInfo: BridgeInvoke<'app:get-build-info'>;
+  hostPower: BridgeInvoke<'app:host-power'>;
+  onHostPowerChanged: BridgeSubscribe<'app:host-power-changed'>;
   /** ENG-025 F5: the anonymized diagnostics bundle a bug report can carry. */
   getDiagnosticsReport: BridgeInvoke<'app:get-diagnostics-report'>;
   /** Writes the same report to Downloads and reveals it in Finder: the path

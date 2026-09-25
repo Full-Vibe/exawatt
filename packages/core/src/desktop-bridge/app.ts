@@ -242,3 +242,13 @@ export interface ElectronAuthError {
   status?: number;
   code?: string;
 }
+
+/** Observed facts about this Electron host, never a Session lifecycle command.
+ * A dark display is not observable through these events and is not inferred. */
+export interface HostPowerSnapshot {
+  /** Monotonic within one main-process lifetime; orders reads against pushes. */
+  revision: number;
+  powerSource: 'ac' | 'battery' | 'unknown';
+  screenLock: 'locked' | 'unlocked' | 'unknown';
+  systemSleep: 'awake' | 'suspended';
+}
