@@ -2828,3 +2828,15 @@ Operator feedback `8ee7651d-156e-4d01-8e01-e9c5f1b4abf1` (dogfood 0.1.13,
 fleet view." The overflow treatment is V3.4's (delegation composition), whose
 operator visual review of ratio, tether and overflow was still owed. Queued for
 the same pass as BUG-225, after V4.0 lands.
+
+### 2026-09-28 — V4.0 rescued and landed
+
+The V4.0 pass was built 2026-09-14 but never landed: all nine commits stayed
+on `agent/fleet-excellence` while master moved 157 commits and changed the
+canvas three times. It was cherry-picked onto master as recorded, taking the
+nine-module split whole, then master's canvas changes were ported to where
+their code now lives: the host render policy that parks ambient rendering on
+battery and lock (BUG-227) in the canvas, the released frames and detached
+mark refs (BUG-228) in the agent layer, and the in-world anchor depth note
+(BUG-143) in the controls. The page-visibility hook master deleted is deleted
+here too. Nothing from V4.0 was dropped.
