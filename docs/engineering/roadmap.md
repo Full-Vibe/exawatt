@@ -3123,6 +3123,21 @@ against a private probe repository. The `v0.1.15` tag runs the old port and
 cannot publish; the release is re-cut as 0.1.16.
 [Log](projects/open-source-readiness.md#2026-09-29--publishing-unbinds-the-draft-release-from-its-tag-bug-254).
 
+### BUG-255 The publish step hands the port assets without their digests
+
+Status: done · ENG-030 · found 2026-09-29 dispatching 0.1.16; resolved 2026-09-29.
+
+0.1.16 built, signed and notarized, then failed "Publish immutable public
+Release" on `invalid-asset ... size or SHA-256 does not match its bytes`. The
+publish command reads its nine assets from disk as name, bytes and media type;
+the port requires each asset's size and SHA-256 too. Every test and the
+BUG-254 rehearsal built the publication in memory, which carries them. Assets
+read from disk now carry both, a publication without them is refused at
+validation, and `pnpm release:rehearse` runs the release's own commands over
+the feed's real containers against a throwaway private repository before a
+dispatch. `v0.1.16` cannot publish; the release is re-cut as 0.1.17.
+[Log](projects/open-source-readiness.md#2026-09-29--the-publish-step-hands-the-port-assets-without-their-digests-bug-255).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
