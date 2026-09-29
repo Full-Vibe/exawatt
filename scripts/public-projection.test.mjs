@@ -4,6 +4,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -16,6 +18,7 @@ import {
   assertFastForward,
   buildProjectionPlan,
   parseFilterRepoCommitMap,
+  PROJECTOR_MODULES,
   projectPublicHistory,
   projectPublicCatchup,
   resolveEntryBoundary,
@@ -284,6 +287,118 @@ function sourceFixture() {
     cleanup: () => rmSync(parent, { recursive: true, force: true }),
   };
 }
+
+const REPOSITORY = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..'
+);
+const SOURCE_PROJECTOR_WORKER =
+  'scripts/lib/public-projection-source-worker.mjs';
+
+/**
+ * Commits this repository's projector into the fixture, as every real source
+ * commit carries it, with `edit` applied to the renderer module.
+ */
+function carryProjector(fixture, edit = source => source) {
+  for (const modulePath of [...PROJECTOR_MODULES, SOURCE_PROJECTOR_WORKER]) {
+    const source = readFileSync(path.join(REPOSITORY, modulePath), 'utf8');
+    write(
+      fixture.source,
+      modulePath,
+      modulePath === 'scripts/lib/recipe-renderers.mjs' ? edit(source) : source
+    );
+  }
+  git(fixture.source, ['add', '--', 'scripts']);
+  git(fixture.source, ['commit', '--quiet', '-m', 'carry the projector']);
+  return git(fixture.source, ['rev-parse', 'HEAD']);
+}
+
+test('PROJECTOR_MODULES is the projector’s whole static import closure', () => {
+  const closure = new Set();
+  const visit = modulePath => {
+    if (closure.has(modulePath)) return;
+    closure.add(modulePath);
+    const text = readFileSync(path.join(REPOSITORY, modulePath), 'utf8');
+    const specifiers = [
+      ...text.matchAll(/^\s*(?:import|export)\s[^;]*?from\s+'(\.[^']+)'/gmu),
+      ...text.matchAll(/import\(\s*'(\.[^']+)'\s*\)/gu),
+    ].map(match => match[1]);
+    for (const specifier of specifiers) {
+      visit(path.posix.join(path.posix.dirname(modulePath), specifier));
+    }
+  };
+  visit('scripts/lib/public-projection.mjs');
+  assert.deepEqual([...closure].sort(), [...PROJECTOR_MODULES].sort());
+});
+
+test('a source commit is rendered by the projector it carries, not the one this process loaded', async () => {
+  const fixture = sourceFixture();
+  const cache = path.join(
+    REPOSITORY,
+    'node_modules',
+    '.cache',
+    'exawatt-projector'
+  );
+  try {
+    const tip = carryProjector(fixture, source => {
+      const edited = source.replace(
+        'Generated for the public repository by the',
+        'Rendered by the commit’s own projector for the'
+      );
+      assert.notEqual(edited, source, 'the renderer edit must apply');
+      return edited;
+    });
+
+    const own = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: tip,
+      destination: fixture.at('own'),
+    });
+    assert.equal(own.renderedBySourceProjector, true);
+    assert.equal(own.sourceSha, tip);
+    assert.match(
+      git(own.destination, ['show', `master:${WORKFLOW}`]),
+      /Rendered by the commit’s own projector/u
+    );
+    assert.deepEqual(
+      readdirSync(cache).filter(entry => entry.startsWith(tip.slice(0, 12))),
+      [],
+      'the extracted projector is removed after the render'
+    );
+
+    // The same commit through this process's projector renders what the
+    // commit's projector would not have: the 2026-09-29 stale publication.
+    const running = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: tip,
+      destination: fixture.at('running'),
+      useRunningProjector: true,
+    });
+    assert.equal(running.renderedBySourceProjector, undefined);
+    assert.match(
+      git(running.destination, ['show', `master:${WORKFLOW}`]),
+      /Generated for the public repository/u
+    );
+    assert.notEqual(running.publicSha, own.publicSha);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a source commit that carries the running projector renders in this process', async () => {
+  const fixture = sourceFixture();
+  try {
+    const tip = carryProjector(fixture);
+    const projection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: tip,
+    });
+    assert.equal(projection.renderedBySourceProjector, undefined);
+    assert.equal(projection.sourceSha, tip);
+  } finally {
+    fixture.cleanup();
+  }
+});
 
 test('the same source commit always projects to the same public commit', async () => {
   const fixture = sourceFixture();

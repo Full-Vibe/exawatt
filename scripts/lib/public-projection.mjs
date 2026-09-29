@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   mkdtemp,
   mkdir,
@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { finished } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import {
@@ -48,8 +49,9 @@ export const PUBLIC_PROJECTION_CONTRACT_ID =
  * Git repository.
  *
  * The projection is a pure function of (source history, Gate A manifest at the
- * source commit). Gate A — `buildSeedPlan` in `open-source-paths.mjs` — is the
- * ONLY classifier; this module never forms its own opinion about what is
+ * source commit), rendered by the projector the source commit itself carries
+ * (`PROJECTOR_MODULES`). Gate A — `buildSeedPlan` in `open-source-paths.mjs` —
+ * is the ONLY classifier; this module never forms its own opinion about what is
  * public. Two consequences the whole two-repository mechanism rests on:
  *
  *   1. determinism — the same `sourceSha` always yields the same `publicSha`;
@@ -112,6 +114,130 @@ function attributeRenderRefusal(error, privateSha) {
 
 function fail(message) {
   throw new Error('[public-projection] ' + message);
+}
+
+/**
+ * The modules that ARE the projector: this file and its static import closure
+ * (a test holds the list to the real closure). A source commit carries them
+ * like any other file, and `projectPublicHistory` renders a commit that carries
+ * a projector only with that projector.
+ *
+ * A process holds whatever projector it loaded, not what is on disk now. A
+ * landing loads this module before it rebases (BUG-201 checks publication
+ * first), so a landing that started before a projector change reached master
+ * went on to publish commits that carried the change with the code from before
+ * it. On 2026-09-29 four landings did that after the `without` directive landed:
+ * their older renderer ignored it and published the full private test command
+ * in 17 public commits. The files converged at the next landing, but that
+ * history can no longer be replayed, which is what the release preflight does
+ * (BUG-253).
+ */
+export const PROJECTOR_MODULES = Object.freeze([
+  'scripts/lib/public-projection.mjs',
+  'scripts/lib/open-source-paths.mjs',
+  'scripts/lib/recipe-renderers.mjs',
+  'scripts/lib/public-projection-epoch.mjs',
+  'scripts/lib/public-metadata-policy.mjs',
+  'scripts/public-content-scan.mjs',
+]);
+const SOURCE_PROJECTOR_WORKER =
+  'scripts/lib/public-projection-source-worker.mjs';
+const PROJECTOR_REPOSITORY = fileURLToPath(new URL('../../', import.meta.url));
+
+function gitBlobId(bytes) {
+  return createHash('sha1')
+    .update('blob ' + bytes.length + '\0')
+    .update(bytes)
+    .digest('hex');
+}
+
+// Read while this module graph evaluates, so it is the projector this process
+// loaded; a rebase later changes the files, not the code already running.
+const RUNNING_PROJECTOR = Object.freeze(
+  Object.fromEntries(
+    PROJECTOR_MODULES.map(modulePath => [
+      modulePath,
+      gitBlobId(readFileSync(path.join(PROJECTOR_REPOSITORY, modulePath))),
+    ])
+  )
+);
+
+/**
+ * Whether the source commit carries a projector other than the running one.
+ * A commit without this file or the worker (a fixture, or history from before
+ * the handoff existed) has no projector of its own to hand to.
+ */
+async function carriesOtherProjector(sourceRepo, sourceSha) {
+  const listing = await git(
+    [
+      'ls-tree',
+      '-z',
+      sourceSha,
+      '--',
+      ...PROJECTOR_MODULES,
+      SOURCE_PROJECTOR_WORKER,
+    ],
+    { cwd: sourceRepo, encoding: 'buffer' }
+  );
+  const carried = new Map(
+    parseTreeRecords(listing).map(entry => [entry.path, entry.object])
+  );
+  if (
+    !carried.has(PROJECTOR_MODULES[0]) ||
+    !carried.has(SOURCE_PROJECTOR_WORKER)
+  ) {
+    return false;
+  }
+  return PROJECTOR_MODULES.some(
+    modulePath => carried.get(modulePath) !== RUNNING_PROJECTOR[modulePath]
+  );
+}
+
+/**
+ * Renders with the projector the source commit carries: its `scripts/` tree,
+ * extracted beside this repository's `node_modules` so its dependencies
+ * resolve, runs the projection in a child and returns the child's result.
+ */
+async function projectWithSourceProjector(options) {
+  const { sourceRepo, sourceSha } = options;
+  console.warn(
+    '[public-projection] this process loaded a different projector than ' +
+      sourceSha.slice(0, 12) +
+      " carries; rendering with the commit's own."
+  );
+  const cache = path.join(
+    PROJECTOR_REPOSITORY,
+    'node_modules',
+    '.cache',
+    'exawatt-projector'
+  );
+  await mkdir(cache, { recursive: true });
+  const root = await mkdtemp(path.join(cache, sourceSha.slice(0, 12) + '-'));
+  try {
+    const archive = path.join(root, 'scripts.tar');
+    await git(
+      ['archive', '--format=tar', '--output=' + archive, sourceSha, 'scripts'],
+      { cwd: sourceRepo }
+    );
+    await execFileAsync('tar', ['-xf', archive, '-C', root]);
+    const stdout = await runWithInput(
+      process.execPath,
+      [path.join(root, SOURCE_PROJECTOR_WORKER)],
+      {
+        cwd: sourceRepo,
+        input: Buffer.from(
+          JSON.stringify({ ...options, useRunningProjector: true })
+        ),
+        label: 'the projector ' + sourceSha.slice(0, 12) + ' carries',
+      }
+    );
+    return {
+      ...JSON.parse(stdout.toString('utf8')),
+      renderedBySourceProjector: true,
+    };
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 async function git(args, { cwd, encoding = 'utf8' } = {}) {
@@ -1838,6 +1964,7 @@ export async function projectPublicHistory({
   metadataProjector = projectPublicCommitMetadata,
   rebuildHistory = false,
   resumeFrom = null,
+  useRunningProjector = false,
 }) {
   const resolvedSourceRepo = path.resolve(sourceRepo);
   const resolvedSourceSha = (
@@ -1845,6 +1972,23 @@ export async function projectPublicHistory({
       cwd: resolvedSourceRepo,
     })
   ).trim();
+  // A custom metadata projector is a test seam and cannot cross a process.
+  if (
+    !useRunningProjector &&
+    metadataProjector === projectPublicCommitMetadata &&
+    (await carriesOtherProjector(resolvedSourceRepo, resolvedSourceSha))
+  ) {
+    return projectWithSourceProjector({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      destination: destination ? path.resolve(destination) : null,
+      fastForwardFrom,
+      manifestPath,
+      ...(explicitEpoch === undefined ? {} : { epoch: explicitEpoch }),
+      rebuildHistory,
+      resumeFrom,
+    });
+  }
   const epoch =
     explicitEpoch === undefined
       ? await readProjectionEpoch(resolvedSourceRepo)

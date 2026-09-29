@@ -473,6 +473,13 @@ test('a JSON public-variant directive fails closed', () => {
       '{"a":1,"exawatt:public-variant":{"replace":{"/a":{"why":"w"}}}}',
       /needs a "value"/u,
     ],
+    // BUG-253: a renderer that skipped a kind it did not know published the
+    // private value the directive existed to trim.
+    [
+      '{"a":"x y","exawatt:public-variant":{"trim":{"/a":{"why":"w"}}}}',
+      /does not know: trim/u,
+    ],
+    ['{"a":1,"exawatt:public-variant":[]}', /not an object/u],
   ];
   for (const [source, expected] of cases) {
     assert.throws(

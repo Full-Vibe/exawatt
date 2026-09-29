@@ -605,6 +605,9 @@ function resolvePointer(document, pointer, path) {
   return { container, key };
 }
 
+// `note` is prose for the reader of the private file and renders nothing.
+const JSON_DIRECTIVE_KINDS = new Set(['note', 'omit', 'without', 'replace']);
+
 /**
  * The JSON form of the same protocol. JSON carries no comments, so a JSON
  * document declares its public variant in a reserved `exawatt:public-variant`
@@ -654,6 +657,22 @@ export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
     );
   }
   delete document[JSON_DIRECTIVE_KEY];
+  // A kind this renderer does not know is refused, never skipped: an older
+  // renderer that skipped `without` published the private command it exists to
+  // trim (BUG-253).
+  const unknownKinds =
+    directive === null ||
+    typeof directive !== 'object' ||
+    Array.isArray(directive)
+      ? ['(not an object)']
+      : Object.keys(directive).filter(kind => !JSON_DIRECTIVE_KINDS.has(kind));
+  if (unknownKinds.length > 0) {
+    failDirective(
+      path +
+        ' public-variant declares directives this renderer does not know: ' +
+        unknownKinds.join(', ')
+    );
+  }
 
   for (const pointer of Object.keys(directive.omit ?? {})) {
     const { container, key } = resolvePointer(document, pointer, path);
