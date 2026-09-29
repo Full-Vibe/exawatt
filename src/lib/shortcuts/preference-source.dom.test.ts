@@ -12,6 +12,9 @@ import {
   installBridgeDouble,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
+// Module compilation belongs to suite setup, outside each storage transaction.
+// A timed-out dynamic import can otherwise write into the following case.
+import * as store from './preference-source';
 
 /**
  * The harm BUG-044 actually caused was not the 500 in the console; it was that
@@ -51,10 +54,6 @@ const REBIND: ShortcutOverride[] = [
   { shortcutId: 'command-terminal', keys: { key: '4', modifiers: ['meta'] } },
 ];
 
-async function store() {
-  return import('./preference-source');
-}
-
 function useContract(json?: string) {
   if (json === undefined) {
     delete process.env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON;
@@ -77,7 +76,7 @@ afterEach(() => {
 
 describe('a distribution with no account service', () => {
   it('keeps a rebind across launches and never asks the account', async () => {
-    const { saveShortcutOverrides, loadShortcutOverrides } = await store();
+    const { saveShortcutOverrides, loadShortcutOverrides } = store;
 
     await saveShortcutOverrides(REBIND);
     // The "next launch": a fresh read against the same device.
@@ -88,13 +87,13 @@ describe('a distribution with no account service', () => {
   });
 
   it('starts on defaults when the device has stored nothing', async () => {
-    const { loadShortcutOverrides } = await store();
+    const { loadShortcutOverrides } = store;
     await expect(loadShortcutOverrides()).resolves.toEqual([]);
   });
 
   it('remembers a deliberate reset instead of re-adopting old bindings', async () => {
     const { saveShortcutOverrides, resetShortcutOverrides, loadShortcutOverrides } =
-      await store();
+      store;
 
     await saveShortcutOverrides(REBIND);
     await resetShortcutOverrides();
@@ -107,7 +106,7 @@ describe('a distribution with no account service', () => {
       communityStorageKey(),
       '{"overrides":[{"shortcutId":"x"},{"shortcutId":42,"keys":{"key":"a"}}]}'
     );
-    const { loadShortcutOverrides } = await store();
+    const { loadShortcutOverrides } = store;
     await expect(loadShortcutOverrides()).resolves.toEqual([]);
   });
 });
@@ -120,7 +119,7 @@ describe('a distribution that does ship an account service', () => {
       status: 'loaded',
       overrides: REBIND,
     });
-    const { loadShortcutOverrides } = await store();
+    const { loadShortcutOverrides } = store;
 
     await expect(loadShortcutOverrides()).resolves.toEqual(REBIND);
     // Adopted, so the second launch answers locally even if the account is
@@ -130,7 +129,7 @@ describe('a distribution that does ship an account service', () => {
   });
 
   it('never lets an unreadable account replace real bindings with defaults', async () => {
-    const { saveShortcutOverrides, loadShortcutOverrides } = await store();
+    const { saveShortcutOverrides, loadShortcutOverrides } = store;
     await saveShortcutOverrides(REBIND);
 
     getKeyboardShortcuts.mockResolvedValue({ status: 'error' });
@@ -138,14 +137,14 @@ describe('a distribution that does ship an account service', () => {
   });
 
   it('syncs a save to the account after the device write', async () => {
-    const { saveShortcutOverrides } = await store();
+    const { saveShortcutOverrides } = store;
     await saveShortcutOverrides(REBIND);
     expect(updateKeyboardShortcuts).toHaveBeenCalledWith(REBIND);
   });
 
   it('still saves locally when the account sync fails', async () => {
     updateKeyboardShortcuts.mockRejectedValueOnce(new Error('offline'));
-    const { saveShortcutOverrides, loadShortcutOverrides } = await store();
+    const { saveShortcutOverrides, loadShortcutOverrides } = store;
 
     await expect(saveShortcutOverrides(REBIND)).resolves.toBeUndefined();
     getKeyboardShortcuts.mockResolvedValue({ status: 'error' });
@@ -169,7 +168,7 @@ describe('the packaged desktop', () => {
       },
     });
 
-    const { saveShortcutOverrides, loadShortcutOverrides } = await store();
+    const { saveShortcutOverrides, loadShortcutOverrides } = store;
     await saveShortcutOverrides(REBIND);
 
     expect(window.localStorage.getItem(communityStorageKey())).toBe(null);
