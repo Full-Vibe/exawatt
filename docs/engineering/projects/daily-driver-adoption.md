@@ -7587,3 +7587,33 @@ checkout or repeat the first slice's failed landing independently. Use Node
 verification: the shell's Node 26 makes jsdom localStorage undefined. The first
 slice passed its 635 delivery tests, selected behavior tests and community
 build before that unrelated runtime failure. No gate has been waived.
+
+### 2026-09-28 — Power controls integrated; physical acceptance remains open
+
+**The combined implementation is integrated at `5140cd9c396a`.** Delivery
+ticket 508 passed the repository floor and all ten declared spatial/Electron
+gates, then rebased cleanly over current master and passed the repeated floor
+(641 delivery tests and 472 related behavior tests). The affected Grok gate
+ran again; unchanged surfaces retained their recorded evidence. Public
+projection completed. No gate was waived. This supersedes the earlier
+instructions to resume or land the three implementation branches: all three
+task-owned worktrees/branches and their development servers are removed.
+
+The signed dogfood installation is queued for that immutable SHA. Do not call
+it installed until the worker's `dogfood_installed` metric or the device's
+`update-state.json` proves that SHA (or a descendant). The existing detached
+worker owns installation; do not start a second synchronous install or
+restart the operator's running app. Its log is under the common Git directory
+at `exawatt-delivery/dogfood-worker.log`.
+
+Resume from master, decision 0044 and incident 0029; no implementation branch
+needs recovery. BUG-228 is repaired. BUG-227 remains open for the physical
+AC/unplug, display-off/lock and sleep/wake matrix, plus separate renderer/GPU
+energy measurement. Synthetic events and real native assertions proved the
+implemented policy, not physical sleep recovery or historical energy blame.
+Verified new macOS Codex 0.156.1 launches are covered; existing processes,
+Claude's inhibitor, other unknown sources and source-side overrides remain
+outside Exawatt's control. Qwen support requires its separately documented
+configuration-precedence work. Shared eval helper teardown is BUG-230 /
+incident 0030, a separate follow-up. Do not market this as a globally
+battery-safe mode or pause Agents when the display locks.
