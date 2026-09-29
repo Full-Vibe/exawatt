@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { deriveConnectedSourceId } from './connected-source-store';
+import { readOrCreatePseudonymKey } from './diagnostics-pseudonyms';
 import {
   MAX_REPORT_BYTES,
   buildDiagnosticsReport,
@@ -22,6 +25,7 @@ function input(
     signedIn: false,
     liveSessions: 3,
     locale: 'en-US',
+    pseudonymKey: Buffer.alloc(32, 7),
     now: () => new Date('2026-08-14T12:00:00.000Z'),
     readLog: () => null,
     ...overrides,
@@ -201,5 +205,92 @@ describe('buildDiagnosticsReport', () => {
   it('adds no notes when nothing had to be dropped', () => {
     const report = buildDiagnosticsReport(input());
     expect(report.notes).toBeUndefined();
+  });
+});
+
+describe('ids derived from a server, in a report', () => {
+  // What `deriveConnectedSourceId` mints for a guessable alias: anyone can
+  // recompute it, so the raw id in a report names the server.
+  const guessable = deriveConnectedSourceId({
+    kind: 'ssh-alias',
+    alias: 'prod',
+    remotePort: 18789,
+  });
+  const coworker = `remote-${'a1'.repeat(12)}`;
+  const logs = logReader({
+    'connected-sources.jsonl': `${JSON.stringify({
+      event: 'connected-sources.connect',
+      sourceId: guessable,
+      outcome: 'failed',
+    })}\n`,
+    'main.jsonl': `${JSON.stringify({
+      event: 'renderer.error-boundary',
+      pathname: `/agent/${coworker}`,
+      message: `no mapping for ${guessable}`,
+    })}\n`,
+  });
+
+  it('leaves the machine keyed to this install, in every log', () => {
+    const report = buildDiagnosticsReport(input({ readLog: logs }));
+    const text = JSON.stringify(report);
+    expect(text).not.toContain(guessable);
+    expect(text).not.toContain(coworker);
+
+    const [act] = report.logs.find(
+      log => log.name === 'connected-sources.jsonl'
+    )!.lines as { sourceId: string }[];
+    const [error] = report.logs.find(log => log.name === 'main.jsonl')!
+      .lines as { pathname: string; message: string }[];
+    expect(act.sourceId).toMatch(/^source~[0-9a-f]{12}$/);
+    // The same id reads the same everywhere in the report, so lines still
+    // correlate with each other.
+    expect(error.message).toBe(`no mapping for ${act.sourceId}`);
+    expect(error.pathname).toMatch(/^\/agent\/remote~[0-9a-f]{12}$/);
+  });
+
+  it('gives another install a pseudonym nobody can match to this one', () => {
+    const ours = buildDiagnosticsReport(input({ readLog: logs }));
+    const theirs = buildDiagnosticsReport(
+      input({ readLog: logs, pseudonymKey: Buffer.alloc(32, 9) })
+    );
+    const idOf = (report: typeof ours) =>
+      (
+        report.logs.find(log => log.name === 'connected-sources.jsonl')!
+          .lines[0] as { sourceId: string }
+      ).sourceId;
+    expect(idOf(ours)).not.toBe(idOf(theirs));
+  });
+
+  it('withholds the ids when this install has no key, rather than sending them', () => {
+    const report = buildDiagnosticsReport(
+      input({ readLog: logs, pseudonymKey: null })
+    );
+    const text = JSON.stringify(report);
+    expect(text).not.toContain(guessable);
+    expect(text).toContain('source~withheld');
+    expect(text).toContain('remote~withheld');
+  });
+});
+
+describe('the install key', () => {
+  function scratch(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'exawatt-pseudonym-'));
+  }
+
+  it('is made once and read back the same', () => {
+    const dir = scratch();
+    const first = readOrCreatePseudonymKey(dir);
+    expect(first).toHaveLength(32);
+    expect(readOrCreatePseudonymKey(dir)).toEqual(first);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('answers null when the key cannot be read, never a fresh one', () => {
+    const dir = scratch();
+    // A key file that is a directory cannot be read and must not be replaced
+    // by a key the next report would not share.
+    fs.mkdirSync(path.join(dir, 'diagnostics-pseudonym.key'));
+    expect(readOrCreatePseudonymKey(dir)).toBeNull();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

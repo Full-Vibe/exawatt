@@ -34,7 +34,7 @@ export const SSH_FAILURE_SENTENCES = {
 } as const;
 
 /** The two ways an SSH login fails, before either leg names them its own way. */
-export type SshLoginFault = 'auth-rejected' | 'unreachable';
+type SshLoginFault = 'auth-rejected' | 'unreachable';
 
 /**
  * Ordered because the phrases overlap, and the first match wins.

@@ -85,8 +85,21 @@ function sourceStore(): ConnectedSourceStore {
  * file without limit, and one that cannot open its file degrades to a no-op:
  * instrumentation must never keep a source from being read.
  */
-let diagnostics: DiagnosticRecorder | null = null;
-function sourceDiagnostics(): DiagnosticRecorder {
+/*
+ * Two budgets over one file. What happens on its own (phase transitions,
+ * above all the reconnect ladder of a server that stays away) and what the
+ * operator does (Connect, Save, Detach, a refused projection) must not share
+ * one: when they did, a day of retries spent the whole run's allowance and
+ * the operator's own failed Connect then left no line (BUG-154 again).
+ */
+let diagnostics: {
+  acts: DiagnosticRecorder;
+  phases: DiagnosticRecorder;
+} | null = null;
+function sourceDiagnostics(): {
+  acts: DiagnosticRecorder;
+  phases: DiagnosticRecorder;
+} {
   if (diagnostics) return diagnostics;
   let file: DiagnosticRecorder;
   try {
@@ -96,16 +109,27 @@ function sourceDiagnostics(): DiagnosticRecorder {
   } catch {
     file = () => {};
   }
-  diagnostics = boundDiagnosticRecorder(file, { perMinute: 30, perRun: 600 });
+  diagnostics = {
+    acts: boundDiagnosticRecorder(file, { perMinute: 30, perRun: 600 }),
+    phases: boundDiagnosticRecorder(file, { perMinute: 30, perRun: 600 }),
+  };
   return diagnostics;
 }
 
-function record(event: string, fields: DiagnosticFields): void {
+function writeLine(
+  budget: 'acts' | 'phases',
+  event: string,
+  fields: DiagnosticFields
+): void {
   try {
-    sourceDiagnostics()(event, fields);
+    sourceDiagnostics()[budget](event, fields);
   } catch {
     // Never load-bearing: a diagnostic that throws must not fail the act.
   }
+}
+
+function record(event: string, fields: DiagnosticFields): void {
+  writeLine('acts', event, fields);
 }
 
 /**
@@ -173,7 +197,7 @@ function sourceRuntime(): ConnectedSourceRuntime {
         clearTimer: handle => clearTimeout(handle as NodeJS.Timeout),
       }),
     now: Date.now,
-    recordDiagnostic: sourceDiagnostics(),
+    recordDiagnostic: (event, fields) => writeLine('acts', event, fields ?? {}),
   });
   created.onChange(change => {
     broadcastToWindows(
@@ -181,8 +205,9 @@ function sourceRuntime(): ConnectedSourceRuntime {
       'connected-sources:changed',
       change
     );
-    const transition = phases.observe(change);
-    if (transition) record('connected-sources.phase', transition);
+    for (const line of phases.observe(change)) {
+      writeLine('phases', line.event, line.fields);
+    }
   });
   /*
    * Unlike `changed`, this one carries content, because a reply the operator

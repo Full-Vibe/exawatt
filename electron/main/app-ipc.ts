@@ -15,6 +15,7 @@ import {
   boundDiagnosticRecorder,
   type DiagnosticRecorder,
 } from './diagnostics-log';
+import { readOrCreatePseudonymKey } from './diagnostics-pseudonyms';
 import {
   buildDiagnosticsReport,
   type DiagnosticsReportInput,
@@ -493,6 +494,9 @@ export function registerMainChannels(deps: {
             updateStatus: runtime.currentUpdateStatus(),
             liveSessions: runtime.liveSessionCount(),
             locale: electron.app.getLocale(),
+            pseudonymKey: readOrCreatePseudonymKey(
+              electron.app.getPath('userData')
+            ),
           }),
           downloadsPath: () => electron.app.getPath('downloads'),
           showItemInFolder: filePath =>

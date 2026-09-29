@@ -159,7 +159,7 @@ export type SnapshotResult =
  * and never reported as one: the attempt closed whatever it had opened and
  * wrote nothing, so the only honest answer is that it stopped.
  */
-export interface ConnectionCancelled {
+interface ConnectionCancelled {
   ok: false;
   outcome: 'cancelled';
   message: string;

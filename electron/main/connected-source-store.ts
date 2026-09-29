@@ -145,8 +145,10 @@ function serverTarget(transport: unknown): string | null {
  * Derived rather than random, for the same reason a coworker's id is derived:
  * detaching and connecting the same server again must return the operator the
  * source they already had, not a second one wearing the same name. It is a
- * digest, so it carries no alias, host, user, or port in the clear and is safe
- * in a file, a log line, and a URL.
+ * digest, so it carries no alias, host, user, or port in the clear. It is not
+ * keyed, though, so anyone who guesses the alias can recompute it: fine on
+ * this machine, and replaced by a per-install pseudonym in anything that
+ * leaves it (`diagnostics-pseudonyms.ts`).
  */
 export function deriveConnectedSourceId(transport: SourceTransport): string {
   return sourceIdForTarget(transportTarget(transport));

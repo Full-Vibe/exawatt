@@ -208,28 +208,86 @@ describe('phase tracking', () => {
       change('idle', 'unavailable', 'host-unreachable', 3),
       change('idle', 'unavailable', 'host-unreachable', 3),
     ].map(entry => tracker.observe(entry));
-    expect(seen.map(entry => entry?.phase ?? null)).toEqual([
-      'opening-tunnel',
-      'connected',
-      null,
-      null,
-      'idle',
-      null,
+    expect(seen.map(lines => lines.map(line => line.fields.phase))).toEqual([
+      ['opening-tunnel'],
+      ['connected'],
+      [],
+      [],
+      ['idle'],
+      [],
     ]);
-    expect(seen[4]).toEqual({
-      sourceId,
-      phase: 'idle',
-      connection: 'unavailable',
-      failure: 'host-unreachable',
-    });
+    expect(seen[4]).toEqual([
+      {
+        event: 'connected-sources.phase',
+        fields: {
+          sourceId,
+          phase: 'idle',
+          connection: 'unavailable',
+          failure: 'host-unreachable',
+        },
+      },
+    ]);
     expect(leaks(seen)).toEqual([]);
   });
 
   it('treats a source that was detached and reattached as news', () => {
     const tracker = createPhaseTracker();
-    expect(tracker.observe(change('connected', 'live'))).not.toBeNull();
-    expect(tracker.observe(change('connected', 'live'))).toBeNull();
+    expect(tracker.observe(change('connected', 'live'))).toHaveLength(1);
+    expect(tracker.observe(change('connected', 'live'))).toHaveLength(0);
     tracker.forget(sourceId);
-    expect(tracker.observe(change('connected', 'live'))).not.toBeNull();
+    expect(tracker.observe(change('connected', 'live'))).toHaveLength(1);
+  });
+
+  it('summarises a day-long reconnect ladder instead of transcribing it', () => {
+    // A server away for a day, retried once a minute: every attempt moves
+    // the source out of Reconnecting's resting phase and back into it.
+    const tracker = createPhaseTracker();
+    const ATTEMPTS = 24 * 60;
+    const lines = [
+      change('connected', 'live'),
+      change('reconnecting', 'reconnecting', 'gateway-down'),
+      ...Array.from({ length: ATTEMPTS }, () => [
+        change('opening-tunnel', 'reconnecting', 'gateway-down'),
+        change('reconnecting', 'reconnecting', 'host-unreachable'),
+        change('reconnecting', 'reconnecting', 'gateway-down'),
+      ]).flat(),
+      change('connected', 'live'),
+    ].flatMap(entry => tracker.observe(entry));
+
+    // Each distinct transition once, a count at each doubling, and the
+    // total beside the transition that ended it: the budget a Connect needs
+    // is still there tomorrow.
+    expect(lines.length).toBeLessThan(24);
+    const retrying = lines.filter(
+      line => line.event === 'connected-sources.retrying'
+    );
+    expect(retrying.map(line => line.fields.attempts)).toEqual([
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512,
+      1024,
+      ATTEMPTS,
+    ]);
+    expect(retrying.at(-1)?.fields.ended).toBe(true);
+    expect(lines.at(-1)).toMatchObject({
+      event: 'connected-sources.phase',
+      fields: { phase: 'connected', connection: 'live' },
+    });
+    // A failure class the ladder had not seen yet is news, and is written.
+    expect(
+      lines.filter(
+        line =>
+          line.event === 'connected-sources.phase' &&
+          line.fields.failure === 'host-unreachable'
+      )
+    ).toHaveLength(1);
+    expect(leaks(lines)).toEqual([]);
   });
 });

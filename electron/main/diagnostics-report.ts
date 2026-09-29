@@ -4,6 +4,7 @@ import {
   anonymizeHomePath,
   redactDiagnosticValue,
 } from './diagnostics-redaction';
+import { pseudonymizeValue } from './diagnostics-pseudonyms';
 import type {
   DiagnosticsLogTail,
   DiagnosticsReport,
@@ -52,6 +53,12 @@ export interface DiagnosticsReportInput {
   signedIn: boolean;
   liveSessions: number;
   locale: string;
+  /**
+   * This install's key for the ids Exawatt derives from a server
+   * (`diagnostics-pseudonyms.ts`). Null when it could not be read or made, in
+   * which case those ids are withheld outright rather than sent as they are.
+   */
+  pseudonymKey: Buffer | null;
   now?: () => Date;
   /** Injected for tests; defaults to the real filesystem. */
   readLog?: (filePath: string) => string | null;
@@ -92,7 +99,11 @@ function defaultReadLog(filePath: string): string | null {
  * record is dropped rather than reported as malformed. A line that will not
  * parse is kept as redacted text: unparseable evidence still beats none.
  */
-function tailLog(name: string, raw: string | null): DiagnosticsLogTail {
+function tailLog(
+  name: string,
+  raw: string | null,
+  pseudonymKey: Buffer | null
+): DiagnosticsLogTail {
   if (raw === null) return { name, present: false, lines: [] };
   const rows = raw.split('\n').filter(line => line.trim().length > 0);
   // Compare BYTES, not characters: the reader slices a byte range, so a log
@@ -106,11 +117,15 @@ function tailLog(name: string, raw: string | null): DiagnosticsLogTail {
   // `summarizer.jsonl` lines that the old writer never sanitized, and those
   // are exactly the lines a first diagnostics report would pick up.
   const lines = selected.map(line => {
+    let redacted: unknown;
     try {
-      return redactDiagnosticValue(JSON.parse(line));
+      redacted = redactDiagnosticValue(JSON.parse(line));
     } catch {
-      return { unparsed: anonymizeHomePath(line).slice(0, 400) };
+      redacted = { unparsed: anonymizeHomePath(line).slice(0, 400) };
     }
+    // Every line, old or new and from every log: the pseudonym is applied
+    // where the id leaves the machine, not where it was written.
+    return pseudonymizeValue(redacted, pseudonymKey);
   });
   return {
     name,
@@ -151,14 +166,21 @@ export function buildDiagnosticsReport(
     // so the status object needs the same treatment as everything else. It is
     // the one field here that is not a bare enum or number.
     update: input.updateStatus
-      ? (redactDiagnosticValue(input.updateStatus) as Record<string, unknown>)
+      ? (pseudonymizeValue(
+          redactDiagnosticValue(input.updateStatus),
+          input.pseudonymKey
+        ) as Record<string, unknown>)
       : null,
     session: {
       signedIn: input.signedIn,
       liveSessions: input.liveSessions,
     },
     logs: LOG_NAMES.map(name =>
-      tailLog(name, readLog(path.join(input.logDirectory, name)))
+      tailLog(
+        name,
+        readLog(path.join(input.logDirectory, name)),
+        input.pseudonymKey
+      )
     ),
   };
 
