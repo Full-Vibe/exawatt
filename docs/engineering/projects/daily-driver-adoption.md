@@ -7739,5 +7739,15 @@ removal before advancing animation time, and proves zero render calls over
 30 frame opportunities. Restoring ordinary motion produces a partial arrival
 and matching final scales. No additional Fleet product defect was found.
 Physical AC/unplug/display-off/sleep-wake acceptance remains open under BUG-227.
-This supersedes the review's pending repair recommendation. Integration and
-signed dogfood installation are still subject to the normal delivery queue.
+Delivered on 2026-09-29: `57d9fd2c1825` is integrated into master and publicly
+projected. The repository floor passed (693 delivery tests, 155 related
+behavior tests), followed by all six declared gates: emergence, source power,
+device power, lifecycle, three-generation idempotency and exact resume. No
+gate was waived. The signed app at `/Applications/Exawatt.app` is installed
+at that exact SHA; `update-state.json` records `2026-09-29T08:33:15.900Z`, and
+the detached worker log records the passing packaged smoke and installation.
+The operator's running app was not restarted. Restart when ready; source
+control applies to newly launched processes. The task-owned worktree, branch
+and development server are removed. This supersedes both the review's pending
+repair recommendation and the in-progress checkpoint above. Resume from
+master; BUG-248 is fixed, while BUG-227's physical acceptance remains open.
