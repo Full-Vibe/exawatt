@@ -537,6 +537,30 @@ test('Spatial viewport owners require the real-route geometry gate', () => {
   }
 });
 
+test('every module the Fleet board canvas was split into owes what the canvas owed', () => {
+  const owed = file => missingSurfaceGates([file]).map(entry => entry.gate);
+  const canvas = owed(
+    'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx'
+  );
+  assert.ok(canvas.includes('eval:spatial:emergence'));
+  for (const part of [
+    'operations-board-agent-layer.tsx',
+    'operations-board-camera-rig.tsx',
+    'operations-board-controls.tsx',
+    'operations-board-delegation-layer.tsx',
+    'operations-board-env.ts',
+    'operations-board-materials.ts',
+    'operations-board-population-layer.tsx',
+    'operations-board-zone-layer.tsx',
+  ]) {
+    assert.deepEqual(
+      owed(`src/components/fleet/spatial/operations-board/${part}`),
+      canvas,
+      part
+    );
+  }
+});
+
 test('the shared menu primitive owes the launcher gate', () => {
   assert.deepEqual(
     missingSurfaceGates(['src/components/ui/option-menu.tsx']).map(

@@ -91,6 +91,28 @@ const isWorkspaceState = file =>
 const workspaceStateModule = (file, ...modules) =>
   modules.some(module => file === `${WORKSPACE_STATE_DIR}${module}.ts`);
 
+/**
+ * The Fleet board's canvas. ENG-004 V4.0 split the one 4,187-line canvas
+ * into these modules by pure motion, so every gate that named the canvas
+ * file owes the same eval for each of them: the agent layer carries the
+ * emergence and status marks, the camera rig the pointer and wheel, the
+ * controls the in-world DOM that sits over the canvas.
+ */
+const BOARD_CANVAS_DIR = 'src/components/fleet/spatial/operations-board/';
+const BOARD_CANVAS_MODULES = [
+  'operations-board-canvas.tsx',
+  'operations-board-agent-layer.tsx',
+  'operations-board-camera-rig.tsx',
+  'operations-board-controls.tsx',
+  'operations-board-delegation-layer.tsx',
+  'operations-board-env.ts',
+  'operations-board-materials.ts',
+  'operations-board-population-layer.tsx',
+  'operations-board-zone-layer.tsx',
+];
+const isBoardCanvas = file =>
+  BOARD_CANVAS_MODULES.some(module => file === `${BOARD_CANVAS_DIR}${module}`);
+
 export const SURFACE_GATES = [
   {
     gate: 'eval:electron:device-power',
@@ -606,8 +628,7 @@ export const SURFACE_GATES = [
       file === 'src/components/fleet/spatial/spatial-navigation-state.ts' ||
       file ===
         'src/components/fleet/spatial/operations-board/operations-board-surface.tsx' ||
-      file ===
-        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      isBoardCanvas(file) ||
       file.startsWith('src/app/eval/t11-altitude-handoff/') ||
       file === 'scripts/r3f-eval/spatial.mjs',
   },
@@ -623,8 +644,7 @@ export const SURFACE_GATES = [
     gate: 'eval:spatial:emergence',
     why: 'departed Agent bodies and status marks must unmount and release the demand loop, including reduced motion',
     match: file =>
-      file ===
-        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      isBoardCanvas(file) ||
       file ===
         'src/components/fleet/spatial/operations-board/operations-board-emergence.ts' ||
       file === 'src/app/eval/t5-operations-board/page.tsx' ||
@@ -635,8 +655,7 @@ export const SURFACE_GATES = [
     why: 'drag band-selects, wheel pans, pinch zooms at the cursor, and a click still drills a zone',
     match: file =>
       file === 'src/components/fleet/spatial/spatial-fleet-client.tsx' ||
-      file ===
-        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      isBoardCanvas(file) ||
       file === 'scripts/spatial-pointer-eval.mjs',
   },
   {
@@ -720,8 +739,7 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'src/components/workspace/session-overview-card.tsx' ||
       file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
-      file ===
-        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      isBoardCanvas(file) ||
       file === 'src/components/nav/command-altitude-nav.tsx' ||
       file === 'scripts/electron-navigation-eval.mjs',
   },
@@ -782,8 +800,7 @@ export const SURFACE_GATES = [
       file === 'src/components/workspace/expose-overlay.tsx' ||
       file === 'src/components/workspace/session-overview-card.tsx' ||
       file === 'src/components/fleet/spatial/spatial-selection-panel.tsx' ||
-      file ===
-        'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx' ||
+      isBoardCanvas(file) ||
       file === 'scripts/electron-session-spatial-parity-eval.mjs',
   },
 ];

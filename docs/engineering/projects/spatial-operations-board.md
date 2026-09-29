@@ -2871,6 +2871,12 @@ screen in the Air light theme, where the mark's colour nearly equals the hex
 body. That is the other half of "dashed rings read like the Idle icon": the
 board had no visible Idle mark to compare with.
 
+Also closed: the landing's surface gates still named only
+`operations-board-canvas.tsx`, so after the V4.0 split a change to the agent
+layer, camera rig or controls owed no Fleet eval. Every gate that named the
+canvas now names all nine modules it became (`isBoardCanvas` in
+`scripts/lib/delivery-policy.mjs`), which is why this change ran them.
+
 Contract: `status-mark-subjects.test.ts` builds one fleet with stopped,
 delegating, overflowing and unreported Agents and asserts that the bar's
 census equals the board's marks, child lights and lobe counts for every
