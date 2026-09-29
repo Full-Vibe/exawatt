@@ -808,11 +808,17 @@ try {
           const session = sessions?.find(
             item => item.harness === 'opencode' && item.id !== originalSessionId
           );
-          if (session?.harnessSessionId === 'ses_eval_opencode_1234') {
-            return {
-              session,
-              buffer: await window.electron?.pty?.buffer(session.id),
-            };
+          // The identity arrives before the fixture has printed its argv, so
+          // a buffer read at the identity alone can be the lifecycle line
+          // only; wait for the argv the check reads.
+          const buffer = session
+            ? ((await window.electron?.pty?.buffer(session.id)) ?? '')
+            : '';
+          if (
+            session?.harnessSessionId === 'ses_eval_opencode_1234' &&
+            buffer.includes('FAKE_OPENCODE_ARGS')
+          ) {
+            return { session, buffer };
           }
           await new Promise(resolveWait => setTimeout(resolveWait, 100));
         }
@@ -1003,7 +1009,13 @@ try {
           const buffer = session
             ? await window.electron?.pty?.buffer(session.id)
             : '';
-          if (session?.harnessSessionId && buffer.includes('FAKE_QWEN_ARGS'))
+          // The fixture prints its argv, then its settings layer, then the
+          // hook count; a read at the first line alone missed the rest.
+          if (
+            session?.harnessSessionId &&
+            buffer.includes('FAKE_QWEN_ARGS') &&
+            buffer.includes('FAKE_QWEN_HOOK_URLS:')
+          )
             return { session, buffer };
           await new Promise(resolveWait => setTimeout(resolveWait, 100));
         }
@@ -1072,7 +1084,13 @@ try {
           const buffer = session
             ? await window.electron?.pty?.buffer(session.id)
             : '';
-          if (session?.harnessSessionId && buffer.includes('FAKE_QWEN_ARGS'))
+          // The fixture prints its argv, then its settings layer, then the
+          // hook count; a read at the first line alone missed the rest.
+          if (
+            session?.harnessSessionId &&
+            buffer.includes('FAKE_QWEN_ARGS') &&
+            buffer.includes('FAKE_QWEN_HOOK_URLS:')
+          )
             return { session, buffer };
           await new Promise(resolveWait => setTimeout(resolveWait, 100));
         }

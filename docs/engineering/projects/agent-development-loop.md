@@ -508,6 +508,16 @@ tests remain the recovery floor during the rollout.
     `electron-eval.test.mjs`.
   - `dev-idle-watch.test.mjs` waited a fixed 60 ms for four polls and failed
     under load during this work; it waits for the shutdown now.
+  - Waits that finally wait found two more eval defects, both reading state
+    too early. `eval:electron:project-agent` asserted that a Codex model and
+    effort choice survive an engine round trip, which the D49 launcher never
+    did (choosing an engine selects its catalog default); it re-chooses them
+    and proves the launch carries what the composer shows.
+    `eval:electron:agent-sources` read the OpenCode and Qwen buffers at the
+    first marker, before the fixture had printed the lines it checks; it
+    waits for them. Separately, a launch still in flight left its composer
+    looking open, so resume pressed a Start that left with it;
+    `summonComposer` waits for the busy Start to detach.
 
 - 2026-09-24, BUG-208, BUG-210, BUG-211 (H20): **every verification
   command has a route, and a test says so.** `theme:check` was repaired on

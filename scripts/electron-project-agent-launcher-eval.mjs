@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
+  chooseLauncherAxis,
   openSetupDrawer,
   waitForLauncherToSettle,
   waitForPageCondition,
@@ -1003,6 +1004,20 @@ try {
       check(
         'an unlaunched policy choice survives a harness round trip',
         (await launcherAxis(page, 'permission').innerText()).includes('Auto')
+      );
+      // Choosing an engine selects that engine's catalog default model and
+      // effort (the D49 launcher); only the permission policy is remembered
+      // across the round trip. Choose the model and effort again, so the
+      // launch below proves the Agent runs what the composer shows. This
+      // eval's async waits resolved on their first poll until BUG-217, so the
+      // round trip's reset was never observed here.
+      await chooseLauncherAxis(page, 'model', /Eval Codex Terra/i);
+      await chooseLauncherAxis(page, 'thinking', /Max.*Maximum evaluator/i);
+      check(
+        'the composer shows the model and effort the launch will carry',
+        (await launcherAxis(page, 'model').innerText()).includes(
+          'Eval Codex Terra'
+        ) && (await launcherAxis(page, 'thinking').innerText()).includes('Max')
       );
       await page
         .getByLabel('Initial task for the new Agent')
