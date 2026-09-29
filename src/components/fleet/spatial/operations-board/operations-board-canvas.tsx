@@ -45,11 +45,8 @@ import type {
 } from './operations-board-presentation';
 
 export type { OperationsBoardViewport } from './operations-board-camera';
-import {
-  useLowPowerMode,
-  usePageVisible,
-  useReducedMotion,
-} from './operations-board-env';
+import { useLowPowerMode, useReducedMotion } from './operations-board-env';
+import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
 import { BoardCameraRig } from './operations-board-camera-rig';
 import { BoardGrid, ZoneLayer } from './operations-board-zone-layer';
 import {
@@ -131,8 +128,9 @@ export function OperationsBoardCanvas({
   theme: SpatialThemeSnapshot;
 }) {
   const reduced = useReducedMotion();
-  const lowPower = useLowPowerMode();
-  const pageVisible = usePageVisible();
+  const hardwareLowPower = useLowPowerMode();
+  const { lowPower, visible: pageVisible } =
+    useHostRenderPolicy(hardwareLowPower);
   const ambient = !reduced && !lowPower && pageVisible;
   // During a Team→Fleet handoff the lazy postprocessing chunk's shader
   // compile is the single biggest main-thread stall — landing it mid

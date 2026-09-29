@@ -38,16 +38,3 @@ export function useLowPowerMode(): boolean {
   }, []);
   return lowPower;
 }
-
-/** V2.4 ambient-motion gate: pulses/rotation run only while the tab is
- *  visible and motion is welcome. Hidden tab or reduced motion ⇒ park. */
-export function usePageVisible(): boolean {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const update = () => setVisible(document.visibilityState === 'visible');
-    update();
-    document.addEventListener('visibilitychange', update);
-    return () => document.removeEventListener('visibilitychange', update);
-  }, []);
-  return visible;
-}
