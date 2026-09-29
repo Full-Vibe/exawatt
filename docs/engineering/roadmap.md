@@ -3093,6 +3093,22 @@ app served nothing there. `/favicon.ico` now serves the distribution icon the
 metadata declares (4 of 4 runs pass), and the eval names the URL of any resource
 that fails to load.
 
+### BUG-253 A stale projector published history the release cannot replay
+
+Status: done · ENG-030 · found 2026-09-29 dispatching 0.1.14; resolved 2026-09-29.
+
+The 0.1.14 release failed "Prepare exact public provenance": replaying the
+projection from the recorded epoch to the tag produced a public commit that
+exists nowhere. Four landings between 05:25 and 05:38Z on 2026-09-29 published
+17 commits with the projector they loaded before their rebase, older than the
+`without` directive those commits carried, so the public `package.json` kept
+the unfiltered delivery-suite command until the next landing re-converged the
+files. A commit is now rendered only by the projector it carries, unknown
+public-variant directive kinds are refused, and the replay epoch is
+re-anchored after the window. The `v0.1.14` tag carries the old epoch and
+cannot pass its own preflight; the release is re-cut as 0.1.15.
+[Log](projects/open-source-readiness.md#2026-09-29--a-stale-projector-published-history-the-release-cannot-replay-bug-253).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
