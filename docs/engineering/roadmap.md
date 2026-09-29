@@ -2313,6 +2313,25 @@ and nowhere on Team or Fleet while an Agent runs; that gap is in scope. A
 design research pass on those products comes before shaping. Evidence:
 [ENG-033 decision entry](projects/connected-openclaw-and-hosted-agents.md#2026-09-28--operator-decision-exawatt-hosts-the-harness-machines).
 
+Finding (BUG-243, 2026-09-28, pre-0.1.14 review): S1's "fails open" let
+through kills it never checked. A listing that timed out read as "nothing
+matched", and the 20-process limit counted the `ps` rows, so on a loaded
+machine `pkill` could reach 600 processes unrefused; a corrupt `settings.json`
+read as the control being off. Now a guard the operator turned on refuses a
+kill it could not check, naming the cause, and records `safety.undecided`;
+the agent's retry succeeds once the listing answers. A target the shell
+decides only at run time (`"$PATTERN"`, `xargs pkill`) still runs and is
+recorded, because refusing it would refuse the same legitimate script
+forever. The dry run now also splits commands the way a shell does and leaves
+out the command's own ancestors, as `pkill` does. Residual gaps, all by
+design or outside the hook: a check slower than Claude Code's 5 s hook
+timeout still proceeds (the harness's own fail-open; listings run side by
+side, about 0.1 s on a live machine); scripts the agent runs (`./stop.sh`)
+and other languages' kill calls are not read; `pkill -g 0` and `-t` resolve
+against Exawatt's process group and terminal, not the agent's; another
+Session's non-harness processes (its dev server) are not protected; a
+settings file unreadable since launch leaves new launches without the hook.
+
 ## Backlog
 
 ### Public defect-record boundary
@@ -2845,12 +2864,37 @@ load is now retried, every post-ready step runs whatever it does, and Reload
 on a launch screen left after startup opens the workspace. Gate:
 `command-surface.test.ts`, mutation-checked. [Findings](projects/stellar-small-fleet.md#findings-log).
 
+### BUG-243 The process-kill guard let through kills it could not check
+
+Status: fixed · ENG-044 · found 2026-09-28 in the pre-0.1.14 review.
+
+Every listing failure (timeout, missing binary, error) read as an empty
+listing, the 20-process limit counted `ps` rows instead of `pgrep` pids, and a
+corrupt `settings.json` read as the control off, so a slow machine let a
+600-process `pkill` through. Accuracy: the dry run matched the agent's own
+Session shell and harness, which real `pkill` excludes as ancestors ("would
+kill zsh, claude"); it missed `/usr/bin/pkill`, `\pkill`, `sh -c`/`bash -c`,
+`eval`, and patterns with `|` or `(`; `-d,` and `-l` output was misparsed,
+reading ports as pids; npm-installed Gemini, Qwen and Codex (`node`) were
+unprotected. Fix: listings resolve with their exit status or reject,
+`pgrep`/`killall` exit codes are read per tool, an empty process table is a
+failure, and an undecidable check refuses with its cause and records
+`safety.undecided`; commands are split by a shell-grammar lexer, dry-run
+options are parsed as macOS getopt reads them, ancestors come from one
+process table, harnesses are recognised by interpreter script. Settings ▸
+Safety reads the controls through `settings:get-safety-controls`, shows a
+failed read with Retry instead of Off, and says when a change did not save.
+Proof: table-driven tests in `electron/main/safety/`, and a live probe that
+reproduced "fish, claude" and then allowed it. Residual gaps: ENG-044's
+2026-09-28 finding.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ENG-044 S1 “It fails open: a guard that cannot answer lets the command run” | BUG-243, 2026-09-28 | A guard the operator turned on refuses a kill it could not check and records `safety.undecided`; only a target the shell decides at run time runs unchecked, and Claude Code's own hook timeout still proceeds. |
 | ENG-033 H3 “NOT ACTIVE; requires a separate design and authorization pass” | operator, 2026-09-28 | Direction decided: Exawatt hosts the machines agent harnesses run on. The design pass on provisioning, custody, deletion, billing, and control-plane ownership still gates implementation. |
 | BUG-227 observational-only boundary | BUG-227 supported-process implementation, 2026-09-28 | Settings now controls Exawatt-owned sleep prevention for verified Codex 0.156.1 launches. Per-launch evidence and native assertion checks permit the scoped control; physical sleep/wake acceptance remains open, and Claude and other independent inhibitors are never claimed controlled. |
 | BUG-227's open question to “choose an explicit battery policy”                                                                                                                            | operator-approved decision `0044`, 2026-09-25                                                 | Recommendation is device-local `Never` / `On AC only` (default) / `On AC and battery`, with display locking independent from Session lifecycle. Setting work remains gated on supported per-harness control; Claude's native inhibitor cannot currently honor the battery boundary, so the app must not claim otherwise. |

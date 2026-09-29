@@ -1,16 +1,15 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   SAFETY_CONTROLS,
   isSafetyControlEnabled,
   type SafetyControl,
   type SafetyControlId,
+  type SafetyControlSettings,
 } from '@exawatt/core';
-import type {
-  DesktopSettingsApi,
-  ExawattSettings,
-} from '@exawatt/core/desktop-bridge';
+import type { DesktopSettingsApi } from '@exawatt/core/desktop-bridge';
+import { Button } from '@/components/ui/button';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
 
@@ -40,47 +39,87 @@ function ControlFacts({ control }: { control: SafetyControl }) {
   );
 }
 
+/**
+ * What the Safety page knows about the operator's choices. `unreadable` is
+ * its own state: a read that failed says nothing about whether a control is
+ * on, so the page never shows it as off.
+ */
+type SafetyState =
+  | { status: 'loading' }
+  | { status: 'ready'; controls: SafetyControlSettings }
+  | { status: 'unreadable' };
+
 function useSafetySettings() {
   const [api, setApi] = useState<DesktopSettingsApi | null>(null);
-  const [settings, setSettings] = useState<ExawattSettings | null>(null);
+  const [state, setState] = useState<SafetyState>({ status: 'loading' });
+  const [saveFailed, setSaveFailed] = useState(false);
   // One channel for reads and writes: a write supersedes the first read, so
   // a slow initial read can never paint over the operator's newer choice.
   const requests = useLatestRequest();
+
+  const load = useCallback(
+    (bridge: DesktopSettingsApi) => {
+      const ticket = requests.begin();
+      void bridge.getSafetyControls().then(
+        next => {
+          if (ticket.current) setState(next);
+        },
+        () => {
+          if (ticket.current) setState({ status: 'unreadable' });
+        }
+      );
+    },
+    [requests]
+  );
 
   useEffect(() => {
     const bridge = window.electron?.settings;
     if (!bridge) return;
     setApi(bridge);
-    const ticket = requests.begin();
-    void bridge.get().then(
-      next => {
-        if (ticket.current) setSettings(next);
-      },
-      () => undefined
-    );
-    const off = bridge.onChanged?.(setSettings);
+    load(bridge);
+    // Any settings write elsewhere re-reads the controls from their source
+    // rather than trusting the broadcast copy.
+    const off = bridge.onChanged?.(() => load(bridge));
     return () => {
       requests.invalidate();
       off?.();
     };
-  }, [requests]);
+  }, [load, requests]);
 
   const setControl = async (id: SafetyControlId, enabled: boolean) => {
     if (!api) return;
     const ticket = requests.begin();
+    setSaveFailed(false);
     try {
       const next = await api.setSafetyControl(id, enabled);
-      if (ticket.current) setSettings(next);
+      if (ticket.current)
+        setState({ status: 'ready', controls: next.safety ?? {} });
     } catch {
-      // A refused write leaves the switch showing the state that is real.
+      // The switch keeps showing the state that is real; the operator is
+      // told the change did not take.
+      if (!ticket.current) return;
+      setSaveFailed(true);
+      // A refused write may mean the file itself became unreadable.
+      load(api);
     }
   };
 
-  return { available: api !== null, settings, setControl };
+  return {
+    available: api !== null,
+    state,
+    saveFailed,
+    setControl,
+    retry: () => {
+      if (!api) return;
+      setState({ status: 'loading' });
+      load(api);
+    },
+  };
 }
 
 export function SafetySettings() {
-  const { available, settings, setControl } = useSafetySettings();
+  const { available, state, saveFailed, setControl, retry } =
+    useSafetySettings();
   return (
     <section
       aria-labelledby="safety-heading"
@@ -108,13 +147,30 @@ export function SafetySettings() {
           {SAFETY_CONTROLS.map(control => (
             <div key={control.id} data-safety-control={control.id}>
               <SettingRow title={control.label} description={control.purpose}>
-                {available ? (
+                {available && state.status === 'unreadable' ? (
+                  <div className="flex shrink-0 items-center gap-3">
+                    <p
+                      role="status"
+                      className="font-ui text-chrome-meta text-[var(--settings-dim)]"
+                    >
+                      Couldn&apos;t load
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={retry}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : available ? (
                   <SettingSwitch
-                    checked={isSafetyControlEnabled(
-                      settings?.safety,
-                      control.id
-                    )}
-                    disabled={settings === null}
+                    checked={
+                      state.status === 'ready' &&
+                      isSafetyControlEnabled(state.controls, control.id)
+                    }
+                    disabled={state.status !== 'ready'}
                     label={control.label}
                     onChange={next => void setControl(control.id, next)}
                   />
@@ -127,6 +183,14 @@ export function SafetySettings() {
               <ControlFacts control={control} />
             </div>
           ))}
+          {saveFailed && (
+            <p
+              role="alert"
+              className="py-3 font-ui text-chrome-label text-[var(--settings-red)]"
+            >
+              That change didn&apos;t save. Try again.
+            </p>
+          )}
         </SettingsGroup>
       </div>
     </section>

@@ -248,6 +248,7 @@ const bridge = {
   },
   settings: {
     get: () => invoke('settings:get'),
+    getSafetyControls: () => invoke('settings:get-safety-controls'),
     setAppearance: appearance => invoke('settings:set-appearance', appearance),
     setAttentionNotifications: enabled =>
       invoke('settings:set-attention-notifications', enabled),

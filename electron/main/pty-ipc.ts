@@ -30,7 +30,10 @@ import {
 } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
-import { createSafetyGuard } from './safety/safety-guard';
+import {
+  createSafetyGuard,
+  enforcedSafetyControls,
+} from './safety/safety-guard';
 import { delegationMonitor } from './harness-events/delegation-monitor';
 import { codexDelegationObserver } from './harness-events/codex-app-server';
 import { wireReportedTurnTruth } from './harness-events/turn-truth';
@@ -64,6 +67,7 @@ import {
   setReentryRecapEnabled,
   setAppearancePreferences,
   setSafetyControl,
+  readSafetyControls,
 } from './settings-store';
 import { applyNativeAppearancePreference } from './appearance';
 import { listResumeCandidates } from './pty/resume-candidates';
@@ -293,17 +297,25 @@ export function registerPtyIPC(
   // quiescence. A source without the capability simply never publishes.
   delegationMonitor.attach(harnessEventChannel, ptySessions);
   // ENG-044 safety controls: a launch carries the hooks of the controls that
-  // are on, and the guard answers them against the live settings.
-  ptySessions.setSafetyControls(() => loadSettings().safety ?? {});
+  // are on, and the guard answers them against the live settings. An
+  // unreadable settings file keeps the last choice read in this run; with
+  // none, a launch carries no hook and the guard keeps judging the hooks
+  // earlier launches carry.
+  const safetyControls = enforcedSafetyControls({
+    read: readSafetyControls,
+    record: diagnostics,
+  });
+  ptySessions.setSafetyControls(() => safetyControls() ?? {});
   harnessEventChannel.setGuard(
     createSafetyGuard({
-      settings: () => loadSettings().safety ?? {},
+      controls: safetyControls,
       protectedPids: () =>
         new Set([
           process.pid,
           ...app.getAppMetrics().map(metric => metric.pid),
           ...ptySessions.sessionProcessIds(),
         ]),
+      sessionRootPid: id => ptySessions.sessionProcessId(id),
       record: diagnostics,
     })
   );
@@ -825,6 +837,7 @@ export function registerPtyIPC(
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());
+  handleTrusted('settings:get-safety-controls', () => readSafetyControls());
   handleTrusted('settings:set-appearance', (_event, appearance: unknown) => {
     const settings = setAppearancePreferences(appearance);
     const resolved = applyNativeAppearancePreference(

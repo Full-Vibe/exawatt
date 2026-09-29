@@ -28,6 +28,7 @@ import {
   type OperatorStatsSyncEvent,
   type SafetyControlId,
   type SafetyControlSettings,
+  type SafetyControlsRead,
 } from '@exawatt/core';
 import type {
   DeviceKeepAwakePolicy,
@@ -695,6 +696,27 @@ export function loadSettings(): StoredSettings {
     );
   }
   return settings;
+}
+
+/**
+ * The safety controls as stored, or `unreadable` (ENG-044). `loadSettings`
+ * answers an unreadable file with the recovery set, which carries no safety
+ * choices; read through it, a control the operator turned on would look off.
+ */
+export function readSafetyControls(): SafetyControlsRead {
+  let result;
+  try {
+    result = readJsonFile(settingsFile(), validStoredSettings);
+  } catch {
+    reportJsonStoreReadFailure(settingsFile());
+    return { status: 'unreadable' };
+  }
+  if (result.status === 'absent') return { status: 'ready', controls: {} };
+  if (result.status === 'corrupt') return { status: 'unreadable' };
+  return {
+    status: 'ready',
+    controls: parseSettings(result.value).safety ?? {},
+  };
 }
 
 /**

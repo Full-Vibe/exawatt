@@ -937,8 +937,11 @@ Built:
   in `@exawatt/core` declares each control once for Settings ▸ Safety and for
   Electron main; a control that is on adds one DECIDING hook to the launch
   (Claude Code `PreToolUse` matched to `Bash`), which the channel answers on
-  its own `/guard` path through `electron/main/safety/`, never emits as an
-  event, and fails open. Every refusal is `safety.denied` in `logs/main.jsonl`
+  its own `/guard` path through `electron/main/safety/` and never emits as an
+  event. A kill the guard could not check is refused with its cause, never
+  read as "nothing matched" (BUG-243); a target the shell decides at run time
+  runs. Every refusal is `safety.denied` and every unjudged command
+  `safety.undecided` in `logs/main.jsonl`
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a lightweight task + Launch
   Configuration ribbon + Start composer. Its selected configuration carries an

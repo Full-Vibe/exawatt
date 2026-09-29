@@ -193,6 +193,12 @@ export class PtySessionManager extends EventEmitter {
     return [...this.sessions.values()].map(session => session.proc.pid);
   }
 
+  /** One live Session's root process: the command an agent runs descends
+   *  from it (ENG-044). */
+  sessionProcessId(id: string): number | null {
+    return this.sessions.get(id)?.proc.pid ?? null;
+  }
+
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
     this.identities = new SessionIdentityStore(

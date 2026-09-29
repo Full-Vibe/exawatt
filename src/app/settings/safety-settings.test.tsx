@@ -11,6 +11,7 @@ import type {
   DesktopSettingsApi,
   ExawattSettings,
 } from '@exawatt/core/desktop-bridge';
+import type { SafetyControlsRead } from '@exawatt/core';
 import {
   installBridgeDouble,
   removeBridgeDouble,
@@ -19,19 +20,31 @@ import { SafetySettings } from './safety-settings';
 
 type SettingsBridge = Pick<
   DesktopSettingsApi,
-  'get' | 'onChanged' | 'setSafetyControl'
+  'getSafetyControls' | 'onChanged' | 'setSafetyControl'
 >;
 
-function installSettings(initial: ExawattSettings = {}) {
+function installSettings(
+  initial: ExawattSettings = {},
+  failures: { read?: 'reject' | 'unreadable'; save?: boolean } = {}
+) {
   let store = initial;
-  const bridge: SettingsBridge = {
-    get: vi.fn(() => Promise.resolve(store)),
+  const bridge = {
+    getSafetyControls: vi.fn((): Promise<SafetyControlsRead> => {
+      if (failures.read === 'reject') {
+        return Promise.reject(new Error('settings:get-safety-controls failed'));
+      }
+      if (failures.read === 'unreadable') {
+        return Promise.resolve({ status: 'unreadable' });
+      }
+      return Promise.resolve({ status: 'ready', controls: store.safety ?? {} });
+    }),
     onChanged: vi.fn(() => () => undefined),
     setSafetyControl: vi.fn(async (id: SafetyControlId, enabled: boolean) => {
+      if (failures.save) throw new Error('settings.json needs recovery');
       store = { ...store, safety: { ...store.safety, [id]: enabled } };
       return store;
     }),
-  };
+  } satisfies SettingsBridge;
   installBridgeDouble({ platform: 'darwin', settings: bridge });
   return bridge;
 }
@@ -86,6 +99,42 @@ describe('SafetySettings', () => {
     await renderSafety();
 
     expect(switchFor(control.id).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it.each(['reject', 'unreadable'] as const)(
+    'never shows a control as off when its read fails (%s), and retries',
+    async failure => {
+      const [control] = SAFETY_CONTROLS;
+      const failures: { read?: 'reject' | 'unreadable' } = { read: failure };
+      const bridge = installSettings(
+        { safety: { [control.id]: true } },
+        failures
+      );
+      await renderSafety();
+
+      expect(screen.queryAllByRole('switch')).toHaveLength(0);
+
+      delete failures.read;
+      await act(async () => {
+        fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
+      });
+
+      expect(bridge.getSafetyControls).toHaveBeenCalledTimes(2);
+      expect(switchFor(control.id).getAttribute('aria-checked')).toBe('true');
+    }
+  );
+
+  it('tells the operator when a change was refused, and keeps the real state', async () => {
+    const [control] = SAFETY_CONTROLS;
+    installSettings({}, { save: true });
+    await renderSafety();
+
+    await act(async () => {
+      fireEvent.click(switchFor(control.id));
+    });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(switchFor(control.id).getAttribute('aria-checked')).toBe('false');
   });
 
   it('offers no switch outside the desktop app, where nothing launches agents', async () => {

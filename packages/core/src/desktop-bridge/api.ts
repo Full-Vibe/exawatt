@@ -227,6 +227,7 @@ interface DesktopRoadmapApi {
 
 export interface DesktopSettingsApi {
   get: BridgeInvoke<'settings:get'>;
+  getSafetyControls: BridgeInvoke<'settings:get-safety-controls'>;
   setAppearance: BridgeInvoke<'settings:set-appearance'>;
   setAttentionNotifications: BridgeInvoke<'settings:set-attention-notifications'>;
   setDockBadge: BridgeInvoke<'settings:set-dock-badge'>;

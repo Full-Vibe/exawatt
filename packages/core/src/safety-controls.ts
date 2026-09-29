@@ -42,6 +42,15 @@ export const SAFETY_CONTROLS: readonly SafetyControl[] = [
 /** The operator's choices. An absent control is off. */
 export type SafetyControlSettings = Partial<Record<SafetyControlId, boolean>>;
 
+/**
+ * One read of the operator's choices. `unreadable` is its own answer: a
+ * settings file that could not be read says nothing about whether a control
+ * is on, so no surface may show it as off.
+ */
+export type SafetyControlsRead =
+  | { status: 'ready'; controls: SafetyControlSettings }
+  | { status: 'unreadable' };
+
 export function isSafetyControlId(value: unknown): value is SafetyControlId {
   return SAFETY_CONTROLS.some(control => control.id === value);
 }

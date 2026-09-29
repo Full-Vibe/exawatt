@@ -17,7 +17,7 @@ import type { AgentLaunchConfigurationInput } from '../launch-configurations';
 import type { OperatorStatsPublicationPlan } from '../operator-stats/publication';
 import type { OperatorStatsSyncEvent } from '../operator-stats/sync-state';
 import type { KeyboardShortcutOverridesV1 } from '../shortcuts/keyboard-overrides';
-import type { SafetyControlId } from '../safety-controls';
+import type { SafetyControlId, SafetyControlsRead } from '../safety-controls';
 import type { ConnectedSourceView } from '../sources/connected-source';
 import type {
   AppearanceBootstrapSnapshot,
@@ -344,6 +344,7 @@ interface RequestTable {
   'roadmap:unwatch': Call<[projectDir: string], void>;
 
   'settings:get': Call<[], ExawattSettings>;
+  'settings:get-safety-controls': Call<[], SafetyControlsRead>;
   'settings:set-appearance': Call<
     [appearance: AppearancePreferencesV1],
     ExawattSettings
