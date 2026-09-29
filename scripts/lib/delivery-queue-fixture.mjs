@@ -112,12 +112,24 @@ export function createQueueFixture(
   // FIXTURE_REQUIRE_FRESH_INSTALL set, every other command fails when that
   // copy differs from the lockfile, standing in for the ERR_MODULE_NOT_FOUND
   // a check meets on a tree nobody installed (BUG-219).
+  //
+  // `dev` execs FIXTURE_DEV_SERVER_SCRIPT, a stand-in dev server, or fails
+  // at once with FIXTURE_DEV_FAILS; an `eval:` gate also runs
+  // FIXTURE_GATE_PROBE, which can ask that server what it serves (BUG-246).
   writeFileSync(
     path.join(bin, 'pnpm'),
     [
       '#!/bin/sh',
       '[ -n "$FIXTURE_PNPM_LOG" ] && echo "$*" >> "$FIXTURE_PNPM_LOG"',
       'case "$*" in',
+      '  "dev"*)',
+      '    if [ -n "$FIXTURE_DEV_FAILS" ]; then',
+      '      echo "dev server stand-in failed to start" >&2',
+      '      exit 1',
+      '    fi',
+      '    shift',
+      '    exec node "$FIXTURE_DEV_SERVER_SCRIPT" "$@"',
+      '    ;;',
       '  "install"*)',
       '    if [ -n "$FIXTURE_INSTALL_FAILS" ]; then',
       '      echo "ERR_PNPM_OUTDATED_LOCKFILE stand-in" >&2',
@@ -137,6 +149,9 @@ export function createQueueFixture(
       '    if [ -n "$FIXTURE_DEV_SERVER" ] && [ ! -f "$FIXTURE_DEV_SERVER" ]; then',
       '      echo "no dev server answering at ${EXA_BASE:-(unset)}" >&2',
       '      exit 1',
+      '    fi',
+      '    if [ -n "$FIXTURE_GATE_PROBE" ]; then',
+      '      node "$FIXTURE_GATE_PROBE" || exit 1',
       '    fi',
       '    ;;',
       'esac',

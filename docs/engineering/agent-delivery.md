@@ -153,8 +153,12 @@ the gate, the files that triggered it, and the exact commands:
 ```text
 pnpm dev -p <free-port>
 EXA_BASE=http://localhost:<port> pnpm eval:workspace:ribbon:bench
-pnpm agent:land -- --verify eval:workspace:ribbon:bench
+EXA_BASE=http://localhost:<port> pnpm agent:land -- --verify eval:workspace:ribbon:bench
 ```
+
+The landing owns the server `EXA_BASE` names while it runs the gate (BUG-246,
+below), so the port may also be a free one: the landing starts the server
+there.
 
 A gate whose own script is red is `quarantined` in the map with the backlog
 id that will repair it: announced on every landing that touches its surface,
@@ -426,12 +430,49 @@ Undeclared gates are not added. The landing prints each verdict, records a
 `gate_recheck` metric and a `gateRechecks` entry on the ticket, and ends its
 status line with `gates=rerun:<gate>,stood:<gate>`.
 
-A re-run gate uses the same environment as the candidate run, so a gate that
-needs a dev server needs it until the ticket integrates: keep
-`pnpm dev -p <port>` serving (`EXAWATT_DEV_IDLE_MINUTES=0` stops an idle one
-from exiting while the ticket waits) and `EXA_BASE` set. A server that has gone
-fails the ticket, naming the gate, the range and paths that forced the re-run,
-and `EXA_BASE`; nothing skips it silently.
+A re-run gate uses the same `EXA_BASE` as the candidate run. The landing
+restarts that server for the rebased tree before the gate runs (BUG-246,
+below), so nothing has to stay alive while the ticket waits. A gate that fails
+on the rebased tree names the range and paths that forced the re-run and
+`EXA_BASE`.
+
+### A gate never reads a server older than its tree
+
+A live `pnpm dev` does not reliably follow a rebase: Turbopack keeps serving
+what it compiled into `.next/dev` from the old tree. The BUG-244 landing's
+second attempt failed `eval:electron:delegation` and passed after a clean
+restart; BUG-212's work saw stale CSS turn `eval:navigation-paint` red after a
+rebase; in August a route deleted under a live server panicked Turbopack.
+
+So the landing owns the dev server its gates read (BUG-246,
+`scripts/lib/landing-dev-server.mjs`). `run-next-with-distribution.mjs` stamps
+every dev server with the commit it started from, and `/api/dev-identity`
+reports it as `sourceHead`. Before the first gate of each floor run that reads
+the server (every gate except the `server: 'packaged'` ones in
+`SURFACE_GATES`), the landing compares that stamp with HEAD. A server that
+started on this tree, or on an ancestor of HEAD with every path changed since
+then one of the change's own, is trusted: the author's edits reached it
+through HMR. Anything else is restarted before the gate:
+
+- started before a rebase (the author's, or the queue head's), or before
+  merged commits the change does not own;
+- no stamp, or a stamp this checkout cannot read;
+- not running, unhealthy, or holding the port without answering.
+
+A restart stops the listener's process group, clears `.next/dev`, runs
+`pnpm electron:compile` when `dist-electron` exists and `electron/` or
+`packages/core/` moved, starts `pnpm dev -p <port>` (log:
+`.next/landing-dev-server.log`), and waits until the server names this
+worktree and HEAD. The landing restarts only a server it can prove is this
+worktree's own: a local port with no listener, or whose listeners run from
+this worktree. Any other server is verified and never touched, and the gate is
+refused, before admission or failing the ticket at the head, when that server
+cannot show it serves HEAD. A server that does not come back stops the landing
+with that cause and its log path. A server the landing started keeps the
+45-minute idle expiry (ENG-022 H12), so one left behind shuts itself down.
+Each restart prints a line, records `server_refreshed`, and adds
+`server_refreshed=<phase>,...` to the status line. With no `EXA_BASE` the
+landing leaves each gate to choose its own target, as before.
 
 ### A floor never checks a tree nobody installed
 
@@ -693,6 +734,7 @@ contributor's own commit is what the projector publishes.
 | `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
 | `gate_recheck`                                                                                                | a head rebase with declared surface gates: ticket, old and new base, the gates that re-ran with the upstream paths on their surface, and the gates whose evidence stood |
 | `install_refreshed` / `install_refresh_failed`                                                                 | a floor run found `node_modules` stale against the lockfile: `phase` (`candidate`/`rebase`), ticket, SHA, what was stale, install duration, whether node-pty was rebuilt; or the install's failure |
+| `server_refreshed` / `server_refresh_failed` / `server_refused`                                                | the landing restarted the `EXA_BASE` dev server before a gate: `phase`, `gate`, `reason` (`rebased`, `merged`, `unstamped`, `not-running`, ...), the commit it had started from and the HEAD it serves now, moved-path count, stopped PIDs, whether the Electron main was recompiled, duration; or why it did not come back, or why a server it does not own was refused |
 | `probe_conflict`                                                                                              | `phase` (`candidate` before the floor, `queued` while waiting), ticket, the `origin/master` it replayed onto, the first conflicting commit, the paths, and for a queued ticket how long it had waited |
 | `queue_hold` / `queue_hold_released`                                                                          | the head held on a latched publication: ticket, `failure` class and the `publicLatch` record; on release the `outcome` (`released`/`expired`) and `heldMs`. A failed ticket's `queue_terminal` carries `publicLatch` and `queueHold` |
 
@@ -721,7 +763,9 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | A landing stops with `pnpm install --frozen-lockfile --prefer-offline` failed | The committed `pnpm-lock.yaml` does not satisfy `package.json`. Run `pnpm install`, commit the lockfile it writes, and land again. At admission no ticket was taken. |
 | A rebase or probe prints `[exawatt-append] ... both sides introduce <id>` | Two changes took the same id. Renumber yours with `pnpm id:next <kind>`, update every reference, and land again. |
 | A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the floor (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
-| A landing fails with `surface gate <gate> re-ran on the rebased tree` | The commits it rebased over touched that gate's surface, and the gate failed on the combination. If the output says no dev server answered, restart `pnpm dev -p <port>` with `EXAWATT_DEV_IDLE_MINUTES=0` and land again; otherwise the combination broke, so rebase, reproduce the gate, and fix it. |
+| A landing fails with `surface gate <gate> re-ran on the rebased tree` | The commits it rebased over touched that gate's surface, and the gate failed on the combination against a server the landing had just made serve that tree. Rebase, reproduce the gate, and fix it. |
+| A landing stops with `the dev server at <base> did not come back after the <phase> refresh` | The landing restarted the server for the tree it was about to gate and `pnpm dev` never served it. Read `.next/landing-dev-server.log` in the worktree, fix what stops `pnpm dev`, and land again. |
+| A landing stops with `refusing to run <gate> against <base>` | `EXA_BASE` names a server this worktree does not own (another checkout's, a remote host) that cannot show it serves HEAD. Point `EXA_BASE` at a local port this worktree serves, or at a free one. |
 | Automatic rebase conflicts                                       | The rebase is aborted and the ticket is terminal `failed`. Fetch/rebase the author branch normally, resolve and verify it, commit if needed, then submit a new ticket. The failed attempt ref remains evidence.                                                   |
 | Queue head has a live PID and stale heartbeat                    | Wait and inspect machine load/process health. Never delete its ticket or lock. If the operator establishes that it is irrecoverably wedged, terminate that exact PID; the next waiter will reconcile it.                                                          |
 | Queue head owner is dead                                         | No manual mutation is needed. The next waiter/lander claims a new epoch, checks remote reachability, and records exactly one terminal result.                                                                                                                     |

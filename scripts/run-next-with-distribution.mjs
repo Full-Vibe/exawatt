@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -27,12 +27,38 @@ const [prepared, webIcon] = await Promise.all([
 ]);
 const require = createRequire(import.meta.url);
 const nextBin = require.resolve('next/dist/bin/next');
+
+/**
+ * BUG-246: the commit a dev server started from, reported by
+ * `/api/dev-identity`. After a rebase Turbopack can keep serving what it had
+ * compiled, so the landing compares this with the tree it is about to gate
+ * and restarts the server when files moved under it. Unknown stays unknown
+ * (null), never a guess, and the landing treats unknown as stale.
+ */
+function sourceHead() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+const env = nextDistributionEnvironment(prepared, process.env, {
+  path: distributionWebIconPath(root),
+  digest: distributionDigest(webIcon),
+});
+if (command === 'dev') {
+  delete env.EXAWATT_DEV_SOURCE_HEAD;
+  const head = sourceHead();
+  if (head) env.EXAWATT_DEV_SOURCE_HEAD = head;
+}
 const child = spawn(process.execPath, [nextBin, command, ...args], {
   cwd: root,
-  env: nextDistributionEnvironment(prepared, process.env, {
-    path: distributionWebIconPath(root),
-    digest: distributionDigest(webIcon),
-  }),
+  env,
   stdio: 'inherit',
   // Own process group so the whole `next dev` → `next-server` tree can be
   // signalled as a unit; `detached` here does not orphan it, the supervisor

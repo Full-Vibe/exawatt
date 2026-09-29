@@ -12,5 +12,8 @@ export function GET() {
     repoRoot: process.cwd(),
     distributionDigest:
       process.env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_SHA256 ?? null,
+    // The commit this server started from (BUG-246), so a landing can tell a
+    // server that predates a rebase from one serving the tree it gates.
+    sourceHead: process.env.EXAWATT_DEV_SOURCE_HEAD ?? null,
   });
 }

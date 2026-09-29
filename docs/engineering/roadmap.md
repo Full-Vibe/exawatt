@@ -2967,6 +2967,27 @@ the Connect log's budget; an approval ask that never reached the server
 cleared its commands; and the SSH failure copy existed twice. Narrative in
 the ENG-010 milestone log.
 
+### BUG-246 Surface gates ran against a dev server older than the tree
+
+Status: done · ENG-022 · found 2026-09-28 from three landings; resolved 2026-09-28.
+
+A live `pnpm dev` does not reliably follow a rebase: Turbopack keeps serving
+what it compiled into `.next/dev`. The BUG-244 landing's second attempt failed
+`eval:electron:delegation` and passed after a clean restart, BUG-212's work saw
+stale CSS turn `eval:navigation-paint` red, and in August a route deleted under
+a live server panicked Turbopack. The landing now owns the `EXA_BASE` server:
+every dev server reports the commit it started from (`sourceHead` on
+`/api/dev-identity`), and before the first gate of each floor run the landing
+restarts a server that started before a rebase or is not running (stop, clear
+`.next/dev`, recompile the Electron main when its sources moved, `pnpm dev`,
+wait until it names this worktree and HEAD). A server it does not own is
+verified, never touched, and refused when it cannot show it serves HEAD.
+Each restart records `server_refreshed` and prints `server_refreshed=<phase>`
+on the status line; a server that does not come back stops the landing with
+that cause. Agents no longer keep a server alive for the landing. Proven in
+`scripts/landing-dev-server.test.mjs`, mutation-checked.
+[Findings](projects/agent-development-loop.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

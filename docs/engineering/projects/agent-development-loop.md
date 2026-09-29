@@ -301,6 +301,43 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-28, BUG-246: **the landing owns the dev server its gates read.**
+  Three landings in four days failed a gate against a server that predated
+  the tree: BUG-244's second attempt (`eval:electron:delegation`, green after a
+  clean restart), BUG-212's `eval:navigation-paint` (stale CSS after a
+  rebase), and August's Turbopack panic on a route deleted under a live
+  server. BUG-219 made the landing reinstall when a rebase moves the
+  lockfile; this is the same guarantee for the server. `pnpm dev` now stamps
+  the commit it started from (`EXAWATT_DEV_SOURCE_HEAD`, reported as
+  `sourceHead` by `/api/dev-identity`). `runDeliveryChecks` gained a
+  `beforeCheck` hook, and before the first gate of each floor run that reads
+  the server (every `SURFACE_GATES` entry but the three marked
+  `server: 'packaged'`), `scripts/lib/landing-dev-server.mjs` compares the
+  stamp with HEAD. It trusts a server started on an ancestor of HEAD whose
+  every later path is the change's own (the author's HMR edits); a rebase, a
+  merge, a missing or unreadable stamp, or a dead or unhealthy server gets a
+  restart: stop the listener's process group, clear `.next/dev`, run
+  `electron:compile` when `dist-electron` exists and `electron/` or
+  `packages/core/` moved, start `pnpm dev -p <port>`, and wait until the
+  server names this worktree and HEAD. Ownership is proved from the
+  listener's working directory, not HTTP, so a panicked server is still
+  recognisably ours; a server another checkout or host owns is never
+  touched, and a gate is refused when that server cannot show it serves HEAD.
+  The refresh is lazy (a rebase whose gates all stood restarts nothing) and
+  runs inside the floor's machine slot, after the cheap checks passed.
+  `scripts/landing-dev-server.test.mjs` drives real queues with a stand-in
+  server that reports its start commit and a stand-in gate that fails unless
+  it is HEAD: a head rebase over the gate's surface restarts the server
+  exactly once, after `electron:compile` and before the re-run gate, and
+  clears `.next/dev`; a rebase whose gate stood leaves the author's server
+  alone; a server that does not come back fails the ticket naming the cause
+  and log; an author who rebased by hand gets a restart before the first
+  candidate gate; a foreign checkout's server is refused before admission and
+  left running; a free port gets a server started. Three mutations (no
+  restart at the head, trusting a rebased server, keeping `.next/dev`) each
+  fail it. AGENTS.md and `agent-delivery.md` drop the advice to keep a server
+  alive with `EXAWATT_DEV_IDLE_MINUTES=0` until the landing reports.
+
 - 2026-09-28, BUG-233 and BUG-140: **the landing checks now fail a change
   that would fail public CI.** Public CI had failed every commit for four
   days while every private check passed. The public `test:agent-delivery` was

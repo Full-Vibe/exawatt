@@ -69,6 +69,10 @@ const MAX_RERUN_FILES = 25;
  * disease one layer down. A quarantined gate is announced, never enforced,
  * and carries the backlog id that will repair it. Deleting the entry instead
  * would throw away the knowledge that the surface owes evidence at all.
+ *
+ * `server: 'packaged'` marks a gate that builds and launches its own package
+ * instead of reading the `EXA_BASE` dev server. Every other gate reads that
+ * server, so the landing makes it serve the exact tree first (BUG-246).
  */
 /**
  * The workspace state (BUG-220). ENG-039 split `use-workspace-state.ts` into
@@ -302,6 +306,7 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:electron:packaged',
+    server: 'packaged',
     why: 'only a packaged build runs the standalone renderer, and only running it distinguishes a renderer that serves from one that died',
     // BUG-036: `next` 16.2.9 → 16.3.1 arrived in a dependency-hardening commit
     // that touched package.json, pnpm-lock.yaml and three audit scripts. The
@@ -347,6 +352,7 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:electron:connected-fleet',
+    server: 'packaged',
     why: 'customer-hosted Agents cross the packaged preload, IPC, Gateway runtime, durable mapping, and Agent/Team/Fleet composition as one surface',
     match: file =>
       file === 'packages/core/src/sources/connected-source.ts' ||
@@ -696,6 +702,7 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:community:network',
+    server: 'packaged',
     why: 'a packaged community build must resolve no hostname and open no socket off loopback while it is used',
     // The observation behind ENG-030 OS4: the build, runtime and closure
     // checks are statements about source; this launches the package and
@@ -827,6 +834,17 @@ export function surfaceGateRecheck(declared, upstreamPaths) {
   return { rerun, stood: stood.sort() };
 }
 
+/**
+ * Does this gate run against the `EXA_BASE` dev server? Every gate does
+ * unless its entry says it launches a packaged build it makes itself
+ * (`server: 'packaged'`). The landing refreshes that server before a gate
+ * that reads it, so the gate sees the exact tree being landed.
+ */
+export function gateNeedsDevServer(id) {
+  const entry = SURFACE_GATES.find(candidate => candidate.gate === id);
+  return Boolean(entry) && entry.server !== 'packaged';
+}
+
 /** Gates this change would owe if their scripts were green. Announced so a
  *  quarantine cannot quietly become "this surface needs no evidence". */
 export function quarantinedSurfaceGates(changedPaths) {
@@ -855,8 +873,8 @@ export function surfaceGateMessage(missing) {
     ]),
     '',
     'Declaring a gate makes the floor RUN it on the exact tree being landed,',
-    "so point it at this worktree's own dev server:",
-    '  pnpm dev -p <free-port>',
+    'against the dev server EXA_BASE names. The landing owns that server: it',
+    'restarts it for the tree it gates, or starts it on a free local port.',
     `  EXA_BASE=http://localhost:<port> pnpm agent:land -- ${missing
       .map(entry => `--verify ${entry.gate}`)
       .join(' ')}`,
@@ -1711,7 +1729,15 @@ async function runOneCheck(root, check) {
 export async function runDeliveryChecks(
   root,
   checks,
-  { phase = 'candidate', onResult = async () => {}, queueHead = false } = {}
+  {
+    phase = 'candidate',
+    onResult = async () => {},
+    queueHead = false,
+    // Runs before each check, inside the slot; a throw stops the floor with
+    // its own message. The landing refreshes its dev server here, right
+    // before the first gate that reads it (BUG-246).
+    beforeCheck = async () => {},
+  } = {}
 ) {
   const evidence = [];
   // One machine slot bounds this floor run's compute: a dozen concurrent
@@ -1731,6 +1757,7 @@ export async function runDeliveryChecks(
   });
   try {
     for (const check of checks) {
+      await beforeCheck(check);
       const startedAt = Date.now();
       console.log(
         `[agent-land] ${phase} floor: ${check.command} ${check.args.join(' ')}`

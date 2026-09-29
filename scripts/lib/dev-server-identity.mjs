@@ -56,6 +56,7 @@ export async function readDevServerIdentity(
     kind: DEV_IDENTITY.IDENTIFIED,
     repoRoot: body?.repoRoot ?? null,
     distributionDigest: body?.distributionDigest ?? null,
+    sourceHead: body?.sourceHead ?? null,
   };
 }
 

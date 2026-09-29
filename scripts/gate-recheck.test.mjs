@@ -157,7 +157,11 @@ test('unrelated upstream paths leave every gate’s pre-rebase evidence standing
   }
 });
 
-test('a re-run gate whose dev server has gone fails the ticket naming the gate and EXA_BASE', async () => {
+// With EXA_BASE set, the landing restarts a server that went away while the
+// ticket waited (BUG-246, landing-dev-server.test.mjs). Without one it leaves
+// each gate to choose its own target, and a gate that then fails on the
+// rebased tree must still name itself, the range that forced it, and the base.
+test('a re-run gate that fails on the rebased tree fails the ticket naming the gate, the range and EXA_BASE', async () => {
   const fixture = createQueueFixture('exawatt-gate-server-', {
     scripts: GATES,
   });
@@ -168,7 +172,6 @@ test('a re-run gate whose dev server has gone fails the ticket naming the gate a
     writeFileSync(server, 'up\n');
     const env = {
       FIXTURE_DEV_SERVER: server,
-      EXA_BASE: 'http://localhost:7999',
       EXAWATT_AGENT_LAND_PROBE_SECONDS: '0',
     };
     lock = await acquireDeliveryLock(fixture.main, { log() {} });
@@ -194,19 +197,19 @@ test('a re-run gate whose dev server has gone fails the ticket naming the gate a
     fixture.advanceMaster({
       'src/components/roadmap/other.tsx': 'export const other = 1;\n',
     });
-    // The owner's dev server idles out while the ticket waits.
+    // Whatever the gate reads is gone by the time the head re-runs it.
     rmSync(server);
     await lock.release();
     lock = null;
     assert.equal((await finished(head)).code, 0);
     const { code, output } = await finished(gated);
     assert.notEqual(code, 0);
-    assert.match(output, /no dev server answering at http:\/\/localhost:7999/u);
+    assert.match(output, /no dev server answering at \(unset\)/u);
     assert.match(
       output,
       /surface gate eval:roadmap:rail re-ran on the rebased tree because \S+ changed src\/components\/roadmap\/other\.tsx on its surface, and failed/u
     );
-    assert.match(output, /EXA_BASE=http:\/\/localhost:7999/u);
+    assert.match(output, /EXA_BASE=\(unset\)/u);
     assert.equal(tickets(fixture.main)[1].status, 'failed');
   } finally {
     await lock?.release();

@@ -23,6 +23,7 @@ import {
 import {
   classifyDeliveryPolicy,
   classifyDocsChecks,
+  gateNeedsDevServer,
   missingSurfaceGates,
   quarantinedSurfaceGates,
   surfaceGateMessage,
@@ -51,6 +52,7 @@ import {
   probeRebase,
 } from './lib/conflict-probe.mjs';
 import { reinstallWhenStale } from './lib/install-freshness.mjs';
+import { createLandingDevServer } from './lib/landing-dev-server.mjs';
 import {
   describePublicLatch,
   holdWhilePublicLatched,
@@ -545,6 +547,8 @@ async function main() {
       // The docs checkout borrows the invoking checkout's node_modules through
       // links, which may be the shared master's; it never installs into them.
       refreshInstall: async () => null,
+      // The docs lane runs no surface gate, so it has no server to own.
+      devServer: null,
     };
   } else {
     // Surface gates are declared, not run here: they need a dev server the
@@ -585,6 +589,11 @@ async function main() {
       checksFor: (changed, extras) => classifyDeliveryPolicy(changed, extras),
       runChecks: runDeliveryChecks,
       refreshInstall: () => reinstallWhenStale(invokingRoot, { run }),
+      devServer: createLandingDevServer({
+        root: invokingRoot,
+        base: process.env.EXA_BASE,
+        run,
+      }),
     };
   }
   try {
@@ -650,6 +659,39 @@ async function landThroughQueue({
     });
   };
 
+  // BUG-246: a gate that reads the dev server runs only once that server
+  // serves the exact tree being checked. Before the first such gate of each
+  // floor run, the landing restarts a server that started before a rebase
+  // (or is gone), or refuses a server it does not own and cannot prove
+  // fresh. Each restart is recorded and named on the STATUS line.
+  const serverRefreshes = [];
+  const freshServerBefore = (phase, ownPaths, extra) => async check => {
+    if (!lane.devServer || !gateNeedsDevServer(check.id)) return;
+    let refreshed;
+    try {
+      refreshed = await lane.devServer.ensureFresh({
+        phase,
+        gate: check.id,
+        ownPaths,
+      });
+    } catch (error) {
+      await appendDeliveryMetric(
+        root,
+        error.serverRefresh?.kind === 'refused'
+          ? 'server_refused'
+          : 'server_refresh_failed',
+        { ...extra, phase, gate: check.id, reason: error.message }
+      );
+      throw error;
+    }
+    if (!refreshed) return;
+    serverRefreshes.push(phase);
+    await appendDeliveryMetric(root, 'server_refreshed', {
+      ...extra,
+      ...refreshed,
+    });
+  };
+
   // BUG-202: the head's rebase verdict, asked before the floor. In September
   // 10 of the 20 tickets that died on a rebase conflict already conflicted
   // with origin/master when their candidate floor started.
@@ -694,6 +736,7 @@ async function landThroughQueue({
   const evidence = await lane.runChecks(root, checks, {
     phase: 'candidate',
     onResult: recordFloorCheck({ candidateSha }),
+    beforeCheck: freshServerBefore('candidate', files, { candidateSha }),
   });
   await requireClean(root, 'Agent worktree after verification');
 
@@ -988,8 +1031,8 @@ async function landThroughQueue({
               command: 'pnpm',
               args: ['run', gate],
               failureHint:
-                `surface gate ${gate} re-ran on the rebased tree because ${range} changed ${paths.join(', ')} on its surface, and failed on that combination. ` +
-                `If it needs a dev server or a packaged build, keep it serving for the whole landing (EXA_BASE=${process.env.EXA_BASE ?? '(unset)'}; EXAWATT_DEV_IDLE_MINUTES=0 stops an idle dev server from exiting while the ticket waits).`,
+                `surface gate ${gate} re-ran on the rebased tree because ${range} changed ${paths.join(', ')} on its surface, and failed on that combination ` +
+                `(EXA_BASE=${process.env.EXA_BASE ?? '(unset)'}; the landing made that dev server serve the rebased tree before the gate ran).`,
             });
             gatesRerun.add(gate);
           }
@@ -1017,6 +1060,10 @@ async function landThroughQueue({
           phase: 'rebase',
           queueHead: true,
           onResult: recordFloorCheck({
+            ticketId: ticket.id,
+            candidateSha: rebasedSha,
+          }),
+          beforeCheck: freshServerBefore('rebase', rebasedFiles, {
             ticketId: ticket.id,
             candidateSha: rebasedSha,
           }),
@@ -1272,8 +1319,14 @@ async function landThroughQueue({
   // otherwise each floor phase that had to reinstall first (BUG-219).
   const reinstalledState =
     reinstalls.length === 0 ? '' : ` reinstalled=${reinstalls.join(',')}`;
+  // Absent when every gate found its dev server already serving the tree;
+  // otherwise each floor phase that had to restart it first (BUG-246).
+  const serverState =
+    serverRefreshes.length === 0
+      ? ''
+      : ` server_refreshed=${serverRefreshes.join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${laneState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${serverState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {
