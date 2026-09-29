@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import type {
   DeviceKeepAwakePolicy,
@@ -121,7 +122,15 @@ export function PowerSettings() {
         {status?.independentSources.length ? (
           <p>
             Working sources outside this control:{' '}
-            {status.independentSources.join(', ')}.
+            {status.independentSources
+              .map(
+                id =>
+                  AGENT_SOURCE_DECLARATIONS.find(
+                    source => source.adapterId === id
+                  )?.label ?? id
+              )
+              .join(', ')}
+            .
           </p>
         ) : null}
         {(error || readError) && <p role="alert">{error || readError}</p>}

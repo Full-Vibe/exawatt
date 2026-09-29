@@ -7534,3 +7534,44 @@ and `--dogfood`. Read delivery state before treating a staged app as installed.
 Resume from decision `0044`, incident `0029`, BUG-227 (open), BUG-228 (repaired),
 this milestone, and the delivery ticket state. No battery-safe setting is
 exposed yet; do not market the original drain as solved.
+
+### 2026-09-28 — Device-local power policy and source launch ownership (BUG-227)
+
+**Power policy now owns one app assertion; it never owns Agent lifecycle.**
+Decision 0044 is implemented for verified macOS Codex 0.156.1 launches.
+`harness-power-control` probes the resolved executable/version and recognized
+feature override in the same login-shell environment as the PTY. The exact
+verified executable launches with `--disable prevent_idle_sleep`; process
+records carry applied-at-launch evidence. Replacement processes probe again.
+Unknown probes keep the ordinary launch available. No user configuration,
+daemon mode, existing process or Claude inhibitor is changed.
+
+The main-process controller consumes local Session status from the shared
+`sessionStatus` selector and the single native host observer. It holds one
+`prevent-app-suspension` assertion while supported local work qualifies:
+AC by default, battery only by explicit device choice. Lock does not release
+or interrupt work. Unplug, idle/completion, operator gates, suspend and shutdown
+release the owned assertion. Demo/remote data and shells never qualify.
+A native failure is reported rather than presented as success; failed shutdown
+release cannot abort the rest of quit cleanup.
+
+Settings → Preferences → Power persists the device choice, reports Exawatt's
+own request, and discloses independent sources and overrides. The surface
+reuses SettingsGroup/SettingRow/Select, design-system body text, semantic dim
+color and 4px spacing; no new visual grammar or gallery study is introduced.
+Revisioned native snapshots and shared request lifetimes reject stale reads,
+recover from a read error on a new push, and preserve write errors honestly.
+
+Verification before landing: 127 focused controller, persistence, input-boundary,
+source command/probe and process-replacement tests; 11 UI/request-order tests;
+Electron compilation, Electron test typecheck, renderer typecheck and targeted
+lint. Source fixture eval proves supported/unknown/uncontrolled launch evidence.
+Device-native eval passed against the real Electron bridge and macOS
+`pmset` assertions: default AC, lock continuity, unplug release, battery opt-in,
+Never preserving another native ID, suspend/resume, and idle/blocked/completed/
+exited/shell exclusions. Disk, renderer reload and fresh-app persistence plus
+the real Preferences control passed; screenshot was visually reviewed. macOS
+labels this Electron assertion `NoIdleSleepAssertion` on the tested build.
+Declared gates and the repository delivery floor remain before integration. Full physical AC/unplug/display-off/lock/sleep-wake
+acceptance and energy attribution remain open; BUG-227 stays open. Claude's
+uncontrolled inhibitor remains a limitation, not a promise this setting fixes.
