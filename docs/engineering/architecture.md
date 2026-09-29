@@ -92,8 +92,23 @@ and hardware limits: lock/suspend suppress ambient animation; battery selects
 the existing static, no-bloom, lower-DPR path. Demo and Live share this host
 boundary, while hosted browsers retain their visibility/hardware fallback.
 These observations never signal a Session or acquire a sleep assertion.
-Decision `0044` gates a future keep-awake control on supported per-launch source
-control; observing host power is not proof that a harness permits system sleep.
+A separate `device-power.ts` controller owns one display-sleep-compatible
+assertion under decision `0044`. It subscribes to the same host observer and
+local Session/attention/delegation events, using the shared `sessionStatus`
+selector. Device-local Settings select Never, AC only (default), or AC and
+battery. Only working local processes with verified source opt-out evidence
+qualify; unplug (under AC only), inactive/blocked work, suspend and shutdown
+release the assertion. Lock does not alter Agent lifecycle or eligibility.
+
+Source ownership is per process: `harness-power-control.ts` probes the resolved
+macOS Codex 0.156.1 executable and recognized feature override in the launch
+shell/cwd/environment. The exact executable receives
+`--disable prevent_idle_sleep`, and its record carries applied-at-launch
+evidence. Every replacement probes again; unknown probes retain the ordinary
+launch, Claude is uncontrolled, and shells do not qualify. This changes neither
+user configuration nor daemon mode. Settings reports only Exawatt's assertion;
+other apps and source-native settings can still prevent sleep. Native revisions
+order reads and pushes; shared request lifetimes own component cleanup.
 
 Fleet emergence cleanup belongs to the React lifecycle, outside the demand
 frame loop. Finished departures unmount even if the final active frame was

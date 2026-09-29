@@ -2681,10 +2681,13 @@ no silent Session interruption, or each unowned harness limitation remains
 plainly surfaced and the setting stays scoped. [Decision 0044](decisions/0044-device-power-policy-is-separate-from-agent-lifecycle.md),
 [incident 0029](incidents/0029-battery-drained-with-display-off.md).
 Read-only Electron host facts now suppress Fleet ambient rendering on battery,
-lock, and suspend, without pausing Agents or acquiring assertions. Codex and Qwen
-have documented source controls; their per-launch integration and real-task
-verification remain open. Claude remains uncontrolled; no global battery-safe
-setting is exposed. Execution authorized 2026-09-25; [resumable checkpoint](projects/daily-driver-adoption.md#2026-09-25--battery-policy-execution-checkpoint-bug-227--bug-228).
+lock, and suspend without pausing Agents. A separate device-local Settings
+control now owns one assertion for verified macOS Codex 0.156.1 launches, with
+AC default, explicit battery opt-in and Never. Per-process probe evidence,
+shared working-state truth and native assertion/Settings evals cover the
+implemented path. Claude remains uncontrolled; Qwen integration and physical
+sleep/wake/unplug acceptance remain open. No global battery-safe promise.
+[Current implementation and evidence](projects/daily-driver-adoption.md#2026-09-28--device-local-power-policy-and-source-launch-ownership-bug-227).
 
 ### BUG-228 Completed Fleet retirements can request frames forever
 
@@ -2786,6 +2789,17 @@ awaiting discovery, so watch/unwatch/watch or two overlapping watches each
 opened an `fs.watch` and all but one leaked; the key is claimed first and a
 watch unwatched mid-discovery opens nothing.
 
+### BUG-230 Electron eval helpers retain output pipes after successful checks
+
+Status: bug · ENG-022 · observed 2026-09-28 during BUG-227 verification.
+
+After both test apps exit, orphaned NetworkService helpers retain the Node
+harness stdout/stderr pipes, delaying a successful eval's process exit. Scope:
+shared eval teardown must reap only proven-owned helpers without touching live
+apps or sibling evals. Exit: repeated fresh-app evals exit with no owned helper
+or output pipe left behind, including bounded forced shutdown; a foreign app
+control survives. [Incident 0030](incidents/0030-electron-eval-network-helpers-retain-pipes.md).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
@@ -2793,6 +2807,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ENG-033 H3 “NOT ACTIVE; requires a separate design and authorization pass” | operator, 2026-09-28 | Direction decided: Exawatt hosts the machines agent harnesses run on. The design pass on provisioning, custody, deletion, billing, and control-plane ownership still gates implementation. |
+| BUG-227 observational-only boundary | BUG-227 supported-process implementation, 2026-09-28 | Settings now controls Exawatt-owned sleep prevention for verified Codex 0.156.1 launches. Per-launch evidence and native assertion checks permit the scoped control; physical sleep/wake acceptance remains open, and Claude and other independent inhibitors are never claimed controlled. |
 | BUG-227's open question to “choose an explicit battery policy”                                                                                                                            | operator-approved decision `0044`, 2026-09-25                                                 | Recommendation is device-local `Never` / `On AC only` (default) / `On AC and battery`, with display locking independent from Session lifecycle. Setting work remains gated on supported per-harness control; Claude's native inhibitor cannot currently honor the battery boundary, so the app must not claim otherwise. |
 | ENG-010/ENG-033: Exawatt asks for send access and never grants it (decision `0037` §4; the H1 criterion that Exawatt never requests `operator.admin` or `operator.pairing`) | operator, 2026-09-24 | Send access is a step in setting up each server. One click has Exawatt run the approval of its OWN pending request over the operator's own SSH login; the alternative is copying that command and running it by hand, then Check again. Exawatt still holds no pairing or admin authority of its own and never approves a request it cannot prove is its own. |
 | BUG-146 item 5: a `thread/items/list` page over the 2 MiB frame cap "rides the same marker" as a permanent verdict | BUG-183, 2026-09-23 | A failure that depends on one Session's data is per Session and per read, on its own ladder, and never a verdict about the binary; an oversize frame fails only its own request. Only a binary fact (version, wire-protocol break) is held, and holding it withdraws every Session. |

@@ -21,7 +21,7 @@ disabling it was found. The same behavior is reported in upstream issues
 The repository's installed Electron is 43.1.0. Its shipped `powerMonitor`
 types include lock/unlock and AC/battery events plus `isOnBatteryPower()`;
 `powerSaveBlocker` includes `prevent-app-suspension`, which permits the display
-to turn off. This provides the app-owned host seam needed for a future policy,
+to turn off. This provides the app-owned host seam used by this policy,
 but cannot release an assertion made directly by Claude.
 
 The incident also found a Fleet frame-scheduling defect (BUG-228), but there
@@ -126,9 +126,21 @@ setting behavior are in [constructor.rs](https://github.com/openai/codex/blob/ru
 [turn_lifecycle.rs](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/tui/src/chatwidget/turn_lifecycle.rs),
 and [settings.rs](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/tui/src/chatwidget/settings.rs).
 
-The first implemented boundary is observational: native host facts drive Fleet
-rendering only. Settings and app-owned assertions remain gated on verified
-per-launch source control and the real power-transition matrix above.
+The implemented boundary now includes Settings and an app-owned assertion for
+verified macOS Codex 0.156.1 processes. Each launch probes the resolved executable
+and effective feature override before applying the opt-out; unsupported versions,
+failed probes and pre-existing processes do not inherit control. The default
+is AC only, battery use is explicit, and Never releases only Exawatt's request.
+The controller uses local `sessionStatus` truth, including silent reported work,
+delegated work and operator gates. Display lock never invokes a Session action.
+
+The real Electron eval verifies native macOS assertion acquisition/release with
+synthetic host events, source-fixture lifecycle transitions, unrelated native
+assertion preservation, persisted choices and the Settings control. macOS reports
+`NoIdleSleepAssertion` for Electron on this build. These checks establish the
+implemented ownership path; the physical power-transition/sleep-wake matrix
+above remains a release acceptance gate. Claude stays uncontrolled, and Qwen's
+supported setting is not yet integrated.
 
 Primary audit sources: [Codex sample configuration](https://learn.chatgpt.com/docs/config-file/config-sample),
 [Qwen settings](https://qwenlm.github.io/qwen-code-docs/en/users/configuration/settings/),
@@ -148,5 +160,5 @@ The existing incident establishes the Mac stayed awake under repeated
 assertions and that a current Claude process used one. It does not establish
 that every historical assertion came from Claude or that Fleet was the main
 energy consumer. The operator accepted the AC default and supported-harness boundary on
-2026-09-25 and authorized implementation. The implementation gates above
-remain open; acceptance is not evidence that the controls have shipped.
+2026-09-25 and authorized implementation. The physical acceptance gates above remain open; synthetic-event verification
+is not physical sleep/wake or historical energy evidence.

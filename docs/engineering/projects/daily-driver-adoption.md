@@ -7575,3 +7575,14 @@ labels this Electron assertion `NoIdleSleepAssertion` on the tested build.
 Declared gates and the repository delivery floor remain before integration. Full physical AC/unplug/display-off/lock/sleep-wake
 acceptance and energy attribution remain open; BUG-227 stays open. Claude's
 uncontrolled inhibitor remains a limitation, not a promise this setting fixes.
+
+
+Delivery note (2026-09-28): both slices are now assembled in
+`agent/battery-device-policy`, preserving the Fleet/host and source-policy
+commits separately. They will use one combined delivery attempt and one set of
+shared gates. This supersedes the earlier instruction to land the source-only
+checkout or repeat the first slice's failed landing independently. Use Node
+22.22.3 (the CI/release major), available at `/Users/jake/.hermes/node/bin`, for
+verification: the shell's Node 26 makes jsdom localStorage undefined. The first
+slice passed its 635 delivery tests, selected behavior tests and community
+build before that unrelated runtime failure. No gate has been waived.
