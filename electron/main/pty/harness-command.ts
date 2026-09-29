@@ -1,15 +1,11 @@
 import path from 'path';
+import { isAgentPermissionMode } from '@exawatt/core';
 import type { PtyPowerControl } from '@exawatt/core/desktop-bridge';
 import type { AgentPermissionMode } from './session-manager';
 import type { AgentHarness } from './harness-types';
 import { harnessDescriptor } from './harness-registry';
 
 const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]{8,128}$/;
-const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>([
-  'prompt',
-  'auto',
-  'unrestricted',
-]);
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
@@ -55,7 +51,7 @@ export function buildHarnessCommand(
   if (resume && prompt) {
     throw new Error('An initial task cannot be supplied when resuming');
   }
-  if (!AGENT_PERMISSION_MODES.has(permissionMode)) {
+  if (!isAgentPermissionMode(permissionMode)) {
     throw new Error('Invalid Agent permission mode');
   }
   const selectedModel = model?.trim() ?? '';

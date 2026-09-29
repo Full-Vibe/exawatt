@@ -1106,11 +1106,18 @@ Built:
   killed underneath it (incident `0028`: a stray machine-wide `pkill` took
   every Chromium helper on the machine). Every renderer, helper and
   renderer-server death is recorded to `logs/main.jsonl` with Chromium's
-  reason and exit code through one bounded recorder; a dead renderer reloads
-  itself; a dead renderer server restarts on its own port; automatic attempts
-  are budgeted per minute, past which the renderer asks the operator and the
-  server stays down on the record; nothing restarts once shutdown owns the
-  processes. A hung renderer (alive, not answering input) asks the operator
+  reason and exit code, bounded per event family so one crash loop cannot
+  silence another (a dropped minute leaves one `<family>.suppressed` line
+  with its count); the app-level death listeners live in
+  `watchProcessDeaths` (`main-diagnostics.ts`) and the per-window one in
+  `window.ts`. A dead renderer reloads itself, unless a navigation already in
+  flight will land on a new renderer by itself; a dead renderer server
+  restarts on its own port, and a restart that dies or hangs while starting
+  is killed (freeing the port) and retried; automatic attempts are budgeted
+  per minute, past which the operator is asked once, Reload Window or Quit,
+  for the renderer and the server alike. Nothing restarts while shutdown owns
+  the processes, and a shutdown that returns to idle (a cancelled quit)
+  brings back whatever died meanwhile (BUG-241). A hung renderer (alive, not answering input) asks the operator
   to wait or reload, withdraws the question if the page recovers, and on
   reload ends the stuck renderer so the same recovery brings it back; the
   page's uncaught errors and unhandled rejections reach `logs/main.jsonl`

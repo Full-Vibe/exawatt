@@ -25,7 +25,10 @@ import { isClaudePlanWindowsEnabled, loadSettings } from './settings-store';
 import type { ShutdownCoordinator } from './shutdown-coordinator';
 import type { ShutdownSequence } from './shutdown-sequence';
 import { registerSystemShortcutIPC } from './system-shortcuts';
-import type { CommandEnginePhase } from '@exawatt/core/desktop-bridge';
+import type {
+  CommandEnginePhase,
+  ElectronAuthError,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * The command surface: everything behind the launch frame. Bootstrap loads the
@@ -39,13 +42,6 @@ import type { CommandEnginePhase } from '@exawatt/core/desktop-bridge';
  * "not started yet", the same way the module globals it replaces did.
  */
 
-interface SafeAuthError {
-  name: string;
-  message: string;
-  status?: number;
-  code?: string;
-}
-
 export class CommandRuntime {
   hostPower: HostPowerObserver | null = null;
   ptySessions: PtySessionManager | null = null;
@@ -55,7 +51,7 @@ export class CommandRuntime {
   runStateStore: RunStateStore | null = null;
   authCoordinator: ElectronAuthCoordinator | null = null;
   recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
-  safeAuthError: (error: unknown) => SafeAuthError = error => ({
+  safeAuthError: (error: unknown) => ElectronAuthError = error => ({
     name: 'Error',
     message: error instanceof Error ? error.message : 'Authentication failed.',
   });

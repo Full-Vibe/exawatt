@@ -21,7 +21,24 @@ export { AGENT_HARNESSES, AGENT_SOURCE_ADAPTER_IDS, AGENT_SOURCE_CATALOG_IDS };
 
 export type AgentHarness = (typeof AGENT_HARNESSES)[number];
 export type PtyHarness = 'shell' | AgentHarness;
-export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
+/** Every permission mode, in the order a picker offers them. */
+export const AGENT_PERMISSION_MODES = [
+  'prompt',
+  'auto',
+  'unrestricted',
+] as const;
+export type AgentPermissionMode = (typeof AGENT_PERMISSION_MODES)[number];
+
+const AGENT_PERMISSION_MODE_SET: ReadonlySet<string> = new Set(
+  AGENT_PERMISSION_MODES
+);
+
+/** A permission mode Exawatt knows. Safe on untrusted IPC input. */
+export function isAgentPermissionMode(
+  value: unknown
+): value is AgentPermissionMode {
+  return typeof value === 'string' && AGENT_PERMISSION_MODE_SET.has(value);
+}
 
 export type AgentSourceAdapterId = (typeof AGENT_SOURCE_ADAPTER_IDS)[number];
 

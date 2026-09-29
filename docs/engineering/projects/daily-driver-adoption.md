@@ -1757,6 +1757,29 @@ round-trip on macOS with Little Snitch.
 
 ## Findings log
 
+- 2026-09-28, BUG-241: **Process recovery follow-ups from the pre-0.1.14
+  review.** Each item verified before fixing. (1) A renderer server restart
+  that failed was recorded once and abandoned, and a hung restart kept its
+  port. `serve()` now stops the child before reporting a failed start; the
+  supervisor retries within the budget, then asks Reload Window / Quit,
+  coalesced with the renderer's prompt. (2) A renderer that died while
+  shutdown owned the processes was left down by design, and a cancelled quit
+  never revisited it; the return to idle now reloads crashed windows and
+  restarts a stopped server. (3) `child.gone` crash loops shared one 20/min
+  budget with `renderer.gone`; budgets are now per family, and a dropped
+  minute writes one `<family>.suppressed` line with its count. (4)
+  `stopping` was never cleared, so after an abandoned shutdown a later server
+  death was ignored and `restart()` threw. (5) `deliverPending` cleared the
+  pending link after delivery, dropping a link that delivery re-queued. New,
+  found by extending the eval: a renderer killed while startup was entering
+  the workspace made recovery reload the launch screen over the in-flight
+  navigation (`loadURL` aborted: "could not start its local command
+  services"); recovery now waits for loading to stop and reloads only if the
+  window is still crashed. Reviewability: app-level death listeners moved to
+  `watchProcessDeaths`, `broadcastToWindows` replaced four hand loops,
+  `SafeAuthError` became core's `ElectronAuthError`, and the permission-mode
+  list lives once in `@exawatt/core` (`AGENT_PERMISSION_MODES`).
+
 - 2026-08-16 (D58, landed): **BUG-004 and BUG-019 were the same disease and are
   fixed together.** The link boundary had four independent owners over the same
   pixels; the "Do you want to navigate…" dialog is xterm CORE's unclaimed OSC 8

@@ -1,5 +1,6 @@
 import {
   isAgentHarness,
+  isAgentPermissionMode,
   isAgentSourceAdapterId,
   isSafetyControlId,
   type AgentPermissionMode,
@@ -40,11 +41,6 @@ type Boundaries = {
 };
 
 const SESSION_ID = /^[A-Za-z0-9._-]{1,200}$/;
-const PERMISSION_MODES: readonly AgentPermissionMode[] = [
-  'prompt',
-  'auto',
-  'unrestricted',
-];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -116,7 +112,7 @@ function launchOptions(value: unknown): PtyCreateOptions {
     !(
       value.permissionMode === undefined ||
       value.permissionMode === null ||
-      PERMISSION_MODES.includes(value.permissionMode as AgentPermissionMode)
+      isAgentPermissionMode(value.permissionMode)
     )
   ) {
     throw new Error('Invalid launch options');

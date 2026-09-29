@@ -46,18 +46,18 @@ import {
 } from './ipc-security';
 import { launchScreenUrl } from './launch-screen';
 import {
-  installCrashAnalytics,
   installMainInstrumentation,
   openMainDiagnostics,
+  watchProcessDeaths,
 } from './main-diagnostics';
-import { boundDiagnosticRecorder } from './diagnostics-log';
+import { boundDiagnosticRecorderPerFamily } from './diagnostics-log';
 import { createMenuController } from './menu-controller';
 import {
   createRendererRecovery,
   createRendererServerSupervisor,
-  recordChildProcessGone,
   rendererHangPrompt,
   rendererRecoveryPrompt,
+  sharedRecoveryPrompt,
   testHangChoice,
 } from './process-recovery';
 import { createRendererPortPolicy } from './renderer-port';
@@ -123,9 +123,10 @@ if (!isDev) assertPackagedRendererComposition(process.resourcesPath, buildInfo);
 
 const runtime = new CommandRuntime();
 const mainDiagnostics = openMainDiagnostics(userDataPath());
-// Process deaths share one bounded recorder: a helper stuck in a crash loop
-// must not be able to fill the diagnostics log (BUG-223).
-const processDiagnostics = boundDiagnosticRecorder(mainDiagnostics, {
+// Process deaths are bounded so a helper stuck in a crash loop cannot fill
+// the diagnostics log (BUG-223), and bounded per family (`child`, `renderer`,
+// `renderer-server`) so that loop cannot silence the renderer's own record.
+const processDiagnostics = boundDiagnosticRecorderPerFamily(mainDiagnostics, {
   perMinute: 20,
   perRun: 200,
 });
@@ -162,17 +163,19 @@ const workspace = createWorkspaceTarget({
   rendererOrigin: () => rendererServer.origin,
 });
 const checkpoints = createCheckpointBroker({ randomUUID });
+/** Reload Window or Quit, once automatic recovery is spent. */
+const askToRecover = sharedRecoveryPrompt(async () => {
+  const prompt = rendererRecoveryPrompt(identity.productName);
+  const parent = mainWindow.live();
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, prompt.options)
+    : await dialog.showMessageBox(prompt.options);
+  return prompt.choice(response);
+});
 const rendererRecovery = createRendererRecovery({
   record: processDiagnostics,
   isQuitting: isShuttingDown,
-  askToReload: async win => {
-    const prompt = rendererRecoveryPrompt(identity.productName);
-    const { response } = await dialog.showMessageBox(
-      win as BrowserWindow,
-      prompt.options
-    );
-    return prompt.choice(response);
-  },
+  ask: askToRecover,
   askWhileUnresponsive: async (win, signal) => {
     // A hidden automation window has no one to ask; the run says the answer.
     if (isTest) return testHangChoice(env);
@@ -210,12 +213,15 @@ const rendererServerSupervisor = createRendererServerSupervisor({
   record: processDiagnostics,
   isQuitting: isShuttingDown,
   restart: () => rendererServer.restart(),
+  isDown: () => rendererServer.isDown(),
   reloadWorkspace: () => {
     const win = mainWindow.live();
     if (win && workspace.isTarget(win.webContents.getURL())) {
       win.webContents.reload();
     }
   },
+  ask: askToRecover,
+  quit: () => app.quit(),
 });
 const startupScreen = createStartupScreen(() => mainWindow.current());
 
@@ -242,6 +248,13 @@ const shutdownSequence = createShutdownSequence({
   },
   window: () => mainWindow.current(),
   allWindows: () => BrowserWindow.getAllWindows(),
+  // A cancelled quit hands the processes back: whatever died while shutdown
+  // owned them comes back now. A restarted server reloads the window again
+  // once it answers.
+  shutdownCancelled: () => {
+    rendererServerSupervisor.shutdownCancelled();
+    rendererRecovery.shutdownCancelled(BrowserWindow.getAllWindows());
+  },
   checkpoints,
   workspace: {
     load: loadWorkspace,
@@ -408,12 +421,7 @@ app.whenReady().then(() => {
   );
 });
 
-installCrashAnalytics(app, process);
-// Chromium restarts its own GPU, network and utility helpers; the record is
-// what says one died. The renderer's death is recorded by its recovery.
-app.on('child-process-gone', (_event, details) =>
-  recordChildProcessGone(processDiagnostics, details)
-);
+watchProcessDeaths(app, process, processDiagnostics);
 
 app.on(
   'before-quit',

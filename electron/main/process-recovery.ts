@@ -25,11 +25,13 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  *   live in main, so a reload costs the page and nothing else.
  * - **A dead renderer server restarts on its own port**, keeping the origin
  *   and everything the renderer stored under it, then reloads the window.
- * - **Recovery never loops.** Automatic attempts are budgeted per window of
- *   time. A renderer that keeps dying past the budget stops reloading and
- *   asks the operator instead; a server that keeps dying stays down and is
- *   recorded.
- * - **A quit is never fought.** Nothing restarts once shutdown has begun.
+ * - **Recovery never loops, and never gives up silently.** Automatic attempts
+ *   are budgeted per window of time. A renderer or server that keeps dying
+ *   past the budget stops restarting and asks the operator (Reload Window or
+ *   Quit) instead.
+ * - **A quit is never fought.** Nothing restarts once shutdown has begun. A
+ *   shutdown the operator cancels hands the processes back, and anything that
+ *   died while it owned them is brought back then.
  * - **A hung renderer is the operator's call** (BUG-129). A page stuck in a
  *   loop never dies, so nothing above would fire: the window just ignores
  *   every click. When Chromium reports it unresponsive, the operator is asked
@@ -78,7 +80,13 @@ interface ChildGoneDetails {
 /** The window surface recovery touches, and nothing more. */
 export interface RecoverableWindow {
   isDestroyed(): boolean;
-  webContents: { reload(): void; forcefullyCrashRenderer(): void };
+  webContents: {
+    reload(): void;
+    isCrashed(): boolean;
+    isLoading(): boolean;
+    once(event: 'did-stop-loading', listener: () => void): unknown;
+    forcefullyCrashRenderer(): void;
+  };
 }
 
 export type HangChoice = 'wait' | 'reload';
@@ -112,6 +120,26 @@ export function testHangChoice(env: NodeJS.ProcessEnv): HangChoice {
 
 export type RecoveryChoice = 'reload' | 'quit';
 
+/**
+ * One operator prompt at a time. The renderer and its server can both run out
+ * of automatic recovery in the same moment (the server dies, so the page the
+ * renderer reloads cannot load); the operator is asked once and both hear the
+ * same answer.
+ */
+export function sharedRecoveryPrompt(
+  show: () => Promise<RecoveryChoice>
+): () => Promise<RecoveryChoice> {
+  let open: Promise<RecoveryChoice> | null = null;
+  return () =>
+    (open ??= show().finally(() => {
+      open = null;
+    }));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** The question asked once automatic recovery is spent. */
 export function rendererRecoveryPrompt(productName: string): {
   options: MessageBoxOptions;
@@ -136,7 +164,7 @@ interface RendererRecoveryDependencies {
   /** True once shutdown is past confirmation: nothing restarts from then on. */
   isQuitting: () => boolean;
   /** Asked only when the automatic budget is spent. */
-  askToReload: (win: RecoverableWindow) => Promise<RecoveryChoice>;
+  ask: () => Promise<RecoveryChoice>;
   /** Asked while the renderer is hung; `signal` aborts it if the page recovers. */
   askWhileUnresponsive: (
     win: RecoverableWindow,
@@ -156,6 +184,12 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
   rendererGone(win: RecoverableWindow, details: RendererGoneDetails): void;
   rendererUnresponsive(win: RecoverableWindow): void;
   rendererResponsive(): void;
+  /**
+   * A shutdown that had begun returned to idle (the operator cancelled it, or
+   * a step failed). A renderer that died while shutdown owned the processes
+   * was deliberately left down; the app is staying open, so bring it back.
+   */
+  shutdownCancelled(windows: readonly RecoverableWindow[]): void;
 } {
   const now = deps.now ?? Date.now;
   const defer = deps.defer ?? (run => setTimeout(run, 0));
@@ -173,11 +207,28 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
     win.webContents.reload();
   }
 
+  /**
+   * The reload runs a turn after Chromium's crash notification. A navigation
+   * already in flight when the renderer died (startup entering the workspace,
+   * say) starts a renderer of its own and lands by itself; reloading then
+   * would abort it and put the window back on the page that died. So a
+   * window still loading is left to finish, and reloaded only if it is still
+   * down once loading stops.
+   */
+  function reloadIfStillDown(win: RecoverableWindow): void {
+    if (win.isDestroyed() || !win.webContents.isCrashed()) return;
+    if (win.webContents.isLoading()) {
+      win.webContents.once('did-stop-loading', () => reloadIfStillDown(win));
+      return;
+    }
+    reload(win);
+  }
+
   function ask(win: RecoverableWindow): void {
     if (asking) return;
     asking = true;
     void deps
-      .askToReload(win)
+      .ask()
       .then(choice => {
         deps.record('renderer.recovery-choice', { choice });
         if (choice === 'reload') {
@@ -187,7 +238,11 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
           deps.quit();
         }
       })
-      .catch(() => {})
+      .catch(error => {
+        deps.record('renderer.recovery-prompt-failed', {
+          message: errorMessage(error),
+        });
+      })
       .finally(() => {
         asking = false;
       });
@@ -215,12 +270,12 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
           action: 'reload',
           requested,
         });
-        defer(() => reload(win));
+        defer(() => reloadIfStillDown(win));
         return;
       }
       if (budget.spend()) {
         deps.record('renderer.gone', { ...fields, action: 'reload' });
-        defer(() => reload(win));
+        defer(() => reloadIfStillDown(win));
         return;
       }
       deps.record('renderer.gone', { ...fields, action: 'ask' });
@@ -244,7 +299,11 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
             win.webContents.forcefullyCrashRenderer();
           }
         })
-        .catch(() => {})
+        .catch(error => {
+          deps.record('renderer.unresponsive-prompt-failed', {
+            message: errorMessage(error),
+          });
+        })
         .finally(() => {
           if (hangQuestion === question) hangQuestion = null;
         });
@@ -255,6 +314,14 @@ export function createRendererRecovery(deps: RendererRecoveryDependencies): {
         deps.record('renderer.responsive', { afterMs: now() - hungSince });
       }
       endHang();
+    },
+
+    shutdownCancelled(windows) {
+      for (const win of windows) {
+        if (win.isDestroyed() || !win.webContents.isCrashed()) continue;
+        deps.record('renderer.reloaded', { after: 'cancelled-shutdown' });
+        reload(win);
+      }
     },
   };
 }
@@ -283,23 +350,92 @@ interface RendererServerSupervisorDependencies {
   isQuitting: () => boolean;
   /** Starts the server again on the port it was serving. */
   restart: () => Promise<unknown>;
+  /** True when the server has served before and nothing is serving now. */
+  isDown: () => boolean;
   /** Reloads the window if it is showing the renderer the server serves. */
   reloadWorkspace: () => void;
+  /** Asked only when the automatic budget is spent. */
+  ask: () => Promise<RecoveryChoice>;
+  quit: () => void;
   now?: () => number;
 }
 
 /**
  * Supervision for the packaged renderer's loopback server. Only an exit the
  * server did not ask for reaches it: `stop()` and a failed start are the
- * renderer server's own business.
+ * renderer server's own business. A restart that fails (the new server dies
+ * while starting, or never answers and is killed) is retried while the budget
+ * lasts; once it is spent the operator is asked, never left with a window
+ * that silently cannot load.
  */
 export function createRendererServerSupervisor(
   deps: RendererServerSupervisorDependencies
 ): {
   exited(details: { code: number | null; signal: string | null }): void;
+  /** A shutdown that had begun returned to idle: serve again if it stopped. */
+  shutdownCancelled(): void;
 } {
   const budget = createRecoveryBudget(RECOVERY_BUDGET, deps.now ?? Date.now);
   let restarting = false;
+  let asking = false;
+
+  function restart(): void {
+    restarting = true;
+    void deps.restart().then(
+      () => {
+        restarting = false;
+        deps.record('renderer-server.restarted');
+        if (!deps.isQuitting()) deps.reloadWorkspace();
+      },
+      error => {
+        restarting = false;
+        const message = errorMessage(error);
+        if (deps.isQuitting()) {
+          deps.record('renderer-server.restart-failed', {
+            message,
+            action: 'none',
+          });
+        } else if (budget.spend()) {
+          deps.record('renderer-server.restart-failed', {
+            message,
+            action: 'retry',
+          });
+          restart();
+        } else {
+          deps.record('renderer-server.restart-failed', {
+            message,
+            action: 'ask',
+          });
+          ask();
+        }
+      }
+    );
+  }
+
+  function ask(): void {
+    if (asking) return;
+    asking = true;
+    void deps
+      .ask()
+      .then(choice => {
+        asking = false;
+        deps.record('renderer-server.recovery-choice', { choice });
+        if (choice === 'quit') {
+          deps.quit();
+        } else if (!deps.isQuitting() && !restarting) {
+          budget.reset();
+          budget.spend();
+          restart();
+        }
+      })
+      .catch(error => {
+        asking = false;
+        deps.record('renderer-server.recovery-prompt-failed', {
+          message: errorMessage(error),
+        });
+      });
+  }
+
   return {
     exited({ code, signal }) {
       const fields = { code, signal };
@@ -308,25 +444,22 @@ export function createRendererServerSupervisor(
         return;
       }
       if (!budget.spend()) {
-        deps.record('renderer-server.exited', { ...fields, action: 'give-up' });
+        deps.record('renderer-server.exited', { ...fields, action: 'ask' });
+        ask();
         return;
       }
       deps.record('renderer-server.exited', { ...fields, action: 'restart' });
-      restarting = true;
-      void deps
-        .restart()
-        .then(() => {
-          deps.record('renderer-server.restarted');
-          if (!deps.isQuitting()) deps.reloadWorkspace();
-        })
-        .catch(error => {
-          deps.record('renderer-server.restart-failed', {
-            message: error instanceof Error ? error.message : String(error),
-          });
-        })
-        .finally(() => {
-          restarting = false;
-        });
+      restart();
+    },
+    shutdownCancelled() {
+      if (deps.isQuitting() || restarting || asking || !deps.isDown()) return;
+      if (!budget.spend()) {
+        deps.record('renderer-server.resumed', { action: 'ask' });
+        ask();
+        return;
+      }
+      deps.record('renderer-server.resumed', { action: 'restart' });
+      restart();
     },
   };
 }

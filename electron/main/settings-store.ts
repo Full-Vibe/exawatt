@@ -22,6 +22,7 @@ import {
   isCalendarDate,
   parseOperatorStatsSyncFailureRecord,
   SAFETY_CONTROLS,
+  isAgentPermissionMode,
   type AgentLaunchConfigurationInput,
   type AgentPermissionMode,
   type LaunchConfigurationPoolV1,
@@ -94,21 +95,8 @@ export const CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES: ElectronAppearanc
     transparency: 'system',
   };
 
-const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>([
-  'prompt',
-  'auto',
-  'unrestricted',
-]);
-
 function isSafeSourceId(value: string): boolean {
   return /^[a-z0-9-]{1,64}$/.test(value);
-}
-
-function isAgentPermissionMode(value: unknown): value is AgentPermissionMode {
-  return (
-    typeof value === 'string' &&
-    AGENT_PERMISSION_MODES.has(value as AgentPermissionMode)
-  );
 }
 
 function isThemeId(value: unknown): value is ThemeBootstrapId {

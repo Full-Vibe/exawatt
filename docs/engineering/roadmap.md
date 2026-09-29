@@ -2888,6 +2888,28 @@ Proof: table-driven tests in `electron/main/safety/`, and a live probe that
 reproduced "fish, claude" and then allowed it. Residual gaps: ENG-044's
 2026-09-28 finding.
 
+### BUG-241 Process recovery gave up silently, and missed start and cancelled quits
+
+Status: done · ENG-016 · found 2026-09-28 in the pre-0.1.14 review; resolved 2026-09-28.
+
+Follow-ups to BUG-223 in `electron/main/process-recovery.ts` and
+`renderer-server.ts`. A restarted renderer server that died or hung while
+starting was never retried, a hung one kept its port, and a server that kept
+dying stayed down with no prompt. A failed start now stops its child, the
+supervisor retries within the budget, and the Reload Window / Quit prompt
+(shared with the renderer) appears when recovery gives up. A renderer killed
+during a quit the operator then cancels was never reloaded; a shutdown that
+returns to idle now reloads crashed windows and restarts a stopped server.
+The server's `stopping` flag lasts only while a stop is in flight. Found by
+the extended eval: a renderer killed while startup was entering the
+workspace had recovery reload the launch screen over that navigation, and
+startup failed; recovery now lets an in-flight navigation land.
+Process-death records are bounded per event family with a `suppressed`
+count, and a re-queued deep link is no longer dropped. Gate:
+`eval:electron:helper-death` (now also kills during start and during a
+cancelled quit), mutation-checked; real-process restart tests in
+`renderer-server.test.ts`. [Findings](projects/daily-driver-adoption.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

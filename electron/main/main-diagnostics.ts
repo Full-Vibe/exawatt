@@ -10,6 +10,7 @@ import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
 } from './diagnostics-log';
+import { recordChildProcessGone } from './process-recovery';
 import {
   MainThreadStallTrace,
   STALL_LOG_MAX_BYTES,
@@ -90,7 +91,7 @@ export function installMainInstrumentation(
   watchShellStartupArtifacts(userDataPath, record);
 }
 
-interface CrashApp {
+interface ProcessDeathApp {
   getVersion(): string;
   on(
     event: 'render-process-gone',
@@ -104,22 +105,34 @@ interface CrashApp {
     event: 'child-process-gone',
     listener: (
       event: unknown,
-      details: { type: string; reason: string }
+      details: {
+        type: string;
+        reason: string;
+        exitCode: number;
+        serviceName?: string;
+        name?: string;
+      }
     ) => void
   ): unknown;
 }
 
 /**
- * ENG-030 OS1.5b — main-process crash coverage (`app_crashed`). Each listener
- * queues one typed event into the in-memory analytics bridge; it reaches
- * PostHog only if a renderer later drains it through the allowlisted emission
- * path (decision `0034`: main has no analytics destination of its own). A
- * crash at quit that never drains is an accepted loss — no persistence, no
- * extra work on the crash path.
+ * Every app-level process-death listener, in one place. Each death is
+ * recorded to `logs/main.jsonl` (BUG-223) and counted as `app_crashed`
+ * (ENG-030 OS1.5b). A renderer's own death is recorded by its window's
+ * recovery, which knows what it did about it; the per-window listener lives
+ * with the window.
+ *
+ * Each analytics listener queues one typed event into the in-memory analytics
+ * bridge; it reaches PostHog only if a renderer later drains it through the
+ * allowlisted emission path (decision `0034`: main has no analytics
+ * destination of its own). A crash at quit that never drains is an accepted
+ * loss — no persistence, no extra work on the crash path.
  */
-export function installCrashAnalytics(
-  app: CrashApp,
-  proc: { on(event: 'uncaughtExceptionMonitor', listener: () => void): unknown }
+export function watchProcessDeaths(
+  app: ProcessDeathApp,
+  proc: { on(event: 'uncaughtExceptionMonitor', listener: () => void): unknown },
+  record: DiagnosticRecorder
 ): void {
   app.on('render-process-gone', (_event, _webContents, details) => {
     const crash = appCrashFromRenderProcessGone(
@@ -128,7 +141,10 @@ export function installCrashAnalytics(
     );
     if (crash) queueMainAnalyticsEvent(crash);
   });
+  // Chromium restarts its own GPU, network and utility helpers; the record is
+  // what says one died.
   app.on('child-process-gone', (_event, details) => {
+    recordChildProcessGone(record, details);
     const crash = appCrashFromChildProcessGone(
       details.type,
       details.reason,

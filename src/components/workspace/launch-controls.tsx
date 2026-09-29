@@ -15,11 +15,9 @@ import {
   AGENT_SOURCE_META,
   AGENT_SOURCE_ORDER,
   AGENT_PERMISSION_MODE_META,
-  AGENT_PERMISSION_MODE_ORDER,
   DEFAULT_AGENT_PERMISSION_MODE,
   fallbackAgentSourceRegistry,
   isAgentSourceId,
-  isAgentPermissionMode,
   launchSourceSnapshots,
   loadAgentModelCatalog,
   loadAgentSourcePreferences,
@@ -49,7 +47,9 @@ import {
 } from './recent-conversations';
 import {
   createAgentLaunchConfiguration,
+  AGENT_PERMISSION_MODES,
   emptyLaunchConfigurationPool,
+  isAgentPermissionMode,
   launchConfigurationId,
   rankLaunchTargets,
   recommendLaunchSetups,
@@ -1396,7 +1396,7 @@ export function AgentComposer({
     description: option.description,
   }));
   const permissionAxisOptions: DetailAxisOption[] =
-    AGENT_PERMISSION_MODE_ORDER.filter(mode =>
+    AGENT_PERMISSION_MODES.filter(mode =>
       sourceMeta.capabilities.permissionModes.includes(mode)
     ).map(mode => ({
       id: mode,

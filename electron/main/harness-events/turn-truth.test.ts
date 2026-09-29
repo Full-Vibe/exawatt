@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import { describe, expect, it } from 'vitest';
 import { AttentionMonitor } from '../pty/attention-monitor';
 import type { PtySessionManager } from '../pty/session-manager';
-import { boundDiagnosticRecorder } from '../diagnostics-log';
 import { DelegationMonitor } from './delegation-monitor';
 import { CENSUS_EXPIRED_EVENT, wireReportedTurnTruth } from './turn-truth';
 
@@ -121,26 +120,5 @@ describe('wireReportedTurnTruth', () => {
     r.silence(120_000);
     expect(r.delegation.get('S')?.children).toHaveLength(1);
     expect(r.log).toEqual([]);
-  });
-});
-
-describe('boundDiagnosticRecorder', () => {
-  it('caps records per minute with one suppression line, and per run with one exhaustion line', () => {
-    let clock = 0;
-    const sink: string[] = [];
-    const record = boundDiagnosticRecorder(
-      (event, fields) => sink.push(`${event}${fields?.n ?? ''}`),
-      { perMinute: 2, perRun: 3, now: () => clock }
-    );
-    record('x', { n: 1 });
-    record('x', { n: 2 });
-    record('x', { n: 3 });
-    record('x', { n: 4 });
-    expect(sink).toEqual(['x1', 'x2', 'x.suppressed']);
-    clock += 60_000;
-    record('x', { n: 5 });
-    record('x', { n: 6 });
-    record('x', { n: 7 });
-    expect(sink).toEqual(['x1', 'x2', 'x.suppressed', 'x5', 'x.exhausted']);
   });
 });

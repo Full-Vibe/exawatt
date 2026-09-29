@@ -80,6 +80,8 @@ interface RendererServer {
   stop(): Promise<void>;
   /** Starts the child again on the port it was serving, same origin. */
   restart(): Promise<string>;
+  /** True when a server has served before and none is serving now. */
+  isDown(): boolean;
   /** The origin being served, or null before the first successful start. */
   readonly origin: string | null;
   /** Whether this version is already unpacked, so start can run pre-ready. */
@@ -175,7 +177,12 @@ export function createRendererServer(
   let activeRendererCacheKey: string | null = null;
   /** What the serving child was launched from, for a same-port restart. */
   let served: { standaloneRoot: string; port: number } | null = null;
-  /** Set once `stop()` is asked: every exit after that is expected. */
+  /**
+   * True while a `stop()` is in flight: the exit it asks for is expected, and
+   * nothing may start a replacement under it. Cleared when the stop settles,
+   * so after a shutdown that is abandoned a later death is reported and a
+   * restart is allowed again.
+   */
   let stopping = false;
 
   const cacheRoot = () =>
@@ -261,7 +268,8 @@ export function createRendererServer(
     });
     rendererServer = child;
     // A child that dies while starting is reported by the start that launched
-    // it, so only an exit after it answered is unexpected.
+    // it (the promise rejects), so only an exit after it answered is
+    // unexpected.
     let answered = false;
     const reportExit = (code: number | null, signal: string | null) => {
       if (!answered || stopping || rendererServer !== child) return;
@@ -272,15 +280,45 @@ export function createRendererServer(
       if (deps.forwardStdout) writeStdout(data);
     });
     child.stderr?.on('data', data => writeStderr(data));
-    await waitForRenderer(`${origin}/workspace`, child);
+    try {
+      await waitForRenderer(`${origin}/workspace`, child);
+      // The exit may have landed after the last readiness check: a child
+      // that is already gone was never handed over.
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(
+          `Packaged renderer exited with ${child.exitCode ?? child.signalCode}`
+        );
+      }
+    } catch (error) {
+      await discard(child, error);
+      throw error;
+    }
     rendererOrigin = origin;
     served = { standaloneRoot, port };
     answered = true;
-    // The exit may have landed during the last readiness probe.
-    if (child.exitCode !== null || child.signalCode !== null) {
-      reportExit(child.exitCode, child.signalCode);
-    }
     return origin;
+  }
+
+  /**
+   * Ends a child whose start failed. One that never answered still holds its
+   * port, and the next start on that port would fail behind it, so it is
+   * stopped before the failure is reported. If it will not stop, it stays
+   * owned so shutdown can try again, and the failure says so.
+   */
+  async function discard(child: ChildProcess, cause: unknown): Promise<void> {
+    try {
+      await stopChildProcess(child, {
+        forceAfterMs: deps.isTest ? 250 : 1_500,
+        failAfterMs: deps.isTest ? 2_000 : 5_000,
+        failureMessage: 'Packaged renderer did not stop after a failed start',
+      });
+    } catch (stopError) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(
+        `${reason}; ${stopError instanceof Error ? stopError.message : String(stopError)}`
+      );
+    }
+    if (rendererServer === child) rendererServer = null;
   }
 
   async function restartRendererServer(): Promise<string> {
@@ -331,23 +369,34 @@ export function createRendererServer(
   }
 
   async function stopRendererServer(): Promise<void> {
-    stopping = true;
     const server = rendererServer;
     if (!server) return;
-    await stopChildProcess(server, {
-      forceAfterMs: deps.isTest ? 250 : 1_500,
-      failAfterMs: deps.isTest ? 2_000 : 5_000,
-      failureMessage: 'Packaged renderer did not stop during shutdown',
-    });
-    // Clear ownership only after the process is truthfully stopped. A rejection
-    // leaves the same handle available to the next shutdown attempt.
-    if (rendererServer === server) rendererServer = null;
+    stopping = true;
+    try {
+      await stopChildProcess(server, {
+        forceAfterMs: deps.isTest ? 250 : 1_500,
+        failAfterMs: deps.isTest ? 2_000 : 5_000,
+        failureMessage: 'Packaged renderer did not stop during shutdown',
+      });
+      // Clear ownership only after the process is truthfully stopped. A
+      // rejection leaves the same handle available to the next shutdown.
+      if (rendererServer === server) rendererServer = null;
+    } finally {
+      stopping = false;
+    }
+  }
+
+  function isRendererServerDown(): boolean {
+    if (!served) return false;
+    const child = rendererServer;
+    return !child || child.exitCode !== null || child.signalCode !== null;
   }
 
   return {
     start: startPackagedRenderer,
     stop: stopRendererServer,
     restart: restartRendererServer,
+    isDown: isRendererServerDown,
     get origin() {
       return rendererOrigin;
     },

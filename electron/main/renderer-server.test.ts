@@ -7,6 +7,10 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import net from 'net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createRendererServerSupervisor,
+  type RecoveryChoice,
+} from './process-recovery';
+import {
   createRendererServer,
   rendererServerLaunch,
   type RendererServerDependencies,
@@ -368,12 +372,85 @@ describe('createRendererServer', () => {
       ]);
     });
 
-    it('refuses to restart a server that never served, or one being stopped', async () => {
-      const { server } = harness();
+    it('refuses to restart a server that never served, or while a stop is in flight', async () => {
+      const { server, spawned } = harness();
       await expect(server.restart()).rejects.toThrow('has not served yet');
       await server.start();
-      await server.stop();
+      spawned[0].child.honoursSignals = false;
+      const stopping = server.stop().catch(() => {});
+
       await expect(server.restart()).rejects.toThrow('stopping');
+
+      spawned[0].child.exit(null, 'SIGTERM');
+      await stopping;
+      expect(server.isDown()).toBe(true);
+      await expect(server.restart()).resolves.toBe('http://127.0.0.1:34567');
+      expect(server.isDown()).toBe(false);
+    });
+
+    it('reports a later death after a stop that failed, and restarts (an abandoned shutdown)', async () => {
+      const exits: unknown[] = [];
+      const { server, spawned } = harness({
+        onUnexpectedExit: details => exits.push(details),
+      });
+      await server.start();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const child = spawned[0].child;
+      child.honoursSignals = false;
+      const stopping = server.stop();
+      const refused = expect(stopping).rejects.toThrow('did not stop');
+      await vi.runAllTimersAsync();
+      await refused;
+      vi.useRealTimers();
+
+      // The shutdown was abandoned; the server dies later on its own.
+      child.exit(null, 'SIGKILL');
+
+      expect(exits).toEqual([{ code: null, signal: 'SIGKILL' }]);
+      await expect(server.restart()).resolves.toBe('http://127.0.0.1:34567');
+    });
+
+    it('stops a child that never answers before failing its start, so it cannot keep the port', async () => {
+      let now = 0;
+      const { server, spawned, answerAfter } = harness({
+        // Each probe moves the clock a second: the 30 s deadline passes on
+        // the thirty-first, whatever the host's speed.
+        clock: {
+          now: () => (now += 1_000),
+          sleep: () => new Promise(resolve => setImmediate(resolve)),
+        },
+      });
+      answerAfter(Number.POSITIVE_INFINITY);
+
+      await expect(server.start()).rejects.toThrow(
+        'Timed out starting the packaged renderer'
+      );
+
+      expect(spawned[0].child.signals).toEqual(['SIGTERM']);
+      expect(spawned[0].child.signalCode).toBe('SIGTERM');
+      // Nothing is left owned: a stop has nothing to do.
+      await server.stop();
+      expect(spawned[0].child.signals).toEqual(['SIGTERM']);
+    });
+
+    it('treats a child that died during the last readiness probe as a failed start', async () => {
+      const exits: unknown[] = [];
+      const { server, spawned } = harness({
+        probe: async () => {
+          // Nothing answers before the child exists; then it answers and is
+          // gone before the answer is handed over.
+          if (spawned.length === 0) return false;
+          spawned[0].child.exit(null, 'SIGKILL');
+          return true;
+        },
+        onUnexpectedExit: details => exits.push(details),
+      });
+
+      await expect(server.start()).rejects.toThrow(
+        'Packaged renderer exited with SIGKILL'
+      );
+      expect(server.origin).toBeNull();
+      expect(exits).toEqual([]);
     });
   });
 });
@@ -535,5 +612,205 @@ setInterval(() => {}, 60000);`;
       await server.stop();
     }
     expect(exits).toHaveLength(1);
+  });
+
+  describe('recovery when the restarted server dies or hangs while starting', () => {
+    /**
+     * A stand-in for Next's server that follows a script, one step per start:
+     * `serve` answers with its pid, `die` exits before listening, and `hang`
+     * stays alive without ever listening (and says so in `hung`).
+     */
+    const SCRIPTED_SERVER = `const fs = require('fs');
+const path = require('path');
+const at = name => path.join(__dirname, name);
+const plan = JSON.parse(fs.readFileSync(at('plan.json'), 'utf8'));
+const n = fs.existsSync(at('starts')) ? Number(fs.readFileSync(at('starts'), 'utf8')) : 0;
+fs.writeFileSync(at('starts'), String(n + 1));
+fs.appendFileSync(at('pids'), process.pid + '\\n');
+const step = plan[n] ?? 'serve';
+if (step === 'die') process.exit(3);
+if (step === 'hang') {
+  fs.writeFileSync(at('hung'), String(process.pid));
+  setInterval(() => {}, 60000);
+} else {
+  require('http')
+    .createServer((req, res) => res.end(String(process.pid)))
+    .listen(Number(process.env.PORT), process.env.HOSTNAME);
+}`;
+
+    async function freePort(): Promise<number> {
+      return await new Promise<number>(resolve => {
+        const probe = net.createServer().listen(0, '127.0.0.1', () => {
+          const { port } = probe.address() as net.AddressInfo;
+          probe.close(() => resolve(port));
+        });
+      });
+    }
+
+    async function scripted(plan: string[]) {
+      const standalone = path.join(versionRoot(), 'dist-renderer');
+      fs.mkdirSync(standalone, { recursive: true });
+      fs.writeFileSync(path.join(standalone, 'server.js'), SCRIPTED_SERVER);
+      fs.writeFileSync(
+        path.join(standalone, 'plan.json'),
+        JSON.stringify(plan)
+      );
+      const pids = () =>
+        fs.existsSync(path.join(standalone, 'pids'))
+          ? fs
+              .readFileSync(path.join(standalone, 'pids'), 'utf8')
+              .split('\n')
+              .filter(Boolean)
+              .map(Number)
+          : [];
+      pids().forEach(pid => started.push(pid));
+      const hungMarker = path.join(standalone, 'hung');
+      const port = await freePort();
+      const events: Array<[string, unknown]> = [];
+      const answers: Array<(choice: RecoveryChoice) => void> = [];
+      let quitting = false;
+      let reloads = 0;
+      const server = createRendererServer({
+        resourcesPath,
+        userDataPath: () => userData,
+        cacheNamespace: 'community',
+        execPath: process.execPath,
+        isTest: true,
+        childEnvironment: () => ({ PATH: process.env.PATH }),
+        forwardStdout: false,
+        ports: { allocate: async () => port, serving: async () => {} },
+        // The readiness deadline passes the moment a hung server has said it
+        // is up, never on the host's clock: a slow host only waits longer.
+        clock: {
+          now: () => {
+            if (!fs.existsSync(hungMarker)) return 0;
+            fs.rmSync(hungMarker);
+            return Number.MAX_SAFE_INTEGER;
+          },
+          sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+        },
+        writeStderr: () => {},
+        onUnexpectedExit: details => supervisor.exited(details),
+      });
+      const supervisor = createRendererServerSupervisor({
+        record: (event, fields) => events.push([event, fields?.action]),
+        isQuitting: () => quitting,
+        restart: () => server.restart(),
+        isDown: () => server.isDown(),
+        reloadWorkspace: () => {
+          reloads += 1;
+        },
+        ask: () => new Promise(resolve => answers.push(resolve)),
+        quit: () => {},
+      });
+      return {
+        server,
+        supervisor,
+        events,
+        answers,
+        pids: () => {
+          const all = pids();
+          all.forEach(pid => started.push(pid));
+          return all;
+        },
+        reloads: () => reloads,
+        quitting: (value: boolean) => {
+          quitting = value;
+        },
+        pidAt: async (origin: string) =>
+          Number(await (await fetch(`${origin}/workspace`)).text()),
+      };
+    }
+
+    const waitLong = { timeout: 10_000, interval: 20 };
+
+    it('retries a restarted server that dies while starting, on the same origin', async () => {
+      const h = await scripted(['serve', 'die', 'serve']);
+      try {
+        const origin = await h.server.start();
+        process.kill(await h.pidAt(origin), 'SIGKILL');
+
+        await vi.waitFor(() => expect(h.reloads()).toBe(1), waitLong);
+
+        expect(h.events).toEqual([
+          ['renderer-server.exited', 'restart'],
+          ['renderer-server.restart-failed', 'retry'],
+          ['renderer-server.restarted', undefined],
+        ]);
+        expect(await h.pidAt(origin)).toBe(h.pids()[2]);
+      } finally {
+        await h.server.stop();
+      }
+    });
+
+    it('kills a restarted server that never answers, then serves again on the port it held', async () => {
+      const h = await scripted(['serve', 'hang', 'serve']);
+      try {
+        const origin = await h.server.start();
+        process.kill(await h.pidAt(origin), 'SIGKILL');
+
+        await vi.waitFor(() => expect(h.reloads()).toBe(1), waitLong);
+
+        const [, hung, serving] = h.pids();
+        expect(alive(hung)).toBe(false);
+        expect(await h.pidAt(origin)).toBe(serving);
+        expect(h.events[1]).toEqual([
+          'renderer-server.restart-failed',
+          'retry',
+        ]);
+      } finally {
+        await h.server.stop();
+      }
+    });
+
+    it('asks the operator once restarts keep failing, and serves again on Reload Window', async () => {
+      const h = await scripted(['serve', 'die', 'die', 'die', 'serve']);
+      try {
+        const origin = await h.server.start();
+        process.kill(await h.pidAt(origin), 'SIGKILL');
+
+        await vi.waitFor(() => expect(h.answers).toHaveLength(1), waitLong);
+        expect(h.reloads()).toBe(0);
+        expect(h.events[h.events.length - 1]).toEqual([
+          'renderer-server.restart-failed',
+          'ask',
+        ]);
+
+        h.answers[0]('reload');
+        await vi.waitFor(() => expect(h.reloads()).toBe(1), waitLong);
+        expect(await h.pidAt(origin)).toBe(h.pids()[4]);
+      } finally {
+        await h.server.stop();
+      }
+    });
+
+    it('serves again when a quit that stopped or lost the server is cancelled', async () => {
+      const h = await scripted(['serve', 'serve', 'serve']);
+      try {
+        const origin = await h.server.start();
+
+        // Killed from outside while shutdown owns the processes: left down.
+        h.quitting(true);
+        process.kill(await h.pidAt(origin), 'SIGKILL');
+        await vi.waitFor(
+          () => expect(h.events).toEqual([['renderer-server.exited', 'none']]),
+          waitLong
+        );
+        h.quitting(false);
+        h.supervisor.shutdownCancelled();
+        await vi.waitFor(() => expect(h.reloads()).toBe(1), waitLong);
+        expect(await h.pidAt(origin)).toBe(h.pids()[1]);
+
+        // Stopped by the quit's own cleanup, then the quit is cancelled.
+        h.quitting(true);
+        await h.server.stop();
+        h.quitting(false);
+        h.supervisor.shutdownCancelled();
+        await vi.waitFor(() => expect(h.reloads()).toBe(2), waitLong);
+        expect(await h.pidAt(origin)).toBe(h.pids()[2]);
+      } finally {
+        await h.server.stop();
+      }
+    });
   });
 });

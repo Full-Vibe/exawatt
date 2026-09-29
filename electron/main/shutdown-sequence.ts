@@ -6,7 +6,7 @@ import type {
   ShutdownDependencies,
   shutdownCopy as ShutdownCopy,
 } from './shutdown-coordinator';
-import { pushToRenderer } from './window-broadcast';
+import { broadcastToWindows, pushToRenderer } from './window-broadcast';
 import type {
   ShutdownIntent,
   ShutdownPhase,
@@ -125,6 +125,12 @@ export interface ShutdownSequenceDependencies {
   showMessageBox: (options: MessageBoxOptions) => Promise<{ response: number }>;
   window: () => CheckpointWindow | null;
   allWindows: () => BroadcastWindow[];
+  /**
+   * A shutdown that had begun returned to idle without exiting: the operator
+   * cancelled it, or a step failed. Processes that died while shutdown owned
+   * them were left down, and the app is staying open.
+   */
+  shutdownCancelled?: () => void;
   checkpoints: CheckpointBroker;
   workspace: {
     load(): Promise<unknown | null>;
@@ -185,14 +191,11 @@ export function createShutdownSequence(
     phase: ShutdownPhase,
     counts: LiveProcessCounts
   ): void {
-    for (const win of deps.allWindows()) {
-      if (!win.isDestroyed()) {
-        pushToRenderer(win.webContents, 'app:shutdown-status', {
-          phase,
-          ...counts,
-        });
-      }
-    }
+    broadcastToWindows(deps.allWindows(), 'app:shutdown-status', {
+      phase,
+      ...counts,
+    });
+    if (phase === 'idle') deps.shutdownCancelled?.();
   }
 
   /**
@@ -224,11 +227,10 @@ export function createShutdownSequence(
   async function confirmWithoutCheckpoint(
     intent: ShutdownIntent
   ): Promise<boolean> {
-    if (
-      deps.env.EXAWATT_TEST === '1' &&
-      deps.env.EXAWATT_TEST_CHECKPOINT_FAILURE === 'confirm'
-    ) {
-      return true;
+    if (deps.env.EXAWATT_TEST === '1') {
+      const answer = deps.env.EXAWATT_TEST_CHECKPOINT_FAILURE;
+      if (answer === 'confirm') return true;
+      if (answer === 'cancel') return false;
     }
     const result = await nativeDialog('checkpoint-failed', {
       type: 'warning',

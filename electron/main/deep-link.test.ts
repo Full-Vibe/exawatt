@@ -148,6 +148,24 @@ describe('createDeepLinkRouter', () => {
     expect(exchanged).toEqual(['early']);
   });
 
+  it('keeps a held link that still cannot land when the workspace loads, and delivers it later', async () => {
+    const { links, state, exchanged, names } = router();
+    state.window = fakeWindow().window;
+    state.coordinatorReady = false;
+    links.handle('exawatt://auth/callback?code=held');
+
+    // The workspace loads before the auth runtime: delivery queues it again.
+    links.deliverPending(WORKSPACE);
+    await settled();
+    expect(exchanged).toEqual([]);
+    expect(names().filter(name => name === 'auth.callback.queued')).toHaveLength(2);
+
+    state.coordinatorReady = true;
+    links.deliverPending(WORKSPACE);
+    await settled();
+    expect(exchanged).toEqual(['held']);
+  });
+
   it('holds a code while the auth runtime is still loading', () => {
     const { links, state, exchanged, names } = router();
     state.window = fakeWindow().window;

@@ -1,4 +1,8 @@
-import { AGENT_HARNESSES, agentSourceLaunchVerdict } from '@exawatt/core';
+import {
+  AGENT_HARNESSES,
+  agentSourceLaunchVerdict,
+  isAgentPermissionMode,
+} from '@exawatt/core';
 import {
   agentSourceDeclaration,
   FUTURE_AGENT_SOURCE_CATALOG,
@@ -17,12 +21,6 @@ import type {
 import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 export type AgentSourceId = AgentHarness;
-
-export const AGENT_PERMISSION_MODE_ORDER = [
-  'prompt',
-  'auto',
-  'unrestricted',
-] as const satisfies readonly AgentPermissionMode[];
 
 export const DEFAULT_AGENT_PERMISSION_MODE: AgentPermissionMode =
   'unrestricted';
@@ -405,15 +403,6 @@ const emptyPreferences = (): AgentSourcePreferenceState => ({
 
 export function isAgentSourceId(value: unknown): value is AgentSourceId {
   return typeof value === 'string' && value in AGENT_SOURCE_META;
-}
-
-export function isAgentPermissionMode(
-  value: unknown
-): value is AgentPermissionMode {
-  return (
-    typeof value === 'string' &&
-    AGENT_PERMISSION_MODE_ORDER.includes(value as AgentPermissionMode)
-  );
 }
 
 export function parseAgentSourcePreferences(

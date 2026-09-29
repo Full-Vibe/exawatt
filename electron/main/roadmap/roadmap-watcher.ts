@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BrowserWindow } from 'electron';
 import { discoverRoadmapPath, ROADMAP_DISCOVERY_ORDER } from './roadmap-reader';
-import { pushToRenderer } from '../window-broadcast';
+import { broadcastToWindows } from '../window-broadcast';
 
 /**
  * Live roadmap watching (ENG-017 S5). Watches the PARENT DIRECTORY of the
@@ -30,9 +30,9 @@ const ROOT_BASENAMES = new Set(
 );
 
 function broadcast(projectDir: string): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    pushToRenderer(win.webContents, 'roadmap:file-changed', { projectDir });
-  }
+  broadcastToWindows(BrowserWindow.getAllWindows(), 'roadmap:file-changed', {
+    projectDir,
+  });
 }
 
 export async function watchRoadmap(projectDir: string): Promise<void> {

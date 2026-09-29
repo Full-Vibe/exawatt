@@ -1,4 +1,5 @@
 import path from 'path';
+import type { ElectronAuthError } from '@exawatt/core/desktop-bridge';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { pushToRenderer } from './window-broadcast';
 
@@ -23,13 +24,6 @@ export interface DeepLinkWindow {
   };
 }
 
-interface SafeAuthError {
-  name: string;
-  message: string;
-  status?: number;
-  code?: string;
-}
-
 export interface DeepLinkDependencies {
   /** Null for a distribution that claims no URL scheme. */
   protocolScheme: string | null;
@@ -39,7 +33,7 @@ export interface DeepLinkDependencies {
   /** Null until the auth runtime loads, which makes an early link queue
    *  rather than arrive unvetted. */
   isLinkOutcome: () => ((value: unknown) => boolean) | null;
-  safeAuthError: (error: unknown) => SafeAuthError;
+  safeAuthError: (error: unknown) => ElectronAuthError;
   isWorkspaceTarget: (url: string) => boolean;
   record: AuthDiagnosticRecorder;
   logError?: (message: string, detail: unknown) => void;
@@ -174,10 +168,12 @@ export function createDeepLinkRouter(
   return {
     handle: handleDeepLink,
     deliverPending(currentUrl) {
-      if (pendingDeepLinkUrl && deps.isWorkspaceTarget(currentUrl)) {
-        handleDeepLink(pendingDeepLinkUrl);
-        pendingDeepLinkUrl = null;
-      }
+      if (!pendingDeepLinkUrl || !deps.isWorkspaceTarget(currentUrl)) return;
+      // Taken before delivery: a link that still cannot land queues itself
+      // again, and clearing after delivery would drop exactly that link.
+      const url = pendingDeepLinkUrl;
+      pendingDeepLinkUrl = null;
+      handleDeepLink(url);
     },
   };
 }

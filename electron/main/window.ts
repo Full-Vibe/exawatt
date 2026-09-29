@@ -195,10 +195,9 @@ export function createMainWindowController(
     });
     const win = mainWindow;
     // Renderer-owned command truth is invalid as soon as a document starts
-    // loading or its process is gone. The main-frame navigation boundary below
-    // repeats this idempotently alongside checkpoint ownership.
+    // loading or its process is gone (below). The main-frame navigation
+    // boundary repeats this idempotently alongside checkpoint ownership.
     win.webContents.on('did-start-loading', resetMenuAvailability);
-    win.webContents.on('render-process-gone', resetMenuAvailability);
 
     if (!showAtCreation && windowLaunchMode === 'inactive') {
       const inactiveWindow = win;
@@ -237,9 +236,11 @@ export function createMainWindowController(
       }
     );
     win.webContents.on('destroyed', clearCheckpointOwner);
-    // A dead renderer owns nothing: a quit must not wait on it to checkpoint.
-    // Recovery runs after ownership is released, never before.
+    // A dead renderer owns nothing: no native command it published is live,
+    // and a quit must not wait on it to checkpoint. Recovery runs after both
+    // are released, never before.
     win.webContents.on('render-process-gone', (_event, details) => {
+      resetMenuAvailability();
       clearCheckpointOwner();
       deps.onRenderProcessGone(win, details);
     });

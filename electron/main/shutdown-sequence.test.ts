@@ -94,6 +94,7 @@ function world(
     },
     window: () => window,
     allWindows: () => [window],
+    shutdownCancelled: () => void log.push('shutdown-cancelled'),
     checkpoints: broker,
     workspace: {
       load: async () => {
@@ -318,6 +319,28 @@ describe('the shutdown sequence', () => {
     expect(log).toContain('error:[shutdown] harness identity refresh failed');
     expect(log).toContain('[shutdown] native dialog: checkpoint-failed');
     expect(log).not.toContain('stop-all');
+  });
+
+  it('hands the processes back when a quit that had begun is cancelled', async () => {
+    const { log, coordinator } = world({
+      env: { EXAWATT_TEST: '1', EXAWATT_TEST_CHECKPOINT_FAILURE: 'cancel' },
+      storedLayout: 'unreadable',
+      sessions: [{ ...agent('a'), exited: true }],
+    });
+
+    expect(await coordinator.request('quit')).toBe(false);
+
+    expect(log).not.toContain('stop-all');
+    expect(log[log.length - 1]).toBe('shutdown-cancelled');
+    expect(log.filter(line => line === 'shutdown-cancelled')).toHaveLength(1);
+  });
+
+  it('hands nothing back after a quit that finished', async () => {
+    const { log, coordinator } = world();
+
+    expect(await coordinator.request('quit')).toBe(true);
+
+    expect(log).not.toContain('shutdown-cancelled');
   });
 
   it('reports a Session it could not stop and stays open', async () => {

@@ -31,12 +31,13 @@ import type {
   DesktopBridgeSyncChannel,
   DesktopBridgeSyncRequests,
   DiagnosticsReport,
+  ElectronAuthError,
   ElectronAuthLinkConfig,
   ElectronAuthStartConfig,
   ExawattBuildInfo,
 } from '@exawatt/core/desktop-bridge';
 import type { DistributionIdentity } from '@exawatt/core/distribution';
-import { pushToRenderer } from './window-broadcast';
+import { broadcastToWindows } from './window-broadcast';
 
 /**
  * Main's own channels, as tables keyed by channel name (`ipc-table.ts`):
@@ -44,13 +45,6 @@ import { pushToRenderer } from './window-broadcast';
  * Everything a handler reads that is not known until later (the auth runtime,
  * the Session manager, the log) is read at call time through an argument.
  */
-
-interface SafeAuthError {
-  name: string;
-  message: string;
-  status?: number;
-  code?: string;
-}
 
 interface AuthCoordinatorPort {
   startGoogle(config: ElectronAuthStartConfig): Promise<void>;
@@ -64,7 +58,7 @@ interface AuthCoordinatorPort {
 export function authChannels(deps: {
   coordinator: () => AuthCoordinatorPort | null;
   record: AuthDiagnosticRecorder;
-  safeAuthError: (error: unknown) => SafeAuthError;
+  safeAuthError: (error: unknown) => ElectronAuthError;
   env: NodeJS.ProcessEnv;
 }): TrustedChannels {
   const recordAuthDiagnostic = deps.record;
@@ -380,12 +374,11 @@ export function createAppearanceIpc(deps: {
           deps.allWindows(),
           { safeTheme: deps.safeTheme }
         );
-        const snapshot = appearanceSnapshot();
-        for (const win of deps.allWindows()) {
-          if (!win.isDestroyed()) {
-            pushToRenderer(win.webContents, 'app:appearance-changed', snapshot);
-          }
-        }
+        broadcastToWindows(
+          deps.allWindows(),
+          'app:appearance-changed',
+          appearanceSnapshot()
+        );
       });
     },
   };
@@ -435,7 +428,7 @@ export function registerMainChannels(deps: {
   runtime: {
     readonly authCoordinator: AuthCoordinatorPort | null;
     recordAuthDiagnostic: AuthDiagnosticRecorder;
-    safeAuthError(error: unknown): SafeAuthError;
+    safeAuthError(error: unknown): ElectronAuthError;
     currentUpdateStatus(): Record<string, unknown> | null;
     liveSessionCount(): number;
   };

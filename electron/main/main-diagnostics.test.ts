@@ -7,7 +7,7 @@ import {
   __resetMainAnalyticsForTests,
   drainMainAnalyticsEvents,
 } from './analytics-bridge';
-import { installCrashAnalytics, openMainDiagnostics } from './main-diagnostics';
+import { openMainDiagnostics, watchProcessDeaths } from './main-diagnostics';
 
 let userData: string;
 beforeEach(() => {
@@ -43,14 +43,17 @@ describe('openMainDiagnostics', () => {
   });
 });
 
-describe('installCrashAnalytics', () => {
+describe('watchProcessDeaths', () => {
   function fakeApp() {
     const app = Object.assign(new EventEmitter(), {
       getVersion: () => '0.1.13',
     });
     const proc = new EventEmitter();
-    installCrashAnalytics(app as never, proc as never);
-    return { app, proc };
+    const recorded: Array<{ event: string; fields?: unknown }> = [];
+    watchProcessDeaths(app as never, proc as never, (event, fields) =>
+      recorded.push({ event, fields })
+    );
+    return { app, proc, recorded };
   }
 
   it('queues one crash event per real crash, and none for an orderly exit', () => {
@@ -70,6 +73,34 @@ describe('installCrashAnalytics', () => {
       { scope: 'renderer', reason: 'out_of_memory' },
       { scope: expect.any(String), reason: 'crashed' },
       { scope: 'main', reason: 'crashed' },
+    ]);
+  });
+
+  it('records every helper death to the diagnostics log', () => {
+    const { app, recorded } = fakeApp();
+
+    app.emit(
+      'child-process-gone',
+      {},
+      { type: 'GPU', reason: 'killed', exitCode: 9, serviceName: 'GPU' }
+    );
+    app.emit(
+      'child-process-gone',
+      {},
+      { type: 'Utility', reason: 'clean-exit', exitCode: 0 }
+    );
+
+    expect(recorded).toEqual([
+      {
+        event: 'child.gone',
+        fields: {
+          type: 'GPU',
+          reason: 'killed',
+          exitCode: 9,
+          serviceName: 'GPU',
+          name: null,
+        },
+      },
     ]);
   });
 });
