@@ -179,6 +179,14 @@ describe('qwenHookSettings', () => {
     expect(merged.hooks.Stop[0].hooks[0].command).toBe('audit');
   });
 
+  it('carries a commented administrator document, as Qwen Code reads it', () => {
+    const admin =
+      '\uFEFF{\n  // managed by IT\n  "general": { "enableAutoUpdate": false } /* pinned */\n}\n';
+    const merged = JSON.parse(qwenHookSettings(1, 't', admin));
+    expect(merged.general).toEqual({ enableAutoUpdate: false });
+    expect(merged.hooks.Stop).toHaveLength(1);
+  });
+
   it('refuses to inject over an administrator document it cannot read', () => {
     expect(() => qwenHookSettings(1, 't', '[not an object]')).toThrow();
     expect(() => qwenHookSettings(1, 't', '[]')).toThrow();

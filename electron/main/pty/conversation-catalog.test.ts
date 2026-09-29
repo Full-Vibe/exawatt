@@ -8,6 +8,7 @@ import {
   GrokConversationAdapter,
   OpenCodeConversationAdapter,
   parseGrokSessionSummary,
+  parseOpencodeSessionList,
   ProjectSessionConversationAdapter,
   RecentConversationCatalog,
   redactHostedSummaryText,
@@ -931,23 +932,41 @@ describe('RecentConversationCatalog', () => {
       async () => fakeShell
     ).list(projectDir);
 
-    expect(rows).toEqual([
-      expect.objectContaining({
-        id: 'ses_valid_title',
-        title: 'Verify provider routing',
-        titleSource: 'native',
-      }),
-      expect.objectContaining({
-        id: 'ses_long_title',
-        title: 'OpenCode session',
-        titleSource: 'fallback',
-      }),
-      expect.objectContaining({
-        id: 'ses_narrative_title',
-        title: 'OpenCode session',
-        titleSource: 'fallback',
-      }),
-    ]);
+    // Row order is the catalog's job (newest first), not the adapter's.
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'ses_valid_title',
+          title: 'Verify provider routing',
+          titleSource: 'native',
+        }),
+        expect.objectContaining({
+          id: 'ses_long_title',
+          title: 'OpenCode session',
+          titleSource: 'fallback',
+        }),
+        expect.objectContaining({
+          id: 'ses_narrative_title',
+          title: 'OpenCode session',
+          titleSource: 'fallback',
+        }),
+      ])
+    );
+  });
+
+  it('bounds the OpenCode session list to its newest rows, whatever order the CLI printed', () => {
+    const rows = Array.from({ length: 201 }, (_, index) => ({
+      id: `ses_bounded_${String(index).padStart(4, '0')}`,
+      title: 'Session',
+      directory: '/work',
+      created: index,
+      updated: index,
+    }));
+    const kept = parseOpencodeSessionList(JSON.stringify(rows));
+    expect(kept).toHaveLength(200);
+    expect(kept.map(row => row.updated)).toContain(200);
+    expect(kept.map(row => row.updated)).not.toContain(0);
   });
 });
 
@@ -1051,6 +1070,27 @@ describe('GrokConversationAdapter (ENG-003 S4)', () => {
     );
     const rows = await new GrokConversationAdapter(sessionsRoot).list(cwd);
     expect(rows.map(row => row.title)).toEqual(['Deeply nested worktree']);
+  });
+
+  it('keeps the newest sessions when the history is longer than the bound', async () => {
+    const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
+    const cwd = await temporaryRoot('exawatt-grok-project-');
+    // Ids sort oldest-first, so directory order is the worst case.
+    const ids = [
+      '018f0000-0000-4000-8000-000000000001',
+      '018f0000-0000-4000-8000-000000000002',
+      '018f0000-0000-4000-8000-000000000003',
+    ];
+    for (const [index, id] of ids.entries()) {
+      const at = new Date(Date.UTC(2026, 7, 20 + index));
+      const directory = await seedSession(sessionsRoot, cwd, id, {
+        generated_title: `Session ${index + 1}`,
+        last_active_at: at.toISOString(),
+      });
+      await fs.promises.utimes(path.join(directory, 'summary.json'), at, at);
+    }
+    const rows = await new GrokConversationAdapter(sessionsRoot, 2).list(cwd);
+    expect(rows.map(row => row.id)).toEqual([ids[2], ids[1]]);
   });
 
   it('is empty, not broken, when Grok Build has never run here', async () => {

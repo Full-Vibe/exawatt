@@ -11,6 +11,7 @@ import {
   qwenRuntimeRoot,
   readQwenAdminDefaults,
   readQwenConfiguredModels,
+  readQwenSettingsFile,
   readQwenSignIn,
 } from './qwen-source';
 
@@ -77,7 +78,7 @@ describe('Qwen Code settings', () => {
   });
 
   it('pins no model when none is configured', () => {
-    const catalog = qwenModelCatalog({ ui: {} });
+    const catalog = qwenModelCatalog({ status: 'ok', settings: { ui: {} } });
     expect(catalog.effectiveModel).toBeNull();
     expect(catalog.effectiveModelSource).toBe('account-default');
     expect(catalog.catalogMode).toBe('source-owned');
@@ -85,16 +86,83 @@ describe('Qwen Code settings', () => {
   });
 
   it('pins the configured default as configuration', () => {
-    const catalog = qwenModelCatalog({ model: { name: 'qwen3-coder-plus' } });
+    const catalog = qwenModelCatalog({
+      status: 'ok',
+      settings: { model: { name: 'qwen3-coder-plus' } },
+    });
     expect(catalog.effectiveModel).toBe('qwen3-coder-plus');
     expect(catalog.effectiveModelSource).toBe('config');
     expect(catalog.catalogMode).toBe('configured-values');
+  });
+
+  it('never offers "source default" for settings it could not read', () => {
+    const catalog = qwenModelCatalog({ status: 'unreadable' });
+    expect(catalog.catalogMode).toBe('unavailable');
+    expect(catalog.effectiveModelSource).toBe('unavailable');
+    expect(catalog.models).toEqual([]);
   });
 
   it('treats a missing administrator document as the normal case', () => {
     expect(
       readQwenAdminDefaults(path.join(os.tmpdir(), 'exawatt-no-such-file.json'))
     ).toBeNull();
+  });
+});
+
+describe('readQwenSettingsFile', () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      fs.chmodSync(root, 0o700);
+      for (const entry of fs.readdirSync(root))
+        fs.chmodSync(path.join(root, entry), 0o600);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+  function settingsFile(text: string): string {
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'exawatt-qwen-settings-')
+    );
+    roots.push(root);
+    const file = path.join(root, 'settings.json');
+    fs.writeFileSync(file, text);
+    return file;
+  }
+
+  it('reads the settings Qwen Code accepts, comments and byte-order mark included', () => {
+    const file = settingsFile(
+      '\uFEFF{\n  // written by /auth\n  "security": { "auth": { "selectedType": "openai" } }\n}\n'
+    );
+    const read = readQwenSettingsFile(file);
+    expect(read.status).toBe('ok');
+    expect(readQwenSignIn(read.status === 'ok' ? read.settings : null)).toEqual(
+      { authType: 'openai' }
+    );
+  });
+
+  it('tells a missing file from one it could not read', () => {
+    expect(
+      readQwenSettingsFile(
+        path.join(os.tmpdir(), 'exawatt-no-qwen-settings.json')
+      )
+    ).toEqual({ status: 'absent' });
+    expect(readQwenSettingsFile(settingsFile('{"a": 1,}'))).toEqual({
+      status: 'unreadable',
+    });
+    expect(readQwenSettingsFile(settingsFile('[]'))).toEqual({
+      status: 'unreadable',
+    });
+    const locked = settingsFile('{}');
+    fs.chmodSync(locked, 0o000);
+    // Root reads through permissions; the case only means something without.
+    if (process.getuid?.() !== 0) {
+      expect(readQwenSettingsFile(locked)).toEqual({ status: 'unreadable' });
+    }
+  });
+
+  it('refuses to guess the transcript root from settings it could not read', () => {
+    const file = settingsFile('{ not json');
+    expect(() => qwenRuntimeRoot({ QWEN_HOME: path.dirname(file) })).toThrow();
   });
 });
 
@@ -172,5 +240,37 @@ describe('QwenConversationAdapter', () => {
       providerSessionId: SESSION,
       continuation: { kind: 'provider' },
     });
+  });
+
+  it('keeps the newest transcripts when the history is longer than the bound', async () => {
+    const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'exawatt-qwen-'));
+    const project = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'exawatt-qwen-project-'))
+    );
+    roots.push(runtime, project);
+    const chats = path.join(
+      runtime,
+      'projects',
+      qwenProjectDirname(project),
+      'chats'
+    );
+    fs.mkdirSync(chats, { recursive: true });
+    // Names sort oldest-first, so directory order is the worst case.
+    const ids = [
+      '11111111-2222-4333-8444-000000000001',
+      '11111111-2222-4333-8444-000000000002',
+      '11111111-2222-4333-8444-000000000003',
+    ];
+    ids.forEach((id, index) => {
+      const file = path.join(chats, `${id}.jsonl`);
+      fs.writeFileSync(
+        file,
+        transcript.split('/work/app').join(project).split(SESSION).join(id)
+      );
+      const at = new Date(Date.UTC(2026, 8, 20 + index));
+      fs.utimesSync(file, at, at);
+    });
+    const rows = await new QwenConversationAdapter(runtime, 2).list(project);
+    expect(rows.map(row => row.id)).toEqual([ids[2], ids[1]]);
   });
 });

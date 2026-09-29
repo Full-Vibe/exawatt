@@ -37,6 +37,7 @@ import type {
   ReportedChildCensus,
 } from './delegation-state';
 import type { SessionBlockedReason } from '@exawatt/core/desktop-bridge';
+import { parseJsonWithComments } from '../json-with-comments';
 
 /** Every hook runs inside the harness turn, so this is the operator's
  *  latency. Qwen's own default for an http hook is 600 seconds, which would
@@ -128,9 +129,11 @@ export function qwenHookSettings(
   return JSON.stringify({ ...base, hooks }, null, 2);
 }
 
+/** Read the way Qwen Code reads it: comments and a byte-order mark are valid
+ *  in an administrator's document, so they must not stop the injection. */
 function parseObject(text: string): Record<string, unknown> | null {
   try {
-    const value: unknown = JSON.parse(text);
+    const value = parseJsonWithComments(text);
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;

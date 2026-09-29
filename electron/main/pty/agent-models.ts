@@ -8,7 +8,11 @@ import {
   catalogCacheKey,
 } from './agent-model-catalog-cache';
 import { planLoginShell, shellQuote } from './login-shell';
-import { readQwenConfiguredModels, readQwenUserSettings } from './qwen-source';
+import {
+  readQwenConfiguredModels,
+  readQwenUserSettings,
+  type QwenSettingsRead,
+} from './qwen-source';
 import type {
   AgentEffortOption,
   AgentModelCatalog,
@@ -641,12 +645,31 @@ export function parseGrokModelCatalog(raw: string): AgentModelCatalog {
  * Qwen Code publishes no model list command. Its settings name the models it
  * routes (`modelProviders`) and the configured default (`model.name`), which
  * the operator wrote, so they are offered as configured values. With nothing
- * configured the source chooses, and Exawatt pins no model.
+ * configured the source chooses, and Exawatt pins no model. Settings that
+ * exist but cannot be read are neither: the catalog is unavailable, so the
+ * picker never offers "source default" in place of the operator's models.
  */
-export function qwenModelCatalog(
-  settings: Record<string, unknown> | null
-): AgentModelCatalog {
-  const configured = readQwenConfiguredModels(settings);
+export function qwenModelCatalog(read: QwenSettingsRead): AgentModelCatalog {
+  if (read.status === 'unreadable') {
+    return {
+      harness: 'qwen',
+      effectiveModel: null,
+      effectiveModelLabel: 'Source default',
+      effectiveModelSource: 'unavailable',
+      effectiveEffort: null,
+      effectiveEffortLabel: 'Source default',
+      effectiveEffortSource: 'unavailable',
+      effortLocked: false,
+      models: [],
+      catalogMode: 'unavailable',
+      catalogProvenance: 'Qwen Code settings could not be read',
+      observedAt: Date.now(),
+      selectionAction: null,
+    };
+  }
+  const configured = readQwenConfiguredModels(
+    read.status === 'ok' ? read.settings : null
+  );
   const models: AgentModelOption[] = configured.models
     .filter(model => isValidAgentModel(model.id))
     .map(model => ({

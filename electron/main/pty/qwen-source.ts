@@ -12,6 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { QWEN_ADMIN_DEFAULTS_PATH } from '../harness-events/qwen-hooks';
+import { parseJsonWithComments } from '../json-with-comments';
 
 /** The oldest version whose launch, identity and hook contract was verified. */
 const QWEN_MIN_VERSION = [0, 24, 0] as const;
@@ -55,15 +56,53 @@ export function qwenHome(env: NodeJS.ProcessEnv = process.env): string {
   return env.QWEN_HOME || path.join(os.homedir(), '.qwen');
 }
 
-function readJsonObject(file: string): Record<string, unknown> | null {
+/**
+ * What Exawatt learned from one of Qwen Code's settings files. Absent is a
+ * fact (nothing configured); unreadable is not (the file exists and could not
+ * be read, or is not the JSON Qwen Code accepts), so nothing downstream may
+ * treat it as "nothing configured".
+ */
+export type QwenSettingsRead =
+  | { status: 'absent' }
+  | { status: 'ok'; settings: Record<string, unknown> }
+  | { status: 'unreadable' };
+
+export function readQwenSettingsFile(file: string): QwenSettingsRead {
+  let text: string;
   try {
-    const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? { status: 'absent' }
+      : { status: 'unreadable' };
+  }
+  const settings = parseQwenSettingsText(text);
+  return settings ? { status: 'ok', settings } : { status: 'unreadable' };
+}
+
+/** Qwen Code's own reading: comments and a byte-order mark are allowed, and
+ *  the document must be an object. Null for anything Qwen Code rejects. */
+function parseQwenSettingsText(text: string): Record<string, unknown> | null {
+  try {
+    const value = parseJsonWithComments(text);
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
   } catch {
     return null;
   }
+}
+
+/** The settings a read produced, null when the file is absent. Throws when it
+ *  is unreadable, for callers that cannot report "unknown" any other way. */
+function settingsOrThrow(
+  read: QwenSettingsRead,
+  what: string
+): Record<string, unknown> | null {
+  if (read.status === 'unreadable') {
+    throw new Error(`Qwen Code settings could not be read to find ${what}`);
+  }
+  return read.status === 'ok' ? read.settings : null;
 }
 
 function readPath(
@@ -80,22 +119,24 @@ function readPath(
 
 export function readQwenUserSettings(
   env: NodeJS.ProcessEnv = process.env
-): Record<string, unknown> | null {
-  return readJsonObject(path.join(qwenHome(env), 'settings.json'));
+): QwenSettingsRead {
+  return readQwenSettingsFile(path.join(qwenHome(env), 'settings.json'));
 }
 
 /**
  * Where Qwen Code writes transcripts, resolved in its own order:
  * `QWEN_RUNTIME_DIR`, the `advanced.runtimeOutputDir` setting, `QWEN_HOME`,
- * then `~/.qwen`.
+ * then `~/.qwen`. Throws when the settings that may name it cannot be read:
+ * guessing the default would list another directory's history as this one's.
  */
 export function qwenRuntimeRoot(env: NodeJS.ProcessEnv = process.env): string {
   if (env.EXAWATT_QWEN_RUNTIME_ROOT) return env.EXAWATT_QWEN_RUNTIME_ROOT;
   if (env.QWEN_RUNTIME_DIR) return env.QWEN_RUNTIME_DIR;
-  const configured = readPath(readQwenUserSettings(env), [
-    'advanced',
-    'runtimeOutputDir',
-  ]);
+  const settings = settingsOrThrow(
+    readQwenUserSettings(env),
+    'where transcripts are kept'
+  );
+  const configured = readPath(settings, ['advanced', 'runtimeOutputDir']);
   if (typeof configured === 'string' && configured) {
     return configured.startsWith('~')
       ? path.join(os.homedir(), configured.slice(1))

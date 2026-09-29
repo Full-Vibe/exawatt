@@ -1690,7 +1690,11 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
   const version = parseQwenVersion(
     `${versionResult.stdout}\n${versionResult.stderr}`
   );
-  const settings = readQwenUserSettings();
+  // An unreadable settings file answers neither question: it is not "signed
+  // out" and not "no models", and it must not be remembered as either.
+  const settingsRead = readQwenUserSettings();
+  const settingsKnown = settingsRead.status !== 'unreadable';
+  const settings = settingsRead.status === 'ok' ? settingsRead.settings : null;
   const signIn = readQwenSignIn(settings);
   const catalog = readQwenConfiguredModels(settings);
   const modelCount = catalog.models.length;
@@ -1702,9 +1706,14 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
         ? 'degraded'
         : !version.compatible
           ? 'incompatible'
-          : signIn
-            ? 'ready'
-            : 'action-required';
+          : !settingsKnown
+            ? 'unknown'
+            : signIn
+              ? 'ready'
+              : 'action-required';
+  const unobservedProbes: AgentSourceProbeName[] = [];
+  if (versionProbe === 'unanswered') unobservedProbes.push('version');
+  if (!settingsKnown) unobservedProbes.push('authentication', 'model catalog');
   return {
     ...declaration,
     id: 'qwen-local',
@@ -1723,7 +1732,7 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
               ? 'Qwen Code status is not known yet.'
               : 'Qwen Code is installed, but its checks did not pass.',
     observedAt,
-    unobservedProbes: versionProbe === 'unanswered' ? ['version'] : [],
+    unobservedProbes,
     observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
@@ -1750,14 +1759,21 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
             : 'The version command did not return before its deadline.',
         commandEvidence
       ),
-      authentication: fact(
-        signIn ? 'ready' : 'action-required',
-        signIn ? `Configured: ${signIn.authType}` : 'Sign-in required',
-        signIn
-          ? `Qwen Code is configured to sign in with ${signIn.authType}. Exawatt cannot confirm the credential works without a model call, and does not read or store it.`
-          : 'No credential is configured. Sign in inside Qwen Code with /auth.',
-        configEvidence
-      ),
+      authentication: !settingsKnown
+        ? fact(
+            'unknown',
+            'Unknown',
+            'Qwen Code settings could not be read.',
+            configEvidence
+          )
+        : fact(
+            signIn ? 'ready' : 'action-required',
+            signIn ? `Configured: ${signIn.authType}` : 'Sign-in required',
+            signIn
+              ? `Signs in with ${signIn.authType}.`
+              : 'No credential is configured. Sign in inside Qwen Code with /auth.',
+            configEvidence
+          ),
       identity: fact(
         'unknown',
         'Unknown',
@@ -1774,22 +1790,29 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
         compatibilityDetail,
         version ? commandEvidence : declarationEvidence
       ),
-      modelDiscovery: fact(
-        modelCount > 0 || catalog.defaultModel ? 'ready' : 'unknown',
-        modelCount > 0
-          ? `${modelCount} models configured`
-          : catalog.defaultModel
-            ? 'Default model configured'
-            : 'Source default',
-        modelCount > 0 || catalog.defaultModel
-          ? 'Read from Qwen Code settings. Qwen Code has no model list command.'
-          : 'No model is configured, so Qwen Code chooses one.',
-        configEvidence
-      ),
+      modelDiscovery: !settingsKnown
+        ? fact(
+            'unknown',
+            'Unknown',
+            'Qwen Code settings could not be read.',
+            configEvidence
+          )
+        : fact(
+            modelCount > 0 || catalog.defaultModel ? 'ready' : 'unknown',
+            modelCount > 0
+              ? `${modelCount} models configured`
+              : catalog.defaultModel
+                ? 'Default model configured'
+                : 'Source default',
+            modelCount > 0 || catalog.defaultModel
+              ? 'Read from Qwen Code settings. Qwen Code has no model list command.'
+              : 'No model is configured, so Qwen Code chooses one.',
+            configEvidence
+          ),
     },
     actions: {
       recheck: true,
-      authenticate: !signIn,
+      authenticate: settingsKnown && !signIn,
       chooseModel: false,
       installGuide: true,
     },
@@ -1952,7 +1975,11 @@ function cacheRegistry(
   if (current && current.snapshot.observedAt > snapshot.observedAt) {
     return;
   }
-  registryCache.set(scope, { snapshot, cachedAt, absenceConfirmedAt: cachedAt });
+  registryCache.set(scope, {
+    snapshot,
+    cachedAt,
+    absenceConfirmedAt: cachedAt,
+  });
 }
 
 /**
@@ -1972,7 +1999,10 @@ function confirmAbsences(
   const absent = settledAbsences(entry.snapshot);
   const check = Promise.all(
     absent.map(source =>
-      resolveExecutable(shell, harnessDescriptor(source.harness).source.executable)
+      resolveExecutable(
+        shell,
+        harnessDescriptor(source.harness).source.executable
+      )
     )
   )
     .then(lookups => {

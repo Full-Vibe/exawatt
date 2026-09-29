@@ -2726,6 +2726,26 @@ child is spawned, and reads an answer as ready only while its child is alive.
 Residual: during the child's own boot, a program that grabs the port after
 that pre-spawn check can still answer first.
 
+### BUG-242 Unreadable Qwen settings read as signed out, and the newest history could drop
+
+Status: fixed · ENG-003 · found 2026-09-28 in the pre-0.1.14 review.
+
+Qwen Code reads its settings with comments and a byte-order mark allowed;
+Exawatt's reader rejected both, and answered a parse error or EACCES exactly
+as a missing file. So a commented `~/.qwen/settings.json` showed "Sign-in
+required" and no models, that incomplete answer replaced the last good one,
+and a commented administrator defaults file dropped the event channel on
+every Qwen launch. Settings now read as absent, ok or unreadable through one
+comment-tolerant parser (`electron/main/json-with-comments.ts`); unreadable
+makes sign-in and models `unknown`, leaves both probes unobserved (so the
+last complete observation stands), and gives an `unavailable` model catalog.
+The transcript root refuses to guess from unreadable settings. Separately,
+the Qwen and Grok history adapters bounded their 200 files in directory
+order before sorting, and OpenCode's list kept the CLI's first 200: all
+three now keep the newest. The Qwen sign-in detail reads "Signs in with
+{authType}". Residual: Claude's layered-settings read, Codex `config.toml`
+and OpenClaw's `openclaw.json` still treat an unreadable file as absent.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

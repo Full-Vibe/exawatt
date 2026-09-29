@@ -982,30 +982,34 @@ export function parseOpencodeSessionList(raw: string): Array<{
     return [];
   }
   if (!Array.isArray(parsed)) return [];
-  return parsed
-    .filter(
-      (
-        entry
-      ): entry is {
-        id: string;
-        title: string;
-        directory: string;
-        created: number;
-        updated: number;
-      } =>
-        Boolean(entry) &&
-        typeof entry === 'object' &&
-        typeof entry.id === 'string' &&
-        /^[A-Za-z0-9_-]{8,128}$/.test(entry.id) &&
-        typeof entry.title === 'string' &&
-        typeof entry.directory === 'string' &&
-        Boolean(entry.directory) &&
-        typeof entry.created === 'number' &&
-        Number.isFinite(entry.created) &&
-        typeof entry.updated === 'number' &&
-        Number.isFinite(entry.updated)
-    )
-    .slice(0, 200);
+  return (
+    parsed
+      .filter(
+        (
+          entry
+        ): entry is {
+          id: string;
+          title: string;
+          directory: string;
+          created: number;
+          updated: number;
+        } =>
+          Boolean(entry) &&
+          typeof entry === 'object' &&
+          typeof entry.id === 'string' &&
+          /^[A-Za-z0-9_-]{8,128}$/.test(entry.id) &&
+          typeof entry.title === 'string' &&
+          typeof entry.directory === 'string' &&
+          Boolean(entry.directory) &&
+          typeof entry.created === 'number' &&
+          Number.isFinite(entry.created) &&
+          typeof entry.updated === 'number' &&
+          Number.isFinite(entry.updated)
+      )
+      // The bound keeps the newest, whatever order the CLI printed.
+      .sort((a, b) => b.updated - a.updated)
+      .slice(0, 200)
+  );
 }
 
 export class OpenCodeConversationAdapter implements ConversationCatalogAdapter {
@@ -1180,33 +1184,74 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
     for (const entry of await this.longFormDirectories()) {
       if (await scope.launchDirectory(entry.cwd)) directories.add(entry.path);
     }
-    const rows: ConversationDraft[] = [];
+    // Newest first across every directory BEFORE the bound, so a long
+    // history never pushes today's session out of the list.
+    const candidates: Array<RecentFile & { directory: string }> = [];
     for (const directory of directories) {
-      for (const summary of await this.readSummaries(directory)) {
-        if (summary.hidden || summary.sessionKind) continue;
-        const launchDirectory = await scope.launchDirectory(summary.cwd);
-        if (!launchDirectory) continue;
-        rows.push({
-          id: summary.id,
-          harness: 'grok',
-          cwd: launchDirectory,
-          startedAt: summary.createdAt,
-          updatedAt: summary.updatedAt,
-          title: summary.title ?? 'Grok Build session',
-          description: null,
-          titleSource: summary.title ? 'native' : 'fallback',
-          needsSummary: false,
-          providerSessionId: summary.id,
-          continuation: { kind: 'provider' },
-          fingerprint: `grok:${summary.updatedAt}`,
-          summaryInput: [],
-          providerIdentity: summary.id,
-          correlationKey: null,
-        });
-        if (rows.length >= this.maxSessions) return rows;
+      for (const file of await datedEntries(directory, entry =>
+        path.join(entry, GROK_SESSION_FILES.summary)
+      )) {
+        candidates.push({ ...file, directory });
       }
     }
-    return rows;
+    const fallbackCwds = new Map<string, Promise<string | null>>();
+    const fallbackCwd = (directory: string) => {
+      let cwd = fallbackCwds.get(directory);
+      if (!cwd) {
+        cwd = fs.promises
+          .readFile(path.join(directory, GROK_SESSION_FILES.cwd), 'utf8')
+          .catch(() => null)
+          .then(contents =>
+            decodeGrokCwdDirname(path.basename(directory), contents)
+          );
+        fallbackCwds.set(directory, cwd);
+      }
+      return cwd;
+    };
+    const summaries = await Promise.all(
+      newestFirst(candidates)
+        .slice(0, this.maxSessions)
+        .map(async candidate => {
+          let raw: string;
+          try {
+            raw = await fs.promises.readFile(candidate.file, 'utf8');
+          } catch {
+            return null;
+          }
+          if (raw.length > MAX_METADATA_BYTES * 4) return null;
+          return parseGrokSessionSummary(
+            raw,
+            path.basename(path.dirname(candidate.file)),
+            await fallbackCwd(candidate.directory)
+          );
+        })
+    );
+    const rows: ConversationDraft[] = [];
+    for (const summary of summaries) {
+      if (!summary || summary.hidden || summary.sessionKind) continue;
+      const launchDirectory = await scope.launchDirectory(summary.cwd);
+      if (!launchDirectory) continue;
+      rows.push({
+        id: summary.id,
+        harness: 'grok',
+        cwd: launchDirectory,
+        startedAt: summary.createdAt,
+        updatedAt: summary.updatedAt,
+        title: summary.title ?? 'Grok Build session',
+        description: null,
+        titleSource: summary.title ? 'native' : 'fallback',
+        needsSummary: false,
+        providerSessionId: summary.id,
+        continuation: { kind: 'provider' },
+        fingerprint: `grok:${summary.updatedAt}`,
+        summaryInput: [],
+        providerIdentity: summary.id,
+        correlationKey: null,
+      });
+    }
+    return rows.sort(
+      (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
+    );
   }
 
   private async longFormDirectories(): Promise<
@@ -1236,39 +1281,6 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
     }
     return out;
   }
-
-  private async readSummaries(
-    directory: string
-  ): Promise<GrokSessionSummary[]> {
-    let entries: string[];
-    try {
-      entries = await fs.promises.readdir(directory);
-    } catch {
-      return [];
-    }
-    const fallbackCwd = decodeGrokCwdDirname(
-      path.basename(directory),
-      await fs.promises
-        .readFile(path.join(directory, GROK_SESSION_FILES.cwd), 'utf8')
-        .catch(() => null)
-    );
-    const rows = await Promise.all(
-      entries.slice(0, this.maxSessions).map(async entry => {
-        const file = path.join(directory, entry, GROK_SESSION_FILES.summary);
-        let raw: string;
-        try {
-          raw = await fs.promises.readFile(file, 'utf8');
-        } catch {
-          return null;
-        }
-        if (raw.length > MAX_METADATA_BYTES * 4) return null;
-        return parseGrokSessionSummary(raw, entry, fallbackCwd);
-      })
-    );
-    return rows
-      .filter((row): row is GrokSessionSummary => row !== null)
-      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
-  }
 }
 
 /** `GROK_HOME` is the harness's own override; Exawatt reads it, never sets it. */
@@ -1283,85 +1295,122 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
 export class QwenConversationAdapter implements ConversationCatalogAdapter {
   readonly harnesses = ['qwen'] as const;
 
+  /** Without a root, Qwen Code's own is resolved at every list, so a
+   *  `runtimeOutputDir` the operator changes is followed. */
   constructor(
-    private readonly runtimeRoot = qwenRuntimeRoot(),
+    private readonly runtimeRoot?: string,
     private readonly maxSessions = 200
   ) {}
 
   async list(projectDir: string): Promise<ConversationDraft[]> {
+    const runtimeRoot = this.runtimeRoot ?? qwenRuntimeRoot();
     const scope = await ProjectDirectoryScope.create(projectDir);
     const directories = new Set(
       [projectDir, ...scope.roots].map(root =>
-        path.join(
-          this.runtimeRoot,
-          'projects',
-          qwenProjectDirname(root),
-          'chats'
-        )
+        path.join(runtimeRoot, 'projects', qwenProjectDirname(root), 'chats')
       )
     );
-    const rows: ConversationDraft[] = [];
+    const candidates: RecentFile[] = [];
     for (const directory of directories) {
-      for (const head of await this.readHeads(directory)) {
-        const launchDirectory = await scope.launchDirectory(head.cwd);
-        if (!launchDirectory) continue;
-        rows.push({
-          id: head.id,
-          harness: 'qwen',
-          cwd: launchDirectory,
-          startedAt: head.startedAt,
-          updatedAt: head.updatedAt,
-          title: head.title
-            ? truncate(head.title, MAX_TITLE_CHARS)
-            : 'Qwen Code session',
-          description: null,
-          titleSource: head.title ? 'native' : 'fallback',
-          needsSummary: false,
-          providerSessionId: head.id,
-          continuation: { kind: 'provider' },
-          fingerprint: `qwen:${head.updatedAt}`,
-          summaryInput: [],
-          providerIdentity: head.id,
-          correlationKey: null,
-        });
-        if (rows.length >= this.maxSessions) return rows;
-      }
-    }
-    return rows;
-  }
-
-  private async readHeads(directory: string): Promise<QwenTranscriptHead[]> {
-    let entries: string[];
-    try {
-      entries = await fs.promises.readdir(directory);
-    } catch {
-      return [];
+      candidates.push(
+        ...(await datedEntries(directory, entry =>
+          entry.endsWith('.jsonl') ? entry : null
+        ))
+      );
     }
     const heads = await Promise.all(
-      entries
-        .filter(entry => entry.endsWith('.jsonl'))
+      newestFirst(candidates)
         .slice(0, this.maxSessions)
-        .map(async entry => {
-          const file = path.join(directory, entry);
+        .map(async candidate => {
           try {
-            const [stat, head] = await Promise.all([
-              fs.promises.stat(file),
-              readHead(file, MAX_METADATA_BYTES),
-            ]);
+            const head = await readHead(candidate.file, MAX_METADATA_BYTES);
             return parseQwenTranscriptHead(
               head,
-              entry.slice(0, -'.jsonl'.length),
-              stat.mtimeMs
+              path.basename(candidate.file, '.jsonl'),
+              candidate.mtimeMs
             );
           } catch {
             return null;
           }
         })
     );
-    return heads
-      .filter((head): head is QwenTranscriptHead => head !== null)
-      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    const rows: ConversationDraft[] = [];
+    for (const head of heads) {
+      if (!head) continue;
+      const launchDirectory = await scope.launchDirectory(head.cwd);
+      if (!launchDirectory) continue;
+      rows.push({
+        id: head.id,
+        harness: 'qwen',
+        cwd: launchDirectory,
+        startedAt: head.startedAt,
+        updatedAt: head.updatedAt,
+        title: head.title
+          ? truncate(head.title, MAX_TITLE_CHARS)
+          : 'Qwen Code session',
+        description: null,
+        titleSource: head.title ? 'native' : 'fallback',
+        needsSummary: false,
+        providerSessionId: head.id,
+        continuation: { kind: 'provider' },
+        fingerprint: `qwen:${head.updatedAt}`,
+        summaryInput: [],
+        providerIdentity: head.id,
+        correlationKey: null,
+      });
+    }
+    return rows.sort(
+      (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
+    );
   }
+}
+
+interface RecentFile {
+  file: string;
+  mtimeMs: number;
+}
+
+/**
+ * The files a history directory holds, each with its mtime, so a bounded
+ * reader can keep the NEWEST ones. Directory order is creation or hash
+ * order, never recency: bounding before sorting drops today's session from a
+ * long history. `pick` maps a directory entry to the file that dates it, or
+ * null to skip it. A missing directory is an empty history; one that cannot
+ * be read throws.
+ */
+async function datedEntries(
+  directory: string,
+  pick: (entry: string) => string | null
+): Promise<RecentFile[]> {
+  let entries: string[];
+  try {
+    entries = await fs.promises.readdir(directory);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Missing is "never ran here"; anything else is a history that exists
+    // and could not be read, which must not read as an empty one.
+    if (code === 'ENOENT' || code === 'ENOTDIR') return [];
+    throw error;
+  }
+  const stats = await Promise.all(
+    entries.map(async entry => {
+      const relative = pick(entry);
+      if (!relative) return null;
+      const file = path.join(directory, relative);
+      try {
+        return { file, mtimeMs: (await fs.promises.stat(file)).mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return stats.filter((stat): stat is RecentFile => stat !== null);
+}
+
+function newestFirst<T extends RecentFile>(files: readonly T[]): T[] {
+  return [...files].sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || a.file.localeCompare(b.file)
+  );
 }
 
 async function readHead(file: string, bytes: number): Promise<string> {
