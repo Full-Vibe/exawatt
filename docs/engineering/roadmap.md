@@ -1461,7 +1461,7 @@ Milestones:
 - [x] OS2.4 Public projection continuity: ordinary public add/change/delete/revert history remains deterministic and fast-forwardable; deterministic refusal stops public-path delivery; new commit metadata obeys the public/private boundary; a certified non-force snapshot restores current parity. Historical metadata disposition remains separate under BUG-112.
 - [x] OS5.4 Exact public recertification: the certified snapshot passes all 14 clean-room gates, including community packaging/runtime and network observation; evidence in the 2026-09-07 ENG-030 milestone.
 - [ ] OS5.5 First green public CI and live repository security: CI, Secret Scan and CodeQL runs pass on the repaired public source (2026-09-07); live-control verification and individual alert disposition remain separate work.
-- [ ] OS4.4 Official public Release provenance: the private dispatch-only workflow publishes one immutable public tag/Release whose signed assets and source archive verify the embedded `ReleaseProvenanceV1` tuple before the Supabase feed advances. AMENDED 2026-09-13: official builds are published as GitHub Releases before the launch moment, which is also what retires BUG-130; the rescued `agent/oss-release-workflow` branch on origin is the R3/R4 packet and needs a rebase and review, not a merge.
+- [ ] OS4.4 Official public Release provenance: the private dispatch-only workflow publishes one immutable public tag/Release whose signed assets and source archive verify the embedded `ReleaseProvenanceV1` tuple before the Supabase feed advances. AMENDED 2026-09-13: official builds are published as GitHub Releases before the launch moment, which is also what retires BUG-130; the rescued `agent/oss-release-workflow` branch on origin is the R3/R4 packet and needs a rebase and review, not a merge. Rebased and landed 2026-09-29 (R4).
 - [x] OS4.5 Hosted reference-service conformance: all seven production operations and Exawatt's composed private handlers pass the same Apache V1, legacy, mismatch, absent-capability, idempotency, media, closed-envelope, problem, and no-replay matrix as the strict custom-distributor harness (completed 2026-08-20).
 - [ ] OS6.0 Public presentation polish after the operational gates: complete the already-promoted footer-copy removal, repository homepage/topics/labels, stable package metadata, social preview, and a CI badge only after a real public run is green. AMENDED 2026-09-13 (operator answers): create the Discord server and point README, SUPPORT.md and the launch post at it; publish `docs/engineering/guides/add-an-agent-source.md` with the ordered touch list and a copyable eval, and prepare contribution guidance (AMENDED 2026-09-18: publishing starter issues and recruiting contributors wait for OS6.2; launch prioritizes users and feedback); declare `engines.node` and `.nvmrc`; neutralize the projector commit trailer wording.
 - [ ] OS6.1 Three-to-five Mac friends complete clean public setup with no private knowledge.
@@ -1504,7 +1504,9 @@ agent picking one up works in its own worktree and lands through
   so the next unused version exists as an immutable public tag and Release with its
   `ReleaseProvenanceV1` record. Done when the Release page shows the signed
   DMG, notes and provenance, and the site's Changelog link resolves to it
-  (retires BUG-130).
+  (retires BUG-130). Rebased and landed 2026-09-29; the first public Release
+  is 0.1.14, waiting on operator activation of immutable Releases, the
+  `refs/tags/v*` tag ruleset, and the release App with its two credentials.
 - **R5 User on-ramp (OS6.0, agent; amended 2026-09-18).** Make public
   install, Demo Mode, local Agent Source setup and feedback instructions
   usable without private knowledge; declare `engines.node` and `.nvmrc`,

@@ -2,7 +2,7 @@
 # 0009 Deliver signed desktop updates through a public artifact channel
 
 Date: 2026-07-10
-Status: accepted; amended 2026-07-20 and 2026-08-03
+Status: accepted; amended 2026-07-20, 2026-08-03, and 2026-08-20
 
 ## Context
 
@@ -14,11 +14,11 @@ never silently restart it while sessions are live.
 
 ## Decision
 
-- Direct macOS distribution uses a Developer ID Application certificate,
-  hardened runtime, Apple notarization, and stapling.
-- `electron-builder` produces the arm64 DMG, update ZIP, blockmaps, and
-  `latest-mac.yml`; CI uploads immutable artifacts first and mutable metadata
-  last. `electron-updater` uses the generated generic HTTPS provider config.
+  - Direct macOS distribution uses a Developer ID Application certificate,
+    hardened runtime, Apple notarization, and stapling.
+  - `electron-builder` produces the arm64 DMG, update ZIP, blockmaps, and
+    `latest-mac.yml`; CI uploads immutable artifacts first and mutable metadata
+    last. `electron-updater` uses the generated generic HTTPS provider config.
 - The standalone renderer remains a content-addressed archive. Release builds
   open that archive after the CI certificate is imported, Developer-ID-sign
   and verify every native `.node` and `.dylib` with a secure timestamp, then
@@ -83,14 +83,14 @@ never silently restart it while sessions are live.
   26 while a system update is pending. Exawatt does not add a LaunchAgent or a
   product-level `launchctl` workaround.
 - `electron-builder` resolves the exact Electron runtime into its managed cache.
-  Release configuration does not point `electronDist` at pnpm's optional
-  `node_modules/electron/dist` directory because a clean CI install may not
-  materialize that directory.
+Release configuration does not point `electronDist` at pnpm's optional
+`node_modules/electron/dist` directory because a clean CI install may not
+materialize that directory.
 
 ## Consequences
 
 - Release versions are real SemVer product state; a tag must exactly match
-  `package.json`.
+`package.json`.
 - Normal update checks never require a secret on the user's machine.
 - Local dogfood refreshes preserve one Exawatt code identity for tools such as
   Little Snitch without importing, weakening, or modifying user firewall rules.

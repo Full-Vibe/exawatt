@@ -210,6 +210,10 @@ test('first-party package metadata declares AGPL and the public repository', asy
       for (const [script, command] of packageScripts) {
         assert.match(command, /pnpm electron:prepare-licenses/u, script);
       }
+      assert.match(
+        manifest.scripts['electron:release:app'],
+        /pnpm electron:release:app:prepared/u
+      );
     }
   }
 });
