@@ -187,6 +187,15 @@ describe('Agent Source registry truth', () => {
         protocolObserved: false,
         protocolReady: false,
       })
+    ).toBe('unknown'); // A configuration that could not be read is not a missing one.
+    expect(
+      openClawSourceState({
+        installationObserved: true,
+        executable: true,
+        configured: null,
+        protocolObserved: true,
+        protocolReady: false,
+      })
     ).toBe('unknown');
   });
 

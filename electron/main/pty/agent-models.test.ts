@@ -9,6 +9,8 @@ import {
   opencodeCatalogContext,
   OpencodeModelCatalogCache,
   parseClaudeModelCatalog,
+  parseClaudeSettingsText,
+  parseCodexConfigText,
   parseCodexConfiguredEffort,
   parseCodexConfiguredModel,
   parseCodexModelCatalog,
@@ -61,27 +63,87 @@ describe('Agent model catalogs', () => {
   });
 
   it('reads the root Codex model without mistaking a profile model for it', () => {
-    expect(
-      parseCodexConfiguredModel(`
+    const config = parseCodexConfigText(`
 model = "gpt-5.6-sol"
 model_reasoning_effort = "xhigh"
 
 [profiles.fast]
 model = "gpt-5.6-luna"
-`)
-    ).toBe('gpt-5.6-sol');
-    expect(
-      parseCodexConfiguredEffort(`
-model = "gpt-5.6-sol"
-model_reasoning_effort = "xhigh"
-
-[profiles.fast]
 model_reasoning_effort = "low"
-`)
-    ).toBe('xhigh');
+`);
+    expect(parseCodexConfiguredModel(config)).toBe('gpt-5.6-sol');
+    expect(parseCodexConfiguredEffort(config)).toBe('xhigh');
     expect(
-      parseCodexConfiguredModel(`[profiles.fast]\nmodel = "gpt-5.6-luna"`)
+      parseCodexConfiguredModel(
+        parseCodexConfigText(`[profiles.fast]\nmodel = "gpt-5.6-luna"`)
+      )
     ).toBeNull();
+  });
+
+  it('reads config.toml as Codex does: TOML 1.1, byte-order mark skipped', () => {
+    const config = parseCodexConfigText(
+      "\uFEFF# chosen with /model\nmodel = 'gpt-5.6-sol' # literal string\n" +
+        'notice = { hide = true,\n  seen = 2, }\n'
+    );
+    expect(parseCodexConfiguredModel(config)).toBe('gpt-5.6-sol');
+    // Codex refuses to start on these, so no model is "found" in them.
+    expect(() =>
+      parseCodexConfigText('model = "gpt-5.6-sol"\nmodel = "x"')
+    ).toThrow();
+    expect(() => parseCodexConfigText('model = "gpt-5.6-sol')).toThrow();
+    expect(() =>
+      parseCodexConfigText('help = """\nmodel = "gpt-x"\n')
+    ).toThrow();
+  });
+
+  it('never reports the recommended model through a config it could not read', () => {
+    const catalog = parseCodexModelCatalog(
+      JSON.stringify({ models: [{ slug: 'gpt-5.6-terra', priority: 1 }] }),
+      null,
+      null,
+      { kind: 'io', code: 'EACCES' }
+    );
+    expect(catalog.effectiveModel).toBeNull();
+    expect(catalog.effectiveModelSource).toBe('unavailable');
+    expect(catalog.configurationUnreadable).toBe(true);
+    expect(catalog.catalogProvenance).toMatch(/permission denied/);
+    // The discovered rows remain choosable.
+    expect(catalog.models.map(model => model.id)).toEqual(['gpt-5.6-terra']);
+  });
+
+  it('reads Claude settings as Claude Code does: mark skipped, blank is empty, else strict', () => {
+    expect(
+      parseClaudeSettingsText('\uFEFF{"model": "claude-opus-5-5"}')
+    ).toEqual({
+      model: 'claude-opus-5-5',
+    });
+    expect(parseClaudeSettingsText(' \n')).toEqual({});
+    expect(parseClaudeSettingsText('[]')).toBeNull();
+    expect(() => parseClaudeSettingsText('{"model": "a",}')).toThrow();
+    expect(() => parseClaudeSettingsText('{ // no comments\n}')).toThrow();
+  });
+
+  it('never reports the account default through Claude settings it could not read', () => {
+    const catalog = buildClaudeModelCatalog(
+      null,
+      [{ model: 'claude-opus-5-5' }],
+      {},
+      ['.claude/settings.local.json (not valid JSON)']
+    );
+    expect(catalog.effectiveModel).toBeNull();
+    expect(catalog.effectiveModelSource).toBe('unavailable');
+    expect(catalog.effectiveEffortSource).toBe('unavailable');
+    expect(catalog.configurationUnreadable).toBe(true);
+    expect(catalog.catalogProvenance).toContain('settings.local.json');
+    // The process environment outranks every file, so it is still known.
+    const pinned = buildClaudeModelCatalog(
+      null,
+      [],
+      { ANTHROPIC_MODEL: 'claude-opus-5-5' },
+      ['user settings (permission denied)']
+    );
+    expect(pinned.effectiveModel).toBe('claude-opus-5-5');
+    expect(pinned.effectiveModelSource).toBe('config');
   });
 
   it('uses the configured Codex model and exposes only visible catalog rows', () => {

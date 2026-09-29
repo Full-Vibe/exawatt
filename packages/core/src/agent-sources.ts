@@ -161,7 +161,9 @@ export type AgentSourceProbeName =
   | 'authentication'
   | 'model catalog'
   | 'launch environment'
-  | 'gateway';
+  | 'gateway'
+  /** A source configuration file exists and could not be read (BUG-245). */
+  | 'configuration';
 
 /**
  * Where a snapshot's facts came from (readiness fact model, BUG-062/BUG-082).

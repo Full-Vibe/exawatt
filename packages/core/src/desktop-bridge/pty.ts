@@ -267,6 +267,13 @@ export interface AgentModelCatalog {
   selectionAction: 'choose-in-source' | null;
   /** True when this came from the disk cache rather than a fresh probe. */
   servedFromCache?: boolean;
+  /**
+   * A configuration file that can name this source's model exists and could
+   * not be read (BUG-245). The effective model is then unknown, never the
+   * default a missing file would give, and the observation is never cached
+   * over a complete one.
+   */
+  configurationUnreadable?: boolean;
 }
 
 /** A soft-closed Session in the Recently-closed ledger (D23). */

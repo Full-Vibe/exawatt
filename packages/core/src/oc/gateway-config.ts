@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseJson5 } from 'json5';
 import type { OCGatewayConfig } from './auth';
+import { readConfigFileSync, type ConfigFileRead } from '../config-file';
 
 /**
  * Read one OpenClaw installation's own configuration.
@@ -44,18 +44,20 @@ export function parseGatewayConfigText(raw: unknown): OCGatewayConfig | null {
   return parsed as OCGatewayConfig;
 }
 
+/**
+ * The local `openclaw.json`, read as OpenClaw reads it. Missing and unreadable
+ * are different answers (BUG-245): a file that is there and cannot be read
+ * is not an installation with no configuration.
+ */
 export function readGatewayConfig(
   stateDir?: string,
   configPath?: string
-): OCGatewayConfig | null {
+): ConfigFileRead<OCGatewayConfig> {
   const resolvedPath =
     configPath ??
     join(stateDir ?? join(homedir(), '.openclaw'), 'openclaw.json');
-  let raw: string;
-  try {
-    raw = readFileSync(resolvedPath, 'utf-8');
-  } catch {
-    return null;
-  }
-  return parseGatewayConfigText(raw);
+  return readConfigFileSync(resolvedPath, {
+    name: 'JSON5',
+    parse: parseGatewayConfigText,
+  });
 }

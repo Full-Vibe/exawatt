@@ -1,7 +1,15 @@
 import { spawn } from 'child_process';
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { parse as parseToml } from 'smol-toml';
+import {
+  asConfigObject,
+  describeUnreadableConfig,
+  readConfigFile,
+  withoutByteOrderMark,
+  type ConfigFileGrammar,
+  type ConfigFileUnreadableCause,
+} from '@exawatt/core/server';
 import type { AgentHarness } from './session-manager';
 import {
   AgentModelCatalogCache,
@@ -225,44 +233,47 @@ export function formatAgentModelLabel(model: string): string {
   return `${words.join(' ')}${contextSuffix}`;
 }
 
-/** Read only the root TOML table. A value below a table header belongs to that
- * table/profile and is not the default used by Exawatt's bare launch. */
-function parseCodexRootString(raw: string, key: string): string | null {
-  const root = raw.split(/^\s*\[/m, 1)[0] ?? '';
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = root.match(
-    new RegExp(
-      `^\\s*${escapedKey}\\s*=\\s*("(?:\\\\.|[^"\\\\])*"|'[^']*')\\s*(?:#.*)?$`,
-      'm'
-    )
-  );
-  if (!match) return null;
-  const literal = match[1];
-  let value: string;
-  try {
-    value = literal.startsWith('"')
-      ? (JSON.parse(literal) as string)
-      : literal.slice(1, -1);
-  } catch {
-    return null;
-  }
-  return value;
+/**
+ * `config.toml` as Codex reads it: the `toml` crate at TOML 1.1, which skips
+ * a leading byte-order mark and rejects anything else that is not TOML
+ * (codex-rs/config/src/loader/layer_io.rs, toml 0.9.11+spec-1.1.0). Codex
+ * refuses to start on a file it cannot parse, so a hand-rolled line match
+ * that "found" a model there reported a launch that never happens (BUG-245).
+ * Throws for text Codex would reject.
+ */
+export function parseCodexConfigText(
+  text: string
+): Record<string, unknown> | null {
+  return asConfigObject(parseToml(text));
 }
 
-export function parseCodexConfiguredModel(raw: string): string | null {
-  const value = parseCodexRootString(raw, 'model');
+const CODEX_CONFIG_GRAMMAR: ConfigFileGrammar<Record<string, unknown>> = {
+  name: 'TOML',
+  parse: parseCodexConfigText,
+};
+
+/** Only the root table: a value under `[profiles.x]` belongs to that profile
+ *  and is not the default used by Exawatt's bare launch. */
+export function parseCodexConfiguredModel(
+  config: Record<string, unknown> | null
+): string | null {
+  const value = config?.model;
   return isValidAgentModel(value) ? value : null;
 }
 
-export function parseCodexConfiguredEffort(raw: string): string | null {
-  const value = parseCodexRootString(raw, 'model_reasoning_effort');
+export function parseCodexConfiguredEffort(
+  config: Record<string, unknown> | null
+): string | null {
+  const value = config?.model_reasoning_effort;
   return isValidAgentEffort(value) ? value : null;
 }
 
 export function parseCodexModelCatalog(
   raw: string,
   configuredModel: string | null,
-  configuredEffort: string | null = null
+  configuredEffort: string | null = null,
+  /** Why `config.toml` exists and could not be read, when it could not. */
+  unreadableConfig: ConfigFileUnreadableCause | null = null
 ): AgentModelCatalog {
   let parsed: { models?: unknown } = {};
   try {
@@ -349,6 +360,26 @@ export function parseCodexModelCatalog(
   const effectiveEffort = configuredEffortSupported
     ? configuredEffort
     : (effectiveModelOption?.defaultEffort ?? null);
+  if (unreadableConfig) {
+    // Codex will not start on this file, and what it names is unknown: never
+    // the recommended model, which is the answer for a file that is not there.
+    return {
+      harness: 'codex',
+      effectiveModel: null,
+      effectiveModelLabel: 'Unknown',
+      effectiveModelSource: 'unavailable',
+      effectiveEffort: null,
+      effectiveEffortLabel: 'Unknown',
+      effectiveEffortSource: 'unavailable',
+      effortLocked: false,
+      models,
+      catalogMode: discoveredModelCount > 0 ? 'live-catalog' : 'unavailable',
+      catalogProvenance: `Codex configuration could not be read: ${describeUnreadableConfig(unreadableConfig)}`,
+      configurationUnreadable: true,
+      observedAt: Date.now(),
+      selectionAction: null,
+    };
+  }
   return {
     harness: 'codex',
     effectiveModel,
@@ -662,13 +693,14 @@ export function qwenModelCatalog(read: QwenSettingsRead): AgentModelCatalog {
       effortLocked: false,
       models: [],
       catalogMode: 'unavailable',
-      catalogProvenance: 'Qwen Code settings could not be read',
+      catalogProvenance: `Qwen Code settings could not be read: ${describeUnreadableConfig(read.cause)}`,
+      configurationUnreadable: true,
       observedAt: Date.now(),
       selectionAction: null,
     };
   }
   const configured = readQwenConfiguredModels(
-    read.status === 'ok' ? read.settings : null
+    read.status === 'ok' ? read.value : null
   );
   const models: AgentModelOption[] = configured.models
     .filter(model => isValidAgentModel(model.id))
@@ -823,6 +855,42 @@ export function parseClaudeModelCatalog(
 export function buildClaudeModelCatalog(
   reported: AgentModelOption[] | null,
   layers: unknown[],
+  environment: NodeJS.ProcessEnv,
+  /** Settings files that exist and could not be read, each with why. */
+  unreadable: readonly string[] = []
+): AgentModelCatalog {
+  const catalog = claudeCatalogFromLayers(reported, layers, environment);
+  if (unreadable.length === 0) return catalog;
+  // A settings file that could not be read may name the model or the effort,
+  // so neither is known unless the process environment outranks every file.
+  // It is never the account default, which is the answer for no setting.
+  const modelKnown = isValidAgentModel(environment.ANTHROPIC_MODEL);
+  const effortKnown = isValidAgentEffort(environment.CLAUDE_CODE_EFFORT_LEVEL);
+  return {
+    ...catalog,
+    ...(modelKnown
+      ? {}
+      : {
+          effectiveModel: null,
+          effectiveModelLabel: 'Unknown',
+          effectiveModelSource: 'unavailable' as const,
+        }),
+    ...(effortKnown
+      ? {}
+      : {
+          effectiveEffort: null,
+          effectiveEffortLabel: 'Unknown',
+          effectiveEffortSource: 'unavailable' as const,
+        }),
+    catalogProvenance: `Claude Code settings could not be read: ${unreadable.join('; ')}`,
+    configurationUnreadable: true,
+    selectionAction: null,
+  };
+}
+
+function claudeCatalogFromLayers(
+  reported: AgentModelOption[] | null,
+  layers: unknown[],
   environment: NodeJS.ProcessEnv
 ): AgentModelCatalog {
   let configuredModel: string | null = null;
@@ -971,13 +1039,23 @@ export function buildClaudeModelCatalog(
   };
 }
 
-async function readJson(file: string): Promise<unknown> {
-  try {
-    return JSON.parse(await fs.promises.readFile(file, 'utf8')) as unknown;
-  } catch {
-    return null;
-  }
+/**
+ * A settings file as Claude Code 2.1 reads it: a byte-order mark is skipped,
+ * a blank file is an empty object, and anything else is strict JSON that must
+ * be an object. Measured in the 2.1.284 build, whose loader strips the mark
+ * before `JSON.parse` and answers blank text with `{}`.
+ */
+export function parseClaudeSettingsText(
+  text: string
+): Record<string, unknown> | null {
+  const body = withoutByteOrderMark(text);
+  return body.trim() === '' ? {} : asConfigObject(JSON.parse(body));
 }
+
+const CLAUDE_SETTINGS_GRAMMAR: ConfigFileGrammar<Record<string, unknown>> = {
+  name: 'JSON',
+  parse: parseClaudeSettingsText,
+};
 
 async function loginModelEnvironment(
   shell: string,
@@ -1108,15 +1186,30 @@ async function listClaudeModels(
     path.join(environment.HOME || os.homedir(), '.claude');
   // Lowest → highest personal/project precedence. Managed policy is still
   // enforced by Claude Code itself; this catalog never claims to replace it.
-  const [reported, layers] = await Promise.all([
+  const files = [
+    { label: 'user settings', file: path.join(configDir, 'settings.json') },
+    {
+      label: '.claude/settings.json',
+      file: path.join(cwd, '.claude', 'settings.json'),
+    },
+    {
+      label: '.claude/settings.local.json',
+      file: path.join(cwd, '.claude', 'settings.local.json'),
+    },
+  ];
+  const [reported, reads] = await Promise.all([
     cachedClaudeModelOptions(cwd, shell, refresh),
-    Promise.all([
-      readJson(path.join(configDir, 'settings.json')),
-      readJson(path.join(cwd, '.claude', 'settings.json')),
-      readJson(path.join(cwd, '.claude', 'settings.local.json')),
-    ]),
+    Promise.all(
+      files.map(({ file }) => readConfigFile(file, CLAUDE_SETTINGS_GRAMMAR))
+    ),
   ]);
-  return buildClaudeModelCatalog(reported, layers, environment);
+  const layers = reads.map(read => (read.status === 'ok' ? read.value : null));
+  const unreadable = reads.flatMap((read, index) =>
+    read.status === 'unreadable'
+      ? [`${files[index].label} (${describeUnreadableConfig(read.cause)})`]
+      : []
+  );
+  return buildClaudeModelCatalog(reported, layers, environment, unreadable);
 }
 
 async function listCodexModels(
@@ -1127,18 +1220,15 @@ async function listCodexModels(
   const configDir =
     environment.CODEX_HOME ||
     path.join(environment.HOME || os.homedir(), '.codex');
-  let configuredModel: string | null = null;
-  let configuredEffort: string | null = null;
-  try {
-    const config = await fs.promises.readFile(
-      path.join(configDir, 'config.toml'),
-      'utf8'
-    );
-    configuredModel = parseCodexConfiguredModel(config);
-    configuredEffort = parseCodexConfiguredEffort(config);
-  } catch {
-    // An absent config means the installed CLI's recommended model wins.
-  }
+  const config = await readConfigFile(
+    path.join(configDir, 'config.toml'),
+    CODEX_CONFIG_GRAMMAR
+  );
+  // A missing config means the installed CLI's recommended model wins; an
+  // unreadable one means Codex will not start, and nothing is known.
+  const table = config.status === 'ok' ? config.value : null;
+  const configuredModel = parseCodexConfiguredModel(table);
+  const configuredEffort = parseCodexConfiguredEffort(table);
   let stdout = '';
   try {
     const executable = testHarnessExecutable('codex');
@@ -1154,7 +1244,12 @@ async function listCodexModels(
   } catch {
     // Offline/older CLIs still expose an explicitly configured model.
   }
-  return parseCodexModelCatalog(stdout, configuredModel, configuredEffort);
+  return parseCodexModelCatalog(
+    stdout,
+    configuredModel,
+    configuredEffort,
+    config.status === 'unreadable' ? config.cause : null
+  );
 }
 
 const OPENCODE_CATALOG_TTL_MS = 5 * 60_000;

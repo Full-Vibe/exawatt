@@ -2781,7 +2781,36 @@ the Qwen and Grok history adapters bounded their 200 files in directory
 order before sorting, and OpenCode's list kept the CLI's first 200: all
 three now keep the newest. The Qwen sign-in detail reads "Signs in with
 {authType}". Residual: Claude's layered-settings read, Codex `config.toml`
-and OpenClaw's `openclaw.json` still treat an unreadable file as absent.
+and OpenClaw's `openclaw.json` still treat an unreadable file as absent
+(fixed by BUG-245).
+
+### BUG-245 Unreadable Claude, Codex and OpenClaw configuration read as absent
+
+Status: fixed · ENG-003 · found 2026-09-28 in the pre-0.1.14 review (BUG-242's residual).
+
+Five readers answered a permission error, a half-saved file or valid syntax
+they did not accept exactly as a missing file. An unreadable Claude
+`settings.json` layer gave the account default as the model; an unreadable
+Codex `config.toml` gave the recommended model (Codex itself refuses to
+start on it), while a regex "found" a model in TOML Codex rejects; a
+commented or unreadable `openclaw.json` read "needs a local gateway
+configuration" in the registry, which was also stricter than OpenClaw's
+JSON5; an unreadable OpenClaw secret file said "paste the token". All now
+read through `readConfigFile` in `@exawatt/core/server` (missing,
+unreadable with cause, ok), generalized from BUG-242's Qwen reader, with
+each owner's grammar verified from its source: Claude Code 2.1.284 strips a
+byte-order mark and reads a blank file as `{}`, Codex reads TOML 1.1 through
+the `toml` crate (now parsed with `smol-toml`), OpenClaw JSON5. Unreadable
+makes the model and effort `Unknown` (the launcher asks for a model) with
+the cause in the model provenance, marks the catalog
+`configurationUnreadable` so it never replaces a cached complete one, leaves
+OpenClaw `unknown` with a `configuration` probe unobserved, and fails the
+local credential as `unreadable-config`. Guard:
+`electron/main/file-read-fallback.ratchet.test.ts` finds by shape any catch
+that turns a file read into an empty value under `electron/main`, against a
+reasoned exceptions list. Residual: `session-identity-store.ts` and
+`claude-plan-account.ts` load their own persisted state that way, so an
+unreadable file there is overwritten by the next save.
 
 ### BUG-234 Publishing said "needs an update" for rate limits and missing routes
 

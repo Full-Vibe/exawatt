@@ -1,12 +1,13 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type { SourceTransport } from '@exawatt/core';
 import {
   parseGatewayConfigText,
+  readConfigFileSync,
   readGatewayConfig,
+  type ConfigFileRead,
   type OCGatewayConfig,
 } from '@exawatt/core/server';
 import { stopChildProcess } from './child-process-lifecycle';
@@ -90,10 +91,10 @@ export type RemoteExec = (
  * same files OpenClaw itself does.
  */
 export interface LocalGatewaySource {
-  /** Parsed `openclaw.json`, or null when it cannot be read or parsed. */
-  readConfig(): OCGatewayConfig | null;
-  /** Bounded read of one named secret file, or null when there is not one. */
-  readSecret(name: string): string | null;
+  /** `openclaw.json` as OpenClaw reads it: missing, unreadable, or parsed. */
+  readConfig(): ConfigFileRead<OCGatewayConfig>;
+  /** Bounded read of one named secret file. Unreadable is never "none". */
+  readSecret(name: string): ConfigFileRead<string>;
 }
 
 export type GatewayBootstrapFailure =
@@ -800,13 +801,16 @@ export async function bootstrapGatewayCredentialOverSsh(
 export async function bootstrapLocalGatewayCredential(
   source: LocalGatewaySource = defaultLocalGatewaySource()
 ): Promise<GatewayBootstrapResult> {
-  let config: OCGatewayConfig | null;
+  let read: ConfigFileRead<OCGatewayConfig>;
   try {
-    config = source.readConfig();
+    read = source.readConfig();
   } catch {
     // The reader already fails closed; this is the belt for an injected one.
     return failed('unreadable-config');
   }
+  // Missing and unreadable both stop here, and the sentence names both: the
+  // operator checks that the file exists and that this account can read it.
+  const config = read.status === 'ok' ? read.value : null;
   const gateway = asRecord(asRecord(config)?.gateway);
   if (!gateway) return failed('unreadable-config');
 
@@ -829,15 +833,26 @@ export async function bootstrapLocalGatewayCredential(
   }
 
   const provider = secretProviderIn(gateway);
+  // A secret file that is there and could not be read is a failed read, not
+  // an absent token: "paste the token" would send the operator past a
+  // permission problem to a credential they already configured (BUG-245).
+  let secretUnreadable = false;
   if (provider !== null) {
     for (const name of secretFileCandidates(provider)) {
-      let contents: string | null;
+      let secret: ConfigFileRead<string>;
       try {
-        contents = source.readSecret(name);
+        secret = source.readSecret(name);
       } catch {
-        contents = null;
+        secretUnreadable = true;
+        continue;
       }
-      const token = boundedToken(contents);
+      if (secret.status === 'unreadable') {
+        // A directory or an oversized file where the secret belongs was read
+        // as far as it could be, and is not a token; a refused read failed.
+        if (secret.cause.kind === 'io') secretUnreadable = true;
+        continue;
+      }
+      const token = boundedToken(secret.status === 'ok' ? secret.value : null);
       if (token) {
         return {
           ok: true,
@@ -852,7 +867,7 @@ export async function bootstrapLocalGatewayCredential(
     }
   }
 
-  return failed('token-unavailable');
+  return failed(secretUnreadable ? 'unreadable-config' : 'token-unavailable');
 }
 
 /**
@@ -879,8 +894,9 @@ export function defaultLocalGatewaySource(
     readConfig: () => readGatewayConfig(stateDir),
     readSecret: name => {
       // Re-checked at the boundary: the caller validates, and this seam is
-      // exported, so a future caller cannot turn a name into a path.
-      if (!SECRET_NAME_PATTERN.test(name)) return null;
+      // exported, so a future caller cannot turn a name into a path. Such a
+      // name can name no file, so there is none to read.
+      if (!SECRET_NAME_PATTERN.test(name)) return { status: 'missing' };
       return readBoundedFile(join(stateDir, LOCAL_SECRETS_DIR_NAME, name));
     },
   };
@@ -914,14 +930,12 @@ export function testLocalGatewaySource(
  * or a pipe, whose read would never end, and the size check refuses anything
  * larger than a credential could be before a byte is read.
  */
-function readBoundedFile(path: string): string | null {
-  try {
-    const stats = statSync(path);
-    if (!stats.isFile() || stats.size > MAX_TOKEN_LENGTH) return null;
-    return readFileSync(path, 'utf8');
-  } catch {
-    return null;
-  }
+function readBoundedFile(path: string): ConfigFileRead<string> {
+  return readConfigFileSync(path, {
+    name: 'text',
+    parse: text => text,
+    maxBytes: MAX_TOKEN_LENGTH,
+  });
 }
 
 export interface GatewayCredentialDependencies {

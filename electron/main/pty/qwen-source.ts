@@ -8,9 +8,13 @@
  * a configured credential, not a working one, and a configured catalog, not
  * an account's entitlement. Measured against Qwen Code 0.24.4.
  */
-import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import {
+  asConfigObject,
+  readConfigFileSync,
+  type ConfigFileRead,
+} from '@exawatt/core/server';
 import { QWEN_ADMIN_DEFAULTS_PATH } from '../harness-events/qwen-hooks';
 import { parseJsonWithComments } from '../json-with-comments';
 
@@ -43,12 +47,12 @@ export function parseQwenVersion(output: string): QwenVersion | null {
 export function readQwenAdminDefaults(
   file = QWEN_ADMIN_DEFAULTS_PATH
 ): string | null {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
+  const read = readConfigFileSync(file, { name: 'text', parse: text => text });
+  if (read.status === 'unreadable') {
+    // Launching without it would drop the administrator's policy silently.
+    throw new Error('The Qwen Code administrator defaults could not be read');
   }
+  return read.status === 'ok' ? read.value : null;
 }
 
 /** Qwen Code's user directory: `QWEN_HOME`, else `~/.qwen`. */
@@ -57,40 +61,20 @@ export function qwenHome(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
- * What Exawatt learned from one of Qwen Code's settings files. Absent is a
+ * What Exawatt learned from one of Qwen Code's settings files. Missing is a
  * fact (nothing configured); unreadable is not (the file exists and could not
  * be read, or is not the JSON Qwen Code accepts), so nothing downstream may
  * treat it as "nothing configured".
  */
-export type QwenSettingsRead =
-  | { status: 'absent' }
-  | { status: 'ok'; settings: Record<string, unknown> }
-  | { status: 'unreadable' };
-
-export function readQwenSettingsFile(file: string): QwenSettingsRead {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT'
-      ? { status: 'absent' }
-      : { status: 'unreadable' };
-  }
-  const settings = parseQwenSettingsText(text);
-  return settings ? { status: 'ok', settings } : { status: 'unreadable' };
-}
+export type QwenSettingsRead = ConfigFileRead<Record<string, unknown>>;
 
 /** Qwen Code's own reading: comments and a byte-order mark are allowed, and
- *  the document must be an object. Null for anything Qwen Code rejects. */
-function parseQwenSettingsText(text: string): Record<string, unknown> | null {
-  try {
-    const value = parseJsonWithComments(text);
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+ *  the document must be an object. */
+export function readQwenSettingsFile(file: string): QwenSettingsRead {
+  return readConfigFileSync(file, {
+    name: 'JSON with comments',
+    parse: text => asConfigObject(parseJsonWithComments(text)),
+  });
 }
 
 /** The settings a read produced, null when the file is absent. Throws when it
@@ -102,7 +86,7 @@ function settingsOrThrow(
   if (read.status === 'unreadable') {
     throw new Error(`Qwen Code settings could not be read to find ${what}`);
   }
-  return read.status === 'ok' ? read.settings : null;
+  return read.status === 'ok' ? read.value : null;
 }
 
 function readPath(

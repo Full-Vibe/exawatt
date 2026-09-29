@@ -19,6 +19,7 @@ import {
 } from './gateway-bootstrap';
 import type { SshDestination } from './ssh-tunnel';
 import type { OCGatewayConfig, SourceTransport } from '@exawatt/core';
+import type { ConfigFileRead } from '@exawatt/core/server';
 
 vi.mock('electron', () => ({}));
 
@@ -971,16 +972,23 @@ describe('bootstrapGatewayCredentialOverSsh redaction', () => {
  */
 function fakeLocal(
   config: unknown,
-  secrets: Record<string, string> = {}
+  secrets: Record<string, string | ConfigFileRead<string>> = {}
 ): { source: LocalGatewaySource; reads: string[] } {
   const reads: string[] = [];
   return {
     reads,
     source: {
-      readConfig: () => config as OCGatewayConfig | null,
+      readConfig: () =>
+        config === null
+          ? { status: 'missing' }
+          : { status: 'ok', value: config as OCGatewayConfig },
       readSecret: name => {
         reads.push(name);
-        return secrets[name] ?? null;
+        const secret = secrets[name];
+        if (secret === undefined) return { status: 'missing' };
+        return typeof secret === 'string'
+          ? { status: 'ok', value: secret }
+          : secret;
       },
     },
   };
@@ -1090,6 +1098,43 @@ describe('bootstrapLocalGatewayCredential', () => {
     expect(reads).toEqual([]);
   });
 
+  it('reports unreadable-config, not token-unavailable, for a secret it could not open', async () => {
+    const { source } = fakeLocal(
+      {
+        gateway: {
+          auth: {
+            token: {
+              source: 'file',
+              provider: 'gateway_auth_token',
+              id: 'value',
+            },
+          },
+        },
+      },
+      {
+        'gateway-auth-token': {
+          status: 'unreadable',
+          cause: { kind: 'io', code: 'EACCES' },
+        },
+      }
+    );
+    const result = await bootstrapLocalGatewayCredential(source);
+    // "Paste the token" would send the operator past a permission problem.
+    expect(result.ok === false && result.failure).toBe('unreadable-config');
+  });
+
+  it('reports unreadable-config for a configuration OpenClaw would reject', async () => {
+    const source: LocalGatewaySource = {
+      readConfig: () => ({
+        status: 'unreadable',
+        cause: { kind: 'rejected', grammar: 'JSON5' },
+      }),
+      readSecret: () => ({ status: 'missing' }),
+    };
+    const result = await bootstrapLocalGatewayCredential(source);
+    expect(result.ok === false && result.failure).toBe('unreadable-config');
+  });
+
   it('ignores an empty or oversized secret file rather than pairing with it', async () => {
     const { source } = fakeLocal(
       {
@@ -1133,7 +1178,7 @@ describe('bootstrapLocalGatewayCredential', () => {
       readConfig: () => {
         throw new Error(`cannot read ${FAKE_KEY_PATH}`);
       },
-      readSecret: () => null,
+      readSecret: () => ({ status: 'missing' }),
     };
     const result = await bootstrapLocalGatewayCredential(source);
     expect(result.ok === false && result.failure).toBe('unreadable-config');

@@ -62,6 +62,8 @@ export const RUNTIME_PACKAGES = [
   '@supabase/ssr',
   '@supabase/supabase-js',
   '@exawatt/core',
+  // Codex `config.toml`, read with the grammar Codex uses (BUG-245).
+  'smol-toml',
 ];
 
 /**

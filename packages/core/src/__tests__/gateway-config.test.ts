@@ -73,11 +73,23 @@ describe('readGatewayConfig', () => {
     const dir = stateDir();
     fs.writeFileSync(path.join(dir, 'openclaw.json'), HAND_EDITED);
     expect(readGatewayConfig(dir)).toEqual({
-      gateway: { port: 4242, auth: { mode: 'token', token: FIXTURE_TOKEN } },
+      status: 'ok',
+      value: {
+        gateway: { port: 4242, auth: { mode: 'token', token: FIXTURE_TOKEN } },
+      },
     });
   });
 
-  it('returns null for a missing file', () => {
-    expect(readGatewayConfig(stateDir())).toBeNull();
+  it('says missing only when there is no file', () => {
+    expect(readGatewayConfig(stateDir())).toEqual({ status: 'missing' });
+  });
+
+  it('says unreadable, not missing, for a file OpenClaw would reject', () => {
+    const dir = stateDir();
+    fs.writeFileSync(path.join(dir, 'openclaw.json'), '{ gateway: ');
+    expect(readGatewayConfig(dir)).toEqual({
+      status: 'unreadable',
+      cause: { kind: 'rejected', grammar: 'JSON5' },
+    });
   });
 });

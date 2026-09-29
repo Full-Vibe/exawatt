@@ -22,6 +22,12 @@ import {
   type AgentSourceSnapshot,
   type AgentSourceState,
 } from '@exawatt/core';
+import {
+  describeUnreadableConfig,
+  parseGatewayConfigText,
+  readConfigFile,
+  type ConfigFileRead,
+} from '@exawatt/core/server';
 import type { AgentSourceObservationStore } from './agent-source-observation-store';
 import { harnessDescriptor } from './harness-registry';
 import {
@@ -337,12 +343,15 @@ export function localSourceState(input: {
 export function openClawSourceState(input: {
   installationObserved: boolean;
   executable: boolean;
-  configured: boolean;
+  /** Null when the configuration exists and could not be read. */
+  configured: boolean | null;
   protocolObserved: boolean;
   protocolReady: boolean;
 }): AgentSourceState {
   if (!input.installationObserved) return 'unknown';
   if (!input.executable) return 'not-installed';
+  // Unreadable is not unconfigured: never "needs a configuration" (BUG-245).
+  if (input.configured === null) return 'unknown';
   if (!input.configured) return 'action-required';
   if (!input.protocolObserved) return 'unknown';
   return input.protocolReady ? 'ready' : 'degraded';
@@ -1191,40 +1200,47 @@ interface OpenClawObservation {
   port: number;
 }
 
-async function readOpenClawConfig(): Promise<OpenClawObservation | null> {
-  try {
-    const raw = await fs.promises.readFile(
-      path.join(os.homedir(), '.openclaw', 'openclaw.json'),
-      'utf8'
-    );
-    const parsed = JSON.parse(raw) as {
-      meta?: { lastTouchedVersion?: unknown };
-      gateway?: {
-        host?: unknown;
-        port?: unknown;
-      };
+/**
+ * `~/.openclaw/openclaw.json` as OpenClaw reads it: JSON5, the grammar the
+ * Gateway's own loader and the Connect bootstrap share (BUG-146). A file that
+ * is there and cannot be read is `unreadable`, never "not configured".
+ */
+async function readOpenClawConfig(): Promise<
+  ConfigFileRead<OpenClawObservation>
+> {
+  const read = await readConfigFile(
+    path.join(os.homedir(), '.openclaw', 'openclaw.json'),
+    { name: 'JSON5', parse: parseGatewayConfigText }
+  );
+  if (read.status !== 'ok') return read;
+  const parsed = read.value as {
+    meta?: { lastTouchedVersion?: unknown };
+    gateway?: {
+      host?: unknown;
+      port?: unknown;
     };
-    const rawHost = parsed.gateway?.host;
-    const host =
-      typeof rawHost === 'string' && rawHost && rawHost !== 'loopback'
-        ? rawHost
-        : '127.0.0.1';
-    const rawPort = parsed.gateway?.port;
-    const port =
-      typeof rawPort === 'number' && Number.isInteger(rawPort) && rawPort > 0
-        ? rawPort
-        : 18789;
-    return {
+  };
+  const rawHost = parsed.gateway?.host;
+  const host =
+    typeof rawHost === 'string' && rawHost && rawHost !== 'loopback'
+      ? rawHost
+      : '127.0.0.1';
+  const rawPort = parsed.gateway?.port;
+  const port =
+    typeof rawPort === 'number' && Number.isInteger(rawPort) && rawPort > 0
+      ? rawPort
+      : 18789;
+  return {
+    status: 'ok',
+    value: {
       lastTouchedVersion:
         typeof parsed.meta?.lastTouchedVersion === 'string'
           ? parsed.meta.lastTouchedVersion
           : null,
       host,
       port,
-    };
-  } catch {
-    return null;
-  }
+    },
+  };
 }
 
 export interface OpenClawGatewayObservation {
@@ -1357,7 +1373,7 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
     stdout: '',
     stderr: '',
   };
-  const [versionResult, statusResult, config] = await Promise.all([
+  const [versionResult, statusResult, configRead] = await Promise.all([
     executable
       ? loginShellCommand(shell, sourceCommand(executable, ['--version']))
       : Promise.resolve(unreached),
@@ -1380,9 +1396,20 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
     statusResult.stdout,
     statusResult.ok
   );
+  const config = configRead.status === 'ok' ? configRead.value : null;
   const host = config?.host ?? '127.0.0.1';
   const port = config?.port ?? 18789;
-  const configured = Boolean(config) || gateway.configValid === true;
+  // The Gateway's own verdict outranks a file Exawatt could not read.
+  const configured: boolean | null =
+    Boolean(config) || gateway.configValid === true
+      ? true
+      : configRead.status === 'unreadable'
+        ? null
+        : false;
+  const configUnreadable =
+    configRead.status === 'unreadable'
+      ? `~/.openclaw/openclaw.json could not be read: ${describeUnreadableConfig(configRead.cause)}.`
+      : null;
   const state = openClawSourceState({
     installationObserved: true,
     executable: Boolean(executable),
@@ -1405,7 +1432,9 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
   return {
     ...declaration,
     id: 'openclaw-local',
-    configured,
+    // Only a read configuration is a configured one; the state and the
+    // unobserved probe carry "could not tell".
+    configured: configured === true,
     launchable: false,
     state,
     stateLabel: stateLabel(state),
@@ -1417,10 +1446,15 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
           : state === 'not-installed'
             ? 'OpenClaw is supported, but its local CLI is not installed.'
             : state === 'unknown'
-              ? 'OpenClaw gateway status is not known yet.'
+              ? configured === null
+                ? 'OpenClaw configuration could not be read.'
+                : 'OpenClaw gateway status is not known yet.'
               : 'OpenClaw needs a local gateway configuration before Exawatt can connect.',
     observedAt,
-    unobservedProbes: statusResult.answered ? [] : ['gateway'],
+    unobservedProbes: [
+      ...(statusResult.answered ? [] : ['gateway' as const]),
+      ...(configured === null ? ['configuration' as const] : []),
+    ],
     observation: LIVE_OBSERVATION,
     facts: {
       installation: fact(
@@ -1431,24 +1465,33 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
           : 'openclaw was not found in the login-shell PATH.',
         commandEvidence
       ),
-      reachability: fact(
-        !configured
-          ? 'unknown'
-          : gateway.protocolReady
-            ? gateway.degraded
-              ? 'degraded'
-              : 'ready'
-            : 'degraded',
-        !configured
-          ? 'Not configured'
-          : gateway.protocolReady
-            ? 'Protocol handshake accepted'
-            : 'Protocol probe failed',
-        configured
-          ? `OpenClaw performed its WebSocket/RPC status probe for ${host}:${port}; no connection secret crossed into the renderer.`
-          : 'No gateway endpoint is configured.',
-        protocolEvidence
-      ),
+      reachability:
+        configured === null
+          ? fact(
+              'unknown',
+              'Configuration unreadable',
+              configUnreadable ??
+                'The OpenClaw configuration could not be read.',
+              configEvidence
+            )
+          : fact(
+              !configured
+                ? 'unknown'
+                : gateway.protocolReady
+                  ? gateway.degraded
+                    ? 'degraded'
+                    : 'ready'
+                  : 'degraded',
+              !configured
+                ? 'Not configured'
+                : gateway.protocolReady
+                  ? 'Protocol handshake accepted'
+                  : 'Protocol probe failed',
+              configured
+                ? `OpenClaw performed its WebSocket/RPC status probe for ${host}:${port}; no connection secret crossed into the renderer.`
+                : 'No gateway endpoint is configured.',
+              protocolEvidence
+            ),
       authentication: fact(
         !configured ? 'unknown' : gateway.protocolReady ? 'ready' : 'unknown',
         gateway.protocolReady ? 'Connection accepted' : 'Not verified',
@@ -1694,7 +1737,7 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
   // out" and not "no models", and it must not be remembered as either.
   const settingsRead = readQwenUserSettings();
   const settingsKnown = settingsRead.status !== 'unreadable';
-  const settings = settingsRead.status === 'ok' ? settingsRead.settings : null;
+  const settings = settingsRead.status === 'ok' ? settingsRead.value : null;
   const signIn = readQwenSignIn(settings);
   const catalog = readQwenConfiguredModels(settings);
   const modelCount = catalog.models.length;

@@ -78,7 +78,7 @@ describe('Qwen Code settings', () => {
   });
 
   it('pins no model when none is configured', () => {
-    const catalog = qwenModelCatalog({ status: 'ok', settings: { ui: {} } });
+    const catalog = qwenModelCatalog({ status: 'ok', value: { ui: {} } });
     expect(catalog.effectiveModel).toBeNull();
     expect(catalog.effectiveModelSource).toBe('account-default');
     expect(catalog.catalogMode).toBe('source-owned');
@@ -88,7 +88,7 @@ describe('Qwen Code settings', () => {
   it('pins the configured default as configuration', () => {
     const catalog = qwenModelCatalog({
       status: 'ok',
-      settings: { model: { name: 'qwen3-coder-plus' } },
+      value: { model: { name: 'qwen3-coder-plus' } },
     });
     expect(catalog.effectiveModel).toBe('qwen3-coder-plus');
     expect(catalog.effectiveModelSource).toBe('config');
@@ -96,7 +96,10 @@ describe('Qwen Code settings', () => {
   });
 
   it('never offers "source default" for settings it could not read', () => {
-    const catalog = qwenModelCatalog({ status: 'unreadable' });
+    const catalog = qwenModelCatalog({
+      status: 'unreadable',
+      cause: { kind: 'io', code: 'EACCES' },
+    });
     expect(catalog.catalogMode).toBe('unavailable');
     expect(catalog.effectiveModelSource).toBe('unavailable');
     expect(catalog.models).toEqual([]);
@@ -135,9 +138,9 @@ describe('readQwenSettingsFile', () => {
     );
     const read = readQwenSettingsFile(file);
     expect(read.status).toBe('ok');
-    expect(readQwenSignIn(read.status === 'ok' ? read.settings : null)).toEqual(
-      { authType: 'openai' }
-    );
+    expect(readQwenSignIn(read.status === 'ok' ? read.value : null)).toEqual({
+      authType: 'openai',
+    });
   });
 
   it('tells a missing file from one it could not read', () => {
@@ -145,18 +148,20 @@ describe('readQwenSettingsFile', () => {
       readQwenSettingsFile(
         path.join(os.tmpdir(), 'exawatt-no-qwen-settings.json')
       )
-    ).toEqual({ status: 'absent' });
-    expect(readQwenSettingsFile(settingsFile('{"a": 1,}'))).toEqual({
+    ).toEqual({ status: 'missing' });
+    const rejected = {
       status: 'unreadable',
-    });
-    expect(readQwenSettingsFile(settingsFile('[]'))).toEqual({
-      status: 'unreadable',
-    });
+      cause: { kind: 'rejected', grammar: 'JSON with comments' },
+    };
+    expect(readQwenSettingsFile(settingsFile('{"a": 1,}'))).toEqual(rejected);
+    expect(readQwenSettingsFile(settingsFile('[]'))).toEqual(rejected);
     const locked = settingsFile('{}');
     fs.chmodSync(locked, 0o000);
     // Root reads through permissions; the case only means something without.
     if (process.getuid?.() !== 0) {
-      expect(readQwenSettingsFile(locked)).toEqual({ status: 'unreadable' });
+      expect(readQwenSettingsFile(locked)).toMatchObject({
+        status: 'unreadable',
+      });
     }
   });
 

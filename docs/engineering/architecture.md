@@ -678,6 +678,19 @@ response. If that live probe is unavailable, its adapter returns only observed
 configured values or an account-default sentinel and source-owned selection
 action. Product code never promotes fixture aliases into source truth.
 
+Every harness configuration or credential file (Claude layered settings,
+Codex `config.toml`, Qwen settings, OpenClaw `openclaw.json` and its secret
+files) is read through one boundary, `readConfigFile` in
+`@exawatt/core/server`, with the owning program's own grammar: Claude's
+strict JSON with a byte-order mark skipped and a blank file empty, Codex's
+TOML 1.1, the gemini-cli family's JSON with comments, OpenClaw's JSON5. It
+answers `missing`, `unreadable` with its cause, or `ok`, and a caller never
+folds `unreadable` into `missing` (BUG-245): an unreadable file makes the
+facts it would decide `unknown` and unobserved, and a model catalog read
+through one carries `configurationUnreadable` and is never cached over a
+complete one. `electron/main/file-read-fallback.ratchet.test.ts` fails on a
+new `catch` that swallows a file read into an empty value.
+
 The registry exposes global source/account facts. The workspace resolves a separate
 Project-effective launch view by combining source facts, Project draft state,
 and environment policy. This separation prevents an account default in

@@ -16,8 +16,9 @@
  * deliberately does NOT reorder under a pointer, so a background refresh
  * lands on the next composer entry.
  *
- * Only a `live-catalog` observation is retained. A probe that failed or
- * returned nothing must stay retryable rather than freeze a degraded view.
+ * Only a complete `live-catalog` observation is retained. A probe that failed,
+ * returned nothing, or read through an unreadable configuration file must stay
+ * retryable rather than freeze a degraded view.
  *
  * ## Size class (BUG-033)
  *
@@ -273,7 +274,14 @@ export class AgentModelCatalogCache {
     catalog: AgentModelCatalog,
     observationGeneration?: number
   ): Promise<void> {
-    if (catalog.catalogMode !== 'live-catalog') return;
+    // An observation made through a configuration file that could not be
+    // read is incomplete, and never replaces a complete one (BUG-245).
+    if (
+      catalog.catalogMode !== 'live-catalog' ||
+      catalog.configurationUnreadable
+    ) {
+      return;
+    }
     const file = await this.load();
     const currentGeneration = this.captureObservationGeneration(
       catalog.harness
