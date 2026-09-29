@@ -337,6 +337,21 @@ tests remain the recovery floor during the rollout.
   restart at the head, trusting a rebased server, keeping `.next/dev`) each
   fail it. AGENTS.md and `agent-delivery.md` drop the advice to keep a server
   alive with `EXAWATT_DEV_IDLE_MINUTES=0` until the landing reports.
+  **End to end, the change landed itself (ticket 519, `cc08dc8f`).** A real
+  `pnpm dev -p 7461` was started on the unrebased commit `3959ff1f`, then the
+  branch was rebased by hand over eight landings (60 paths, including
+  `electron/`, `packages/core/` and the lockfile; none under `src/`, because
+  nothing upstream touched it). With `--verify eval:electron:delegation
+  --verify eval:navigation-paint`, the landing reinstalled (lockfile moved),
+  ran the floor, then before the first gate printed `started before a
+  rebase; restarting it on cc08dc8fe0ff`, stopped the server's process group,
+  cleared `.next/dev`, recompiled the Electron main, and had Next serving
+  `sourceHead=cc08dc8f` 8.2 s later. Both gates ran on that one restart
+  (delegation 48 s, navigation-paint 3 s, both green); the metric read
+  `server_refreshed phase=candidate reason=rebased fromHead=3959ff1f
+  toHead=cc08dc8f movedPaths=60 electronRecompiled=true`, and STATUS ended
+  `reinstalled=candidate server_refreshed=candidate`. Master did not move
+  while the ticket waited, so the head did not rebase.
 
 - 2026-09-28, BUG-233 and BUG-140: **the landing checks now fail a change
   that would fail public CI.** Public CI had failed every commit for four
