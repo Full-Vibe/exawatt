@@ -7454,3 +7454,37 @@ This updates the September 25 handoff, not the accepted policy in decision 0044.
   display-off/lock, sleep/wake and energy attribution remain unproven; synthetic
   events never authorize locking or sleeping the operator's Mac. Claude still
   independently prevents sleep. Never claim a global battery-safe mode.
+
+
+### 2026-09-28 — Combined battery delivery checkpoint
+
+**Implementation and native verification are complete; integration is next.**
+This supersedes the earlier separate-delivery recovery order. All Fleet/host,
+source and device-policy commits are assembled in `agent/battery-device-policy`
+at `da48c2dd`, sibling `exawatt-battery-device-policy`. Its dev server is port
+7358. The source-only and Fleet checkouts are recovery copies; neither has a
+live landing. Do not restart their old landing commands.
+
+The real device-power eval exited 0: native macOS assertion acquisition/release,
+lock continuity, unplug, battery opt-in, Never preserving an independent native
+ID, suspend/resume, lifecycle exclusions, persisted Settings and real UI writes
+all passed. The Settings screenshot was reviewed. Physical sleep/unplug and
+energy acceptance remain open, with Claude explicitly uncontrolled.
+
+The first slice's floor passed 635 delivery tests and the community build but
+then exposed an environment mismatch: the shell resolves Node 26, CI/release
+use Node 22. Use `PATH=/Users/jake/.hermes/node/bin:$PATH` for delivery. The
+unrelated shortcut-storage fixture also put cold compilation inside a behavior
+deadline; commit `d0d48afa` (copied as `da48c2dd`) uses a hoisted static import.
+All 9 isolated cases and all 38 community-runtime cases pass on Node 22.
+No timeout increases or gate waivers were made.
+
+Next: rebase this combined branch on origin/master, install, and run one
+`agent:land --dogfood` declaring spatial, spatial:pointer, spatial:emergence,
+electron:host-power, electron:connected-fleet, electron:source-power,
+electron:device-power, electron:lifecycle, electron:idempotency and
+electron:grok-source eval commands (each with its `eval:` prefix). Keep the
+7358 server alive for queue rechecks. Confirm integration and queued dogfood
+installation separately, then clean only these three task-owned worktrees.
+The combined branch also records the proven eval NetworkService pipe leak
+under incident 0030 / BUG-230; that shared-harness follow-up is separate work.
