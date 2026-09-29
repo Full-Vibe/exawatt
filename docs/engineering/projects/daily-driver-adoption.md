@@ -7543,7 +7543,9 @@ Decision 0044 is implemented for verified macOS Codex 0.156.1 launches.
 feature override in the same login-shell environment as the PTY. The exact
 verified executable launches with `--disable prevent_idle_sleep`; process
 records carry applied-at-launch evidence. Replacement processes probe again.
-Unknown probes keep the ordinary launch available. No user configuration,
+Unknown probes keep the ordinary launch available. Fish functions/aliases
+remain on that path: a plain-executable check prevents `command -v` from
+bypassing an operator wrapper. No user configuration,
 daemon mode, existing process or Claude inhibitor is changed.
 
 The main-process controller consumes local Session status from the shared

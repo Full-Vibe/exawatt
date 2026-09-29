@@ -58,6 +58,20 @@ export async function probeHarnessPowerControl(
   let executable: string | undefined;
   let version: string | undefined;
   try {
+    // Fish's `command -v` skips functions (including its aliases), unlike the
+    // plain invocation we normally launch. Never bypass an operator wrapper
+    // merely because a verified binary also exists later in PATH.
+    if (
+      !request.executable &&
+      loginShellFamily(request.shell) === 'fish' &&
+      (await run(`type -t ${shellQuote(descriptor.source.executable)}`)) !==
+        'file'
+    ) {
+      return {
+        state: 'unknown',
+        reason: 'Source invocation is not a plain executable',
+      };
+    }
     executable =
       request.executable ??
       (await run(`command -v ${shellQuote(descriptor.source.executable)}`));

@@ -95,6 +95,35 @@ describe('per-launch source sleep control probe', () => {
     }
   );
 
+  it('preserves a Fish function instead of bypassing it for the PATH binary', async () => {
+    run.mockResolvedValueOnce({ stdout: 'function\n' });
+    expect(
+      await probeHarnessPowerControl({
+        ...request,
+        shell: '/usr/local/bin/fish',
+      })
+    ).toMatchObject({ state: 'unknown' });
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0][1].at(-1)).toContain("type -t 'codex'");
+  });
+
+  it('verifies a plain Fish executable after resolving invocation precedence', async () => {
+    run
+      .mockResolvedValueOnce({ stdout: 'file\n' })
+      .mockResolvedValueOnce({ stdout: '/opt/codex\n' })
+      .mockResolvedValueOnce({ stdout: 'codex-cli 0.156.1\n' })
+      .mockResolvedValueOnce({
+        stdout: 'prevent_idle_sleep experimental false\n',
+      });
+    expect(
+      await probeHarnessPowerControl({
+        ...request,
+        shell: '/usr/local/bin/fish',
+      })
+    ).toMatchObject({ state: 'applied-at-launch', executable: '/opt/codex' });
+    expect(run).toHaveBeenCalledTimes(4);
+  });
+
   it('does not claim control on an unverified platform', async () => {
     vi.stubGlobal('process', { ...process, platform: 'linux' });
     expect(await probeHarnessPowerControl(request)).toMatchObject({
