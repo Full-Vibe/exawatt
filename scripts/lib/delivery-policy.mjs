@@ -1363,19 +1363,18 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:turn-truth': GATE,
   'eval:electron:tenancy': GATE,
   'eval:community:network': GATE,
-  // Repaired and enforced (BUG-213, BUG-216, BUG-217).
+  // Born quarantined by the BUG-211 audit and repaired under BUG-212 to
+  // BUG-217; enforced like the rest.
+  'eval:navigation-paint': GATE,
   'eval:navigation:electron': GATE,
+  'eval:electron:grok-source': GATE,
+  'eval:electron:appearance': GATE,
   'eval:electron:source-power': GATE,
   'eval:electron:device-power': GATE,
   'eval:electron:context-labels': GATE,
   'eval:electron:resume': GATE,
   'eval:electron:chrome': GATE,
   'eval:electron:session-parity': GATE,
-  // Quarantined in `SURFACE_GATES`: owed and announced, repaired under the id
-  // each entry there carries.
-  'eval:navigation-paint': GATE,
-  'eval:electron:grok-source': GATE,
-  'eval:electron:appearance': GATE,
 
   // (c) CI.
   'test:ci': CI,

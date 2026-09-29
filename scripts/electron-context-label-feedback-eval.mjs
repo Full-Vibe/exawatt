@@ -2,13 +2,7 @@
 
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
@@ -61,28 +55,25 @@ const fixtureTab = (id, task) => ({
   initialTask: task,
   contextSummary: task,
 });
-writeFileSync(
-  join(userData, 'workspace.json'),
-  JSON.stringify({
-    v: 6,
-    lastUsedDir: projectDir,
-    activeDir: projectDir,
-    pinnedTabId: null,
-    recentProjects: [],
-    projects: [
-      {
-        dir: projectDir,
-        name: 'Exawatt',
-        color: '#F34A9D',
-        activeTabId: 'tab-context-a',
-        tabs: [
-          fixtureTab('a', CORRECTED),
-          fixtureTab('b', 'Fix auth redirect loop'),
-        ],
-      },
-    ],
-  })
-);
+seedWorkspaceLayout(userData, {
+  v: 6,
+  lastUsedDir: projectDir,
+  activeDir: projectDir,
+  pinnedTabId: null,
+  recentProjects: [],
+  projects: [
+    {
+      dir: projectDir,
+      name: 'Exawatt',
+      color: '#F34A9D',
+      activeTabId: 'tab-context-a',
+      tabs: [
+        fixtureTab('a', CORRECTED),
+        fixtureTab('b', 'Fix auth redirect loop'),
+      ],
+    },
+  ],
+});
 const requests = [];
 const server = createServer(async (request, response) => {
   if (request.method !== 'POST') {
