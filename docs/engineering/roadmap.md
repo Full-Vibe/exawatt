@@ -3082,6 +3082,17 @@ gate, reads the `EXA_BASE` server but is not in `gateNeedsDevServer`, so after
 a failed refresh it ran against a stopped server (`ERR_CONNECTION_REFUSED`).
 It should get the same ensure-fresh step as the surface gates.
 
+### BUG-252 The Fleet eval fails on a browser's `/favicon.ico` request
+
+Status: done · ENG-004 · found and fixed 2026-09-29 while landing BUG-250.
+
+`pnpm eval:spatial` failed its desktop scenario in 2 of 3 runs on "Failed to
+load resource: 404", unrelated to the change under test. Chromium intermittently
+requests the conventional `/favicon.ico` despite the declared icon link, and the
+app served nothing there. `/favicon.ico` now serves the distribution icon the
+metadata declares (4 of 4 runs pass), and the eval names the URL of any resource
+that fails to load.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

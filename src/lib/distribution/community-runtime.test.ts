@@ -61,6 +61,8 @@ const ENTRYPOINTS: Record<string, Disposition> = {
   'api/oc/token/route.ts': 'account-free',
   // Build-prepared first-party bytes only; no account or network capability.
   'exawatt-distribution/icon.png/route.ts': 'account-free',
+  // The same prepared icon, answered at the browser's conventional path.
+  'favicon.ico/route.ts': 'account-free',
 };
 
 /**

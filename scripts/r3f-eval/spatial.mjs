@@ -25,6 +25,14 @@ const HARD_FAIL = [
   'WebGL context',
 ];
 
+// A failed resource load says only its status; name what failed to load.
+function consoleErrorText(message) {
+  const { url } = message.location();
+  return message.text().startsWith('Failed to load resource') && url
+    ? `${message.text()}: ${url}`
+    : message.text();
+}
+
 function check(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -572,7 +580,7 @@ async function runScenario(browser, scenario) {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error.message || error)));
   page.on('console', message => {
-    if (message.type() === 'error') errors.push(message.text());
+    if (message.type() === 'error') errors.push(consoleErrorText(message));
   });
 
   const result = {
@@ -743,7 +751,7 @@ async function runHandoffScenario(browser, scenario) {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error.message || error)));
   page.on('console', message => {
-    if (message.type() === 'error') errors.push(message.text());
+    if (message.type() === 'error') errors.push(consoleErrorText(message));
   });
   const result = { name: scenario.name, passed: false, errors: [] };
   try {
