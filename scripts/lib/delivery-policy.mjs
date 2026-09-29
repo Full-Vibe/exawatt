@@ -1363,14 +1363,14 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:turn-truth': GATE,
   'eval:electron:tenancy': GATE,
   'eval:community:network': GATE,
+  'eval:electron:source-power': GATE,
+  'eval:electron:device-power': GATE,
   // Born quarantined by the BUG-211 audit and repaired under BUG-212 to
   // BUG-217; enforced like the rest.
   'eval:navigation-paint': GATE,
   'eval:navigation:electron': GATE,
   'eval:electron:grok-source': GATE,
   'eval:electron:appearance': GATE,
-  'eval:electron:source-power': GATE,
-  'eval:electron:device-power': GATE,
   'eval:electron:context-labels': GATE,
   'eval:electron:resume': GATE,
   'eval:electron:chrome': GATE,

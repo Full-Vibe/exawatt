@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
 import {
   createHarnessFixture,
   fixtureLaunch,
@@ -54,12 +54,16 @@ try {
     await bridgeReady(page);
     const power = () => page.evaluate(() => window.electron.app.devicePower());
     const waitPower = async expected => {
-      await page.waitForFunction(async values => {
-        const status = await window.electron.app.devicePower();
-        return Object.entries(values).every(
-          ([key, value]) => status[key] === value
-        );
-      }, expected);
+      await waitForPageCondition(
+        page,
+        async values => {
+          const status = await window.electron.app.devicePower();
+          return Object.entries(values).every(
+            ([key, value]) => status[key] === value
+          );
+        },
+        expected
+      );
       return power();
     };
     const event = name =>
@@ -80,7 +84,8 @@ try {
         { id, data }
       );
     const waitSession = async (id, expected) => {
-      await page.waitForFunction(
+      await waitForPageCondition(
+        page,
         async ({ id, expected }) => {
           const row = (await window.electron.pty.list()).find(
             item => item.id === id
@@ -125,12 +130,16 @@ try {
     };
     const codex = await launch('codex');
     assert.equal(codex.powerControl?.state, 'applied-at-launch');
-    await page.waitForFunction(async id => {
-      const row = (await window.electron.pty.list()).find(
-        item => item.id === id
-      );
-      return row?.delegation?.children.length === 2;
-    }, codex.id);
+    await waitForPageCondition(
+      page,
+      async id => {
+        const row = (await window.electron.pty.list()).find(
+          item => item.id === id
+        );
+        return row?.delegation?.children.length === 2;
+      },
+      codex.id
+    );
     await waitPower({ assertion: 'active', supportedWorkingSessions: 1 });
     const held = await assertNative(1);
 
@@ -194,28 +203,48 @@ try {
 
     for (const child of fixture.codex.childIds)
       await send(codex.id, `finish ${child}`);
-    await page.waitForFunction(async id => {
-      const row = (await window.electron.pty.list()).find(
-        item => item.id === id
-      );
-      return row?.delegation?.children.length === 0;
-    }, codex.id);
+    await waitForPageCondition(
+      page,
+      async id => {
+        const row = (await window.electron.pty.list()).find(
+          item => item.id === id
+        );
+        // A source with nothing live reports `delegation: null`, never an
+        // empty list (`PtySessionRecord`), so either reads as cleared.
+        return row && (row.delegation?.children.length ?? 0) === 0;
+      },
+      codex.id
+    );
     await waitPower({ assertion: 'inactive', supportedWorkingSessions: 0 });
     await assertNative(0);
     // BEL is the real PTY operator-attention boundary for a source without a
     // more specific question event; no private monitor state is injected.
     await page.evaluate(() => window.electron.pty.focus(null));
     await send(codex.id, 'bell');
-    await page.waitForFunction(async id => {
-      const row = (await window.electron.pty.list()).find(
-        item => item.id === id
-      );
-      return row?.attention?.kind === 'bell';
-    }, codex.id);
+    await waitForPageCondition(
+      page,
+      async id => {
+        const row = (await window.electron.pty.list()).find(
+          item => item.id === id
+        );
+        return row?.attention?.kind === 'bell';
+      },
+      codex.id
+    );
     await waitPower({ assertion: 'inactive', supportedWorkingSessions: 0 });
     await assertNative(0);
     await page.evaluate(id => window.electron.pty.kill(id), codex.id);
-    await waitSession(codex.id, { exited: true });
+    // `pty.kill` stops the process and forgets its record, so the row leaves
+    // the list rather than reading `exited`.
+    await waitForPageCondition(
+      page,
+      async id =>
+        !(await window.electron.pty.list()).some(
+          item => item.id === id && !item.exited
+        ),
+      codex.id,
+      { label: 'the killed Agent to leave the live list' }
+    );
     await assertNative(0);
 
     installFixture(false);
@@ -270,7 +299,8 @@ try {
     const control = group.getByRole('combobox');
     await control.click();
     await page.getByRole('option', { name: 'Never', exact: true }).click();
-    await page.waitForFunction(
+    await waitForPageCondition(
+      page,
       async () => (await window.electron.app.devicePower()).policy === 'never'
     );
     await group.screenshot({ path: '/tmp/exawatt-device-power-settings.png' });
