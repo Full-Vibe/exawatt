@@ -39,7 +39,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-006 | Decision model                                   | planned      | Decision as a first-class scoped record with Approval scope and lifetime.                                                                                                              |
 | ENG-007 | Context Signals                                  | planned      | Many-to-many external inputs (PostHog, Slack, email, GitHub, calendar) as modeled sources.                                                                                             |
 | ENG-009 | Connections, secrets, and configuration          | planned      | UNSHAPED pending a design pass — vendor connections, buy-vs-build secrets, and a future credential-broker seam.                                                                        |
-| ENG-010 | Connected OpenClaw on customer infrastructure    | done         | C0–C8 landed: installed-app proof of the existing fleet; C6–C8 (2026-09-23) harden failure predicates, record Connect evidence, and repair the Connect flow. |
+| ENG-010 | Connected OpenClaw on customer infrastructure    | done         | C0–C9 landed: installed-app proof of the existing fleet; C6–C8 (2026-09-23) harden failure predicates, record Connect evidence, and repair the Connect flow; C9 (2026-09-28) makes a cancelled Connect close what it opened. |
 | ENG-011 | Multi-source fleet management                    | planned      | Aggregate mixed-assurance sources from one agent to thousands.                                                                                                                         |
 | ENG-012 | Hosted Exawatt control plane                     | planned      | Hosted metadata, team governance, managed ceilings, fleet health, billing.                                                                                                             |
 | ENG-013 | Lead agent — the non-worker role                 | planned      | One non-worker role — intent custody, attention filtering, dispatch — at Project and Workspace scope.                                                                                  |
@@ -1710,6 +1710,13 @@ Milestones:
   reports, a non-conforming frame cannot escape as an unhandled rejection,
   and main records the ones that do. Unit fixtures fail without each fix;
   the live two-Gateway pass was not re-run.
+- C9 Cancelled Connect and the pre-0.1.14 review — LANDED 2026-09-28
+  (BUG-244): a Connect overtaken by Disconnect, Detach, or a newer Connect
+  closes a late tunnel or socket and writes nothing; closing Connect mid-save
+  releases the record; a server list that failed to load says so; Manage
+  opens that server; reports key the ids a server can be guessed from; a
+  reconnect ladder no longer spends the Connect log. Proof: a real-process
+  test cancels at five points and finds no child or socket left.
 - C8 Connect flow repair — LANDED 2026-09-23 (BUG-155 to BUG-158): found by
   a real-app audit of the flow. Cancel no longer detaches a server the flow
   was handed back, and saved servers are marked Connected; a failed attempt
@@ -2909,6 +2916,26 @@ count, and a re-queued deep link is no longer dropped. Gate:
 `eval:electron:helper-death` (now also kills during start and during a
 cancelled quit), mutation-checked; real-process restart tests in
 `renderer-server.test.ts`. [Findings](projects/daily-driver-adoption.md#findings-log).
+
+### BUG-244 A cancelled Connect finished anyway, and left a tunnel running
+
+Status: fixed · ENG-010 · found 2026-09-28 in the pre-0.1.14 review.
+
+`disconnect()` set a flag that `establish()` never re-read after an await, so
+a Connect cancelled mid-flight completed: an `ssh -N -L` child and a Gateway
+socket nothing would close, a device credential written for a removed record,
+and a bound identity remembered for a detached source. The session now
+carries a connection generation that `connect()` and `disconnect()` advance
+and every step re-checks; a handle that arrives late is closed where it
+arrives. The same review fixed eight smaller defects in the path: a save
+finishing after Close stayed saved; a failed server-list read showed "no SSH
+configuration" and dropped Connected marks; Manage did not open the server;
+the empty state said Gateways above "Connect a server"; bug reports carried
+source ids anyone could recompute from a guessed alias (now a per-install
+HMAC at the report boundary; stored ids unchanged); a day of retries spent
+the Connect log's budget; an approval ask that never reached the server
+cleared its commands; and the SSH failure copy existed twice. Narrative in
+the ENG-010 milestone log.
 
 ## Amendment chain
 

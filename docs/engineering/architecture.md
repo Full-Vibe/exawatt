@@ -1101,6 +1101,12 @@ Built:
   instrumentation may never become the reason the app is slow. Lateness
   between the system's `suspend` and `resume` is sleep, not a stall, since
   every clock Node exposes on macOS counts through sleep (BUG-223);
+- one egress for those logs: the diagnostics bundle
+  (`electron/main/diagnostics-report.ts`) is the only artifact that carries
+  them off the machine, and it replaces every id Exawatt derives from a
+  server (`source-…`, `remote-…`, unkeyed digests a guessed alias recomputes)
+  with an HMAC under a per-install key, or withholds them when the key cannot
+  be read (`electron/main/diagnostics-pseudonyms.ts`, BUG-244);
 - one owner for process-death recovery
   (`electron/main/process-recovery.ts`). Everything main depends on can be
   killed underneath it (incident `0028`: a stray machine-wide `pkill` took

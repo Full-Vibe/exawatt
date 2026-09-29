@@ -1968,3 +1968,69 @@ Node 26, whose own `localStorage` broke 144 DOM tests on master (BUG-229,
 fixed separately). P2b's landing on the Project with the new coworker marked
 is next, now that the home exists to land on.
 
+### 2026-09-28 — the pre-0.1.14 review: a Cancel that did not cancel (C9, BUG-244)
+
+**A cancelled Connect now closes what it opened and writes nothing.** The
+release blocker predates 0.1.13: `disconnect()` set `detached`, and nothing
+in `establish()` read it again after an await. Measured against the real
+tunnel owner and the Connect eval's stand-in `ssh`, a Cancel during the
+configuration read or the tunnel open left the `ssh -N -L` child running for
+the life of the app; one during the stream subscription left the session
+reporting `connected` after the operator disconnected; and a Detach during
+pairing could write a device credential for the record being removed.
+
+The session now holds a connection generation. `connect()` and `disconnect()`
+advance it; every await in `establish`, `openTransport`, `pair`, `discover`,
+the conversation follow, and the write-authority renegotiation re-checks it.
+Handles stored on the session before the attempt was overtaken are closed by
+whoever overtook it; a tunnel or socket that arrives afterwards was never
+stored, so the step that received it closes it. An overtaken attempt returns
+`cancelled`, never a failure, and writes no credential, port, identity,
+phase, or teardown (a teardown could close the newer connection). The runtime
+remembers and emits only while its entry is still current, the store refuses
+a credential for a record it does not hold, and `OCClient` opens no socket
+for a connect a disconnect overtook while its identity was prepared.
+
+The same review's smaller findings, each fixed at its class:
+
+- Closing Connect while a server was being saved left the record: the close
+  released only what existed when it ran. The save now releases its own
+  record when it finds the flow closed.
+- A failed server-list read looked like an empty one: "This machine has no
+  SSH configuration yet", with every Connected mark dropped. The list now has
+  a failed state with Try again, and all three reads succeed or none count.
+- Manage closed the dialog and left the operator on the list. It carries the
+  saved server's id: Settings selects it, and from elsewhere Manage links to
+  `/settings?source=<id>`.
+- The empty state said "Gateways you connect" above "Connect a server".
+  Every entry point says server; the empty state now does too.
+- Source ids are unkeyed SHA-256 of an alias or `user@host:port`, and
+  coworker ids hash those, so a bug report named the server to anyone who
+  guessed it. Re-keying the ids would have re-keyed every record, credential,
+  projection row, and open coworker tab, for no protection beyond what the
+  report boundary gives; so the report replaces every derived id, in every
+  log, with an HMAC under a per-install key (`diagnostics-pseudonyms.ts`),
+  and withholds them when that key cannot be read. Lines still correlate
+  within an install's reports.
+- The reconnect ladder spent the 600-line run budget in about five hours,
+  after which a failed Connect left no line (BUG-154 again). Phase lines and
+  operator acts now have separate budgets, and a Reconnecting episode writes
+  each distinct transition once plus a count at each doubling: a day's
+  outage is 17 lines, not about 3,000.
+- An approval ask that never reached the server (no connection, a failed SSH
+  read, a socket that closed unanswered) cleared the copy commands for a
+  request still standing there. Results now say whether the source answered,
+  and only an answer retires the commands.
+- The SSH failure phrases and sentences existed in both `ssh-tunnel.ts` and
+  `gateway-bootstrap.ts`; they live once in `ssh-failure-text.ts`.
+
+Evidence: `connected-gateway-cancel.test.ts` runs the real session, tunnel
+owner, remote exec, and protocol client against `ConnectedGatewayFixture`
+through the stand-in `ssh`, cancels at five points (configuration read,
+tunnel open, handshake, discovery, conversation follow), overtakes with a
+newer Connect, and detaches through the runtime at two points; it asserts
+every child exited and the Gateway saw every socket close. Against the old
+code the first two cases find the tunnel child still running. Unit tests
+cover the dialog, model, Settings selection, report pseudonyms, the key
+reader, the day-long ladder, and the approval rule; `eval:electron:connect-flow`,
+`eval:electron:agent-sources`, and `eval:electron:delegation` pass on this tree.
