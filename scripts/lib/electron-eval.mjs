@@ -763,7 +763,18 @@ export async function startAgentFromLauncher(page, options = {}) {
   }
   const start = page.locator('[data-launcher-start]');
   await start.waitFor({ state: 'visible' });
-  if (await start.isDisabled()) {
+  // Start also waits for the selected engine's model catalog, which a newly
+  // opened Project loads for its own directory after the launcher settles.
+  // Read a refusal only once that wait is over, or a load in progress reads
+  // as "disabled and stated no reason" (BUG-217).
+  const enabled = await page
+    .locator('[data-launcher-start]:not([disabled])')
+    .waitFor({ timeout: 60_000 })
+    .then(
+      () => true,
+      () => false
+    );
+  if (!enabled) {
     const reason = await page
       .locator('[data-agent-launcher] [role="status"]')
       .first()
