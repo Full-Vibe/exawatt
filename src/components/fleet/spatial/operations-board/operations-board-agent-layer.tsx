@@ -65,6 +65,7 @@ import {
   useBoardHoverSlice,
   type BoardHoverStore,
 } from './operations-board-hover';
+import { statusMarkSubjects } from './status-mark-subjects';
 
 /**
  * Batched spatial sibling of the DOM StatusLight. Project identity stays on
@@ -680,20 +681,32 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   const settledDelegation = useSettledDelegationUnits(delegationUnits, reduced);
   const statusSubjects = useMemo(
     () => [
-      ...rendered,
+      ...statusMarkSubjects(rendered, visible),
       ...delegationStatusPieces(settledDelegation).map(piece =>
         piece.id === selectedDelegationUnitId
           ? { ...piece, selected: true }
           : piece
       ),
     ],
-    [selectedDelegationUnitId, settledDelegation, rendered]
+    [selectedDelegationUnitId, settledDelegation, rendered, visible]
   );
-  /** Per-frame scale for a piece from its emergence, 1 when settled. */
+  const stoppedIds = useMemo(
+    () =>
+      new Set(
+        visible
+          .filter(piece => piece.sessionState === 'stopped')
+          .map(piece => piece.id)
+      ),
+    [visible]
+  );
+  /** Per-frame scale for a piece from its emergence, 1 when settled. A
+   *  stopped piece's mark holds its size while the body it sat on retires. */
   const emergenceScale = useCallback(
     (pieceId: string, nowMs: number) =>
-      emergence.current!.scaleOf(pieceId, nowMs),
-    []
+      stoppedIds.has(pieceId)
+        ? 1
+        : emergence.current!.scaleOf(pieceId, nowMs),
+    [stoppedIds]
   );
 
   // Entrance choreography (V2.4): pieces scale in with a radial slot stagger

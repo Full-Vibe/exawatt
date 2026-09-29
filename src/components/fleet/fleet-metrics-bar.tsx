@@ -3,10 +3,9 @@ import { useFleet, useFleetConnection } from '@/lib/fleet/fleet-provider';
 import {
   STATUS_LIGHT_META,
   StatusLight,
-  workStateReading,
-  type StatusLightReading,
   type StatusLightState,
 } from '@/components/status-light';
+import { fleetStatusCounts } from './fleet-status-counts';
 
 const STATUS_ORDER: StatusLightState[] = [
   'active',
@@ -28,16 +27,18 @@ export function FleetMetricsBar({
   const { agents, metrics } = useFleet();
   const { status } = useFleetConnection();
   const isStale = status === 'disconnected' || status === 'error';
-  // Counted by READING. An Agent whose source reported no work state used to
-  // land on `off` and be announced as one more idle Agent; it now has its own
-  // tally, so the Idle figure only counts Agents somebody reported as idle.
-  const counts = agents.reduce<Record<StatusLightReading, number>>(
-    (result, agent) => {
-      result[workStateReading(agent.status)] += 1;
-      return result;
-    },
-    { active: 0, 'needs-you': 0, fault: 0, result: 0, off: 0, unreported: 0 }
-  );
+  const { readings: counts, delegated } = fleetStatusCounts(agents);
+  const delegatedNote = `${delegated} delegated ${delegated === 1 ? 'agent' : 'agents'}`;
+  // Working includes the delegated team, so its accessible name says how the
+  // figure splits instead of calling it a share of the top-level Agents.
+  const countLabel = (state: StatusLightState) =>
+    state === 'active' && delegated > 0
+      ? `${counts.active} (${counts.active - delegated} of ${agents.length} Agents and ${delegatedNote})`
+      : `${counts[state]} of ${agents.length} Agents`;
+  const description = (state: StatusLightState) =>
+    state === 'active' && delegated > 0
+      ? `${STATUS_LIGHT_META.active.description} Includes ${delegatedNote}.`
+      : STATUS_LIGHT_META[state].description;
 
   const formatCost = (v: number) => `$${v.toFixed(2)}`;
   const formatRate = (v: number) => `$${v.toFixed(2)}/hr`;
@@ -67,14 +68,14 @@ export function FleetMetricsBar({
             key={state}
             type="button"
             aria-pressed={selectedStates.includes(state)}
-            aria-label={`${STATUS_LIGHT_META[state].label}: ${counts[state]} of ${agents.length} Agents. Filter by this status.`}
+            aria-label={`${STATUS_LIGHT_META[state].label}: ${countLabel(state)}. Filter by this status.`}
             onClick={() => onToggleState(state)}
             className={`inline-flex min-h-8 items-center gap-1 whitespace-nowrap rounded px-1.5 text-muted-foreground outline-none transition-[background-color,color] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11 ${
               selectedStates.includes(state)
                 ? 'bg-secondary text-foreground'
                 : ''
             }`}
-            title={STATUS_LIGHT_META[state].description}
+            title={description(state)}
           >
             {content}
           </button>
@@ -82,7 +83,7 @@ export function FleetMetricsBar({
           <span
             key={state}
             className="inline-flex items-center gap-1 whitespace-nowrap text-muted-foreground"
-            title={STATUS_LIGHT_META[state].description}
+            title={description(state)}
           >
             {content}
           </span>

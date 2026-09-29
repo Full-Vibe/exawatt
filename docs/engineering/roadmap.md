@@ -2679,18 +2679,20 @@ records now name any helper or renderer that died.
 
 ### BUG-225 Fleet status counts disagree with the board
 
-Status: bug · ENG-004 · operator product-feedback `09054d9b-74bc-4c6e-a0aa-f3a890527651`, 2026-09-24.
+Status: done · ENG-004 · operator product-feedback `09054d9b-74bc-4c6e-a0aa-f3a890527651`, 2026-09-24; resolved 2026-09-29.
 
-The counts bar's Result ready total does not match the glyphs on the board
-(13 counted, one green check drawn), and Working excludes delegated children.
-Queued after the V4.0 pass lands. [Report and execution notes](projects/spatial-operations-board.md#2026-09-24--fleet-status-counts-disagree-with-the-board-bug-225).
+Stopped Sessions now wear their status mark inside the dashed outline, and
+Working counts every delegated child; a contract test holds the bar equal to
+the board for every reading. [Report](projects/spatial-operations-board.md#2026-09-24--fleet-status-counts-disagree-with-the-board-bug-225),
+[fix](projects/spatial-operations-board.md#2026-09-29--the-counts-bar-and-the-board-agree-bug-225-bug-226).
 
 ### BUG-226 Zoomed-out Fleet overflow marker renders blank
 
-Status: bug · ENG-004 · operator product-feedback `8ee7651d-156e-4d01-8e01-e9c5f1b4abf1`, 2026-09-24.
+Status: done · ENG-004 · operator product-feedback `8ee7651d-156e-4d01-8e01-e9c5f1b4abf1`, 2026-09-24; resolved 2026-09-29.
 
-The "+3" overflow circle draws empty at overview zoom. Same pass as BUG-225.
-[Report](projects/spatial-operations-board.md#2026-09-24--zoomed-out-overflow-marker-renders-blank-bug-226).
+The overflow lobe keeps its "+N" count, read-only, at the Fleet overview.
+[Report](projects/spatial-operations-board.md#2026-09-24--zoomed-out-overflow-marker-renders-blank-bug-226),
+[fix](projects/spatial-operations-board.md#2026-09-29--the-counts-bar-and-the-board-agree-bug-225-bug-226).
 
 ### BUG-227 Unattended battery drain with harness sleep inhibitors
 
@@ -3055,6 +3057,18 @@ the hosted schema accepts nothing else. Proven in `state-store.test.ts`
 (every registered source survives reload; a Grok sample survives compaction)
 and `scanner-service.test.ts` (the repair re-reads the dropped files exactly
 once and nothing else), each failing on the old code.
+
+### BUG-250 Idle marks do not read on the Fleet board
+
+Status: bug · ENG-004 · found 2026-09-29 while fixing BUG-225.
+
+The board draws every Idle Agent's mark (43 Agents, 172 segments in the Demo
+scene), but on screen an Idle Agent is a bare hex in the Air light theme: the
+mark's colour (`status.off`, #53615A) nearly equals the hex body
+(`spatial.unit`, #52665D), and the light backing disk under each mark does not
+show. The counts bar's Idle glyph therefore has no visible partner on the
+board. Exit: an Idle Agent's mark reads against its body in every theme, shown
+by a screenshot per theme. [Finding](projects/spatial-operations-board.md#2026-09-29--the-counts-bar-and-the-board-agree-bug-225-bug-226).
 
 ## Amendment chain
 

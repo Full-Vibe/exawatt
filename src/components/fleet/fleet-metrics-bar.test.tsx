@@ -78,6 +78,25 @@ describe('the fleet status row', () => {
     expect(tally('Working')).toBe('1');
   });
 
+  it('counts delegated Agents as Working, as the board lights them', () => {
+    fleet.agents = [
+      {
+        ...agent('lead', 'working'),
+        delegation: {
+          children: ['a', 'b', 'c'].map(id => ({
+            id,
+            agentType: 'Explore',
+            startedAt: 1,
+          })),
+        },
+      },
+      agent('resting', 'idle'),
+    ];
+    render(<FleetMetricsBar />);
+    expect(tally('Working')).toBe('4');
+    expect(tally('Idle')).toBe('1');
+  });
+
   it('stays silent about a state nobody is in', () => {
     fleet.agents = [agent('resting', 'idle')];
     render(<FleetMetricsBar />);

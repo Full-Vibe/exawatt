@@ -2840,3 +2840,39 @@ battery and lock (BUG-227) in the canvas, the released frames and detached
 mark refs (BUG-228) in the agent layer, and the in-world anchor depth note
 (BUG-143) in the controls. The page-visibility hook master deleted is deleted
 here too. Nothing from V4.0 was dropped.
+
+### 2026-09-29 — The counts bar and the board agree (BUG-225, BUG-226)
+
+Both reports were one figure visible in one place and missing from the other.
+
+- **Result ready.** A stopped Session drew its dashed outline and no status
+  mark, while the counts bar tallied its last reading. Finished-and-exited
+  Agents were counted as Result ready and drawn as empty outlines, which read
+  as the Idle mark's broken ring. The vocabularies stay layered, as the
+  design system's lifecycle rung requires: the outline says the Session
+  stopped, and the status mark now sits inside it and says what the last turn
+  left. `statusMarkSubjects` owns which pieces wear a mark. A stopped piece's
+  mark holds its size while the body it sat on retires.
+- **Working.** The board lights every delegated child Active and folds the
+  rest into the "+N" lobe; the bar counted top-level Agents only.
+  `fleetStatusCounts` adds the ENG-023 census's children to Working: a
+  reported child is running, and a source that reports no delegation adds
+  nothing. The Working control's accessible name and tooltip give the split.
+- **Blank "+N" at the overview.** `DelegationControls` rendered nothing at
+  Fleet altitude, where zones own the drill verb, so the count lived only on
+  the Project-altitude button. The overview now anchors each overflow lobe's
+  count read-only, sized from the lobe on screen so it never spills across
+  its neighbours, and passing pan and zoom through to the board. Reversible
+  call, made in execution: no new control at the overview; the lobe stays
+  non-interactive there.
+
+Found on the way (BUG-250): Idle marks are in the scene but do not read on
+screen in the Air light theme, where the mark's colour nearly equals the hex
+body. That is the other half of "dashed rings read like the Idle icon": the
+board had no visible Idle mark to compare with.
+
+Contract: `status-mark-subjects.test.ts` builds one fleet with stopped,
+delegating, overflowing and unreported Agents and asserts that the bar's
+census equals the board's marks, child lights and lobe counts for every
+reading; it fails against the previous board. `operations-board-controls.dom.test.tsx`
+asserts the lobe's count at both altitudes.

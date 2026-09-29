@@ -106,11 +106,15 @@ function DampedHtmlAnchor({
   position,
   reduced,
   center = false,
+  interactive = true,
   children,
 }: {
   position: [number, number, number];
   reduced: boolean;
   center?: boolean;
+  /** A read-only label must not take the board's pan and zoom gestures,
+   *  which the canvas owns: the anchor's wrapper sits on top of it. */
+  interactive?: boolean;
   children: ReactNode;
 }) {
   const group = useRef<THREE.Group>(null);
@@ -177,7 +181,7 @@ function DampedHtmlAnchor({
         // anchors belong just above the board's own overlay chrome (z-10/z-20)
         // and below app chrome, so the range is stated rather than defaulted.
         zIndexRange={[BOARD_HTML_Z_MAX, 0]}
-        style={{ pointerEvents: 'auto' }}
+        style={{ pointerEvents: interactive ? 'auto' : 'none' }}
       >
         {children}
       </Html>
@@ -591,6 +595,60 @@ export const AgentControls = memo(function AgentControls({
  * Activating opens the PARENT Session: D3c does not pretend a child is
  * independently commandable, and never joins "Direct N Agents".
  */
+/** Font size (px) that keeps an overflow count inside the lobe it counts:
+ *  mono glyphs run about 0.6em, and the count may fill ~65% of the body. */
+function overflowCountFontPx(lobePx: number, label: string): number {
+  return Math.round((lobePx * 0.65) / (0.6 * label.length));
+}
+
+/**
+ * A lobe's "+N" at the Fleet overview. Sized from the lobe on screen, the way
+ * every other mark on the board scales with the body it sits on, so a count
+ * never spills across its neighbours when the overview is dense. It is held
+ * legible at the small end and never outgrows the Project altitude's label.
+ * An orthographic camera's zoom is pixels per world unit.
+ */
+function OverflowCount({
+  unit,
+  reduced,
+  theme,
+}: {
+  unit: SpatialBoardDelegationUnit;
+  reduced: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  const label = `+${unit.overflowCount}`;
+  const span = useRef<HTMLSpanElement>(null);
+  const camera = useThree(state => state.camera);
+  const size = (px: number) =>
+    `clamp(7px, ${px}px, var(--text-chrome-micro))`;
+  const shown = useRef(overflowCountFontPx(unit.size * camera.zoom, label));
+  useFrame(state => {
+    const px = overflowCountFontPx(unit.size * state.camera.zoom, label);
+    if (px === shown.current || !span.current) return;
+    shown.current = px;
+    span.current.style.fontSize = size(px);
+  });
+  return (
+    <DampedHtmlAnchor
+      position={boardWorldPosition(unit, 1.1)}
+      reduced={reduced}
+      center
+      interactive={false}
+    >
+      <span
+        ref={span}
+        aria-hidden="true"
+        data-board-delegation-overflow={unit.id}
+        className="pointer-events-none select-none font-mono text-chrome-micro font-semibold"
+        style={{ color: theme.label, fontSize: size(shown.current) }}
+      >
+        {label}
+      </span>
+    </DampedHtmlAnchor>
+  );
+}
+
 export const DelegationControls = memo(function DelegationControls({
   units,
   pieces,
@@ -620,7 +678,23 @@ export const DelegationControls = memo(function DelegationControls({
   // labels on delegated children -- measured as two renders on the wall-clock
   // minute with the board otherwise parked under reduced motion.
   const now = useMinuteClock();
-  if (altitude === 'fleet') return null;
+  if (altitude === 'fleet') {
+    // The Fleet overview has no in-world controls (zones own the drill verb),
+    // but it draws every overflow lobe, and a lobe without its count is an
+    // empty circle (BUG-226). The count rides along read-only and hidden from
+    // assistive tech: this altitude announces no piece individually, and the
+    // counts bar's Working total already includes these delegated Agents.
+    return units
+      .filter(unit => unit.kind === 'overflow')
+      .map(unit => (
+        <OverflowCount
+          key={`delegation-overflow:${unit.id}`}
+          unit={unit}
+          reduced={reduced}
+          theme={theme}
+        />
+      ));
+  }
   const parentLabels = new Map(
     pieces.map(piece => [piece.id, piece.label] as const)
   );
