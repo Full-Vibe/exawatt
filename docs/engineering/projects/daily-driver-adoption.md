@@ -7645,3 +7645,38 @@ outside Exawatt's control. Qwen support requires its separately documented
 configuration-precedence work. Shared eval helper teardown is BUG-230 /
 incident 0030, a separate follow-up. Do not market this as a globally
 battery-safe mode or pause Agents when the display locks.
+
+### 2026-09-28 — Post-landing power review (BUG-248)
+
+**One P2 launch regression was reproduced; the native and Fleet reviews found
+no other concrete defect.** The review covered the landed range
+`0b8710e3b00b..5140cd9c396a` and checked current code for later corrections.
+Three independent review slices examined native ownership/persistence, source
+launches, and Fleet/Settings lifecycles. Fresh isolated tests passed: 83 native
+policy/persistence/input-boundary tests, 46 source probe/command/replacement
+tests, and 15 Fleet/renderer/Settings tests (144 total). Passing tests do not
+cover the reproduced boundary below.
+
+BUG-248: `probeHarnessPowerControl` executes the login shell through `execFile`
+with pipes, but `PtySessionManager` starts the source in a terminal and pins
+the executable returned by that probe. An isolated zsh `.zprofile` containing
+`if [[ -t 1 ]]; then function codex() { print "WRAPPER $*"; }; fi` demonstrates
+the mismatch. A fake Codex on PATH reports `codex-cli 0.156.1` and
+`prevent_idle_sleep experimental false` to both probe commands. The ordinary
+PTY invocation prints `WRAPPER --yolo`; the new pinned invocation prints
+`BINARY --disable prevent_idle_sleep --yolo`. The root reviewer independently
+repeated this result. No real Agent, operator dotfile or installed source was
+changed. A terminal-dependent PATH can similarly choose a different binary.
+
+Unsupported wrappers are supposed to remain ordinary launches with unknown
+control. This case instead records applied-at-launch evidence and bypasses
+the wrapper, potentially losing custom environment or launch arguments. The
+unit tests mock the subprocess boundary, and the Electron source eval passes
+an absolute fixture executable, so neither proves normal terminal command
+resolution. Repair that boundary with a real-shell/PTY regression; do not
+infer equivalent startup behavior from matching shell, directory and env
+alone. Review only: no application fix or new app installation was performed.
+
+Physical macOS AC/unplug, display-off/lock and sleep/wake acceptance remains
+open under BUG-227. Runtime reduced-motion changes during a retirement also
+lack browser coverage, but code inspection found no corresponding defect.

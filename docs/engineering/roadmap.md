@@ -2988,6 +2988,19 @@ that cause. Agents no longer keep a server alive for the landing. Proven in
 `scripts/landing-dev-server.test.mjs`, mutation-checked.
 [Findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-248 Power probe can bypass terminal-dependent source wrappers
+
+Status: bug · ENG-016 · found in post-landing power review, 2026-09-28.
+
+The Codex sleep-control probe resolves a binary through piped shell startup,
+then pins it into a PTY launch. A terminal-dependent function, alias or PATH
+choice can therefore be bypassed despite passing version/feature checks.
+Preserve the ordinary terminal invocation unless capability evidence describes
+that same startup context. Exit: an isolated real-shell/PTY regression proves
+terminal-dependent wrappers and executable selection are preserved, while a
+plain supported executable still receives the verified sleep opt-out.
+[Review evidence and reproduction](projects/daily-driver-adoption.md#2026-09-28--post-landing-power-review-bug-248).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
