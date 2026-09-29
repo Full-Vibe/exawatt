@@ -96,6 +96,102 @@ async function objects(page) {
   });
 }
 
+function checkRestored(arrived, baseline) {
+  check(
+    arrived.bodies.length === baseline.bodies.length,
+    'Later arrivals did not render'
+  );
+  for (const body of arrived.bodies) {
+    const original = baseline.bodies.find(item => item.name === body.name);
+    check(
+      original && Math.abs(body.scale - original.scale) < 1e-6,
+      'Arrival did not reach its final body scale'
+    );
+    const marks = arrived.marks.filter(
+      mark => mark.name === body.name.replace('body:', 'mark:')
+    );
+    check(
+      marks.length > 0 &&
+        marks.every(mark => Math.abs(mark.scale - body.scale) < 1e-6),
+      'Status marks did not settle at body scale'
+    );
+  }
+}
+
+async function switchMotionDuringRetirement(page, baseline, idle, result) {
+  await page.evaluate(bodies => {
+    const probe = window.__EMERGENCE_PROBE__;
+    const nativeNow = performance.now.bind(performance);
+    const descriptor = Object.getOwnPropertyDescriptor(performance, 'now');
+    let heldAt = null;
+    // Hold only after a real frame samples a partial retirement. This proves
+    // that the preference change snaps it, instead of letting a slow protocol
+    // round trip accidentally test an already completed transition.
+    Object.defineProperty(performance, 'now', {
+      configurable: true,
+      value: () => heldAt ?? nativeNow(),
+    });
+    probe.restoreClock = () => {
+      if (descriptor) Object.defineProperty(performance, 'now', descriptor);
+      else delete performance.now;
+      delete probe.onRender;
+    };
+    probe.onRender = () => {
+      if (heldAt !== null) return;
+      window.__EVAL_SCENE__.traverse(node => {
+        const original = bodies.find(body => body.name === node.name);
+        if (original && node.scale.x > 0 && node.scale.x < original.scale) {
+          heldAt = nativeNow();
+          probe.partialRetirement = node.scale.x / original.scale;
+        }
+      });
+    };
+  }, baseline.bodies);
+  try {
+    await population(page, []);
+    await page.waitForFunction(
+      () => window.__EMERGENCE_PROBE__.partialRetirement > 0
+    );
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.waitForFunction(() => {
+      let remaining = 0;
+      window.__EVAL_SCENE__.traverse(node => {
+        if (node.name.startsWith('body:') || node.name.startsWith('mark:'))
+          remaining++;
+      });
+      return remaining === 0;
+    });
+  } finally {
+    await page.evaluate(() => window.__EMERGENCE_PROBE__.restoreClock());
+  }
+  result.phases.push({
+    phase: 'reduced-during-retirement',
+    ...(await park(page, 'reduced-during-retirement')),
+  });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await park(page, 'ordinary-motion-restored');
+  await page.evaluate(bodies => {
+    const probe = window.__EMERGENCE_PROBE__;
+    probe.onRender = () => {
+      window.__EVAL_SCENE__.traverse(node => {
+        const original = bodies.find(body => body.name === node.name);
+        if (original && node.scale.x > 0 && node.scale.x < original.scale)
+          probe.ordinaryArrivalObserved = true;
+      });
+    };
+  }, baseline.bodies);
+  await population(page, idle);
+  await page.waitForFunction(
+    () => window.__EMERGENCE_PROBE__.ordinaryArrivalObserved
+  );
+  result.phases.push({
+    phase: 'ordinary-arrival-after-motion-switch',
+    ...(await park(page, 'ordinary-arrival-after-motion-switch')),
+  });
+  await page.evaluate(() => delete window.__EMERGENCE_PROBE__.onRender);
+  checkRestored(await objects(page), baseline);
+}
+
 try {
   for (const reduced of [false, true]) {
     const result = { reduced, passed: false, phases: [] };
@@ -124,6 +220,7 @@ try {
         window.__EMERGENCE_PROBE__ = { renders: 0, previous: -1, quiet: 0 };
         gl.render = (...args) => {
           window.__EMERGENCE_PROBE__.renders++;
+          window.__EMERGENCE_PROBE__.onRender?.();
           return render(...args);
         };
       });
@@ -152,29 +249,10 @@ try {
           phase: `arrived-${cycle}`,
           ...(await park(page, `arrived-${cycle}`)),
         });
-        const arrived = await objects(page);
-        check(
-          arrived.bodies.length === baseline.bodies.length,
-          'Later arrivals did not render'
-        );
-        for (const body of arrived.bodies) {
-          const original = baseline.bodies.find(
-            item => item.name === body.name
-          );
-          check(
-            original && Math.abs(body.scale - original.scale) < 1e-6,
-            'Arrival did not reach its final body scale'
-          );
-          const marks = arrived.marks.filter(
-            mark => mark.name === body.name.replace('body:', 'mark:')
-          );
-          check(
-            marks.length > 0 &&
-              marks.every(mark => Math.abs(mark.scale - body.scale) < 1e-6),
-            'Status marks did not settle at body scale'
-          );
-        }
+        checkRestored(await objects(page), baseline);
       }
+      if (!reduced)
+        await switchMotionDuringRetirement(page, baseline, idle, result);
       // Active marks legitimately render in the normal-motion regime; their
       // replacement by quiet marks must detach the old rotor callback refs.
       await population(

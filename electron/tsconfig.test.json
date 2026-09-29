@@ -45,6 +45,8 @@
     "main/workspace-store*.ts",
     "main/settings-store*.ts",
     "main/pty/closed-session-ledger*.ts",
+    "main/pty/harness-power-*.ts",
+    "main/pty/session-power-control.test.ts",
     "main/untrusted-input.ts",
     "main/gateway-identity.ts"
   ],

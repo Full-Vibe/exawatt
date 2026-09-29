@@ -28,6 +28,7 @@ import {
 import { ownerOfCodexCandidate } from './codex-identity-match';
 import { planLoginShell } from './login-shell';
 import { probeHarnessPowerControl } from './harness-power-control';
+import { createHarnessPowerLaunch } from './harness-power-launch';
 import { OrderedWriteBuffer } from './ordered-write-buffer';
 import {
   type AgentHarness,
@@ -412,7 +413,7 @@ export class PtySessionManager extends EventEmitter {
       SHELL: shell,
       TERM_PROGRAM: this.productName,
     };
-    const powerControl = await probeHarnessPowerControl({
+    const powerCandidate = await probeHarnessPowerControl({
       harness: options.harness,
       shell,
       cwd,
@@ -420,8 +421,8 @@ export class PtySessionManager extends EventEmitter {
       env: launchEnvironment,
     });
     const launchExecutable =
-      powerControl.state === 'applied-at-launch'
-        ? powerControl.executable
+      powerCandidate.state === 'applied-at-launch'
+        ? powerCandidate.executable
         : testHarnessExecutable;
 
     // plain shell: interactive login shell. Harness: run its CLI through the
@@ -433,7 +434,6 @@ export class PtySessionManager extends EventEmitter {
     const opencodeLaunchAgentName =
       options.harness === 'opencode' ? `exawatt-${randomUUID()}` : null;
     const wiring = {
-      powerControl,
       ...(await this.subscribeToEventChannel(
         id,
         options.harness,
@@ -448,16 +448,33 @@ export class PtySessionManager extends EventEmitter {
       cwd: path.resolve(cwd),
     };
     let proc: pty.IPty;
+    let powerLaunch: ReturnType<typeof createHarnessPowerLaunch> | null = null;
     try {
-      // `login-shell.ts` owns both halves of this: the per-shell login argv,
-      // and the rule that startup files never execute inside the Project (the
-      // structural cause of incident `0006`). The Project is entered after
-      // startup — as a `cd` prefix here, as fish's `-C` for a plain shell.
-      const plan = planLoginShell(shell, {
-        command:
-          options.harness === 'shell'
-            ? null
-            : buildHarnessCommand(
+      const ordinaryCommand =
+        options.harness === 'shell'
+          ? null
+          : buildHarnessCommand(
+              options.harness,
+              harnessSessionId,
+              !!options.resumeSessionId,
+              testHarnessExecutable,
+              options.initialPrompt,
+              options.permissionMode,
+              options.model,
+              options.effort,
+              wiring
+            );
+      powerLaunch =
+        options.harness !== 'shell' &&
+        powerCandidate.state === 'applied-at-launch'
+          ? createHarnessPowerLaunch({
+              shell,
+              sourceExecutable: harnessDescriptor(options.harness).source
+                .executable,
+              candidate: powerCandidate,
+              explicitExecutable: testHarnessExecutable,
+              ordinaryCommand: ordinaryCommand!,
+              controlledCommand: buildHarnessCommand(
                 options.harness,
                 harnessSessionId,
                 !!options.resumeSessionId,
@@ -466,8 +483,14 @@ export class PtySessionManager extends EventEmitter {
                 options.permissionMode,
                 options.model,
                 options.effort,
-                wiring
+                { ...wiring, powerControl: powerCandidate }
               ),
+            })
+          : null;
+      // Startup runs outside the Project. The guard resolves the source in
+      // this actual terminal shell before opting out of source-owned sleep.
+      const plan = planLoginShell(shell, {
+        command: powerLaunch?.command ?? ordinaryCommand,
         directory: cwd,
       });
 
@@ -502,7 +525,7 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
       launchModel: options.model,
       launchEffort: options.effort,
-      powerControl,
+      powerControl: powerLaunch?.initialPowerControl ?? powerCandidate,
     };
 
     const statedTask =
@@ -534,7 +557,14 @@ export class PtySessionManager extends EventEmitter {
       );
     }
 
-    proc.onData(data => {
+    proc.onData(rawData => {
+      const received = powerLaunch?.consume(rawData);
+      if (received?.powerControl && !info.exited && this.sessions.has(id)) {
+        info.powerControl = received.powerControl;
+        this.emit('session', { ...info });
+      }
+      const data = received?.data ?? rawData;
+      if (!data) return;
       info.lastDataAt = Date.now();
       this.appendBuffer(id, data);
       this.emit(
@@ -551,6 +581,17 @@ export class PtySessionManager extends EventEmitter {
       // exit state for a session the UI already closed
       const owner = this.sessions.get(id);
       if (!owner) return;
+      const pendingOutput = powerLaunch?.flush();
+      if (pendingOutput) {
+        this.appendBuffer(id, pendingOutput);
+        this.emit(
+          'data',
+          id,
+          pendingOutput,
+          this.scrollback.cursor(durableSessionId),
+          durableSessionId
+        );
+      }
       info.exited = true;
       if (owner.stopRequested) {
         // Exawatt's own stop is a clean stop, whatever the process reported:

@@ -7703,3 +7703,38 @@ supported launch, delayed/fallback acknowledgement, Session replacement,
 native assertions, and motion-preference changes during retirement. Physical
 host sleep/wake remains an operator-coordinated acceptance gap, not an
 automated test authorized to interrupt running work.
+
+### 2026-09-29 — Actual-terminal power control confirmation (BUG-248)
+
+**Terminal-dependent wrappers and PATH choices are preserved.** The piped
+probe establishes a candidate only. `harness-power-launch.ts` checks resolution
+inside the actual PTY shell immediately before choosing the controlled or
+ordinary invocation. POSIX functions/aliases and Fish functions are excluded
+from plain executable control. An explicitly selected test executable retains
+its existing selection semantics. Unsupported shells fall back unchanged.
+
+Session records begin unknown and become applied-at-launch only after the
+guard's per-launch nonce acknowledgement. The stream filter runs before
+scrollback and attention, preserves unrelated bytes across chunk boundaries,
+settles evidence once, and drops an identified truncated control message on
+exit. Missing confirmation cannot acquire device-owned sleep prevention.
+Replacement processes start fresh. No source settings, operator dotfiles,
+Agent lifecycle policy or native inhibitor processes are changed.
+
+Verification: 62 focused source/guard/Session tests passed across four files.
+The real Electron source eval now tests ordinary command resolution without
+its explicit executable fixture shortcut: a terminal-only wrapper actually
+runs, terminal-only PATH selects the alternate binary, both receive no sleep
+flag and remain unknown, and a plain supported launch confirms the opt-out.
+Native policy eval also passed the actual macOS assertion transitions,
+Session exclusions, Preferences write and persistence checks. The new guard is included in
+the source surface gate and Electron test typecheck.
+
+The separate coverage gap is also closed: the real Fleet emergence eval flips
+reduced motion during an observed partial retirement, requires body/mark
+removal before advancing animation time, and proves zero render calls over
+30 frame opportunities. Restoring ordinary motion produces a partial arrival
+and matching final scales. No additional Fleet product defect was found.
+Physical AC/unplug/display-off/sleep-wake acceptance remains open under BUG-227.
+This supersedes the review's pending repair recommendation. Integration and
+signed dogfood installation are still subject to the normal delivery queue.

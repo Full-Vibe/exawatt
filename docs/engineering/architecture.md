@@ -102,9 +102,13 @@ release the assertion. Lock does not alter Agent lifecycle or eligibility.
 
 Source ownership is per process: `harness-power-control.ts` probes the resolved
 macOS Codex 0.156.1 executable and recognized feature override in the launch
-shell/cwd/environment. The exact executable receives
-`--disable prevent_idle_sleep`, and its record carries applied-at-launch
-evidence. Every replacement probes again; unknown probes retain the ordinary
+shell/cwd/environment as a candidate. `harness-power-launch.ts` then checks
+resolution in the actual terminal shell: only the same plain executable
+receives `--disable prevent_idle_sleep`. Terminal-dependent wrappers or PATH
+changes keep the ordinary invocation. Records remain unknown until a
+per-launch nonce acknowledgement confirms which branch ran; the bounded
+stream filter removes that control message before scrollback and attention.
+Every replacement probes and confirms again; unknown probes retain the ordinary
 launch, Claude is uncontrolled, and shells do not qualify. This changes neither
 user configuration nor daemon mode. Settings reports only Exawatt's assertion;
 other apps and source-native settings can still prevent sleep. Native revisions
@@ -114,7 +118,8 @@ Fleet emergence cleanup belongs to the React lifecycle, outside the demand
 frame loop. Finished departures unmount even if the final active frame was
 skipped; callback refs detach exact mark instances, and body/mark scales sample
 both endpoints. `eval:spatial:emergence` proves final retirement parks the real
-board in normal/reduced motion and later arrivals and interactions still render
+board in normal/reduced motion, including a preference change during retirement,
+and later arrivals and interactions still render
 (BUG-228), under the unchanged design-system status/motion rungs.
 
 The desktop artifact's **runtime payload is a declaration, not a copy**

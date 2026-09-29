@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 // Real PTY launch and bridge records; isolated fake CLIs, no agent/model task.
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  mkdirSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
 import {
   createHarnessFixture,
   fixtureLaunch,
@@ -68,6 +74,22 @@ try {
       return result.session;
     };
     const supported = await launch();
+    await waitForPageCondition(
+      page,
+      async id =>
+        (await window.electron.pty.list()).find(row => row.id === id)
+          ?.powerControl?.state === 'applied-at-launch',
+      supported.id
+    );
+    supported.powerControl = (
+      await page.evaluate(
+        id =>
+          window.electron.pty
+            .list()
+            .then(rows => rows.find(row => row.id === id)),
+        supported.id
+      )
+    ).powerControl;
     assert.equal(supported.powerControl.state, 'applied-at-launch');
     assert.equal(supported.powerControl.version, '0.156.1');
     assert.equal(supported.powerControl.executable, cli);
@@ -100,6 +122,106 @@ try {
       'PASS source power: verified flag and record; unknown-version/feature fallback; shell excluded; Claude uncontrolled; no daemon override'
     );
   });
+  // Exercise normal command resolution: the explicit test executable above
+  // deliberately bypasses shell lookup and cannot catch BUG-248.
+  installFixture('0.156.1');
+  rmSync(argsFile, { force: true });
+  const alternateBin = join(fixture.root, 'alternate-bin');
+  mkdirSync(alternateBin);
+  const alternateCli = join(alternateBin, 'codex');
+  const alternateMarker = join(fixture.root, 'alternate-ran');
+  writeFileSync(
+    alternateCli,
+    readFileSync(cli, 'utf8').replace(
+      'fs.appendFileSync(',
+      `fs.writeFileSync(${JSON.stringify(alternateMarker)}, 'alternate'); fs.appendFileSync(`
+    ),
+    { mode: 0o755 }
+  );
+  const config = join(fixture.root, 'shell-config');
+  mkdirSync(join(config, 'fish'), { recursive: true });
+  const wrapperMarker = join(fixture.root, 'wrapper-ran');
+  const quote = value => `'${value.replaceAll("'", `'"'"'`)}'`;
+  const writeStartup = mode => {
+    const terminalPath = mode === 'alternate' ? alternateBin : fixture.fakeBin;
+    const zshWrapper =
+      mode === 'wrapper'
+        ? `function codex() { printf wrapper > ${quote(wrapperMarker)}; ${quote(cli)} "$@"; }`
+        : '';
+    const fishWrapper =
+      mode === 'wrapper'
+        ? `function codex; printf wrapper > ${quote(wrapperMarker)}; ${quote(cli)} $argv; end`
+        : '';
+    writeFileSync(
+      join(config, '.zprofile'),
+      `export PATH=${quote(fixture.fakeBin)}:$PATH\nif [[ -t 1 ]]; then\nexport PATH=${quote(terminalPath)}:$PATH\n${zshWrapper}\nfi\n`
+    );
+    writeFileSync(
+      join(config, 'fish', 'config.fish'),
+      `set -gx PATH ${quote(fixture.fakeBin)} $PATH\nif test -t 1\nset -gx PATH ${quote(terminalPath)} $PATH\n${fishWrapper}\nend\n`
+    );
+  };
+  writeStartup('wrapper');
+  await withElectronApp(
+    fixtureLaunch(fixture, {
+      EXAWATT_TEST_HARNESS_BIN: '',
+      XDG_CONFIG_HOME: config,
+      ZDOTDIR: config,
+    }),
+    async (_app, page) => {
+      await page.waitForURL(
+        url =>
+          url.origin ===
+          new URL(process.env.EXA_BASE ?? 'http://localhost:7000').origin,
+        { timeout: 90_000 }
+      );
+      await page.waitForFunction(() => Boolean(window.electron?.pty));
+      let count = 0;
+      for (const mode of ['wrapper', 'alternate', 'plain']) {
+        writeStartup(mode);
+        const result = await page.evaluate(
+          options => window.electron.pty.create(options),
+          {
+            harness: 'codex',
+            cwd: fixture.project,
+          }
+        );
+        assert.equal(result.ok, true, JSON.stringify(result));
+        const launches = await waitForLaunches(page, ++count);
+        const argv = launches.at(-1);
+        const expected = mode === 'plain' ? 'applied-at-launch' : 'unknown';
+        await waitForPageCondition(
+          page,
+          async ({ id, expected }) =>
+            (await window.electron.pty.list()).find(row => row.id === id)
+              ?.powerControl?.state === expected,
+          { id: result.session.id, expected }
+        );
+        if (mode === 'wrapper')
+          assert(
+            existsSync(wrapperMarker),
+            'the ordinary terminal wrapper must execute'
+          );
+        if (mode === 'alternate')
+          assert(
+            existsSync(alternateMarker),
+            'the terminal PATH executable must execute'
+          );
+        assert.equal(
+          argv.includes('--disable'),
+          mode === 'plain',
+          `${mode}: ${JSON.stringify(argv)}`
+        );
+        await page.evaluate(
+          id => window.electron.pty.kill(id),
+          result.session.id
+        );
+      }
+      console.log(
+        'PASS source power: real terminal wrapper and PATH changes preserve ordinary invocation; plain terminal launch confirms opt-out'
+      );
+    }
+  );
 } finally {
   rmSync(fixture.root, { recursive: true, force: true, maxRetries: 5 });
 }

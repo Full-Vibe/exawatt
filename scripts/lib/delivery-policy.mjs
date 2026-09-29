@@ -129,6 +129,7 @@ export const SURFACE_GATES = [
     why: 'sleep opt-out evidence belongs to the exact supported source process launched',
     match: file =>
       file === 'electron/main/pty/harness-power-control.ts' ||
+      file === 'electron/main/pty/harness-power-launch.ts' ||
       file === 'electron/main/pty/harness-command.ts' ||
       file === 'electron/main/pty/harness-registry.ts' ||
       file === 'electron/main/pty/session-manager.ts' ||

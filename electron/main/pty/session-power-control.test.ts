@@ -6,9 +6,24 @@ const fixture = vi.hoisted(() => ({
   commands: [] as string[][],
   environments: [] as NodeJS.ProcessEnv[],
   exits: [] as Array<() => void>,
+  data: [] as Array<(data: string) => void>,
 }));
 vi.mock('./harness-power-control', () => ({
   probeHarnessPowerControl: fixture.probe,
+}));
+vi.mock('./harness-power-launch', () => ({
+  createHarnessPowerLaunch: (request: {
+    candidate: PtyPowerControl;
+    controlledCommand: string;
+  }) => ({
+    command: request.controlledCommand,
+    initialPowerControl: { state: 'unknown', reason: 'Awaiting confirmation' },
+    consume: (data: string) =>
+      data === 'fixture-confirmation'
+        ? { data: '', powerControl: request.candidate }
+        : { data },
+    flush: () => '',
+  }),
 }));
 vi.mock('./resume-candidates', () => ({
   listResumeCandidates: vi.fn(async () => []),
@@ -24,7 +39,10 @@ vi.mock('node-pty', () => ({
     fixture.environments.push(options.env);
     return {
       pid: 4242,
-      onData: () => ({ dispose() {} }),
+      onData: (listener: (data: string) => void) => {
+        fixture.data.push(listener);
+        return { dispose() {} };
+      },
       onExit: (listener: (event: { exitCode: number }) => void) => {
         fixture.exits.push(() => listener({ exitCode: 0 }));
         return { dispose() {} };
@@ -35,7 +53,7 @@ vi.mock('node-pty', () => ({
     };
   },
 }));
-const { PtySessionManager } = await import('./session-manager');
+import { PtySessionManager } from './session-manager';
 
 describe('power evidence belongs to the process', () => {
   it('re-probes a replacement and does not inherit previous launch control', async () => {
@@ -56,7 +74,19 @@ describe('power evidence belongs to the process', () => {
       cwd: process.cwd(),
       durableSessionId: 'power-session',
     });
-    expect(original.powerControl).toEqual(applied);
+    expect(original.powerControl?.state).toBe('unknown');
+    const updates = vi.fn();
+    const output = vi.fn();
+    manager.on('session', updates);
+    manager.on('data', output);
+    fixture.data[0]('fixture-confirmation');
+    expect(
+      manager.list().find(row => row.id === original.id)?.powerControl
+    ).toEqual(applied);
+    expect(updates).toHaveBeenCalledWith(
+      expect.objectContaining({ id: original.id, powerControl: applied })
+    );
+    expect(output).not.toHaveBeenCalled();
     expect(fixture.probe.mock.calls[0][0].env).toBe(fixture.environments[0]);
     expect(fixture.commands[0].at(-1)).toContain(
       "'/opt/verified-codex' --disable prevent_idle_sleep"

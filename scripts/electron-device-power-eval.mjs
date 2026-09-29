@@ -129,7 +129,13 @@ try {
       return evidence;
     };
     const codex = await launch('codex');
-    assert.equal(codex.powerControl?.state, 'applied-at-launch');
+    await waitForPageCondition(
+      page,
+      async id =>
+        (await window.electron.pty.list()).find(row => row.id === id)
+          ?.powerControl?.state === 'applied-at-launch',
+      codex.id
+    );
     await waitForPageCondition(
       page,
       async id => {
@@ -249,7 +255,13 @@ try {
 
     installFixture(false);
     const idle = await launch('codex');
-    assert.equal(idle.powerControl?.state, 'applied-at-launch');
+    await waitForPageCondition(
+      page,
+      async id =>
+        (await window.electron.pty.list()).find(row => row.id === id)
+          ?.powerControl?.state === 'applied-at-launch',
+      idle.id
+    );
     await waitSession(idle.id, {
       working: false,
       engaged: false,

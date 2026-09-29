@@ -128,7 +128,11 @@ and [settings.rs](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/tu
 
 The implemented boundary now includes Settings and an app-owned assertion for
 verified macOS Codex 0.156.1 processes. Each launch probes the resolved executable
-and effective feature override before applying the opt-out; unsupported versions,
+and effective feature override as a candidate, then confirms matching plain
+executable resolution inside the actual launch terminal before applying the
+opt-out (BUG-248). Terminal-dependent wrappers and PATH choices preserve their
+ordinary invocation. Until the per-launch acknowledgement arrives the record
+is unknown; unsupported versions,
 failed probes and pre-existing processes do not inherit control. The default
 is AC only, battery use is explicit, and Never releases only Exawatt's request.
 The controller uses local `sessionStatus` truth, including silent reported work,

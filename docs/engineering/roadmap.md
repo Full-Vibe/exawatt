@@ -3022,16 +3022,15 @@ that cause. Agents no longer keep a server alive for the landing. Proven in
 
 ### BUG-248 Power probe can bypass terminal-dependent source wrappers
 
-Status: bug · ENG-016 · found in post-landing power review, 2026-09-28.
+Status: fixed · ENG-016 · found 2026-09-28; repaired 2026-09-29.
 
-The Codex sleep-control probe resolves a binary through piped shell startup,
-then pins it into a PTY launch. A terminal-dependent function, alias or PATH
-choice can therefore be bypassed despite passing version/feature checks.
-Preserve the ordinary terminal invocation unless capability evidence describes
-that same startup context. Exit: an isolated real-shell/PTY regression proves
-terminal-dependent wrappers and executable selection are preserved, while a
-plain supported executable still receives the verified sleep opt-out.
-[Review evidence and reproduction](projects/daily-driver-adoption.md#2026-09-28--post-landing-power-review-bug-248).
+The actual terminal now checks that the source still resolves to the probed
+plain executable before applying the sleep opt-out; otherwise it preserves
+the ordinary invocation. Per-process evidence remains unknown until the
+launch guard confirms its branch. Real terminal wrapper/PATH regressions and
+normal supported-launch checks pass; split/truncated acknowledgement handling
+is covered independently. Physical host acceptance remains BUG-227.
+[Repair and evidence](projects/daily-driver-adoption.md#2026-09-29--actual-terminal-power-control-confirmation-bug-248).
 
 ### BUG-249 Grok usage vanished after a restart and was never read again
 
@@ -3095,6 +3094,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | 0.1.13 storage recovery: a corrupt JSON read “installs a durable write interlock”, and “quarantine cannot look like fresh-install absence” | BUG-247, 2026-09-28 | Still holds for operator choices (settings, workspace, connected sources, projection plan, closed Sessions). State Exawatt rebuilds (Session resume links, Claude plan history, the usage scan) sets damaged bytes aside the same way and starts fresh with no interlock; an unreadable file there blocks writes in memory only and is read again. |
 | ENG-044 S1 “It fails open: a guard that cannot answer lets the command run” | BUG-243, 2026-09-28 | A guard the operator turned on refuses a kill it could not check and records `safety.undecided`; only a target the shell decides at run time runs unchecked, and Claude Code's own hook timeout still proceeds. |
 | ENG-033 H3 “NOT ACTIVE; requires a separate design and authorization pass” | operator, 2026-09-28 | Direction decided: Exawatt hosts the machines agent harnesses run on. The design pass on provisioning, custody, deletion, billing, and control-plane ownership still gates implementation. |
+| Piped Codex power probe treated as sufficient applied-at-launch evidence | BUG-248, 2026-09-29 | The actual terminal must confirm the same plain executable and acknowledge the controlled branch. Terminal-dependent wrappers/PATH changes preserve ordinary invocation; unconfirmed records stay unknown. |
 | BUG-227 observational-only boundary | BUG-227 supported-process implementation, 2026-09-28 | Settings now controls Exawatt-owned sleep prevention for verified Codex 0.156.1 launches. Per-launch evidence and native assertion checks permit the scoped control; physical sleep/wake acceptance remains open, and Claude and other independent inhibitors are never claimed controlled. |
 | BUG-227's open question to “choose an explicit battery policy”                                                                                                                            | operator-approved decision `0044`, 2026-09-25                                                 | Recommendation is device-local `Never` / `On AC only` (default) / `On AC and battery`, with display locking independent from Session lifecycle. Setting work remains gated on supported per-harness control; Claude's native inhibitor cannot currently honor the battery boundary, so the app must not claim otherwise. |
 | ENG-010/ENG-033: Exawatt asks for send access and never grants it (decision `0037` §4; the H1 criterion that Exawatt never requests `operator.admin` or `operator.pairing`) | operator, 2026-09-24 | Send access is a step in setting up each server. One click has Exawatt run the approval of its OWN pending request over the operator's own SSH login; the alternative is copying that command and running it by hand, then Check again. Exawatt still holds no pairing or admin authority of its own and never approves a request it cannot prove is its own. |

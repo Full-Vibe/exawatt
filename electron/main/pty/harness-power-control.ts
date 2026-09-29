@@ -16,8 +16,9 @@ interface ProbeRequest {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Read-only, bounded CLI probes in the SAME login-shell/cwd context as the
- * launch. Failure must leave the original launch available, without a flag
+/** Read-only, bounded CLI candidate probes. Pipes do not reproduce terminal
+ * startup: the actual launch must confirm resolution before claiming control.
+ * Failure must leave the original launch available, without a flag
  * whose support we have not established. No probe starts an agent turn. */
 export async function probeHarnessPowerControl(
   request: ProbeRequest
