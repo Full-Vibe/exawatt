@@ -318,9 +318,7 @@ async function checkVoltaicFleet(page) {
   // name) exists for phone-width viewports where zones project ~70px. A
   // desktop fleet fit must keep its Project names -- the first nano bound
   // (122px) would have stripped them on ordinary laptop windows.
-  const nanoChips = await page
-    .locator('[data-board-zone-tier="nano"]')
-    .count();
+  const nanoChips = await page.locator('[data-board-zone-tier="nano"]').count();
   const phoneWidth = (page.viewportSize()?.width ?? 0) < 600;
   check(
     phoneWidth ? nanoChips > 0 : nanoChips === 0,
@@ -484,6 +482,56 @@ async function checkAgentProjectionPersistence(page) {
   );
 }
 
+/**
+ * Every status mark must draw after the Agent body beneath it, and on its
+ * canvas-colored plate. three.js draws all opaque objects before all
+ * transparent ones, and render order only sequences within a pass, so an
+ * opaque mark over a transparent (fading) body is painted over by it -- the
+ * Idle marks vanished into their hexes exactly that way. The plate is the
+ * widest footprint in the mark stack; it sits between the bodies and the marks.
+ */
+async function checkMarkStackDrawOrder(page) {
+  const stack = await page.evaluate(() => {
+    const layers = { bodies: [], marks: [] };
+    window.__EVAL_SCENE__.traverse(node => {
+      if (!node.isInstancedMesh || !node.visible) return;
+      const role = node.children.some(child => child.name.startsWith('body:'))
+        ? 'bodies'
+        : node.children.some(child => child.name.startsWith('mark:'))
+          ? 'marks'
+          : null;
+      if (!role) return;
+      node.geometry.computeBoundingSphere();
+      layers[role].push({
+        pass: node.material.transparent ? 1 : 0,
+        order: node.renderOrder,
+        width: node.geometry.boundingSphere.radius,
+        geometry: node.geometry.type,
+      });
+    });
+    return layers;
+  });
+  check(stack.bodies.length > 0, 'Board drew no Agent bodies');
+  check(stack.marks.length > 1, 'Board drew no status marks');
+  const after = (a, b) =>
+    a.pass > b.pass || (a.pass === b.pass && a.order > b.order);
+  const plate = stack.marks.reduce((a, b) => (b.width > a.width ? b : a));
+  for (const mark of stack.marks) {
+    for (const body of stack.bodies) {
+      check(
+        after(mark, body),
+        `A status mark (${mark.geometry}) draws before the Agent body beneath it and is painted over`
+      );
+    }
+    if (mark === plate) continue;
+    check(
+      after(mark, plate),
+      `A status mark (${mark.geometry}) draws before its plate and is painted over`
+    );
+  }
+  return { bodies: stack.bodies.length, marks: stack.marks.length };
+}
+
 async function openAgent(page, units) {
   const unitCount = await units.count();
   check(unitCount > 0, 'Project regime has no accessible Agent units');
@@ -559,6 +607,7 @@ async function runScenario(browser, scenario) {
     check(board.pieces > 0, 'Operations Board rendered no visible pieces');
     result.board = board;
     await pauseDemo(page, scenario.mobile);
+    result.markStack = await checkMarkStackDrawOrder(page);
     result.pixelRatio = await page.evaluate(() =>
       window.__EVAL_GL__.getPixelRatio()
     );

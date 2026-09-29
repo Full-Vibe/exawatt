@@ -2882,3 +2882,25 @@ delegating, overflowing and unreported Agents and asserts that the bar's
 census equals the board's marks, child lights and lobe counts for every
 reading; it fails against the previous board. `operations-board-controls.dom.test.tsx`
 asserts the lobe's count at both altitudes.
+
+### 2026-09-29 — Idle marks read on the board (BUG-250)
+
+The finding blamed colour: Idle's `status.off` nearly equals the hex body's
+`spatial.unit` in Air. The colour was only what was left on screen. The body
+was painting over the mark and its plate. The hex bodies are transparent
+because they fade in, and three.js draws every opaque object before every
+transparent one; render order only sequences objects within a pass. The
+canvas-colored plate, Idle's four arcs and the no-reading bar were opaque, so
+the transparent body drawn after them covered them. The other marks were
+already transparent and drew correctly. The whole mark stack now draws in the
+transparent pass, ordered body (0), plate (1), mark (2). No colour changed; the
+plate the design system already requires under every mark now does its job.
+
+Measured on the Demo fleet, with the Idle ring's pixels against its plate: Air
+light 5.0:1, Night dark 13.9:1, Classic dark 13.9:1 (non-text minimum 3:1).
+Before the fix, the plate did not show either, and the ring measured the body
+colour.
+
+Contract: `pnpm eval:spatial` reads the live scene and fails when any status
+mark draws before the Agent body beneath it or before its plate. It failed in
+all four board scenarios with Idle's arcs returned to the opaque pass.

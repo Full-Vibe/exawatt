@@ -172,7 +172,21 @@ function StatusMarkLayer({
           range={agentPieces.length}
           renderOrder={1}
         >
-          <meshBasicMaterial toneMapped={false} depthWrite={false} />
+          {/* The whole mark stack -- this plate and every mark above it --
+              draws in the transparent pass (BUG-250). The hex bodies are
+              transparent (they fade in) and three.js draws every opaque object
+              first, so an opaque plate or mark that writes no depth was painted
+              over by the body beneath it: Idle's arcs and the no-reading bar
+              vanished into their hex, and the plate that carries each mark's
+              contrast (design system: every mark sits on a canvas-colored
+              plate) never showed. Inside the transparent pass, render order
+              sequences body (0), plate (1), mark (2). */}
+          <meshBasicMaterial
+            toneMapped={false}
+            transparent
+            opacity={1}
+            depthWrite={false}
+          />
           {agentPieces.map(piece => (
             <Instance
               {...instance(piece)}
@@ -237,6 +251,7 @@ function StatusMarkLayer({
         >
           <meshBasicMaterial
             toneMapped={false}
+            transparent
             opacity={1}
             depthWrite={false}
           />
@@ -283,6 +298,7 @@ function StatusMarkLayer({
         >
           <meshBasicMaterial
             toneMapped={false}
+            transparent
             opacity={1}
             depthWrite={false}
           />

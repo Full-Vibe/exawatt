@@ -3059,15 +3059,12 @@ once and nothing else), each failing on the old code.
 
 ### BUG-250 Idle marks do not read on the Fleet board
 
-Status: bug · ENG-004 · found 2026-09-29 while fixing BUG-225.
+Status: done · ENG-004 · found 2026-09-29 while fixing BUG-225; resolved 2026-09-29.
 
-The board draws every Idle Agent's mark (43 Agents, 172 segments in the Demo
-scene), but on screen an Idle Agent is a bare hex in the Air light theme: the
-mark's colour (`status.off`, #53615A) nearly equals the hex body
-(`spatial.unit`, #52665D), and the light backing disk under each mark does not
-show. The counts bar's Idle glyph therefore has no visible partner on the
-board. Exit: an Idle Agent's mark reads against its body in every theme, shown
-by a screenshot per theme. [Finding](projects/spatial-operations-board.md#2026-09-29--the-counts-bar-and-the-board-agree-bug-225-bug-226).
+The fading hex body was painting over Idle's mark, the no-reading bar and every
+mark's plate; the whole mark stack now draws after the body, and the Fleet eval
+fails if any mark draws before its body or plate. [Finding](projects/spatial-operations-board.md#2026-09-29--the-counts-bar-and-the-board-agree-bug-225-bug-226),
+[fix](projects/spatial-operations-board.md#2026-09-29--idle-marks-read-on-the-board-bug-250).
 
 ### BUG-251 The landing clears `.next/dev` while the stopped server still writes it
 
