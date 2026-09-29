@@ -3109,6 +3109,20 @@ re-anchored after the window. The `v0.1.14` tag carries the old epoch and
 cannot pass its own preflight; the release is re-cut as 0.1.15.
 [Log](projects/open-source-readiness.md#2026-09-29--a-stale-projector-published-history-the-release-cannot-replay-bug-253).
 
+### BUG-254 Publishing unbinds the draft Release from its tag
+
+Status: done · ENG-030 · found 2026-09-29 dispatching 0.1.15; resolved 2026-09-29.
+
+The 0.1.15 run built, signed, notarized and packaged, then failed "Publish
+immutable public Release" on `invalid-tag ... received untagged-<hash>`. The
+port created the draft bound to `v0.1.15`, then edited its name and body
+without `tag_name`, and GitHub unbinds a draft edited that way. The test double
+kept the binding. Every draft PATCH now names its tag, the double reproduces
+GitHub's observed behavior, and the fixed port was rehearsed end to end
+against a private probe repository. The `v0.1.15` tag runs the old port and
+cannot publish; the release is re-cut as 0.1.16.
+[Log](projects/open-source-readiness.md#2026-09-29--publishing-unbinds-the-draft-release-from-its-tag-bug-254).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
