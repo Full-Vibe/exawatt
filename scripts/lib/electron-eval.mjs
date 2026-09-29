@@ -428,6 +428,26 @@ function resetThrowawayUserData(userData) {
   if (seeded) writeWorkspaceLayout(userData, seeded);
 }
 
+/** Leave evidence of a failed step before the app is torn down: a screenshot
+ *  and the address the window was on. A step that times out on a selector
+ *  otherwise says only what it waited for, never what was on screen. Best
+ *  effort and bounded; it never replaces the step's own error. */
+async function recordFailure(page, error) {
+  if (page.isClosed?.()) return;
+  const directory = join(tmpdir(), 'exawatt-eval-failures');
+  const file = join(directory, `${Date.now()}-${process.pid}.png`);
+  try {
+    mkdirSync(directory, { recursive: true });
+    await page.screenshot({ path: file, timeout: 5_000 });
+    console.error(
+      `[harness] failed at ${page.url()}: ${String(error?.message ?? error).split('\n')[0]}\n` +
+        `[harness] screenshot: ${file}`
+    );
+  } catch {
+    /* evidence is best effort */
+  }
+}
+
 async function runElectronAttempt({
   launchOpts,
   body,
@@ -507,7 +527,12 @@ async function runElectronAttempt({
   try {
     const page = await app.firstWindow({ timeout: firstWindowMs });
     launch.firstWindowAt = performance.now();
-    return await body(anchorMainEvaluate(app), page, launch);
+    try {
+      return await body(anchorMainEvaluate(app), page, launch);
+    } catch (error) {
+      await recordFailure(page, error);
+      throw error;
+    }
   } finally {
     await shutdown();
     process.off('SIGINT', onSignal);
@@ -571,12 +596,26 @@ export async function waitForPageCondition(
  * them is the defect this module exists to prevent.
  */
 
+/** Wait until no launch is in flight. After Start the new Session takes the
+ *  stage and the composer leaves with it, while its Start still reads
+ *  `aria-busy`; a composer seen in that window is not open, it is closing. */
+async function waitForLaunchToLand(page) {
+  await page
+    .locator('[data-launcher-start][aria-busy="true"]')
+    .waitFor({ state: 'detached', timeout: 90_000 });
+}
+
 /** The composer is summoned, not permanent (D18) — expand it when collapsed.
  *  Matched by its own hook rather than its name: the collapsed toggle does not
  *  always carry `aria-expanded`, and "New Agent" also matches a TAB called
  *  "New agent" plus that tab's close button, so a name query is three ways
- *  ambiguous the moment a draft tab exists. */
+ *  ambiguous the moment a draft tab exists.
+ *
+ *  A composer still launching counts as closed: reading it as open is how
+ *  `eval:electron:resume` pressed a Start that then left with its composer
+ *  and waited 20 s for one that was never summoned (BUG-217). */
 export async function summonComposer(page) {
+  await waitForLaunchToLand(page);
   if ((await page.locator('[data-agent-composer]').count()) > 0) return;
   const toggle = page.locator('[data-composer-toggle]').first();
   if ((await toggle.count()) > 0) await toggle.click();
@@ -715,6 +754,9 @@ export function selectedLauncherSetup(page) {
 export async function startAgentFromLauncher(page, options = {}) {
   const { engine = null, task = '' } = options;
   await summonComposer(page);
+  // Start is disabled while the launcher settles, with or without an engine
+  // to choose; reading it before then reports a refusal that is only a wait.
+  await waitForLauncherToSettle(page);
   if (engine) await selectLauncherEngine(page, engine);
   if (task) {
     await page.getByLabel('Initial task for the new Agent').fill(task);

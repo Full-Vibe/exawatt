@@ -450,6 +450,65 @@ tests remain the recovery floor during the rollout.
   stops before admission. With the reinstall removed, the first case fails
   exactly as ticket 476 did.
 
+- 2026-09-24, BUG-213, BUG-216, BUG-217 (H21): **one way to launch, package
+  and fake.** Five quarantined gates were red for eval defects of one family,
+  each local to its script and invisible until that script ran.
+  - Launch. Ten scripts called Playwright's `_electron` beside
+    `withElectronApp`, skipping the cross-worktree lock and guaranteed
+    teardown. All ten run through it now; `withElectronApp` gained a
+    `packaged` option and passes `performance.now()` launch stamps to the
+    body, which is what the startup probe measured beside it. Two scripts keep
+    a named, reasoned exception: `electron:dev` (hands the app to a person) and
+    the update eval (drives the /Applications bundle through LaunchServices
+    because macOS and the updater perform the relaunch it proves). A failed
+    step now leaves a screenshot under `$TMPDIR/exawatt-eval-failures/`.
+  - Package. Three evals built a package, each with its own copy of the
+    steps; eight launched whatever `release/` held, which on a fresh worktree
+    is nothing and on an old one is an older tree. `ensurePackagedApp` is the
+    one copy. Its cache key is the pair the package already carries: the
+    distribution digest and the source SHA in `app.asar`. A package matching
+    both is reused, so every packaged gate on one tree shares one build;
+    `EXAWATT_APP_PATH` never builds and is proved against the same pair.
+    `withElectronApp` launches only a package it returned.
+  - Fake harness. Six scripts hand-rolled fakes and five spliced the shared
+    answers into their own heredocs. Resume's `claude` answered nothing:
+    reproduced outside Electron, `--version` blocked on the probe's open stdin
+    until the registry's 3 s deadline killed it. `writeFakeHarness` owns the
+    questions per harness (every local CLI in `contracts/agent-sources.json`,
+    plus OpenClaw); an eval chooses answers and launch behaviour only. Every
+    file it writes is marked, and the launcher refuses an unmarked
+    harness-named executable in the fixture bin or a temp PATH entry. Node
+    fakes now answer with `writeSync`: stdout to a pipe is asynchronous on
+    macOS, so the old write-then-exit could reach the product empty.
+  - Waits. `page.waitForFunction` tests what its predicate returns for
+    truthiness; an async predicate returns a Promise, so the wait ends on the
+    first poll. 27 waits in 14 scripts were that. It is how the repaired
+    navigation eval logged "PTY launched" and then read an empty list, and it
+    meant the spine eval's persisted-recents check and connected-fleet's
+    failure-isolation and recovery waits could never fail.
+    `waitForPageCondition` polls through `page.evaluate`, which awaits.
+  - BUG-213, the Next step: the eval opened its own checkout, whose branch
+    names no roadmap item, so the card correctly showed no Next region. It
+    opens a git fixture whose branch carries `NAV-001` now, the inference
+    `eval:roadmap:rail` relies on.
+  - BUG-216, two defects: the Help row is read by its manifest id (a
+    community build has none, so `items[0]` was the next row); and the
+    relaunch failure was its own race, not a knock-on. The eval wrote its
+    fixture layout into a live renderer and reloaded, and the renderer's
+    400 ms debounced save of the Sessions it had just launched could land
+    after that write: a captured failure's persisted layout held only the two
+    launched tabs. The layout is seeded before first launch, and the eval
+    waits for the correction to reach the persisted layout instead of 600 ms.
+  - Held by `scripts/eval-boundaries.test.mjs` in `test:agent-delivery`:
+    direct launches, bare executable paths, packaged launches without the
+    helper, eval-owned builds, hand-rolled probe answers, async
+    `waitForFunction`, and a local CLI the fixture does not know. Five
+    mutations (each gate's pre-repair script, plus a synthetic packaged eval
+    without the helper) all failed it. The runtime half is unit-tested in
+    `electron-eval.test.mjs`.
+  - `dev-idle-watch.test.mjs` waited a fixed 60 ms for four polls and failed
+    under load during this work; it waits for the shutdown now.
+
 - 2026-09-24, BUG-208, BUG-210, BUG-211 (H20): **every verification
   command has a route, and a test says so.** `theme:check` was repaired on
   2026-08-17 (BUG-059) and red again on 2026-08-18 (`f4de31cb`), and it stayed

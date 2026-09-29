@@ -90,7 +90,12 @@ such without first revalidating their fixture and owner:
   keep that command name stable when implementation paths later move.
 - Name product evaluators `*-eval.mjs` and document prerequisites at the top of
   the file. Electron/browser evaluators must use the repository harness and the
-  worktree's own `EXA_BASE`.
+  worktree's own `EXA_BASE`. An Electron eval launches through
+  `withElectronApp` (`lib/electron-eval.mjs`), a packaged one passes it
+  `packaged: await ensurePackagedApp()` (`lib/packaged-app.mjs`), a fake
+  harness comes from `writeFakeHarness` (`lib/harness-probe-fixture.mjs`), and
+  an async page condition is polled with `waitForPageCondition`;
+  `eval-boundaries.test.mjs` refuses a script that goes around any of them.
 - Put reusable logic in `lib/`; keep entrypoints focused on orchestration and
   reporting.
 - Give a genuinely multi-file family its own directory and README. Do not

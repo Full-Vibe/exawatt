@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  summonComposer,
+  startAgentFromLauncher,
   waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
@@ -113,10 +113,9 @@ try {
       await page.locator('[data-agent-composer]').waitFor();
 
       for (let count = 1; count <= 4; count++) {
-        // D24 uses a new-Agent tab once a Project already has Sessions; older
-        // layouts expose an inline toggle. Exercise either supported summon path.
-        await summonComposer(page);
-        await page.getByRole('button', { name: 'Start' }).click();
+        // D24 uses a new-Agent tab once a Project already has Sessions; the
+        // shared driver summons either way and waits out the last launch.
+        await startAgentFromLauncher(page);
         const snapshot = await waitForSessionCount(page, count);
         console.log(
           `[exact-resume] launch ${count}: ${snapshot?.map(session => `${session.id}:${session.harnessSessionId}`).join(', ')}`
@@ -139,8 +138,7 @@ try {
       }, otherProjectDir);
       await page.locator('[data-agent-composer]').waitFor();
       for (let count = 5; count <= 6; count++) {
-        await summonComposer(page);
-        await page.getByRole('button', { name: 'Start' }).click();
+        await startAgentFromLauncher(page);
         await waitForSessionCount(page, count);
       }
       otherIds = await page.evaluate(async dir => {

@@ -105,26 +105,53 @@ test('a disabled watch never probes and never fires', async () => {
   assert.equal(probed, 0);
 });
 
-test('the watch shuts an abandoned server down and stops polling', async () => {
-  let clock = 0;
-  let fired = 0;
-  const stop = watchForIdle({
-    port: 7000,
-    ttlMs: 30,
-    pollIntervalMs: 1,
-    now: () => clock,
-    probe: async () => {
-      clock += 10;
-      return 0;
-    },
-    onIdle: () => {
-      fired += 1;
-    },
-  });
-  await new Promise(resolve => setTimeout(resolve, 60));
-  stop();
-  assert.equal(fired, 1, 'shuts down exactly once');
-});
+test(
+  'the watch shuts an abandoned server down and stops polling',
+  { timeout: 10_000 },
+  async () => {
+    // Waits for the shutdown itself. A fixed 60 ms saw fewer than the four
+    // polls the fake clock needs whenever the host was loaded, and failed.
+    let clock = 0;
+    let fired = 0;
+    let probes = 0;
+    let probesAtShutdown = null;
+    let shutDown;
+    const shutdown = new Promise(resolve => {
+      shutDown = resolve;
+    });
+    // The watch's own interval is unref'd, so something must hold the loop
+    // open while the test waits on it.
+    const keepAlive = setInterval(() => {}, 1_000);
+    const stop = watchForIdle({
+      port: 7000,
+      ttlMs: 30,
+      pollIntervalMs: 1,
+      now: () => clock,
+      probe: async () => {
+        probes += 1;
+        clock += 10;
+        return 0;
+      },
+      onIdle: () => {
+        fired += 1;
+        probesAtShutdown = probes;
+        shutDown();
+      },
+    });
+    try {
+      await shutdown;
+      // Turns in which a watch that kept polling would probe again.
+      for (let turn = 0; turn < 20; turn += 1) {
+        await new Promise(resolve => setTimeout(resolve, 1));
+      }
+    } finally {
+      stop();
+      clearInterval(keepAlive);
+    }
+    assert.equal(fired, 1, 'shuts down exactly once');
+    assert.equal(probes, probesAtShutdown, 'polls nothing after shutting down');
+  }
+);
 
 test('a server that keeps a client is never shut down', async () => {
   let clock = 0;
