@@ -493,11 +493,14 @@ export function registerConnectedSourcesIPC(): void {
     );
   });
 
-  /*
-   * Quitting Exawatt detaches observation, never execution. Every session
-   * closes exactly once; no remote work is paused, stopped, or rescheduled.
-   */
-  app.on('before-quit', () => {
-    void runtime?.dispose();
-  });
+}
+
+/**
+ * Quitting Exawatt detaches observation, never execution. Every session
+ * closes exactly once; no remote work is paused, stopped, or rescheduled.
+ * Called by the shutdown sequence's final cleanup, after the operator has
+ * confirmed the quit: a cancelled "Quit and Stop?" keeps every source live.
+ */
+export function disposeConnectedSources(): Promise<void> {
+  return runtime?.dispose() ?? Promise.resolve();
 }

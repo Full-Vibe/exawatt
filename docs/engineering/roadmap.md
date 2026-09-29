@@ -2800,6 +2800,51 @@ apps or sibling evals. Exit: repeated fresh-app evals exit with no owned helper
 or output pipe left behind, including bounded forced shutdown; a foreign app
 control survives. [Incident 0030](incidents/0030-electron-eval-network-helpers-retain-pipes.md).
 
+### BUG-237 Pausing an Agent showed it as failed
+
+Status: fixed · ENG-015 · found 2026-09-28 in the pre-0.1.14 review; release blocker, regression from BUG-186.
+
+Exawatt stops a Session with SIGHUP, and zsh and fish report that as
+`{ exitCode: 0, signal: 1 }`, so after BUG-186 every Pause, model change and
+quit was recorded as `ended by SIGHUP`: ⌘K sorted it to the top as a fault,
+Fleet showed an error, and the terminal printed the signal. Main now records
+the stops it asks for (`stop`, `stopAll`, `kill`) and writes them as clean
+(`exitSignal: null`, code 0, `[session stopped]`); the renderer's two
+patches over the same fact are gone. Gates: `session-exit-signal.test.ts`
+(real exit shape, mutation-checked) and `eval:electron:project-pause` (real
+login shell; fails on the old main). [Findings](projects/stellar-small-fleet.md#findings-log).
+
+### BUG-238 ⌘W during a launch left the Agent running with no tab
+
+Status: fixed · ENG-015 · found 2026-09-28 in the pre-0.1.14 review.
+
+Closing a starting tab removed the draft, the launch then found no tab to
+promote, and the Agent worked its prompt with no tab. Closing a starting tab
+now cancels the start: the launched Session is stopped and discarded, a
+restored conversation goes back to Recently closed. Gate:
+`launch-focus.test.tsx`, mutation-checked. [Findings](projects/stellar-small-fleet.md#findings-log).
+
+### BUG-239 Cancelling ⌘Q broke usage, the plan panel and connected sources
+
+Status: fixed · ENG-016 · found 2026-09-28 in the pre-0.1.14 review.
+
+`before-quit` disposed the usage scanner, the Claude plan panel and the
+connected-source runtime before "Quit and Stop?", and nothing rebuilt them
+when the operator cancelled. They are now the shutdown coordinator's final
+cleanup, after the quit is decided. Gate: `shutdown-sequence.test.ts`,
+mutation-checked. [Findings](projects/stellar-small-fleet.md#findings-log).
+
+### BUG-240 A failed first workspace load read "Command engine paused"
+
+Status: fixed · ENG-016 · found 2026-09-28 in the pre-0.1.14 review.
+
+A reload landing during the final workspace load rejected it, which failed
+the whole bootstrap: the splash said "Command engine paused" over a working
+engine and the updater, installed-build watch and cache prune never ran. The
+load is now retried, every post-ready step runs whatever it does, and Reload
+on a launch screen left after startup opens the workspace. Gate:
+`command-surface.test.ts`, mutation-checked. [Findings](projects/stellar-small-fleet.md#findings-log).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

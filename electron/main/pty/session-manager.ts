@@ -149,6 +149,13 @@ interface Session {
   /** The composer's first task, kept for goal-oriented context summaries
    *  (D18): the operator's own words are the best statement of the goal. */
   initialTask?: string;
+  /**
+   * Exawatt itself asked this process to end (Pause, a model change, Close,
+   * quit). Only main knows that: the signal `stopProcessGroups` sends
+   * (SIGHUP, escalating to SIGKILL) arrives in the exit event exactly as a
+   * foreign kill would, so the exit record must be told which one it is.
+   */
+  stopRequested?: boolean;
 }
 
 export class PtySessionManager extends EventEmitter {
@@ -536,17 +543,31 @@ export class PtySessionManager extends EventEmitter {
       // kill() may have already removed the session (process death is
       // asynchronous) — never resurrect a deleted buffer or re-broadcast
       // exit state for a session the UI already closed
-      if (!this.sessions.has(id)) return;
+      const owner = this.sessions.get(id);
+      if (!owner) return;
       info.exited = true;
-      info.exitCode = exitCode;
-      // node-pty reports a signalled death as exit code 0 PLUS the signal
-      // (`pty.cc`: WIFSIGNALED sets only `signal_code`). Keeping only the
-      // code recorded an OOM kill as a clean exit (BUG-186).
-      info.exitSignal = signal ? exitSignalName(signal) : null;
+      if (owner.stopRequested) {
+        // Exawatt's own stop is a clean stop, whatever the process reported:
+        // zsh and fish die by the SIGHUP we send, a shell that traps it exits
+        // 129, and a straggler is SIGKILLed. Recording that as a signal death
+        // painted every Pause, model change and quit as a fault.
+        info.exitCode = 0;
+        info.exitSignal = null;
+      } else {
+        info.exitCode = exitCode;
+        // node-pty reports a signalled death as exit code 0 PLUS the signal
+        // (`pty.cc`: WIFSIGNALED sets only `signal_code`). Keeping only the
+        // code recorded an OOM kill as a clean exit (BUG-186).
+        info.exitSignal = signal ? exitSignalName(signal) : null;
+      }
       // the marker goes through the BUFFER (not just live listeners) so a
       // pane attaching after a fast death still shows what happened
       const marker = `\r\n\x1b[38;5;244m[session ${
-        info.exitSignal ? `ended by ${info.exitSignal}` : `exited ${exitCode}`
+        owner.stopRequested
+          ? 'stopped'
+          : info.exitSignal
+            ? `ended by ${info.exitSignal}`
+            : `exited ${exitCode}`
       }]\x1b[0m\r\n`;
       this.appendBuffer(id, marker);
       this.emit(
@@ -559,7 +580,7 @@ export class PtySessionManager extends EventEmitter {
       // A dead process cannot report anything else, and its token is now
       // worthless — retire both before anyone can reuse the id.
       this.cleanupHarnessWiring(id);
-      this.emit('exit', id, exitCode, durableSessionId, info.exitSignal);
+      this.emit('exit', id, info.exitCode, durableSessionId, info.exitSignal);
     });
 
     const session = this.sessions.get(id)!;
@@ -981,6 +1002,7 @@ export class PtySessionManager extends EventEmitter {
   async stop(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (!s || s.info.exited) return;
+    s.stopRequested = true;
     await stopProcessGroups([s.proc.pid], (_pid, signal) =>
       s.proc.kill(signal)
     );
@@ -1176,6 +1198,7 @@ export class PtySessionManager extends EventEmitter {
     const s = this.sessions.get(id);
     if (!s) return;
     if (!s.info.exited) {
+      s.stopRequested = true;
       await stopProcessGroups([s.proc.pid], (_pid, signal) =>
         s.proc.kill(signal)
       );
@@ -1415,6 +1438,7 @@ export class PtySessionManager extends EventEmitter {
     const active = Array.from(this.sessions.entries()).filter(
       ([, session]) => !session.info.exited
     );
+    for (const [, session] of active) session.stopRequested = true;
     await stopProcessGroups(
       active.map(([, session]) => session.proc.pid),
       (pid, signal) => {

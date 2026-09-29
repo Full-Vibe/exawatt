@@ -63,7 +63,12 @@ vi.mock('./installed-build', () => ({
   },
 }));
 
-const { CommandRuntime, bootstrapCommandSurface, reportCommandSurfaceFailure } =
+const {
+  CommandRuntime,
+  bootstrapCommandSurface,
+  reloadWindow,
+  reportCommandSurfaceFailure,
+} =
   await import('./command-surface');
 
 type Dependencies = Parameters<typeof bootstrapCommandSurface>[0];
@@ -136,6 +141,8 @@ function fakeModules() {
     },
     connectedSourcesIpc: {
       registerConnectedSourcesIPC: () => log.push('ipc:connected-sources'),
+      disposeConnectedSources: async () =>
+        void log.push('dispose:connected-sources'),
     },
   };
 }
@@ -266,6 +273,7 @@ describe('bootstrapCommandSurface', () => {
     runtime.disposeServices();
     expect(world.log).toContain('dispose:scanner');
     expect(world.log).toContain('dispose:plan-account');
+    expect(world.log).toContain('dispose:connected-sources');
   });
 
   it('wires the updater only for a distribution that declares a feed', async () => {
@@ -314,9 +322,89 @@ describe('bootstrapCommandSurface', () => {
     expect(runtime.shutdownCoordinator).toBeNull();
   });
 
+  it('retries a workspace load another navigation interrupted', async () => {
+    let loads = 0;
+    const { deps } = dependencies({
+      enterWorkspace: async () => {
+        loads += 1;
+        world.log.push(`window:workspace:${loads}`);
+        // A reload landing during the first load aborts it, as Electron does.
+        if (loads === 1) throw new Error('ERR_ABORTED (-3) loading workspace');
+      },
+    });
+    await bootstrapCommandSurface(deps);
+    expect(loads).toBe(2);
+    expect(world.log).not.toContain('engine:paused');
+  });
+
+  it('runs every post-ready step when the workspace never loads', async () => {
+    const { deps, runtime } = dependencies({
+      contract: OFFICIAL,
+      enterWorkspace: async () => {
+        world.log.push('window:workspace');
+        throw new Error('ERR_ABORTED (-3) loading workspace');
+      },
+    });
+
+    // The engine is up; one navigation failing is not a failed bootstrap.
+    await bootstrapCommandSurface(deps);
+
+    expect(world.log).toContain('engine:ready');
+    expect(world.log).not.toContain('engine:paused');
+    expect(runtime.startupComplete).toBe(true);
+    expect(world.log).toContain('watch:installed-build');
+    expect(world.log.some(entry => entry.startsWith('updater:start'))).toBe(
+      true
+    );
+    expect(world.log).toContain('renderer:prune');
+  });
+
   it('leaves the renderer cache alone in development', async () => {
     await bootstrapCommandSurface(dependencies({ isDev: true }).deps);
     expect(world.log).not.toContain('renderer:prune');
+  });
+});
+
+describe('reloadWindow', () => {
+  function reloadWorld(url: string, startupComplete: boolean) {
+    const log: string[] = [];
+    const win = {
+      webContents: { getURL: () => url },
+      loadURL: async (target: string) => void log.push(`load:${target}`),
+    };
+    const reload = (focused: unknown, options: { ignoringCache: boolean }) =>
+      void log.push(`reload:${options.ignoringCache}`);
+    const run = () =>
+      reloadWindow(
+        {
+          startupComplete: () => startupComplete,
+          window: () => win,
+          isWorkspaceTarget: target => target.startsWith('http://renderer'),
+          workspaceUrl: () => 'http://renderer/workspace',
+          reload,
+        },
+        undefined,
+        { ignoringCache: false }
+      );
+    return { log, run };
+  }
+
+  it('opens the workspace from a launch screen startup left behind', () => {
+    const { log, run } = reloadWorld('data:text/html,launch', true);
+    run();
+    expect(log).toEqual(['load:http://renderer/workspace']);
+  });
+
+  it('reloads the launch screen while startup is still running', () => {
+    const { log, run } = reloadWorld('data:text/html,launch', false);
+    run();
+    expect(log).toEqual(['reload:false']);
+  });
+
+  it('reloads the workspace it shows', () => {
+    const { log, run } = reloadWorld('http://renderer/workspace', true);
+    run();
+    expect(log).toEqual(['reload:false']);
   });
 });
 

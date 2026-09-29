@@ -109,6 +109,7 @@ function installElectron(create: ReturnType<typeof pendingCreate>['create']) {
     create,
     closedSessions: vi.fn(() => Promise.resolve([])),
     reopenSession: vi.fn(() => Promise.resolve(null)),
+    closeSession: vi.fn(() => Promise.resolve(true)),
     onExit: vi.fn(() => () => {}),
     focus: vi.fn(() => Promise.resolve()),
     openPath: vi.fn(() => Promise.resolve()),
@@ -265,5 +266,87 @@ describe('a late launch does not move the operator (BUG-018)', () => {
 
     expect(view.result.current.projects[0].tabs).toHaveLength(3);
     expect(view.result.current.activeTab?.id).toBe('tab-other');
+  });
+});
+
+describe('closing a starting tab cancels the start', () => {
+  afterEach(() => {
+    operatorPosition.setSource(null);
+    vi.clearAllMocks();
+  });
+
+  it('stops the launched Agent instead of leaving it running with no tab', async () => {
+    const launcher = pendingCreate();
+    const { pty } = installElectron(launcher.create);
+    const view = await mountedWorkspace();
+
+    let launched: Promise<boolean> | null = null;
+    act(() => {
+      launched = view.result.current.launch({
+        harness: 'claude',
+        dir: REPO,
+        initialPrompt: 'Refactor the parser',
+        reuseTabId: 'tab-draft',
+      });
+    });
+    // ⌘W while the provider is still coming up.
+    await act(async () => {
+      await view.result.current.closeTab('tab-draft');
+    });
+    await act(async () => {
+      launcher.land(session('durable-draft'));
+      expect(await launched).toBe(false);
+    });
+
+    // The started process is stopped and discarded, and no tab brings it back.
+    expect(pty.closeSession).toHaveBeenCalledWith('durable-draft', true);
+    expect(tabById(view, 'tab-draft')).toBeUndefined();
+    expect(
+      view.result.current.projects[0].tabs.some(
+        tab =>
+          tab.kind === 'session' && tab.durableSessionId === 'durable-draft'
+      )
+    ).toBe(false);
+  });
+
+  it('puts a restored conversation back where it was', async () => {
+    const launcher = pendingCreate();
+    const { pty } = installElectron(launcher.create);
+    const entry = {
+      durableSessionId: 'durable-draft',
+      title: 'Parser',
+      goal: null,
+      harness: 'claude',
+      cwd: REPO,
+      projectDir: REPO,
+      projectName: 'repo',
+      harnessSessionId: 'harness-parser',
+      initialTask: null,
+      closedAt: 1,
+    };
+    pty.closedSessions.mockResolvedValue([entry] as never);
+    const view = await mountedWorkspace();
+
+    let launched: Promise<boolean> | null = null;
+    act(() => {
+      launched = view.result.current.launch({
+        harness: 'claude',
+        dir: REPO,
+        resumeSessionId: 'harness-parser',
+        restoreSessionId: 'durable-draft',
+        reuseTabId: 'tab-draft',
+      });
+    });
+    await act(async () => {
+      await view.result.current.closeTab('tab-draft');
+    });
+    await act(async () => {
+      launcher.land(session('durable-draft'));
+      expect(await launched).toBe(false);
+    });
+
+    // Stopped, history kept, and its Recently closed entry never consumed.
+    expect(pty.closeSession).toHaveBeenCalledWith('durable-draft', false);
+    expect(pty.reopenSession).not.toHaveBeenCalled();
   });
 });

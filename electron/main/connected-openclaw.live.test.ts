@@ -869,7 +869,7 @@ function openLaunch(context: LifecycleContext): ProbeLaunch {
   return launch;
 }
 
-/** Quit: dispose every session exactly as `before-quit` does. */
+/** Quit: dispose every session exactly as the confirmed quit does. */
 async function closeLaunch(context: LifecycleContext): Promise<void> {
   const launch = context.launch;
   context.launch = null;

@@ -232,32 +232,18 @@ export function useSessionRuntime({
         throw new Error('A Session operation is already in progress.');
       targets.forEach(tab => operations.begin(tab.id));
       try {
+        // A paused tab ends through `pty:exit`, which main confirms before
+        // this reply and records as its own clean stop.
         const result = await api.pauseSessions(
           sessionIds,
           confirmedSessionIds !== undefined
         );
-        if (result.kind === 'completed') {
-          for (const item of result.results) {
-            if (item.status !== 'paused' && item.status !== 'already-paused')
-              continue;
-            const tab = targets.find(
-              target => target.durableSessionId === item.durableSessionId
-            );
-            if (tab)
-              updateTab(tab.id, {
-                sessionId: null,
-                lifecycle: 'stopped-clean',
-                exitCode: null,
-                exitSignal: null,
-              });
-          }
-        }
         return { ...result, sessionIds };
       } finally {
         targets.forEach(tab => operations.end(tab.id, tab.durableSessionId));
       }
     },
-    [operations, stateRef, updateTab]
+    [operations, stateRef]
   );
 
   const resumeTabs = useCallback(

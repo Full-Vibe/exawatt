@@ -34,6 +34,7 @@ import {
 import {
   bootstrapCommandSurface,
   CommandRuntime,
+  reloadWindow,
   reportCommandSurfaceFailure,
 } from './command-surface';
 import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
@@ -248,6 +249,7 @@ const shutdownSequence = createShutdownSequence({
     save: saveWorkspace,
   },
   cleanup: [
+    () => runtime.disposeServices(),
     () => runtime.disposeRoadmapWatchers(),
     () => runtime.disposePty(),
     () => rendererServer.stop(),
@@ -275,7 +277,19 @@ const menu = createMenuController({
         : undefined,
     onWindowManagementHelp: () =>
       void shutdownSequence.promptWindowManagementRestart(),
-    onReloadWindow: (focused, options) => mainWindow.reload(focused, options),
+    onReloadWindow: (focused, options) =>
+      reloadWindow(
+        {
+          startupComplete: () => runtime.startupComplete,
+          window: () => mainWindow.live(),
+          isWorkspaceTarget: target => workspace.isTarget(target),
+          workspaceUrl: () => workspace.url(),
+          reload: (target, reloadOptions) =>
+            mainWindow.reload(target, reloadOptions),
+        },
+        focused,
+        options
+      ),
   }),
   install: template =>
     Menu.setApplicationMenu(Menu.buildFromTemplate(template)),

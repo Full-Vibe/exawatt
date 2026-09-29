@@ -79,14 +79,22 @@ export class CommandRuntime {
   installedBuildWatch: { stop(): void } | null = null;
 
   /**
-   * Abort any in-flight background scan and settle its state writes. The
-   * store is crash-safe (append-ordered, atomic meta), so this is a courtesy
-   * flush, never a correctness requirement — it must not delay quit.
+   * Abort any in-flight background scan, settle its state writes, and close
+   * connected-source observation. The store is crash-safe (append-ordered,
+   * atomic meta), so this is a courtesy flush, never a correctness
+   * requirement — it must not delay quit. It runs only once a quit is
+   * decided: nothing here is rebuilt, so disposing before "Quit and Stop?"
+   * left a cancelled quit with usage, the plan panel and connected sources
+   * dead until relaunch.
    */
   disposeServices(): void {
     void this.consumptionScanner?.dispose();
     this.claudePlanAccount?.dispose();
+    void this.disposeConnectedSources().catch(error =>
+      console.error('[shutdown] connected sources did not close', error)
+    );
   }
+  disposeConnectedSources: () => Promise<void> = async () => {};
 
   liveSessionCount(): number {
     return this.ptySessions
@@ -183,6 +191,11 @@ interface CommandSurfaceDependencies {
   loadRuntime?: () => Promise<CommandRuntimeModules>;
 }
 
+/** A load a reload aborted succeeds on the next try; one that keeps failing
+ *  is not going to be fixed by a loop. */
+const WORKSPACE_ENTRY_ATTEMPTS = 3;
+const ENTERING_WORKSPACE_PROGRESS = 0.94;
+
 export async function bootstrapCommandSurface(
   deps: CommandSurfaceDependencies
 ): Promise<void> {
@@ -226,6 +239,8 @@ export async function bootstrapCommandSurface(
   runtime.ptySessions = ptySessions;
   ptySessions.setProductName(deps.build.identity.productName);
   runtime.disposePty = modules.ptyIpc.disposePty;
+  runtime.disposeConnectedSources =
+    modules.connectedSourcesIpc.disposeConnectedSources;
   runtime.disposeRoadmapWatchers =
     modules.roadmapWatcher.disposeRoadmapWatchers;
   if (productUpdateFeedUrl !== null) {
@@ -404,14 +419,18 @@ export async function bootstrapCommandSurface(
   }
   deps.rebuildMenu();
   startupScreen.update({
-    progress: 0.94,
+    progress: ENTERING_WORKSPACE_PROGRESS,
     label: 'Entering workspace',
     detail: 'Command services are ready',
   });
 
   deps.setEnginePhase('ready');
 
-  await deps.enterWorkspace();
+  // The engine is ready whatever this one navigation does. A reload landing
+  // during it aborts the load, and letting that reject here reported
+  // "Command engine paused" over a working engine and skipped every step
+  // below, the updater included.
+  await enterWorkspace(deps);
   runtime.startupComplete = true;
   runtime.installedBuildWatch = watchInstalledBuild({
     statePath: path.join(userDataPath(), 'update-state.json'),
@@ -422,6 +441,71 @@ export async function bootstrapCommandSurface(
     modules.updater.startProductUpdater(buildInfo.delivery === 'signed');
   }
   if (!deps.isDev) deps.pruneRendererCache();
+}
+
+/**
+ * Navigates the main window to the workspace, retrying a load that another
+ * navigation interrupted. When it still fails, the launch screen says so and
+ * a reload opens the workspace (`reloadWindow`), because startup is complete.
+ */
+async function enterWorkspace(
+  deps: Pick<CommandSurfaceDependencies, 'enterWorkspace' | 'startupScreen'> & {
+    logError?: (message: string, error: unknown) => void;
+  }
+): Promise<boolean> {
+  let failure: unknown;
+  for (let attempt = 0; attempt < WORKSPACE_ENTRY_ATTEMPTS; attempt += 1) {
+    try {
+      await deps.enterWorkspace();
+      return true;
+    } catch (error) {
+      failure = error;
+    }
+  }
+  (deps.logError ?? ((message, cause) => console.error(message, cause)))(
+    '[startup] workspace did not open',
+    failure
+  );
+  deps.startupScreen.update({
+    progress: ENTERING_WORKSPACE_PROGRESS,
+    label: 'Workspace did not open',
+    detail: 'Reload the window to open it',
+    failed: true,
+  });
+  return false;
+}
+
+/**
+ * The window menu's Reload. A window still on the launch screen after startup
+ * completed has no page of its own to reload, so Reload opens the workspace;
+ * every other window reloads what it shows.
+ */
+export function reloadWindow(
+  deps: {
+    startupComplete: () => boolean;
+    window: () => {
+      webContents: { getURL(): string };
+      loadURL(url: string): Promise<void>;
+    } | null;
+    isWorkspaceTarget: (url: string) => boolean;
+    workspaceUrl: () => string;
+    reload: (focused: unknown, options: { ignoringCache: boolean }) => void;
+  },
+  focused: unknown,
+  options: { ignoringCache: boolean }
+): void {
+  const win = deps.window();
+  if (
+    deps.startupComplete() &&
+    win &&
+    !deps.isWorkspaceTarget(win.webContents.getURL())
+  ) {
+    void win.loadURL(deps.workspaceUrl()).catch(error =>
+      console.error('[window] workspace did not open', error)
+    );
+    return;
+  }
+  deps.reload(focused, options);
 }
 
 /**

@@ -380,7 +380,9 @@ export function createShutdownSequence(
  * quit goes through the coordinator, which lets the final exit through.
  */
 export function createBeforeQuitHandler(deps: {
-  /** Courtesy flushes that must never delay a quit. */
+  /** Courtesy flushes that must never delay a quit. Only the bootstrap exit
+   *  runs them here; after bootstrap they are the coordinator's final
+   *  cleanup, because a quit the operator cancels must keep them alive. */
   disposeServices: () => void;
   coordinator: () => {
     readonly allowsFinalExit: boolean;
@@ -394,12 +396,12 @@ export function createBeforeQuitHandler(deps: {
     deps.logError ?? ((message, error) => console.error(message, error));
   let bootstrapExitInProgress = false;
   return event => {
-    deps.disposeServices();
     const shutdownCoordinator = deps.coordinator();
     if (!shutdownCoordinator) {
       if (bootstrapExitInProgress) return;
       event.preventDefault();
       bootstrapExitInProgress = true;
+      deps.disposeServices();
       void deps
         .stopRendererServer()
         .catch(error => logError('[shutdown] renderer stop failed', error))

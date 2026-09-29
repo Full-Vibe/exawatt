@@ -141,9 +141,9 @@ export function serializeLayout(
             roadmapItemId: tab.roadmapItemId,
             lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
             exitCode: tab.exitCode,
-            // Exawatt's own stop signals the process; that is not how
-            // it ended to the operator.
-            exitSignal: stopped ? null : tab.exitSignal,
+            // Main records Exawatt's own stop as clean, so the tab's signal
+            // is already how the process ended to the operator.
+            exitSignal: tab.exitSignal,
             initialTask: tab.initialTask ?? null,
             startedAt: tab.startedAt ?? null,
             contextSummary: summaries[tab.durableSessionId] ?? null,

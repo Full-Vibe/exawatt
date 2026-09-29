@@ -489,7 +489,7 @@ describe('createBeforeQuitHandler', () => {
     // The app.quit() that follows lands here again and must pass through.
     expect(quitEvent()).toBe(false);
 
-    expect(log).toEqual(['dispose', 'stop-renderer', 'quit', 'dispose']);
+    expect(log).toEqual(['dispose', 'stop-renderer', 'quit']);
   });
 
   it('still quits when the renderer server will not stop', async () => {
@@ -517,5 +517,20 @@ describe('createBeforeQuitHandler', () => {
     coordinator.allowsFinalExit = true;
     expect(quitEvent()).toBe(false);
     expect(requests).toEqual(['quit']);
+  });
+
+  it('leaves services running for a quit the operator may still cancel', async () => {
+    // The usage scanner, the Claude plan panel and connected sources are not
+    // rebuilt once disposed, so disposing them before "Quit and Stop?" broke
+    // them until relaunch whenever the operator chose Cancel. Their disposal
+    // is the coordinator's final cleanup, after the quit is decided.
+    const coordinator = {
+      allowsFinalExit: false,
+      request: async () => false,
+    };
+    const { log, quitEvent } = harness(coordinator);
+    expect(quitEvent()).toBe(true);
+    await Promise.resolve();
+    expect(log).not.toContain('dispose');
   });
 });

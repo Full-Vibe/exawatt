@@ -77,6 +77,13 @@ export interface LaunchOptions {
   reuseTabId?: string;
 }
 
+/** The draft a launch lands in is still in the strip. */
+function tabStillOpen(stateRef: Latest<WorkspaceLayout>, tabId: string) {
+  return stateRef.current.projects.some(group =>
+    group.tabs.some(tab => tab.id === tabId)
+  );
+}
+
 export function useSessionLaunch({
   stateRef,
   sizeRef,
@@ -204,6 +211,30 @@ export function useSessionLaunch({
           setError(res.error);
           return false;
         }
+        // ⌘W on a starting tab cancels the start. The operator closed the
+        // one place the Agent could appear, and the provider may already be
+        // working the prompt he just threw away: stop it rather than leave an
+        // Agent running with no tab, or put back a tab he closed. A fresh
+        // Session is discarded whole; a restored one goes back to Recently
+        // closed with its history, as it was before he asked.
+        const startCancelled = () =>
+          !!opts.reuseTabId && !tabStillOpen(stateRef, opts.reuseTabId);
+        const cancelStart = async (ledgerConsumed: boolean) => {
+          try {
+            await api.closeSession(
+              res.session.durableSessionId,
+              !restoredEntry
+            );
+            if (restoredEntry && ledgerConsumed) {
+              const { closedAt: _closedAt, ...entry } = restoredEntry;
+              await api.archiveSession(entry);
+            }
+          } catch {
+            setError(`Could not stop the ${launchLabel} from the closed tab.`);
+          }
+          return false;
+        };
+        if (startCancelled()) return cancelStart(false);
         const observedIdentity =
           observedIdentitiesRef.current.get(res.session.durableSessionId) ??
           null;
@@ -223,6 +254,7 @@ export function useSessionLaunch({
             );
           }
         }
+        if (startCancelled()) return cancelStart(true);
         setError(null);
         setLastUsedDir(dir);
         // Promoting the tab to live ALWAYS happens; going there happens only

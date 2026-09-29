@@ -44,6 +44,27 @@ try {
           ?.ownTurn === 'generating',
       'active turn'
     );
+    // A Pause is Exawatt's own stop. The login shell dies by the SIGHUP it
+    // sends (zsh and fish report `{ exitCode: 0, signal: 1 }`), and that
+    // must never read as a fault: ⌘K and Fleet read main's record, the
+    // terminal reads its buffer, and the tab reads the persisted layout.
+    const assertCleanStop = async id => {
+      const record = (await sessions()).find(s => s.id === id);
+      assert.equal(record?.exited, true);
+      assert.equal(record?.exitSignal, null, 'main recorded a signal death');
+      assert.equal(record?.exitCode, 0);
+      const terminal = await page.evaluate(
+        sessionId => window.electron.pty.buffer(sessionId),
+        id
+      );
+      assert.equal(/ended by|exited [1-9]/.test(terminal), false, terminal);
+      const tab = await until(() => {
+        const stored = storedTab();
+        return stored?.sessionId === null ? stored : null;
+      }, 'persisted stopped Session');
+      assert.equal(tab.exitSignal ?? null, null, 'the tab kept a signal');
+      assert.equal(tab.exitCode ?? 0, 0);
+    };
     await projectMenu('Pause Agents');
     const dialog = page.locator('[data-project-pause-confirm]');
     await dialog.waitFor();
@@ -74,6 +95,7 @@ try {
       async () => (await sessions()).find(s => s.id === claude.id)?.exited,
       'confirmed stop'
     );
+    await assertCleanStop(claude.id);
     await page.locator(`[data-tab-id="${before.id}"]`).waitFor();
     await projectMenu('Resume Agents');
     const resumed = await until(
@@ -108,6 +130,7 @@ try {
       'quiet pause without confirmation'
     );
     assert.equal(await dialog.count(), 0);
+    await assertCleanStop(resumed.id);
     const after = await until(() => {
       const tab = storedTab();
       return tab?.sessionId === null ? tab : null;
@@ -126,7 +149,7 @@ try {
     );
     assert.equal(launches[1].includes('--continue'), false);
     console.log(
-      'PASS Project pause: active cancellation and interruption; quiet direct pause; exact Session identity and retained tab/task on resume'
+      'PASS Project pause: active cancellation and interruption; quiet direct pause; every pause reads as a clean stop in main, the terminal and the tab; exact Session identity and retained tab/task on resume'
     );
   });
 } finally {

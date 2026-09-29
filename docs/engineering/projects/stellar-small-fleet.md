@@ -648,6 +648,57 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-09-28 (pre-0.1.14 review, BUG-237 to BUG-240): **Exawatt's own stop
+  is a clean stop, a closed starting tab cancels its start, and neither a
+  cancelled quit nor an interrupted first load breaks the app.**
+
+  - **Pause read as a fault (BUG-237, release blocker).** BUG-186 made main
+    keep the signal a process died by. `stopProcessGroups` ends a Session
+    with SIGHUP (SIGKILL after 1.5 s), and the login shell reports that
+    death as `{ exitCode: 0, signal: 1 }`, so every Pause, model change and
+    quit recorded `exitSignal: 'SIGHUP'`: ⌘K's `sessionRowStatus` and
+    Fleet's `sessionStatus` read it as a fault, the terminal printed
+    `[session ended by SIGHUP]`, and only the tab looked right, because
+    `pauseProject` and the quit-time serializer each overwrote the signal
+    with null. Reproduced in `eval:electron:project-pause` on the real login
+    shell (fish): main's record read `SIGHUP`. Main now marks a Session
+    `stopRequested` in `stop()`, `stopAll()` and `kill()`, and the exit
+    handler records it as `exitCode: 0`, `exitSignal: null` and the marker
+    `[session stopped]`, whatever the process reported (a shell that traps
+    SIGHUP exits 129). A signal Exawatt did not send is still recorded.
+    Both renderer overwrites are deleted, so main is the one owner.
+    `session-exit-signal.test.ts` drives the real manager with node-pty's
+    exit shape through a `stopProcessGroups` double that signals the way the
+    real one's fallback does; the pause eval now asserts main's record, the
+    terminal buffer and the persisted tab after each pause. Both fail with
+    the main change reverted.
+  - **⌘W during a launch (BUG-238).** Closing a draft that was launching
+    removed it at once; when `pty.create` returned, `replaceTab` found
+    nothing and `launch` returned true with the Agent working its prompt and
+    no tab. Decision: closing a starting tab cancels the start. The operator
+    closed the one place the Agent could appear, so bringing it back would
+    reverse his close, and leaving it running spends tokens on a prompt he
+    discarded. The launch checks the draft is still open when `create`
+    returns (and again after consuming a restored ledger entry); if not, it
+    stops the Session with `closeSession`, discarding a fresh one and
+    re-archiving a restored one, and says so if the stop fails.
+  - **Cancelled quit (BUG-239).** `createBeforeQuitHandler` disposed
+    services on every `before-quit`, before the coordinator asked "Quit and
+    Stop?", and `connected-sources-ipc.ts` disposed its runtime on its own
+    `before-quit` listener. None of them is rebuilt, so Cancel left usage,
+    the Claude plan panel and connected sources dead until relaunch.
+    `disposeServices` (now including connected sources) is the first entry
+    of the coordinator's final cleanup; `before-quit` disposes only on the
+    bootstrap exit, where no coordinator exists.
+  - **Interrupted first load (BUG-240).** `bootstrapCommandSurface` awaited
+    `loadURL(workspace)` and treated a rejection as a failed bootstrap. A
+    reload landing during that load aborts it (`ERR_ABORTED`), so the splash
+    said "Command engine paused" and `startupComplete`, the installed-build
+    watch, the updater and the cache prune were skipped. The load is now
+    retried (three attempts); the post-ready steps run either way; a load
+    that still fails says "Workspace did not open" on the splash, and Reload
+    on a launch screen after startup completed opens the workspace.
+
 - 2026-09-23 (S6.4 follow-up, BUG-185 and BUG-186): **"Paused" named two
   sets of Agents, and a killed Agent read as cleanly paused; resumability
   and the word are now one derivation, and the exit record keeps its
@@ -709,7 +760,8 @@ Implementation record (landed 2026-07-10):
     such a record cannot claim a clean exit. A `stopped-clean` record is
     Exawatt's own clean stop and stays Paused; the layout writes a null
     signal for a Session Exawatt stopped, because its own SIGHUP is not how
-    the Session ended.
+    the Session ended. (Superseded 2026-09-28 by BUG-237: main records its
+    own stop as clean, and the layout no longer overwrites the signal.)
   - **Tests.** `session-resume-truth.test.tsx` walks all 378 combinations of
     lifecycle, exit code, signal, harness and identity through the rendered
     tab strip and the recovery bar and fails if a tab's word and the resume
