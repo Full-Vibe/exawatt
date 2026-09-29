@@ -7421,3 +7421,36 @@ decision `0044`. No application code from this task is integrated yet.
 Resume by inspecting those worktrees, their commits/dirty state, and delivery
 state under the common Git directory before implementing anything again. Keep
 future conclusions in the existing roadmap, decision, incident, and this log.
+
+### 2026-09-28 — Battery implementation resumed (BUG-227 / BUG-228)
+
+**Both implementation slices are recoverable; integration is still pending.**
+This updates the September 25 handoff, not the accepted policy in decision 0044.
+
+- Fleet/host observations: `agent/battery-fleet-power` in sibling
+  `exawatt-battery-fleet-power`, candidate `9e707511` rebased over `5bb7a9a4`.
+  The previous connected-Fleet timeout did not reproduce in the isolated
+  packaged gate; all navigation, send, reconnect and persistence assertions
+  passed. Full delivery is retrying with spatial, pointer, emergence,
+  host-power and connected-Fleet gates plus `--dogfood`.
+- Source control: commit `52e67ffa` in `agent/power-host-facts` contains only
+  the source slice, after the host-observation parent already copied elsewhere.
+  Per-process Codex 0.156.1 opt-out probing/launch, unknown fallback, Claude
+  limitation, shell exclusion and no daemon override pass 56 focused tests
+  and the isolated Electron fixture. Do not cherry-pick its parent twice.
+- Device policy: `agent/battery-device-policy` in sibling
+  `exawatt-battery-device-policy` has controller/settings checkpoint `ba67d802`
+  and source cherry-pick `06808d7d`. Additional test/gate integration is in
+  progress there. Native controller, settings persistence, input boundaries,
+  source launch and process replacement pass 127 focused tests. Five Settings
+  request-order/error tests and the async guard check pass. Electron compiled;
+  the actual native-assertion lifecycle eval is the next acceptance step.
+- Recovery order: finish the first slice's existing landing (inspect its process
+  and `/tmp/exawatt-battery-land-resume.log` before starting another); integrate
+  its master into the device-policy branch, install dependencies, finish device
+  eval and canonical docs, then land device policy with required gates and
+  `--dogfood`. The source-only checkout is a backup, not a second landing.
+- No application code was integrated at this checkpoint. Physical unplug,
+  display-off/lock, sleep/wake and energy attribution remain unproven; synthetic
+  events never authorize locking or sleeping the operator's Mac. Claude still
+  independently prevents sleep. Never claim a global battery-safe mode.
