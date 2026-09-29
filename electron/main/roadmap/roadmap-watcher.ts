@@ -16,14 +16,17 @@ const DEBOUNCE_MS = 250;
 const MAX_WATCHERS = 32;
 
 interface WatchEntry {
-  watcher: fs.FSWatcher;
+  /** Null while the roadmap is still being discovered. */
+  watcher: fs.FSWatcher | null;
   timer: NodeJS.Timeout | null;
 }
 
 const watchers = new Map<string, WatchEntry>();
 
 const ROOT_BASENAMES = new Set(
-  ROADMAP_DISCOVERY_ORDER.map(candidate => path.basename(candidate).toLowerCase())
+  ROADMAP_DISCOVERY_ORDER.map(candidate =>
+    path.basename(candidate).toLowerCase()
+  )
 );
 
 function broadcast(projectDir: string): void {
@@ -36,7 +39,21 @@ export async function watchRoadmap(projectDir: string): Promise<void> {
   const key = path.resolve(projectDir);
   if (watchers.has(key)) return;
   if (watchers.size >= MAX_WATCHERS) return; // focus-refresh still covers it
-  const file = await discoverRoadmapPath(key);
+  // The key is claimed BEFORE discovery awaits. Claimed after, two watches of
+  // one Project (or watch, unwatch, watch) each opened an `fs.watch` and the
+  // map kept only the last, so the others leaked open for the app's life.
+  const entry: WatchEntry = { watcher: null, timer: null };
+  watchers.set(key, entry);
+  const current = () => watchers.get(key) === entry;
+  let file: string | null;
+  try {
+    file = await discoverRoadmapPath(key);
+  } catch {
+    if (current()) watchers.delete(key);
+    return;
+  }
+  // Unwatched (and perhaps watched again) while discovering: not ours now.
+  if (!current()) return;
   const dir = file ? path.dirname(file) : key;
   const relevant = file
     ? new Set([path.basename(file).toLowerCase()])
@@ -45,9 +62,10 @@ export async function watchRoadmap(projectDir: string): Promise<void> {
   try {
     watcher = fs.watch(dir, { persistent: false });
   } catch {
+    watchers.delete(key);
     return; // directory vanished; focus-refresh remains the fallback
   }
-  const entry: WatchEntry = { watcher, timer: null };
+  entry.watcher = watcher;
   watcher.on('change', (_event, filename) => {
     const name = filename?.toString().toLowerCase();
     if (name && !relevant.has(name)) return;
@@ -62,8 +80,9 @@ export async function watchRoadmap(projectDir: string): Promise<void> {
       }
     }, DEBOUNCE_MS);
   });
-  watcher.on('error', () => unwatchRoadmap(key));
-  watchers.set(key, entry);
+  watcher.on('error', () => {
+    if (current()) unwatchRoadmap(key);
+  });
 }
 
 export function unwatchRoadmap(projectDir: string): void {
@@ -71,7 +90,7 @@ export function unwatchRoadmap(projectDir: string): void {
   const entry = watchers.get(key);
   if (!entry) return;
   if (entry.timer) clearTimeout(entry.timer);
-  entry.watcher.close();
+  entry.watcher?.close();
   watchers.delete(key);
 }
 

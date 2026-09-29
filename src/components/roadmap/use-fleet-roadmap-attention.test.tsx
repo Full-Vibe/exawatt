@@ -68,7 +68,9 @@ describe('useFleetRoadmapAttention', () => {
 
   it('reads EVERY open Project, not only the one in front (BUG-026)', async () => {
     const api = electron();
-    const { result } = renderHook(() => useFleetRoadmapAttention([ALPHA, BRAVO]));
+    const { result } = renderHook(() =>
+      useFleetRoadmapAttention([ALPHA, BRAVO])
+    );
     await waitFor(() => expect(result.current.signals.sb).toBeDefined());
     expect(api.read).toHaveBeenCalledWith('/a');
     expect(api.read).toHaveBeenCalledWith('/b');
@@ -93,7 +95,9 @@ describe('useFleetRoadmapAttention', () => {
 
   it('re-reads on focus but does not re-parse an unchanged roadmap', async () => {
     const api = electron();
-    const { result } = renderHook(() => useFleetRoadmapAttention([ALPHA, BRAVO]));
+    const { result } = renderHook(() =>
+      useFleetRoadmapAttention([ALPHA, BRAVO])
+    );
     await waitFor(() => expect(result.current.signals.sb).toBeDefined());
     const before = result.current;
     await act(async () => {
@@ -129,10 +133,17 @@ describe('useFleetRoadmapAttention', () => {
       read: vi.fn(async (dir: string) =>
         dir === '/b'
           ? { status: 'error' as const, error: 'roadmap.md exceeds the limit' }
-          : { status: 'ok' as const, text: CLEAN, file: 'ROADMAP.md', mtimeMs: 1 }
+          : {
+              status: 'ok' as const,
+              text: CLEAN,
+              file: 'ROADMAP.md',
+              mtimeMs: 1,
+            }
       ),
     });
-    const { result } = renderHook(() => useFleetRoadmapAttention([ALPHA, BRAVO]));
+    const { result } = renderHook(() =>
+      useFleetRoadmapAttention([ALPHA, BRAVO])
+    );
     await waitFor(() =>
       expect(result.current.scope).toEqual({
         kind: 'sessions',
@@ -158,26 +169,48 @@ describe('useFleetRoadmapAttention', () => {
     );
   });
 
-  it('keeps the last good parse when a later read fails, as a fact with an age', async () => {
+  // A parse from before the failure cannot vouch for now: the file may have
+  // unblocked the item since, and nothing would ever age the block out.
+  it('stops vouching for an earlier parse once the roadmap cannot be read', async () => {
     let fail = false;
     electron({
       read: vi.fn(async () =>
         fail
           ? { status: 'error' as const, error: 'roadmap.md exceeds the limit' }
-          : { status: 'ok' as const, text: BLOCKED, file: 'ROADMAP.md', mtimeMs: 1 }
+          : {
+              status: 'ok' as const,
+              text: BLOCKED,
+              file: 'ROADMAP.md',
+              mtimeMs: 1,
+            }
       ),
     });
     const { result } = renderHook(() => useFleetRoadmapAttention([BRAVO]));
     await waitFor(() => expect(result.current.signals.sb).toBeDefined());
+    const since = result.current.signals.sb!.since;
     fail = true;
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
       await Promise.resolve();
     });
-    // The block the last good parse showed still stands, and the producer
-    // still covers the Session: nothing about the roadmap has been learned.
-    expect(result.current.signals.sb?.kind).toBe('roadmap-blocked');
-    expect(result.current.scope).toEqual({ kind: 'fleet' });
+    const view = mergeAttention(fleetAttention('pty', {}), result.current);
+    expect(attentionAt(view, 'sb')).toEqual({
+      known: false,
+      unseenBy: ['roadmap'],
+    });
+
+    // Readable again: the block returns with the moment it first became true.
+    fail = false;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(result.current.signals.sb).toEqual({
+        kind: 'roadmap-blocked',
+        since,
+      })
+    );
   });
 
   it('never lets an older read of the same roadmap land after a newer one', async () => {
@@ -192,9 +225,19 @@ describe('useFleetRoadmapAttention', () => {
         if (calls === 1) {
           // The mount read: answers last, with the OLDER file state.
           await first;
-          return { status: 'ok' as const, text: CLEAN, file: 'ROADMAP.md', mtimeMs: 1 };
+          return {
+            status: 'ok' as const,
+            text: CLEAN,
+            file: 'ROADMAP.md',
+            mtimeMs: 1,
+          };
         }
-        return { status: 'ok' as const, text: BLOCKED, file: 'ROADMAP.md', mtimeMs: 2 };
+        return {
+          status: 'ok' as const,
+          text: BLOCKED,
+          file: 'ROADMAP.md',
+          mtimeMs: 2,
+        };
       }),
     });
     const { result } = renderHook(() => useFleetRoadmapAttention([BRAVO]));
@@ -216,8 +259,12 @@ describe('useFleetRoadmapAttention', () => {
     electron({
       read: vi.fn(async () => ({ status: 'none' as const, checked: [] })),
     });
-    const { result } = renderHook(() => useFleetRoadmapAttention([ALPHA, BRAVO]));
-    await waitFor(() => expect(result.current.scope).toEqual({ kind: 'fleet' }));
+    const { result } = renderHook(() =>
+      useFleetRoadmapAttention([ALPHA, BRAVO])
+    );
+    await waitFor(() =>
+      expect(result.current.scope).toEqual({ kind: 'fleet' })
+    );
     expect(result.current.signals).toEqual({});
   });
 });

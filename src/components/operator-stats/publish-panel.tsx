@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { Session, UserIdentity } from '@supabase/supabase-js';
+import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
 import { disableOperatorStatsProfile } from '@exawatt/core/distribution';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
@@ -65,19 +66,53 @@ const SERVER_SYNC_STATE: OperatorStatsSyncState = {
 // A retry is promised only where one can succeed. A refused update repeats
 // identically until the app changes, and the old line ("Sync will retry
 // automatically") sat above a profile that stayed frozen for nine days
-// (BUG-164).
+// (BUG-164). A final refusal names an update only when one exists: a newer
+// build is the one remedy the operator can act on, and without one the line
+// says what happened instead of sending him looking for it.
 const SYNC_FAILURE_COPY: Record<OperatorStatsSyncFailure, string> = {
   'local-scan': 'Local usage scan failed. Sync will retry automatically.',
   'local-state':
     'Publishing state could not be saved. Restart Exawatt to retry.',
-  'local-contract':
-    'Publishing stopped. Exawatt needs an update to publish again.',
+  'local-contract': 'Publishing stopped. The last sync was declined.',
   network: 'Offline. Sync will retry automatically.',
   unauthorized: 'Sign in again to resume publishing.',
   identity: 'Relink GitHub to resume publishing.',
-  rejected: 'Publishing stopped. Exawatt needs an update to publish again.',
+  rejected: 'Publishing stopped. The last sync was declined.',
   service: 'Publishing service unavailable. Sync will retry automatically.',
 };
+
+const UPDATE_PHASES = new Set(['available', 'downloading', 'downloaded']);
+
+/** The newer Exawatt version the updater has found, or null when there is
+ *  none, the channel is off, or the status cannot be read. */
+function useNewerVersion(): string | null {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    const updates = window.electron?.app?.updates;
+    if (!updates) return;
+    const adopt = (status: ProductUpdateStatus) =>
+      setVersion(
+        status.enabled &&
+          UPDATE_PHASES.has(status.phase) &&
+          status.availableVersion
+          ? status.availableVersion
+          : null
+      );
+    let live = true;
+    void updates.getStatus().then(
+      status => {
+        if (live) adopt(status);
+      },
+      () => undefined
+    );
+    const off = updates.onStatus(adopt);
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return version;
+}
 
 function findGithub(identities: UserIdentity[] | null | undefined) {
   return identities?.find(identity => identity.provider === 'github') ?? null;
@@ -112,6 +147,7 @@ export function PublishPanel() {
     readOperatorStatsSyncState,
     () => SERVER_SYNC_STATE
   );
+  const newerVersion = useNewerVersion();
 
   const refreshIdentities = useCallback(async () => {
     if (!supabase) return null;
@@ -468,19 +504,22 @@ export function PublishPanel() {
   const syncing = sync.phase === 'syncing';
   const failing = sync.lastOutcome === 'failed';
   const stopped = failing && isTerminalSyncFailure(sync.lastFailure);
+  const remedyUpdate = stopped && newerVersion !== null;
   const statusLine = !autoPublish
     ? published
       ? 'Paused. Your profile stays visible and stops updating.'
       : null
     : syncing
       ? 'Syncing…'
-      : failing
-        ? sync.lastFailure
-          ? SYNC_FAILURE_COPY[sync.lastFailure]
-          : 'Sync failed. Sync will retry automatically.'
-        : sync.lastSyncedAt
-          ? `Up to date · synced ${formatSyncedAt(sync.lastSyncedAt)}`
-          : 'Publishing on. First sync runs shortly.';
+      : remedyUpdate
+        ? `Publishing stopped. Update to Exawatt ${newerVersion} to resume.`
+        : failing
+          ? sync.lastFailure
+            ? SYNC_FAILURE_COPY[sync.lastFailure]
+            : 'Sync failed. Sync will retry automatically.'
+          : sync.lastSyncedAt
+            ? `Up to date · synced ${formatSyncedAt(sync.lastSyncedAt)}`
+            : 'Publishing on. First sync runs shortly.';
   const syncState = !autoPublish
     ? 'paused'
     : syncing
@@ -511,6 +550,7 @@ export function PublishPanel() {
           <p
             className={styles.syncStatus}
             data-sync-state={syncState}
+            data-sync-remedy={remedyUpdate ? 'update' : undefined}
             aria-live="polite"
           >
             {statusLine}

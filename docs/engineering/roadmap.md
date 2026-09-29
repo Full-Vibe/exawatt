@@ -2749,6 +2749,39 @@ three now keep the newest. The Qwen sign-in detail reads "Signs in with
 {authType}". Residual: Claude's layered-settings read, Codex `config.toml`
 and OpenClaw's `openclaw.json` still treat an unreadable file as absent.
 
+### BUG-234 Publishing said "needs an update" for rate limits and missing routes
+
+Status: fixed · ENG-035 · found 2026-09-28 in the pre-0.1.14 review.
+
+`auto-sync.ts` mapped every 4xx except 401/403/409 to `rejected` and ignored
+the service's own `retryable`, so a 429 or a 404 mid-deploy froze the panel
+on "Exawatt needs an update to publish again", with no update to install.
+The service's `retryable` now decides: a refusal it calls retryable is
+`service` (transient, retried) whatever its status, and a bare status is
+final only for 400/413/415/422. The panel names an update only when the
+updater has found a newer version; otherwise it says the sync was declined.
+
+### BUG-235 The Usage verdict note called a switched-off source unreadable
+
+Status: fixed · ENG-038 · found 2026-09-28 in the pre-0.1.14 review.
+
+`unknownVerdictNote` wrote one verb for all unknown sources, so one source
+turned off beside one not configured read "X and Y are not readable". Each
+cause now has its own clause, failures first.
+
+### BUG-236 An unreadable roadmap kept Agents roadmap-blocked, and roadmap watches leaked
+
+Status: fixed · ENG-017 · found 2026-09-28 in the pre-0.1.14 review.
+
+After BUG-162, a failed roadmap read kept the last good parse with no age,
+so an Agent unblocked in the file stayed "roadmap-blocked" in ⌘J and Fleet
+for as long as the file was unreadable. A failed read now makes that
+Project's Agents unknown; the block's `since` is held and returns intact
+when the file reads again. Separately, `watchRoadmap` claimed its key after
+awaiting discovery, so watch/unwatch/watch or two overlapping watches each
+opened an `fs.watch` and all but one leaked; the key is claimed first and a
+watch unwatched mid-discovery opens nothing.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
@@ -2955,3 +2988,4 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | BUG-044's claim that keyboard overrides persist in `userData/settings.json` | BUG-142, 2026-09-16 | They were written there and never read back; `parseSettings` lacked the field. The settings schema is now one table both parse and write derive from, with a typed round-trip test over every field. |
 | BUG-195's docs push guard, which let a docs push reach `master` once `docs:check` passed, and AGENTS.md's in-place docs path that pushed directly | BUG-200, 2026-09-24 | Only `agent:land` moves `master`. The pre-push hook refuses every other push to it, and documentation lands through `pnpm agent:land -- --docs`: no worktree, the docs checks only, a queue ticket like any other. |
 | ENG-030's latch policy as applied by `agent:land`: a latched publication failed the queue head, after its rebase and re-check | BUG-201, 2026-09-24 | The head checks publication before rebasing and holds, bounded and visible, instead of failing; a transient latch is retried, a deterministic one waits for the operator's recovery. Private `master` still never moves past unpublished work. |
+| BUG-162's rule that a failed roadmap read keeps the last good parse "as a fact with an age" | BUG-236, 2026-09-28 | Nothing aged it, so an unblocked Agent read blocked for as long as the file was unreadable. A failed read now declares the producer blind to that Project's Agents (unknown, never quiet or blocked); the block's `since` pin is held across the gap. |

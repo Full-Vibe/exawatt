@@ -366,6 +366,61 @@ describe('performOperatorStatsSync failures', () => {
     expect(deps.captureSpy).toHaveBeenCalledWith('invalid_response', 400);
   });
 
+  // A refusal the service calls retryable is transient whatever its status,
+  // and a bare edge status that does not refuse the request itself is too.
+  it.each([
+    ['a retryable problem', 429, true],
+    ['a retryable problem', 404, true],
+    ['a bare status', 429, null],
+    ['a bare status', 404, null],
+    ['a bare status', 408, null],
+  ])('keeps %s with status %i transient', async (_kind, status, retryable) => {
+    const deps = buildDeps({
+      post:
+        retryable === null
+          ? async () => ({ ok: false, status })
+          : async () => {
+              throw new CompatibleServiceProblemError({
+                type: 'about:blank',
+                title: 'Slow down',
+                status,
+                code: 'rate_limited',
+                retryable,
+              });
+            },
+    });
+
+    const result = await performOperatorStatsSync(deps);
+
+    expect(result.failure).toBe('service');
+    expect(deps.events[0]).toMatchObject({ kind: 'failed', retryable: true });
+  });
+
+  it.each([
+    ['a final problem', 429, false],
+    ['a bare status', 422, null],
+  ])('stops on %s with status %i', async (_kind, status, retryable) => {
+    const deps = buildDeps({
+      post:
+        retryable === null
+          ? async () => ({ ok: false, status })
+          : async () => {
+              throw new CompatibleServiceProblemError({
+                type: 'about:blank',
+                title: 'Refused',
+                status,
+                code: 'refused',
+                retryable,
+              });
+            },
+    });
+
+    const result = await performOperatorStatsSync(deps);
+
+    expect(result.failure).toBe('rejected');
+    expect(deps.events[0]).toMatchObject({ retryable: false });
+  });
+
   it('keeps the cursor of publications that landed before a failure', async () => {
     let calls = 0;
     const deps = buildDeps({

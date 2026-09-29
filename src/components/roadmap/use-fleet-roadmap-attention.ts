@@ -24,10 +24,13 @@
  * write the same `absent` a successful read of nothing writes, so a roadmap
  * over the reader's byte limit made the strip, the Project dot and ⌘J read
  * every Session in that Project as quiet while the rail showed the error.
- * Now a failed read keeps the last good parse when there is one (a fact with
- * an age, the readiness model's rule), and with nothing known it declares
- * the producer BLIND to that Project's Sessions, so the merge answers
- * unknown for them and names this producer.
+ * Now a failed read declares the producer BLIND to that Project's Sessions,
+ * so the merge answers unknown for them and names this producer. That holds
+ * even with an earlier good parse in hand: keeping it made a Session the
+ * file had since unblocked read "roadmap-blocked" in ⌘J and Fleet for as long
+ * as the file stayed unreadable, with nothing to age it out. A held block's
+ * `since` survives the gap (`pinRoadmapBlockedSince`), so the ⌘J order is
+ * intact when the file reads again.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseRoadmap } from '@exawatt/core';
@@ -75,8 +78,7 @@ export function useFleetRoadmapAttention(
 ): AttentionSource {
   const [reads, setReads] = useState<Record<string, CachedRead>>({});
   const dirsKey = useMemo(
-    () =>
-      [...new Set(projects.map(project => project.dir))].sort().join('\n'),
+    () => [...new Set(projects.map(project => project.dir))].sort().join('\n'),
     [projects]
   );
   const dirs = useMemo(
@@ -105,7 +107,9 @@ export function useFleetRoadmapAttention(
   load.current = (dir: string, pass: RequestTicket) => {
     const api = window.electron?.roadmap;
     if (!api) {
-      setReads(prev => (prev[dir] === ABSENT ? prev : { ...prev, [dir]: ABSENT }));
+      setReads(prev =>
+        prev[dir] === ABSENT ? prev : { ...prev, [dir]: ABSENT }
+      );
       return;
     }
     const ticket = channelFor(dir).begin();
@@ -117,10 +121,12 @@ export function useFleetRoadmapAttention(
         return entry === cached ? prev : { ...prev, [dir]: entry };
       });
     };
-    // A read that did not answer is not evidence about the roadmap: the last
-    // good parse stands (aged), and with nothing known the Project is unread.
+    // A read that did not answer is not evidence about the roadmap, and an
+    // older parse is not evidence about it NOW: the Project is unread.
     const keepOrFail = (error: string) => (cached: CachedRead | undefined) =>
-      cached?.read.status === 'ok' ? cached : failed(error);
+      cached?.read.status === 'failed' && cached.read.error === error
+        ? cached
+        : failed(error);
     void api
       .read(dir)
       .then(result => {
@@ -135,7 +141,10 @@ export function useFleetRoadmapAttention(
         commit(cached => {
           // The parse is the expensive half; an unchanged file skips it and
           // returns the same state object, so no consumer re-renders.
-          if (cached?.mtimeMs === result.mtimeMs && cached.read.status === 'ok') {
+          if (
+            cached?.mtimeMs === result.mtimeMs &&
+            cached.read.status === 'ok'
+          ) {
             return cached;
           }
           const doc = parseRoadmap(result.text, {

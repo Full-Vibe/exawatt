@@ -43,6 +43,7 @@ import {
   type ConsumptionSourceView,
   type DisplayUsage,
   type Harness,
+  type PlanReadState,
 } from '@/components/consumption/model';
 import {
   fleetHasUnknownSource,
@@ -98,27 +99,53 @@ export function unknownSources(demo: DemoConsumption): ConsumptionSourceView[] {
  * The Headroom band's partial-verdict line: names the sources the verdict on
  * screen does NOT cover. Null when it covers everything.
  */
-export function unknownVerdictNote(
-  demo: DemoConsumption
-): string | null {
+export function unknownVerdictNote(demo: DemoConsumption): string | null {
   const unknown = unknownSources(demo);
   if (unknown.length === 0) return null;
-  const names = unknown.map(sourceOwnerLabel);
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  const states = new Set(unknown.map(s => planReadState(s, demo.nowMs)));
-  const verb = names.length === 1 ? 'is' : 'are';
-  // One cause, one sentence. A mix never softens a real failure into a
-  // preference, and a build with no grant is never the operator's switch.
+  // One clause per cause. A mix never softens a real failure into a
+  // preference, never turns a switch into a failure, and a build with no
+  // grant is never the operator's switch.
+  const byState = new Map<PlanReadState, string[]>();
+  for (const source of unknown) {
+    const state = planReadState(source, demo.nowMs);
+    byState.set(state, [
+      ...(byState.get(state) ?? []),
+      sourceOwnerLabel(source),
+    ]);
+  }
+  const clauses = UNKNOWN_CLAUSE_ORDER.filter(state => byState.has(state)).map(
+    state => {
+      const names = byState.get(state)!;
+      const verb = names.length === 1 ? 'is' : 'are';
+      return `${listOf(names)} ${verb} ${UNKNOWN_CAUSE[state]}`;
+    }
+  );
   const fact =
-    states.size === 1 && states.has('off')
-      ? `${list} ${verb} turned off`
-      : states.size === 1 && states.has('unconfigured')
-        ? `${list} ${verb} not configured in this build`
-        : `${list} ${verb} not readable`;
+    clauses.length === 1
+      ? clauses[0]
+      : `${clauses.slice(0, -1).join(', ')}, and ${clauses[clauses.length - 1]}`;
   return `${fact}. This verdict covers the sources that reported.`;
+}
+
+type UnknownPlanReadState = Exclude<PlanReadState, 'reported' | 'none'>;
+
+/** Failures first: the cause the operator most needs to see leads. */
+const UNKNOWN_CLAUSE_ORDER: readonly UnknownPlanReadState[] = [
+  'unreadable',
+  'off',
+  'unconfigured',
+];
+
+const UNKNOWN_CAUSE: Record<UnknownPlanReadState, string> = {
+  unreadable: 'not readable',
+  off: 'turned off',
+  unconfigured: 'not configured in this build',
+};
+
+function listOf(names: readonly string[]): string {
+  return names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /** Vendor-account plan-credit spend, per source that reports it (ENG-038). */
@@ -311,7 +338,10 @@ export interface GridRow {
 }
 
 function specRows(demo: DemoConsumption): DemoSessionRollup[] {
-  return [...demo.roadmap.flatMap(r => r.sessions), ...demo.unattributedSessions];
+  return [
+    ...demo.roadmap.flatMap(r => r.sessions),
+    ...demo.unattributedSessions,
+  ];
 }
 
 export function gridRows(demo: DemoConsumption): GridRow[] {
@@ -323,7 +353,9 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
   for (const s of specRows(demo)) {
     covered.add(s.spec.id);
     const usage = displayUsage(s.rollup.totals, s.rollup.sources);
-    const project = s.spec.projectKey ? byKey.get(s.spec.projectKey) : undefined;
+    const project = s.spec.projectKey
+      ? byKey.get(s.spec.projectKey)
+      : undefined;
     const capable = SOURCE_CAPABILITIES[s.spec.source].delegation;
     const samples = index.get(s.spec.id) ?? [];
     rows.push({
@@ -359,11 +391,7 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
     const rollup = demo.sessionsById.get(id);
     const usage = rollup
       ? displayUsage(rollup.totals, rollup.sources)
-      : sumUsage(
-          samples.map(s =>
-            displayUsage(s.usage, [s.source])
-          )
-        );
+      : sumUsage(samples.map(s => displayUsage(s.usage, [s.source])));
     const times = samples.map(s => Date.parse(s.at));
     const startedAtMs = Math.min(...times);
     const lastAtMs = Math.max(...times);
@@ -394,7 +422,8 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
       weighted:
         rollup?.weightedTokens ??
         samples.reduce(
-          (n, s) => n + weightUsage(s.usage, resolveModelWeight(s.model).weight),
+          (n, s) =>
+            n + weightUsage(s.usage, resolveModelWeight(s.model).weight),
           0
         ),
       agents: null,
@@ -647,7 +676,8 @@ export interface Diagnostic {
   share?: number;
 }
 
-const rate1 = (n: number) => (n >= 10 ? Math.round(n).toString() : n.toFixed(1));
+const rate1 = (n: number) =>
+  n >= 10 ? Math.round(n).toString() : n.toFixed(1);
 
 /** Corpus window as the short qualifier the tile labels carry. */
 const WINDOW_SHORT: Record<string, string> = {

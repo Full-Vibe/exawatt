@@ -167,12 +167,26 @@ interface SyncFailure {
   detail: string | null;
 }
 
-function syncFailureForStatus(status: number): OperatorStatsSyncFailure {
+/**
+ * What a refusal means for publishing, from what the service said about it.
+ * Auth and identity have their own remedies. Otherwise the service's own
+ * `retryable` decides: a refusal it says can succeed later (rate limits,
+ * maintenance, a missing route mid-deploy) is transient whatever its status,
+ * and only a refusal it calls final stops publishing.
+ */
+function syncFailureForStatus(
+  status: number,
+  retryable: boolean
+): OperatorStatsSyncFailure {
   if (status === 401 || status === 403) return 'unauthorized';
   if (status === 409) return 'identity';
-  if (status >= 400 && status < 500) return 'rejected';
+  if (!retryable && status >= 400 && status < 500) return 'rejected';
   return 'service';
 }
+
+/** Without a problem document, only the statuses that refuse the request
+ *  itself are final; a 404, 408, 425 or 429 from an edge or a deploy is not. */
+const FINAL_BARE_STATUSES = new Set([400, 413, 415, 422]);
 
 /** Classifies a hosted call that threw, and counts it (decision `0034`). */
 function hostedFailure(
@@ -182,7 +196,7 @@ function hostedFailure(
   if (isCompatibleServiceProblemError(cause)) {
     deps.captureFailure(hostedFailureForStatus(cause.status), cause.status);
     return {
-      failure: syncFailureForStatus(cause.status),
+      failure: syncFailureForStatus(cause.status, cause.retryable),
       retryable: cause.retryable,
       status: cause.status,
       code: cause.code,
@@ -202,7 +216,10 @@ function hostedFailure(
 
 function statusFailure(status: number, deps: OperatorStatsSyncDeps) {
   deps.captureFailure(hostedFailureForStatus(status), status);
-  const failure = syncFailureForStatus(status);
+  const failure = syncFailureForStatus(
+    status,
+    !FINAL_BARE_STATUSES.has(status)
+  );
   return {
     failure,
     retryable: !isTerminalSyncFailure(failure),

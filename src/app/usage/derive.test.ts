@@ -26,7 +26,10 @@ const NOW = Date.parse('2026-08-02T15:20:00.000Z');
 const MIN = 60_000;
 
 function win(
-  overrides: Partial<CapacityWindowView> & { limitId: string; usedPercent: number }
+  overrides: Partial<CapacityWindowView> & {
+    limitId: string;
+    usedPercent: number;
+  }
 ): CapacityWindowView {
   return {
     label: '5-hour window',
@@ -99,9 +102,7 @@ describe('per-run context pressure — absent is never zero', () => {
     // at least one authored compaction survives to the drill
     expect(codex.some(r => (r.compactions ?? 0) > 0)).toBe(true);
     // Claude Code records neither window nor peak: null, never 0
-    const claude = rows.filter(
-      r => r.source === 'claude-code' && r.identified
-    );
+    const claude = rows.filter(r => r.source === 'claude-code' && r.identified);
     expect(claude.length).toBeGreaterThan(0);
     for (const r of claude) {
       expect(r.contextWindow).toBeNull();
@@ -123,9 +124,7 @@ describe('meter/page verdict agreement on opportunity states (E9)', () => {
         nowMs: state.nowMs,
         sources: state.sources,
       } as unknown as DemoConsumption);
-      const meter = state.sources.flatMap(s =>
-        readAllWindows(s, state.nowMs)
-      );
+      const meter = state.sources.flatMap(s => readAllWindows(s, state.nowMs));
       expect(page.map(p => p.window.limitId).sort()).toEqual(
         meter.map(m => m.window.limitId).sort()
       );
@@ -157,7 +156,13 @@ describe('meter/page verdict agreement on opportunity states (E9)', () => {
 describe('pivotAbsenceNote', () => {
   const row = (over: Partial<PivotRow> & { id: string }): PivotRow => ({
     label: over.id,
-    usage: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: null },
+    usage: {
+      input: 0,
+      cacheWrite: 0,
+      cacheRead: 0,
+      output: 0,
+      reasoning: null,
+    },
     weighted: 1,
     sessions: 1,
     drill: [],
@@ -168,7 +173,9 @@ describe('pivotAbsenceNote', () => {
     // Live data collapses to exactly this: a single `Not attributed` row,
     // because a live Session carries no roadmap link until ENG-017's
     // declaration path exists. One bar reads as a measured result.
-    const rows = [row({ id: 'unattributed', label: 'Not attributed', unknown: true })];
+    const rows = [
+      row({ id: 'unattributed', label: 'Not attributed', unknown: true }),
+    ];
     expect(pivotAbsenceNote('roadmap', rows)).toBe(
       'No session in this window carries a roadmap link.'
     );
@@ -251,9 +258,17 @@ describe('unknownVerdictNote — naming what the verdict misses', () => {
     expect(unknownVerdictNote(demoWith([claude(unconfigured)]))).toBe(
       'Claude account is not configured in this build. This verdict covers the sources that reported.'
     );
-    expect(
-      unknownVerdictNote(demoWith([claude(unconfigured), grok(off)]))
-    ).toContain('are not readable');
+  });
+
+  // Each cause keeps its own clause: a switch is never reported as a failure,
+  // and a build with no grant is never reported as the operator's switch.
+  it('gives every cause in a mix its own clause', () => {
+    const note = unknownVerdictNote(
+      demoWith([claude(unconfigured), grok(off)])
+    )!;
+    expect(note).toContain('Claude account is not configured in this build');
+    expect(note).toContain('xAI account is turned off');
+    expect(note).not.toContain('not readable');
   });
 
   it('says "turned off" only when every unknown source is switched off', () => {
@@ -261,13 +276,15 @@ describe('unknownVerdictNote — naming what the verdict misses', () => {
       'is turned off'
     );
     // a mix must not soften a real failure into a preference
-    expect(
-      unknownVerdictNote(demoWith([claude(off), grok(failing)]))
-    ).toContain('are not readable');
+    const note = unknownVerdictNote(demoWith([claude(off), grok(failing)]))!;
+    expect(note).toContain('xAI account is not readable');
+    expect(note).toContain('Claude account is turned off');
   });
 
   it('lists several accounts in one line', () => {
-    const note = unknownVerdictNote(demoWith([claude(failing), grok(failing)]))!;
+    const note = unknownVerdictNote(
+      demoWith([claude(failing), grok(failing)])
+    )!;
     expect(note).toContain('Claude account and xAI account');
     expect(note).toContain('are not readable');
   });

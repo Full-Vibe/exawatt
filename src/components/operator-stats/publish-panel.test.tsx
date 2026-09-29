@@ -22,6 +22,7 @@ import type {
   DesktopAuthApi,
   ExawattSettings,
   OperatorProfileStateUpdate,
+  ProductUpdateStatus,
 } from '@exawatt/core/desktop-bridge';
 
 const { client, distributionState, createOptionalClient } = vi.hoisted(() => ({
@@ -259,6 +260,27 @@ function electronPanel(
       }
     ),
   };
+  let status: ProductUpdateStatus = {
+    phase: 'idle',
+    currentVersion: '1.0.0',
+    availableVersion: null,
+    percent: null,
+    liveSessions: 0,
+    error: null,
+    enabled: true,
+    disabledReason: null,
+    logPath: null,
+  };
+  const updateListeners = new Set<(next: ProductUpdateStatus) => void>();
+  const updates = {
+    getStatus: vi.fn(async () => status),
+    check: vi.fn(async () => status),
+    restart: vi.fn(async () => undefined),
+    onStatus: vi.fn((handler: (next: ProductUpdateStatus) => void) => {
+      updateListeners.add(handler);
+      return () => updateListeners.delete(handler);
+    }),
+  };
   installBridgeDouble({
     auth: {
       onComplete: vi.fn(() => () => {}),
@@ -266,8 +288,13 @@ function electronPanel(
       onLinkOutcome: vi.fn(() => () => {}),
     },
     settings: bridge,
+    app: { updates },
   });
-  return { settingsBridge: bridge };
+  const updateStatus = (patch: Partial<ProductUpdateStatus>) => {
+    status = { ...status, ...patch };
+    for (const listener of updateListeners) listener(status);
+  };
+  return { settingsBridge: bridge, updateStatus };
 }
 
 beforeEach(() => {
@@ -699,6 +726,42 @@ describe('honest sync status while publishing is on', () => {
     expect(document.querySelector('time')?.getAttribute('dateTime')).toBe(
       new Date(lastSyncedAt).toISOString()
     );
+  });
+
+  it('names an update as the remedy only when the updater has found one', async () => {
+    const { updateStatus } = electronPanel({
+      autoPublish: true,
+      published: true,
+    });
+
+    await mount();
+    act(() =>
+      syncStore.set({
+        phase: 'idle',
+        lastOutcome: 'failed',
+        lastFailure: 'rejected',
+      })
+    );
+    const status = () => document.querySelector('[data-sync-state="stopped"]');
+    expect(status()?.getAttribute('data-sync-remedy')).toBeNull();
+
+    act(() => updateStatus({ phase: 'available', availableVersion: '9.9.9' }));
+    expect(status()?.getAttribute('data-sync-remedy')).toBe('update');
+    expect(status()?.textContent).toContain('9.9.9');
+
+    // A transient failure never points at an update, even when one exists.
+    act(() =>
+      syncStore.set({
+        phase: 'idle',
+        lastOutcome: 'failed',
+        lastFailure: 'service',
+      })
+    );
+    expect(
+      document
+        .querySelector('[data-sync-state="failed"]')
+        ?.getAttribute('data-sync-remedy')
+    ).toBeNull();
   });
 
   it('keeps a transient failure retrying and still shows the profile age', async () => {
