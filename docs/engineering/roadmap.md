@@ -2692,6 +2692,20 @@ cleanup and dispose mark refs. Exit: a real board parks after final retirement,
 including reduced motion, while later arrivals and interactions still render.
 [Evidence and control](incidents/0029-battery-drained-with-display-off.md).
 
+### BUG-229 DOM tests lost `localStorage` when the machine moved to Node 26
+
+Status: done · ENG-022 · found and fixed 2026-09-28 during ENG-033 H2.4 P1.
+
+On 2026-09-28 the machine's `node` became Homebrew's v26.5.0. Node 25 and
+later define a global `localStorage` of their own, undefined unless
+`--localstorage-file` is given, and it shadows jsdom's, so every app-dom test
+touching storage threw `Cannot read properties of undefined (reading
+'clear')`: 144 tests in 17 files on an untouched master. The app-dom project
+now starts its workers with `--no-experimental-webstorage`, the one spelling
+both Node 22 and Node 26 accept, so DOM tests run against jsdom's Storage
+whatever Node hosts them. After the fix: app-dom 897 passed, the full suite
+5,172 passed, under Node 26.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
