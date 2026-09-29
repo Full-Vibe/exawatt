@@ -7728,7 +7728,10 @@ runs, terminal-only PATH selects the alternate binary, both receive no sleep
 flag and remain unknown, and a plain supported launch confirms the opt-out.
 Native policy eval also passed the actual macOS assertion transitions,
 Session exclusions, Preferences write and persistence checks. The new guard is included in
-the source surface gate and Electron test typecheck.
+the source surface gate and Electron test typecheck. The Settings eval waits
+for the live registry before clicking its server-rendered navigation: a cold
+route lost a pre-hydration click in delivery, then passed in isolation. No
+timeout was raised and no product workaround was added.
 
 The separate coverage gap is also closed: the real Fleet emergence eval flips
 reduced motion during an observed partial retirement, requires body/mark

@@ -303,6 +303,10 @@ try {
       `${process.env.EXA_BASE ?? 'http://localhost:7000'}/settings`,
       { waitUntil: 'domcontentloaded' }
     );
+    // A cold route can paint its server-rendered navigation before React has
+    // attached handlers. The live registry is existing, observable hydration
+    // evidence; clicking merely visible HTML can lose the Preferences action.
+    await page.locator('[data-agent-source-registry-status="live"]').waitFor();
     await page
       .getByRole('button', { name: 'Preferences', exact: true })
       .click();
