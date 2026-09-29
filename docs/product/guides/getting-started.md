@@ -250,3 +250,22 @@ If Exawatt reports damaged local data, it preserves the affected file and blocks
 changes to that store. Use the recovery surface to reveal the file, repair it or
 restore a valid copy, then retry. Restarting the app does not clear this
 protection, and recovery does not silently reset your configuration.
+
+## Working while away from your Mac
+
+In the desktop app, **Settings → Preferences → Power** controls Exawatt's
+sleep prevention. **On AC only** is the default: supported local Agents can
+keep the Mac awake while working on external power, and Exawatt releases that
+request when you unplug. **Never** disables Exawatt's request. **On AC and
+battery** also keeps working Sessions awake on battery and can use substantial
+battery power. Idle Sessions, attention gates, shells, Demo Agents and remote
+Agents do not keep this Mac awake through this control.
+
+Locking the Mac never pauses an Agent, and the display remains free to sleep.
+If macOS sleeps, local work depends on the Agent Source's recovery behavior.
+
+The control currently covers verified Codex 0.156.1 launches started by this
+app. Existing Sessions, unverified versions and other sources manage sleep
+independently. Claude Code can still keep the Mac awake on battery. Changes
+made inside a source, and other apps, can also prevent sleep. Settings reports
+Exawatt's own request and identifies working sources outside its control.

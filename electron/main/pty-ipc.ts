@@ -165,19 +165,22 @@ export function registerPtyIPC(
     );
   };
   const offHostPower = hostPower?.subscribe(refreshDevicePower);
-  const powerEvents = [
-    { source: ptySessions, names: ['session', 'exit', 'session-forgotten'] },
-    { source: attentionMonitor, names: ['activity', 'engaged', 'attention'] },
-    { source: delegationMonitor, names: ['delegation'] },
-  ];
-  for (const { source, names } of powerEvents) {
-    for (const name of names) source.on(name, refreshDevicePower);
-  }
+  ptySessions.on('session', refreshDevicePower);
+  ptySessions.on('exit', refreshDevicePower);
+  ptySessions.on('session-forgotten', refreshDevicePower);
+  attentionMonitor.on('activity', refreshDevicePower);
+  attentionMonitor.on('engaged', refreshDevicePower);
+  attentionMonitor.on('attention', refreshDevicePower);
+  delegationMonitor.on('delegation', refreshDevicePower);
   disposeDevicePower = () => {
     offHostPower?.();
-    for (const { source, names } of powerEvents) {
-      for (const name of names) source.removeListener(name, refreshDevicePower);
-    }
+    ptySessions.removeListener('session', refreshDevicePower);
+    ptySessions.removeListener('exit', refreshDevicePower);
+    ptySessions.removeListener('session-forgotten', refreshDevicePower);
+    attentionMonitor.removeListener('activity', refreshDevicePower);
+    attentionMonitor.removeListener('engaged', refreshDevicePower);
+    attentionMonitor.removeListener('attention', refreshDevicePower);
+    delegationMonitor.removeListener('delegation', refreshDevicePower);
     devicePower.dispose();
   };
   refreshDevicePower();

@@ -557,6 +557,15 @@ boundary (for Claude Code, a `PreToolUse` hook), so it adds no second
 enforcement regime. A managed Workspace that locks controls for a whole
 company is the unshaped next layer.
 
+**Device power policy** belongs to the local Electron host, across Projects;
+it is separate from Agent lifecycle and Workspace execution policy. Settings
+offers `Never`, `On AC only` (default), and `On AC and battery` for Exawatt's
+own system-sleep prevention while supported local Sessions work. Locking or
+turning off the display never pauses an Agent. Only a process with verified
+source opt-out evidence at launch is covered. Other sources and applications
+can prevent sleep independently; the preference is not a global sleep guarantee.
+Remote Agents and Demo data never acquire a local keep-awake assertion.
+
 ## Approval
 
 A human authorization checkpoint.

@@ -236,3 +236,20 @@ The recovery surface lets the operator reveal the file and retry after repair;
 only validated data clears the interlock. This slice provides no destructive
 reset action. Diagnostics identify the store and failure without exposing file
 contents or credentials.
+
+## Device sleep and lock
+
+Display lock, display-off and window visibility never invoke Pause, stop or
+relaunch a Session. The desktop's device-local Power preference controls only
+Exawatt-owned `prevent-app-suspension` requests for supported working local
+Sessions. The display can still sleep. Attention gates and completion release
+the request; `On AC only` also releases it on unplug. An explicitly requested
+system sleep is not reported as an Agent pause, and recovery remains source-owned.
+
+Coverage is evidence attached to the launched process, not a property inherited
+by every Session of that source. The current supported path verifies the exact
+macOS Codex 0.156.1 executable and its `prevent_idle_sleep` override, then applies
+`--disable prevent_idle_sleep` at launch without changing user configuration or
+daemon mode. Replacements probe again. Failed or unverified probes preserve the
+ordinary launch and report unknown control. Claude Code remains uncontrolled;
+other apps and later changes inside a source can independently prevent sleep.

@@ -43,6 +43,9 @@ const PRIMITIVE = path.join('hooks', 'use-latest-request.ts');
  * `useLatestRequest`; add one only with a reason the primitive cannot serve.
  */
 const KNOWN_GUARDS: Record<string, { why: string; count?: number }> = {
+  'app/settings/power-settings.tsx:revision': {
+    why: 'native-assigned snapshot revisions order pushes against reads; useLatestRequest already owns the subscription lifetime, but request tickets cannot order native snapshots',
+  },
   // Request generations the primitive would own, held by their owners.
   'app/settings/connected-sources-section.tsx:listRequest': {
     why: 'one of two read channels; Agent Source settings migrate as one change with their gate',

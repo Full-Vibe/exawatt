@@ -89,6 +89,26 @@ const workspaceStateModule = (file, ...modules) =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:electron:device-power',
+    why: 'device power follows local work, power transitions and persisted operator policy without pausing Sessions',
+    match: file =>
+      file === 'electron/main/device-power.ts' ||
+      file === 'electron/main/host-power.ts' ||
+      file === 'electron/main/pty-ipc.ts' ||
+      file === 'src/app/settings/power-settings.tsx' ||
+      file === 'scripts/electron-device-power-eval.mjs',
+  },
+  {
+    gate: 'eval:electron:source-power',
+    why: 'sleep opt-out evidence belongs to the exact supported source process launched',
+    match: file =>
+      file === 'electron/main/pty/harness-power-control.ts' ||
+      file === 'electron/main/pty/harness-command.ts' ||
+      file === 'electron/main/pty/harness-registry.ts' ||
+      file === 'electron/main/pty/session-manager.ts' ||
+      file === 'scripts/electron-source-power-eval.mjs',
+  },
+  {
     gate: 'eval:electron:project-pause',
     why: 'Project pause must confirm interruption and preserve exact resumable Sessions through the real UI and IPC',
     match: file =>
@@ -1353,6 +1373,8 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:navigation-paint': GATE,
   'eval:navigation:electron': GATE,
   'eval:electron:grok-source': GATE,
+  'eval:electron:source-power': GATE,
+  'eval:electron:device-power': GATE,
   'eval:electron:appearance': GATE,
   'eval:electron:context-labels': GATE,
   'eval:electron:resume': GATE,

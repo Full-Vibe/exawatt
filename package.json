@@ -155,7 +155,8 @@
     "open-source:catchup": "node scripts/public-catchup.mjs",
     "eval:electron:project-pause": "node scripts/electron-project-pause-eval.mjs",
     "eval:electron:model-change": "node scripts/electron-model-change-eval.mjs",
-    "eval:electron:clone-context": "node scripts/electron-clone-context-eval.mjs"
+    "eval:electron:clone-context": "node scripts/electron-clone-context-eval.mjs",
+    "eval:electron:device-power": "node scripts/electron-device-power-eval.mjs"
   },
   "dependencies": {
     "@exawatt/core": "workspace:*",
