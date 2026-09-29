@@ -7680,3 +7680,26 @@ alone. Review only: no application fix or new app installation was performed.
 Physical macOS AC/unplug, display-off/lock and sleep/wake acceptance remains
 open under BUG-227. Runtime reduced-motion changes during a retirement also
 lack browser coverage, but code inspection found no corresponding defect.
+
+### 2026-09-29 — BUG-248 repair in progress
+
+**The fix preserves actual terminal resolution and confirms launch ownership.**
+Implementation is in sibling `exawatt-power-wrapper-fix`, branch
+`agent/power-wrapper-fix`, based on `f71b880c`. The existing piped probe is
+only a candidate: a guard in the actual launch shell checks that the source
+is still the same plain executable before selecting the controlled command.
+Otherwise the original invocation runs unchanged. A per-launch acknowledgement
+must arrive before the process record claims applied sleep control; missing
+acknowledgement remains unknown. Its stream parser must preserve ordinary
+output across arbitrary chunk boundaries and never leak its control marker
+into scrollback or attention detection.
+
+Root owns Session integration, native evals and canon; the source reviewer
+owns the pure guard/parser and tests, and the Fleet reviewer owns only the
+runtime reduced-motion browser regression. No implementation is integrated
+yet. Resume by inspecting this branch and its working tree before duplicating
+work. Planned checks cover real terminal-dependent wrappers/PATH, a normal
+supported launch, delayed/fallback acknowledgement, Session replacement,
+native assertions, and motion-preference changes during retirement. Physical
+host sleep/wake remains an operator-coordinated acceptance gap, not an
+automated test authorized to interrupt running work.
