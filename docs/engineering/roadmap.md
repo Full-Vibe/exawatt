@@ -3070,6 +3070,22 @@ show. The counts bar's Idle glyph therefore has no visible partner on the
 board. Exit: an Idle Agent's mark reads against its body in every theme, shown
 by a screenshot per theme. [Finding](projects/spatial-operations-board.md#2026-09-29--the-counts-bar-and-the-board-agree-bug-225-bug-226).
 
+### BUG-251 The landing clears `.next/dev` while the stopped server still writes it
+
+Status: bug · ENG-022 · found 2026-09-29 landing BUG-225.
+
+`landing-dev-server.mjs` stops a stale dev server, waits only until its port
+is free, then removes `.next/dev`. A Next process that outlives the listener
+was still writing there: the removal failed with `ENOTEMPTY`, the landing
+stopped before `eval:spatial`, and seconds later the directory was empty. The
+port is the wrong signal for "stopped". Exit: the restart waits until every
+process it signalled has exited (escalating as it does for the port) before
+clearing the cache, with a fixture that holds a writer open past the
+listener. Same landing: `eval:r3f`, a required check rather than a declared
+gate, reads the `EXA_BASE` server but is not in `gateNeedsDevServer`, so after
+a failed refresh it ran against a stopped server (`ERR_CONNECTION_REFUSED`).
+It should get the same ensure-fresh step as the surface gates.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
