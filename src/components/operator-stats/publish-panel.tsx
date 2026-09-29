@@ -13,6 +13,7 @@ import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
 import { disableOperatorStatsProfile } from '@exawatt/core/distribution';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import {
   AUTH_INTENT_PARAM,
@@ -87,6 +88,7 @@ const UPDATE_PHASES = new Set(['available', 'downloading', 'downloaded']);
  *  none, the channel is off, or the status cannot be read. */
 function useNewerVersion(): string | null {
   const [version, setVersion] = useState<string | null>(null);
+  const requests = useLatestRequest();
   useEffect(() => {
     const updates = window.electron?.app?.updates;
     if (!updates) return;
@@ -98,19 +100,23 @@ function useNewerVersion(): string | null {
           ? status.availableVersion
           : null
       );
-    let live = true;
+    const ticket = requests.begin();
     void updates.getStatus().then(
       status => {
-        if (live) adopt(status);
+        if (ticket.current) adopt(status);
       },
       () => undefined
     );
-    const off = updates.onStatus(adopt);
+    // A pushed status is newer than the first read: it supersedes it.
+    const off = updates.onStatus(status => {
+      requests.begin();
+      adopt(status);
+    });
     return () => {
-      live = false;
+      requests.invalidate();
       off();
     };
-  }, []);
+  }, [requests]);
   return version;
 }
 
