@@ -3138,6 +3138,21 @@ the feed's real containers against a throwaway private repository before a
 dispatch. `v0.1.16` cannot publish; the release is re-cut as 0.1.17.
 [Log](projects/open-source-readiness.md#2026-09-29--the-publish-step-hands-the-port-assets-without-their-digests-bug-255).
 
+### BUG-256 The source archive check compares gzip bytes across platforms
+
+Status: done · ENG-030 · found 2026-09-29 dispatching 0.1.17; resolved 2026-09-29.
+
+0.1.17 published its immutable Release, then `reread_public` failed on
+Ubuntu: the source archive's bytes did not equal the one re-derived there.
+The macOS release runner compressed `git archive` output with Apple's gzip,
+and Ubuntu recompressed it with GNU gzip. The tar is identical; the
+compressed bytes are not. The check now judges content: the archive must be a
+`gzip -n` stream whose decompressed bytes equal `git archive --format=tar` of
+the public commit. `pnpm release:rehearse` recompresses the archive with
+another implementation, so it catches this class. `v0.1.17` cannot finish its
+own workflow; its Release stays published and the feed moves at 0.1.18.
+[Log](projects/open-source-readiness.md#2026-09-29--the-source-archive-check-compares-gzip-bytes-across-platforms-bug-256).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
