@@ -305,7 +305,8 @@ try {
       );
       console.log(`Screenshots: ${SCREENSHOT_DIR}`);
     },
-    { maxMs: 180_000 }
+    // A cold dev server compiles the workspace route before the first window.
+    { maxMs: 180_000, firstWindowMs: 90_000 }
   );
 } finally {
   rmSync(userData, { recursive: true, force: true });

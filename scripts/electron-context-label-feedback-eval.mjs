@@ -5,7 +5,11 @@ import { createRequire } from 'node:module';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import {
+  seedWorkspaceLayout,
+  waitForPageCondition,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-context-eval-user-'));
