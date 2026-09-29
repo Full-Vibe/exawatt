@@ -7599,12 +7599,17 @@ projection completed. No gate was waived. This supersedes the earlier
 instructions to resume or land the three implementation branches: all three
 task-owned worktrees/branches and their development servers are removed.
 
-The signed dogfood installation is queued for that immutable SHA. Do not call
-it installed until the worker's `dogfood_installed` metric or the device's
-`update-state.json` proves that SHA (or a descendant). The existing detached
-worker owns installation; do not start a second synchronous install or
-restart the operator's running app. Its log is under the common Git directory
-at `exawatt-delivery/dogfood-worker.log`.
+The signed dogfood app is installed at `/Applications/Exawatt.app` as
+`4c9580432238`, a verified descendant of the implementation SHA. The device's
+`update-state.json` records installation at `2026-09-29T05:51:52.306Z` (the
+evening of September 28 locally), and the worker log confirms staging after
+the packaged smoke passed: launch, renderer, desktop bridge, PTY round trip,
+relaunch storage and renderer-server teardown. The superseding worker built
+the newer integrated app once; no parallel installer was started. The running
+operator app was not restarted. Restart when ready to activate the installed
+code; supported source control applies to newly launched processes. Evidence
+remains under the common Git directory at
+`exawatt-delivery/dogfood-worker.log` and in the delivery metrics.
 
 Resume from master, decision 0044 and incident 0029; no implementation branch
 needs recovery. BUG-228 is repaired. BUG-227 remains open for the physical
