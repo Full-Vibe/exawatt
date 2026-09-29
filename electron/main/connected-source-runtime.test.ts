@@ -389,6 +389,7 @@ class FakeSession implements ConnectedSourceSession {
         outcome: 'granted',
         authority: 'write',
         message: 'This source granted Exawatt write authority.',
+        sourceAnswered: true,
       }
   );
 
@@ -404,6 +405,7 @@ class FakeSession implements ConnectedSourceSession {
         authority: 'write',
         message: 'This source granted Exawatt write authority.',
         approvalStep: 'approved',
+        sourceAnswered: true,
       }
   );
 
@@ -2101,6 +2103,7 @@ const APPROVAL_REQUIRED: AuthorityRequestResult = {
   outcome: 'approval-required',
   authority: 'read',
   message: 'This source needs its own operator to approve the device.',
+  sourceAnswered: true,
 };
 
 async function talkingTo(
@@ -2410,21 +2413,84 @@ describe('ConnectedSourceRuntime — sending to the primary conversation', () =>
   });
 
   it('stops waiting once the source answers the request another way', async () => {
-    const { runtime, agentId } = await talkingTo(
+    const { runtime, session, agentId } = await talkingTo(
+      undefined,
+      { authorityResult: APPROVAL_REQUIRED },
+      'read'
+    );
+    await runtime.requestCommandAuthority('alpha');
+    expect(runtime.commandAuthority()[0].awaitingApproval).toBe(true);
+
+    session.requestWriteAuthority.mockResolvedValueOnce({
+      outcome: 'refused',
+      authority: 'read',
+      message: 'This source refused write access.',
+      sourceAnswered: true,
+    });
+    await runtime.requestCommandAuthority('alpha');
+
+    expect(runtime.commandAuthority()[0].awaitingApproval).toBe(false);
+    const result = await runtime.send(agentId, 'hello');
+    expect(result.ok ? null : result.outcome).toBe('read-only-source');
+  });
+
+  it('keeps the commands on screen when an ask never reached the source', async () => {
+    // A failed SSH read or a closed socket says nothing about the request
+    // already standing there; clearing the commands left it unapprovable.
+    const { runtime, session } = await talkingTo(
       undefined,
       {
-        authorityResult: {
+        authorityResult: APPROVAL_REQUIRED,
+        ownPendingRequest: { kind: 'found', requestId: OWN_REQUEST_ID },
+      },
+      'read'
+    );
+    await runtime.requestCommandAuthority('alpha');
+
+    session.requestWriteAuthority.mockResolvedValueOnce({
+      outcome: 'refused',
+      authority: 'read',
+      message: 'Exawatt could not ask this source for write access.',
+    });
+    await runtime.requestCommandAuthority('alpha');
+
+    expect(runtime.commandAuthority()[0]).toMatchObject({
+      awaitingApproval: true,
+      approveCommands: [
+        'ssh alias-alpha',
+        `openclaw devices approve ${OWN_REQUEST_ID}`,
+      ],
+    });
+  });
+
+  it('keeps the commands on screen when the one click stopped before the source answered', async () => {
+    const { runtime } = await talkingTo(
+      undefined,
+      {
+        authorityResult: APPROVAL_REQUIRED,
+        ownPendingRequest: { kind: 'found', requestId: OWN_REQUEST_ID },
+        // What the session answers when its first ask failed on the way to
+        // the source: the ask's own refusal, marked as the step it reached.
+        approvalResult: {
           outcome: 'refused',
           authority: 'read',
-          message: 'This source refused write access.',
+          message: 'Exawatt could not ask this source for write access.',
+          approvalStep: 'asked',
         },
       },
       'read'
     );
     await runtime.requestCommandAuthority('alpha');
-    expect(runtime.commandAuthority()[0].awaitingApproval).toBe(false);
-    const result = await runtime.send(agentId, 'hello');
-    expect(result.ok ? null : result.outcome).toBe('read-only-source');
+
+    await runtime.approveCommandAuthority('alpha');
+
+    expect(runtime.commandAuthority()[0]).toMatchObject({
+      awaitingApproval: true,
+      approveCommands: [
+        'ssh alias-alpha',
+        `openclaw devices approve ${OWN_REQUEST_ID}`,
+      ],
+    });
   });
 
   it('names the standing request so the commands on screen are exact', async () => {

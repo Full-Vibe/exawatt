@@ -186,6 +186,7 @@ export type DeviceCredentialWriteResult =
         | 'encryption-unavailable'
         | 'invalid-token'
         | 'invalid-keypair'
+        | 'unknown-source'
         | 'io';
     };
 
@@ -476,6 +477,10 @@ export class ConnectedSourceStore {
     if (serialisedKeypair.length > MAX_KEYPAIR_LENGTH) {
       return { ok: false, reason: 'invalid-keypair' };
     }
+    // A credential for a record that is not here would outlive it with
+    // nothing left to name it, and nothing would ever clear it: `remove` is
+    // the only path that does, and it has already run.
+    if (this.get(id) === null) return { ok: false, reason: 'unknown-source' };
     const encryption = this.deps.encryption;
     if (!encryption?.isAvailable()) {
       return { ok: false, reason: 'encryption-unavailable' };

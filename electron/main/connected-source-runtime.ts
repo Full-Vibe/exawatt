@@ -275,6 +275,21 @@ interface SessionEntry {
   awaitingResnapshot: boolean;
 }
 
+/**
+ * Whether an answer to a write ask retires the request standing on the source,
+ * and with it the commands on screen that would approve it.
+ *
+ * Only an answer the source gave can. Holding write settles it; so does the
+ * source refusing or granting in its own words. A refusal that never reached
+ * the source (no connection, an SSH read that failed, a socket that closed
+ * without an answer) says nothing about the request, which is still standing
+ * there, and clearing the commands then left the operator with a request they
+ * could no longer see how to approve.
+ */
+function settlesStandingRequest(result: AuthorityRequestResult): boolean {
+  return result.authority === 'write' || result.sourceAnswered === true;
+}
+
 export class ConnectedSourceRuntime {
   private readonly deps: ConnectedSourceRuntimeDeps;
   private readonly sessions = new Map<string, SessionEntry>();
@@ -364,7 +379,6 @@ export class ConnectedSourceRuntime {
 
     const entry = this.ensureSession(record);
     const result = await entry.session.connect();
-    this.rememberBoundIdentity(entry);
     if (this.disposed) {
       return {
         ok: false,
@@ -374,6 +388,26 @@ export class ConnectedSourceRuntime {
         message: 'Exawatt is shutting down.',
       };
     }
+    /*
+     * Detached or replaced while it connected. The plan has already dropped
+     * this source's rows, so remembering its identity would write a binding
+     * for a source Exawatt no longer has, and a change event would tell the
+     * renderer about a session that is gone. The session itself stopped
+     * short and closed what it opened; the only answer left is that it did.
+     */
+    if (
+      result.outcome === 'cancelled' ||
+      !this.isCurrentEntry(sourceId, entry)
+    ) {
+      return {
+        ok: false,
+        sourceId,
+        outcome: 'cancelled',
+        failure: null,
+        message: 'Connecting stopped before it finished.',
+      };
+    }
+    this.rememberBoundIdentity(entry);
 
     if (!result.ok) {
       this.emit(entry);
@@ -664,11 +698,14 @@ export class ConnectedSourceRuntime {
       // are exact. A list that cannot be read costs the exactness, not the
       // answer: the commands then start by listing.
       const own = await entry.session.findOwnPendingRequest();
+      if (!this.isCurrentEntry(sourceId, entry)) return result;
       this.awaitingApproval.set(
         sourceId,
         own.kind === 'found' ? own.requestId : null
       );
-    } else {
+    } else if (!this.isCurrentEntry(sourceId, entry)) {
+      return result;
+    } else if (settlesStandingRequest(result)) {
       this.awaitingApproval.delete(sourceId);
     }
     entry.record = this.deps.store.get(sourceId) ?? entry.record;
@@ -702,14 +739,10 @@ export class ConnectedSourceRuntime {
       };
     }
     const result = await entry.session.approveOwnWriteRequest();
+    if (!this.isCurrentEntry(sourceId, entry)) return result;
     if (result.outcome === 'approval-required') {
       this.awaitingApproval.set(sourceId, result.pendingRequestId ?? null);
-    } else if (
-      result.authority === 'write' ||
-      result.approvalStep !== undefined
-    ) {
-      // Granted, or the source itself answered the ask. A refusal before
-      // anything was asked leaves a standing request exactly as it was.
+    } else if (settlesStandingRequest(result)) {
       this.awaitingApproval.delete(sourceId);
     }
     entry.record = this.deps.store.get(sourceId) ?? entry.record;
@@ -1086,6 +1119,11 @@ export class ConnectedSourceRuntime {
     if (snapshot === null || snapshot === entry.observedSnapshot) return;
     entry.observedSnapshot = snapshot;
     entry.snapshotRevision += 1;
+  }
+
+  /** The entry still stands for this source: not detached, not replaced. */
+  private isCurrentEntry(sourceId: string, entry: SessionEntry): boolean {
+    return !entry.closed && this.sessions.get(sourceId) === entry;
   }
 
   private ensureSession(record: ConnectedSourceRecord): SessionEntry {

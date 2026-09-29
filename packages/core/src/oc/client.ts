@@ -182,6 +182,8 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
    */
   deviceToken: string | null = null;
   private _ocEventHandlers = new Map<string, Set<(payload: unknown) => void>>();
+  /** Advanced by every `connect()` and `disconnect()`; see `connect()`. */
+  private connectAttempt = 0;
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
 
@@ -218,8 +220,15 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   }
 
   async connect(): Promise<void> {
+    const attempt = ++this.connectAttempt;
     this.shouldReconnect = true;
     await this._initKeypair();
+    // A `disconnect()` (or a newer `connect()`) that landed while the identity
+    // was being prepared owns this client now. Opening a socket anyway would
+    // leave one nobody closes, because the disconnect already ran.
+    if (attempt !== this.connectAttempt) {
+      throw new Error('Connection closed');
+    }
 
     return new Promise<void>((resolve, reject) => {
       const timeoutMs = this.config.requestTimeoutMs ?? 10000;
@@ -244,6 +253,7 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   }
 
   disconnect(): void {
+    this.connectAttempt += 1;
     this.shouldReconnect = false;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

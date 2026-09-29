@@ -209,7 +209,7 @@ function renderDialog({
   bridge: ConnectSourceBridge;
   projects?: readonly ConnectProjectOption[];
   onConnected?: (result: ConnectSourceResult) => void;
-  onManageServer?: () => void;
+  onManageServer?: (sourceId: string) => void;
 }) {
   function Harness() {
     const [open, setOpen] = useState(true);
@@ -322,9 +322,69 @@ describe('Connect: the server list', () => {
       screen.queryByRole('button', { name: /cinder-box/ })
     ).not.toBeInTheDocument();
     fireEvent.click(within(row('cinder-box')).getByText('Manage'));
-    expect(onManageServer).toHaveBeenCalledOnce();
+    // To that server, not to the list it is in.
+    expect(onManageServer).toHaveBeenCalledExactlyOnceWith('source-9');
     expect(bridge.add).not.toHaveBeenCalled();
   });
+
+  it('links Manage to that server when no handler is given', async () => {
+    renderDialog({
+      bridge: makeBridge({
+        list: vi.fn(async () => [{ id: 'source-9', alias: 'cinder-box' }]),
+      }),
+    });
+    await waitFor(() =>
+      expect(row('cinder-box')).toHaveAttribute(
+        'data-server-state',
+        'connected'
+      )
+    );
+    expect(within(row('cinder-box')).getByText('Manage')).toHaveAttribute(
+      'href',
+      '/settings?source=source-9'
+    );
+  });
+
+  for (const failing of ['sshAliases', 'list', 'agents'] as const) {
+    it(`says the list did not load when ${failing} fails, and loads it on Try again`, async () => {
+      const read = {
+        sshAliases: vi.fn(async () => ({
+          aliases: ALIASES,
+          configPresent: true,
+          incompleteIncludes: false,
+        })),
+        list: vi.fn(async () => [{ id: 'source-9', alias: 'cinder-box' }]),
+        agents: vi.fn(
+          async () =>
+            [] as {
+              displayName: string;
+              projectId: string;
+              source: { id: string };
+            }[]
+        ),
+      };
+      read[failing].mockRejectedValueOnce(new Error('ipc failed'));
+      renderDialog({ bridge: makeBridge(read) });
+
+      await screen.findByText('Your server list didn’t load.');
+      // An unread configuration is not a missing one, and an unread saved
+      // list is not one with nothing connected in it.
+      expect(document.body.textContent).not.toMatch(/no SSH configuration/);
+      expect(document.querySelector('[data-connect-server]')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Describe a server' })
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() =>
+        expect(row('cinder-box')).toHaveAttribute(
+          'data-server-state',
+          'connected'
+        )
+      );
+      expect(screen.queryByText('Your server list didn’t load.')).toBeNull();
+    });
+  }
 
   it('offers the manual path plainly when the machine has no SSH config', async () => {
     renderDialog({
@@ -529,6 +589,48 @@ describe('Connect: testing in place', () => {
     );
     expect(bridge.detach).not.toHaveBeenCalled();
   });
+
+  for (const created of [true, false]) {
+    it(`${created ? 'releases' : 'keeps'} a server whose save finishes after Cancel${created ? '' : ' when it was already saved'}`, async () => {
+      let finishAdd: (value: {
+        ok: true;
+        source: { id: string };
+        created: boolean;
+      }) => void = () => {};
+      const bridge = makeBridge({
+        add: vi.fn(
+          () =>
+            new Promise<{ ok: true; source: { id: string }; created: boolean }>(
+              resolve => {
+                finishAdd = resolve;
+              }
+            )
+        ),
+      });
+      renderDialog({ bridge });
+      await pick('atlas-box');
+      await waitFor(() => expect(bridge.add).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      );
+      await act(async () => {
+        finishAdd({ ok: true, source: { id: 'source-late' }, created });
+      });
+
+      if (created) {
+        // The record did not exist when Cancel ran, so only the save that
+        // made it can let it go; left, it was dialed in the background.
+        await waitFor(() =>
+          expect(bridge.detach).toHaveBeenCalledWith('source-late')
+        );
+      } else {
+        expect(bridge.detach).not.toHaveBeenCalled();
+      }
+      expect(bridge.connect).not.toHaveBeenCalled();
+    });
+  }
 
   it('leaves the remote runtime alone when the operator cancels', async () => {
     const bridge = makeBridge();

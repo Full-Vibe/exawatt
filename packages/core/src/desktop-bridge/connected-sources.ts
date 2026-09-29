@@ -194,7 +194,9 @@ export type ConnectSourceResult =
   | {
       ok: false;
       sourceId: string;
-      outcome: 'unknown-source' | 'identity-drift' | 'failed';
+      /** `cancelled`: a Disconnect, a Detach, or a newer Connect overtook this
+       *  one. It closed what it had opened and saved nothing. */
+      outcome: 'unknown-source' | 'identity-drift' | 'failed' | 'cancelled';
       failure: SourceFailureClass | null;
       message: string;
     };
@@ -415,4 +417,9 @@ export interface AuthorityRequestResult {
   pendingRequestId?: string;
   /** How far a one-click approval got, when this answers one. */
   approvalStep?: OwnApprovalStep;
+  /** True when the source itself answered the ask. Absent when the ask never
+   *  reached it (no connection, an SSH read that failed, a socket that closed
+   *  unanswered), which leaves a request already standing on the source
+   *  exactly as it was, so the commands that finish it stay on screen. */
+  sourceAnswered?: boolean;
 }

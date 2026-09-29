@@ -1073,8 +1073,13 @@ export async function resolveGatewayCredential(
  * capped, and the child is killed at a deadline instead of being waited on.
  */
 export function createSshRemoteExec(
-  options: { timeoutMs?: number } = {}
+  options: {
+    timeoutMs?: number;
+    /** The same seam `openSshTunnel` takes, so a test runs a stand-in `ssh`. */
+    spawn?: typeof nodeSpawn;
+  } = {}
 ): RemoteExec {
+  const spawnProcess = options.spawn ?? nodeSpawn;
   const requested = options.timeoutMs;
   const timeoutMs = Number.isFinite(requested)
     ? Math.min(
@@ -1095,7 +1100,7 @@ export function createSshRemoteExec(
 
       let child: ChildProcess;
       try {
-        child = nodeSpawn('ssh', args, {
+        child = spawnProcess('ssh', args, {
           // An argument array with no shell. There is no command string
           // anywhere in this module, so there is nothing for a local shell to
           // reinterpret; `isSafeRemoteArgument` covers the remote shell.

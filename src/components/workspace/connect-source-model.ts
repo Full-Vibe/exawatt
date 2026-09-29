@@ -473,6 +473,8 @@ function isPort(value: number): boolean {
 /** A server Exawatt already keeps a source for, with the coworkers it maps. */
 export interface ConnectedServer {
   alias: string;
+  /** The saved record, so Manage opens this server rather than the list. */
+  sourceId: string;
   agentNames: readonly string[];
 }
 
@@ -516,6 +518,13 @@ export interface ConnectFlowState {
   servers: {
     /** False until the local configuration read answers. */
     loaded: boolean;
+    /**
+     * The read answered with an error rather than a list. Kept apart from an
+     * empty list on purpose: "this machine has no SSH configuration" said
+     * over a read that failed sent the operator to fix a file that was fine,
+     * and a failed saved-server read dropped every Connected mark.
+     */
+    failed: boolean;
     aliases: readonly SshHostAlias[];
     connected: readonly ConnectedServer[];
     configPresent: boolean;
@@ -549,6 +558,10 @@ export type ConnectAction =
       configPresent: boolean;
       incompleteIncludes: boolean;
     }
+  /** Any of the list's reads failed: SSH aliases, saved servers, coworkers. */
+  | { type: 'servers-unreadable' }
+  /** Try again: the list is being read afresh. */
+  | { type: 'servers-reloading' }
   | { type: 'filter'; text: string }
   | { type: 'set-manual'; manual: boolean }
   | { type: 'edit-manual'; patch: Partial<ManualServerDraft> }
@@ -595,6 +608,8 @@ type ServerRowState = 'idle' | 'connected' | 'testing' | 'ready' | 'failed';
 
 export interface ServerRow {
   alias: string;
+  /** Present on a Connected row: the saved record Manage opens. */
+  sourceId?: string;
   state: ServerRowState;
   /** The line under the name: progress, result, failure, or its coworkers. */
   detail: string | null;
@@ -606,6 +621,7 @@ export function initialConnectFlowState(): ConnectFlowState {
   return {
     servers: {
       loaded: false,
+      failed: false,
       aliases: [],
       connected: [],
       configPresent: false,
@@ -670,6 +686,7 @@ function rowFor(state: ConnectFlowState, alias: string): ServerRow {
   if (connected) {
     return {
       alias,
+      sourceId: connected.sourceId,
       state: 'connected',
       detail:
         connected.agentNames.length > 0
@@ -791,6 +808,7 @@ export function connectFlowReducer(
         ...state,
         servers: {
           loaded: true,
+          failed: false,
           aliases: action.aliases,
           connected: action.connected,
           configPresent: action.configPresent,
@@ -799,6 +817,27 @@ export function connectFlowReducer(
         // With no configuration to choose from, describing the server is the
         // path, not a fallback the operator has to go looking for.
         manual: state.manual || !action.configPresent,
+      };
+
+    case 'servers-unreadable':
+      // Nothing is known about the configuration, so the flow does not
+      // switch to describing a server on the operator's behalf.
+      return {
+        ...state,
+        servers: {
+          loaded: true,
+          failed: true,
+          aliases: [],
+          connected: [],
+          configPresent: false,
+          incompleteIncludes: false,
+        },
+      };
+
+    case 'servers-reloading':
+      return {
+        ...state,
+        servers: { ...state.servers, loaded: false, failed: false },
       };
 
     case 'filter':

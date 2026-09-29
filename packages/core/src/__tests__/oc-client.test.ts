@@ -339,6 +339,18 @@ describe('OCClient', () => {
     expect(client.getStatus()).toBe('connected');
   });
 
+  it('opens no socket for a connect that a disconnect overtook while it prepared', async () => {
+    // Minting is asynchronous, so a disconnect can land before the socket
+    // exists. The disconnect has already run by the time the socket would
+    // open, so nothing would ever close it.
+    const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
+    const connecting = client.connect();
+    client.disconnect();
+
+    await expect(connecting).rejects.toThrow('Connection closed');
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
   describe('device identity', () => {
     it('mints one when the caller keeps none, and exposes what it minted', async () => {
       const client = new OCClient({ url: 'ws://127.0.0.1:18789' });

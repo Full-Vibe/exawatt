@@ -829,6 +829,21 @@ describe('Connected sources in Agent Source Settings', () => {
     expect(bridge.list).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the server someone asked for, once it is in the list', async () => {
+    mountBridge({
+      sources: [
+        connection({ id: 'a', displayName: 'Work gateway' }),
+        connection({ id: 'b', displayName: 'Lab gateway' }),
+      ],
+      statuses: [observation({ id: 'a' }), observation({ id: 'b' })],
+    });
+    render(<AgentSourcesSettings openConnection={{ id: 'b' }} />);
+
+    expect(
+      await screen.findByText('Lab gateway', { selector: 'h2' })
+    ).toBeInTheDocument();
+  });
+
   it('renames a connection in place and shows the new name', async () => {
     const bridge = mountBridge({
       sources: [connection({ id: 'a', displayName: 'Work gateway' })],
@@ -860,9 +875,7 @@ describe('Connected sources in Agent Source Settings', () => {
       expect(node).not.toBeNull();
       return node!;
     });
-    expect(empty).toHaveTextContent(
-      'Gateways you connect appear here with their own health.'
-    );
+    expect(empty).not.toBeEmptyDOMElement();
     expect(document.querySelector('[data-connected-source]')).toBeNull();
 
     fireEvent.click(

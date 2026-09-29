@@ -2435,6 +2435,8 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
     expect(result.outcome).toBe('refused');
     expect(result.authority).toBe('read');
     expect(result.message).toContain('the Gateway is restarting');
+    // The source's own no retires whatever request was standing there.
+    expect(result.sourceAnswered).toBe(true);
     expect(harness.session.phase).toBe('connected');
     await expect(harness.session.read('health')).resolves.toEqual({ ok: true });
   });
@@ -2448,6 +2450,8 @@ describe('ConnectedGatewaySession — requesting write authority', () => {
     expect(result.authority).toBe('read');
     expect(result.message).toMatch(/no gateway connection/iu);
     expect(harness.clients).toHaveLength(0);
+    // Nothing reached the source, so nothing about a standing request changed.
+    expect(result.sourceAnswered).toBeUndefined();
   });
 
   it('asks the Gateway nothing when the authority is already held', async () => {

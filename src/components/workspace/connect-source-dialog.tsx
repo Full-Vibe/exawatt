@@ -343,10 +343,12 @@ export function ConnectSourceDialog({
   /** The saved source and its Project mapping, once the operator confirms. */
   onConnected?: (result: ConnectSourceResult) => void;
   /**
-   * Where a connected server's Manage goes. Absent, it links to Settings;
-   * Settings itself passes a close, because the operator is already there.
+   * Where a connected server's Manage goes, with the saved server it names.
+   * Absent, it links to that server in Settings; Settings itself passes a
+   * handler that closes the dialog and selects the server, because the
+   * operator is already there.
    */
-  onManageServer?: () => void;
+  onManageServer?: (sourceId: string) => void;
 }) {
   const [state, dispatch] = useReducer(
     connectFlowReducer,
@@ -441,22 +443,24 @@ export function ConnectSourceDialog({
     dispatch({ type: 'edit-manual', patch: draft });
   }, [open]);
 
-  // Listing reads local configuration and Exawatt's own records only.
-  // Listing a server is not contacting it.
-  useEffect(() => {
-    if (!open || serversRequested.current) return;
+  /**
+   * Listing reads local configuration and Exawatt's own records only.
+   * Listing a server is not contacting it.
+   *
+   * All three reads succeed or the list says it did not load. A read that
+   * failed is not a read that found nothing: an unreadable SSH configuration
+   * is not a missing one, and an unreadable saved-server list is not a list
+   * with no Connected servers in it.
+   */
+  const loadServers = useCallback(() => {
     const api = bridgeRef.current;
     if (!api) return;
     serversRequested.current = true;
     const ticket = attempts.current();
     const saved = api.list
-      ? api
-          .list()
-          .catch(() => [] as readonly { id: string; alias: string | null }[])
+      ? api.list()
       : Promise.resolve([] as readonly { id: string; alias: string | null }[]);
-    const coworkers = api.agents
-      ? api.agents().catch(() => [])
-      : Promise.resolve([]);
+    const coworkers = api.agents ? api.agents() : Promise.resolve([]);
     void Promise.all([api.sshAliases(), saved, coworkers])
       .then(([result, sources, agents]) => {
         if (!ticket.current) return;
@@ -466,6 +470,7 @@ export function ConnectSourceDialog({
             : [
                 {
                   alias: source.alias,
+                  sourceId: source.id,
                   agentNames: agents
                     .filter(agent => agent.source.id === source.id)
                     .map(agent => agent.displayName),
@@ -483,15 +488,19 @@ export function ConnectSourceDialog({
       })
       .catch(() => {
         if (!ticket.current) return;
-        dispatch({
-          type: 'servers-loaded',
-          aliases: [],
-          connected: [],
-          configPresent: false,
-          incompleteIncludes: false,
-        });
+        dispatch({ type: 'servers-unreadable' });
       });
-  }, [attempts, open]);
+  }, [attempts]);
+
+  useEffect(() => {
+    if (!open || serversRequested.current) return;
+    loadServers();
+  }, [loadServers, open]);
+
+  const reloadServers = useCallback(() => {
+    dispatch({ type: 'servers-reloading' });
+    loadServers();
+  }, [loadServers]);
 
   /**
    * The bounded test ticks from main's own connection channel, subscribed for
@@ -590,13 +599,23 @@ export function ConnectSourceDialog({
           transport: input.transport,
           credentialOwner,
         });
-        if (!ticket.current) return;
         sourceId = added.ok && added.source ? added.source.id : null;
         owned = added.ok && added.created !== false;
       } catch {
         sourceId = null;
       }
-      if (!ticket.current) return;
+      if (!ticket.current) {
+        /*
+         * Closed while the record was being saved. The close already ran and
+         * released only what it knew about, which did not include this: the
+         * record did not exist yet. It is this flow's own, so it goes now,
+         * or it stays saved and is dialed in the background (BUG-157).
+         */
+        if (sourceId && owned) {
+          void api.detach(sourceId).catch(() => undefined);
+        }
+        return;
+      }
       if (!sourceId) {
         setServerError(
           'Exawatt could not save this server. Check the details and try again.'
@@ -856,7 +875,11 @@ export function ConnectSourceDialog({
             </p>
           ) : state.manual ? (
             <ManualForm
-              configPresent={state.servers.configPresent}
+              noSshConfiguration={
+                state.servers.loaded &&
+                !state.servers.failed &&
+                !state.servers.configPresent
+              }
               draft={state.draft}
               issues={manualIssues}
               onEdit={patch => dispatch({ type: 'edit-manual', patch })}
@@ -867,11 +890,13 @@ export function ConnectSourceDialog({
               filter={state.filter}
               incompleteIncludes={state.servers.incompleteIncludes}
               loaded={state.servers.loaded}
+              failed={state.servers.failed}
               configPresent={state.servers.configPresent}
               rows={rows}
               total={total}
               onFilter={text => dispatch({ type: 'filter', text })}
               onManage={onManageServer}
+              onReload={reloadServers}
               onPick={alias => void startTest(aliasInput(alias))}
               onRetry={retry}
               canPick={alias => canTestServer(state, alias)}
@@ -919,7 +944,8 @@ export function ConnectSourceDialog({
           style={{ borderColor: HUD.strokeFaint }}
         >
           <div className="flex items-center gap-2">
-            {resolvedBridge && state.servers.configPresent ? (
+            {resolvedBridge &&
+            (state.servers.configPresent || state.servers.failed) ? (
               <button
                 type="button"
                 data-connect-describe
@@ -953,12 +979,14 @@ function ServerList({
   busy,
   filter,
   loaded,
+  failed,
   configPresent,
   incompleteIncludes,
   rows,
   total,
   onFilter,
   onManage,
+  onReload,
   onPick,
   onRetry,
   canPick,
@@ -968,12 +996,14 @@ function ServerList({
   busy: boolean;
   filter: string;
   loaded: boolean;
+  failed: boolean;
   configPresent: boolean;
   incompleteIncludes: boolean;
   rows: readonly ServerRow[];
   total: number;
   onFilter: (text: string) => void;
-  onManage?: () => void;
+  onManage?: (sourceId: string) => void;
+  onReload: () => void;
   onPick: (alias: string) => void;
   onRetry: (alias: string) => void;
   canPick: (alias: string) => boolean;
@@ -986,6 +1016,24 @@ function ServerList({
       <p className="text-sm" style={{ color: HUD.textDim }}>
         Reading your SSH configuration.
       </p>
+    );
+  }
+  if (failed) {
+    return (
+      <div className="flex items-center gap-3" data-connect-servers-failed>
+        <p className="min-w-0 flex-1 text-sm" style={{ color: HUD.amber }}>
+          Your server list didn’t load.
+        </p>
+        <button
+          type="button"
+          data-connect-servers-reload
+          onClick={onReload}
+          className="inline-flex h-8 shrink-0 items-center rounded border px-3 text-chrome-label outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          style={{ color: HUD.text, borderColor: HUD.strokeSoft }}
+        >
+          Try again
+        </button>
+      </div>
     );
   }
   if (total === 0) {
@@ -1082,7 +1130,7 @@ function ServerRowView({
 }: {
   row: ServerRow;
   disabled?: boolean;
-  onManage?: () => void;
+  onManage?: (sourceId: string) => void;
   onPick?: () => void;
   onRetry?: () => void;
   /** What opens beneath the row: the answered server's Agents. */
@@ -1174,11 +1222,11 @@ function ServerRowView({
             </span>
             {text}
             {row.state === 'connected' ? (
-              onManage ? (
+              onManage && row.sourceId ? (
                 <button
                   type="button"
                   data-connect-manage
-                  onClick={onManage}
+                  onClick={() => onManage(row.sourceId!)}
                   className="shrink-0 rounded px-1 text-chrome-label underline underline-offset-2 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                   style={{ color: HUD.textDim }}
                 >
@@ -1187,7 +1235,11 @@ function ServerRowView({
               ) : (
                 <Link
                   data-connect-manage
-                  href="/settings"
+                  href={
+                    row.sourceId
+                      ? `/settings?source=${encodeURIComponent(row.sourceId)}`
+                      : '/settings'
+                  }
                   className="shrink-0 rounded px-1 text-chrome-label underline underline-offset-2 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                   style={{ color: HUD.textDim }}
                 >
@@ -1233,12 +1285,13 @@ function ReadyScroll({ children }: { children: ReactNode }) {
 }
 
 function ManualForm({
-  configPresent,
+  noSshConfiguration,
   draft,
   issues,
   onEdit,
 }: {
-  configPresent: boolean;
+  /** Known to be absent, not merely unread. */
+  noSshConfiguration: boolean;
   draft: ManualServerDraft;
   /** What the draft still needs. The model already names each one. */
   issues: readonly ConnectIssue[];
@@ -1246,7 +1299,7 @@ function ManualForm({
 }) {
   return (
     <div className="grid gap-3">
-      {!configPresent && (
+      {noSshConfiguration && (
         <p className="text-chrome-meta" style={{ color: HUD.textDim }}>
           This machine has no SSH configuration yet. Describe the server and
           Exawatt connects over SSH.

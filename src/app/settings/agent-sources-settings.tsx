@@ -696,6 +696,7 @@ function AddSourceView({
 
 export function AgentSourcesSettings({
   onConnectExistingAgent,
+  openConnection = null,
 }: {
   /**
    * The ⌘N Connect route. A sibling packet owns that dialog,
@@ -703,6 +704,13 @@ export function AgentSourcesSettings({
    * until one is exported the empty state names the chord instead.
    */
   onConnectExistingAgent?: () => void;
+  /**
+   * A saved server to open, when something outside asked for one (Manage in
+   * Connect). Applied once per request, and only once the server is in the
+   * list: selecting an id the registry has not read yet would be undone by
+   * the rule that drops a selection whose server is gone.
+   */
+  openConnection?: { id: string } | null;
 } = {}) {
   const connected = useConnectedSources();
   const [selectedConnectionId, setSelectedConnectionId] = useState<
@@ -846,6 +854,19 @@ export function AgentSourcesSettings({
       setSelectedConnectionId(null);
     }
   }, [selectedConnection, selectedConnectionId]);
+
+  const openedConnection = useRef<{ id: string } | null>(null);
+  useEffect(() => {
+    if (!openConnection || openedConnection.current === openConnection) return;
+    if (!connected.sources.some(source => source.id === openConnection.id)) {
+      return;
+    }
+    openedConnection.current = openConnection;
+    cancelReconciliation();
+    setSelectedConnectionId(openConnection.id);
+    setAdding(false);
+    setMessage(null);
+  }, [cancelReconciliation, connected.sources, openConnection]);
 
   const waitForReconciliation = useCallback((delay: number) => {
     return new Promise<void>(resolve => {

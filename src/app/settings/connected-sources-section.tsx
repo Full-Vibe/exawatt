@@ -709,7 +709,7 @@ function ConnectedSourcesEmpty({ onConnect }: { onConnect?: () => void }) {
       data-connected-sources-empty
       className="px-3 py-2.5 font-ui text-chrome-label leading-4.5 text-[var(--settings-dim)]"
     >
-      <p>Gateways you connect appear here with their own health.</p>
+      <p>Servers you connect appear here with their own health.</p>
       {/* A route, or nothing. Naming a chord here was navigation the operator
           could read and not take: this empty state is exactly where somebody
           with no sources arrives, and the one thing it owes them is the way

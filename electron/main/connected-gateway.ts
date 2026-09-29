@@ -150,12 +150,32 @@ export type SnapshotResult =
       outcome: 'failed';
       failure: SourceFailureClass;
       message: string;
-    };
+    }
+  | ConnectionCancelled;
+
+/**
+ * The attempt was overtaken: `disconnect()` or a newer `connect()` ran while
+ * it was in flight. Not a failure, because nothing about the source failed,
+ * and never reported as one: the attempt closed whatever it had opened and
+ * wrote nothing, so the only honest answer is that it stopped.
+ */
+export interface ConnectionCancelled {
+  ok: false;
+  outcome: 'cancelled';
+  message: string;
+}
+
+const CANCELLED: ConnectionCancelled = {
+  ok: false,
+  outcome: 'cancelled',
+  message: 'Connecting stopped before it finished.',
+};
 
 /**
  * Connecting ends in the same place a resnapshot does: one authoritative
- * snapshot, a drift report, or a classified failure. They share a type because
- * a first connect and a reconnect must produce indistinguishable results.
+ * snapshot, a drift report, a classified failure, or a cancellation. They
+ * share a type because a first connect and a reconnect must produce
+ * indistinguishable results.
  */
 export type ConnectResult = SnapshotResult;
 
@@ -445,6 +465,20 @@ export class ConnectedGatewaySession {
   private renegotiating = false;
   /** Set by `disconnect()`; cleared by a later `connect()`. */
   private detached = false;
+  /**
+   * Which connection intent is current. `connect()` and `disconnect()` each
+   * advance it, and every asynchronous step of opening a connection carries
+   * the value it started under and checks it after each await.
+   *
+   * `detached` alone could not do this job. It is cleared by the next
+   * `connect()`, so an attempt that outlived a Cancel and then a reconnect
+   * would read it as false and carry on over the newer connection. And a flag
+   * that nothing re-reads after an await is not a cancellation: an abandoned
+   * Connect used to finish anyway, leaving an `ssh -N -L` child, a Gateway
+   * socket nothing would ever close, and a device credential written for a
+   * record the operator had just removed.
+   */
+  private generation = 0;
 
   constructor(
     record: ConnectedSourceRecord,
@@ -525,12 +559,16 @@ export class ConnectedGatewaySession {
    * not a defensive nicety: it is the ordinary path.
    */
   async connect(): Promise<ConnectResult> {
+    const generation = ++this.generation;
     this.detached = false;
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
     this.retrying = false;
     await this.teardownConnection();
-    const result = await this.establish();
+    if (!this.isCurrent(generation)) return CANCELLED;
+    const result = await this.establish(generation);
+    // Whoever overtook this attempt owns the phase now.
+    if (result.outcome === 'cancelled') return result;
     if (!result.ok) {
       if (
         result.outcome === 'failed' &&
@@ -633,7 +671,8 @@ export class ConnectedGatewaySession {
   private async performResnapshot(
     announcePhase: boolean
   ): Promise<SnapshotResult> {
-    const result = await this.discover(announcePhase);
+    const result = await this.discover(announcePhase, this.generation);
+    if (result.outcome === 'cancelled') return result;
     if (result.ok) {
       if (announcePhase) this.setPhase('connected');
       this.schedulePeriodicResnapshot();
@@ -692,10 +731,12 @@ export class ConnectedGatewaySession {
    * deliberately. Events are not replayed, so a resumed cursor would silently
    * skip whatever arrived while the socket was down.
    */
-  private async followConversations(): Promise<void> {
+  private async followConversations(generation: number): Promise<void> {
     const snapshot = this.snapshot;
     if (!snapshot) return;
     for (const agent of snapshot.agents) {
+      // A later subscription would go to whichever socket is current now.
+      if (!this.isCurrent(generation)) return;
       if (agent.discoveryState !== 'configured') continue;
       const primary = findPrimaryConversation(snapshot, agent.nativeAgentId);
       if (!primary) continue;
@@ -777,6 +818,7 @@ export class ConnectedGatewaySession {
       };
     }
 
+    const generation = this.generation;
     const client = this.client;
     const config = this.clientConfig;
     if (!client || !config) {
@@ -794,6 +836,7 @@ export class ConnectedGatewaySession {
         exec: this.deps.remoteExec,
       }
     );
+    if (!this.isCurrent(generation)) return this.askOvertaken();
     if (!credential.ok) {
       return {
         outcome: 'refused',
@@ -816,17 +859,38 @@ export class ConnectedGatewaySession {
     let restoreFailed = false;
     const previousToken = client.deviceToken ?? null;
     let sharedSecret: string | null = credential.facts.sharedToken;
+    /** Put the socket back at read scope; a cancelled restore is no drop. */
+    const restoreRead = async (): Promise<void> => {
+      client.deviceToken = previousToken;
+      const restored = await this.renegotiate(
+        client,
+        config,
+        'read',
+        generation
+      );
+      restoreFailed = !restored.ok && restored.outcome !== 'cancelled';
+    };
     try {
       // The source binds a device token to both keypair and scope. The shared
       // secret authorises issuance; the unchanged keypair proves this is the
       // already-visible Exawatt device, not a second device pairing itself.
       client.deviceToken = null;
       config.token = sharedSecret;
-      const attempt = await this.renegotiate(client, config, 'write');
+      const attempt = await this.renegotiate(
+        client,
+        config,
+        'write',
+        generation
+      );
       // The explicit handshake is over. No restore, stream subscription, or
       // later reconnect may inherit the admin-capable bootstrap credential.
       sharedSecret = null;
       config.token = undefined;
+      if (!attempt.ok && attempt.outcome === 'cancelled') {
+        // Nothing is written for a connection that is no longer this one.
+        client.deviceToken = previousToken;
+        return this.askOvertaken();
+      }
       if (attempt.ok) {
         const granted = this.grantedFrom(client, 'write');
         const issued = issuedDeviceToken(client);
@@ -836,14 +900,13 @@ export class ConnectedGatewaySession {
             keypair,
           });
           if (!stored.ok) {
-            client.deviceToken = previousToken;
-            const restored = await this.renegotiate(client, config, 'read');
-            restoreFailed = !restored.ok;
+            await restoreRead();
             return {
               outcome: 'refused',
               authority: 'read',
               message:
                 'This source granted write access, but Exawatt could not keep the scoped device credential safely. Read-only observation continues.',
+              sourceAnswered: true,
             };
           }
           this.applyGrantedAuthority('write');
@@ -851,6 +914,7 @@ export class ConnectedGatewaySession {
             outcome: 'granted',
             authority: 'write',
             message: 'This source granted Exawatt write authority.',
+            sourceAnswered: true,
           };
         }
         /*
@@ -858,22 +922,33 @@ export class ConnectedGatewaySession {
          * than the one asked for. Recording the ask would be the exact lie
          * this whole field exists to prevent, so the narrower grant wins.
          */
-        client.deviceToken = previousToken;
-        const restored = await this.renegotiate(client, config, 'read');
-        restoreFailed = !restored.ok;
+        await restoreRead();
         return {
           outcome: 'refused',
           authority: 'read',
           message:
             'This source granted observation only, so Exawatt still holds read access.',
+          sourceAnswered: true,
         };
       }
 
       // Refused. Put the connection back the way the operator had it: the
       // request failing must not cost them the view they already had.
-      client.deviceToken = previousToken;
-      const restored = await this.renegotiate(client, config, 'read');
-      restoreFailed = !restored.ok;
+      await restoreRead();
+      if (!attempt.answered) {
+        /*
+         * The socket closed or timed out before the source said anything, so
+         * nothing is known about the request: one already standing on the
+         * source is still standing, and the commands that finish it must stay
+         * where the operator can copy them.
+         */
+        return {
+          outcome: 'refused',
+          authority: this.grantedAuthority,
+          message:
+            'This source did not answer the request for write access. Ask again once it is reachable.',
+        };
+      }
       return {
         outcome: attempt.refusal,
         authority: this.grantedAuthority,
@@ -883,6 +958,7 @@ export class ConnectedGatewaySession {
             : attempt.sentence === null
               ? 'This source refused write access.'
               : `This source refused write access. It said "${attempt.sentence}".`,
+        sourceAnswered: true,
       };
     } finally {
       sharedSecret = null;
@@ -894,6 +970,20 @@ export class ConnectedGatewaySession {
         this.handleDrop('gateway-down');
       }
     }
+  }
+
+  /**
+   * A write ask whose connection was closed or replaced while it waited. It
+   * reached nothing Exawatt still holds, so it records nothing and reports
+   * the authority exactly as it stands.
+   */
+  private askOvertaken(): AuthorityRequestResult {
+    return {
+      outcome: 'refused',
+      authority: this.grantedAuthority,
+      message:
+        'The connection to this source closed before Exawatt could finish asking. Ask again once it is connected.',
+    };
   }
 
   /**
@@ -1039,8 +1129,13 @@ export class ConnectedGatewaySession {
     this.renegotiating = true;
     let dropped = false;
     try {
-      const narrowed = await this.renegotiate(client, config, 'read');
-      dropped = !narrowed.ok;
+      const narrowed = await this.renegotiate(
+        client,
+        config,
+        'read',
+        this.generation
+      );
+      dropped = !narrowed.ok && narrowed.outcome !== 'cancelled';
       return {
         outcome: 'granted',
         authority: 'read',
@@ -1061,6 +1156,7 @@ export class ConnectedGatewaySession {
    * paired device remains listed and revocable on the source.
    */
   async disconnect(): Promise<void> {
+    this.generation += 1;
     this.detached = true;
     this.clearReconnectTimer();
     this.retrying = false;
@@ -1070,9 +1166,28 @@ export class ConnectedGatewaySession {
 
   // ---- Lifecycle ---------------------------------------------------------
 
-  private async establish(): Promise<ConnectResult> {
-    const transport = await this.openTransport();
+  /** True while `generation` is still the connection intent this session holds. */
+  private isCurrent(generation: number): boolean {
+    return this.generation === generation;
+  }
+
+  /**
+   * Open one connection under `generation`, or stop at the first await that
+   * finds it overtaken.
+   *
+   * The rule that keeps an overtaken attempt harmless has two halves. A handle
+   * this attempt stored on `this` before it was overtaken is closed by
+   * whoever overtook it, because `disconnect()` and `connect()` both tear down
+   * what `this` holds. A handle that arrives AFTER the attempt was overtaken
+   * was never stored anywhere, so the step that received it closes it on the
+   * spot (`openTransport` for a tunnel, `pair` for a socket). Nothing past a
+   * failed check may write: not a credential, not a port, not a phase, and not
+   * a teardown, which could close the newer connection instead of this one.
+   */
+  private async establish(generation: number): Promise<ConnectResult> {
+    const transport = await this.openTransport(generation);
     if (!transport.ok) {
+      if (transport.outcome === 'cancelled') return transport;
       this.transportUp = false;
       this.terminalFailure = transport.failure;
       return {
@@ -1084,6 +1199,7 @@ export class ConnectedGatewaySession {
     }
 
     const credential = await this.resolveCredential();
+    if (!this.isCurrent(generation)) return CANCELLED;
     if (!credential.ok) {
       await this.teardownConnection();
       this.terminalFailure = credential.failure;
@@ -1095,8 +1211,9 @@ export class ConnectedGatewaySession {
       };
     }
 
-    const paired = await this.pair(transport.port, credential);
+    const paired = await this.pair(transport.port, credential, generation);
     if (!paired.ok) {
+      if (paired.outcome === 'cancelled') return paired;
       await this.teardownConnection();
       this.terminalFailure = paired.failure;
       return {
@@ -1107,7 +1224,7 @@ export class ConnectedGatewaySession {
       };
     }
 
-    const discovered = await this.discover();
+    const discovered = await this.discover(true, generation);
     if (!discovered.ok) {
       if (discovered.outcome === 'failed') {
         await this.teardownConnection();
@@ -1126,7 +1243,8 @@ export class ConnectedGatewaySession {
      * nothing, so what arrived while Exawatt was away is recovered from the
      * authoritative snapshot taken a moment ago rather than from a cursor.
      */
-    await this.followConversations();
+    await this.followConversations(generation);
+    if (!this.isCurrent(generation)) return CANCELLED;
     this.setPhase('connected');
     this.schedulePeriodicResnapshot();
     return discovered;
@@ -1144,9 +1262,15 @@ export class ConnectedGatewaySession {
    * server differ in what they hand `ssh`, which is the tunnel owner's business
    * and validated there; from here they are one path.
    */
-  private async openTransport(): Promise<
+  private async openTransport(generation: number): Promise<
     | { ok: true; port: number }
-    | { ok: false; failure: SourceFailureClass; message: string }
+    | {
+        ok: false;
+        outcome: 'failed';
+        failure: SourceFailureClass;
+        message: string;
+      }
+    | ConnectionCancelled
   > {
     const transport = this.record.transport;
 
@@ -1172,9 +1296,12 @@ export class ConnectedGatewaySession {
         const bootstrap = await this.deps.resolveCredential(transport, {
           exec: this.deps.remoteExec,
         });
+        // Before the port is remembered: the record may be gone by now.
+        if (!this.isCurrent(generation)) return CANCELLED;
         if (!bootstrap.ok) {
           return {
             ok: false,
+            outcome: 'failed',
             failure: BOOTSTRAP_FAILURE_TO_SOURCE_FAILURE[bootstrap.failure],
             message: bootstrap.message,
           };
@@ -1194,10 +1321,27 @@ export class ConnectedGatewaySession {
     }
 
     const opened = await this.deps.openTunnel(tunnelTargetFor(tunnelTransport));
+    if (!this.isCurrent(generation)) {
+      /*
+       * The tunnel came up after this attempt was overtaken, so nothing else
+       * knows it exists: the teardown that overtook it ran while `this.tunnel`
+       * was still empty. Left here, it was an `ssh -N -L` child holding a
+       * forward open on the operator's server for the life of the app.
+       */
+      if (opened.ok) {
+        try {
+          await opened.tunnel.close();
+        } catch {
+          // The tunnel owner already bounds and force-kills its own child.
+        }
+      }
+      return CANCELLED;
+    }
     if (!opened.ok) {
       this.pendingBootstrapFacts = null;
       return {
         ok: false,
+        outcome: 'failed',
         failure: TUNNEL_FAILURE_TO_SOURCE_FAILURE[opened.failure.class],
         message: opened.failure.message,
       };
@@ -1324,9 +1468,17 @@ export class ConnectedGatewaySession {
       deviceToken: string | null;
       keypair: OCDeviceKeypair;
       sharedSecret: string | null;
-    }
+    },
+    generation: number
   ): Promise<
-    { ok: true } | { ok: false; failure: SourceFailureClass; message: string }
+    | { ok: true }
+    | {
+        ok: false;
+        outcome: 'failed';
+        failure: SourceFailureClass;
+        message: string;
+      }
+    | ConnectionCancelled
   > {
     this.setPhase('pairing');
 
@@ -1359,8 +1511,28 @@ export class ConnectedGatewaySession {
       client.deviceToken = credential.deviceToken;
     }
 
+    /*
+     * Overtaken during a handshake. The teardown that overtook this attempt
+     * closed this client if it was still the one on `this`, but a socket the
+     * client opened after that close has no other owner, so it is closed here
+     * as well; a second close of a closed client is a no-op. Nothing the
+     * source answered is kept: no credential is written for a record the
+     * operator may just have removed, and no authority is recorded.
+     */
+    const abandon = (): ConnectionCancelled => {
+      sharedSecret = null;
+      config.token = undefined;
+      try {
+        client.disconnect();
+      } catch {
+        // Already closed, which is the outcome this wanted.
+      }
+      return CANCELLED;
+    };
+
     let requested: SourceAuthority = this.grantedAuthority;
     let opened = await this.openHandshake(client);
+    if (!this.isCurrent(generation)) return abandon();
     if (!opened.ok && opened.answered && requested === 'write') {
       /*
        * Asking for less than the source approved is always allowed, so a
@@ -1380,6 +1552,7 @@ export class ConnectedGatewaySession {
       requested = 'read';
       config.scopes = [...SCOPES_FOR_AUTHORITY.read];
       opened = await this.openHandshake(client);
+      if (!this.isCurrent(generation)) return abandon();
     }
     if (!opened.ok) {
       sharedSecret = null;
@@ -1489,13 +1662,19 @@ export class ConnectedGatewaySession {
   private refusedHandshake(
     sentence: string | null,
     presentedStoredCredential: boolean
-  ): { ok: false; failure: SourceFailureClass; message: string } {
+  ): {
+    ok: false;
+    outcome: 'failed';
+    failure: SourceFailureClass;
+    message: string;
+  } {
     const failure = classifyHandshakeFailure(sentence);
     const said = sentence === null ? '' : ` The source said "${sentence}".`;
 
     if (failure !== 'auth-rejected') {
       return {
         ok: false,
+        outcome: 'failed',
         failure,
         message: `Exawatt reached this source but the Gateway refused the connection.${said}`,
       };
@@ -1504,6 +1683,7 @@ export class ConnectedGatewaySession {
     if (!presentedStoredCredential) {
       return {
         ok: false,
+        outcome: 'failed',
         failure,
         message: `This source refused to pair the Exawatt device.${said}`,
       };
@@ -1512,6 +1692,7 @@ export class ConnectedGatewaySession {
     this.deps.store.clearDeviceToken(this.record.id);
     return {
       ok: false,
+      outcome: 'failed',
       failure,
       message: `This source refused the device credential Exawatt saved for it.${said} Exawatt has discarded that credential; connect again to pair a new device, which reads this source's Gateway secret one more time.`,
     };
@@ -1535,15 +1716,28 @@ export class ConnectedGatewaySession {
   private async renegotiate(
     client: ConnectedGatewayClient,
     config: OCClientConfig,
-    authority: SourceAuthority
+    authority: SourceAuthority,
+    generation: number
   ): Promise<
     | { ok: true }
     | {
         ok: false;
+        outcome: 'refused';
         sentence: string | null;
         refusal: 'approval-required' | 'refused';
+        /** False when the socket closed or timed out without an answer. */
+        answered: boolean;
       }
+    | ConnectionCancelled
   > {
+    /*
+     * The session may have been disconnected or reconnected while the caller
+     * awaited its credential. Cycling this client then would reopen a socket
+     * the teardown already closed and nothing would ever close again, so an
+     * overtaken cycle stops, and one overtaken mid-handshake closes the
+     * socket it reopened.
+     */
+    if (!this.isCurrent(generation)) return CANCELLED;
     config.scopes = [...SCOPES_FOR_AUTHORITY[authority]];
     try {
       client.disconnect();
@@ -1552,6 +1746,15 @@ export class ConnectedGatewaySession {
       // is the point of this call.
     }
     const opened = await this.openHandshake(client);
+    const abandon = (): ConnectionCancelled => {
+      try {
+        client.disconnect();
+      } catch {
+        // Already closed, which is the outcome this wanted.
+      }
+      return CANCELLED;
+    };
+    if (!this.isCurrent(generation)) return abandon();
     if (opened.ok) {
       /*
        * A new socket carries no subscription, so the stream has to be asked
@@ -1561,13 +1764,16 @@ export class ConnectedGatewaySession {
        * for would leave their first reply to appear on the next authoritative
        * read. Asked again, never resumed: the Gateway replays nothing.
        */
-      await this.followConversations();
+      await this.followConversations(generation);
+      if (!this.isCurrent(generation)) return abandon();
       return { ok: true };
     }
     return {
       ok: false,
+      outcome: 'refused',
       sentence: opened.sentence,
       refusal: classifyAuthorityRefusal(opened.sentence ?? ''),
+      answered: opened.answered,
     };
   }
 
@@ -1610,27 +1816,46 @@ export class ConnectedGatewaySession {
    * configured Agent, plus `cron.list` and `status`. The result replaces the
    * cached topology outright.
    */
-  private async discover(announcePhase = true): Promise<SnapshotResult> {
+  private async discover(
+    announcePhase: boolean,
+    generation: number
+  ): Promise<SnapshotResult> {
     if (announcePhase) this.setPhase('discovering');
     const observedAt = this.deps.now();
+
+    /*
+     * Every read goes to whatever client is current, so a read issued after
+     * this observation was overtaken would land on the next connection, and
+     * its answer would be committed over a session that has moved on. Checked
+     * after every await rather than once at the end for that reason.
+     */
+    const overtaken = new Error('overtaken');
+    const read = async (method: string, params?: unknown): Promise<unknown> => {
+      const value = await this.callGateway(method, params);
+      if (!this.isCurrent(generation)) throw overtaken;
+      return value;
+    };
 
     let agentsList: unknown;
     const sessionLists: { nativeAgentId: string; payload: unknown }[] = [];
     let cronList: unknown;
     let statusPayload: unknown;
     try {
-      agentsList = await this.callGateway('agents.list');
+      agentsList = await read('agents.list');
       for (const nativeAgentId of readNativeAgentIds(agentsList)) {
         sessionLists.push({
           nativeAgentId,
-          payload: await this.callGateway('sessions.list', {
+          payload: await read('sessions.list', {
             agentId: nativeAgentId,
           }),
         });
       }
-      cronList = await this.callGateway('cron.list');
-      statusPayload = await this.callGateway('status');
+      cronList = await read('cron.list');
+      statusPayload = await read('status');
     } catch (error) {
+      // A read that failed because the teardown closed its socket is the same
+      // cancellation, and must not be reported as a Gateway that went down.
+      if (error === overtaken || !this.isCurrent(generation)) return CANCELLED;
       return {
         ok: false,
         outcome: 'failed',
@@ -1926,15 +2151,16 @@ export class ConnectedGatewaySession {
 
   private async attemptReconnect(): Promise<void> {
     if (this.detached) return;
+    const generation = this.generation;
     await this.teardownConnection();
-    if (this.detached) return;
+    if (!this.isCurrent(generation)) return;
 
-    const result = await this.establish();
+    const result = await this.establish(generation);
     if (result.ok) {
       this.reconnectAttempts = 0;
       return;
     }
-    if (this.detached) return;
+    if (result.outcome === 'cancelled' || !this.isCurrent(generation)) return;
     if (result.outcome === 'identity-drift') {
       // Drift is not a transport fault, so retrying cannot fix it. The session
       // stops and the operator decides.

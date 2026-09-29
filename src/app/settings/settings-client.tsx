@@ -1,7 +1,14 @@
 'use client';
 
 import { PowerSettings } from './power-settings';
-import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
+import {
+  Suspense,
+  useState,
+  useCallback,
+  useEffect,
+  useSyncExternalStore,
+} from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -189,6 +196,19 @@ interface SystemHotkeyTable {
   verified: boolean;
 }
 
+/**
+ * `/settings?source=<id>`: where Manage goes from a Connect dialog opened
+ * anywhere else. Its own Suspense leaf, so reading the query string never
+ * holds back the rest of Settings.
+ */
+function ConnectionFromLink({ onOpen }: { onOpen: (id: string) => void }) {
+  const source = useSearchParams()?.get('source') ?? null;
+  useEffect(() => {
+    if (source) onOpen(source);
+  }, [onOpen, source]);
+  return null;
+}
+
 export function SettingsClient() {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>('agent-sources');
@@ -204,6 +224,18 @@ export function SettingsClient() {
    * registry follows the bridge's change channel.
    */
   const [connectOpen, setConnectOpen] = useState(false);
+  /**
+   * A saved server someone asked to see: Manage in the Connect dialog, or a
+   * link to `/settings?source=<id>`. An object, so asking for the same server
+   * twice selects it twice.
+   */
+  const [openConnection, setOpenConnection] = useState<{ id: string } | null>(
+    null
+  );
+  const openConnectionById = useCallback((id: string) => {
+    setActiveSection('agent-sources');
+    setOpenConnection({ id });
+  }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedKeys, setRecordedKeys] = useState<KeyBinding[]>([]);
   const [bindingError, setBindingError] = useState<string | null>(null);
@@ -423,6 +455,7 @@ export function SettingsClient() {
         {activeSection === 'agent-sources' && (
           <AgentSourcesSettings
             onConnectExistingAgent={() => setConnectOpen(true)}
+            openConnection={openConnection}
           />
         )}
         {activeSection === 'privacy' && <PrivacySettings />}
@@ -617,9 +650,16 @@ export function SettingsClient() {
       <ConnectSourceDialog
         open={connectOpen}
         onOpenChange={setConnectOpen}
-        // The operator is already where saved servers are managed.
-        onManageServer={() => setConnectOpen(false)}
+        // The operator is already where saved servers are managed, so
+        // Manage closes the dialog onto that server's own detail.
+        onManageServer={sourceId => {
+          setConnectOpen(false);
+          openConnectionById(sourceId);
+        }}
       />
+      <Suspense fallback={null}>
+        <ConnectionFromLink onOpen={openConnectionById} />
+      </Suspense>
     </main>
   );
 }

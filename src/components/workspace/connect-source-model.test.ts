@@ -103,7 +103,13 @@ const LOADED: readonly ConnectAction[] = [
   {
     type: 'servers-loaded',
     aliases: ALIASES,
-    connected: [{ alias: 'cinder-box', agentNames: ['Scout', 'reddit'] }],
+    connected: [
+      {
+        alias: 'cinder-box',
+        sourceId: 'source-cinder',
+        agentNames: ['Scout', 'reddit'],
+      },
+    ],
     configPresent: true,
     incompleteIncludes: false,
   },
@@ -159,6 +165,25 @@ describe('Connect: listing servers', () => {
     const { rows, total } = visibleServerRows(state);
     expect(rows.map(row => row.alias)).toEqual(['beacon-box']);
     expect(total).toBe(3);
+  });
+
+  it('tells a list that failed to load apart from an empty one', () => {
+    const failed = run([{ type: 'servers-unreadable' }]);
+    expect(failed.servers).toMatchObject({ loaded: true, failed: true });
+    // Nothing is known about the configuration, so nothing switches the
+    // operator to describing a server on their behalf.
+    expect(failed.manual).toBe(false);
+
+    const reloading = run([{ type: 'servers-reloading' }], failed);
+    expect(reloading.servers).toMatchObject({ loaded: false, failed: false });
+    expect(run(LOADED, reloading).servers.failed).toBe(false);
+  });
+
+  it('names the saved server behind a Connected row', () => {
+    const row = visibleServerRows(run(LOADED)).rows.find(
+      entry => entry.alias === 'cinder-box'
+    );
+    expect(row).toMatchObject({ state: 'connected', sourceId: 'source-cinder' });
   });
 
   it('offers manual entry as the path when no SSH config exists', () => {
