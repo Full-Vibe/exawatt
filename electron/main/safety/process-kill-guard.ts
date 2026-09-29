@@ -103,12 +103,12 @@ export interface ProcessKillGuardDependencies {
 }
 
 /** Part of a command the guard did not judge, and why. */
-export interface UndecidedInvocation {
+interface UndecidedInvocation {
   invocation: string;
   cause: string;
 }
 
-export interface ProcessKillGuardVerdict {
+interface ProcessKillGuardVerdict {
   /** The refusal the agent reads, or null to let the command run. */
   refusal: string | null;
   /** Invocations the guard could not judge. With a refusal, the guard refused
@@ -260,7 +260,7 @@ export function shellWords(text: string): string[] | null {
  * own commands, and the word holding it is marked dynamic. Null when quoting
  * or a substitution is unbalanced: the shell refuses such a command itself.
  */
-export function simpleCommands(text: string): Word[][] | null {
+function simpleCommands(text: string): Word[][] | null {
   const out: Word[][] = [];
   return scan(text, 0, null, out) === null ? null : out;
 }
