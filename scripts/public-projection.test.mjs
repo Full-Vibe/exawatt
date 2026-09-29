@@ -19,6 +19,7 @@ import {
   projectPublicHistory,
   projectPublicCatchup,
   resolveEntryBoundary,
+  runWithInput,
 } from './lib/public-projection.mjs';
 import {
   git as hermeticGit,
@@ -32,6 +33,53 @@ import {
   readForbiddenVocabulary,
   readPartnerConversationTerms,
 } from './public-content-scan.mjs';
+
+// BUG-140. The input is far larger than any socket buffer, so the write is
+// still queued when the child closes its stdin: the EPIPE that used to escape
+// as an unhandled `error` event, and kill the process, happens on every run.
+const UNREAD_INPUT = Buffer.alloc(16 * 1024 * 1024, 0x61);
+const CLOSES_STDIN_THEN_EXITS = code =>
+  `exec 0<&-; printf 'refused the input' >&2; sleep 0.2; exit ${code}`;
+
+test('a child that closes stdin and fails reports its own failure, not EPIPE', async () => {
+  await assert.rejects(
+    runWithInput('sh', ['-c', CLOSES_STDIN_THEN_EXITS(3)], {
+      input: UNREAD_INPUT,
+    }),
+    error => {
+      assert.match(error.message, /\(code 3, signal none\): refused the input$/u);
+      assert.doesNotMatch(error.message, /EPIPE/u);
+      return true;
+    }
+  );
+});
+
+test('a child that closes stdin yet exits 0 is refused, not taken as success', async () => {
+  await assert.rejects(
+    runWithInput('sh', ['-c', CLOSES_STDIN_THEN_EXITS(0)], {
+      input: UNREAD_INPUT,
+    }),
+    /exited 0 without consuming its input \(EPIPE\)/u
+  );
+});
+
+test('a child that reads no input gets no stdin to race against', async () => {
+  // `read-tree --empty` and `write-tree` exit without reading: no pipe is
+  // opened, so there is no write for an early exit to break.
+  for (let run = 0; run < 20; run += 1) {
+    const stdout = await runWithInput('sh', ['-c', 'printf ok'], {
+      input: Buffer.alloc(0),
+    });
+    assert.equal(stdout.toString('utf8'), 'ok');
+  }
+});
+
+test('stdout is read to the end, not to the exit event', async () => {
+  const input = Buffer.alloc(4 * 1024 * 1024, 0x62);
+  const stdout = await runWithInput('cat', [], { input });
+  assert.equal(stdout.length, input.length);
+  assert.ok(stdout.equals(input));
+});
 
 test('filter-repo many-to-one commit maps choose a deterministic source set', () => {
   const filtered = 'f'.repeat(40);
@@ -308,18 +356,7 @@ test('an earlier source commit projects to an ancestor of the later projection',
   }
 });
 
-// BUG-140: on Linux a git child that exits early raises an unhandled EPIPE
-// from `gitInput` and kills the process before the child's own failure can
-// be read (first seen in CI run 34816818621). Asserted on macOS until the
-// projector handles its stdin error.
-test(
-  'the published prefix survives public add, edit, rename, delete, and revert',
-  {
-    skip:
-      process.platform !== 'darwin' &&
-      'BUG-140: gitInput raises an unhandled EPIPE on Linux',
-  },
-  async () => {
+test('the published prefix survives public add, edit, rename, delete, and revert', async () => {
   const fixture = sourceFixture();
   try {
     const epochProjection = await projectPublicHistory({
@@ -403,8 +440,7 @@ test(
   } finally {
     fixture.cleanup();
   }
-  }
-);
+});
 
 test('continuous projection refuses an unreviewed merge DAG', async () => {
   const fixture = sourceFixture();

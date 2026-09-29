@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { finished } from 'node:stream';
 import { promisify } from 'node:util';
 
 import {
@@ -174,36 +175,11 @@ export function parseBatchBlobOutput(buffer, expectedObjects) {
 async function readBlobBatch(repo, objects) {
   const expected = [...new Set(objects)];
   if (expected.length === 0) return new Map();
-  const child = spawn('git', ['cat-file', '--batch'], {
+  const stdout = await gitInput(['cat-file', '--batch'], {
     cwd: repo,
-    stdio: ['pipe', 'pipe', 'pipe'],
+    input: Buffer.from(expected.join('\n') + '\n', 'utf8'),
   });
-  const stdout = [];
-  const stderr = [];
-  child.stdout.on('data', chunk => stdout.push(chunk));
-  child.stderr.on('data', chunk => stderr.push(chunk));
-  const complete = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          '[public-projection] git cat-file --batch failed (code ' +
-            (code ?? 'none') +
-            ', signal ' +
-            (signal ?? 'none') +
-            '): ' +
-            Buffer.concat(stderr).toString('utf8').trim()
-        )
-      );
-    });
-  });
-  child.stdin.end(expected.join('\n') + '\n');
-  await complete;
-  return parseBatchBlobOutput(Buffer.concat(stdout), expected);
+  return parseBatchBlobOutput(stdout, expected);
 }
 
 /**
@@ -441,37 +417,86 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-async function gitInput(args, { cwd, input, env = process.env } = {}) {
-  const child = spawn('git', args, {
+/**
+ * Runs `command` with `input` on its stdin and resolves its stdout once the
+ * child has exited AND every stdio stream has settled. The child's exit status
+ * is the authority; stdin is only a delivery channel (BUG-140):
+ *
+ * - A child can exit before the parent writes, or close stdin before reading
+ *   it all. The write then fails with `EPIPE`, which as an unhandled `error`
+ *   event killed the whole process before the child's own exit status and
+ *   stderr could be read. The error is held here instead, and a non-zero exit
+ *   reports the child's real failure.
+ * - A zero exit with a failed write is a contradiction, not a success: every
+ *   command given input here reads stdin to EOF before it acts, so a child
+ *   that reports success on input it never received is refused.
+ * - No input means no stdin pipe at all (`ignore`), so a command that reads
+ *   nothing (`read-tree --empty`, `write-tree`) has no write to lose a race.
+ * - It settles on `close`, not `exit`: `exit` can fire while stdout still holds
+ *   unread bytes, which would truncate an answer instead of failing it.
+ */
+export async function runWithInput(
+  command,
+  args,
+  { cwd, input, env = process.env, label = command + ' ' + args[0] } = {}
+) {
+  if (input !== undefined && !Buffer.isBuffer(input)) {
+    fail(label + ' input must be a Buffer');
+  }
+  const writes = input !== undefined && input.length > 0;
+  const child = spawn(command, args, {
     cwd,
     env,
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio: [writes ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
   const stdout = [];
   const stderr = [];
   child.stdout.on('data', chunk => stdout.push(chunk));
   child.stderr.on('data', chunk => stderr.push(chunk));
-  const complete = new Promise((resolve, reject) => {
+  let stdinError = null;
+  const stdinSettled = writes
+    ? new Promise(resolve => {
+        child.stdin.on('error', error => {
+          stdinError ??= error;
+        });
+        finished(child.stdin, () => resolve());
+      })
+    : Promise.resolve();
+  const exited = new Promise((resolve, reject) => {
     child.once('error', reject);
-    child.once('exit', (code, signal) => {
-      if (code === 0) return resolve();
-      reject(
-        new Error(
-          '[public-projection] git ' +
-            args[0] +
-            ' failed (code ' +
-            (code ?? 'none') +
-            ', signal ' +
-            (signal ?? 'none') +
-            '): ' +
-            Buffer.concat(stderr).toString('utf8').trim()
-        )
-      );
-    });
+    child.once('close', (code, signal) => resolve({ code, signal }));
   });
-  child.stdin.end(input);
-  await complete;
+  if (writes) child.stdin.end(input);
+  const { code, signal } = await exited;
+  await stdinSettled;
+  const detail = Buffer.concat(stderr).toString('utf8').trim();
+  if (code !== 0) {
+    throw new Error(
+      '[public-projection] ' +
+        label +
+        ' failed (code ' +
+        (code ?? 'none') +
+        ', signal ' +
+        (signal ?? 'none') +
+        '): ' +
+        detail
+    );
+  }
+  if (stdinError) {
+    throw new Error(
+      '[public-projection] ' +
+        label +
+        ' exited 0 without consuming its input (' +
+        (stdinError.code ?? stdinError.message) +
+        '): ' +
+        detail
+    );
+  }
   return Buffer.concat(stdout);
+}
+
+function gitInput(args, options = {}) {
+  return runWithInput('git', args, { ...options, label: 'git ' + args[0] });
 }
 
 async function hashBlob(repo, contents) {
@@ -490,11 +515,7 @@ async function writeTree(repo, outputs) {
   await rm(index, { force: true });
   const env = { ...process.env, GIT_INDEX_FILE: index };
   try {
-    await gitInput(['read-tree', '--empty'], {
-      cwd: repo,
-      input: Buffer.alloc(0),
-      env,
-    });
+    await gitInput(['read-tree', '--empty'], { cwd: repo, env });
     const records = outputs.map(output =>
       Buffer.from(`${output.mode} ${output.object}\t${output.path}\0`, 'utf8')
     );
@@ -503,13 +524,7 @@ async function writeTree(repo, outputs) {
       input: Buffer.concat(records),
       env,
     });
-    return (
-      await gitInput(['write-tree'], {
-        cwd: repo,
-        input: Buffer.alloc(0),
-        env,
-      })
-    )
+    return (await gitInput(['write-tree'], { cwd: repo, env }))
       .toString('utf8')
       .trim();
   } finally {
@@ -604,32 +619,11 @@ async function createCommit(
  */
 async function batchCheck(repo, requests) {
   if (requests.length === 0) return [];
-  const child = spawn('git', ['cat-file', '--batch-check'], {
+  const stdout = await gitInput(['cat-file', '--batch-check'], {
     cwd: repo,
-    stdio: ['pipe', 'pipe', 'pipe'],
+    input: Buffer.from(requests.join('\n') + '\n', 'utf8'),
   });
-  const stdout = [];
-  const stderr = [];
-  child.stdout.on('data', chunk => stdout.push(chunk));
-  child.stderr.on('data', chunk => stderr.push(chunk));
-  const complete = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', code => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          '[public-projection] git cat-file --batch-check failed: ' +
-            Buffer.concat(stderr).toString('utf8').trim()
-        )
-      );
-    });
-  });
-  child.stdin.end(requests.join('\n') + '\n');
-  await complete;
-  const lines = Buffer.concat(stdout)
+  const lines = stdout
     .toString('utf8')
     .split('\n')
     .filter(line => line !== '');

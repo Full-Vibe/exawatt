@@ -612,15 +612,30 @@ function resolvePointer(document, pointer, path) {
  *
  *   "exawatt:public-variant": {
  *     "omit": { "/scripts/invite:issue": "why this entry is company-only" },
+ *     "without": {
+ *       "/scripts/test:agent-delivery": {
+ *         "why": "…",
+ *         "arguments": ["scripts/company-only.test.mjs"]
+ *       }
+ *     },
  *     "replace": {
- *       "/scripts/test:agent-delivery": { "why": "…", "value": "…" }
+ *       "/scripts/eval:context-labels": { "why": "…", "value": "…" }
  *     }
  *   }
  *
+ * `without` removes named space-separated arguments from a command, so the
+ * public command is DERIVED from the private one: a suite added privately
+ * reaches the public command with no second edit, and only a private argument
+ * has to be named. A hand-copied `replace` of a growing list drifted exactly
+ * that way (BUG-233: six public suites went unregistered and public CI failed
+ * on every commit). Prefer `without` whenever the public value is the private
+ * one minus some arguments; `replace` is for a value that genuinely differs.
+ *
  * The judgement still lives in the private file, reviewed in the private diff,
- * and the renderer stays mechanical: resolve, delete, set, drop the directive
- * member itself. Every pointer must match, so a directive cannot rot into a
- * silent no-op while the document moves out from under it.
+ * and the renderer stays mechanical: resolve, delete, filter, set, drop the
+ * directive member itself. Every pointer, and every argument `without` names,
+ * must match, so a directive cannot rot into a silent no-op while the document
+ * moves out from under it.
  */
 export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
   let document;
@@ -643,6 +658,41 @@ export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
   for (const pointer of Object.keys(directive.omit ?? {})) {
     const { container, key } = resolvePointer(document, pointer, path);
     delete container[key];
+  }
+  for (const [pointer, entry] of Object.entries(directive.without ?? {})) {
+    const { container, key } = resolvePointer(document, pointer, path);
+    const removed = entry?.arguments;
+    if (
+      !Array.isArray(removed) ||
+      removed.length === 0 ||
+      removed.some(argument => typeof argument !== 'string' || argument === '')
+    ) {
+      failDirective(
+        path + ' public-variant without needs non-empty "arguments": ' + pointer
+      );
+    }
+    if (typeof container[key] !== 'string') {
+      failDirective(
+        path + ' public-variant without applies only to a command: ' + pointer
+      );
+    }
+    const words = container[key].split(' ');
+    const unmatched = removed.filter(
+      (argument, index) =>
+        removed.indexOf(argument) !== index ||
+        words.filter(word => word === argument).length !== 1
+    );
+    if (unmatched.length > 0) {
+      failDirective(
+        path +
+          ' public-variant without names arguments ' +
+          pointer +
+          ' does not have exactly once: ' +
+          unmatched.join(', ')
+      );
+    }
+    const kept = words.filter(word => !removed.includes(word));
+    container[key] = kept.join(' ');
   }
   for (const [pointer, entry] of Object.entries(directive.replace ?? {})) {
     const { container, key } = resolvePointer(document, pointer, path);

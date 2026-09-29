@@ -301,6 +301,21 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-09-28, BUG-233 and BUG-140: **the landing checks now fail a change
+  that would fail public CI.** Public CI had failed every commit for four
+  days while every private check passed. The public `test:agent-delivery` was
+  a hand-copied list, and six new suites never reached it. It is now derived
+  from the private command minus the named private suites, and
+  `script-layout.test.mjs` runs its rules against the rendered public tree as
+  well. The same runs showed the projector's intermittent Linux `EPIPE`. A
+  git child that exited before the parent wrote its stdin killed the process;
+  it hit a different test on each run because it lost a scheduling race, not
+  because any one test was broken. The fix removes the race at the helper
+  (no stdin pipe for empty input, stdin errors held, the child's exit status
+  decides) instead of skipping the tests it happened to hit. **A failure that
+  moves between tests points at a shared helper; find the helper instead of
+  skipping each test it hits.**
+
 - 2026-09-24, BUG-221 (sweep) and BUG-222: **every eval now waits for
   hydration, and none counts output a redraw can repeat.** A read-only audit
   of about 70 scripts found three groups. (1) 15 sites dispatched

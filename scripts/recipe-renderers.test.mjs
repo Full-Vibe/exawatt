@@ -428,6 +428,43 @@ test('a JSON document declares its public variant in a reserved member', () => {
   );
 });
 
+test('a JSON without directive derives a public command from the private one', () => {
+  const document = arguments_ =>
+    JSON.stringify({
+      scripts: { suite: 'node --test a.test.mjs private.test.mjs b.test.mjs' },
+      'exawatt:public-variant': {
+        without: {
+          '/scripts/suite': { why: 'private suite', arguments: arguments_ },
+        },
+      },
+    });
+  assert.equal(
+    JSON.parse(
+      applyPublicVariantJsonDirectives(document(['private.test.mjs']), {
+        path: 'fixture.json',
+      })
+    ).scripts.suite,
+    'node --test a.test.mjs b.test.mjs'
+  );
+  // A stale or repeated argument is a judgement that no longer matches.
+  for (const [removed, expected] of [
+    [['gone.test.mjs'], /does not have exactly once: gone\.test\.mjs/u],
+    [
+      ['private.test.mjs', 'private.test.mjs'],
+      /does not have exactly once: private\.test\.mjs/u,
+    ],
+    [[], /needs non-empty "arguments"/u],
+  ]) {
+    assert.throws(
+      () =>
+        applyPublicVariantJsonDirectives(document(removed), {
+          path: 'fixture.json',
+        }),
+      expected
+    );
+  }
+});
+
 test('a JSON public-variant directive fails closed', () => {
   const cases = [
     ['{}', /must declare its public variant/u],

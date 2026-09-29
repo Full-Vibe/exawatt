@@ -695,18 +695,7 @@ test('a deterministic catch-up refusal names the commit, the check, and the exac
   }
 });
 
-// BUG-140: on Linux a git child that exits early raises an unhandled EPIPE
-// from `gitInput` and kills the process before the child's own failure can
-// be read (first seen in CI run 34816818621). Asserted on macOS until the
-// projector handles its stdin error.
-test(
-  'a stale or missing source lock catches up integrated master before a candidate',
-  {
-    skip:
-      process.platform !== 'darwin' &&
-      'BUG-140: gitInput raises an unhandled EPIPE on Linux',
-  },
-  async () => {
+test('a stale or missing source lock catches up integrated master before a candidate', async () => {
   const fixture = createPrivateFixture('exawatt-projector-missing-lock-');
   try {
     const remote = fixture.configurePublicRemote(fixture.publicRemote());
@@ -736,8 +725,7 @@ test(
   } finally {
     fixture.cleanup();
   }
-  }
-);
+});
 
 for (const pushState of ['accepted', 'rejected']) {
   test(`a ${pushState} public push reports source-lock append failure truthfully`, async () => {
