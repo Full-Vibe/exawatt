@@ -1,3 +1,4 @@
+import type { PtyPowerControl } from '@exawatt/core/desktop-bridge';
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -7,6 +8,86 @@ import { buildHarnessCommand } from './harness-command';
 import { harnessDescriptor } from './harness-registry';
 
 describe('buildHarnessCommand', () => {
+  it('applies verified sleep control to fresh and exact-resume invocations only', () => {
+    const powerControl: PtyPowerControl = {
+      state: 'applied-at-launch',
+      mechanism: 'codex-prevent-idle-sleep',
+      executable: '/opt/codex verified',
+      version: '0.156.1',
+      observedAt: 1,
+    };
+    for (const resume of [false, true]) {
+      const command = buildHarnessCommand(
+        'codex',
+        'session123',
+        resume,
+        powerControl.executable,
+        undefined,
+        'prompt',
+        'model',
+        'high',
+        { powerControl }
+      );
+      expect(command).toContain(
+        "'/opt/codex verified' --disable prevent_idle_sleep"
+      );
+      expect(command).not.toContain('--no-daemon');
+      if (resume) expect(command).toContain('resume session123');
+    }
+    expect(() =>
+      buildHarnessCommand(
+        'claude',
+        null,
+        false,
+        powerControl.executable,
+        undefined,
+        'prompt',
+        undefined,
+        undefined,
+        { powerControl }
+      )
+    ).toThrow('evidence');
+    expect(() =>
+      buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        '/different/codex',
+        undefined,
+        'prompt',
+        undefined,
+        undefined,
+        { powerControl }
+      )
+    ).toThrow('evidence');
+    expect(() =>
+      buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        powerControl.executable,
+        undefined,
+        'prompt',
+        undefined,
+        undefined,
+        { powerControl: { ...powerControl, version: '0.156.2' } }
+      )
+    ).toThrow('evidence');
+    expect(
+      buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        undefined,
+        undefined,
+        'prompt',
+        undefined,
+        undefined,
+        { powerControl: { state: 'unknown', reason: 'probe failed' } }
+      )
+    ).not.toContain('--disable');
+  });
+
   it('assigns and resumes exact Claude identities in the YOLO default', () => {
     expect(
       buildHarnessCommand(

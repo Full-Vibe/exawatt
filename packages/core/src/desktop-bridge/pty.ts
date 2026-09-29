@@ -40,6 +40,20 @@ export interface PtyCreateOptions {
   effort?: string;
 }
 
+/** Evidence about source-owned sleep control for ONE process, not a live
+ * enforcement guarantee. A native settings action can override launch flags. */
+export type PtyPowerControl =
+  | {
+      state: 'applied-at-launch';
+      mechanism: 'codex-prevent-idle-sleep';
+      executable: string;
+      version: string;
+      observedAt: number;
+    }
+  | { state: 'uncontrolled'; reason: string }
+  | { state: 'unknown'; reason: string; executable?: string; version?: string }
+  | { state: 'not-applicable'; reason: 'shell' };
+
 /**
  * What the PTY owner knows about one process: the answer to a create or a
  * model change. A row of `pty:list` adds main's live observations to it
@@ -71,6 +85,9 @@ export interface PtySessionRecord {
   /** Requested at launch; a native in-terminal change may differ. */
   launchModel?: string;
   launchEffort?: string;
+  /** Absent on pre-observation records: treat absence as unknown. Never
+   * inherit this evidence when replacing a process or resuming a Session. */
+  powerControl?: PtyPowerControl;
 }
 
 /** `blocked` is a reported operator gate (ENG-023 D4): a question, a

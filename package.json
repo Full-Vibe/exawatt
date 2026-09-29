@@ -118,6 +118,7 @@
     "eval:electron:grok-source": "node scripts/electron-grok-source-eval.mjs",
     "eval:electron:recents": "node scripts/electron-recent-conversations-eval.mjs",
     "eval:electron:startup": "node scripts/electron-startup-eval.mjs",
+    "eval:electron:source-power": "node scripts/electron-source-power-eval.mjs",
     "eval:electron:host-power": "node scripts/electron-host-power-eval.mjs",
     "eval:electron:appearance": "node scripts/electron-appearance-eval.mjs",
     "eval:electron:offline": "node scripts/electron-offline-eval.mjs",

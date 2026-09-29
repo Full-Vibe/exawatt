@@ -1,4 +1,5 @@
 import path from 'path';
+import type { PtyPowerControl } from '@exawatt/core/desktop-bridge';
 import type { AgentPermissionMode } from './session-manager';
 import type { AgentHarness } from './harness-types';
 import { harnessDescriptor } from './harness-registry';
@@ -26,6 +27,8 @@ export interface HarnessLaunchWiring {
   /** The directory the PTY is spawned in, passed on to sources that accept it
    *  as an argument so a login-shell `cd` cannot relocate the Session. */
   cwd?: string;
+  /** Main-owned probe evidence, never part of renderer launch options. */
+  powerControl?: PtyPowerControl;
 }
 
 export function buildHarnessCommand(
@@ -79,6 +82,21 @@ export function buildHarnessCommand(
   }
   const descriptor = harnessDescriptor(harness);
   const command = executable ? shellQuote(executable) : descriptor.id;
+  const power = wiring.powerControl;
+  const sleepControl = descriptor.sleepControl;
+  if (
+    power?.state === 'applied-at-launch' &&
+    (sleepControl?.kind !== power.mechanism ||
+      !sleepControl.verifiedVersions.includes(power.version) ||
+      executable !== power.executable)
+  ) {
+    throw new Error('Sleep-control evidence does not match this executable');
+  }
+  const controlledCommand =
+    power?.state === 'applied-at-launch' &&
+    sleepControl?.kind === power.mechanism
+      ? sleepControl.invocation(command)
+      : command;
   const launchAgentName = wiring.launchAgentName?.trim() ?? '';
   if (
     launchAgentName &&
@@ -91,7 +109,7 @@ export function buildHarnessCommand(
   }
   const configuredCommand = descriptor.launchAgent
     ? descriptor.launchAgent.invocation(
-        command,
+        controlledCommand,
         launchAgentName,
         descriptor.launchAgent.configuration(
           launchAgentName,
@@ -100,7 +118,7 @@ export function buildHarnessCommand(
           selectedEffort && selectedEffort !== 'auto' ? selectedEffort : null
         )
       )
-    : command;
+    : controlledCommand;
   const permissionInvocation = [
     configuredCommand,
     descriptor.permissionFlags(permissionMode),

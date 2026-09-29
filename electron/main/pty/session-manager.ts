@@ -27,6 +27,7 @@ import {
 } from './resume-candidates';
 import { ownerOfCodexCandidate } from './codex-identity-match';
 import { planLoginShell } from './login-shell';
+import { probeHarnessPowerControl } from './harness-power-control';
 import { OrderedWriteBuffer } from './ordered-write-buffer';
 import {
   type AgentHarness,
@@ -393,6 +394,23 @@ export class PtySessionManager extends EventEmitter {
         ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, options.harness)
         : undefined;
 
+    const launchEnvironment = {
+      ...process.env,
+      SHELL: shell,
+      TERM_PROGRAM: this.productName,
+    };
+    const powerControl = await probeHarnessPowerControl({
+      harness: options.harness,
+      shell,
+      cwd,
+      executable: testHarnessExecutable,
+      env: launchEnvironment,
+    });
+    const launchExecutable =
+      powerControl.state === 'applied-at-launch'
+        ? powerControl.executable
+        : testHarnessExecutable;
+
     // plain shell: interactive login shell. Harness: run its CLI through the
     // login shell so PATH (homebrew, nvm, ...) resolves like the user's
     // terminal; when the CLI exits the session ends. A resume command always
@@ -402,6 +420,7 @@ export class PtySessionManager extends EventEmitter {
     const opencodeLaunchAgentName =
       options.harness === 'opencode' ? `exawatt-${randomUUID()}` : null;
     const wiring = {
+      powerControl,
       ...(await this.subscribeToEventChannel(
         id,
         options.harness,
@@ -429,7 +448,7 @@ export class PtySessionManager extends EventEmitter {
                 options.harness,
                 harnessSessionId,
                 !!options.resumeSessionId,
-                testHarnessExecutable,
+                launchExecutable,
                 options.initialPrompt,
                 options.permissionMode,
                 options.model,
@@ -444,13 +463,8 @@ export class PtySessionManager extends EventEmitter {
         cols,
         rows,
         cwd: plan.cwd,
-        env: {
-          ...process.env,
-          // programs in the session must see the RESOLVED shell, not whatever
-          // environment the app was launched from
-          SHELL: shell,
-          TERM_PROGRAM: this.productName,
-        } as Record<string, string>,
+        // Probes and the process must see the same shell startup environment.
+        env: launchEnvironment as Record<string, string>,
       });
     } catch (error) {
       this.cleanupHarnessWiring(id);
@@ -475,6 +489,7 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
       launchModel: options.model,
       launchEffort: options.effort,
+      powerControl,
     };
 
     const statedTask =

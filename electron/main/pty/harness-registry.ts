@@ -94,6 +94,16 @@ export interface HarnessLaunchDescriptor {
    *  sources with no push mechanism, which simply launch unsubscribed. */
   eventChannel?: HarnessEventChannelBinding;
   launchAgent?: HarnessLaunchAgentBinding;
+  /** Source-owned assertion control, deliberately verified one version at a
+   * time. A recognized feature alone does not establish runtime behavior. */
+  sleepControl?:
+    | { kind: 'uncontrolled'; reason: string }
+    | {
+        kind: 'codex-prevent-idle-sleep';
+        verifiedVersions: readonly string[];
+        feature: string;
+        invocation: (invocation: string) => string;
+      };
   permissionFlags: (mode: AgentPermissionMode) => string;
   /** Pin the launch directory on the argv when the source accepts one. The PTY
    *  is already spawned there; a source that also takes the directory as an
@@ -166,6 +176,10 @@ function opencodeLaunchAgentConfiguration(
 const descriptors = {
   claude: {
     id: 'claude',
+    sleepControl: {
+      kind: 'uncontrolled',
+      reason: 'No supported Claude Code sleep-inhibitor opt-out is verified',
+    },
     source: {
       ...agentSourceDeclaration('claude'),
       executable: 'claude',
@@ -204,6 +218,13 @@ const descriptors = {
   },
   codex: {
     id: 'codex',
+    sleepControl: {
+      kind: 'codex-prevent-idle-sleep',
+      // Native TUI positive/negative assertion controls verified on macOS.
+      verifiedVersions: ['0.156.1'],
+      feature: 'prevent_idle_sleep',
+      invocation: invocation => `${invocation} --disable prevent_idle_sleep`,
+    },
     source: {
       ...agentSourceDeclaration('codex'),
       executable: 'codex',
