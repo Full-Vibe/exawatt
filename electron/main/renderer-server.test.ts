@@ -106,7 +106,14 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
         served.push(port);
       },
     },
-    probe: async () => ++probes >= answerAfter,
+    // Like the real port: only a live child of ours answers on it.
+    probe: async () => {
+      const child = spawned.at(-1)?.child;
+      if (!child || child.exitCode !== null || child.signalCode !== null) {
+        return false;
+      }
+      return ++probes >= answerAfter;
+    },
     // Never advances, so only the child's exit or an answer ends the wait;
     // each sleep yields a full event-loop turn so other work can run.
     clock: {
@@ -185,6 +192,45 @@ describe('createRendererServer', () => {
     await expect(started).rejects.toThrow('Packaged renderer exited with 1');
     expect(server.origin).toBeNull();
     expect(served).toEqual([]);
+  });
+
+  // The port can be answered by another program: one on the wildcard
+  // address, or one bound to loopback that made our child's bind fail. Its
+  // answer must never read as our renderer being ready.
+  it('never reads another program’s answer as the renderer being ready', async () => {
+    const { server, spawned, served } = harness({
+      probe: async () => true,
+    });
+
+    await expect(server.start()).rejects.toThrow(
+      'answered by another program'
+    );
+    expect(spawned).toEqual([]);
+    expect(served).toEqual([]);
+    expect(server.origin).toBeNull();
+  });
+
+  it('fails the start when its child died, even though the port answers', async () => {
+    let spawnedChild: FakeChild | null = null;
+    const { server, served } = harness({
+      spawn: () => {
+        spawnedChild = new FakeChild();
+        return spawnedChild as unknown as ChildProcess;
+      },
+      // Another program answers the moment our child is gone.
+      probe: async () => {
+        const child = spawnedChild;
+        if (!child) return false;
+        child.exit(1);
+        return true;
+      },
+    });
+
+    await expect(server.start()).rejects.toThrow(
+      'Packaged renderer exited with 1'
+    );
+    expect(served).toEqual([]);
+    expect(server.origin).toBeNull();
   });
 
   it('stops its child with SIGTERM and releases it only once it has closed', async () => {

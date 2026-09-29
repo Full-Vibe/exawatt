@@ -181,18 +181,27 @@ export function createRendererServer(
   const cacheRoot = () =>
     path.join(deps.userDataPath(), 'renderer-cache', deps.cacheNamespace);
 
-  async function waitForRenderer(url: string): Promise<void> {
+  /**
+   * Resolves once `child` answers. An answer is only ever read as the child's
+   * while the child is alive: the port can also be answered by another
+   * program (one that took it, or one on the wildcard address the child's
+   * loopback bind shadows), and a child that died on its bind leaves exactly
+   * that program answering.
+   */
+  async function waitForRenderer(
+    url: string,
+    child: ChildProcess
+  ): Promise<void> {
     const deadline = clock.now() + 30_000;
     while (clock.now() < deadline) {
       const ready = await probe(url);
-      if (ready) return;
       // A child killed by a signal has a null exit code and a signal code.
-      const child = rendererServer;
-      if (!child || child.exitCode !== null || child.signalCode !== null) {
+      if (child.exitCode !== null || child.signalCode !== null) {
         throw new Error(
-          `Packaged renderer exited with ${child?.exitCode ?? child?.signalCode}`
+          `Packaged renderer exited with ${child.exitCode ?? child.signalCode}`
         );
       }
+      if (ready) return;
       await clock.sleep(40);
     }
     throw new Error('Timed out starting the packaged renderer');
@@ -230,6 +239,13 @@ export function createRendererServer(
 
   /** Spawns the server child on `port` and resolves once it answers. */
   async function serve(standaloneRoot: string, port: number): Promise<string> {
+    const origin = `http://127.0.0.1:${port}`;
+    // Nothing of ours serves yet, so an answer now is another program's.
+    if (await probe(`${origin}/workspace`)) {
+      throw new Error(
+        `Packaged renderer port ${port} is answered by another program`
+      );
+    }
     const serverEntry = path.join(standaloneRoot, 'server.js');
     const launch = rendererServerLaunch(serverEntry);
     const child = spawn(execPath, launch.args, {
@@ -256,8 +272,7 @@ export function createRendererServer(
       if (deps.forwardStdout) writeStdout(data);
     });
     child.stderr?.on('data', data => writeStderr(data));
-    const origin = `http://127.0.0.1:${port}`;
-    await waitForRenderer(`${origin}/workspace`);
+    await waitForRenderer(`${origin}/workspace`, child);
     rendererOrigin = origin;
     served = { standaloneRoot, port };
     answered = true;

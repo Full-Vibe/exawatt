@@ -2708,6 +2708,24 @@ both Node 22 and Node 26 accept, so DOM tests run against jsdom's Storage
 whatever Node hosts them. After the fix: app-dom 897 passed, the full suite
 5,172 passed, under Node 26.
 
+### BUG-232 The renderer port could be lost to a read error or taken from another app
+
+Status: fixed · ENG-016 · found 2026-09-28 in the pre-0.1.14 review.
+
+Two failed reads in BUG-022's port policy looked like answers. A permission or
+I/O error on `renderer-port.json` read as "no record", so the launch re-homed
+and overwrote it, orphaning the origin's `localStorage`; it now serves a
+temporary OS port, writes nothing, and logs `renderer.port.inaccessible`
+(corrupt bytes still re-home). "Free" was a `127.0.0.1` bind, which macOS
+allows while another app listens on `0.0.0.0` or `::`, so Exawatt took that
+app's loopback traffic; free now also requires that nothing answers a
+connect, and a probe that fails for another reason is `unknown`: never kept,
+never counted as a fallback. The renderer server accepted any non-5xx answer
+before checking its child: it now refuses a port that answers before the
+child is spawned, and reads an answer as ready only while its child is alive.
+Residual: during the child's own boot, a program that grabs the port after
+that pre-spawn check can still answer first.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

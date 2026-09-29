@@ -23,11 +23,23 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  *    an OS-assigned port and keep the record. This launch starts with empty
  *    storage and what it writes does not carry over; the kept origin's storage
  *    is untouched and comes back the next launch the port is free.
- * 3. **Re-home.** The kept port has been taken for
+ * 3. **Temporary.** The record exists but cannot be read (a permission or I/O
+ *    error), or whether the kept port is free cannot be told: serve this
+ *    launch from an OS-assigned port and write nothing. A failed read is not
+ *    an empty one, so it neither counts as a fallback nor replaces the record
+ *    (the record IS the origin, and the storage under it, being preserved).
+ * 4. **Re-home.** The kept port has been taken for
  *    `REHOME_AFTER_CONSECUTIVE_FALLBACKS` launches in a row, or the record is
- *    missing or unreadable: choose a new port and keep it from then on. The
- *    old origin's storage is abandoned, which is honest only because it has
- *    already been unreachable that long (or was never readable at all).
+ *    missing or its bytes are not a record: choose a new port and keep it from
+ *    then on. The old origin's storage is abandoned, which is honest only
+ *    because it has already been unreachable that long (or was never readable
+ *    at all).
+ *
+ * "Free" means nothing answers a connection to `127.0.0.1:<port>` AND the
+ * address can be bound. The bind alone is not enough: macOS lets
+ * `127.0.0.1:<port>` bind while another program listens on `0.0.0.0` or `::`
+ * at that port, and the more specific bind then takes that program's loopback
+ * traffic.
  *
  * The record is written only once the server is answering on the port, so a
  * launch that fails to start never records a port nobody served. Size class
@@ -51,19 +63,30 @@ interface KeptPort {
 type KeptPortRead =
   | { status: 'absent' }
   | { status: 'ok'; value: KeptPort }
-  | { status: 'unreadable' };
+  /** The bytes were read and are not a record. */
+  | { status: 'corrupt' }
+  /** The bytes could not be read at all; what they say is unknown. */
+  | { status: 'inaccessible'; code: string };
 
 type PortDecision =
   | { kind: 'kept'; port: number; record: KeptPort }
   | { kind: 'new'; port: number }
-  | { kind: 'fallback'; port: number; record: KeptPort };
+  | { kind: 'fallback'; port: number; record: KeptPort }
+  | { kind: 'temporary'; port: number };
+
+/**
+ * What a probe of one loopback port found. `unknown` is a probe that failed
+ * for a reason other than the port's state, and is never read as either
+ * answer.
+ */
+type PortProbe = 'free' | 'taken' | 'unknown';
 
 export interface RendererPortPolicyDependencies {
   /** Read late: `userData` may be redirected before the first launch. */
   userDataPath: () => string;
   record?: DiagnosticRecorder;
-  /** Whether `127.0.0.1:<port>` can be bound right now. */
-  isFree?: (port: number) => Promise<boolean>;
+  /** Whether `127.0.0.1:<port>` is free for this launch right now. */
+  probe?: (port: number) => Promise<PortProbe>;
   /** An OS-assigned free loopback port, for a fallback launch. */
   anyFreePort?: () => Promise<number>;
   random?: () => number;
@@ -96,14 +119,45 @@ async function osAssignedLoopbackPort(): Promise<number> {
   });
 }
 
-async function loopbackPortIsFree(port: number): Promise<boolean> {
+const errorCode = (error: unknown): string =>
+  String((error as NodeJS.ErrnoException | null)?.code ?? 'unknown');
+
+/** Loopback answers or refuses at once; this bounds only a wedged listener. */
+const CONNECT_PROBE_TIMEOUT_MS = 1_000;
+
+/** Whether anything answers a connection to `127.0.0.1:<port>`. */
+async function loopbackAnswers(port: number): Promise<PortProbe> {
+  return await new Promise(resolve => {
+    const socket = nodeNet.connect({ port, host: '127.0.0.1' });
+    const settle = (result: PortProbe) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.once('connect', () => settle('taken'));
+    socket.once('error', error =>
+      settle(errorCode(error) === 'ECONNREFUSED' ? 'free' : 'unknown')
+    );
+    socket.setTimeout(CONNECT_PROBE_TIMEOUT_MS, () => settle('unknown'));
+  });
+}
+
+async function loopbackBinds(port: number): Promise<PortProbe> {
   return await new Promise(resolve => {
     const probe = nodeNet.createServer();
-    probe.once('error', () => resolve(false));
+    probe.once('error', error =>
+      resolve(errorCode(error) === 'EADDRINUSE' ? 'taken' : 'unknown')
+    );
     probe.listen(port, '127.0.0.1', () => {
-      probe.close(() => resolve(true));
+      probe.close(() => resolve('free'));
     });
   });
+}
+
+/** Free only when nothing answers on the port AND it binds. */
+async function probeLoopbackPort(port: number): Promise<PortProbe> {
+  const answered = await loopbackAnswers(port);
+  if (answered !== 'free') return answered;
+  return await loopbackBinds(port);
 }
 
 function isStablePort(value: unknown): value is number {
@@ -119,10 +173,10 @@ async function readKeptPort(file: string): Promise<KeptPortRead> {
   try {
     text = await fs.promises.readFile(file, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { status: 'absent' };
-    }
-    return { status: 'unreadable' };
+    const code = errorCode(error);
+    // Both mean no record can exist at that path, which is an answer.
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { status: 'absent' };
+    return { status: 'inaccessible', code };
   }
   try {
     const value = JSON.parse(text) as Partial<KeptPort> | null;
@@ -141,10 +195,10 @@ async function readKeptPort(file: string): Promise<KeptPortRead> {
       };
     }
   } catch {
-    // fall through: bytes that do not parse are as unreadable as bytes that
+    // fall through: bytes that do not parse are as corrupt as bytes that
     // parse into the wrong shape.
   }
-  return { status: 'unreadable' };
+  return { status: 'corrupt' };
 }
 
 async function writeKeptPort(file: string, value: KeptPort): Promise<void> {
@@ -160,7 +214,7 @@ export function createRendererPortPolicy(
   deps: RendererPortPolicyDependencies
 ): RendererPortPolicy {
   const record = deps.record ?? (() => {});
-  const isFree = deps.isFree ?? loopbackPortIsFree;
+  const probe = deps.probe ?? probeLoopbackPort;
   const random = deps.random ?? Math.random;
   const anyFreePort = deps.anyFreePort ?? osAssignedLoopbackPort;
   const file = () => path.join(deps.userDataPath(), RENDERER_PORT_FILE);
@@ -170,7 +224,8 @@ export function createRendererPortPolicy(
     const span = STABLE_PORT_MAX - STABLE_PORT_MIN + 1;
     for (let attempt = 0; attempt < STABLE_PORT_CANDIDATES; attempt += 1) {
       const candidate = STABLE_PORT_MIN + Math.floor(random() * span);
-      if (await isFree(candidate)) return candidate;
+      // A candidate that cannot be judged is skipped, never kept.
+      if ((await probe(candidate)) === 'free') return candidate;
     }
     // A machine with sixteen random ports taken in a row is not one this
     // policy can reason about; serve, and try for a stable port next launch.
@@ -179,13 +234,25 @@ export function createRendererPortPolicy(
 
   async function decide(): Promise<PortDecision> {
     const kept = await readKeptPort(file());
-    if (kept.status === 'unreadable') {
+    if (kept.status === 'inaccessible') {
+      record('renderer.port.inaccessible', {
+        file: RENDERER_PORT_FILE,
+        code: kept.code,
+      });
+      return { kind: 'temporary', port: await anyFreePort() };
+    }
+    if (kept.status === 'corrupt') {
       record('renderer.port.unreadable', { file: RENDERER_PORT_FILE });
     }
     if (kept.status === 'ok') {
       const { port, consecutiveFallbacks } = kept.value;
-      if (await isFree(port)) {
+      const state = await probe(port);
+      if (state === 'free') {
         return { kind: 'kept', port, record: kept.value };
+      }
+      if (state === 'unknown') {
+        record('renderer.port.probe-failed', { keptPort: port });
+        return { kind: 'temporary', port: await anyFreePort() };
       }
       const fallbacks = consecutiveFallbacks + 1;
       if (fallbacks < REHOME_AFTER_CONSECUTIVE_FALLBACKS) {
@@ -216,6 +283,9 @@ export function createRendererPortPolicy(
       const settled = decision;
       decision = null;
       if (!settled || settled.port !== port) return;
+      // A temporary launch writes nothing: the record it could not read may
+      // still name the origin whose storage is being preserved.
+      if (settled.kind === 'temporary') return;
       let next: KeptPort | null = null;
       if (settled.kind === 'new') {
         next = isStablePort(port) ? { port, consecutiveFallbacks: 0 } : null;

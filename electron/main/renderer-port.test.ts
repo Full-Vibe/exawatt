@@ -27,11 +27,14 @@ afterEach(() => {
   fs.rmSync(userData, { recursive: true, force: true });
 });
 
-async function listenOnAStablePort(server: net.Server): Promise<number> {
+async function listenOnAStablePort(
+  server: net.Server,
+  host = '127.0.0.1'
+): Promise<number> {
   for (let port = 20_000; port < 20_200; port += 1) {
     const bound = await new Promise<boolean>(resolve => {
       server.once('error', () => resolve(false));
-      server.listen(port, '127.0.0.1', () => resolve(true));
+      server.listen(port, host, () => resolve(true));
     });
     if (bound) return port;
   }
@@ -40,15 +43,20 @@ async function listenOnAStablePort(server: net.Server): Promise<number> {
 
 /** A machine whose busy ports the test names; every other port is free. */
 function machine(
-  overrides: Partial<RendererPortPolicyDependencies> & { busy?: number[] } = {}
+  overrides: Partial<RendererPortPolicyDependencies> & {
+    busy?: number[];
+    unknown?: number[];
+  } = {}
 ) {
   const busy = new Set(overrides.busy ?? []);
+  const unknown = new Set(overrides.unknown ?? []);
   const events: Array<{ event: string; fields?: Record<string, unknown> }> = [];
   let osPort = 50_000;
   const deps: RendererPortPolicyDependencies = {
     userDataPath: () => userData,
     record: (event, fields) => events.push({ event, fields }),
-    isFree: async port => !busy.has(port),
+    probe: async port =>
+      unknown.has(port) ? 'unknown' : busy.has(port) ? 'taken' : 'free',
     anyFreePort: async () => ++osPort,
     // 0.25 of the way through the stable range, every time.
     random: () => 0.25,
@@ -56,6 +64,7 @@ function machine(
   };
   return {
     busy,
+    unknown,
     events,
     launch: async () => {
       const policy = createRendererPortPolicy(deps);
@@ -91,7 +100,7 @@ describe('createRendererPortPolicy', () => {
   it('does not record a port before anything has answered on it', async () => {
     const policy = createRendererPortPolicy({
       userDataPath: () => userData,
-      isFree: async () => true,
+      probe: async () => 'free',
       random: () => 0.5,
     });
 
@@ -157,6 +166,72 @@ describe('createRendererPortPolicy', () => {
     });
   });
 
+  // BUG-232: a record that exists but cannot be read is not a missing one.
+  // Re-homing on it would overwrite the record and orphan the storage kept
+  // under its origin, so the launch is served temporarily and writes nothing.
+  it.each([
+    [
+      'without permission to read it',
+      () => fs.chmodSync(file(), 0o000),
+      () => fs.chmodSync(file(), 0o600),
+    ],
+    [
+      'when its path cannot be read as a file',
+      () => {
+        fs.renameSync(file(), `${file()}.aside`);
+        fs.mkdirSync(file());
+      },
+      () => {
+        fs.rmdirSync(file());
+        fs.renameSync(`${file()}.aside`, file());
+      },
+    ],
+  ])(
+    'serves a temporary port and keeps the record when it cannot be read %s',
+    async (_case, damage, repair) => {
+      const { launch, events } = machine();
+      const home = await launch();
+      damage();
+
+      const temporary = await launch();
+
+      expect(temporary).not.toBe(home);
+      expect(events.map(entry => entry.event)).toEqual([
+        'renderer.port.inaccessible',
+      ]);
+      repair();
+      expect(kept()).toEqual({ port: home, consecutiveFallbacks: 0 });
+      expect(await launch()).toBe(home);
+    }
+  );
+
+  it('serves a temporary port, and counts nothing, when the kept port cannot be probed', async () => {
+    const { launch, unknown, events } = machine();
+    const home = await launch();
+    unknown.add(home);
+
+    for (let i = 0; i < 4; i += 1) {
+      expect(await launch()).not.toBe(home);
+    }
+
+    expect(kept()).toEqual({ port: home, consecutiveFallbacks: 0 });
+    expect(new Set(events.map(entry => entry.event))).toEqual(
+      new Set(['renderer.port.probe-failed'])
+    );
+    unknown.delete(home);
+    expect(await launch()).toBe(home);
+  });
+
+  it('never keeps a new candidate that cannot be probed', async () => {
+    const draws = [0, 0.5];
+    const { launch } = machine({
+      unknown: [20_000],
+      random: () => draws.shift() ?? 0.5,
+    });
+
+    expect(await launch()).toBe(20_000 + Math.floor(0.5 * 12_768));
+  });
+
   it('treats a record outside the stable range as unreadable, not as a port to serve on', async () => {
     fs.writeFileSync(
       file(),
@@ -183,7 +258,7 @@ describe('createRendererPortPolicy', () => {
   });
 
   it('serves from an OS port, and keeps nothing, when no stable candidate is free', async () => {
-    const { launch } = machine({ isFree: async () => false });
+    const { launch } = machine({ probe: async () => 'taken' });
 
     expect(await launch()).toBe(50_001);
     expect(fs.existsSync(file())).toBe(false);
@@ -201,6 +276,34 @@ describe('createRendererPortPolicy', () => {
       'renderer.port.persist-failed'
     );
   });
+
+  // macOS lets 127.0.0.1:<port> bind while another program listens on the
+  // wildcard address, and the more specific bind then takes that program's
+  // loopback traffic. A port someone answers on is taken, whatever binds.
+  it.each(['0.0.0.0', '::', '127.0.0.1'])(
+    'counts a kept port as taken while another program listens on %s',
+    async host => {
+      const holder = net.createServer();
+      const heldPort = await listenOnAStablePort(holder, host);
+      try {
+        fs.writeFileSync(
+          file(),
+          JSON.stringify({ port: heldPort, consecutiveFallbacks: 0 })
+        );
+        const events: string[] = [];
+        const policy = createRendererPortPolicy({
+          userDataPath: () => userData,
+          anyFreePort: async () => 1,
+          record: event => events.push(event),
+        });
+
+        expect(await policy.allocate()).toBe(1);
+        expect(events).toEqual(['renderer.port.fallback']);
+      } finally {
+        await new Promise(resolve => holder.close(resolve));
+      }
+    }
+  );
 
   it('probes the real loopback interface by default', async () => {
     const holder = net.createServer();
