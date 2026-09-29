@@ -1,4 +1,4 @@
-import { isLocalProject } from '@/lib/projects/contract';
+import { isLocalProject, isRemoteHome } from '@/lib/projects/contract';
 import type { Project as SyncedProject } from '@/lib/projects/registry';
 import type { RecentProject } from './switcher-rows';
 
@@ -22,6 +22,8 @@ export interface ProjectLibraryEntry {
   registryId: string | null;
   /** Kept in this machine's local registry rather than an account's. */
   local: boolean;
+  /** The Remote home connected coworkers land in (ENG-033 H2.4 P1). */
+  remoteHome: boolean;
   lastOpenedAt: number;
 }
 
@@ -43,6 +45,7 @@ export function mergeProjectLibrary(
       color: project.color,
       registryId: project.id,
       local: isLocalProject(project),
+      remoteHome: isRemoteHome(project),
       lastOpenedAt: project.last_opened_at
         ? new Date(project.last_opened_at).getTime()
         : 0,
@@ -58,6 +61,7 @@ export function mergeProjectLibrary(
       color: project.color ?? null,
       registryId: project.registryId ?? null,
       local: false,
+      remoteHome: false,
       lastOpenedAt: 0,
     });
   }
@@ -71,6 +75,7 @@ export function mergeProjectLibrary(
       color: project.color ?? null,
       registryId: null,
       local: false,
+      remoteHome: false,
       lastOpenedAt: 0,
     });
   }

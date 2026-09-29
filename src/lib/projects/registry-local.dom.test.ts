@@ -6,6 +6,7 @@ import {
   archiveProject,
   listProjects,
   openManualProject,
+  openRemoteHomeProject,
   openRepositoryProject,
   renameProject,
   reorderProjects,
@@ -90,5 +91,41 @@ describe('Community Project registry', () => {
     expect((await listProjects()).map(project => project.id)).toEqual([
       created.id,
     ]);
+  });
+
+  it('keeps one Remote home, found by kind, that keeps its rename', async () => {
+    const home = await openRemoteHomeProject({ id: 'home-1', name: 'Remote' });
+    expect(home).toMatchObject({
+      id: 'home-1',
+      kind: 'remote-home',
+      root_path: null,
+      name: 'Remote',
+    });
+    await renameProject(home.id, 'Servers');
+
+    // A second Connect mints a fresh id and still lands in the same home.
+    const again = await openRemoteHomeProject({ id: 'home-2', name: 'Remote' });
+    expect(again.id).toBe('home-1');
+    expect(again.name).toBe('Servers');
+    expect(
+      (await listProjects()).filter(project => project.kind === 'remote-home')
+    ).toHaveLength(1);
+  });
+
+  it('reopens its own home by id after a failed Connect archived it', async () => {
+    const home = await openRemoteHomeProject({ id: 'home-1', name: 'Remote' });
+    await archiveProject(home.id);
+
+    const retried = await openRemoteHomeProject({
+      id: 'home-1',
+      name: 'Remote',
+    });
+
+    expect(retried).toMatchObject({
+      id: 'home-1',
+      kind: 'remote-home',
+      archived_at: null,
+    });
+    expect(await listProjects()).toHaveLength(1);
   });
 });

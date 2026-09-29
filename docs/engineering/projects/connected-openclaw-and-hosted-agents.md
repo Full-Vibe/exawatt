@@ -562,7 +562,8 @@ per machine (a new Mac, or a detach and reconnect, pairs a new device).
 **Execution packets.** In dependency order; each lands through the normal
 queue with the connected-fleet gate.
 
-- **P1 Remote home.** One Exawatt-owned, folderless, renameable Project,
+- **P1 Remote home.** LANDED 2026-09-28 (log entry of that date). One
+  Exawatt-owned, folderless, renameable Project,
   "Remote" for now, created on first need and used as ⌘N Connect's default.
   Touches the Project registry, so it lands after the workspace-honesty work
   on signed-in, signed-out, and expired-session registries, and must hold for
@@ -1936,3 +1937,34 @@ and visibly present while an Agent runs, with design cues taken from products
 already solving it. Today's only remote gate is per-server send access, shown
 on the coworker pane's composer and nowhere on Team or Fleet tiles while an
 Agent runs.
+
+### 2026-09-28 — the Remote home (H2.4 P1)
+
+Connected coworkers now have one home Project. It is a folderless Project of
+its own kind, `remote-home`, and that kind is its identity: the name starts as
+Remote and the operator can rename it, and a renamed home is still the home.
+`openRemoteHomeProject` returns the live home from whichever store holds it
+(the account's, or this machine's for one made signed out) and creates one only
+when none exists, so a Connect started from Settings, which hands the dialog no
+Project list, still lands in the same home rather than minting a second. A
+registry that cannot tell whether the operator is signed in refuses, as every
+read does since BUG-190.
+
+Connect defaults to the home by identity, ahead of the Project the connected
+coworkers happen to live in (P2's stopgap, still the fallback when neither a
+home nor a choice exists). The ⌘N chooser labels the home "Connected servers"
+where other folderless Projects say "No folder". A refused mapping archives
+only a Project that attempt created: an existing home comes back under its own
+id and is never cleanup's to remove, and a retry after cleanup reopens the
+attempt's own home by id instead of failing on a duplicate. Removing that
+guard fails two dialog tests.
+
+Evidence: registry tests for local, signed-out-then-signed-in, and
+expired-session registries; dialog tests for the default, a single home on
+first connect, and the archive guard; and `eval:electron:connect-flow` now
+checks in the real app that the first connect made exactly one home and the
+second server's coworkers joined it. Found on the way: this machine moved to
+Node 26, whose own `localStorage` broke 144 DOM tests on master (BUG-229,
+fixed separately). P2b's landing on the Project with the new coworker marked
+is next, now that the home exists to land on.
+

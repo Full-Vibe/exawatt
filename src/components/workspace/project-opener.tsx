@@ -212,6 +212,7 @@ export function ProjectOpener({
           id: project.registryId!,
           name: project.name,
           rootPath: project.rootPath,
+          remoteHome: project.remoteHome,
         })),
     [library]
   );
@@ -613,7 +614,9 @@ export function ProjectOpener({
                           className="mt-1 block truncate font-mono text-chrome-micro"
                           style={{ color: HUD.textDim }}
                         >
-                          {project.rootPath ?? 'No folder'}
+                          {project.remoteHome
+                            ? 'Connected servers'
+                            : (project.rootPath ?? 'No folder')}
                           {/* Beside an account's Projects, one kept on this
                             machine says so: it does not sync (BUG-191). */}
                           {registry === 'hosted' && project.local && ' · Local'}

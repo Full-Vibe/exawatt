@@ -34,6 +34,7 @@ import {
   archiveProject,
   listProjects,
   openManualProject,
+  openRemoteHomeProject,
   openRepositoryProject,
   ProjectRegistryUnavailableError,
   projectRegistryScope,
@@ -167,6 +168,14 @@ describe('Project registry whose session could not be refreshed (BUG-190)', () =
     expect(hosted.from).not.toHaveBeenCalled();
   });
 
+  it('opens no Remote home when it cannot tell who is signed in', async () => {
+    await expect(
+      openRemoteHomeProject({ id: 'home-1', name: 'Remote' })
+    ).rejects.toBeInstanceOf(ProjectRegistryUnavailableError);
+    expect(window.localStorage.length).toBe(0);
+    expect(hosted.from).not.toHaveBeenCalled();
+  });
+
   it('treats a session read that throws the same way', async () => {
     hosted.getSession.mockRejectedValue(new Error('lock timed out'));
     await expect(
@@ -180,6 +189,36 @@ async function openLocalProjectWhileSignedOut(id: string): Promise<Project> {
   hosted.getSession.mockResolvedValue(SIGNED_OUT);
   return openManualProject({ id, name: `Agent ${id}` });
 }
+
+describe('the Remote home across sign-in (ENG-033 H2.4 P1)', () => {
+  it('finds the account’s home rather than minting a second one', async () => {
+    hosted.getSession.mockResolvedValue(SIGNED_IN);
+    hosted.rows = [
+      hostedProject({ id: 'hosted-home', kind: 'remote-home', name: 'Fleet' }),
+    ];
+
+    const home = await openRemoteHomeProject({
+      id: 'home-new',
+      name: 'Remote',
+    });
+
+    expect(home.id).toBe('hosted-home');
+    expect(home.name).toBe('Fleet');
+    // One listing read, and nothing written.
+    expect(hosted.from).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the home made signed out as the home after signing in', async () => {
+    hosted.getSession.mockResolvedValue(SIGNED_OUT);
+    const local = await openRemoteHomeProject({ id: 'home-1', name: 'Remote' });
+    hosted.getSession.mockResolvedValue(SIGNED_IN);
+
+    const home = await openRemoteHomeProject({ id: 'home-2', name: 'Remote' });
+
+    expect(home.id).toBe(local.id);
+    expect(hosted.from).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('Project registry after signing in, with Projects made signed out (BUG-191)', () => {
   it('keeps each Connect-minted Project in the list, marked local', async () => {

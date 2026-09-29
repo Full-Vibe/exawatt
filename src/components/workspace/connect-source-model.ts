@@ -94,7 +94,15 @@ export interface DiscoveredAgent {
 
 /** Where an imported Agent lands. Both arms are an explicit operator choice. */
 export type ProjectTarget =
-  | { kind: 'new-project'; name: string }
+  | {
+      kind: 'new-project';
+      name: string;
+      /**
+       * This new Project is the Remote home (ENG-033 H2.4 P1): it is opened
+       * by kind, so a Connect never mints a second one.
+       */
+      remoteHome?: boolean;
+    }
   | { kind: 'existing-project'; projectId: string };
 
 export interface AgentMappingRow {
@@ -583,12 +591,7 @@ export interface CancelOutcome {
 }
 
 /** How one server row reads. */
-type ServerRowState =
-  | 'idle'
-  | 'connected'
-  | 'testing'
-  | 'ready'
-  | 'failed';
+type ServerRowState = 'idle' | 'connected' | 'testing' | 'ready' | 'failed';
 
 export interface ServerRow {
   alias: string;

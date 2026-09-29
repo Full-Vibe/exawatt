@@ -205,10 +205,11 @@ try {
         clicks += 1;
         await locator.click();
       };
-      const openConnect = async () => {
+      const openConnect = async (inspectChooser = async () => {}) => {
         clicks = 0;
         await page.keyboard.press('Meta+n');
         await page.locator('[data-project-opener]').waitFor();
+        await inspectChooser();
         await click(page.getByRole('button', { name: /Connect a server/ }));
         await dialog.waitFor();
         await server(ALIASES[0]).waitFor();
@@ -288,7 +289,17 @@ try {
 
       // The second server: marked, defaulted into the same Project, and the
       // copy path finishing with the exact command.
-      await openConnect();
+      await openConnect(async () => {
+        // The first connect made the Remote home; ⌘N lists it once, as the
+        // place connected servers' coworkers live (ENG-033 H2.4 P1).
+        const opener = page.locator('[data-project-opener]');
+        await opener.getByText('Connected servers').first().waitFor();
+        await opener.screenshot({ path: join(output, 'remote-home.png') });
+        check(
+          'the first connect made one Remote home',
+          (await opener.getByText('Connected servers').count()) === 1
+        );
+      });
       await server(NORTH).scrollIntoViewIfNeeded();
       const northState = await server(NORTH).getAttribute('data-server-state');
       const northText = (await server(NORTH).textContent()) ?? '';

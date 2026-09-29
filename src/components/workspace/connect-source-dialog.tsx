@@ -67,6 +67,7 @@ import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import {
   archiveProject,
   openManualProject,
+  openRemoteHomeProject,
   ProjectRegistryUnavailableError,
 } from '@/lib/projects/registry';
 import {
@@ -104,6 +105,8 @@ export interface ConnectProjectOption {
   name: string;
   /** Folder binding for local actions. Null means this Project is folderless. */
   rootPath?: string | null;
+  /** The Remote home connected coworkers land in by default. */
+  remoteHome?: boolean;
 }
 
 export interface ConnectedProjectMapping {
@@ -261,24 +264,30 @@ function electronBridge(): ConnectSourceBridge | null {
 export const DEFAULT_REMOTE_PROJECT_NAME = 'Remote';
 
 /**
- * Where the batch lands unless the operator says otherwise: the Project the
- * connected coworkers already live in, by identity, or a new one named for
- * where remote coworkers live (ENG-033 H2.4, "a special project, like
- * remote"). Never a Project named after the server.
+ * Where the batch lands unless the operator says otherwise: the Remote home
+ * (ENG-033 H2.4 P1, "a special project, like remote"); before one exists,
+ * the Project the connected coworkers already live in, by identity; and
+ * otherwise a new Remote home. Never a Project named after the server.
  */
 function defaultProjectFor(
   projects: readonly ConnectProjectOption[],
   coworkerProjectIds: readonly string[]
 ): ProjectTarget {
+  const home = projects.find(project => project.remoteHome);
+  if (home) return { kind: 'existing-project', projectId: home.id };
   const known = new Set(projects.map(project => project.id));
   const counts = new Map<string, number>();
   for (const id of coworkerProjectIds) {
     if (known.has(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
   }
-  const home = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  return home
-    ? { kind: 'existing-project', projectId: home }
-    : { kind: 'new-project', name: DEFAULT_REMOTE_PROJECT_NAME };
+  const lived = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return lived
+    ? { kind: 'existing-project', projectId: lived }
+    : {
+        kind: 'new-project',
+        name: DEFAULT_REMOTE_PROJECT_NAME,
+        remoteHome: true,
+      };
 }
 
 interface TestInput {
@@ -666,11 +675,14 @@ export function ConnectSourceDialog({
         const projectId =
           manualProjectIds.current.get(outcome.sourceId) ?? crypto.randomUUID();
         manualProjectIds.current.set(outcome.sourceId, projectId);
-        const created = await openManualProject({
-          id: projectId,
-          name: target.name.trim(),
-        });
-        createdProjectIds.push(created.id);
+        const ref = { id: projectId, name: target.name.trim() };
+        const created = target.remoteHome
+          ? await openRemoteHomeProject(ref)
+          : await openManualProject(ref);
+        // Only a Project this attempt minted is this attempt's to archive. An
+        // existing Remote home comes back under its own id and is never
+        // cleanup's to remove.
+        if (created.id === projectId) createdProjectIds.push(created.id);
         mapped = {
           id: created.id,
           name: created.name,

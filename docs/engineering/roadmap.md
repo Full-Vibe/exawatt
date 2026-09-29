@@ -1861,9 +1861,11 @@ Milestones:
   the Project with the new coworker marked (ships with P1), a ⌘K row
   (rewrites the verb's recorded no-palette reason), and send access inside the
   dialog. P5 LANDED 2026-09-24: `eval:electron:connect-flow` holds Connect and
-  send access to click and SSH-login budgets in the real app. Next: P1 once
-  the workspace-honesty registry work lands, with P2b's landing; then P4 with
-  D54.
+  send access to click and SSH-login budgets in the real app. P1 LANDED
+  2026-09-28: connected coworkers land in one Remote home Project, a
+  folderless `remote-home` kind found by identity and renameable, and Connect's
+  default. Next: P2b's landing on the Project with the new coworker marked,
+  then P4 with D54.
 - H3 Exawatt-managed placement — DIRECTION DECIDED 2026-09-28 (operator):
   Exawatt hosts the machines agent harnesses run on, for Agents doing work,
   not as a general container host. Implementation still waits for the design

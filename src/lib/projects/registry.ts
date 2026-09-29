@@ -14,6 +14,8 @@ import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
 import {
   LOCAL_PROJECT_OWNER,
+  REMOTE_HOME_KIND,
+  isRemoteHome,
   type Project,
   type ProjectInsert,
 } from './contract';
@@ -221,13 +223,17 @@ export interface ManualProjectRef {
   name: string;
 }
 
-function newLocalManualProject(ref: ManualProjectRef, nowIso: string): Project {
+function newLocalManualProject(
+  ref: ManualProjectRef,
+  nowIso: string,
+  kind: string = 'manual'
+): Project {
   return {
     id: ref.id,
     user_id: LOCAL_PROJECT_OWNER,
     name: ref.name,
     color: null,
-    kind: 'manual',
+    kind,
     root_path: null,
     git_remote: null,
     last_opened_at: nowIso,
@@ -385,9 +391,17 @@ export async function openRepositoryProject(
 export async function openManualProject(
   ref: ManualProjectRef
 ): Promise<Project> {
+  return await openFolderlessProject(ref, 'manual');
+}
+
+/** Create or idempotently reopen a folderless Project of one kind, by id. */
+async function openFolderlessProject(
+  ref: ManualProjectRef,
+  kind: string
+): Promise<Project> {
   const trimmed = ref.name.trim();
   if (!ref.id.trim() || !trimmed) {
-    throw new Error('A manual Project needs an identity and name.');
+    throw new Error('A folderless Project needs an identity and name.');
   }
   const store = await projectStoreHolding(ref.id);
   if (store.kind === 'local') {
@@ -398,7 +412,7 @@ export async function openManualProject(
       const reopened: Project = {
         ...existing,
         name: trimmed,
-        kind: 'manual',
+        kind,
         root_path: null,
         archived_at: null,
         last_opened_at: nowIso,
@@ -413,7 +427,8 @@ export async function openManualProject(
     }
     const created = newLocalManualProject(
       { id: ref.id, name: trimmed },
-      nowIso
+      nowIso,
+      kind
     );
     writeLocalProjects([...projects, created]);
     return created;
@@ -433,7 +448,7 @@ export async function openManualProject(
       .from('projects')
       .update({
         name: trimmed,
-        kind: 'manual',
+        kind,
         root_path: null,
         archived_at: null,
         last_opened_at: nowIso,
@@ -451,7 +466,7 @@ export async function openManualProject(
       id: ref.id,
       user_id: userId,
       name: trimmed,
-      kind: 'manual',
+      kind,
       root_path: null,
       git_remote: null,
       last_opened_at: nowIso,
@@ -460,6 +475,25 @@ export async function openManualProject(
     .single();
   if (error) throw new Error(error.message);
   return data as Project;
+}
+
+/**
+ * The Remote home: where connected coworkers land by default (ENG-033 H2.4
+ * P1).
+ *
+ * Opened by kind, not by id or name. When a live home exists, whichever store
+ * holds it, this returns it untouched, so a home the operator renamed keeps
+ * its name and a Connect from any surface finds the same one. Only when none
+ * exists is one created, with the caller's opaque id so a retry after a lost
+ * acknowledgement reopens rather than duplicates. A registry that cannot tell
+ * whether the operator is signed in refuses here, as every read does.
+ */
+export async function openRemoteHomeProject(
+  ref: ManualProjectRef
+): Promise<Project> {
+  const home = (await listProjects()).find(isRemoteHome);
+  if (home) return home;
+  return await openFolderlessProject(ref, REMOTE_HOME_KIND);
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {

@@ -25,6 +25,7 @@ import {
   ConnectSourceDialog,
   DEFAULT_REMOTE_PROJECT_NAME,
   type ConnectAttemptResult,
+  type ConnectProjectOption,
   type ConnectSourceBridge,
   type ConnectSourceProgress,
   type ConnectSourceResult,
@@ -34,7 +35,11 @@ import {
   CONNECT_STAGE_COPY,
   type DiscoveredAgent,
 } from './connect-source-model';
-import { listProjects } from '@/lib/projects/registry';
+import {
+  archiveProject,
+  listProjects,
+  openRemoteHomeProject,
+} from '@/lib/projects/registry';
 import {
   installBridgeDouble,
   removeBridgeDouble,
@@ -202,7 +207,7 @@ function renderDialog({
   onManageServer,
 }: {
   bridge: ConnectSourceBridge;
-  projects?: readonly { id: string; name: string }[];
+  projects?: readonly ConnectProjectOption[];
   onConnected?: (result: ConnectSourceResult) => void;
   onManageServer?: () => void;
 }) {
@@ -762,6 +767,76 @@ describe('Connect: Agents, names, and the Project', () => {
 // One test per screen (BUG-218): the dialog costs hundreds of milliseconds to
 // open and walk in jsdom, and a single test that walked all eight screens sat
 // at a quarter of its timeout alone.
+describe('Connect: the Remote home (ENG-033 H2.4 P1)', () => {
+  afterEach(async () => {
+    for (const project of await listProjects()) {
+      await archiveProject(project.id);
+    }
+  });
+
+  it('lands the first connect in one new Remote home', async () => {
+    const onConnected = vi.fn();
+    renderDialog({ bridge: makeBridge(), onConnected });
+    await reachReady();
+    fireEvent.click(primary());
+    await waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
+
+    const homes = (await listProjects()).filter(
+      project => project.kind === 'remote-home'
+    );
+    expect(homes).toHaveLength(1);
+    expect(onConnected.mock.calls[0]![0].agents[0].project.id).toBe(
+      homes[0]!.id
+    );
+  });
+
+  it('defaults to the Remote home by identity, whatever it is called now', async () => {
+    const bridge = makeBridge({
+      // Coworkers live elsewhere; the home still wins.
+      list: vi.fn(async () => [{ id: 'source-9', alias: 'cinder-box' }]),
+      agents: vi.fn(async () => [
+        {
+          displayName: 'Scout',
+          projectId: 'project-other',
+          source: { id: 'source-9' },
+        },
+      ]),
+    });
+    renderDialog({
+      bridge,
+      projects: [
+        { id: 'project-other', name: 'Growth' },
+        { id: 'project-home', name: 'Servers', remoteHome: true },
+      ],
+    });
+    await reachReady();
+    expect(screen.getByLabelText('Add to')).toHaveValue('project-home');
+  });
+
+  it('never archives an existing home when the mapping is refused', async () => {
+    const home = await openRemoteHomeProject({
+      id: 'home-existing',
+      name: 'Remote',
+    });
+    const mapAgents = vi.fn<ConnectSourceBridge['mapAgents']>(async () => ({
+      ok: false as const,
+      issues: ['Try later.'],
+    }));
+    // A host that passes no Projects (Settings) still finds the home.
+    renderDialog({ bridge: makeBridge({ mapAgents }) });
+    await reachReady();
+    fireEvent.click(primary());
+    await screen.findByText('Try later.');
+
+    expect(mapAgents.mock.calls[0]![1]![0]).toMatchObject({
+      projectId: home.id,
+    });
+    expect((await listProjects()).map(project => project.id)).toContain(
+      home.id
+    );
+  });
+});
+
 describe('Connect: voice', () => {
   function expectOperatorVoice() {
     const text = document.body.textContent ?? '';

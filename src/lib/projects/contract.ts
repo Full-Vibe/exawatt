@@ -32,6 +32,18 @@ export function isLocalProject(project: Pick<Project, 'user_id'>): boolean {
   return project.user_id === LOCAL_PROJECT_OWNER;
 }
 
+/**
+ * The kind of the one Project connected coworkers land in by default
+ * (ENG-033 H2.4 P1): folderless, renameable, created on the first Connect
+ * that needs it. Identity is the kind, never the name, so a renamed home is
+ * still the home.
+ */
+export const REMOTE_HOME_KIND = 'remote-home';
+
+export function isRemoteHome(project: Pick<Project, 'kind'>): boolean {
+  return project.kind === REMOTE_HOME_KIND;
+}
+
 export interface ProjectInsert {
   id?: string;
   user_id: string;
