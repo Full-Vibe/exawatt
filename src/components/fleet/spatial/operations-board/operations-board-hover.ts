@@ -14,7 +14,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-export interface BoardHoverState {
+interface BoardHoverState {
   zoneId: string | null;
   agentId: string | null;
   pressedAgentId: string | null;

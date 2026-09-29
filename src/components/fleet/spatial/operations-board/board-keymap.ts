@@ -17,7 +17,7 @@ import type { KeyBinding } from '@/types/shortcuts';
  * describes what a key does on this board, not what a listener happens to
  * swallow.
  */
-export interface BoardKeymapEntry {
+interface BoardKeymapEntry {
   /** Stable family id; the help modal's board entry carries the same id. */
   id: string;
   /** Keycaps as the help modal renders them. */
