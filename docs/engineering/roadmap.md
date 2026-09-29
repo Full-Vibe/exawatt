@@ -2707,6 +2707,9 @@ now starts its workers with `--no-experimental-webstorage`, the one spelling
 both Node 22 and Node 26 accept, so DOM tests run against jsdom's Storage
 whatever Node hosts them. After the fix: app-dom 897 passed, the full suite
 5,172 passed, under Node 26.
+`vitest.setup.ts` now refuses to start, with that one named cause, whenever
+jsdom's Storage is shadowed, instead of 144 opaque failures (pre-0.1.14
+review, 2026-09-28, which saw the same failure in `privacy-settings.test.tsx`).
 
 ### BUG-232 The renderer port could be lost to a read error or taken from another app
 
