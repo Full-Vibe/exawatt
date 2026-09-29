@@ -2,7 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { isAgentHarness } from '@exawatt/core';
+import type { ConfigFileUnreadableCause } from '@exawatt/core/server';
 
+import {
+  UnreadableStateWatch,
+  jsonStateGrammar,
+  readPersistedState,
+} from '../persisted-state-file';
 import type { AgentHarness } from './harness-types';
 
 export interface SessionIdentityRecord {
@@ -38,6 +44,22 @@ function validRecord(value: unknown): value is SessionIdentityRecord {
 }
 
 /**
+ * The whole file or nothing: one record this build cannot read sets the file
+ * aside with its bytes, rather than being dropped by the next save (the rule
+ * settings follow since 0.1.13).
+ */
+const IDENTITY_FILE = jsonStateGrammar<SessionIdentityRecord[]>(
+  value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      return null;
+    const stored = value as Partial<StoredSessionIdentitiesV1>;
+    if (stored.v !== 1 || !Array.isArray(stored.identities)) return null;
+    return stored.identities.every(validRecord) ? stored.identities : null;
+  },
+  64 * 1024 * 1024
+);
+
+/**
  * Main-owned durable mapping from Exawatt Session identity to provider
  * conversation identity.
  *
@@ -53,29 +75,63 @@ export class SessionIdentityStore {
   private temporarySequence = 0;
   private mutationVersion = 0;
   private persistedVersion = 0;
+  /**
+   * Set while the file exists and cannot be read (BUG-247). Nothing is
+   * written over it; changes stay in memory, deletions included, and are
+   * merged over the file once a later read succeeds.
+   */
+  private unreadable: ConfigFileUnreadableCause | null = null;
+  private pendingDeletes = new Set<string>();
+  private readonly watch: UnreadableStateWatch;
 
-  constructor(private readonly file: string) {}
+  constructor(private readonly file: string) {
+    this.watch = new UnreadableStateWatch(file, 'saved Session resume links');
+  }
 
+  /**
+   * Reads the file once, and again on every later call while it is
+   * unreadable: each mutation and flush calls this first, so the next access
+   * retries.
+   */
   async initialize(): Promise<void> {
-    if (!this.initializePromise) {
+    if (!this.initializePromise || this.unreadable) {
+      const previous = this.initializePromise;
       this.initializePromise = (async () => {
-        try {
-          const parsed = JSON.parse(
-            await fs.promises.readFile(this.file, 'utf8')
-          ) as Partial<StoredSessionIdentitiesV1>;
-          if (parsed.v !== 1 || !Array.isArray(parsed.identities)) return;
-          for (const record of parsed.identities) {
-            if (validRecord(record)) {
-              this.identities.set(record.durableSessionId, record);
-            }
-          }
-        } catch {
-          // Missing or corrupt identity state is recoverable from provider
-          // transcripts when and only when there is one unambiguous match.
-        }
+        await previous;
+        if (previous && !this.unreadable) return;
+        await this.read();
       })();
     }
     await this.initializePromise;
+  }
+
+  private async read(): Promise<void> {
+    const read = await readPersistedState(this.file, IDENTITY_FILE);
+    if (read.status === 'unreadable') {
+      this.unreadable = read.cause;
+      this.watch.failed(read.cause);
+      return;
+    }
+    // Missing, or damaged and set aside with its bytes: a fresh index.
+    const disk = new Map<string, SessionIdentityRecord>();
+    if (read.status === 'ok') {
+      for (const record of read.value) {
+        disk.set(record.durableSessionId, record);
+      }
+    }
+    const blocked = this.unreadable !== null;
+    this.unreadable = null;
+    this.watch.recovered();
+    // Changes made while the file could not be read win over it.
+    for (const id of this.pendingDeletes) disk.delete(id);
+    for (const [id, record] of this.identities) disk.set(id, record);
+    this.pendingDeletes.clear();
+    this.identities = disk;
+    if (blocked && this.persistedVersion < this.mutationVersion) {
+      await this.persist().catch(error => {
+        console.error('Session identity checkpoint failed', error);
+      });
+    }
   }
 
   list(): SessionIdentityRecord[] {
@@ -103,13 +159,21 @@ export class SessionIdentityStore {
 
   async delete(durableSessionId: string): Promise<void> {
     await this.initialize();
-    if (!this.identities.delete(durableSessionId)) return;
+    if (this.unreadable) this.pendingDeletes.add(durableSessionId);
+    if (!this.identities.delete(durableSessionId) && !this.unreadable) return;
     this.mutationVersion += 1;
     await this.persist();
   }
 
   async flush(): Promise<void> {
     await this.operationTail;
+    if (this.unreadable) {
+      await this.initialize();
+      // Still unreadable: the file stays as it is, and what this launch
+      // learned is lost with it. The workspace checkpoint carries the same
+      // provider identities.
+      if (this.unreadable) return;
+    }
     // A failed mutation remains dirty in memory. Normal launch/resume must not
     // be reported as failed after the provider process is already live, so the
     // shutdown checkpoint gets one authoritative retry.
@@ -117,6 +181,9 @@ export class SessionIdentityStore {
   }
 
   private persist(): Promise<void> {
+    // Never replace a file that could not be read. The change stays dirty in
+    // memory and is written once a read succeeds.
+    if (this.unreadable) return Promise.resolve();
     const version = this.mutationVersion;
     const snapshot: StoredSessionIdentitiesV1 = {
       v: 1,

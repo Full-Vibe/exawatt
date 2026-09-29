@@ -41,6 +41,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import {
+  readConfigFile,
+  type ConfigFileUnreadableCause,
+} from '@exawatt/core/server';
+import {
   ConsumptionSampleWindow,
   MAX_SEEN_SNAPSHOTS,
   emptyDiagnostics,
@@ -53,6 +57,14 @@ import {
   type PlanWindow,
   type PlanWindowObservation,
 } from '@exawatt/core';
+import {
+  recordStoreDiagnostic,
+  setAsideDamagedFile,
+} from '../atomic-json-file';
+import {
+  UnreadableStateWatch,
+  jsonStateGrammar,
+} from '../persisted-state-file';
 
 const LOG_FILE = 'log-v1.jsonl';
 const META_FILE = 'meta-v1.json';
@@ -236,16 +248,78 @@ function validPlanWindow(value: unknown): value is PlanWindow {
   );
 }
 
+/** A meta of another shape is damaged: the scan state is set aside whole. */
+const META_FILE_GRAMMAR = jsonStateGrammar<Partial<ConsumptionScanMetaV1>>(
+  value =>
+    isRecord(value) && value.v === 1
+      ? (value as Partial<ConsumptionScanMetaV1>)
+      : null
+);
+
+function errorCode(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return typeof code === 'string' ? code : 'unknown';
+}
+
 export class ConsumptionStateStore {
   private operationTail: Promise<void> = Promise.resolve();
   private temporarySequence = 0;
   private appendedBytes = 0;
   private compactedBytes = 0;
+  /**
+   * Set while the scan state exists and cannot be read (BUG-247). The log
+   * holds usage the harnesses may have deleted since, so no append, meta
+   * write or compaction touches it; the scan runs in memory and `load` is
+   * tried again before each pass.
+   */
+  private unreadable: ConfigFileUnreadableCause | null = null;
+  private readonly watch: UnreadableStateWatch;
 
   constructor(
     private readonly dir: string,
     private readonly options: ConsumptionStateStoreOptions = {}
-  ) {}
+  ) {
+    this.watch = new UnreadableStateWatch(this.metaPath, 'usage history');
+  }
+
+  /** The saved state is there and could not be read; writes are withheld. */
+  get blocked(): boolean {
+    return this.unreadable !== null;
+  }
+
+  private markUnreadable(cause: ConfigFileUnreadableCause): void {
+    this.unreadable = cause;
+    this.watch.failed(cause);
+  }
+
+  private markReadable(): void {
+    this.unreadable = null;
+    this.watch.recovered();
+  }
+
+  /**
+   * A damaged meta means the log cannot be trusted either, and a fresh scan
+   * would compact over it, so both are moved aside with their bytes: the log
+   * first, so a failure between the two leaves the meta to say so again.
+   * False when a move failed; nothing is then written over either file.
+   */
+  private setAsideDamagedState(): boolean {
+    const moved: string[] = [];
+    for (const file of [this.logPath, this.metaPath]) {
+      try {
+        moved.push(path.basename(setAsideDamagedFile(file)));
+      } catch (error) {
+        if (errorCode(error) === 'ENOENT') continue;
+        this.markUnreadable({ kind: 'io', code: errorCode(error) });
+        return false;
+      }
+    }
+    recordStoreDiagnostic('store.set-aside', {
+      store: META_FILE,
+      recoveryFiles: moved,
+    });
+    return true;
+  }
 
   get root(): string {
     return this.dir;
@@ -261,12 +335,14 @@ export class ConsumptionStateStore {
 
   /**
    * Load persisted state. Returns empty state (meta defaults) when nothing
-   * usable exists — a missing directory, an unknown version, or a corrupt
-   * meta all mean "scan from scratch", never a crash.
+   * usable exists, never a crash: a missing directory is a first scan; a
+   * damaged or unknown-version meta is set aside with the log, bytes kept,
+   * and the scan starts from scratch; a meta or log that is there and cannot
+   * be read leaves both untouched and the store `blocked` (BUG-247).
    */
   async load(): Promise<LoadedConsumptionState> {
     const horizon = this.options.sampleHorizonMs;
-    const out: LoadedConsumptionState = {
+    const fresh = (): LoadedConsumptionState => ({
       meta: emptyConsumptionMeta(),
       samples: new ConsumptionSampleWindow({
         horizonMs: typeof horizon === 'function' ? horizon() : horizon,
@@ -277,55 +353,75 @@ export class ConsumptionStateStore {
       logBytes: 0,
       expiredSamples: 0,
       retainedBytes: 0,
-    };
-    let meta: ConsumptionScanMetaV1 | null = null;
-    try {
-      const parsed = JSON.parse(
-        await fs.promises.readFile(this.metaPath, 'utf8')
-      ) as Partial<ConsumptionScanMetaV1>;
-      if (parsed.v === 1) {
-        meta = {
-          ...emptyConsumptionMeta(),
-          ...parsed,
-          v: 1,
-          diagnostics: {
-            ...emptyDiagnostics(),
-            ...(isRecord(parsed.diagnostics) ? parsed.diagnostics : {}),
-          },
-          planWindows: Array.isArray(parsed.planWindows)
-            ? parsed.planWindows.filter(validPlanWindow)
-            : [],
-          emptySources: Array.isArray(parsed.emptySources)
-            ? parsed.emptySources.filter(
-                (value): value is ConsumptionSourceId =>
-                  value === 'claude-code' || value === 'codex'
-              )
-            : [],
-          prunedThroughMs:
-            typeof parsed.prunedThroughMs === 'number' &&
-            Number.isFinite(parsed.prunedThroughMs)
-              ? parsed.prunedThroughMs
-              : null,
-        };
-      }
-    } catch {
-      // No meta -> no trusted state. The log alone is not resumed without its
-      // meta because firstScanComplete would be unknown.
+    });
+    const out = fresh();
+    // No meta -> no trusted state. The log alone is not resumed without its
+    // meta because firstScanComplete would be unknown.
+    const read = await readConfigFile(this.metaPath, META_FILE_GRAMMAR);
+    if (read.status === 'missing') {
+      this.markReadable();
+      return out;
     }
-    if (!meta) return out;
+    if (read.status === 'unreadable') {
+      if (read.cause.kind === 'rejected' && this.setAsideDamagedState()) {
+        this.markReadable();
+      } else if (read.cause.kind !== 'rejected') {
+        this.markUnreadable(read.cause);
+      }
+      return out;
+    }
+    const parsed = read.value;
+    const meta: ConsumptionScanMetaV1 = {
+      ...emptyConsumptionMeta(),
+      ...parsed,
+      v: 1,
+      diagnostics: {
+        ...emptyDiagnostics(),
+        ...(isRecord(parsed.diagnostics) ? parsed.diagnostics : {}),
+      },
+      planWindows: Array.isArray(parsed.planWindows)
+        ? parsed.planWindows.filter(validPlanWindow)
+        : [],
+      emptySources: Array.isArray(parsed.emptySources)
+        ? parsed.emptySources.filter(
+            (value): value is ConsumptionSourceId =>
+              value === 'claude-code' || value === 'codex'
+          )
+        : [],
+      prunedThroughMs:
+        typeof parsed.prunedThroughMs === 'number' &&
+        Number.isFinite(parsed.prunedThroughMs)
+          ? parsed.prunedThroughMs
+          : null,
+    };
+
+    let log: fs.promises.FileHandle;
+    try {
+      log = await fs.promises.open(this.logPath, 'r');
+    } catch (error) {
+      if (errorCode(error) !== 'ENOENT') {
+        this.markUnreadable({ kind: 'io', code: errorCode(error) });
+        return fresh();
+      }
+      this.markReadable();
+      out.meta = meta;
+      if (meta.prunedThroughMs !== null) {
+        out.samples.notePrunedThrough(meta.prunedThroughMs);
+      }
+      this.compactedBytes = meta.compactedBytes;
+      return out;
+    }
     out.meta = meta;
     if (meta.prunedThroughMs !== null) {
       out.samples.notePrunedThrough(meta.prunedThroughMs);
     }
     this.compactedBytes = meta.compactedBytes;
 
-    let stream: fs.ReadStream;
-    try {
-      await fs.promises.access(this.logPath);
-      stream = fs.createReadStream(this.logPath, { encoding: 'utf8' });
-    } catch {
-      return out;
-    }
+    const stream = log.createReadStream({ encoding: 'utf8' });
+    let streamError: unknown = null;
+    stream.on('error', error => {
+      streamError = error;
+    });
     const lines = readline.createInterface({
       input: stream,
       crlfDelay: Infinity,
@@ -339,48 +435,60 @@ export class ConsumptionStateStore {
     let sampleLines = 0;
     let observationBytes = 0;
     const markBytesByPath = new Map<string, number>();
-    for await (const line of lines) {
-      const lineBytes = Buffer.byteLength(line, 'utf8') + 1;
-      out.logBytes += lineBytes;
-      if (line.trim().length === 0) continue;
-      let envelope: unknown;
-      try {
-        envelope = JSON.parse(line);
-      } catch {
-        out.corruptLines += 1;
-        continue;
+    try {
+      for await (const line of lines) {
+        const lineBytes = Buffer.byteLength(line, 'utf8') + 1;
+        out.logBytes += lineBytes;
+        if (line.trim().length === 0) continue;
+        let envelope: unknown;
+        try {
+          envelope = JSON.parse(line);
+        } catch {
+          out.corruptLines += 1;
+          continue;
+        }
+        if (!isRecord(envelope)) {
+          out.corruptLines += 1;
+          continue;
+        }
+        const kind = envelope.k;
+        const value = envelope.v;
+        if (kind === 'sample' && validSample(value)) {
+          sampleLineBytes += lineBytes;
+          sampleLines += 1;
+          const retained = out.samples.add({
+            ...value,
+            assurance: REHYDRATED_ASSURANCE[value.source],
+          });
+          if (!retained) out.expiredSamples += 1;
+        } else if (kind === 'mark' && validMark(value)) {
+          // Last write wins per path — later passes append newer marks.
+          const bounded = boundedMark(value);
+          out.watermarks[value.path] = bounded;
+          markBytesByPath.set(
+            value.path,
+            bounded === value
+              ? lineBytes
+              : Buffer.byteLength(JSON.stringify({ k: 'mark', v: bounded })) + 1
+          );
+        } else if (kind === 'obs' && validObservation(value)) {
+          observations.push(value);
+          observationBytes += lineBytes;
+        } else {
+          out.corruptLines += 1;
+        }
       }
-      if (!isRecord(envelope)) {
-        out.corruptLines += 1;
-        continue;
-      }
-      const kind = envelope.k;
-      const value = envelope.v;
-      if (kind === 'sample' && validSample(value)) {
-        sampleLineBytes += lineBytes;
-        sampleLines += 1;
-        const retained = out.samples.add({
-          ...value,
-          assurance: REHYDRATED_ASSURANCE[value.source],
-        });
-        if (!retained) out.expiredSamples += 1;
-      } else if (kind === 'mark' && validMark(value)) {
-        // Last write wins per path — later passes append newer marks.
-        const bounded = boundedMark(value);
-        out.watermarks[value.path] = bounded;
-        markBytesByPath.set(
-          value.path,
-          bounded === value
-            ? lineBytes
-            : Buffer.byteLength(JSON.stringify({ k: 'mark', v: bounded })) + 1
-        );
-      } else if (kind === 'obs' && validObservation(value)) {
-        observations.push(value);
-        observationBytes += lineBytes;
-      } else {
-        out.corruptLines += 1;
-      }
+    } catch (error) {
+      streamError ??= error;
+    } finally {
+      lines.close();
+      await log.close().catch(() => undefined);
     }
+    if (streamError) {
+      this.markUnreadable({ kind: 'io', code: errorCode(streamError) });
+      return fresh();
+    }
+    this.markReadable();
     out.observations = observations;
     this.appendedBytes = out.logBytes;
     const averageSampleLine =
@@ -404,6 +512,7 @@ export class ConsumptionStateStore {
    * before it cuts the samples they certify.
    */
   append(batch: ConsumptionAppendBatch): Promise<void> {
+    if (this.unreadable) return Promise.resolve();
     if (
       batch.samples.length === 0 &&
       batch.observations.length === 0 &&
@@ -439,6 +548,7 @@ export class ConsumptionStateStore {
 
   /** Atomic meta replace. */
   writeMeta(meta: ConsumptionScanMetaV1): Promise<void> {
+    if (this.unreadable) return Promise.resolve();
     return this.enqueue(async () => {
       await this.ensureDir();
       await this.atomicReplace(
@@ -464,6 +574,7 @@ export class ConsumptionStateStore {
     observations: readonly PlanWindowObservation[],
     meta: ConsumptionScanMetaV1
   ): Promise<void> {
+    if (this.unreadable) return Promise.resolve();
     return this.enqueue(async () => {
       await this.ensureDir();
       const temporary = `${this.logPath}.tmp-${process.pid}-${++this.temporarySequence}`;

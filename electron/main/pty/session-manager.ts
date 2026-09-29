@@ -1368,6 +1368,9 @@ export class PtySessionManager extends EventEmitter {
   async reconcileResumeIdentities(
     hints: ResumeIdentityHint[]
   ): Promise<ReconciledResumeIdentity[]> {
+    // Retries a read that failed at launch, so a file that became readable
+    // is not repaired over.
+    await this.identities?.initialize();
     const durable = new Map(
       (this.identities?.list() ?? []).map(record => [
         record.durableSessionId,

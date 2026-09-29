@@ -19,6 +19,7 @@ import type {
 import {
   CONSUMPTION_SAMPLE_HORIZON_MS,
   CONSUMPTION_SAMPLE_MAX_HORIZON_MS,
+  localLogAssurance,
   planWindowKey,
   totalTokens,
 } from '@exawatt/core';
@@ -28,6 +29,7 @@ import {
   CLAUDE_ORDINARY_JSONL,
 } from '../../../packages/core/src/__tests__/consumption-fixtures';
 import { ConsumptionScannerService } from './scanner-service';
+import { ConsumptionStateStore } from './state-store';
 
 /* ------------------------------------------------------------------ */
 /* fixture corpus on disk                                              */
@@ -444,6 +446,79 @@ describe('persistence and incremental passes', () => {
     const primary = after.planWindows.find(w => w.scope === 'primary');
     expect(primary?.usedPercent).toBe(58.8);
     expect(after.scanState.phase).toBe('idle');
+  });
+});
+
+describe('saved history that cannot be read (BUG-247)', () => {
+  it('scans in memory without touching it, refuses to publish, and adopts it once it reads', async () => {
+    const first = makeService();
+    await first.snapshot();
+    await first.settle();
+    await first.dispose();
+    // Usage whose transcript the harness has since deleted: only the log
+    // still holds it.
+    const store = new ConsumptionStateStore(stateDir);
+    await store.load();
+    await store.append({
+      samples: [
+        {
+          at: '2026-08-10T07:00:00.000Z',
+          source: 'claude-code',
+          model: 'claude-sonnet-5',
+          effort: null,
+          providerSessionId: 'deleted-session',
+          cwd: '/w/acme',
+          gitBranch: 'main',
+          usage: {
+            inputTokens: 10,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 5,
+            reasoningTokens: 0,
+            webSearches: 0,
+            webFetches: 0,
+          },
+          assurance: localLogAssurance('claude-code'),
+          idempotencyKey: 'deleted-transcript',
+          contextWindow: null,
+          sourceFile: '/deleted.jsonl',
+          delegation: null,
+          entrypoint: 'cli',
+        },
+      ],
+      observations: [],
+      marks: [],
+    });
+    await store.flush();
+    const meta = path.join(stateDir, 'meta-v1.json');
+    const log = path.join(stateDir, 'log-v1.jsonl');
+    const saved = [
+      await fs.promises.readFile(meta),
+      await fs.promises.readFile(log),
+    ];
+
+    await fs.promises.chmod(meta, 0o000);
+    try {
+      const second = makeService();
+      await second.snapshot();
+      await second.settle();
+      expect((await second.snapshot()).scanState.firstScanComplete).toBe(true);
+      await expect(second.settledSampleView(0)).rejects.toThrow(/unreadable/);
+      await fs.promises.chmod(meta, 0o600);
+      expect([
+        await fs.promises.readFile(meta),
+        await fs.promises.readFile(log),
+      ]).toEqual(saved);
+
+      second.rescan();
+      await second.settle();
+      const view = await second.settledSampleView(0);
+      expect(view.samples.map(sample => sample.idempotencyKey)).toContain(
+        'deleted-transcript'
+      );
+    } finally {
+      await fs.promises.chmod(meta, 0o600);
+    }
   });
 });
 

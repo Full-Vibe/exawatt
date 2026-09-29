@@ -34,8 +34,14 @@ const FAKE_TOKEN = 'sk-ant-oat01-FIXTURE-NEVER-A-REAL-TOKEN';
 
 /** Mirrors the live `/api/oauth/usage` response shape observed 2026-08-11. */
 const USAGE_RESPONSE = {
-  five_hour: { utilization: 16.0, resets_at: '2026-08-11T22:39:59.709988+00:00' },
-  seven_day: { utilization: 38.0, resets_at: '2026-08-17T08:59:59.710005+00:00' },
+  five_hour: {
+    utilization: 16.0,
+    resets_at: '2026-08-11T22:39:59.709988+00:00',
+  },
+  seven_day: {
+    utilization: 38.0,
+    resets_at: '2026-08-17T08:59:59.710005+00:00',
+  },
   seven_day_opus: null,
   // Experiment codenames the endpoint carries and churns; never parsed.
   tangelo: null,
@@ -576,6 +582,82 @@ describe('ClaudePlanAccountService', () => {
       w => w.limitId === 'claude-weekly-all'
     )!;
     expect(view.rates[planWindowKey(weeklyAll)]).toBeCloseTo(2, 5);
+  });
+
+  describe('a state file that cannot be read (BUG-247)', () => {
+    const stateFile = () => path.join(stateDir, 'claude-plan.json');
+    const observedAtMs = (svc: ClaudePlanAccountService) =>
+      svc
+        .view()
+        .observations.map(observation => observation.observedAtMs)
+        .sort();
+
+    it('is never written over, and its history is merged back once it reads', async () => {
+      const first = service({ minFetchIntervalMs: 0 });
+      await first.maybeRefresh();
+      const firstObserved = observedAtMs(first);
+      const saved = fs.readFileSync(stateFile());
+      fs.chmodSync(stateFile(), 0o000);
+      try {
+        nowMs += 60 * 60_000;
+        const blocked = service({ minFetchIntervalMs: 0 });
+        expect(blocked.view().windows).toEqual([]);
+        await blocked.maybeRefresh();
+        expect(blocked.view().account.status).toBe('ok');
+        fs.chmodSync(stateFile(), 0o600);
+        expect(fs.readFileSync(stateFile())).toEqual(saved);
+
+        // The next refresh reads it again, and saves both launches' history.
+        nowMs += 60 * 60_000;
+        await blocked.maybeRefresh();
+        const warm = service({ fetchFn: vi.fn() as unknown as typeof fetch });
+        expect(observedAtMs(warm)).toEqual(
+          expect.arrayContaining(firstObserved)
+        );
+        expect(observedAtMs(warm).length).toBeGreaterThan(firstObserved.length);
+        expect(warm.view().account.observedAt).toBe(
+          new Date(nowMs).toISOString()
+        );
+      } finally {
+        fs.chmodSync(stateFile(), 0o600);
+      }
+    });
+
+    it.each([
+      ['unparsable JSON', '{"version":1,"windows":['],
+      ['an unknown version', JSON.stringify({ version: 2, windows: [] })],
+      [
+        'a field of the wrong type',
+        JSON.stringify({ version: 1, windows: {} }),
+      ],
+    ])(
+      'sets %s aside with its bytes and starts fresh',
+      async (_label, text) => {
+        fs.writeFileSync(stateFile(), text);
+        const svc = service();
+        expect(svc.view().windows).toEqual([]);
+        const [aside] = fs
+          .readdirSync(stateDir)
+          .filter(name => name.startsWith('claude-plan.json.corrupt-'));
+        expect(aside).toBeDefined();
+        expect(fs.readFileSync(path.join(stateDir, aside), 'utf8')).toBe(text);
+        expect(fs.statSync(path.join(stateDir, aside)).mode & 0o777).toBe(
+          0o600
+        );
+
+        await svc.maybeRefresh();
+        expect(
+          JSON.parse(fs.readFileSync(stateFile(), 'utf8')).windows
+        ).toHaveLength(3);
+      }
+    );
+
+    it('starts empty from a missing file and writes nothing before a read', () => {
+      const svc = service();
+      expect(svc.view().windows).toEqual([]);
+      expect(svc.view().account.observedAt).toBeNull();
+      expect(fs.readdirSync(stateDir)).toEqual([]);
+    });
   });
 });
 

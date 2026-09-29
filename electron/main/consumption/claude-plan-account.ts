@@ -40,6 +40,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { ConfigFileUnreadableCause } from '@exawatt/core/server';
 import {
   WindowObservationAccumulator,
   derivePlanWindowRates,
@@ -48,6 +49,11 @@ import {
   type ProviderPlanAccountState,
   type ProviderPlanSpend,
 } from '@exawatt/core';
+import {
+  UnreadableStateWatch,
+  jsonStateGrammar,
+  readPersistedStateSync,
+} from '../persisted-state-file';
 
 /** The one host this module may speak to. */
 export const CLAUDE_USAGE_ENDPOINT =
@@ -442,6 +448,42 @@ interface PersistedPlanState {
   spend: ProviderPlanSpend | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+const optionalRecords = (value: unknown) =>
+  value === undefined || (Array.isArray(value) && value.every(isRecord));
+const optionalText = (value: unknown) =>
+  value === undefined || value === null || typeof value === 'string';
+
+/** A state file of another shape is set aside with its bytes (BUG-247). */
+const PLAN_STATE_FILE = jsonStateGrammar<PersistedPlanState>(value => {
+  if (!isRecord(value) || value.version !== 1) return null;
+  if (
+    !optionalRecords(value.windows) ||
+    !optionalRecords(value.observations) ||
+    !optionalText(value.observedAt) ||
+    !optionalText(value.planType) ||
+    !(
+      value.spend === undefined ||
+      value.spend === null ||
+      isRecord(value.spend)
+    )
+  ) {
+    return null;
+  }
+  return {
+    version: 1,
+    observedAt: (value.observedAt as string | null | undefined) ?? null,
+    planType: (value.planType as string | null | undefined) ?? null,
+    windows: (value.windows as PlanWindow[] | undefined) ?? [],
+    observations:
+      (value.observations as PlanWindowObservation[] | undefined) ?? [],
+    spend: (value.spend as ProviderPlanSpend | null | undefined) ?? null,
+  };
+});
+
 export class ClaudePlanAccountService {
   private readonly stateDir: string;
   private readonly fetchFn: typeof fetch;
@@ -464,9 +506,19 @@ export class ClaudePlanAccountService {
   private inFlight: Promise<void> | null = null;
   private disposed = false;
   private listeners = new Set<() => void>();
+  /**
+   * Set while the state file exists and cannot be read (BUG-247): the file is
+   * never written over, and every refresh reads it again.
+   */
+  private unreadable: ConfigFileUnreadableCause | null = null;
+  private readonly watch: UnreadableStateWatch;
 
   constructor(options: ClaudePlanAccountOptions) {
     this.stateDir = options.stateDir;
+    this.watch = new UnreadableStateWatch(
+      this.stateFile,
+      'Claude plan history'
+    );
     this.preferenceEnabled = options.enabled;
     this.remoteReadAllowed = options.remoteReadAllowed ?? true;
     this.fetchFn = options.fetchFn ?? fetch;
@@ -569,6 +621,7 @@ export class ClaudePlanAccountService {
   }
 
   private async refresh(): Promise<void> {
+    if (this.unreadable && this.loadPersisted()) this.bump();
     const credential = await this.readCredential().catch(() => null);
     if (this.disposed || !this.enabled) return;
     if (!credential) {
@@ -643,26 +696,45 @@ export class ClaudePlanAccountService {
     return path.join(this.stateDir, STATE_FILE);
   }
 
-  private loadPersisted(): void {
-    try {
-      const raw = fs.readFileSync(this.stateFile, 'utf8');
-      const parsed = JSON.parse(raw) as PersistedPlanState;
-      if (parsed.version !== 1) return;
-      this.windows = Array.isArray(parsed.windows) ? parsed.windows : [];
-      this.observations = new WindowObservationAccumulator(
-        {},
-        Array.isArray(parsed.observations) ? parsed.observations : []
-      );
-      this.spend = parsed.spend ?? null;
-      this.planType = parsed.planType ?? null;
-      this.observedAt = parsed.observedAt ?? null;
-      this.available = this.windows.length > 0;
-    } catch {
-      // No persisted state is a normal first launch.
+  /**
+   * Reads the last-known state, merging it under anything observed since.
+   * Returns whether the file was read (or found missing, or set aside); false
+   * while it stays unreadable.
+   */
+  private loadPersisted(): boolean {
+    const read = readPersistedStateSync(this.stateFile, PLAN_STATE_FILE);
+    if (read.status === 'unreadable') {
+      this.unreadable = read.cause;
+      this.watch.failed(read.cause);
+      return false;
     }
+    this.unreadable = null;
+    this.watch.recovered();
+    // Missing is a first launch; set aside is a fresh start with the damaged
+    // bytes kept beside the store.
+    if (read.status !== 'ok') return true;
+    const saved = read.value;
+    this.observations = new WindowObservationAccumulator({}, [
+      ...saved.observations,
+      ...this.observations.list(),
+    ]);
+    const newer =
+      this.observedAt === null ||
+      (saved.observedAt !== null && saved.observedAt > this.observedAt);
+    if (newer) {
+      this.windows = saved.windows;
+      this.spend = saved.spend;
+      this.planType = saved.planType;
+      this.observedAt = saved.observedAt;
+      this.available = this.windows.length > 0;
+    }
+    return true;
   }
 
   private persist(): void {
+    // Never write over a file that could not be read; what it holds is
+    // merged in first once it can be.
+    if (this.unreadable && !this.loadPersisted()) return;
     const state: PersistedPlanState = {
       version: 1,
       observedAt: this.observedAt,

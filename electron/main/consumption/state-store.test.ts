@@ -198,16 +198,6 @@ describe('ConsumptionStateStore', () => {
     expect(reloaded.corruptLines).toBe(3);
   });
 
-  it('ignores an unknown meta version outright', async () => {
-    await fs.promises.mkdir(dir, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(dir, 'meta-v1.json'),
-      JSON.stringify({ v: 99, firstScanComplete: true })
-    );
-    const loaded = await new ConsumptionStateStore(dir).load();
-    expect(loaded.meta.firstScanComplete).toBe(false);
-  });
-
   it('compaction rewrites the log to live state and reload agrees', async () => {
     const store = new ConsumptionStateStore(dir);
     // Bloat: the same key appended many times.
@@ -424,5 +414,129 @@ describe('sample retention', () => {
 
   it('states its horizon rather than inheriting wall time', () => {
     expect(CONSUMPTION_SAMPLE_HORIZON_MS).toBe(14 * DAY);
+  });
+});
+
+describe('saved state that cannot be read (BUG-247)', () => {
+  const meta = () => path.join(dir, 'meta-v1.json');
+  const log = () => path.join(dir, 'log-v1.jsonl');
+
+  async function seed(): Promise<{ meta: Buffer; log: Buffer }> {
+    const store = new ConsumptionStateStore(dir);
+    await store.append({
+      samples: [sample('history')],
+      observations: [observation()],
+      marks: [mark('/root/claude/x.jsonl')],
+    });
+    await store.writeMeta({
+      ...emptyConsumptionMeta(),
+      firstScanComplete: true,
+    });
+    await store.flush();
+    return {
+      meta: await fs.promises.readFile(meta()),
+      log: await fs.promises.readFile(log()),
+    };
+  }
+
+  /** Every write a pass makes, against a store that loaded `blocked`. */
+  async function writeEverything(store: ConsumptionStateStore): Promise<void> {
+    await store.append({
+      samples: [sample('rescanned')],
+      observations: [],
+      marks: [mark('/root/claude/y.jsonl')],
+    });
+    await store.writeMeta({
+      ...emptyConsumptionMeta(),
+      lastScanAt: '2026-09-28T00:00:00.000Z',
+    });
+    await store.compact([sample('rescanned')], {}, [], emptyConsumptionMeta());
+    await store.flush();
+  }
+
+  it.each([
+    ['the meta', meta],
+    ['the log', log],
+  ])(
+    'leaves both files untouched when %s is unreadable, then reads them again',
+    async (_label, unreadable) => {
+      const saved = await seed();
+      await fs.promises.chmod(unreadable(), 0o000);
+      try {
+        const store = new ConsumptionStateStore(dir);
+        const loaded = await store.load();
+        expect(store.blocked).toBe(true);
+        expect(loaded.samples.size).toBe(0);
+        await writeEverything(store);
+        await fs.promises.chmod(unreadable(), 0o600);
+        expect(await fs.promises.readFile(meta())).toEqual(saved.meta);
+        expect(await fs.promises.readFile(log())).toEqual(saved.log);
+
+        const reloaded = await store.load();
+        expect(store.blocked).toBe(false);
+        expect([...reloaded.samples.keys()]).toEqual(['history']);
+      } finally {
+        await fs.promises.chmod(unreadable(), 0o600);
+      }
+    }
+  );
+
+  it('a directory where the log belongs blocks the store, and is left alone', async () => {
+    await seed();
+    await fs.promises.rm(log());
+    await fs.promises.mkdir(log());
+    const store = new ConsumptionStateStore(dir);
+    expect((await store.load()).samples.size).toBe(0);
+    expect(store.blocked).toBe(true);
+    await writeEverything(store);
+    expect((await fs.promises.stat(log())).isDirectory()).toBe(true);
+  });
+
+  it.each([
+    ['unparsable JSON', '{"v":1,'],
+    ['an unknown version', JSON.stringify({ v: 99, firstScanComplete: true })],
+  ])(
+    'sets the meta and log aside with their bytes on %s, and starts fresh',
+    async (_label, text) => {
+      const saved = await seed();
+      await fs.promises.writeFile(meta(), text);
+      const store = new ConsumptionStateStore(dir);
+      const loaded = await store.load();
+      expect(store.blocked).toBe(false);
+      expect(loaded.samples.size).toBe(0);
+      expect(loaded.meta.firstScanComplete).toBe(false);
+
+      const names = await fs.promises.readdir(dir);
+      const aside = (prefix: string) => {
+        const name = names.find(entry =>
+          entry.startsWith(`${prefix}.corrupt-`)
+        );
+        if (!name) throw new Error(`${prefix} was not set aside`);
+        return path.join(dir, name);
+      };
+      expect(await fs.promises.readFile(aside('meta-v1.json'), 'utf8')).toBe(
+        text
+      );
+      expect(await fs.promises.readFile(aside('log-v1.jsonl'))).toEqual(
+        saved.log
+      );
+      expect((await fs.promises.stat(aside('log-v1.jsonl'))).mode & 0o777).toBe(
+        0o600
+      );
+      expect(names).not.toContain('meta-v1.json');
+      expect(names).not.toContain('log-v1.jsonl');
+
+      await writeEverything(store);
+      expect([
+        ...(await new ConsumptionStateStore(dir).load()).samples.keys(),
+      ]).toEqual(['rescanned']);
+    }
+  );
+
+  it('starts empty from a missing directory and is not blocked', async () => {
+    const store = new ConsumptionStateStore(path.join(dir, 'absent'));
+    const loaded = await store.load();
+    expect(store.blocked).toBe(false);
+    expect(loaded.samples.size).toBe(0);
   });
 });

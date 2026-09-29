@@ -38,9 +38,35 @@ function missing(error: unknown): boolean {
   );
 }
 
+/** Store-owned diagnostics: basenames and causes only, never contents. */
+export function recordStoreDiagnostic(
+  event: string,
+  fields: Record<string, unknown>
+): void {
+  recordDiagnostic(event, fields);
+}
+
+function recoveryFileFor(file: string): string {
+  return `${file}.corrupt-${Date.now()}-${randomUUID()}`;
+}
+
+/**
+ * Damaged bytes moved beside the store, owner-only, where no later write can
+ * reach them. Returns where they went. Throws when the move fails, and the
+ * file is then exactly where it was.
+ */
+export function setAsideDamagedFile(
+  file: string,
+  recoveryFile = recoveryFileFor(file)
+): string {
+  fs.renameSync(file, recoveryFile);
+  fs.chmodSync(recoveryFile, 0o600);
+  return recoveryFile;
+}
+
 /** A durable interlock: moving bad bytes aside must never look like a fresh install. */
 function quarantine(file: string): JsonFileRead {
-  const recoveryFile = `${file}.corrupt-${Date.now()}-${randomUUID()}`;
+  const recoveryFile = recoveryFileFor(file);
   const marker = `${file}.recovery-required`;
   // Marker first: a crash or failed rename still leaves writes blocked. Never
   // put parser errors or file contents into diagnostics (this includes secrets).
@@ -49,8 +75,7 @@ function quarantine(file: string): JsonFileRead {
     JSON.stringify({ recoveryFile: path.basename(recoveryFile) }),
     { mode: 0o600, flag: 'wx' }
   );
-  fs.renameSync(file, recoveryFile);
-  fs.chmodSync(recoveryFile, 0o600);
+  setAsideDamagedFile(file, recoveryFile);
   recordDiagnostic('store.recovery-required', {
     store: path.basename(file),
     recoveryFile: path.basename(recoveryFile),

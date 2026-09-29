@@ -1290,3 +1290,14 @@ repair-and-retry path; no destructive reset is added. Successful validation of a
 repaired file clears protection. Diagnostics never emit stored values. These
 contracts remain active-build until the integration log records verification
 and delivery; they do not imply new remote lifecycle support.
+
+State Exawatt rebuilds from transcripts and live reads (Session resume links,
+Claude plan history, the usage scan) reads through `readPersistedState` in
+`electron/main/persisted-state-file.ts`, on `readConfigFile` (BUG-247). A
+damaged file is set aside with its bytes as above, but no interlock follows:
+the store starts fresh, since nothing would lift one. A file that is there and
+cannot be read is never written over: changes stay in memory, the read is
+retried on the next access and merged over the file once it succeeds, the
+first failure is logged, and one that survives a retry raises a notification
+that reveals the file. The usage scan refuses to publish operator stats while
+its history is unreadable.

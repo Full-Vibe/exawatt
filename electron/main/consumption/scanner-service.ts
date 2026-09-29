@@ -69,6 +69,7 @@ import {
 import type { ConsumptionScannerLike } from '../consumption-ipc';
 import {
   ConsumptionStateStore,
+  type LoadedConsumptionState,
   emptyConsumptionMeta,
   type ConsumptionScanMetaV1,
 } from './state-store';
@@ -278,6 +279,11 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     if (!this.firstScanComplete) {
       throw new Error('Local usage scan is incomplete');
     }
+    // A scan run in memory beside unreadable history holds only what the
+    // harnesses still keep; publishing it would replace the older activity.
+    if (this.store.blocked) {
+      throw new Error('Saved usage history is unreadable');
+    }
     return {
       samples: this.samples.since(sinceMs),
       completeSinceMs: this.samples.prunedThroughMs,
@@ -339,37 +345,41 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     this.started = true;
     this.ready = (async () => {
       try {
-        const loaded = await this.store.load();
-        this.samples = loaded.samples;
-        this.watermarks = loaded.watermarks;
-        this.observations = new WindowObservationAccumulator(
-          {},
-          loaded.observations
-        );
-        this.diagnostics = loaded.meta.diagnostics;
-        this.discardedDegenerateWindows =
-          loaded.meta.discardedDegenerateWindows;
-        this.firstScanComplete = loaded.meta.firstScanComplete;
-        this.lastScanAt = loaded.meta.lastScanAt;
-        this.corpusBytes = loaded.meta.corpusBytes;
-        this.emptySources = loaded.meta.emptySources;
-        for (const window of loaded.meta.planWindows) {
-          this.latestWindows.set(planWindowKey(window), window);
-        }
-        if (loaded.expiredSamples > 0) {
-          console.log(
-            `[consumption] retention dropped ${loaded.expiredSamples} sample(s) ` +
-              `older than ${Math.round(this.samples.retentionMs / 86_400_000)}d ` +
-              `while hydrating ${loaded.logBytes} log bytes`
-          );
-        }
-        if (this.samples.size > 0) this.revision += 1;
+        this.hydrate(await this.store.load());
       } catch (error) {
         console.error('Consumption state load failed; rescanning', error);
       }
       this.startWatching();
       this.schedulePass(this.initialDelayMs);
     })();
+  }
+
+  /** Adopts persisted state wholesale, replacing whatever memory holds. */
+  private hydrate(loaded: LoadedConsumptionState): void {
+    this.samples = loaded.samples;
+    this.watermarks = loaded.watermarks;
+    this.observations = new WindowObservationAccumulator(
+      {},
+      loaded.observations
+    );
+    this.diagnostics = loaded.meta.diagnostics;
+    this.discardedDegenerateWindows = loaded.meta.discardedDegenerateWindows;
+    this.firstScanComplete = loaded.meta.firstScanComplete;
+    this.lastScanAt = loaded.meta.lastScanAt;
+    this.corpusBytes = loaded.meta.corpusBytes;
+    this.emptySources = loaded.meta.emptySources;
+    this.latestWindows.clear();
+    for (const window of loaded.meta.planWindows) {
+      this.latestWindows.set(planWindowKey(window), window);
+    }
+    if (loaded.expiredSamples > 0) {
+      console.log(
+        `[consumption] retention dropped ${loaded.expiredSamples} sample(s) ` +
+          `older than ${Math.round(this.samples.retentionMs / 86_400_000)}d ` +
+          `while hydrating ${loaded.logBytes} log bytes`
+      );
+    }
+    if (this.samples.size > 0) this.revision += 1;
   }
 
   private startWatching(): void {
@@ -438,6 +448,17 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private async runPass(): Promise<void> {
     const abort = { aborted: false };
     this.passAbort = abort;
+    if (this.store.blocked) {
+      // The saved scan could not be read at launch (BUG-247). Read it again;
+      // once it reads, it replaces the in-memory scan, and this pass re-reads
+      // only what changed since its watermarks.
+      try {
+        const loaded = await this.store.load();
+        if (!this.store.blocked) this.hydrate(loaded);
+      } catch (error) {
+        console.error('Consumption state reload failed', error);
+      }
+    }
     this.phase = this.firstScanComplete ? 'incremental' : 'first-scan';
     this.cancelled = false;
     this.progressBySource = new Map();

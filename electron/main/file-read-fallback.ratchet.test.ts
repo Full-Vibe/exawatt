@@ -43,10 +43,10 @@ const MAIN = __dirname;
  */
 const KNOWN_FALLBACKS: Record<string, { why: string; count?: number }> = {
   // Exawatt's own caches: a failed read costs a recompute, and nothing is
-  // reported to the operator from the empty value.
-  'consumption/state-store.ts:load': {
-    why: 'scan metadata cache; unreadable means a full rescan of the source logs',
-  },
+  // reported to the operator from the empty value. Exawatt state that holds
+  // history (Session resume links, Claude plan history, the usage scan) is
+  // not a cache: it reads through `readPersistedState` and is never written
+  // over after a failed read (BUG-247).
   'content-store.ts:read': {
     why: 'content-addressed render cache; a miss re-renders the artifact',
   },
@@ -55,7 +55,7 @@ const KNOWN_FALLBACKS: Record<string, { why: string; count?: number }> = {
     why: 'the dedupe read before a write; a failed read only costs a rewrite of identical bytes',
   },
   'pty/conversation-catalog.ts:readCache': {
-    why: 'summary cache; a miss re-reads the transcripts',
+    why: 'summary cache; a failed read costs regenerating titles the next write drops, and the transcripts they summarize are untouched',
   },
   'renderer-server.ts:hasWarmRendererCache': {
     why: 'a cold cache only chooses the slower extraction path',
@@ -84,15 +84,6 @@ const KNOWN_FALLBACKS: Record<string, { why: string; count?: number }> = {
   },
   'ssh-alias-candidates.ts:readTextFile': {
     why: 'alias suggestions only; the operator can still type any alias, and Connect reads the real config through ssh',
-  },
-
-  // Persisted state that a later write replaces. Tracked as BUG-245 residuals:
-  // an unreadable file here is overwritten by the next save.
-  'consumption/claude-plan-account.ts:loadPersisted': {
-    why: 'last-known plan windows only; the live read refills them (BUG-245 residual)',
-  },
-  'pty/session-identity-store.ts:initialize': {
-    why: 'identities are recoverable from provider transcripts when one match is unambiguous (BUG-245 residual)',
   },
 };
 

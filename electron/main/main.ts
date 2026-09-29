@@ -14,6 +14,7 @@ import {
 } from 'electron';
 import { randomUUID } from 'crypto';
 import path from 'path';
+import { installUnreadableStateNotice } from './unreadable-state-notice';
 import { commandVerbCapabilities } from '@exawatt/core';
 import { registerMainChannels } from './app-ipc';
 import { observeHostPower } from './host-power';
@@ -386,6 +387,7 @@ function openMainWindow(workspaceReady: boolean): void {
 
 app.whenReady().then(() => {
   installMainInstrumentation(userDataPath(), mainDiagnostics, powerMonitor);
+  installUnreadableStateNotice(identity.productName);
   const hostPower = observeHostPower(powerMonitor, snapshot => {
     broadcastToWindows(
       BrowserWindow.getAllWindows(),

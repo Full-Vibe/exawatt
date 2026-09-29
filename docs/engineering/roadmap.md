@@ -2810,7 +2810,34 @@ local credential as `unreadable-config`. Guard:
 that turns a file read into an empty value under `electron/main`, against a
 reasoned exceptions list. Residual: `session-identity-store.ts` and
 `claude-plan-account.ts` load their own persisted state that way, so an
-unreadable file there is overwritten by the next save.
+unreadable file there is overwritten by the next save (fixed by BUG-247).
+
+### BUG-247 Unreadable Session links, plan history and usage scan were overwritten by the next save
+
+Status: fixed · ENG-003 · found 2026-09-28 in the pre-0.1.14 review (BUG-245's residual).
+
+Three stores of Exawatt's own state read a failed read as an empty one and
+then saved over it. `session-identities.json` (which conversation each
+Session resumes) and `claude-plan.json` (Claude plan history) lost their
+records to the next save. The usage scan was worse than the exceptions list
+said: an unreadable or damaged `meta-v1.json`, or an unreadable log, started
+a scan from scratch whose compaction rewrote `log-v1.jsonl` without the usage
+the harnesses had since deleted (Claude Code keeps 30 days; the log up to
+400). All three now read through `readPersistedState`
+(`electron/main/persisted-state-file.ts`, on `readConfigFile`). Unreadable
+leaves the file untouched and saves nothing: changes stay in memory, the read
+is tried again on the next mutation, refresh or scan pass, and what memory
+holds is merged over the file once it reads. The first failure is logged;
+one that survives a retry shows a notification that reveals the file. The
+usage scan also refuses to publish operator stats while its history is
+unreadable. A damaged file (bad JSON, another version, or a record this build
+cannot read) is set aside with its bytes, `<file>.corrupt-<time>-<uuid>`,
+owner-only, as settings do since 0.1.13; the usage scan sets its log aside
+with its meta. Unlike settings, no write interlock follows: this state is
+rebuilt from transcripts and live reads, there is no recovery step to lift
+one, and it would stop the store saving again. The other 11 ratchet
+exceptions are caches, harness files Exawatt never writes, or read-only
+suggestions, and stay listed with why.
 
 ### BUG-234 Publishing said "needs an update" for rate limits and missing routes
 
@@ -3007,6 +3034,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1.13 storage recovery: a corrupt JSON read “installs a durable write interlock”, and “quarantine cannot look like fresh-install absence” | BUG-247, 2026-09-28 | Still holds for operator choices (settings, workspace, connected sources, projection plan, closed Sessions). State Exawatt rebuilds (Session resume links, Claude plan history, the usage scan) sets damaged bytes aside the same way and starts fresh with no interlock; an unreadable file there blocks writes in memory only and is read again. |
 | ENG-044 S1 “It fails open: a guard that cannot answer lets the command run” | BUG-243, 2026-09-28 | A guard the operator turned on refuses a kill it could not check and records `safety.undecided`; only a target the shell decides at run time runs unchecked, and Claude Code's own hook timeout still proceeds. |
 | ENG-033 H3 “NOT ACTIVE; requires a separate design and authorization pass” | operator, 2026-09-28 | Direction decided: Exawatt hosts the machines agent harnesses run on. The design pass on provisioning, custody, deletion, billing, and control-plane ownership still gates implementation. |
 | BUG-227 observational-only boundary | BUG-227 supported-process implementation, 2026-09-28 | Settings now controls Exawatt-owned sleep prevention for verified Codex 0.156.1 launches. Per-launch evidence and native assertion checks permit the scoped control; physical sleep/wake acceptance remains open, and Claude and other independent inhibitors are never claimed controlled. |
