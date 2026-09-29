@@ -46,7 +46,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-030 | Open-source readiness                            | active-build | Public repo is live; repair projection/history parity, exact-tree CI/security, and public Release provenance before the friend cohort. Contribution intake is trigger-deferred. |
 | ENG-031 | Website — vision communication and guides        | active-build | SHAPED 2026-08-14 — the overhaul IS the ENG-030 launch surface; altitude-ladder spine, band system, live board hero.                                                                   |
 | ENG-032 | Theming and visual identity                      | done         | T0–T5.3 LANDED — three presets share one app-global Manual/Auto contract with browser-paint and public-typography continuity gates.                                                    |
-| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P2 one-screen Connect and P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. |
+| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P2 one-screen Connect and P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. H3 direction decided 2026-09-28: Exawatt-hosted harness machines, design pass next. |
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
@@ -1864,9 +1864,14 @@ Milestones:
   send access to click and SSH-login budgets in the real app. Next: P1 once
   the workspace-honesty registry work lands, with P2b's landing; then P4 with
   D54.
-- H3 Exawatt-managed placement — NOT ACTIVE; requires a separate design and
-  authorization pass for provisioning, credential custody, deletion, billing,
-  and control-plane ownership before implementation begins.
+- H3 Exawatt-managed placement — DIRECTION DECIDED 2026-09-28 (operator):
+  Exawatt hosts the machines agent harnesses run on, for Agents doing work,
+  not as a general container host. Implementation still waits for the design
+  pass on provisioning, credential custody, deletion, billing, and
+  control-plane ownership. The shared first build is a per-machine Exawatt
+  host process that owns the terminals and journals hook events, attached over
+  the existing SSH transport; managed placement runs the same process.
+  [Decision and research](projects/connected-openclaw-and-hosted-agents.md#2026-09-28--operator-decision-exawatt-hosts-the-harness-machines).
 - H4 Clone or move — enumerate what transfers and what remains source-local
   before offering a gesture. No false provider-session continuity.
 
@@ -2296,6 +2301,16 @@ next controls (destructive git, credential reads, network egress, allowed
 harnesses and models); and how it meets ENG-006 Approvals and ENG-023
 visibility. Guides are owed under ENG-031.
 
+Direction (operator, 2026-09-28), for Agents running on remote machines:
+the guard policy is "configurable and clear and visually evident when it's
+running", and its design takes cues from products already solving this well
+("like with Muse or Codex or Claude Code. I bet they're solving this problem
+much better than we can from a design and UX standpoint"). Today the one
+remote gate is per-server send access, shown on the coworker pane's composer
+and nowhere on Team or Fleet while an Agent runs; that gap is in scope. A
+design research pass on those products comes before shaping. Evidence:
+[ENG-033 decision entry](projects/connected-openclaw-and-hosted-agents.md#2026-09-28--operator-decision-exawatt-hosts-the-harness-machines).
+
 ## Backlog
 
 ### Public defect-record boundary
@@ -2683,6 +2698,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ENG-033 H3 “NOT ACTIVE; requires a separate design and authorization pass” | operator, 2026-09-28 | Direction decided: Exawatt hosts the machines agent harnesses run on. The design pass on provisioning, custody, deletion, billing, and control-plane ownership still gates implementation. |
 | BUG-227's open question to “choose an explicit battery policy”                                                                                                                            | operator-approved decision `0044`, 2026-09-25                                                 | Recommendation is device-local `Never` / `On AC only` (default) / `On AC and battery`, with display locking independent from Session lifecycle. Setting work remains gated on supported per-harness control; Claude's native inhibitor cannot currently honor the battery boundary, so the app must not claim otherwise. |
 | ENG-010/ENG-033: Exawatt asks for send access and never grants it (decision `0037` §4; the H1 criterion that Exawatt never requests `operator.admin` or `operator.pairing`) | operator, 2026-09-24 | Send access is a step in setting up each server. One click has Exawatt run the approval of its OWN pending request over the operator's own SSH login; the alternative is copying that command and running it by hand, then Check again. Exawatt still holds no pairing or admin authority of its own and never approves a request it cannot prove is its own. |
 | BUG-146 item 5: a `thread/items/list` page over the 2 MiB frame cap "rides the same marker" as a permanent verdict | BUG-183, 2026-09-23 | A failure that depends on one Session's data is per Session and per read, on its own ladder, and never a verdict about the binary; an oversize frame fails only its own request. Only a binary fact (version, wire-protocol break) is held, and holding it withdraws every Session. |

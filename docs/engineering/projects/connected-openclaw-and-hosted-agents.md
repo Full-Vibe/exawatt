@@ -1905,3 +1905,34 @@ research input, not canon). Its conclusions for the H3 design pass:
 - Open for the operator: whether the first user will hold her own cloud
   account, and whether safety-control hooks on a remote Agent fail closed
   or evaluate policy on the machine.
+
+### 2026-09-28 — Operator decision: Exawatt hosts the harness machines
+
+The operator chose Exawatt-managed placement over the research's recommended
+customer-rented machine: Exawatt hosts the machines agent harnesses run on.
+The product is persistent coding agents and other harnesses doing work, not a
+general container host. H3 moves from not active to direction decided; the
+design pass on provisioning, credential custody, deletion, billing, and
+control-plane ownership still gates implementation.
+
+What does not change: the first build. Every placement needs a small Exawatt
+host process on the machine, because status comes from per-launch hooks
+posting to a loopback listener a remote harness cannot reach. That process
+(owning the terminals, running today's launch plans, journaling hook events
+for replay on reconnect) is dogfooded on the operator's own servers over the
+existing SSH transport, then runs unchanged on Exawatt-managed machines.
+
+The custody constraint that decides what a hosted Agent can sign in with:
+Anthropic's terms for third-party products say developers "may not collect,
+store, or intermediate Claude.ai credentials or session tokens", and OpenAI's
+forbid sharing account credentials. On machines Exawatt hosts, Claude Code and
+Codex therefore run on API credentials or a commercial arrangement with the
+vendor, not the customer's consumer subscription sign-in. Harnesses that
+already run on API keys (OpenCode, Qwen Code, Hermes, OpenClaw) are
+unaffected. Raised once; the design pass records the operator's call.
+
+Remote Agent safety direction is recorded under ENG-044: configurable, clear,
+and visibly present while an Agent runs, with design cues taken from products
+already solving it. Today's only remote gate is per-server send access, shown
+on the coworker pane's composer and nowhere on Team or Fleet tiles while an
+Agent runs.
