@@ -10,6 +10,7 @@ import {
   type OCGatewayConfig,
 } from '@exawatt/core/server';
 import { stopChildProcess } from './child-process-lifecycle';
+import { SSH_FAILURE_SENTENCES, SSH_LOGIN_PATTERNS } from './ssh-failure-text';
 import {
   buildDestinationArgs,
   namesUnreadableIdentityFile,
@@ -198,19 +199,15 @@ const SSH_LAUNCH_FAILED = 'exawatt:ssh-launch-failed';
  * is what makes the redaction invariant checkable: no code path interpolates a
  * host, user, port, key path, or token into a failure message.
  *
- * A class may have several fixed sentences (see `SPECIFIC_MESSAGES`), because
+ * A class may have several fixed sentences (see `SSH_FAILURE_SENTENCES`), because
  * the class says what kind of failure it was and the sentence has to say which
  * field the operator got wrong.
  */
 const FAILURE_MESSAGES: Record<GatewayBootstrapFailure, string> = {
   'invalid-target':
     'That server target is not usable. Check the SSH alias, or the host, login, port, and key file you entered.',
-  unreachable:
-    'Could not reach that server over SSH. Check that it is online and reachable from this machine.',
-  // Not "authorized for this alias": a manually entered server has no alias,
-  // and this module serves both transports.
-  'auth-rejected':
-    'The server refused the SSH login. Check that your key is loaded and authorized for that login.',
+  unreachable: SSH_FAILURE_SENTENCES.unreachable,
+  'auth-rejected': SSH_FAILURE_SENTENCES['auth-rejected'],
   'openclaw-missing':
     'OpenClaw was not found on that server. Check that it is installed for this login and try again.',
   'token-unavailable':
@@ -220,24 +217,6 @@ const FAILURE_MESSAGES: Record<GatewayBootstrapFailure, string> = {
   unknown:
     'The Gateway credential could not be read for an unrecognized reason. Open source diagnostics for the connection detail.',
 };
-
-/**
- * The sentences that name a FIELD rather than a category. Each stays inside an
- * existing class, so the product's failure vocabulary is unchanged and only the
- * operator's next step gets sharper.
- */
-const SPECIFIC_MESSAGES = {
-  identity_file_unreadable:
-    'That key file could not be read. Check the path to the private key file and that this account can open it.',
-  identity_file_refused:
-    'That key file was refused. Check that it is the private key for this login and that only you can read it.',
-  address_unresolved:
-    'That server address could not be found. Check the server’s hostname or IP address.',
-  ssh_port_silent:
-    'Nothing answered on the server’s SSH port. Check that the server is online and that its SSH port is right.',
-  host_key_changed:
-    'The server offered a different SSH host key than the one this machine already trusts. Verify the server first.',
-} as const;
 
 function bounded(text: string): string {
   return text.length <= MESSAGE_MAX
@@ -521,9 +500,10 @@ function parseCliToken(stdout: unknown): string | null {
 }
 
 /**
- * Ordered because the phrases overlap, and the first match wins. This is the
- * same vocabulary `ssh-tunnel.ts` classifies, minus the forward-specific cases
- * that cannot arise here: this module runs a command, it does not open a `-L`.
+ * Ordered because the phrases overlap, and the first match wins. The login
+ * phrases are the ones `ssh-tunnel.ts` matches too (`ssh-failure-text.ts`);
+ * the forward-specific cases cannot arise here, because this module runs a
+ * command and does not open a `-L`.
  */
 const TRANSPORT_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
@@ -531,80 +511,11 @@ const TRANSPORT_PATTERNS: ReadonlyArray<{
   /** Names the field the operator got wrong, when `ssh` said which it was. */
   message?: string;
 }> = [
-  /*
-   * The key-file phrases come BEFORE the generic refusal phrases, for the
-   * reason `ssh-tunnel.ts` orders them the same way: an unreadable or wrongly
-   * permissioned `-i` never arrives alone. `ssh` warns about the key, offers
-   * nothing, and the server ends the session with `Permission denied
-   * (publickey).`, so below that phrase these could never win a match.
-   */
-  {
-    pattern: /identity file .* not accessible/i,
-    failure: 'auth-rejected',
-    message: SPECIFIC_MESSAGES.identity_file_refused,
-  },
-  {
-    pattern: /no such identity/i,
-    failure: 'auth-rejected',
-    message: SPECIFIC_MESSAGES.identity_file_refused,
-  },
-  {
-    pattern: /bad permissions|unprotected private key file/i,
-    failure: 'auth-rejected',
-    message: SPECIFIC_MESSAGES.identity_file_refused,
-  },
-  {
-    pattern: /invalid format|error in libcrypto/i,
-    failure: 'auth-rejected',
-    message: SPECIFIC_MESSAGES.identity_file_refused,
-  },
-
-  {
-    pattern:
-      /host key verification failed|remote host identification has changed/i,
-    failure: 'auth-rejected',
-    message: SPECIFIC_MESSAGES.host_key_changed,
-  },
-
-  { pattern: /permission denied/i, failure: 'auth-rejected' },
-  { pattern: /publickey/i, failure: 'auth-rejected' },
-  { pattern: /too many authentication failures/i, failure: 'auth-rejected' },
-
-  {
-    pattern: /could not resolve hostname/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.address_unresolved,
-  },
-  {
-    pattern: /name or service not known|nodename nor servname/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.address_unresolved,
-  },
-  {
-    pattern: /no route to host/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.ssh_port_silent,
-  },
-  {
-    pattern: /network is unreachable/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.ssh_port_silent,
-  },
-  {
-    pattern: /operation timed out/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.ssh_port_silent,
-  },
-  {
-    pattern: /connection timed out/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.ssh_port_silent,
-  },
-  {
-    pattern: /connection refused/i,
-    failure: 'unreachable',
-    message: SPECIFIC_MESSAGES.ssh_port_silent,
-  },
+  ...SSH_LOGIN_PATTERNS.map(({ pattern, fault, message }) => ({
+    pattern,
+    failure: fault,
+    message,
+  })),
   { pattern: /connection closed by remote host/i, failure: 'unreachable' },
 ];
 
@@ -736,7 +647,10 @@ export async function bootstrapGatewayCredentialOverSsh(
       ? namesUnreadableIdentityFile(target)
       : namesUnreadableIdentityFile(target, canReadIdentityFile)
   ) {
-    return failed('invalid-target', SPECIFIC_MESSAGES.identity_file_unreadable);
+    return failed(
+      'invalid-target',
+      SSH_FAILURE_SENTENCES.identity_file_unreadable
+    );
   }
 
   // 1. The config file. First, because it is the trustworthy source and the
