@@ -36,6 +36,8 @@
    */
   "include": [
     "main/connected-*.ts",
+    "main/device-power*.ts",
+    "main/host-power*.ts",
     "main/ssh-*.ts",
     "main/gateway-bootstrap*.ts",
     "main/atomic-json-file*.ts",

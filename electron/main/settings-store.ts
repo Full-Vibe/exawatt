@@ -30,6 +30,7 @@ import {
   type SafetyControlSettings,
 } from '@exawatt/core';
 import type {
+  DeviceKeepAwakePolicy,
   AppearanceAutoPairV1,
   AppearancePreferencesV1,
   AppearanceSelectionV1,
@@ -348,6 +349,17 @@ const SETTINGS_SCHEMA: {
   // Only an explicit boolean is a choice. A missing or malformed hosted-feature
   // key stays absent so `?.hosted !== false` resolves it to the disclosed
   // default instead of silently opting the operator out.
+  power: raw => {
+    const policy =
+      raw && typeof raw === 'object'
+        ? (raw as { keepAwake?: unknown }).keepAwake
+        : undefined;
+    return policy === 'never' ||
+      policy === 'ac-only' ||
+      policy === 'ac-and-battery'
+      ? { keepAwake: policy }
+      : undefined;
+  },
   contextLabels: raw => {
     const hosted = explicitBoolean(raw, 'hosted');
     return hosted === undefined ? undefined : { hosted };
@@ -551,6 +563,7 @@ function validStoredSettings(value: unknown): boolean {
       'fontStrokeWidth',
     ],
     notifications: ['attention', 'dockBadge'],
+    power: ['keepAwake'],
     contextLabels: ['hosted'],
     conversationSummaries: ['hosted'],
     goalVisuals: ['enabled'],
@@ -649,6 +662,7 @@ function recoverySettings(): StoredSettings {
     appearance: structuredClone(
       CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
     ),
+    power: { keepAwake: 'never' },
     contextLabels: { hosted: false },
     conversationSummaries: { hosted: false },
     goalVisuals: { enabled: false },
@@ -1038,6 +1052,23 @@ export function setAgentPermissionMode(
       },
     },
   };
+  writeSettings(settings);
+  return settings;
+}
+
+/** Validate here too: direct callers have the same persistence boundary as IPC. */
+export function setKeepAwakePolicy(
+  policy: DeviceKeepAwakePolicy
+): StoredSettings {
+  if (
+    policy !== 'never' &&
+    policy !== 'ac-only' &&
+    policy !== 'ac-and-battery'
+  ) {
+    throw new Error('Invalid keep-awake policy');
+  }
+  const settings = loadSettings();
+  settings.power = { keepAwake: policy };
   writeSettings(settings);
   return settings;
 }

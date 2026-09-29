@@ -60,6 +60,7 @@ const WELL_FORMED: { [C in Channel]: unknown[] } = {
   ],
   'settings:set-attention-notifications': [true],
   'settings:set-dock-badge': [false],
+  'settings:set-keep-awake': ['ac-only'],
   'settings:set-hosted-context-labels': [true],
   'settings:set-hosted-conversation-summaries': [false],
   'settings:set-goal-visuals': [true],
@@ -72,6 +73,20 @@ const WELL_FORMED: { [C in Channel]: unknown[] } = {
 };
 
 describe('argument boundaries', () => {
+  it('accepts only explicit device power choices', () => {
+    for (const policy of ['never', 'ac-only', 'ac-and-battery']) {
+      expect(read('settings:set-keep-awake', policy)).toEqual([policy]);
+    }
+    for (const policy of [
+      undefined,
+      null,
+      true,
+      'always',
+      { keepAwake: 'never' },
+    ]) {
+      expect(() => read('settings:set-keep-awake', policy)).toThrow();
+    }
+  });
   it.each(Object.entries(WELL_FORMED))(
     '%s accepts what preload sends',
     (channel, args) => {

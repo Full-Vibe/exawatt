@@ -366,6 +366,7 @@ app.whenReady().then(() => {
       snapshot
     );
   });
+  runtime.hostPower = hostPower;
   handleTrusted('app:host-power', () => hostPower.getSnapshot());
   app.once('will-quit', hostPower.dispose);
   // Registered BEFORE bootstrap so it survives bootstrap failing: this is the

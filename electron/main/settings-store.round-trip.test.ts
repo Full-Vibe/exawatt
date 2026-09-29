@@ -33,6 +33,7 @@ import {
   SETTINGS_KEYS,
   loadSettings,
   setKeyboardShortcutOverrides,
+  setKeepAwakePolicy,
   setReentryRecapEnabled,
   writeSettings,
   type StoredSettings,
@@ -68,6 +69,7 @@ const FIXTURES: {
     fontStrokeWidth: 0.15,
   },
   notifications: { attention: true, dockBadge: true },
+  power: { keepAwake: 'ac-and-battery' },
   contextLabels: { hosted: false },
   conversationSummaries: { hosted: false },
   goalVisuals: { enabled: false },
@@ -190,5 +192,24 @@ describe('safety controls (ENG-044)', () => {
       JSON.stringify({ safety: { processKillGuard: 'yes' } })
     );
     expect(loadSettings().safety?.processKillGuard).toBeUndefined();
+  });
+});
+
+describe('device-local power preference', () => {
+  it('changes only power policy and survives an unrelated settings write', () => {
+    writeSettings(FIXTURES);
+    setKeepAwakePolicy('never');
+    expect(loadSettings()).toEqual({
+      ...FIXTURES,
+      power: { keepAwake: 'never' },
+    });
+    setReentryRecapEnabled(false);
+    expect(loadSettings().power).toEqual({ keepAwake: 'never' });
+  });
+
+  it('rejects invalid direct writes without changing the persisted preference', () => {
+    setKeepAwakePolicy('never');
+    expect(() => setKeepAwakePolicy('always' as 'never')).toThrow();
+    expect(loadSettings().power).toEqual({ keepAwake: 'never' });
   });
 });

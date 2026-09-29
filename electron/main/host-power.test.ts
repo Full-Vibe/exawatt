@@ -39,6 +39,25 @@ describe('host power observations', () => {
     observer.dispose();
   });
 
+  it('shares one observation with owned subscribers and removes them on disposal', () => {
+    const source = powerSource();
+    const observer = observeHostPower(source, vi.fn());
+    const first = vi.fn();
+    const second = vi.fn();
+    const off = observer.subscribe(first);
+    observer.subscribe(second);
+    source.emit('on-battery');
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    off();
+    source.emit('on-ac');
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledTimes(2);
+    observer.dispose();
+    source.emit('on-battery');
+    expect(second).toHaveBeenCalledTimes(2);
+  });
+
   it('refreshes power on wake without inferring that the display unlocked', () => {
     const source = powerSource();
     const observer = observeHostPower(source, vi.fn());

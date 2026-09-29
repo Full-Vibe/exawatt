@@ -234,6 +234,7 @@ export interface DesktopSettingsApi {
   setHostedConversationSummaries: BridgeInvoke<'settings:set-hosted-conversation-summaries'>;
   setGoalVisualsEnabled: BridgeInvoke<'settings:set-goal-visuals'>;
   setKeyboardShortcuts: BridgeInvoke<'settings:set-keyboard-shortcuts'>;
+  setKeepAwake: BridgeInvoke<'settings:set-keep-awake'>;
   setReentryRecap: BridgeInvoke<'settings:set-reentry-recap'>;
   setClaudePlanWindows: BridgeInvoke<'settings:set-claude-plan-windows'>;
   setSafetyControl: BridgeInvoke<'settings:set-safety-control'>;
@@ -263,6 +264,8 @@ interface DesktopAppApi {
   bootstrapAppearance: AppearanceBootstrapSnapshot | undefined;
   getBuildInfo: BridgeInvoke<'app:get-build-info'>;
   hostPower: BridgeInvoke<'app:host-power'>;
+  devicePower: BridgeInvoke<'app:device-power'>;
+  onDevicePowerChanged: BridgeSubscribe<'app:device-power-changed'>;
   onHostPowerChanged: BridgeSubscribe<'app:host-power-changed'>;
   /** ENG-025 F5: the anonymized diagnostics bundle a bug report can carry. */
   getDiagnosticsReport: BridgeInvoke<'app:get-diagnostics-report'>;

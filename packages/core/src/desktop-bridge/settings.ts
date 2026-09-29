@@ -1,3 +1,4 @@
+import type { DeviceKeepAwakePolicy } from './app';
 import type { AgentPermissionMode } from '../agent-sources';
 import type { LaunchConfigurationPoolV1 } from '../launch-configurations';
 import type { OperatorStatsSyncFailureRecord } from '../operator-stats/sync-state';
@@ -52,6 +53,9 @@ export interface AppearancePreferencesV1<ThemeId extends string = string> {
 }
 
 export interface ExawattSettings<ThemeId extends string = string> {
+  /** This device's Exawatt-owned assertion policy; absent defaults to AC only. */
+  power?: { keepAwake: DeviceKeepAwakePolicy };
+
   terminal?: TerminalFontSettings;
   notifications?: {
     attention: boolean;

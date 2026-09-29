@@ -15,12 +15,18 @@ interface HostPowerSource {
   removeListener(event: HostPowerEvent, listener: () => void): unknown;
 }
 
+export interface HostPowerObserver {
+  getSnapshot(): HostPowerSnapshot;
+  subscribe(listener: (snapshot: HostPowerSnapshot) => void): () => void;
+  dispose(): void;
+}
+
 /** Called after Electron is ready. Observes only: no assertions, signals, or
  * Session references. Listeners belong to this observer and dispose together. */
 export function observeHostPower(
   source: HostPowerSource,
   changed: (snapshot: HostPowerSnapshot) => void
-): { getSnapshot: () => HostPowerSnapshot; dispose: () => void } {
+): HostPowerObserver {
   const readPower = (): HostPowerSnapshot['powerSource'] => {
     try {
       return source.isOnBatteryPower() ? 'battery' : 'ac';
@@ -47,6 +53,7 @@ export function observeHostPower(
     systemSleep: 'awake',
   };
   let disposed = false;
+  const subscribers = new Set<(snapshot: HostPowerSnapshot) => void>();
   const update = (patch: Partial<Omit<HostPowerSnapshot, 'revision'>>) => {
     if (disposed) return;
     const next = { ...snapshot, ...patch };
@@ -58,6 +65,7 @@ export function observeHostPower(
       return;
     snapshot = { ...next, revision: snapshot.revision + 1 };
     changed({ ...snapshot });
+    for (const listener of subscribers) listener({ ...snapshot });
   };
   const listeners: Record<HostPowerEvent, () => void> = {
     'on-ac': () => update({ powerSource: 'ac' }),
@@ -79,9 +87,16 @@ export function observeHostPower(
   }
   return {
     getSnapshot: () => ({ ...snapshot }),
+    subscribe: listener => {
+      if (!disposed) subscribers.add(listener);
+      return () => {
+        subscribers.delete(listener);
+      };
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      subscribers.clear();
       for (const event of Object.keys(listeners) as HostPowerEvent[]) {
         source.removeListener(event, listeners[event]);
       }

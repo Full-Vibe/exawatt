@@ -329,6 +329,18 @@ export const ARGUMENT_BOUNDARIES = {
     'Invalid conversation summary setting'
   ),
   'settings:set-goal-visuals': switchSetting('Invalid goal visual setting'),
+  'settings:set-keep-awake': {
+    read([policy]) {
+      if (
+        policy !== 'never' &&
+        policy !== 'ac-only' &&
+        policy !== 'ac-and-battery'
+      ) {
+        throw new Error('Invalid keep-awake policy');
+      }
+      return [policy];
+    },
+  },
   'settings:set-reentry-recap': switchSetting('Invalid recap setting'),
   'settings:set-operator-auto-publish': switchSetting(
     'Invalid publishing setting'

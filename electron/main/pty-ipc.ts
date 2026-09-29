@@ -1,6 +1,15 @@
+import { createDevicePowerController } from './device-power';
+import type { HostPowerObserver } from './host-power';
 import { createSessionPauser } from './pty/session-pause';
 import { readSessionCloneContext } from './pty/session-clone-context';
-import { BrowserWindow, Notification, app, nativeTheme, shell } from 'electron';
+import {
+  BrowserWindow,
+  Notification,
+  app,
+  nativeTheme,
+  powerSaveBlocker,
+  shell,
+} from 'electron';
 import { handleBounded } from './ipc-arguments';
 import { handleTrusted } from './ipc-security';
 import { createSessionModelChanger } from './pty/session-model-change';
@@ -36,6 +45,7 @@ import {
 import { hydrateGoalVisual, retainGoalVisual } from './goal-visual-store';
 import {
   loadSettings,
+  setKeepAwakePolicy,
   deleteLaunchConfiguration,
   recordAgentSourceUse,
   recordLaunchConfigurationSuccess,
@@ -71,7 +81,11 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows, pushToRenderer } from './window-broadcast';
-import { isAgentHarness, type AgentPermissionMode } from '@exawatt/core';
+import {
+  isAgentHarness,
+  sessionStatus,
+  type AgentPermissionMode,
+} from '@exawatt/core';
 import type { DistributionContractV2 } from '@exawatt/core/distribution';
 import type {
   ClosedSessionEntry,
@@ -84,6 +98,7 @@ import type {
 } from '@exawatt/core/desktop-bridge';
 
 let activeContextSummarizer: ContextSummarizer | null = null;
+let disposeDevicePower: (() => void) | null = null;
 
 // Engines and their model lists change on the order of days, but the composer
 // re-probed all of them on every entry (ENG-016 D49). The cache is installed at
@@ -102,7 +117,8 @@ export function registerPtyIPC(
   distribution: DistributionContractV2,
   previousRunInterrupted = false,
   /** `logs/main.jsonl`; a no-op keeps every diagnostic from being load-bearing */
-  diagnostics: DiagnosticRecorder = () => {}
+  diagnostics: DiagnosticRecorder = () => {},
+  hostPower: HostPowerObserver | null = null
 ): void {
   const contextSummarizer = new ContextSummarizer({ distribution });
   activeContextSummarizer = contextSummarizer;
@@ -116,6 +132,62 @@ export function registerPtyIPC(
       payload
     );
   };
+  const devicePower = createDevicePowerController(powerSaveBlocker, status => {
+    broadcast('app:device-power-changed', status);
+  });
+  const refreshDevicePower = () => {
+    const now = Date.now();
+    devicePower.reconcile(
+      loadSettings().power?.keepAwake ?? 'ac-only',
+      hostPower?.getSnapshot() ?? {
+        revision: 0,
+        powerSource: 'unknown',
+        screenLock: 'unknown',
+        systemSleep: 'awake',
+      },
+      ptySessions.list().map(record => ({
+        harness: record.harness,
+        optOutAppliedAtLaunch:
+          record.powerControl?.state === 'applied-at-launch',
+        status: sessionStatus(
+          {
+            ...record,
+            attention: attentionMonitor.get(record.id),
+            engaged: attentionMonitor.isEngaged(record.id),
+            working: attentionMonitor.isWorking(record.id),
+            delegation: delegationMonitor.getLive(record.id),
+          },
+          record.lastDataAt,
+          now,
+          15_000
+        ),
+      }))
+    );
+  };
+  const offHostPower = hostPower?.subscribe(refreshDevicePower);
+  const powerEvents = [
+    { source: ptySessions, names: ['session', 'exit', 'session-forgotten'] },
+    { source: attentionMonitor, names: ['activity', 'engaged', 'attention'] },
+    { source: delegationMonitor, names: ['delegation'] },
+  ];
+  for (const { source, names } of powerEvents) {
+    for (const name of names) source.on(name, refreshDevicePower);
+  }
+  disposeDevicePower = () => {
+    offHostPower?.();
+    for (const { source, names } of powerEvents) {
+      for (const name of names) source.removeListener(name, refreshDevicePower);
+    }
+    devicePower.dispose();
+  };
+  refreshDevicePower();
+  handleTrusted('app:device-power', () => devicePower.getSnapshot());
+  handleBounded('settings:set-keep-awake', (_event, policy) => {
+    const settings = setKeepAwakePolicy(policy);
+    refreshDevicePower();
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   const closedLedger = new ClosedSessionLedger(
     path.join(app.getPath('userData'), 'closed-sessions.json'),
     durableSessionId => ptySessions.purgeHistory(durableSessionId)
@@ -271,6 +343,7 @@ export function registerPtyIPC(
       if (!win.isDestroyed())
         win.setBackgroundColor(appearance.bootstrap.background);
     }
+    refreshDevicePower();
     broadcast('settings:changed', settings);
   });
   app.on('browser-window-blur', () => {
@@ -901,6 +974,8 @@ export function registerPtyIPC(
 
 /** app-quit cleanup: never leave orphan shells behind */
 export async function disposePty(): Promise<void> {
+  disposeDevicePower?.();
+  disposeDevicePower = null;
   activeContextSummarizer?.stop();
   activeContextSummarizer = null;
   attentionMonitor.stop();

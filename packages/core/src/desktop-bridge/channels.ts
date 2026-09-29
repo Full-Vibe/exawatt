@@ -30,6 +30,8 @@ import type {
   ElectronAuthStartConfig,
   ExawattBuildInfo,
   HostPowerSnapshot,
+  DeviceKeepAwakePolicy,
+  DevicePowerStatus,
   OperatorStatsPlanRequest,
   OsAppearanceSnapshot,
   ProductUpdateStatus,
@@ -142,6 +144,8 @@ interface RequestTable {
   'analytics:drain-main-events': Call<[], unknown[]>;
 
   'app:command-engine': Call<[], CommandEnginePhase>;
+  'app:device-power': Call<[], DevicePowerStatus>;
+  'settings:set-keep-awake': Call<[policy: DeviceKeepAwakePolicy], ExawattSettings>;
   'app:host-power': Call<[], HostPowerSnapshot>;
   'app:get-build-info': Call<[], ExawattBuildInfo>;
   /** `signedIn` is renderer-supplied because the session lives there. */
@@ -439,6 +443,7 @@ interface PushTable {
   'app:appearance-changed': OsAppearanceSnapshot;
   'app:checkpoint-request': CheckpointRequest;
   'app:command-engine-changed': CommandEnginePhase;
+  'app:device-power-changed': DevicePowerStatus;
   'app:host-power-changed': HostPowerSnapshot;
   'app:shutdown-status': ShutdownStatus;
   'app:update-ready': UpdateReadyNotice;

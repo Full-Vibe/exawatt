@@ -1,3 +1,4 @@
+import type { HostPowerObserver } from './host-power';
 import type { Cookies } from 'electron';
 import path from 'path';
 import type { DistributionContractV2 } from '@exawatt/core/distribution';
@@ -46,6 +47,7 @@ interface SafeAuthError {
 }
 
 export class CommandRuntime {
+  hostPower: HostPowerObserver | null = null;
   ptySessions: PtySessionManager | null = null;
   shutdownCoordinator: ShutdownCoordinator | null = null;
   consumptionScanner: ConsumptionScannerService | null = null;
@@ -315,7 +317,8 @@ export async function bootstrapCommandSurface(
         modules.ptyIpc.registerPtyIPC(
           distribution,
           recovery.previousRunInterrupted,
-          deps.mainDiagnostics
+          deps.mainDiagnostics,
+          runtime.hostPower
         ),
     },
     { id: 'roadmap', register: () => modules.roadmapIpc.registerRoadmapIPC() },

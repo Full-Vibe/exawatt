@@ -1,5 +1,6 @@
 'use client';
 
+import { PowerSettings } from './power-settings';
 import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -447,6 +448,7 @@ export function SettingsClient() {
 
               <AppearanceSettings />
               <NotificationsSettings />
+              <PowerSettings />
               <PermissionsExplainer />
 
               <Card className="border-[var(--settings-line)] bg-[var(--settings-panel)] shadow-none">

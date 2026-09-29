@@ -260,6 +260,7 @@ const bridge = {
       invoke('settings:set-goal-visuals', enabled),
     setKeyboardShortcuts: overrides =>
       invoke('settings:set-keyboard-shortcuts', overrides),
+    setKeepAwake: policy => invoke('settings:set-keep-awake', policy),
     setReentryRecap: enabled => invoke('settings:set-reentry-recap', enabled),
     setClaudePlanWindows: enabled =>
       invoke('settings:set-claude-plan-windows', enabled),
@@ -302,6 +303,8 @@ const bridge = {
   app: {
     bootstrapAppearance,
     hostPower: () => invoke('app:host-power'),
+    devicePower: () => invoke('app:device-power'),
+    onDevicePowerChanged: subscribe('app:device-power-changed'),
     onHostPowerChanged: subscribe('app:host-power-changed'),
     getBuildInfo: () => invoke('app:get-build-info'),
     getDiagnosticsReport: signedIn =>

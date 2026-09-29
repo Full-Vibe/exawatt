@@ -252,3 +252,18 @@ export interface HostPowerSnapshot {
   screenLock: 'locked' | 'unlocked' | 'unknown';
   systemSleep: 'awake' | 'suspended';
 }
+
+/** Device-local intent for Exawatt-owned system-sleep prevention. */
+export type DeviceKeepAwakePolicy = 'never' | 'ac-only' | 'ac-and-battery';
+
+/** This reports only Exawatt's assertion, never a global promise of sleep. */
+export interface DevicePowerStatus {
+  revision: number;
+  policy: DeviceKeepAwakePolicy;
+  powerSource: HostPowerSnapshot['powerSource'];
+  assertion: 'inactive' | 'active' | 'error';
+  supportedWorkingSessions: number;
+  /** Active local sources without an opt-out applied to this process. */
+  independentSources: string[];
+  error: string | null;
+}
