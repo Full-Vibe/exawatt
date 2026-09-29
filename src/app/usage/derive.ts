@@ -19,6 +19,7 @@
  */
 import {
   SOURCE_CAPABILITIES,
+  isConsumptionSourceId,
   isOperatorEntrypoint,
   resolveModelWeight,
   rollupByModel,
@@ -32,6 +33,7 @@ import type {
 } from '@/components/consumption/demo-source';
 import {
   ACCOUNT_LABEL,
+  HARNESS_LABEL,
   displayUsage,
   planReadState,
   rawTotal,
@@ -206,7 +208,7 @@ export function spendView(demo: DemoConsumption, rows: GridRow[]): SpendView {
     bySource: [...bySource.entries()]
       .map(([key, weighted]) => ({
         key,
-        label: SOURCE_LABEL[key] ?? key,
+        label: HARNESS_LABEL[key],
         weighted,
       }))
       .sort((a, b) => b.weighted - a.weighted),
@@ -294,11 +296,6 @@ export function windowTimeline(
 /* ------------------------------------------------------------------ */
 /* the session grid — every operator session, one row each             */
 /* ------------------------------------------------------------------ */
-
-export const SOURCE_LABEL: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-};
 
 /**
  * One operator session as the grid renders it. `identified: false` marks a
@@ -490,7 +487,7 @@ export function drillOf(rows: GridRow[]): DrillSession[] {
   return rows.map(r => ({
     id: r.id,
     title: r.title,
-    sourceLabel: SOURCE_LABEL[r.source] ?? r.source,
+    sourceLabel: HARNESS_LABEL[r.source],
     model: r.model,
     weighted: r.weighted,
     raw: r.raw,
@@ -561,7 +558,7 @@ export function pivotRows(
       out.push({
         id: r.id,
         label: r.title,
-        meta: `${SOURCE_LABEL[r.source] ?? r.source}${r.model ? ` · ${r.model}` : ''}`,
+        meta: `${HARNESS_LABEL[r.source]}${r.model ? ` · ${r.model}` : ''}`,
         usage: r.usage,
         weighted: r.weighted,
         sessions: 1,
@@ -584,7 +581,9 @@ export function pivotRows(
         id,
         label:
           key === 'source'
-            ? (SOURCE_LABEL[id] ?? rollup.scope.label)
+            ? isConsumptionSourceId(id)
+              ? HARNESS_LABEL[id]
+              : rollup.scope.label
             : rollup.scope.label,
         usage: displayUsage(rollup.totals, rollup.sources),
         weighted: rollup.weightedTokens,

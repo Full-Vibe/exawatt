@@ -3031,6 +3031,31 @@ terminal-dependent wrappers and executable selection are preserved, while a
 plain supported executable still receives the verified sleep opt-out.
 [Review evidence and reproduction](projects/daily-driver-adoption.md#2026-09-28--post-landing-power-review-bug-248).
 
+### BUG-249 Grok usage vanished after a restart and was never read again
+
+Status: fixed · ENG-008 · reported 2026-09-29.
+
+The usage scan's saved-state validators accepted only `claude-code` and
+`codex`, a hand-written pair that Grok Build (ENG-003 S4, 2026-08-13) never
+joined. Grok samples were appended to `log-v1.jsonl`, dropped as corrupt on
+every reload, and removed from the log by the next compaction, while the
+watermarks that marked their files as read survived: Grok usage disappeared
+after a restart and its files were never rescanned. The same drift hid Grok's
+live burn on a running Session (`live-store.ts`) and its label on /usage.
+Every usage-reporting source is now declared once in core
+(`CONSUMPTION_SOURCE_HARNESS`, with `CONSUMPTION_SOURCE_IDS`,
+`isConsumptionSourceId` and `consumptionSourceForHarness` derived from it),
+and every validator and harness lookup reads it. Recovery: saved state
+records `repairVersion`; state from before the fix owes repair 1, whose next
+completed pass re-reads every Grok file from byte 0, ignoring its watermark
+(re-reading merges by idempotency key, so an interrupted repair simply runs
+again). Usage in Grok transcripts the harness has since deleted cannot be
+recovered. Operator stats still publish Claude Code and Codex only, on purpose:
+the hosted schema accepts nothing else. Proven in `state-store.test.ts`
+(every registered source survives reload; a Grok sample survives compaction)
+and `scanner-service.test.ts` (the repair re-reads the dropped files exactly
+once and nothing else), each failing on the old code.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

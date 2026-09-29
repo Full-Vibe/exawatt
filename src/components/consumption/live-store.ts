@@ -38,8 +38,8 @@ import {
 } from '@/components/workspace/harnesses';
 import { sessionDisplayCopy } from '@/components/workspace/session-display-copy';
 import {
+  consumptionSourceForHarness,
   emptyLiveConsumptionSnapshot,
-  type ConsumptionSourceId,
   type ConsumptionUpdatedEvent,
   type LiveConsumptionSnapshot,
 } from '@exawatt/core';
@@ -106,12 +106,6 @@ const UNAVAILABLE: LiveConsumptionState = Object.freeze({
   burnByProviderId: new Map<string, LiveSessionBurn>(),
   revision: -1,
 });
-
-type HarnessSource = ConsumptionSourceId | null;
-const HARNESS_TO_SOURCE: Record<string, HarnessSource> = {
-  claude: 'claude-code',
-  codex: 'codex',
-};
 
 function bridge() {
   if (typeof window === 'undefined') return undefined;
@@ -268,7 +262,7 @@ function assembleIdentities(
   // persisted index catches up — union it in so a running Session is never
   // nameless on its own machine.
   for (const p of ptys) {
-    const source = HARNESS_TO_SOURCE[p.harness] ?? null;
+    const source = consumptionSourceForHarness(p.harness);
     if (!source || !p.harnessSessionId) continue;
     const key = `${source}:${p.harnessSessionId}`;
     if (identities.has(key)) continue;

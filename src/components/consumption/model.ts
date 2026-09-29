@@ -31,9 +31,9 @@
  */
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
+  CONSUMPTION_SOURCE_HARNESS,
   SOURCE_CAPABILITIES,
   planWindowKey,
-  type AgentHarness,
   type ConsumptionRollup,
   type ConsumptionSourceId,
   type PlanWindow,
@@ -43,17 +43,6 @@ import {
 const HOUR_MS = 3_600_000;
 
 export type Harness = ConsumptionSourceId;
-
-/**
- * The Agent Source each Consumption source measures. Consumption keeps its own
- * ids (`claude-code` names the log format, not the adapter), so the mapping is
- * stated here once rather than inferred from the spelling.
- */
-export const CONSUMPTION_SOURCE_HARNESS = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  grok: 'grok',
-} as const satisfies Record<Harness, AgentHarness>;
 
 /** A Consumption source's display name: its Agent Source's declared label. */
 export const HARNESS_LABEL = Object.fromEntries(

@@ -45,9 +45,11 @@ import {
   type ConfigFileUnreadableCause,
 } from '@exawatt/core/server';
 import {
+  CONSUMPTION_SOURCE_IDS,
   ConsumptionSampleWindow,
   MAX_SEEN_SNAPSHOTS,
   emptyDiagnostics,
+  isConsumptionSourceId,
   localLogAssurance,
   type ConsumptionDiagnostics,
   type ConsumptionSample,
@@ -96,6 +98,59 @@ export interface ConsumptionScanMetaV1 {
    * Absent in state written before it existed, which reads as never pruned.
    */
   prunedThroughMs: number | null;
+  /**
+   * The newest one-time repair this state has completed
+   * (`CONSUMPTION_STATE_REPAIRS`). Absent in state written before repairs
+   * existed, which reads as 0: every repair is still owed. Fresh state starts
+   * current, because there is nothing to repair.
+   */
+  repairVersion: number;
+}
+
+/**
+ * Sources this store could reload before BUG-249. Its validators were a
+ * hand-written pair, so every other source's samples were appended and then
+ * dropped on every reload, while the watermarks certifying them survived:
+ * the files read as done, were never read again, and the next compaction
+ * removed the samples from the log. Frozen history, not a list to maintain.
+ */
+const RELOADABLE_BEFORE_BUG_249: readonly ConsumptionSourceId[] = [
+  'claude-code',
+  'codex',
+];
+
+/**
+ * One-time, versioned repairs of persisted scan state. Each names the sources
+ * whose files the next COMPLETED pass reads again from byte 0, ignoring their
+ * watermarks. Re-reading is idempotent (samples merge by idempotency key), so
+ * a repair interrupted before its pass completes simply runs again.
+ */
+const CONSUMPTION_STATE_REPAIRS: readonly {
+  version: number;
+  reread: readonly ConsumptionSourceId[];
+}[] = [
+  {
+    version: 1,
+    reread: CONSUMPTION_SOURCE_IDS.filter(
+      source => !RELOADABLE_BEFORE_BUG_249.includes(source)
+    ),
+  },
+];
+
+export const CONSUMPTION_STATE_REPAIR_VERSION =
+  CONSUMPTION_STATE_REPAIRS[CONSUMPTION_STATE_REPAIRS.length - 1].version;
+
+/** Sources whose files a state at `repairVersion` still owes a full re-read. */
+export function sourcesOwedReread(
+  repairVersion: number
+): ReadonlySet<ConsumptionSourceId> {
+  const owed = new Set<ConsumptionSourceId>();
+  for (const repair of CONSUMPTION_STATE_REPAIRS) {
+    if (repair.version > repairVersion) {
+      for (const source of repair.reread) owed.add(source);
+    }
+  }
+  return owed;
 }
 
 export interface LoadedConsumptionState {
@@ -147,14 +202,9 @@ type LogEnvelope =
  * heap restating one fact 100k+ times. It is stripped on write and re-attached
  * as one shared instance per source on load — derivation, not data loss.
  */
-const REHYDRATED_ASSURANCE: Record<
-  ConsumptionSourceId,
-  ConsumptionSample['assurance']
-> = {
-  'claude-code': localLogAssurance('claude-code'),
-  codex: localLogAssurance('codex'),
-  grok: localLogAssurance('grok'),
-};
+const REHYDRATED_ASSURANCE = Object.fromEntries(
+  CONSUMPTION_SOURCE_IDS.map(source => [source, localLogAssurance(source)])
+) as Record<ConsumptionSourceId, ConsumptionSample['assurance']>;
 
 function stripAssurance(
   sample: ConsumptionSample
@@ -174,7 +224,7 @@ function validSample(
   return (
     typeof value.at === 'string' &&
     typeof value.idempotencyKey === 'string' &&
-    (value.source === 'claude-code' || value.source === 'codex') &&
+    isConsumptionSourceId(value.source) &&
     typeof value.providerSessionId === 'string' &&
     isRecord(value.usage)
   );
@@ -214,7 +264,7 @@ function boundedMark(mark: ConsumptionWatermark): ConsumptionWatermark {
 function validObservation(value: unknown): value is PlanWindowObservation {
   if (!isRecord(value)) return false;
   return (
-    (value.source === 'claude-code' || value.source === 'codex') &&
+    isConsumptionSourceId(value.source) &&
     (value.scope === 'primary' || value.scope === 'secondary') &&
     typeof value.windowMinutes === 'number' &&
     typeof value.usedPercent === 'number' &&
@@ -234,13 +284,14 @@ export function emptyConsumptionMeta(): ConsumptionScanMetaV1 {
     emptySources: [],
     compactedBytes: 0,
     prunedThroughMs: null,
+    repairVersion: CONSUMPTION_STATE_REPAIR_VERSION,
   };
 }
 
 function validPlanWindow(value: unknown): value is PlanWindow {
   if (!isRecord(value)) return false;
   return (
-    (value.source === 'claude-code' || value.source === 'codex') &&
+    isConsumptionSourceId(value.source) &&
     (value.scope === 'primary' || value.scope === 'secondary') &&
     typeof value.windowMinutes === 'number' &&
     typeof value.usedPercent === 'number' &&
@@ -383,16 +434,18 @@ export class ConsumptionStateStore {
         ? parsed.planWindows.filter(validPlanWindow)
         : [],
       emptySources: Array.isArray(parsed.emptySources)
-        ? parsed.emptySources.filter(
-            (value): value is ConsumptionSourceId =>
-              value === 'claude-code' || value === 'codex'
-          )
+        ? parsed.emptySources.filter(isConsumptionSourceId)
         : [],
       prunedThroughMs:
         typeof parsed.prunedThroughMs === 'number' &&
         Number.isFinite(parsed.prunedThroughMs)
           ? parsed.prunedThroughMs
           : null,
+      repairVersion:
+        typeof parsed.repairVersion === 'number' &&
+        Number.isFinite(parsed.repairVersion)
+          ? parsed.repairVersion
+          : 0,
     };
 
     let log: fs.promises.FileHandle;

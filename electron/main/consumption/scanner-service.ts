@@ -39,6 +39,7 @@ import {
   LIVE_CONSUMPTION_SNAPSHOT_VERSION,
   WindowObservationAccumulator,
   addDiagnostics,
+  consumptionSourceForHarness,
   derivePlanWindowRates,
   emptyDiagnostics,
   planWindowKey,
@@ -68,9 +69,11 @@ import {
 } from '@exawatt/core/server';
 import type { ConsumptionScannerLike } from '../consumption-ipc';
 import {
+  CONSUMPTION_STATE_REPAIR_VERSION,
   ConsumptionStateStore,
   type LoadedConsumptionState,
   emptyConsumptionMeta,
+  sourcesOwedReread,
   type ConsumptionScanMetaV1,
 } from './state-store';
 
@@ -124,12 +127,6 @@ export interface ConsumptionScannerServiceOptions {
   now?: () => number;
 }
 
-const HARNESS_TO_SOURCE: Record<string, ConsumptionSourceId> = {
-  claude: 'claude-code',
-  codex: 'codex',
-  grok: 'grok',
-};
-
 interface AppendBuffer {
   samples: ConsumptionSample[];
   observations: PlanWindowObservation[];
@@ -172,6 +169,8 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private diagnostics = emptyDiagnostics();
   private discardedDegenerateWindows = 0;
   private emptySources: ConsumptionSourceId[] = [];
+  /** The newest state repair completed; see `CONSUMPTION_STATE_REPAIRS`. */
+  private repairVersion = CONSUMPTION_STATE_REPAIR_VERSION;
 
   private phase: ConsumptionScanState['phase'] = 'idle';
   private lastScanAt: string | null = null;
@@ -368,6 +367,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     this.lastScanAt = loaded.meta.lastScanAt;
     this.corpusBytes = loaded.meta.corpusBytes;
     this.emptySources = loaded.meta.emptySources;
+    this.repairVersion = loaded.meta.repairVersion;
     this.latestWindows.clear();
     for (const window of loaded.meta.planWindows) {
       this.latestWindows.set(planWindowKey(window), window);
@@ -562,12 +562,25 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
       new GrokConsumptionAdapter(this.grokRoot),
     ];
 
+    // A repair owed by the saved state (BUG-249) re-reads its sources from
+    // byte 0: their watermarks certify samples the old store dropped.
+    const reread = sourcesOwedReread(this.repairVersion);
+    const rereadOptions: ConsumptionScanOptions = {
+      ...scanOptions,
+      watermarks: {},
+    };
+
     let aborted = false;
     const emptySources: ConsumptionSourceId[] = [];
     const returnedMarks: ConsumptionWatermarks = {};
     try {
       const results = await Promise.all(
-        adapters.map(adapter => adapter.scan(this.fileSystem, scanOptions))
+        adapters.map(adapter =>
+          adapter.scan(
+            this.fileSystem,
+            reread.has(adapter.source) ? rereadOptions : scanOptions
+          )
+        )
       );
       for (let i = 0; i < results.length; i += 1) {
         const result = results[i];
@@ -603,6 +616,9 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
         );
         this.firstScanComplete = true;
         this.cancelled = false;
+        // Only a completed pass has re-read every owed file, so only it
+        // retires the repair; an interrupted one leaves it owed.
+        this.repairVersion = CONSUMPTION_STATE_REPAIR_VERSION;
       }
       this.phase = 'idle';
       this.progressBySource = new Map();
@@ -664,7 +680,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private identityLinks(): LiveSessionIdentityLink[] {
     const out: LiveSessionIdentityLink[] = [];
     for (const record of this.identities()) {
-      const source = HARNESS_TO_SOURCE[record.harness];
+      const source = consumptionSourceForHarness(record.harness);
       if (!source) continue;
       out.push({
         source,
@@ -689,6 +705,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
       prunedThroughMs: Number.isFinite(this.samples.prunedThroughMs)
         ? this.samples.prunedThroughMs
         : null,
+      repairVersion: this.repairVersion,
     };
   }
 

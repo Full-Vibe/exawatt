@@ -9,12 +9,20 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONSUMPTION_SAMPLE_HORIZON_MS,
+  CONSUMPTION_SOURCE_IDS,
   localLogAssurance,
   type ConsumptionSample,
+  type ConsumptionSourceId,
   type ConsumptionWatermark,
+  type PlanWindow,
   type PlanWindowObservation,
 } from '@exawatt/core';
-import { ConsumptionStateStore, emptyConsumptionMeta } from './state-store';
+import {
+  CONSUMPTION_STATE_REPAIR_VERSION,
+  ConsumptionStateStore,
+  emptyConsumptionMeta,
+  sourcesOwedReread,
+} from './state-store';
 
 let dir: string;
 
@@ -538,5 +546,127 @@ describe('saved state that cannot be read (BUG-247)', () => {
     const loaded = await store.load();
     expect(store.blocked).toBe(false);
     expect(loaded.samples.size).toBe(0);
+  });
+});
+
+/**
+ * BUG-249 — the store's validators were a hand-written `claude-code | codex`
+ * pair, so Grok samples were appended, dropped on every reload, and removed
+ * from the log by the next compaction, while the watermarks certifying them
+ * survived. These pin the class, not the instance: every source in the
+ * registry must survive the store.
+ */
+describe('every usage-reporting source survives the store (BUG-249)', () => {
+  const planWindow = (source: ConsumptionSourceId): PlanWindow => ({
+    source,
+    limitId: source,
+    limitName: null,
+    scope: 'primary',
+    usedPercent: 25,
+    windowMinutes: 300,
+    resetsAt: null,
+    planType: null,
+    observedAt: '2026-07-05T12:00:00.000Z',
+    providerSessionId: `sess-${source}`,
+  });
+
+  it('reloads a sample, observation, plan window and empty mark for every registered source', async () => {
+    const store = new ConsumptionStateStore(dir);
+    await store.append({
+      samples: CONSUMPTION_SOURCE_IDS.map(source =>
+        sample(`k-${source}`, {
+          source,
+          assurance: localLogAssurance(source),
+        })
+      ),
+      observations: CONSUMPTION_SOURCE_IDS.map(source =>
+        observation({ source, limitId: source })
+      ),
+      marks: CONSUMPTION_SOURCE_IDS.map(source => mark(`/root/${source}/f`)),
+    });
+    await store.writeMeta({
+      ...emptyConsumptionMeta(),
+      planWindows: CONSUMPTION_SOURCE_IDS.map(planWindow),
+      emptySources: [...CONSUMPTION_SOURCE_IDS],
+    });
+    await store.flush();
+
+    const reloaded = await new ConsumptionStateStore(dir).load();
+    expect(reloaded.corruptLines).toBe(0);
+    for (const source of CONSUMPTION_SOURCE_IDS) {
+      expect(reloaded.samples.get(`k-${source}`)?.assurance).toEqual(
+        localLogAssurance(source)
+      );
+    }
+    expect(reloaded.observations.map(o => o.source)).toEqual([
+      ...CONSUMPTION_SOURCE_IDS,
+    ]);
+    expect(reloaded.meta.planWindows.map(w => w.source)).toEqual([
+      ...CONSUMPTION_SOURCE_IDS,
+    ]);
+    expect(reloaded.meta.emptySources).toEqual([...CONSUMPTION_SOURCE_IDS]);
+  });
+
+  it('a Grok sample round-trips through save, reload and compaction', async () => {
+    const grok = sample('grok-1', {
+      source: 'grok',
+      model: 'grok-4.5',
+      assurance: localLogAssurance('grok'),
+      sourceFile: '/root/grok/sessions/%2Fw/s1/updates.jsonl',
+    });
+    const store = new ConsumptionStateStore(dir);
+    await store.append({
+      samples: [grok, sample('claude-1')],
+      observations: [],
+      marks: [mark(grok.sourceFile!)],
+    });
+    await store.writeMeta(emptyConsumptionMeta());
+    await store.flush();
+
+    const reloaded = await new ConsumptionStateStore(dir).load();
+    expect(reloaded.samples.get('grok-1')).toEqual(grok);
+
+    // Compaction rewrites the log FROM the reloaded state, which is where the
+    // dropped samples used to disappear for good.
+    await store.compact(
+      reloaded.samples.values(),
+      reloaded.watermarks,
+      reloaded.observations,
+      reloaded.meta
+    );
+    await store.flush();
+    const compacted = await new ConsumptionStateStore(dir).load();
+    expect(compacted.samples.get('grok-1')).toEqual(grok);
+    expect(compacted.watermarks[grok.sourceFile!]).toEqual(
+      mark(grok.sourceFile!)
+    );
+    expect(compacted.corruptLines).toBe(0);
+  });
+
+  it('state saved before the repair owes a re-read of every source it dropped, and only those', async () => {
+    const store = new ConsumptionStateStore(dir);
+    const { repairVersion: _absent, ...legacyMeta } = emptyConsumptionMeta();
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(dir, 'meta-v1.json'),
+      JSON.stringify(legacyMeta)
+    );
+    const legacy = await store.load();
+    expect(legacy.meta.repairVersion).toBe(0);
+    const owed = sourcesOwedReread(legacy.meta.repairVersion);
+    expect(owed.has('grok')).toBe(true);
+    // The two sources the old validators accepted lost nothing.
+    expect(owed.has('claude-code')).toBe(false);
+    expect(owed.has('codex')).toBe(false);
+
+    // Fresh state has nothing to repair, and a recorded repair stays done.
+    expect(sourcesOwedReread(emptyConsumptionMeta().repairVersion).size).toBe(
+      0
+    );
+    await store.writeMeta(emptyConsumptionMeta());
+    await store.flush();
+    const repaired = await new ConsumptionStateStore(dir).load();
+    expect(repaired.meta.repairVersion).toBe(CONSUMPTION_STATE_REPAIR_VERSION);
+    expect(sourcesOwedReread(repaired.meta.repairVersion).size).toBe(0);
   });
 });

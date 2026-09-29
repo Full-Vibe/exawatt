@@ -11,8 +11,55 @@
  * File IO lives behind the `ConsumptionFileSystem` port in `./ports`.
  */
 
+import type { AgentHarness } from '../agent-sources';
+
+/**
+ * Every harness whose local records Exawatt can parse, and the Agent Source
+ * each one measures. This is THE registry of usage-reporting sources: the
+ * type, the runtime guard, the persisted-state validators and the
+ * harness-to-source lookups are all derived from it, so declaring a source
+ * here is what makes it survive a reload. A hand-written copy of this list is
+ * how Grok usage was dropped on every restart (BUG-249).
+ *
+ * Consumption keeps its own ids (`claude-code` names the log format, not the
+ * adapter), so the mapping is stated once rather than inferred from spelling.
+ */
+export const CONSUMPTION_SOURCE_HARNESS = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  grok: 'grok',
+} as const satisfies Record<string, AgentHarness>;
+
 /** A harness whose local records Exawatt can parse. */
-export type ConsumptionSourceId = 'claude-code' | 'codex' | 'grok';
+export type ConsumptionSourceId = keyof typeof CONSUMPTION_SOURCE_HARNESS;
+
+/** Every usage-reporting source, in registry order. */
+export const CONSUMPTION_SOURCE_IDS = Object.freeze(
+  Object.keys(CONSUMPTION_SOURCE_HARNESS) as ConsumptionSourceId[]
+);
+
+export function isConsumptionSourceId(
+  value: unknown
+): value is ConsumptionSourceId {
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(CONSUMPTION_SOURCE_HARNESS, value)
+  );
+}
+
+const SOURCE_BY_HARNESS: ReadonlyMap<string, ConsumptionSourceId> = new Map(
+  CONSUMPTION_SOURCE_IDS.map(source => [
+    CONSUMPTION_SOURCE_HARNESS[source],
+    source,
+  ])
+);
+
+/** The Consumption source that measures an Agent Source, or null for none. */
+export function consumptionSourceForHarness(
+  harness: string | null | undefined
+): ConsumptionSourceId | null {
+  return harness ? (SOURCE_BY_HARNESS.get(harness) ?? null) : null;
+}
 
 /**
  * Raw, provider-normalized token counts for one unit of work.

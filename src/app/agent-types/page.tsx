@@ -3,11 +3,11 @@ import { Shapes } from 'lucide-react';
 import { PreviewSurfaceShell } from '@/components/readiness';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { demoAgentTypeRoster, type AgentTypeProfile } from './model';
+import { HARNESS_LABEL } from '@/components/consumption/model';
 import {
   CONSUMPTION_SOURCE_HARNESS,
-  HARNESS_LABEL,
-} from '@/components/consumption/model';
-import type { ConsumptionSourceId } from '@exawatt/core';
+  type ConsumptionSourceId,
+} from '@exawatt/core';
 
 // Preview surface (ENG-026 N5 / ENG-028 T1). noindex for the same stealth
 // reason as /usage: reachable by URL for demos, not discoverable.

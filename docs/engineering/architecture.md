@@ -1301,3 +1301,10 @@ retried on the next access and merged over the file once it succeeds, the
 first failure is logged, and one that survives a retry raises a notification
 that reveals the file. The usage scan refuses to publish operator stats while
 its history is unreadable.
+
+The usage scan's saved state accepts exactly the sources declared in core's
+`CONSUMPTION_SOURCE_HARNESS`, the one registry of usage-reporting harnesses;
+no validator or harness lookup keeps its own list (BUG-249). Its meta records
+`repairVersion`: a state saved before a one-time repair owes it, and the
+repair (re-reading named sources' files from byte 0) is retired only by a
+completed pass.

@@ -567,6 +567,122 @@ describe('cancellation', () => {
   });
 });
 
+/**
+ * BUG-249 — the store's hand-written source pair dropped every Grok sample on
+ * reload and kept the watermarks that certified them, so a Grok file read
+ * once was never read again. The repair re-reads those files once.
+ */
+describe('state saved before BUG-249', () => {
+  const grokLine = JSON.stringify({
+    timestamp: 1_786_000_000,
+    method: '_x.ai/session/update',
+    params: {
+      sessionId: 'grok-sess-1',
+      update: {
+        sessionUpdate: 'turn_completed',
+        prompt_id: 'p1',
+        stop_reason: 'end_turn',
+        usage: {
+          inputTokens: 12_000,
+          cachedReadTokens: 9_000,
+          cacheCreationTokens: 1_000,
+          outputTokens: 800,
+          reasoningTokens: 300,
+          numTurns: 1,
+        },
+      },
+    },
+  });
+
+  /** Counts every read from byte 0, per file, across services. */
+  class CountingFileSystem implements ConsumptionFileSystem {
+    private readonly real = new NodeConsumptionFileSystem();
+    readonly fullReads = new Map<string, number>();
+    listFiles(dir: string): Promise<ConsumptionFileRef[]> {
+      return this.real.listFiles(dir);
+    }
+    readFrom(
+      p: string,
+      fromByte: number,
+      maxBytes?: number
+    ): Promise<ConsumptionChunk | null> {
+      if (fromByte === 0) {
+        this.fullReads.set(p, (this.fullReads.get(p) ?? 0) + 1);
+      }
+      return this.real.readFrom(p, fromByte, maxBytes);
+    }
+  }
+
+  it('re-reads the files whose samples were dropped exactly once, and nothing else', async () => {
+    const grokRoot = path.join(root, 'grok-sessions');
+    const grokFile = path.join(
+      grokRoot,
+      '%2Fw%2Facme',
+      '018f-uuid',
+      'updates.jsonl'
+    );
+    await fs.promises.mkdir(path.dirname(grokFile), { recursive: true });
+    await fs.promises.writeFile(grokFile, `${grokLine}\n`);
+    const reads = new CountingFileSystem();
+
+    const first = makeService({ fileSystem: reads });
+    await first.snapshot();
+    await first.settle();
+    const grokKeys = (await first.snapshot()).samples
+      .filter(s => s.source === 'grok')
+      .map(s => s.idempotencyKey);
+    expect(grokKeys).toHaveLength(1);
+    await first.dispose();
+
+    // Reproduce what the old store left on disk after a compaction: Grok's
+    // watermark kept, Grok's samples gone, and no repair recorded.
+    const logPath = path.join(stateDir, 'log-v1.jsonl');
+    const metaPath = path.join(stateDir, 'meta-v1.json');
+    const log = await fs.promises.readFile(logPath, 'utf8');
+    await fs.promises.writeFile(
+      logPath,
+      log
+        .split('\n')
+        .filter(
+          line =>
+            !(line.includes('"k":"sample"') && line.includes('"source":"grok"'))
+        )
+        .join('\n')
+    );
+    const { repairVersion: _absent, ...legacyMeta } = JSON.parse(
+      await fs.promises.readFile(metaPath, 'utf8')
+    );
+    await fs.promises.writeFile(metaPath, JSON.stringify(legacyMeta));
+    const readsBefore = new Map(reads.fullReads);
+
+    const repaired = makeService({ fileSystem: reads });
+    const lost = await repaired.snapshot();
+    expect(lost.samples.some(s => s.source === 'grok')).toBe(false);
+    await repaired.settle();
+    const recovered = await repaired.snapshot();
+    expect(
+      recovered.samples
+        .filter(s => s.source === 'grok')
+        .map(s => s.idempotencyKey)
+    ).toEqual(grokKeys);
+    await repaired.dispose();
+    // Only the dropped source was read again; the others resumed.
+    for (const [file, count] of reads.fullReads) {
+      expect(count - (readsBefore.get(file) ?? 0)).toBe(
+        file === grokFile ? 1 : 0
+      );
+    }
+
+    const later = makeService({ fileSystem: reads });
+    await later.snapshot();
+    await later.settle();
+    const kept = await later.snapshot();
+    expect(kept.samples.filter(s => s.source === 'grok')).toHaveLength(1);
+    // The repair is recorded: a third launch reads the Grok file no more.
+    expect(reads.fullReads.get(grokFile)).toBe(2);
+  });
+});
+
 describe('privacy', () => {
   it('a full scan writes only under its own state directory and mutates nothing in the corpus', async () => {
     const statBefore = new Map<string, { mtimeMs: number; size: number }>();
