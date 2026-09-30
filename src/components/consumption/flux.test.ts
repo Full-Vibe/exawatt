@@ -7,7 +7,6 @@ import {
   consumptionAlpha,
   pressureColor,
   pressureColorCss,
-  unknownHatchCss,
 } from './flux';
 
 describe('Consumption theme adapter', () => {
@@ -48,7 +47,6 @@ describe('Consumption theme adapter', () => {
     expect(consumptionAlpha(FLUX_CSS.hot, 0.5)).toBe(
       'color-mix(in srgb, var(--exa-consumption-hot) 50%, transparent)'
     );
-    expect(unknownHatchCss()).toContain('var(--exa-consumption-unknown)');
   });
 
   it('uses generated foundation chrome without collapsing channels', () => {

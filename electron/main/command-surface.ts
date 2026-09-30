@@ -10,6 +10,7 @@ import {
   ClaudePlanAccountService,
   isClaudePlanRemoteReadAllowed,
 } from './consumption/claude-plan-account';
+import { CodexPlanAccountService } from './consumption/codex-plan-account';
 import { ProviderPlanCompositeSource } from './consumption/provider-plan-composite';
 import { sampleRetentionPolicy } from './consumption/retention-policy';
 import { ConsumptionScannerService } from './consumption/scanner-service';
@@ -21,7 +22,11 @@ import type { StartupStage } from './launch-screen';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import type { PtySessionManager } from './pty/session-manager';
 import type { RunStateStore } from './run-state';
-import { isClaudePlanWindowsEnabled, loadSettings } from './settings-store';
+import {
+  isClaudePlanWindowsEnabled,
+  isCodexPlanWindowsEnabled,
+  loadSettings,
+} from './settings-store';
 import type { ShutdownCoordinator } from './shutdown-coordinator';
 import type { ShutdownSequence } from './shutdown-sequence';
 import { registerSystemShortcutIPC } from './system-shortcuts';
@@ -48,6 +53,7 @@ export class CommandRuntime {
   shutdownCoordinator: ShutdownCoordinator | null = null;
   consumptionScanner: ConsumptionScannerService | null = null;
   claudePlanAccount: ClaudePlanAccountService | null = null;
+  codexPlanAccount: CodexPlanAccountService | null = null;
   runStateStore: RunStateStore | null = null;
   authCoordinator: ElectronAuthCoordinator | null = null;
   recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
@@ -86,6 +92,7 @@ export class CommandRuntime {
   disposeServices(): void {
     void this.consumptionScanner?.dispose();
     this.claudePlanAccount?.dispose();
+    this.codexPlanAccount?.dispose();
     void this.disposeConnectedSources().catch(error =>
       console.error('[shutdown] connected sources did not close', error)
     );
@@ -386,13 +393,22 @@ export async function bootstrapCommandSurface(
           fetchFn: electronNetworkFetch,
         });
         runtime.claudePlanAccount = claudePlanAccount;
+        // ENG-038 slice 2: the Codex account, asked of the operator's own
+        // `codex` app-server under its own sign-in. Nothing leaves through
+        // Exawatt's network identity, so no distribution grant applies;
+        // automated test launches still never start an app-server.
+        const codexPlanAccount = new CodexPlanAccountService({
+          stateDir: path.join(userDataPath(), 'consumption-plan'),
+          enabled: isCodexPlanWindowsEnabled(loadSettings()) && !deps.isTest,
+        });
+        runtime.codexPlanAccount = codexPlanAccount;
         registerConsumptionIPC(
           () => deps.electron.BrowserWindow.getAllWindows(),
-          new ProviderPlanCompositeSource(
-            runtime.consumptionScanner!,
-            claudePlanAccount
-          ),
-          claudePlanAccount
+          new ProviderPlanCompositeSource(runtime.consumptionScanner!, [
+            claudePlanAccount,
+            codexPlanAccount,
+          ]),
+          { claude: claudePlanAccount, codex: codexPlanAccount }
         );
       },
     },

@@ -397,6 +397,18 @@ export const SURFACE_GATES = [
       file === 'scripts/lib/connected-gateway-fixture.mjs',
   },
   {
+    gate: 'eval:usage:scenarios',
+    why: 'the Usage account cards, the chrome meter popover and the scenario workbench render one projection whose geometry is asserted per scenario',
+    match: file =>
+      file.startsWith('src/app/usage/') ||
+      file.startsWith('src/app/hud-gallery/usage-scenarios/') ||
+      file.startsWith('src/components/consumption/meter/') ||
+      file === 'src/components/consumption/accounts.ts' ||
+      file === 'src/components/consumption/usage-bars.tsx' ||
+      file === 'src/components/consumption/usage-scenarios.ts' ||
+      file === 'scripts/usage-scenarios-eval.mjs',
+  },
+  {
     gate: 'eval:workspace:launcher',
     why: 'the New Agent launcher has a deterministic state/interaction rig',
     // option-menu is the launcher's list renderer (decision `0033`, one menu
@@ -1377,6 +1389,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:host-power': GATE,
   'eval:spatial:emergence': GATE,
   'eval:workspace:launcher': GATE,
+  'eval:usage:scenarios': GATE,
   'eval:electron:project-agent': GATE,
   'eval:roadmap:rail': GATE,
   'eval:electron:recents': GATE,

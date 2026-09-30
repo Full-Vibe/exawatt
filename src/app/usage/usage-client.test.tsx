@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CONSUMPTION_CHROME, FLUX_CSS } from '@/components/consumption/flux';
+import { CONSUMPTION_CHROME } from '@/components/consumption/flux';
 import { resetLiveConsumptionForTests } from '@/components/consumption/live-store';
 import { UsageClient } from './usage-client';
+import { AnalyticsClient } from './analytics/analytics-client';
 import {
   installBridgeDouble,
   removeBridgeDouble,
@@ -10,8 +11,6 @@ import {
 
 afterEach(() => {
   document.documentElement.style.removeProperty('--exa-foundation-canvas');
-  document.documentElement.style.removeProperty('--exa-consumption-panel');
-  document.documentElement.style.removeProperty('--exa-consumption-unknown');
   resetLiveConsumptionForTests();
   removeBridgeDouble();
 });
@@ -24,33 +23,33 @@ describe('Usage theme percolation', () => {
     );
     expect(surface).not.toBeNull();
     expect(surface?.style.background).toBe(CONSUMPTION_CHROME.canvas);
+    const card = view.container.querySelector<HTMLElement>('[data-usage-account]');
+    expect(card?.style.borderColor).toBe(CONSUMPTION_CHROME.border);
 
-    const firstPanel = view.container.querySelector<HTMLElement>(
-      '[data-consumption-surface] section'
-    );
-    expect(firstPanel?.style.background).toBe(CONSUMPTION_CHROME.surface);
-
-    document.documentElement.style.setProperty(
-      '--exa-foundation-canvas',
-      '#f3f5f2'
-    );
-    document.documentElement.style.setProperty(
-      '--exa-consumption-panel',
-      '#f4f1f8'
-    );
-    expect(view.container.querySelector('[data-consumption-surface]')).toBe(
-      surface
-    );
+    document.documentElement.style.setProperty('--exa-foundation-canvas', '#f3f5f2');
+    expect(view.container.querySelector('[data-consumption-surface]')).toBe(surface);
     expect(surface?.style.background).toBe('var(--exa-foundation-canvas)');
-    expect(firstPanel?.style.background).toBe('var(--exa-consumption-panel)');
+  });
+});
+
+describe('Usage tabs', () => {
+  it('opens on Overview with the account cards and links to Analytics', () => {
+    const view = render(<UsageClient />);
+    const overview = screen.getByRole('link', { name: 'Overview' });
+    expect(overview.getAttribute('aria-current')).toBe('page');
+    expect(
+      screen.getByRole('link', { name: 'Analytics' }).getAttribute('href')
+    ).toBe('/usage/analytics');
+    expect(view.container.querySelectorAll('[data-usage-account]').length).toBeGreaterThan(0);
   });
 
-  it('renders unknown Consumption state from its own channel, not readiness', () => {
-    const view = render(<UsageClient />);
-    const unknown = screen.getAllByText(/no plan record/i)[0];
-    expect(unknown.style.color).toBe(FLUX_CSS.unknown);
-    expect(unknown.getAttribute('style')).not.toContain('readiness');
-    expect(FLUX_CSS.unknown).not.toBe('var(--exa-readiness-neutral)');
+  it('keeps the breakdown and its raw-units lens on Analytics', () => {
+    const view = render(<AnalyticsClient />);
+    expect(
+      screen.getByRole('link', { name: 'Analytics' }).getAttribute('aria-current')
+    ).toBe('page');
+    expect(view.container.querySelector('[data-usage-account]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'By agent' }));
     fireEvent.click(screen.getByRole('button', { name: 'raw tokens' }));
     expect(view.container.innerHTML).toContain('--exa-consumption-units-');
   });

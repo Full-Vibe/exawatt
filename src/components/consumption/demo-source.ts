@@ -50,7 +50,6 @@ import {
   type InterventionRow,
   type InterventionStats,
 } from './model';
-import type { ClosedCycle } from './meter/meter-model';
 
 export const DEMO_NOW_MS = Date.parse('2026-08-02T15:20:00.000Z');
 
@@ -884,7 +883,7 @@ export function demoPlanWindows(): PlanWindow[] {
     {
       source: 'codex',
       limitId: 'codex-primary',
-      limitName: '5-hour window',
+      limitName: null,
       scope: 'primary',
       usedPercent: 68,
       windowMinutes: 300,
@@ -896,7 +895,7 @@ export function demoPlanWindows(): PlanWindow[] {
     {
       source: 'codex',
       limitId: 'codex-weekly',
-      limitName: 'Weekly window',
+      limitName: null,
       scope: 'secondary',
       usedPercent: 84,
       windowMinutes: 10_080,
@@ -906,6 +905,83 @@ export function demoPlanWindows(): PlanWindow[] {
       providerSessionId: '0195da61-4f02-7d18-a7b6-4c5d6e7f8a90',
     },
   ];
+}
+
+/**
+ * The vendor-account half of a demo corpus (ENG-038, ENG-008 E15): what the
+ * Claude account read and the Codex app-server report for a representative
+ * Max and Pro plan. Demo Mode is first-class forever, so it exercises the
+ * account cards through the same path a live read takes, including the
+ * banked resets and extra-usage lanes. Nothing here claims to be a local log.
+ */
+export function demoAccountReads(nowMs: number): {
+  planWindows: PlanWindow[];
+  burnRates: Record<string, number>;
+  accountReads: Partial<Record<ConsumptionSourceId, AccountReadView>>;
+} {
+  const observedAt = iso(nowMs - 2 * MIN);
+  const weekResets = iso(nowMs + 3 * DAY + 11 * HOUR);
+  const claude = (
+    limitId: string,
+    limitName: string | null,
+    windowMinutes: number,
+    usedPercent: number,
+    resetsAt: string
+  ): PlanWindow => ({
+    source: 'claude-code',
+    limitId,
+    limitName,
+    scope: 'primary',
+    usedPercent,
+    windowMinutes,
+    resetsAt,
+    planType: 'max',
+    observedAt,
+    providerSessionId: '',
+    origin: 'provider-account',
+  });
+  const planWindows = [
+    claude('claude-session', null, 300, 34, iso(nowMs + 2 * HOUR + 25 * MIN)),
+    claude('claude-weekly-all', null, 10_080, 52, weekResets),
+    claude('claude-weekly-fable', 'Fable', 10_080, 38, weekResets),
+  ];
+  return {
+    planWindows,
+    burnRates: {
+      [planWindowKey(planWindows[0])]: 11,
+      [planWindowKey(planWindows[1])]: 0.62,
+      [planWindowKey(planWindows[2])]: 0.3,
+    },
+    accountReads: {
+      'claude-code': {
+        status: 'ok',
+        observedAtMs: nowMs - 2 * MIN,
+        planType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+        spend: {
+          usedMinor: 4_180,
+          limitMinor: 20_000,
+          currency: 'USD',
+          exponent: 2,
+          percent: 21,
+          enabled: true,
+        },
+      },
+      codex: {
+        status: 'ok',
+        observedAtMs: nowMs - MIN,
+        planType: 'pro',
+        spend: null,
+        resets: {
+          available: 2,
+          credits: [
+            { title: 'Full reset', expiresAtMs: nowMs + 2 * DAY + 3 * HOUR },
+            { title: 'Full reset', expiresAtMs: nowMs + 23 * DAY },
+          ],
+        },
+      },
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -984,13 +1060,6 @@ export interface DemoConsumption {
   resolveProject: (cwd: string) => { id: string; label: string } | null;
   sources: ConsumptionSourceView[];
   /**
-   * E9 — cycles that recently closed with real headroom unspent, derived
-   * from observed window history near each reset (live corpus only; the
-   * authored demo corpora carry none). Rendered as the one ledger caption
-   * in `/usage`'s Headroom band — never in the popover.
-   */
-  closedCycles: ClosedCycle[];
-  /**
    * ENG-026 N2 — the intervention record for operator Sessions. Overhead is
    * excluded by construction: a machine-invoked call has no operator to
    * intervene, and counting it would flatter the rate.
@@ -1024,8 +1093,6 @@ export interface DemoConsumptionInputs {
   /** per plan-window limitId: percent consumed per hour */
   burnRates: Record<string, number>;
   claudePlanNote: string;
-  /** E9 — recently closed cycles with unspent headroom; live source only. */
-  closedCycles?: ClosedCycle[];
   /**
    * ENG-038 — per-source vendor account read state, for the sources that have
    * one. Absent entries mean no credentialed read is configured for that
@@ -1173,7 +1240,6 @@ export function buildDemoConsumption(
     },
     resolveProject: projectResolver,
     sources: buildSources(inputs, operator, planWindows),
-    closedCycles: inputs.closedCycles ?? [],
     interventions: {
       rows: interventionRows,
       total: interventionStats(interventionRows),
@@ -1196,11 +1262,13 @@ let cached: DemoConsumption | null = null;
 
 export function demoConsumption(): DemoConsumption {
   if (cached) return cached;
+  const accounts = demoAccountReads(DEMO_NOW_MS);
   cached = buildDemoConsumption({
     nowMs: DEMO_NOW_MS,
     windowLabel: 'seven days',
     samples: demoSamples(),
-    planWindows: demoPlanWindows(),
+    planWindows: [...demoPlanWindows(), ...accounts.planWindows],
+    accountReads: accounts.accountReads,
     projects: DEMO_PROJECTS,
     roadmap: DEMO_ROADMAP,
     sessionSpecs: DEMO_SESSIONS,
@@ -1213,7 +1281,7 @@ export function demoConsumption(): DemoConsumption {
       // from the demo readout rather than inventing a shape for it.
       grok: [],
     },
-    burnRates: { 'codex-primary': 9.4, 'codex-weekly': 0.92 },
+    burnRates: { 'codex-primary': 9.4, 'codex-weekly': 0.92, ...accounts.burnRates },
     claudePlanNote:
       'Claude Code keeps no plan, quota, or rate-limit record in its local files.',
   });

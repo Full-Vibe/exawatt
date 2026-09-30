@@ -1,93 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  CapacityWindowView,
-  ConsumptionSourceView,
-} from '@/components/consumption/model';
-import {
-  demoConsumption,
-  type DemoConsumption,
-} from '@/components/consumption/demo-source';
-import {
-  opportunityOf,
-  paceLabel,
-  paceSentence,
-  readAllWindows,
-} from '@/components/consumption/meter/meter-model';
-import { OPPORTUNITY_STATES } from '@/app/hud-gallery/pace-opportunity-model';
-import {
-  allPaces,
-  gridRows,
-  pivotAbsenceNote,
-  unknownVerdictNote,
-  type PivotRow,
-} from './derive';
-
-const NOW = Date.parse('2026-08-02T15:20:00.000Z');
-const MIN = 60_000;
-
-function win(
-  overrides: Partial<CapacityWindowView> & {
-    limitId: string;
-    usedPercent: number;
-  }
-): CapacityWindowView {
-  return {
-    label: '5-hour window',
-    windowMinutes: 300,
-    resetsAtMs: NOW + 90 * MIN,
-    burnPercentPerHour: 8,
-    observedAtMs: NOW - MIN,
-    ...overrides,
-  };
-}
-
-function source(windows: CapacityWindowView[]): ConsumptionSourceView {
-  return {
-    key: 'codex',
-    harness: 'codex',
-    label: 'Codex',
-    planType: 'pro',
-    credits: null,
-    windows,
-    observedTokens5h: 1_000_000,
-    observedSessions: 2,
-    observedDelegatedShare: null,
-    burn: [0.4, 0.5],
-  };
-}
-
-function demoWith(sources: ConsumptionSourceView[]): DemoConsumption {
-  return { nowMs: NOW, sources } as unknown as DemoConsumption;
-}
-
-describe('allPaces — the page applies the meter’s freshness discipline', () => {
-  it('drops expired and stale windows so a dead reading can never headline', () => {
-    const live = win({ limitId: 'live', usedPercent: 40 });
-    const expired = win({
-      limitId: 'expired',
-      usedPercent: 95,
-      resetsAtMs: NOW - MIN,
-    });
-    const stale = win({
-      limitId: 'stale',
-      usedPercent: 90,
-      observedAtMs: NOW - 400 * MIN,
-    });
-    const paces = allPaces(demoWith([source([live, expired, stale])]));
-    expect(paces.map(p => p.window.limitId)).toEqual(['live']);
-  });
-
-  it('sorts tightest (highest used) first and carries the shared pace verdict', () => {
-    const a = win({ limitId: 'a', usedPercent: 40 });
-    const b = win({ limitId: 'b', usedPercent: 78 });
-    const paces = allPaces(demoWith([source([a, b])]));
-    expect(paces.map(p => p.window.limitId)).toEqual(['b', 'a']);
-    // 70% elapsed → +8 pts on b (ahead), −30 pts on a (behind); the verdict
-    // field exists because the page renders the meter's reading, not its own
-    expect(paces[0].pace).toBe('ahead');
-    expect(paces[1].pace).toBe('behind');
-  });
-});
+import { demoConsumption } from '@/components/consumption/demo-source';
+import { gridRows, pivotAbsenceNote, pivotRows, type PivotRow } from './derive';
 
 describe('per-run context pressure — absent is never zero', () => {
   it('carries codex context truth and leaves claude-code unreported', () => {
@@ -112,40 +25,24 @@ describe('per-run context pressure — absent is never zero', () => {
   });
 });
 
-describe('meter/page verdict agreement on opportunity states (E9)', () => {
-  // The chrome popover derives rows through `readAllWindows`; the page
-  // derives them through `allPaces`. Both must speak the same opportunity
-  // verdict AND the same words for every window of every review fixture —
-  // one vocabulary, one trigger, zero drift.
-  it.each(OPPORTUNITY_STATES.map(s => [s.id, s] as const))(
-    '%s: identical trigger and vocabulary in both placements',
-    (_id, state) => {
-      const page = allPaces({
-        nowMs: state.nowMs,
-        sources: state.sources,
-      } as unknown as DemoConsumption);
-      const meter = state.sources.flatMap(s => readAllWindows(s, state.nowMs));
-      expect(page.map(p => p.window.limitId).sort()).toEqual(
-        meter.map(m => m.window.limitId).sort()
-      );
-      for (const m of meter) {
-        const p = page.find(x => x.window.limitId === m.window.limitId)!;
-        expect(opportunityOf(p)).toEqual(opportunityOf(m));
-        expect(paceSentence(p)).toBe(paceSentence(m));
-        expect(paceLabel(p).text).toBe(paceLabel(m).text);
-      }
-    }
-  );
+describe('the Analytics breakdown', () => {
+  const demo = demoConsumption();
+  const rows = gridRows(demo);
 
-  it('the operator’s verbatim shape reads free-to-spend on the page and in the popover', () => {
-    const state = OPPORTUNITY_STATES.find(s => s.id === 'strongly-behind')!;
-    const page = allPaces({
-      nowMs: state.nowMs,
-      sources: state.sources,
-    } as unknown as DemoConsumption);
-    const weekly = page.find(p => p.window.limitId === 'codex-weekly')!;
-    expect(paceLabel(weekly).text).toBe('72% free to spend');
-    expect(paceSentence(weekly)).toBe('72% free · expires in 9h');
+  it('accounts for every operator session by Project and by Agent alike', () => {
+    const byProject = pivotRows(demo, 'project', rows);
+    const byAgent = pivotRows(demo, 'session', rows);
+    const total = (list: PivotRow[]) => list.reduce((n, r) => n + r.sessions, 0);
+    expect(total(byAgent)).toBe(rows.length);
+    expect(total(byProject)).toBeGreaterThan(0);
+    expect(byAgent.every(r => r.drill.length === 1)).toBe(true);
+  });
+
+  it('orders rows by weighted burn, heaviest first', () => {
+    const byAgent = pivotRows(demo, 'session', rows);
+    for (let i = 1; i < byAgent.length; i += 1) {
+      expect(byAgent[i - 1].weighted).toBeGreaterThanOrEqual(byAgent[i].weighted);
+    }
   });
 });
 
@@ -156,136 +53,25 @@ describe('meter/page verdict agreement on opportunity states (E9)', () => {
 describe('pivotAbsenceNote', () => {
   const row = (over: Partial<PivotRow> & { id: string }): PivotRow => ({
     label: over.id,
-    usage: {
-      input: 0,
-      cacheWrite: 0,
-      cacheRead: 0,
-      output: 0,
-      reasoning: null,
-    },
+    usage: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: null },
     weighted: 1,
     sessions: 1,
     drill: [],
     ...over,
   });
 
-  it('says a roadmap pivot has no links rather than drawing one grey bar', () => {
-    // Live data collapses to exactly this: a single `Not attributed` row,
-    // because a live Session carries no roadmap link until ENG-017's
-    // declaration path exists. One bar reads as a measured result.
-    const rows = [
-      row({ id: 'unattributed', label: 'Not attributed', unknown: true }),
-    ];
-    expect(pivotAbsenceNote('roadmap', rows)).toBe(
-      'No session in this window carries a roadmap link.'
-    );
+  it('says no session resolves to a Project rather than drawing one grey bar', () => {
+    const rows = [row({ id: 'no-project', unknown: true })];
+    expect(pivotAbsenceNote('project', rows)).not.toBeNull();
   });
 
   it('stays silent as soon as one real row exists', () => {
-    const rows = [
-      row({ id: 'ENG-008', label: 'ENG-008 · Consumption' }),
-      row({ id: 'unattributed', label: 'Not attributed', unknown: true }),
-    ];
-    expect(pivotAbsenceNote('roadmap', rows)).toBeNull();
+    const rows = [row({ id: 'exawatt' }), row({ id: 'no-project', unknown: true })];
+    expect(pivotAbsenceNote('project', rows)).toBeNull();
   });
 
-  it('gives the empty corpus the empty state the band lacked', () => {
-    expect(pivotAbsenceNote('project', [])).toBe(
-      'Nothing to attribute in this window.'
-    );
-    expect(pivotAbsenceNote('session', [])).toBe(
-      'Nothing to attribute in this window.'
-    );
-  });
-
-  it('has nothing to add for pivots whose absence is already legible', () => {
-    const rows = [row({ id: 'x', unknown: true })];
-    expect(pivotAbsenceNote('model', rows)).toBeNull();
-    expect(pivotAbsenceNote('source', rows)).toBeNull();
-  });
-});
-
-describe('unknownVerdictNote — naming what the verdict misses', () => {
-  const claude = (
-    accountRead: ConsumptionSourceView['accountRead']
-  ): ConsumptionSourceView => ({
-    ...source([]),
-    key: 'claude-code',
-    harness: 'claude-code',
-    label: 'Claude Code',
-    ...(accountRead ? { accountRead } : {}),
-  });
-  const grok = (
-    accountRead: ConsumptionSourceView['accountRead']
-  ): ConsumptionSourceView => ({
-    ...source([]),
-    key: 'grok',
-    harness: 'grok',
-    label: 'Grok Build',
-    ...(accountRead ? { accountRead } : {}),
-  });
-  const off = {
-    status: 'disabled' as const,
-    observedAtMs: null,
-    planType: null,
-    spend: null,
-  };
-  const failing = {
-    status: 'unavailable' as const,
-    observedAtMs: NOW - 60 * MIN,
-    planType: 'max',
-    spend: null,
-  };
-
-  it('is null when every source is readable', () => {
-    expect(unknownVerdictNote(demoWith([claude(undefined)]))).toBeNull();
-  });
-
-  const unconfigured = {
-    status: 'unconfigured' as const,
-    observedAtMs: null,
-    planType: null,
-    spend: null,
-  };
-
-  it('names one unreadable account', () => {
-    expect(unknownVerdictNote(demoWith([claude(failing)]))).toBe(
-      'Claude account is not readable. This verdict covers the sources that reported.'
-    );
-  });
-
-  it('names a build with no grant as such, never as the operator turning it off', () => {
-    expect(unknownVerdictNote(demoWith([claude(unconfigured)]))).toBe(
-      'Claude account is not configured in this build. This verdict covers the sources that reported.'
-    );
-  });
-
-  // Each cause keeps its own clause: a switch is never reported as a failure,
-  // and a build with no grant is never reported as the operator's switch.
-  it('gives every cause in a mix its own clause', () => {
-    const note = unknownVerdictNote(
-      demoWith([claude(unconfigured), grok(off)])
-    )!;
-    expect(note).toContain('Claude account is not configured in this build');
-    expect(note).toContain('xAI account is turned off');
-    expect(note).not.toContain('not readable');
-  });
-
-  it('says "turned off" only when every unknown source is switched off', () => {
-    expect(unknownVerdictNote(demoWith([claude(off)]))).toContain(
-      'is turned off'
-    );
-    // a mix must not soften a real failure into a preference
-    const note = unknownVerdictNote(demoWith([claude(off), grok(failing)]))!;
-    expect(note).toContain('xAI account is not readable');
-    expect(note).toContain('Claude account is turned off');
-  });
-
-  it('lists several accounts in one line', () => {
-    const note = unknownVerdictNote(
-      demoWith([claude(failing), grok(failing)])
-    )!;
-    expect(note).toContain('Claude account and xAI account');
-    expect(note).toContain('are not readable');
+  it('gives the empty corpus an empty state', () => {
+    expect(pivotAbsenceNote('project', [])).not.toBeNull();
+    expect(pivotAbsenceNote('session', [])).not.toBeNull();
   });
 });

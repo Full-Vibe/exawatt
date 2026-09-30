@@ -97,6 +97,12 @@ export interface ExawattSettings<ThemeId extends string = string> {
      *  off constructs no request and serves no Claude plan windows. */
     enabled: boolean;
   };
+  codexPlanWindows?: {
+    /** ENG-038 slice 2: the account's windows, credits and banked resets,
+     *  asked of the operator's own `codex` app-server under its own sign-in.
+     *  Defaults on; off starts no app-server and serves no account read. */
+    enabled: boolean;
+  };
   /** ENG-044 safety controls, declared in `SAFETY_CONTROLS`. Every control
    *  defaults OFF: only an explicit true applies a limit to an agent. */
   safety?: SafetyControlSettings;

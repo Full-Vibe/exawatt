@@ -29,7 +29,7 @@ import type {
   DemoSessionSpec,
   LinkMethod,
 } from './demo-source';
-import { buildDemoConsumption } from './demo-source';
+import { buildDemoConsumption, demoAccountReads } from './demo-source';
 
 const ROADMAP_STATUS: Record<RoadmapItemStatus, DemoRoadmapItem['status']> = {
   now: 'active-build',
@@ -141,11 +141,13 @@ export function voltaicConsumption(): DemoConsumption {
     dir: project.dir,
     color: project.color,
   }));
+  const accounts = demoAccountReads(nowMs);
   cached = buildDemoConsumption({
     nowMs,
     windowLabel: 'fourteen days',
     samples: corpus.samples,
-    planWindows: corpus.planWindows,
+    planWindows: [...corpus.planWindows, ...accounts.planWindows],
+    accountReads: accounts.accountReads,
     projects,
     roadmap: voltaicRoadmapItems(),
     sessionSpecs: voltaicSessionSpecs(fleetAgents),
@@ -163,7 +165,7 @@ export function voltaicConsumption(): DemoConsumption {
       // No Grok Build fixture corpus: absent, not a fabricated series.
       grok: [],
     },
-    burnRates: { 'codex-primary': 8.1, 'codex-weekly': 0.78 },
+    burnRates: { 'codex-primary': 8.1, 'codex-weekly': 0.78, ...accounts.burnRates },
     claudePlanNote:
       'Claude Code keeps no plan, quota, or rate-limit record in its local files.',
   });

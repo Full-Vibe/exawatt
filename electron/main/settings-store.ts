@@ -369,6 +369,10 @@ const SETTINGS_SCHEMA: {
     const enabled = explicitBoolean(raw, 'enabled');
     return enabled === undefined ? undefined : { enabled };
   },
+  codexPlanWindows: raw => {
+    const enabled = explicitBoolean(raw, 'enabled');
+    return enabled === undefined ? undefined : { enabled };
+  },
   // Opposite polarity from every switch above: absent means OFF (decision
   // `0029` — publishing is opt-in), so a malformed key falls back to not
   // publishing rather than silently opting the operator in.
@@ -558,6 +562,7 @@ function validStoredSettings(value: unknown): boolean {
     goalVisuals: ['enabled'],
     reentryRecap: ['enabled'],
     claudePlanWindows: ['enabled'],
+    codexPlanWindows: ['enabled'],
     safety: SAFETY_CONTROLS.map(control => control.id),
     operatorProfile: [
       'autoPublish',
@@ -657,6 +662,7 @@ function recoverySettings(): StoredSettings {
     goalVisuals: { enabled: false },
     reentryRecap: { enabled: false },
     claudePlanWindows: { enabled: false },
+    codexPlanWindows: { enabled: false },
     operatorProfile: { autoPublish: false },
   };
 }
@@ -873,6 +879,13 @@ export function setClaudePlanWindowsEnabled(enabled: boolean): StoredSettings {
   return settings;
 }
 
+export function setCodexPlanWindowsEnabled(enabled: boolean): StoredSettings {
+  const settings = loadSettings();
+  settings.codexPlanWindows = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
 export function setSafetyControl(
   control: SafetyControlId,
   enabled: boolean
@@ -886,6 +899,11 @@ export function setSafetyControl(
 /** Default ON; only an explicit false is off (the `!== false` convention). */
 export function isClaudePlanWindowsEnabled(settings: StoredSettings): boolean {
   return settings.claudePlanWindows?.enabled !== false;
+}
+
+/** Default ON, same convention (ENG-038 slice 2). */
+export function isCodexPlanWindowsEnabled(settings: StoredSettings): boolean {
+  return settings.codexPlanWindows?.enabled !== false;
 }
 
 function normalizedTimestamp(value: unknown): string | null {

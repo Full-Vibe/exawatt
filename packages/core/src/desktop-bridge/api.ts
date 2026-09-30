@@ -238,6 +238,7 @@ export interface DesktopSettingsApi {
   setKeepAwake: BridgeInvoke<'settings:set-keep-awake'>;
   setReentryRecap: BridgeInvoke<'settings:set-reentry-recap'>;
   setClaudePlanWindows: BridgeInvoke<'settings:set-claude-plan-windows'>;
+  setCodexPlanWindows: BridgeInvoke<'settings:set-codex-plan-windows'>;
   setSafetyControl: BridgeInvoke<'settings:set-safety-control'>;
   setOperatorAutoPublish: BridgeInvoke<'settings:set-operator-auto-publish'>;
   recordOperatorProfileState: BridgeInvoke<'settings:record-operator-profile-state'>;

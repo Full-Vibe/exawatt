@@ -32,23 +32,16 @@
  */
 import {
   isOperatorEntrypoint,
-  observationKey,
   planWindowKey,
   resolveModelWeight,
   weightUsage,
   type ConsumptionSample,
   type ConsumptionSourceId,
   type PlanWindow,
-  type PlanWindowObservation,
   type ProviderPlanAccountState,
 } from '@exawatt/core';
 import { projectColor } from '@/components/workspace/project-colors';
-import { planWindowLabel, type AccountReadView } from './model';
-import {
-  OPPORTUNITY_CLOSING_RESET_FRACTION,
-  OPPORTUNITY_MIN_FLOOR_PTS,
-  type ClosedCycle,
-} from './meter/meter-model';
+import type { AccountReadView } from './model';
 import {
   buildDemoConsumption,
   type DemoConsumption,
@@ -145,13 +138,6 @@ export interface LiveConsumptionInputs {
    * single-observation derivation, never a fabricated zero.
    */
   windowRates: Record<string, number>;
-  /**
-   * Bounded observed history per window bucket from the snapshot, ascending
-   * by `observedAtMs`. E9's closed-cycle ledger is derived from the tail of
-   * the PREVIOUS cycle; absent history simply means no ledger, never a
-   * fabricated claim.
-   */
-  windowObservations: PlanWindowObservation[];
   identities: LiveSessionIdentity[];
   projects: LiveProjectRecord[];
   /**
@@ -162,6 +148,12 @@ export interface LiveConsumptionInputs {
    * read is off or failing, and is where the plan-credit spend arrives.
    */
   providerPlanAccounts?: ProviderPlanAccountState[];
+}
+
+function msOrNull(iso: string | null): number | null {
+  if (iso === null) return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /** Snapshot account state → the view-model's account read, one per source. */
@@ -180,6 +172,22 @@ export function accountReads(
           ? null
           : observedAtMs,
       planType: account.planType,
+      ...(account.rateLimitTier != null
+        ? { rateLimitTier: account.rateLimitTier }
+        : {}),
+      ...(account.resets
+        ? {
+            resets: {
+              available: account.resets.available,
+              credits:
+                account.resets.credits?.map(credit => ({
+                  title: credit.title,
+                  expiresAtMs: msOrNull(credit.expiresAt),
+                })) ?? null,
+            },
+          }
+        : {}),
+      ...(account.credits ? { credits: { ...account.credits } } : {}),
       spend: account.spend
         ? {
             usedMinor: account.spend.usedMinor,
@@ -276,72 +284,6 @@ export function observedBurnRate(w: PlanWindow): number {
   const elapsedMs = Math.min(windowMs, Math.max(0, windowMs - (resetsAtMs - observedAtMs)));
   const hours = Math.max(0.5, elapsedMs / HOUR);
   return w.usedPercent / hours;
-}
-
-/* ------------------------------------------------------------------ */
-/* closed cycles — the E9 ledger's data (observed, never extrapolated) */
-/* ------------------------------------------------------------------ */
-
-/**
- * A "closed with N% unused" claim is only honest if the harness was actually
- * observed near the close — Codex reports rate limits with each response, so
- * burn near the reset always writes a fresher observation, and a final
- * observation this close to the reset IS the closing state to log fidelity.
- * Farther than this, the cycle's end went unobserved and no claim is made.
- */
-const LEDGER_OBSERVATION_SLACK_MIN_MS = 30 * MIN;
-const LEDGER_OBSERVATION_SLACK_FRACTION = 0.05;
-
-/**
- * Cycles that recently closed with real headroom unspent, derived per live
- * window bucket from the previous cycle's final observation. Three gates:
- *
- *  - the current cycle is young (elapsed ≤ ¼ window — the same fraction the
- *    closing tier uses), so the ledger is news, not history;
- *  - the previous cycle's last observation sits within the slack of the
- *    reset instant (see above), so "closed with" is observed fact;
- *  - the unused share clears the opportunity floor (15 pts) — at a window's
- *    close even-pace is 100%, so unused IS the floor, and below the floor
- *    the trigger itself would never have spoken.
- */
-export function liveClosedCycles(
-  planWindows: readonly PlanWindow[],
-  observations: readonly PlanWindowObservation[],
-  nowMs: number
-): ClosedCycle[] {
-  const out: ClosedCycle[] = [];
-  for (const w of planWindows) {
-    if (w.windowMinutes <= 0 || !w.resetsAt) continue;
-    const resetsAtMs = Date.parse(w.resetsAt);
-    if (Number.isNaN(resetsAtMs)) continue;
-    const windowMs = w.windowMinutes * MIN;
-    const cycleStartMs = resetsAtMs - windowMs;
-    const agoMs = nowMs - cycleStartMs;
-    if (agoMs < 0) continue; // window not started (clock skew) — no claim
-    if (agoMs > windowMs * OPPORTUNITY_CLOSING_RESET_FRACTION) continue;
-    const key = planWindowKey(w);
-    let last: PlanWindowObservation | null = null;
-    for (const o of observations) {
-      if (observationKey(o) !== key) continue;
-      if (o.observedAtMs >= cycleStartMs) continue; // current cycle
-      if (o.observedAtMs < cycleStartMs - windowMs) continue; // older cycles
-      if (!last || o.observedAtMs > last.observedAtMs) last = o;
-    }
-    if (!last) continue;
-    const slack = Math.max(
-      LEDGER_OBSERVATION_SLACK_MIN_MS,
-      windowMs * LEDGER_OBSERVATION_SLACK_FRACTION
-    );
-    if (cycleStartMs - last.observedAtMs > slack) continue;
-    const unusedPercent = Math.round(100 - last.usedPercent);
-    if (unusedPercent < OPPORTUNITY_MIN_FLOOR_PTS) continue;
-    out.push({
-      label: planWindowLabel(w.windowMinutes),
-      unusedPercent,
-      agoMs,
-    });
-  }
-  return out.sort((a, b) => b.unusedPercent - a.unusedPercent);
 }
 
 /* ------------------------------------------------------------------ */
@@ -565,10 +507,5 @@ export function buildLiveConsumption(
     burnRates,
     claudePlanNote: CLAUDE_PLAN_NOTE,
     accountReads: accountReads(inputs.providerPlanAccounts),
-    closedCycles: liveClosedCycles(
-      planWindows,
-      inputs.windowObservations,
-      nowMs
-    ),
   });
 }

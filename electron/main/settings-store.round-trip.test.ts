@@ -75,6 +75,7 @@ const FIXTURES: {
   goalVisuals: { enabled: false },
   reentryRecap: { enabled: false },
   claudePlanWindows: { enabled: false },
+  codexPlanWindows: { enabled: false },
   safety: { processKillGuard: true },
   operatorProfile: {
     autoPublish: true,

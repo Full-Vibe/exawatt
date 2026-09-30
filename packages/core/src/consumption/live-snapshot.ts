@@ -98,6 +98,36 @@ export interface ProviderPlanSpend {
   enabled: boolean;
 }
 
+/**
+ * One banked reset the vendor granted the account (ENG-038 slice 2): spending
+ * it restores the plan's limits early. Codex reports these as "Full reset"
+ * credits with an expiry; one that expires unused is allowance thrown away,
+ * which is why the expiry is carried and not only the count.
+ */
+export interface PlanResetCredit {
+  /** The vendor's own display title, e.g. `Full reset`. null when unlabelled. */
+  title: string | null;
+  /** ISO 8601 expiry; null when the credit never expires. */
+  expiresAt: string | null;
+  /** ISO 8601 grant instant; null when not reported. */
+  grantedAt: string | null;
+}
+
+export interface PlanResets {
+  /** Available resets as the vendor counts them. May exceed `credits.length`
+   *  because the vendor may cap its detail list. */
+  available: number;
+  /** Detail rows, soonest expiry first. null when only the count is known. */
+  credits: PlanResetCredit[] | null;
+}
+
+/** A prepaid credit balance the vendor draws on past the plan's limits. */
+export interface PlanCreditBalance {
+  /** The vendor's own balance figure; null when it reports none. */
+  balance: number | null;
+  unlimited: boolean;
+}
+
 export interface ProviderPlanAccountState {
   source: ConsumptionSourceId;
   status: ProviderPlanAccountStatus;
@@ -106,6 +136,18 @@ export interface ProviderPlanAccountState {
   /** The account's own plan identity, e.g. `max`. */
   planType: string | null;
   spend: ProviderPlanSpend | null;
+  /**
+   * The vendor's own tier id within the plan, e.g. Claude's
+   * `default_claude_max_20x`. Absent or null when not reported.
+   */
+  rateLimitTier?: string | null;
+  /**
+   * Banked resets. ABSENT means this source cannot report them at all, which
+   * is a different fact from `{ available: 0 }`: never render absence as none.
+   */
+  resets?: PlanResets;
+  /** Prepaid credit balance. Absent when the source cannot report one. */
+  credits?: PlanCreditBalance;
 }
 
 export const LIVE_CONSUMPTION_SNAPSHOT_VERSION = 1 as const;

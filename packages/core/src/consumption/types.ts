@@ -329,6 +329,11 @@ export interface PlanWindow {
   source: ConsumptionSourceId;
   /** Provider's identifier for the limit bucket, e.g. `codex`. */
   limitId: string | null;
+  /**
+   * The provider's name for a bucket NARROWER than the plan: the model a
+   * limit is scoped to (Claude's `Fable`, Codex's `GPT-5.3-Codex-Spark`).
+   * null for the plan's own windows, which surfaces name from their length.
+   */
   limitName: string | null;
   /** Which of the provider's two reported windows this is. */
   scope: 'primary' | 'secondary';

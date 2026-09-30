@@ -15,22 +15,14 @@ import {
   type PlanWindow,
   type ProviderPlanAccountState,
 } from '@exawatt/core';
-import { opportunityOf, paceLabel, readMeter } from './meter/meter-model';
 import { planReadState } from './model';
 import { planCredits } from './units';
-import {
-  allPaces,
-  diagnostics,
-  gridRows,
-  planCreditRows,
-  unknownSources,
-  unknownVerdictNote,
-} from '@/app/usage/derive';
+import { usageOverview } from './accounts';
+import { gridRows } from '@/app/usage/derive';
 import {
   CLAUDE_PLAN_NOTE,
   buildLiveConsumption,
   latestPlanWindows,
-  liveClosedCycles,
   liveProjectResolver,
   liveScanView,
   observedBurnRate,
@@ -113,7 +105,6 @@ function inputs(over: Partial<LiveConsumptionInputs> = {}): LiveConsumptionInput
     samples: [],
     planWindows: [],
     windowRates: {},
-    windowObservations: [],
     identities: [],
     projects: [
       { dir: EXA, name: 'exawatt', color: '#19E6FF' },
@@ -321,10 +312,6 @@ describe('the built view — attribution, identity, honest absence', () => {
 
   it('excludes unrecorded sessions from the intervention rate', () => {
     expect(view.interventions.rows).toHaveLength(0);
-    // …and the diagnostics tile states the absence, never a 0.0 rate
-    const tile = diagnostics(view).find(d => d.key === 'interventions');
-    expect(tile?.value).toBe('not recorded');
-    expect(tile?.state).toBe('not-recorded');
     const counted = buildLiveConsumption({
       ...liveInputs,
       identities: [
@@ -340,25 +327,13 @@ describe('the built view — attribution, identity, honest absence', () => {
   });
 
   it('applies the freshness discipline: a stale window can never headline', () => {
-    const paces = allPaces(view);
-    expect(paces.map(p => p.window.limitId)).toEqual([
-      planWindowKey(weeklyWindow),
-      planWindowKey(primaryWindow),
-    ]);
-    // …but the stale record is not hidden from the source's window list
-    const codex = view.sources.find(s => s.harness === 'codex')!;
-    expect(codex.windows.map(w => w.limitId)).toContain(
-      planWindowKey(ancientWindow)
-    );
-  });
-
-  it('meter == page: both read the same tightest live window (the invariant)', () => {
-    const meter = readMeter(view.sources, view.nowMs);
-    const pagePaces = allPaces(view);
-    expect(meter.reading).not.toBeNull();
-    expect(meter.reading!.window.limitId).toBe(pagePaces[0].window.limitId);
-    expect(meter.reading!.usedPercent).toBe(pagePaces[0].usedPercent);
-    expect(meter.reading!.pace).toBe(pagePaces[0].pace);
+    const overview = usageOverview(view);
+    expect(overview.binding?.meter.key).toBe(planWindowKey(weeklyWindow));
+    const codex = overview.accounts.find(a => a.key === 'codex')!;
+    const ancient = codex.meters.find(m => m.key === planWindowKey(ancientWindow));
+    // …the stale record stays on the card at its true age, never live.
+    expect(ancient?.live).toBe(false);
+    expect(ancient?.forecast).toBeNull();
   });
 
   it('keeps Claude Code’s plan absence explicit', () => {
@@ -382,21 +357,21 @@ describe('ENG-038 — Claude vendor-account windows through the live view', () =
   const claudeWindows = [
     vendor({
       limitId: 'claude-session',
-      limitName: 'Current session',
+      limitName: null,
       windowMinutes: 300,
       usedPercent: 16,
       resetsAt: iso(NOW + 100 * MIN),
     }),
     vendor({
       limitId: 'claude-weekly-all',
-      limitName: 'Weekly — all models',
+      limitName: null,
       windowMinutes: 10_080,
       usedPercent: 38,
       resetsAt: iso(NOW + 5 * 24 * HOUR),
     }),
     vendor({
       limitId: 'claude-weekly-fable',
-      limitName: 'Weekly — Fable',
+      limitName: 'Fable',
       windowMinutes: 10_080,
       usedPercent: 68,
       resetsAt: iso(NOW + 5 * 24 * HOUR),
@@ -414,27 +389,24 @@ describe('ENG-038 — Claude vendor-account windows through the live view', () =
     expect(claude.windows).toHaveLength(3);
     expect(claude.windows.map(w => w.label).sort()).toEqual([
       'Current session',
-      'Weekly — Fable',
-      'Weekly — all models',
+      'Fable this week',
+      'This week',
     ]);
     expect(claude.planType).toBe('max');
-    // Plan-level, per source: these meter the whole plan (claude.ai chat
-    // included) and every row says so through the one popover caption.
-    expect(claude.windows.every(w => w.planLevel === true)).toBe(true);
   });
 
   it("prefers main's trend rate and falls back to the observed average", () => {
-    const fable = claude.windows.find(w => w.label === 'Weekly — Fable')!;
+    const fable = claude.windows.find(w => w.label === 'Fable this week')!;
     expect(fable.burnPercentPerHour).toBeCloseTo(0.41, 5);
     const session = claude.windows.find(w => w.label === 'Current session')!;
     expect(session.burnPercentPerHour).toBeGreaterThan(0); // average, never 0
   });
 
-  it('the tightest Claude window headlines the meter exactly like Codex would', () => {
-    const meter = readMeter(view.sources, view.nowMs);
-    expect(meter.reading).not.toBeNull();
-    expect(meter.reading!.window.label).toBe('Weekly — Fable');
-    expect(meter.reading!.usedPercent).toBe(68);
+  it('the fullest Claude window headlines the meter when none runs out', () => {
+    const binding = usageOverview(view).binding;
+    expect(binding).not.toBeNull();
+    expect(binding!.meter.label).toBe('Fable this week');
+    expect(binding!.meter.usedPercent).toBe(68);
   });
 
   it('degrade path: no vendor windows reads exactly like before ENG-038', () => {
@@ -452,8 +424,8 @@ describe('the empty corpus — a fresh machine, absent-never-zero', () => {
     expect(view.workspace.sessionCount).toBe(0);
     expect(view.samples).toHaveLength(0);
     expect(gridRows(view)).toHaveLength(0);
-    expect(allPaces(view)).toHaveLength(0);
-    expect(readMeter(view.sources, view.nowMs).reading).toBeNull();
+    expect(usageOverview(view).accounts).toHaveLength(0);
+    expect(usageOverview(view).binding).toBeNull();
     // every declared source exists as an absent channel, never a 0% window
     expect(view.sources.map(s => s.harness).sort()).toEqual([
       'claude-code',
@@ -510,95 +482,6 @@ describe('liveScanView — the caption mapping', () => {
     });
     expect(scan.lastScanAtMs).toBe(NOW - 3 * MIN);
     expect(scan.firstScanComplete).toBe(true);
-  });
-});
-
-describe('liveClosedCycles — the E9 ledger claims only what was observed', () => {
-  const WEEK_MIN = 10_080;
-  const WEEK_MS = WEEK_MIN * MIN;
-
-  /** A weekly window whose current cycle began `agoMs` ago. */
-  function weekly(agoMs: number): PlanWindow {
-    return planWindow({
-      limitId: 'codex-weekly',
-      scope: 'secondary',
-      windowMinutes: WEEK_MIN,
-      usedPercent: 1,
-      resetsAt: iso(NOW - agoMs + WEEK_MS),
-      observedAt: iso(NOW - MIN),
-    });
-  }
-
-  function observation(observedAtMs: number, usedPercent: number) {
-    return {
-      source: 'codex' as const,
-      limitId: 'codex-weekly',
-      scope: 'secondary' as const,
-      windowMinutes: WEEK_MIN,
-      usedPercent,
-      observedAtMs,
-    };
-  }
-
-  it('a cycle observed near its close with real headroom becomes the ledger', () => {
-    const cycleStart = NOW - 25 * MIN;
-    const cycles = liveClosedCycles(
-      [weekly(25 * MIN)],
-      [
-        observation(cycleStart - 2 * 24 * HOUR, 20),
-        observation(cycleStart - 10 * MIN, 33), // the final observed state
-      ],
-      NOW
-    );
-    expect(cycles).toEqual([
-      { label: 'Weekly window', unusedPercent: 67, agoMs: 25 * MIN },
-    ]);
-  });
-
-  it('an unobserved close makes no claim, however behind the cycle was', () => {
-    const cycleStart = NOW - 25 * MIN;
-    // last seen 3 days before the reset — anything could have burned since
-    const cycles = liveClosedCycles(
-      [weekly(25 * MIN)],
-      [observation(cycleStart - 3 * 24 * HOUR, 20)],
-      NOW
-    );
-    expect(cycles).toEqual([]);
-  });
-
-  it('a cycle that closed under the opportunity floor is a footnote, not a ledger', () => {
-    const cycleStart = NOW - 25 * MIN;
-    const cycles = liveClosedCycles(
-      [weekly(25 * MIN)],
-      [observation(cycleStart - 10 * MIN, 90)], // closed with only 10% unused
-      NOW
-    );
-    expect(cycles).toEqual([]);
-  });
-
-  it('the ledger is news, never history: silent past a quarter of the new window', () => {
-    const agoMs = 2 * 24 * HOUR; // weekly quarter is 1.75d
-    const cycleStart = NOW - agoMs;
-    const cycles = liveClosedCycles(
-      [weekly(agoMs)],
-      [observation(cycleStart - 10 * MIN, 33)],
-      NOW
-    );
-    expect(cycles).toEqual([]);
-  });
-
-  it('rides the built view; absent history means an empty ledger', () => {
-    const cycleStart = NOW - 25 * MIN;
-    const view = buildLiveConsumption(
-      inputs({
-        planWindows: [weekly(25 * MIN)],
-        windowObservations: [observation(cycleStart - 10 * MIN, 33)],
-      })
-    );
-    expect(view.closedCycles).toEqual([
-      { label: 'Weekly window', unusedPercent: 67, agoMs: 25 * MIN },
-    ]);
-    expect(buildLiveConsumption(inputs()).closedCycles).toEqual([]);
   });
 });
 
@@ -671,27 +554,29 @@ describe('providerPlanAccounts reaches the view (D1/D2)', () => {
       currency: 'USD',
       exponent: 2,
     });
-    const rows = planCreditRows(buildLiveConsumption(
-      inputs({
-        providerPlanAccounts: [
-          account({
-            spend: {
-              usedMinor: 20_160,
-              limitMinor: 20_000,
-              currency: 'USD',
-              exponent: 2,
-              percent: 100.8,
-              enabled: true,
-            },
-          }),
-        ],
-      })
-    ));
-    expect(rows).toHaveLength(1);
-    // account truth wears the ACCOUNT's name, never the harness's
-    expect(rows[0].label).toBe('Claude account');
-    expect(planCredits(rows[0].spend.usedMinor, rows[0].spend)).toBe('$201.60');
-    expect(planCredits(rows[0].spend.limitMinor!, rows[0].spend)).toBe('$200.00');
+    expect(planCredits(claude.accountRead!.spend!.usedMinor, claude.accountRead!.spend!)).toBe('$201.60');
+  });
+
+  it('carries banked resets and credits, and absent stays absent', () => {
+    const codexOf = (over: Partial<ProviderPlanAccountState>) =>
+      buildLiveConsumption(
+        inputs({ providerPlanAccounts: [account({ source: 'codex', planType: 'pro', ...over })] })
+      ).sources.find(s => s.harness === 'codex')!;
+    const withResets = codexOf({
+      resets: {
+        available: 3,
+        credits: [{ title: 'Full reset', expiresAt: iso(NOW + 48 * HOUR), grantedAt: null }],
+      },
+      credits: { balance: 60_941.2, unlimited: false },
+    });
+    expect(withResets.accountRead?.resets).toEqual({
+      available: 3,
+      credits: [{ title: 'Full reset', expiresAtMs: NOW + 48 * HOUR }],
+    });
+    expect(withResets.accountRead?.credits).toEqual({ balance: 60_941.2, unlimited: false });
+    const bare = codexOf({});
+    expect(bare.accountRead?.resets).toBeUndefined();
+    expect(bare.accountRead?.credits).toBeUndefined();
   });
 
   it('renders a non-USD account in its own currency', () => {
@@ -714,14 +599,12 @@ describe('providerPlanAccounts reaches the view (D1/D2)', () => {
     );
   });
 
-  it('an unreadable account turns the page verdict partial and quiet (D1)', () => {
-    // The audit's capture `08`, end to end through the live builder: Codex
-    // sits at 5% and far behind pace, so before the guard this read
-    // "95% free to spend" while Claude burned unmetered.
+  it('an account read turned off keeps its card and says so (D1)', () => {
+    // The audit's capture `08`: Codex far behind pace while the Claude read
+    // is off. The page must show Claude's card saying why, never omit it.
     const codexWeekly = planWindow({
       source: 'codex',
       limitId: 'codex-weekly',
-      limitName: 'Weekly window',
       windowMinutes: 10_080,
       usedPercent: 5,
       resetsAt: iso(NOW + 5 * 24 * HOUR),
@@ -729,20 +612,15 @@ describe('providerPlanAccounts reaches the view (D1/D2)', () => {
     });
     const view = buildLiveConsumption(
       inputs({
+        samples: [sample({ providerSessionId: 'c-1', source: 'claude-code' })],
         planWindows: [codexWeekly],
         providerPlanAccounts: [
           account({ status: 'disabled', observedAt: null, planType: null }),
         ],
       })
     );
-    const paces = allPaces(view);
-    expect(paces).toHaveLength(1);
-    expect(paces[0].fleetUnknown).toBe(true);
-    expect(opportunityOf(paces[0])).toBeNull();
-    expect(paceLabel(paces[0]).text).not.toContain('free to spend');
-    const note = unknownVerdictNote(view)!;
-    expect(note).toContain('Claude account');
-    expect(note).toContain('turned off');
-    expect(unknownSources(view).map(s => s.harness)).toEqual(['claude-code']);
+    const claude = usageOverview(view).accounts.find(a => a.key === 'claude-code');
+    expect(claude?.health).toBe('off');
+    expect(claude?.meters).toEqual([]);
   });
 });

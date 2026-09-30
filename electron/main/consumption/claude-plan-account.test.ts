@@ -13,11 +13,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { planWindowKey } from '@exawatt/core';
+import { planWindowKey, type PlanWindow } from '@exawatt/core';
 import {
   CLAUDE_USAGE_ENDPOINT,
   ClaudePlanAccountService,
   isClaudePlanRemoteReadAllowed,
+  migratePersistedLimitName,
   parseClaudeUsage,
   readClaudeCredential,
   type ClaudeOauthCredential,
@@ -187,7 +188,7 @@ describe('parseClaudeUsage', () => {
     const session = byId.get('claude-session');
     expect(session).toMatchObject({
       source: 'claude-code',
-      limitName: 'Current session',
+      limitName: null,
       usedPercent: 16,
       windowMinutes: 300,
       resetsAt: '2026-08-11T22:39:59.709988+00:00',
@@ -198,12 +199,12 @@ describe('parseClaudeUsage', () => {
     });
 
     expect(byId.get('claude-weekly-all')).toMatchObject({
-      limitName: 'Weekly — all models',
+      limitName: null,
       usedPercent: 38,
       windowMinutes: 10080,
     });
     expect(byId.get('claude-weekly-fable')).toMatchObject({
-      limitName: 'Weekly — Fable',
+      limitName: 'Fable',
       usedPercent: 68,
       windowMinutes: 10080,
     });
@@ -316,6 +317,7 @@ describe('readClaudeCredential', () => {
       accessToken: FAKE_TOKEN,
       expiresAtMs: 1786489274838,
       subscriptionType: 'max',
+      rateLimitTier: 'default_claude_max_20x',
     });
   });
 
@@ -347,6 +349,7 @@ describe('ClaudePlanAccountService', () => {
     accessToken: FAKE_TOKEN,
     expiresAtMs: nowMs + 3_600_000,
     subscriptionType: 'max',
+    rateLimitTier: 'default_claude_max_20x',
     ...over,
   });
 
@@ -397,6 +400,7 @@ describe('ClaudePlanAccountService', () => {
       observedAt: new Date(nowMs).toISOString(),
     });
     expect(view.account.spend?.usedMinor).toBe(20160);
+    expect(view.account.rateLimitTier).toBe('default_claude_max_20x');
     expect(view.revision).toBeGreaterThan(0);
   });
 
@@ -669,6 +673,15 @@ describe('ProviderPlanCompositeSource', () => {
   const scannerSnapshot = (revision: number): LiveConsumptionSnapshot => {
     const snapshot = emptyLiveConsumptionSnapshot(0);
     snapshot.scanState.revision = revision;
+    const observation = (hoursAgo: number, usedPercent: number) => ({
+      source: 'codex' as const,
+      limitId: 'codex',
+      scope: 'primary' as const,
+      windowMinutes: 300,
+      usedPercent,
+      observedAtMs: Date.parse('2026-08-11T21:00:00.000Z') - hoursAgo * 3_600_000,
+    });
+    snapshot.windowObservations = [observation(1, 10), observation(0, 19.4)];
     snapshot.windowRates = { 'codex|codex|primary|300': 9.4 };
     return snapshot;
   };
@@ -710,6 +723,7 @@ describe('ProviderPlanCompositeSource', () => {
         accessToken: FAKE_TOKEN,
         expiresAtMs: Date.now() + 3_600_000,
         subscriptionType: 'max',
+        rateLimitTier: null,
       }),
       minFetchIntervalMs: 0,
       jitterMs: 0,
@@ -727,7 +741,7 @@ describe('ProviderPlanCompositeSource', () => {
   it('merges vendor windows, rates, and account state into the one snapshot', async () => {
     const scanner = fakeScanner();
     const plan = planService(stateDir);
-    const composite = new ProviderPlanCompositeSource(scanner, plan);
+    const composite = new ProviderPlanCompositeSource(scanner, [plan]);
 
     await plan.maybeRefresh();
     const snapshot = await composite.snapshot();
@@ -737,7 +751,9 @@ describe('ProviderPlanCompositeSource', () => {
       'claude-weekly-all',
       'claude-weekly-fable',
     ]);
-    expect(snapshot.windowRates['codex|codex|primary|300']).toBe(9.4);
+    // The rate is derived once from the merged history, so the scanner's
+    // own series survives the merge.
+    expect(snapshot.windowRates['codex|codex|primary|300']).toBeCloseTo(9.4, 5);
     expect(snapshot.providerPlanAccounts?.[0]).toMatchObject({
       source: 'claude-code',
       status: 'ok',
@@ -749,7 +765,7 @@ describe('ProviderPlanCompositeSource', () => {
   it('re-emits scanner events with the composed revision and emits on plan bumps', async () => {
     const scanner = fakeScanner();
     const plan = planService(stateDir);
-    const composite = new ProviderPlanCompositeSource(scanner, plan);
+    const composite = new ProviderPlanCompositeSource(scanner, [plan]);
     const events: ConsumptionUpdatedEvent[] = [];
     composite.onUpdated(event => events.push(event));
 
@@ -768,8 +784,51 @@ describe('ProviderPlanCompositeSource', () => {
     const scanner = fakeScanner();
     const plan = planService(stateDir);
     const spy = vi.spyOn(plan, 'maybeRefresh');
-    new ProviderPlanCompositeSource(scanner, plan).rescan();
+    new ProviderPlanCompositeSource(scanner, [plan]).rescan();
     expect(spy).toHaveBeenCalledTimes(1);
     expect(scanner.rescans).toBe(1);
+  });
+
+  it('reads an account only when its harness left local files', async () => {
+    const scanner = fakeScanner();
+    const plan = planService(stateDir);
+    const spy = vi.spyOn(plan, 'maybeRefresh');
+    const composite = new ProviderPlanCompositeSource(
+      {
+        ...scanner,
+        snapshot: async () => ({
+          ...scannerSnapshot(3),
+          emptySources: ['claude-code'],
+        }),
+      },
+      [plan]
+    );
+    await composite.snapshot(); // learns the empty sources
+    spy.mockClear();
+    await composite.snapshot();
+    composite.rescan();
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('persisted Claude windows from before the label move', () => {
+  it('re-reads a saved display sentence as the model scope it named', () => {
+    const saved = (limitId: string, limitName: string | null): PlanWindow => ({
+      source: 'claude-code',
+      limitId,
+      limitName,
+      scope: 'primary',
+      usedPercent: 10,
+      windowMinutes: 10080,
+      resetsAt: null,
+      planType: 'max',
+      observedAt: OBSERVED_AT,
+      providerSessionId: '',
+      origin: 'provider-account',
+    });
+    expect(migratePersistedLimitName(saved('claude-weekly-fable', 'Weekly — Fable')).limitName).toBe('Fable');
+    expect(migratePersistedLimitName(saved('claude-weekly-all', 'Weekly — all models')).limitName).toBeNull();
+    expect(migratePersistedLimitName(saved('claude-session', 'Current session')).limitName).toBeNull();
+    expect(migratePersistedLimitName(saved('claude-weekly-fable', 'Fable')).limitName).toBe('Fable');
   });
 });

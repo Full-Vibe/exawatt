@@ -28,10 +28,6 @@ vi.mock('@/components/readiness/gallery-study', () => ({
   ReadinessGrammarStudy: () => null,
 }));
 
-vi.mock('./pace-opportunity-study', () => ({
-  PaceOpportunityStudy: () => null,
-}));
-
 import HudGallery from './page';
 
 class IntersectionObserverStub implements IntersectionObserver {

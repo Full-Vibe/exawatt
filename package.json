@@ -108,6 +108,7 @@
     "eval:workspace:ribbon": "node scripts/project-ribbon-motion-eval.mjs",
     "eval:workspace:ribbon:bench": "node scripts/ribbon-dogfood-bench-eval.mjs",
     "eval:workspace:launcher": "node scripts/agent-launcher-bench-shot.mjs",
+    "eval:usage:scenarios": "node scripts/usage-scenarios-eval.mjs",
     "eval:workspace:team": "node scripts/team-order-eval.mjs",
     "eval:workspace:paused": "node scripts/paused-agent-record-eval.mjs",
     "eval:workspace:split": "node scripts/workspace-split-eval.mjs",

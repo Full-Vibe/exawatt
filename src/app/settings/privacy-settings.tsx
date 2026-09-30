@@ -7,6 +7,7 @@ import {
   HOSTED_FEATURE_IDS,
   OUTBOUND_CONTROLS,
   isClaudePlanWindowsEnabled,
+  isCodexPlanWindowsEnabled,
   isHostedFeatureEnabled,
   isOperatorAutoPublishEnabled,
   isReentryRecapEnabled,
@@ -156,7 +157,9 @@ function useHostedFeatureSettings() {
               ? api.setOperatorAutoPublish
               : id === 'claudePlanWindows'
                 ? api.setClaudePlanWindows
-                : api.setReentryRecap;
+                : id === 'codexPlanWindows'
+                  ? api.setCodexPlanWindows
+                  : api.setReentryRecap;
       try {
         setSettings(await save(enabled));
       } catch {
@@ -257,6 +260,11 @@ export function PrivacySettings() {
                 )
               }
               onChange={next => void setFeature('claudePlanWindows', next)}
+            />
+            <OutboundControlRow
+              control={OUTBOUND_CONTROLS.codexPlanWindows}
+              checked={isCodexPlanWindowsEnabled(preferences)}
+              onChange={next => void setFeature('codexPlanWindows', next)}
             />
           </SettingsGroup>
         ) : null}

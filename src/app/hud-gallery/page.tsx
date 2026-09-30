@@ -37,7 +37,6 @@ import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
 import { QuickCaptureStudy } from './quick-capture-study';
-import { PaceOpportunityStudy } from './pace-opportunity-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -66,12 +65,6 @@ const SECTIONS: Section[] = [
     title: 'Quick capture chip row',
     meta: 'ENG-025 F5 — the diagnostics chip shipped unrendered and wrapped; densest state first',
     showcase: <QuickCaptureStudy />,
-  },
-  {
-    id: 'pace-opportunity',
-    title: 'Pace opportunity voice',
-    meta: 'ENG-008 E9 — C (metric swap + coach) + B (page-bar expiry geometry) shipped 2026-08-11; A unshipped',
-    showcase: <PaceOpportunityStudy />,
   },
   {
     id: 'readiness-grammar',
@@ -546,11 +539,11 @@ export default function HudGallery() {
                 Open the proposed homepage at /v2 →
               </a>{' '}
               <a
-                href="/hud-gallery/usage-directions"
+                href="/hud-gallery/usage-scenarios"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}
               >
-                Open the Usage multiplexer directions →
+                Open the Usage scenarios →
               </a>{' '}
               <a
                 href="/hud-gallery/connected-source"

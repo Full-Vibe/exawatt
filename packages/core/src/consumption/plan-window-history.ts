@@ -136,6 +136,17 @@ export class WindowObservationAccumulator {
 export const MIN_RATE_SPAN_MS = 10 * 60_000;
 
 /**
+ * How far back "the pace you are going now" looks (ENG-008 E15). An operator
+ * who launches ten Agents at 9pm wants the forecast to move at 9:30, not to
+ * stay diluted by a quiet weekend at the start of the week.
+ */
+const RECENT_RATE_SPAN_MS = 6 * 3_600_000;
+
+/** A recent rate needs this much observed span before it outranks the
+ *  cycle average; shorter bursts read as noise. */
+const MIN_RECENT_RATE_SPAN_MS = 30 * 60_000;
+
+/**
  * Observed consumption rate per window bucket, in percent per hour.
  *
  * Per bucket: take the newest observation, then walk backwards while (a) the
@@ -143,10 +154,17 @@ export const MIN_RATE_SPAN_MS = 10 * 60_000;
  * the pace belongs to another era of the window — and (b) `usedPercent` is
  * non-increasing going backwards. A DROP in the forward direction is a reset;
  * pace must never be computed across one, or a week of quiet after a reset
- * reads as furious burn. Buckets with fewer than two usable observations, or
- * a span under `MIN_RATE_SPAN_MS`, are ABSENT from the result — a rate that
- * cannot be observed is never reported as zero. A genuinely flat window does
- * report `0`, which is a real observed pace.
+ * reads as furious burn. That walk bounds the CURRENT CYCLE.
+ *
+ * Within the cycle the rate is the RECENT one: the change over the trailing
+ * `RECENT_RATE_SPAN_MS` behind the newest observation, when at least
+ * `MIN_RECENT_RATE_SPAN_MS` of it was observed. Otherwise it is the cycle's
+ * average. Both are observed facts, never extrapolations.
+ *
+ * Buckets with fewer than two usable observations, or a span under
+ * `MIN_RATE_SPAN_MS`, are ABSENT from the result — a rate that cannot be
+ * observed is never reported as zero. A genuinely flat window does report
+ * `0`, which is a real observed pace.
  */
 export function derivePlanWindowRates(
   observations: readonly PlanWindowObservation[]
@@ -164,15 +182,21 @@ export function derivePlanWindowRates(
     const latest = list[list.length - 1];
     const windowMs = latest.windowMinutes * 60_000;
     let earliest = latest;
+    let recent = latest;
     for (let i = list.length - 2; i >= 0; i -= 1) {
       const candidate = list[i];
       if (candidate.observedAtMs < latest.observedAtMs - windowMs) break;
       if (candidate.usedPercent > earliest.usedPercent) break; // reset boundary
       earliest = candidate;
+      if (candidate.observedAtMs >= latest.observedAtMs - RECENT_RATE_SPAN_MS) {
+        recent = candidate;
+      }
     }
-    const spanMs = latest.observedAtMs - earliest.observedAtMs;
+    const recentSpanMs = latest.observedAtMs - recent.observedAtMs;
+    const from = recentSpanMs >= MIN_RECENT_RATE_SPAN_MS ? recent : earliest;
+    const spanMs = latest.observedAtMs - from.observedAtMs;
     if (spanMs < MIN_RATE_SPAN_MS) continue;
-    const deltaPercent = latest.usedPercent - earliest.usedPercent;
+    const deltaPercent = latest.usedPercent - from.usedPercent;
     if (deltaPercent < 0) continue;
     rates[key] = deltaPercent / (spanMs / 3_600_000);
   }

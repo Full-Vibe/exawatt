@@ -49,6 +49,7 @@ export type HostedFeatureId = (typeof HOSTED_FEATURE_IDS)[number];
 export const OWN_ACCOUNT_FEATURE_IDS = [
   'reentryRecap',
   'claudePlanWindows',
+  'codexPlanWindows',
 ] as const;
 
 export type OwnAccountFeatureId = (typeof OWN_ACCOUNT_FEATURE_IDS)[number];
@@ -197,6 +198,21 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // automatically (BUG-060, decision `0036` §6).
     requiresDistributionCapability: 'ownAccount.claudePlanUsage',
   },
+  codexPlanWindows: {
+    id: 'codexPlanWindows',
+    label: 'Codex plan usage',
+    purpose:
+      'Shows your Codex limits, credits, and free resets in the Usage meter and page.',
+    sends:
+      'Nothing from Exawatt. Your own codex app asks your ChatGPT account for its usage, under the sign-in Codex already keeps. Exawatt never reads that sign-in.',
+    destination: 'OpenAI, through your own Codex sign-in, never Exawatt',
+    cost: 'Codex limits update only when a Codex Agent runs, and free resets are not shown.',
+    defaultEnabled: true,
+    // Genuinely null, like the recap: the request is made by the operator's
+    // own `codex` binary under its own firewall identity, never under
+    // Exawatt's signature, so no distribution declaration gates it.
+    requiresDistributionCapability: null,
+  },
   operatorProfile: {
     id: 'operatorProfile',
     // "Publishing" is the word the leaderboard panel's switch carries; this
@@ -234,6 +250,7 @@ export interface HostedFeaturePreferences {
   goalVisuals?: { enabled: boolean };
   reentryRecap?: { enabled: boolean };
   claudePlanWindows?: { enabled: boolean };
+  codexPlanWindows?: { enabled: boolean };
   operatorProfile?: { autoPublish: boolean };
 }
 
@@ -264,6 +281,13 @@ export function isClaudePlanWindowsEnabled(
 ): boolean {
   if (!preferences) return OUTBOUND_CONTROLS.claudePlanWindows.defaultEnabled;
   return preferences.claudePlanWindows?.enabled !== false;
+}
+
+export function isCodexPlanWindowsEnabled(
+  preferences: HostedFeaturePreferences | null | undefined
+): boolean {
+  if (!preferences) return OUTBOUND_CONTROLS.codexPlanWindows.defaultEnabled;
+  return preferences.codexPlanWindows?.enabled !== false;
 }
 
 /**

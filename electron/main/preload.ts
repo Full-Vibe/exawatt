@@ -265,6 +265,8 @@ const bridge = {
     setReentryRecap: enabled => invoke('settings:set-reentry-recap', enabled),
     setClaudePlanWindows: enabled =>
       invoke('settings:set-claude-plan-windows', enabled),
+    setCodexPlanWindows: enabled =>
+      invoke('settings:set-codex-plan-windows', enabled),
     setSafetyControl: (control, enabled) =>
       invoke('settings:set-safety-control', control, enabled),
     setOperatorAutoPublish: enabled =>

@@ -227,3 +227,35 @@ the request uses the signed Exawatt Chromium stack; unpackaged builds cannot
 make it unless the narrow development opt-in is set. Unit evidence pins the
 runtime policy and proves the Privacy toggle cannot expand it. Incident `0011`
 carries the controlled Little Snitch reproduction and signature evidence.
+
+### Slice 2 — the Codex plan account and a shared account service (2026-09-29)
+
+Shaped and built with ENG-008 E15. `CodexPlanAccountService` asks the
+operator's own `codex app-server` for `account/rateLimits/read` (the question
+Codex's `/status` asks) through the existing `CodexAppServerClient`, one
+short-lived read-side process per read at the shared five-minute cadence.
+Custody is source-owned: Exawatt never reads `~/.codex/auth.json`, the request
+leaves under Codex's own identity, and no distribution grant applies. A new
+own-account privacy switch (`codexPlanWindows`, default on) turns it off;
+automated test launches never start it; a machine with no Codex logs is never
+asked. The parser is pinned to a recorded answer from the operator's Pro
+account (ids redacted): windows per bucket from `rateLimitsByLimitId`, the
+credit balance, and available reset credits sorted by expiry, with absent
+reset data carried as absent rather than zero.
+
+The Claude service's life (throttle, last-known persisted state, pace history,
+off switch, build grant) moved into `PlanAccountService`; Claude and Codex now
+supply only a reader, which is the seam a future Agent Source plugin
+implements to add an account. The composite takes a list of accounts, skips an
+account whose harness has no local files, and derives one pace per bucket from
+the merged observation history, so Codex's log and account readings form one
+series and the fresher reading wins per bucket. `ProviderPlanAccountState`
+gained `rateLimitTier`, `resets`, and `credits`; the Claude reader now passes
+the Keychain's `rateLimitTier` so the card reads "Max 20x". Claude's own free
+reset ("Reset for free") is claimed through an endpoint Exawatt does not read,
+so it is not shown.
+
+Verified live: the production Codex reader, run against the installed
+codex-cli 0.158.0, returned the Pro week at 45%, three resets expiring
+2026-10-05, 10-22 and 10-29 (UTC), and the credit balance.
+

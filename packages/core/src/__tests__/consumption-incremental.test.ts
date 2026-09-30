@@ -449,6 +449,30 @@ describe('derivePlanWindowRates', () => {
     expect(rates[planWindowKey(obs())]).toBe(0);
   });
 
+  it('moves with the recent pace instead of the cycle average', () => {
+    const at = Date.parse('2026-07-05T12:00:00.000Z');
+    const weekly = { windowMinutes: 10_080 };
+    // A quiet first two days, then a fleet launched: 40 points in 4 hours.
+    const rates = derivePlanWindowRates([
+      obs({ ...weekly, observedAtMs: at, usedPercent: 2 }),
+      obs({ ...weekly, observedAtMs: at + 48 * HOUR, usedPercent: 10 }),
+      obs({ ...weekly, observedAtMs: at + 52 * HOUR, usedPercent: 50 }),
+    ]);
+    expect(rates[planWindowKey(obs(weekly))]).toBeCloseTo(10, 5);
+  });
+
+  it('falls back to the cycle average when the recent span is too short to read', () => {
+    const at = Date.parse('2026-07-05T12:00:00.000Z');
+    const weekly = { windowMinutes: 10_080 };
+    const rates = derivePlanWindowRates([
+      obs({ ...weekly, observedAtMs: at, usedPercent: 0 }),
+      obs({ ...weekly, observedAtMs: at + 10 * HOUR, usedPercent: 20 }),
+      obs({ ...weekly, observedAtMs: at + 10 * HOUR + 15 * 60_000, usedPercent: 25 }),
+    ]);
+    const cycle = 25 / (10.25);
+    expect(rates[planWindowKey(obs(weekly))]).toBeCloseTo(cycle, 5);
+  });
+
   it('ignores observations older than one window length behind the newest', () => {
     const at = Date.parse('2026-07-05T12:00:00.000Z');
     const windowMs = 300 * 60_000; // 5h

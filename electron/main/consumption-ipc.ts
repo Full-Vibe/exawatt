@@ -15,7 +15,10 @@ import type {
 import { emptyLiveConsumptionSnapshot } from '@exawatt/core';
 import { handleBounded } from './ipc-arguments';
 import { handleTrusted } from './ipc-security';
-import { setClaudePlanWindowsEnabled } from './settings-store';
+import {
+  setClaudePlanWindowsEnabled,
+  setCodexPlanWindowsEnabled,
+} from './settings-store';
 import { broadcastToWindows } from './window-broadcast';
 
 export interface ConsumptionScannerLike {
@@ -45,11 +48,28 @@ class StubConsumptionScanner implements ConsumptionScannerLike {
   }
 }
 
+/** An account read the operator can switch off from Settings, Privacy. */
+interface SwitchableAccount {
+  setEnabled(enabled: boolean): void;
+}
+
 export function registerConsumptionIPC(
   windows: () => readonly BrowserWindow[],
   scanner: ConsumptionScannerLike = new StubConsumptionScanner(),
-  planAccount?: { setEnabled(enabled: boolean): void }
+  accounts: { claude?: SwitchableAccount; codex?: SwitchableAccount } = {}
 ): () => void {
+  const planAccount = accounts.claude;
+  if (accounts.codex) {
+    const codex = accounts.codex;
+    // ENG-038 slice 2: the same contract for the Codex account read. Off is
+    // applied before it is announced, so no app-server starts after it.
+    handleBounded('settings:set-codex-plan-windows', (_event, enabled) => {
+      codex.setEnabled(enabled);
+      const settings = setCodexPlanWindowsEnabled(enabled);
+      broadcastToWindows(windows(), 'settings:changed', settings);
+      return settings;
+    });
+  }
   if (planAccount) {
     // ENG-038: the off switch for the credentialed Claude plan-window read.
     // Applied to the service BEFORE the write is announced, so no request can

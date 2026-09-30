@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOURCE_CAPABILITIES } from '@exawatt/core';
 import {
   capacityWindowFromPlan,
+  meterLabel,
   delegatedWeighted,
   displayUsage,
   interventionStats,
@@ -9,7 +10,6 @@ import {
   rawTotal,
   unknownPlanSources,
   windowFreshness,
-  windowOwnerLabel,
   type AccountReadView,
   type CapacityWindowView,
   type ConsumptionSourceView,
@@ -91,7 +91,7 @@ describe('capacityWindowFromPlan (ENG-038 vendor windows)', () => {
   const plan = {
     source: 'claude-code' as const,
     limitId: 'claude-weekly-fable',
-    limitName: 'Weekly — Fable',
+    limitName: 'Fable',
     scope: 'primary' as const,
     usedPercent: 68,
     windowMinutes: 10_080,
@@ -102,22 +102,24 @@ describe('capacityWindowFromPlan (ENG-038 vendor windows)', () => {
     origin: 'provider-account' as const,
   };
 
-  it("prefers the provider's own window name — two same-length weeklies must read apart", () => {
-    const view = capacityWindowFromPlan(plan, 0.4)!;
-    expect(view.label).toBe('Weekly — Fable');
-    // Without a provider name the length-derived label still applies.
+  it('names a model-scoped window by its model, in the vendors\' own words', () => {
+    expect(capacityWindowFromPlan({ ...plan, limitName: 'Fable' }, 0.4)!.label).toBe(
+      'Fable this week'
+    );
     expect(capacityWindowFromPlan({ ...plan, limitName: null }, 0.4)!.label).toBe(
-      'Weekly window'
+      'This week'
     );
   });
+});
 
-  it('marks a vendor-account window plan-level; a local-log window never is', () => {
-    expect(capacityWindowFromPlan(plan, 0.4)!.planLevel).toBe(true);
-    const local = capacityWindowFromPlan(
-      { ...plan, limitId: 'codex', source: 'codex', origin: undefined },
-      0.4
-    )!;
-    expect(local.planLevel).toBeUndefined();
+describe('meterLabel', () => {
+  it('reads each window length the way claude.ai and ChatGPT do', () => {
+    expect(meterLabel(300, null)).toBe('Current session');
+    expect(meterLabel(10_080, null)).toBe('This week');
+    expect(meterLabel(1_440, null)).toBe('Today');
+    expect(meterLabel(43_200, null)).toBe('This month');
+    expect(meterLabel(60, null)).toBe('1-hour limit');
+    expect(meterLabel(300, 'GPT-5.3-Codex-Spark')).toBe('GPT-5.3-Codex-Spark session');
   });
 });
 
@@ -157,13 +159,15 @@ describe('demo corpus stays plausible against the real corpus', () => {
     }
   });
 
-  it('reports plan windows for Codex and none at all for Claude Code', () => {
+  it('reads Claude plan windows only from the account, never from a local log', () => {
     const codex = demo.sources.find(s => s.harness === 'codex')!;
-    const claude = demo.sources.find(s => s.harness === 'claude-code')!;
     expect(codex.windows.length).toBeGreaterThan(0);
-    expect(claude.windows).toHaveLength(0);
-    expect(claude.planType).toBeNull();
-    expect(claude.unreportedReason).toBeTruthy();
+    const claude = demo.planWindows.filter(w => w.source === 'claude-code');
+    expect(claude.length).toBeGreaterThan(0);
+    // Claude Code writes no local plan record (spine §4): every Claude window
+    // a corpus carries arrived through the account read.
+    expect(claude.every(w => w.origin === 'provider-account')).toBe(true);
+    expect(demo.sources.find(s => s.harness === 'claude-code')!.accountRead?.status).toBe('ok');
   });
 
   it('separates Exawatt’s own harness calls from the operator workspace', () => {
@@ -311,7 +315,6 @@ describe('planReadState', () => {
     resetsAtMs: NOW + 2 * 24 * HOUR,
     burnPercentPerHour: 0.4,
     observedAtMs: NOW - 5 * MIN,
-    planLevel: true,
   });
 
   /** The persisted last-known window a failed read leaves behind: its TRUE
@@ -424,67 +427,5 @@ describe('planReadState', () => {
       spend: null,
     });
     expect(planReadState(source, NOW)).toBe('unreadable');
-  });
-});
-
-describe('windowOwnerLabel', () => {
-  const NOW = Date.parse('2026-08-13T18:00:00.000Z');
-  const source: ConsumptionSourceView = {
-    key: 'claude-code',
-    harness: 'claude-code',
-    label: 'Claude Code',
-    planType: null,
-    credits: null,
-    windows: [],
-    observedTokens5h: 0,
-    observedSessions: 0,
-    observedDelegatedShare: null,
-    burn: [],
-  };
-
-  it('names an account-scoped window for the ACCOUNT, not the harness', () => {
-    // The figure meters the whole Anthropic plan, claude.ai chat included,
-    // so "Claude Code" would state tool truth for an account number.
-    const view = capacityWindowFromPlan(
-      {
-        source: 'claude-code',
-        limitId: 'claude-weekly',
-        limitName: 'Weekly — Fable',
-        scope: 'primary',
-        usedPercent: 97,
-        windowMinutes: 10_080,
-        resetsAt: new Date(NOW + HOUR).toISOString(),
-        observedAt: new Date(NOW).toISOString(),
-        planType: 'max',
-        origin: 'provider-account',
-        providerSessionId: '',
-      },
-      0.4
-    )!;
-    expect(view.planLevel).toBe(true);
-    expect(windowOwnerLabel(source, view)).toBe('Claude account');
-  });
-
-  it('leaves a locally-parsed window under its harness', () => {
-    const view = capacityWindowFromPlan(
-      {
-        source: 'codex',
-        limitId: 'codex-primary',
-        limitName: null,
-        scope: 'primary',
-        usedPercent: 5,
-        windowMinutes: 10_080,
-        resetsAt: new Date(NOW + HOUR).toISOString(),
-        observedAt: new Date(NOW).toISOString(),
-        planType: 'pro',
-        origin: 'local-log',
-        providerSessionId: '',
-      },
-      0.1
-    )!;
-    expect(view.planLevel).toBeUndefined();
-    expect(
-      windowOwnerLabel({ ...source, harness: 'codex', label: 'Codex' }, view)
-    ).toBe('Codex');
   });
 });

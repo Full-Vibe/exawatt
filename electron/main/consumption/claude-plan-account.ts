@@ -31,29 +31,19 @@
  * freshness rule judges it) and, when nothing was ever observed, leaves
  * Claude exactly as it read before ENG-038 — "unmetered here, not at zero".
  *
- * Refresh policy: pulled by the composite on snapshot pulls and rescans,
- * throttled to one fetch per `minFetchIntervalMs` (default 5 minutes) plus
- * jitter. The vendor page self-describes as sub-minute fresh; five minutes is
+ * Refresh policy (the shared `PlanAccountService`): pulled by the composite
+ * on snapshot pulls and rescans, throttled to one fetch per
+ * `minFetchIntervalMs` (default 5 minutes) plus jitter. The vendor page self-describes as sub-minute fresh; five minutes is
  * deliberately conservative and the renderer's existing 5-minute visible
  * rescan drives the cadence without a dedicated timer.
  */
 import { execFile } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
-import type { ConfigFileUnreadableCause } from '@exawatt/core/server';
+import type { PlanWindow, ProviderPlanSpend } from '@exawatt/core';
 import {
-  WindowObservationAccumulator,
-  derivePlanWindowRates,
-  type PlanWindow,
-  type PlanWindowObservation,
-  type ProviderPlanAccountState,
-  type ProviderPlanSpend,
-} from '@exawatt/core';
-import {
-  UnreadableStateWatch,
-  jsonStateGrammar,
-  readPersistedStateSync,
-} from '../persisted-state-file';
+  PlanAccountService,
+  type PlanAccountReader,
+  type PlanAccountView,
+} from './plan-account-service';
 
 /** The one host this module may speak to. */
 export const CLAUDE_USAGE_ENDPOINT =
@@ -99,8 +89,6 @@ export function isClaudePlanRemoteReadAllowed(options: {
 }
 
 const STATE_FILE = 'claude-plan.json';
-const DEFAULT_MIN_FETCH_INTERVAL_MS = 5 * 60_000;
-const DEFAULT_JITTER_MS = 45_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /* ------------------------------------------------------------------ */
@@ -113,6 +101,8 @@ export interface ClaudeOauthCredential {
   expiresAtMs: number | null;
   /** e.g. `max` — the plan identity the account itself reports. */
   subscriptionType: string | null;
+  /** e.g. `default_claude_max_20x` — the tier within the plan. */
+  rateLimitTier: string | null;
 }
 
 function runSecurity(): Promise<string> {
@@ -150,6 +140,7 @@ export async function readClaudeCredential(
         accessToken?: unknown;
         expiresAt?: unknown;
         subscriptionType?: unknown;
+        rateLimitTier?: unknown;
       };
     };
     const oauth = parsed.claudeAiOauth;
@@ -166,6 +157,8 @@ export async function readClaudeCredential(
         typeof oauth.subscriptionType === 'string'
           ? oauth.subscriptionType
           : null,
+      rateLimitTier:
+        typeof oauth.rateLimitTier === 'string' ? oauth.rateLimitTier : null,
     };
   } catch {
     return null;
@@ -245,12 +238,12 @@ function readLimitRow(candidate: unknown): LimitRow | null {
  */
 function limitIdentity(
   row: LimitRow
-): { limitId: string; limitName: string; windowMinutes: number } | null {
+): { limitId: string; limitName: string | null; windowMinutes: number } | null {
   const group = row.group ?? (row.kind === 'session' ? 'session' : null);
   if (group === 'session') {
     return {
       limitId: 'claude-session',
-      limitName: 'Current session',
+      limitName: null,
       windowMinutes: SESSION_MINUTES,
     };
   }
@@ -258,15 +251,29 @@ function limitIdentity(
   if (row.scopeLabel) {
     return {
       limitId: `claude-weekly-${slug(row.scopeLabel)}`,
-      limitName: `Weekly — ${row.scopeLabel}`,
+      // The model the limit is scoped to, in the vendor's own words.
+      limitName: row.scopeLabel,
       windowMinutes: WEEK_MINUTES,
     };
   }
   return {
     limitId: 'claude-weekly-all',
-    limitName: 'Weekly — all models',
+    limitName: null,
     windowMinutes: WEEK_MINUTES,
   };
+}
+
+/**
+ * State written before ENG-008 E15 stored display sentences as `limitName`
+ * ("Weekly — Fable"). The field now names only a model scope, so a saved
+ * window is re-read in the current meaning rather than rendered verbatim.
+ */
+export function migratePersistedLimitName(window: PlanWindow): PlanWindow {
+  if (window.limitId === 'claude-session' || window.limitId === 'claude-weekly-all') {
+    return window.limitName === null ? window : { ...window, limitName: null };
+  }
+  const legacy = /^Weekly\s+\S\s+(.+)$/u.exec(window.limitName ?? '');
+  return legacy ? { ...window, limitName: legacy[1] } : window;
 }
 
 function parseSpend(payload: {
@@ -375,7 +382,7 @@ export function parseClaudeUsage(
         body.five_hour,
         {
           limitId: 'claude-session',
-          limitName: 'Current session',
+          limitName: null,
           windowMinutes: SESSION_MINUTES,
         },
       ],
@@ -383,7 +390,7 @@ export function parseClaudeUsage(
         body.seven_day,
         {
           limitId: 'claude-weekly-all',
-          limitName: 'Weekly — all models',
+          limitName: null,
           windowMinutes: WEEK_MINUTES,
         },
       ],
@@ -409,17 +416,10 @@ export function parseClaudeUsage(
 }
 
 /* ------------------------------------------------------------------ */
-/* the service                                                         */
+/* the service — the shared account-read life, with Claude's reader    */
 /* ------------------------------------------------------------------ */
 
-export interface ClaudePlanAccountView {
-  windows: PlanWindow[];
-  observations: PlanWindowObservation[];
-  rates: Record<string, number>;
-  account: ProviderPlanAccountState;
-  /** Monotonic within a launch; bumps whenever the view changes. */
-  revision: number;
-}
+export type ClaudePlanAccountView = PlanAccountView;
 
 export interface ClaudePlanAccountOptions {
   /** Directory this service may write. Its ONLY write path. */
@@ -439,207 +439,31 @@ export interface ClaudePlanAccountOptions {
   timeoutMs?: number;
 }
 
-interface PersistedPlanState {
-  version: 1;
-  observedAt: string | null;
-  planType: string | null;
-  windows: PlanWindow[];
-  observations: PlanWindowObservation[];
-  spend: ProviderPlanSpend | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-const optionalRecords = (value: unknown) =>
-  value === undefined || (Array.isArray(value) && value.every(isRecord));
-const optionalText = (value: unknown) =>
-  value === undefined || value === null || typeof value === 'string';
-
-/** A state file of another shape is set aside with its bytes (BUG-247). */
-const PLAN_STATE_FILE = jsonStateGrammar<PersistedPlanState>(value => {
-  if (!isRecord(value) || value.version !== 1) return null;
-  if (
-    !optionalRecords(value.windows) ||
-    !optionalRecords(value.observations) ||
-    !optionalText(value.observedAt) ||
-    !optionalText(value.planType) ||
-    !(
-      value.spend === undefined ||
-      value.spend === null ||
-      isRecord(value.spend)
-    )
-  ) {
-    return null;
-  }
-  return {
-    version: 1,
-    observedAt: (value.observedAt as string | null | undefined) ?? null,
-    planType: (value.planType as string | null | undefined) ?? null,
-    windows: (value.windows as PlanWindow[] | undefined) ?? [],
-    observations:
-      (value.observations as PlanWindowObservation[] | undefined) ?? [],
-    spend: (value.spend as ProviderPlanSpend | null | undefined) ?? null,
-  };
-});
-
-export class ClaudePlanAccountService {
-  private readonly stateDir: string;
-  private readonly fetchFn: typeof fetch;
-  private readonly readCredential: () => Promise<ClaudeOauthCredential | null>;
-  private readonly now: () => number;
-  private readonly minFetchIntervalMs: number;
-  private readonly jitterMs: number;
-  private readonly timeoutMs: number;
-  private readonly remoteReadAllowed: boolean;
-
-  private preferenceEnabled: boolean;
-  private windows: PlanWindow[] = [];
-  private observations = new WindowObservationAccumulator();
-  private spend: ProviderPlanSpend | null = null;
-  private planType: string | null = null;
-  private observedAt: string | null = null;
-  private available = false;
-  private revision = 0;
-  private nextAllowedAtMs = 0;
-  private inFlight: Promise<void> | null = null;
-  private disposed = false;
-  private listeners = new Set<() => void>();
-  /**
-   * Set while the state file exists and cannot be read (BUG-247): the file is
-   * never written over, and every refresh reads it again.
-   */
-  private unreadable: ConfigFileUnreadableCause | null = null;
-  private readonly watch: UnreadableStateWatch;
-
-  constructor(options: ClaudePlanAccountOptions) {
-    this.stateDir = options.stateDir;
-    this.watch = new UnreadableStateWatch(
-      this.stateFile,
-      'Claude plan history'
-    );
-    this.preferenceEnabled = options.enabled;
-    this.remoteReadAllowed = options.remoteReadAllowed ?? true;
-    this.fetchFn = options.fetchFn ?? fetch;
-    this.readCredential = options.readCredential ?? readClaudeCredential;
-    this.now = options.now ?? Date.now;
-    this.minFetchIntervalMs =
-      options.minFetchIntervalMs ?? DEFAULT_MIN_FETCH_INTERVAL_MS;
-    this.jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS;
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.loadPersisted();
-  }
-
-  private get enabled(): boolean {
-    return this.preferenceEnabled && this.remoteReadAllowed;
-  }
-
-  /** Current state, synchronously. Disabled serves ABSENCE — no windows,
-   *  no rates — while persisted state stays on disk for a later re-enable.
-   *  A build with no grant says so as its own status: the capability fact
-   *  and the operator's preference are two different facts, and folding the
-   *  first into the second painted every community build's meter as a
-   *  switch the operator had turned off, pointing at a Settings control that
-   *  build does not render (BUG-149). */
-  view(): ClaudePlanAccountView {
-    if (!this.enabled) {
-      return {
-        windows: [],
-        observations: [],
-        rates: {},
-        account: {
-          source: 'claude-code',
-          status: this.remoteReadAllowed ? 'disabled' : 'unconfigured',
-          observedAt: null,
-          planType: null,
-          spend: null,
-        },
-        revision: this.revision,
-      };
-    }
-    const observations = this.observations.list();
-    return {
-      windows: [...this.windows],
-      observations,
-      rates: derivePlanWindowRates(observations),
-      account: {
-        source: 'claude-code',
-        status: this.available ? 'ok' : 'unavailable',
-        observedAt: this.observedAt,
-        planType: this.planType,
-        spend: this.spend,
-      },
-      revision: this.revision,
-    };
-  }
-
-  /**
-   * Fire-and-forget: never blocks a snapshot, never runs concurrently, never
-   * fetches more often than the cadence. Callers may invoke it on every pull
-   * and must not await it; the returned promise exists for tests.
-   */
-  maybeRefresh(): Promise<void> {
-    if (!this.enabled || this.disposed)
-      return this.inFlight ?? Promise.resolve();
-    if (this.inFlight) return this.inFlight;
-    if (this.now() < this.nextAllowedAtMs) return Promise.resolve();
-    this.nextAllowedAtMs =
-      this.now() + this.minFetchIntervalMs + Math.random() * this.jitterMs;
-    this.inFlight = this.refresh().finally(() => {
-      this.inFlight = null;
-    });
-    return this.inFlight;
-  }
-
-  /** The settings toggle, applied before it is announced: off serves absence
-   *  on the very next view and no further request is constructed. */
-  setEnabled(enabled: boolean): void {
-    if (this.preferenceEnabled === enabled) return;
-    this.preferenceEnabled = enabled;
-    this.bump();
-    if (this.enabled) this.maybeRefresh();
-  }
-
-  onUpdated(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  dispose(): void {
-    this.disposed = true;
-    this.listeners.clear();
-  }
-
-  /* ---------------------------------------------------------------- */
-
-  private bump(): void {
-    this.revision += 1;
-    for (const listener of [...this.listeners]) listener();
-  }
-
-  private async refresh(): Promise<void> {
-    if (this.unreadable && this.loadPersisted()) this.bump();
-    const credential = await this.readCredential().catch(() => null);
-    if (this.disposed || !this.enabled) return;
-    if (!credential) {
-      this.markUnavailable();
-      return;
-    }
-    // An expired token is never sent, and never refreshed here — Claude Code
+/**
+ * One read of the Claude account: Claude Code's own credential, read in
+ * place, sent to `api.anthropic.com` only, never when expired, never
+ * refreshed here. Null on any failure; the service turns that into absence.
+ */
+function claudePlanReader(options: {
+  fetchFn: typeof fetch;
+  readCredential: () => Promise<ClaudeOauthCredential | null>;
+  now: () => number;
+  timeoutMs: number;
+}): PlanAccountReader {
+  return async () => {
+    const credential = await options.readCredential().catch(() => null);
+    if (!credential) return null;
+    // An expired token is never sent, and never refreshed here: Claude Code
     // owns that credential's lifecycle. Degrade to absence until it does.
     if (
       credential.expiresAtMs !== null &&
-      credential.expiresAtMs <= this.now()
+      credential.expiresAtMs <= options.now()
     ) {
-      this.markUnavailable();
-      return;
+      return null;
     }
     let payload: unknown;
     try {
-      const response = await this.fetchFn(CLAUDE_USAGE_ENDPOINT, {
+      const response = await options.fetchFn(CLAUDE_USAGE_ENDPOINT, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${credential.accessToken}`,
@@ -648,108 +472,48 @@ export class ClaudePlanAccountService {
         },
         // The token must not follow a redirect off api.anthropic.com.
         redirect: 'error',
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(options.timeoutMs),
       });
-      if (!response.ok) {
-        this.markUnavailable();
-        return;
-      }
+      if (!response.ok) return null;
       payload = await response.json();
     } catch {
-      this.markUnavailable();
-      return;
+      return null;
     }
-    if (this.disposed || !this.enabled) return;
-    const observedAt = new Date(this.now()).toISOString();
+    const observedAt = new Date(options.now()).toISOString();
     const parsed = parseClaudeUsage(
       payload,
       observedAt,
       credential.subscriptionType
     );
-    if (parsed.windows.length === 0 && parsed.spend === null) {
-      // Schema drift or an account with nothing to report: absence, with any
-      // previous observation kept at its true age for freshness to judge.
-      this.markUnavailable();
-      return;
-    }
-    this.windows = parsed.windows;
-    this.spend = parsed.spend;
-    this.planType = credential.subscriptionType;
-    this.observedAt = observedAt;
-    this.available = true;
-    for (const window of parsed.windows) this.observations.addWindow(window);
-    this.persist();
-    this.bump();
-  }
-
-  private markUnavailable(): void {
-    if (!this.available) return; // already absent — nothing changed
-    this.available = false;
-    this.bump();
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* persistence — last-known state only, NEVER credential material    */
-  /* ---------------------------------------------------------------- */
-
-  private get stateFile(): string {
-    return path.join(this.stateDir, STATE_FILE);
-  }
-
-  /**
-   * Reads the last-known state, merging it under anything observed since.
-   * Returns whether the file was read (or found missing, or set aside); false
-   * while it stays unreadable.
-   */
-  private loadPersisted(): boolean {
-    const read = readPersistedStateSync(this.stateFile, PLAN_STATE_FILE);
-    if (read.status === 'unreadable') {
-      this.unreadable = read.cause;
-      this.watch.failed(read.cause);
-      return false;
-    }
-    this.unreadable = null;
-    this.watch.recovered();
-    // Missing is a first launch; set aside is a fresh start with the damaged
-    // bytes kept beside the store.
-    if (read.status !== 'ok') return true;
-    const saved = read.value;
-    this.observations = new WindowObservationAccumulator({}, [
-      ...saved.observations,
-      ...this.observations.list(),
-    ]);
-    const newer =
-      this.observedAt === null ||
-      (saved.observedAt !== null && saved.observedAt > this.observedAt);
-    if (newer) {
-      this.windows = saved.windows;
-      this.spend = saved.spend;
-      this.planType = saved.planType;
-      this.observedAt = saved.observedAt;
-      this.available = this.windows.length > 0;
-    }
-    return true;
-  }
-
-  private persist(): void {
-    // Never write over a file that could not be read; what it holds is
-    // merged in first once it can be.
-    if (this.unreadable && !this.loadPersisted()) return;
-    const state: PersistedPlanState = {
-      version: 1,
-      observedAt: this.observedAt,
-      planType: this.planType,
-      windows: this.windows,
-      observations: this.observations.list(),
-      spend: this.spend,
+    return {
+      windows: parsed.windows,
+      spend: parsed.spend,
+      planType: credential.subscriptionType,
+      rateLimitTier: credential.rateLimitTier,
     };
-    try {
-      fs.mkdirSync(this.stateDir, { recursive: true });
-      const tmp = `${this.stateFile}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(state));
-      fs.renameSync(tmp, this.stateFile);
-    } catch {
-      // Persistence is an optimization; the live view is already updated.
-    }
+  };
+}
+
+export class ClaudePlanAccountService extends PlanAccountService {
+  constructor(options: ClaudePlanAccountOptions) {
+    const now = options.now ?? Date.now;
+    super({
+      source: 'claude-code',
+      stateDir: options.stateDir,
+      stateFileName: STATE_FILE,
+      stateLabel: 'Claude plan history',
+      enabled: options.enabled,
+      remoteReadAllowed: options.remoteReadAllowed,
+      read: claudePlanReader({
+        fetchFn: options.fetchFn ?? fetch,
+        readCredential: options.readCredential ?? readClaudeCredential,
+        now,
+        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      }),
+      migrateWindow: migratePersistedLimitName,
+      now,
+      minFetchIntervalMs: options.minFetchIntervalMs,
+      jitterMs: options.jitterMs,
+    });
   }
 }

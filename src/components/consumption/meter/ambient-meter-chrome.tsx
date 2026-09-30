@@ -1,64 +1,60 @@
 'use client';
 
 /**
- * Ambient consumption meter — the title-bar mount (ENG-008 meter options).
+ * Ambient consumption meter, the title-bar mount (ENG-008 E6, E15).
  *
  * The iStat three-rung ladder in one control:
- *   1. the glyph, always on, ≤20px tall, monochrome until a window runs hot;
- *   2. hover (or keyboard focus) raises the windows/reset/pace popover;
- *   3. click goes to /usage — the meter IS that surface's first-class
- *      entry in the chrome, per the ⌘K-is-backstop rule.
- *
- * `CHROME_METER_FORM` picks which of the four candidate forms renders; the
- * placement is deliberately form-agnostic so the operator's pick is a
- * one-word change. `AMBIENT_CHROME_METER_ENABLED` is the whole flag.
+ *   1. the bar glyph, always on, ≤20px tall, showing the live window that
+ *      bites first, monochrome until it runs hot;
+ *   2. hover (or keyboard focus) raises the account cards at glance size;
+ *   3. click goes to /usage, the same cards at reading size. The meter IS
+ *      that surface's first-class entry in the chrome (⌘K is a backstop).
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { duration, percent } from '../flux';
-import { windowOwnerLabel } from '../model';
-import { useTenantConsumption } from '../use-tenant-consumption';
 import {
-  paceSentence,
-  readMeter,
-  type MeterSnapshot,
-} from './meter-model';
-import { METER_FORM, type MeterFormId } from './meter-forms';
+  resetPhrase,
+  usageOverview,
+  type UsageOverview,
+} from '../accounts';
+import { useTenantConsumption } from '../use-tenant-consumption';
+import { BarMeter } from './meter-forms';
 import { METER_POPOVER_WIDTH, MeterPopover } from './meter-popover';
 
 /** The one boolean between the meter and the title bar. */
 export const AMBIENT_CHROME_METER_ENABLED = true;
 
-/** The operator's pick renders here. Candidates: 'arc' | 'bar' | 'ring' | 'swap'. */
-export const CHROME_METER_FORM: MeterFormId = 'bar';
-
-export function meterAriaLabel(snapshot: MeterSnapshot): string {
-  const r = snapshot.reading;
-  // A 71px glyph cannot show the fleet's unknowns, but its label can — and
-  // must, or the one number it shows reads as the whole picture (ENG-038).
-  const partial = snapshot.unknownSources
-    ? ' Some sources cannot be read, so this is a partial reading.'
-    : '';
-  if (!r) {
-    return `Usage: no source reports plan limits.${partial} Opens the usage surface.`;
+/**
+ * The glyph's accessible sentence. A 34px bar cannot show the other accounts,
+ * but its label can, and must, or the one number it shows reads as the whole
+ * picture (ENG-038).
+ */
+export function meterAriaLabel(overview: UsageOverview): string {
+  const unknown = overview.accounts.some(a =>
+    ['stale', 'unreadable', 'off', 'unconfigured'].includes(a.health)
+  );
+  const partial = unknown ? ' Some accounts cannot be read right now.' : '';
+  if (overview.headline) {
+    return `Usage: ${overview.headline.text}${partial} Opens Usage.`;
   }
-  const owner = windowOwnerLabel(r.source, r.window);
-  const head =
-    r.state === 'exhausted'
-      ? `${owner} ${r.window.label.toLowerCase()} spent, resets in ${duration(r.msToReset)}`
-      : `${owner} ${r.window.label.toLowerCase()} at ${percent(r.usedPercent)}, ${paceSentence(r)}, resets in ${duration(r.msToReset)}`;
-  return `Usage: ${head}.${partial} Opens the usage surface.`;
+  const binding = overview.binding;
+  if (!binding) {
+    return `Usage: no account reports plan limits.${partial} Opens Usage.`;
+  }
+  const account = overview.accounts.find(a => a.key === binding.accountKey);
+  const m = binding.meter;
+  return `Usage: ${account?.name ?? ''} ${m.label.toLowerCase()} at ${Math.round(m.usedPercent)}%, resets ${resetPhrase(m.resetsAtMs, overview.nowMs)}.${partial} Opens Usage.`;
 }
 
 const HOVER_OPEN_MS = 120;
 const HOVER_CLOSE_MS = 160;
 
 /**
- * The reusable control: any form, any snapshot, hover popover, click-through.
- * The gallery's chrome mocks mount this exact component so the wired
- * placement cannot drift from what was reviewed.
+ * The reusable control: the bar glyph, hover popover, click-through. The
+ * scenario workbench mounts this exact component so the wired placement
+ * cannot drift from what was reviewed.
  *
  * The popover renders through a portal on `document.body`: the site header
  * carries a backdrop-filter material, and an overflowing absolutely-positioned
@@ -67,13 +63,11 @@ const HOVER_CLOSE_MS = 160;
  * backdrop root does). Navigating away (click-through) closes it.
  */
 export function AmbientMeterControl({
-  snapshot,
-  form,
+  overview,
   align = 'right',
   href = '/usage',
 }: {
-  snapshot: MeterSnapshot;
-  form: MeterFormId;
+  overview: UsageOverview;
   align?: 'left' | 'right';
   href?: string;
 }) {
@@ -81,7 +75,6 @@ export function AmbientMeterControl({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const anchor = useRef<HTMLSpanElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const Form = METER_FORM[form];
 
   const schedule = useCallback((next: boolean, delay: number) => {
     if (timer.current) clearTimeout(timer.current);
@@ -122,13 +115,13 @@ export function AmbientMeterControl({
     <span
       ref={anchor}
       className="relative inline-flex"
-      data-consumption-chrome-meter={form}
+      data-consumption-chrome-meter="bar"
       onMouseEnter={() => schedule(true, HOVER_OPEN_MS)}
       onMouseLeave={() => schedule(false, HOVER_CLOSE_MS)}
     >
       <Link
         href={href}
-        aria-label={meterAriaLabel(snapshot)}
+        aria-label={meterAriaLabel(overview)}
         onClick={() => schedule(false, 0)}
         onFocus={() => schedule(true, 0)}
         onBlur={() => schedule(false, 0)}
@@ -137,7 +130,7 @@ export function AmbientMeterControl({
         }}
         className="inline-flex h-7 items-center rounded-[3px] px-2 outline-none transition-[background-color] duration-150 hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--exa-foundation-focus)] motion-reduce:transition-none"
       >
-        <Form reading={snapshot.reading} />
+        <BarMeter reading={overview.binding?.meter.reading ?? null} />
       </Link>
       {open &&
         pos &&
@@ -149,7 +142,7 @@ export function AmbientMeterControl({
             onMouseEnter={() => schedule(true, 0)}
             onMouseLeave={() => schedule(false, HOVER_CLOSE_MS)}
           >
-            <MeterPopover snapshot={snapshot} />
+            <MeterPopover overview={overview} />
           </div>,
           document.body
         )}
@@ -159,11 +152,11 @@ export function AmbientMeterControl({
 
 /**
  * The wired title-bar instance: the active tenant's corpus at that corpus's
- * pinned instant, through the one tenant-aware seam `/usage` reads — the
- * glyph and the page are structurally the same numbers.
+ * pinned instant, through the one tenant-aware seam `/usage` reads, projected
+ * by the same `usageOverview`. The glyph and the page are the same numbers.
  */
 export function AmbientChromeMeter() {
   const { view } = useTenantConsumption();
-  const snapshot = readMeter(view.sources, view.nowMs);
-  return <AmbientMeterControl snapshot={snapshot} form={CHROME_METER_FORM} />;
+  const overview = useMemo(() => usageOverview(view), [view]);
+  return <AmbientMeterControl overview={overview} />;
 }

@@ -552,7 +552,7 @@ export const architectureManifest = {
           id: 'consumption-surface',
           label: `${CONSUMPTION_SURFACE_NAME} Surface`,
           summary:
-            'Plan-window headroom and pace, attribution pivot and session grid drilling into modelled dollars, and ratio diagnostics, each with its stated assurance.',
+            'One card per vendor account: every plan limit as a bar with its reset and forecast, pay-as-you-go spend, credits, and banked resets, under at most one run-out sentence; an Analytics tab breaks usage down by Project and by Agent. The chrome meter and the scenario workbench render the same projection.',
           layer: 'ui',
           status: 'active-build',
           x: 945,
@@ -720,7 +720,7 @@ export const architectureManifest = {
           id: 'consumption-spine',
           label: 'Consumption Spine',
           summary:
-            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. A structurally separate credentialed sibling reads vendor plan-account truth (Claude plan windows) as reported, plan-level capacity through the signed Chromium network boundary; routine development and tests keep that remote capability closed.',
+            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. Structurally separate plan-account reads share one service (throttle, last-known state, pace history, off switch) with a per-vendor reader: Claude through the signed Chromium network boundary under Claude Code\'s own sign-in, Codex through its own app-server; routine development and tests keep both closed.',
           layer: 'coordination',
           status: 'implemented',
           x: 645,

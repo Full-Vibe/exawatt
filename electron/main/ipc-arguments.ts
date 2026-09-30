@@ -344,6 +344,9 @@ export const ARGUMENT_BOUNDARIES = {
   'settings:set-claude-plan-windows': switchSetting(
     'Invalid Claude plan usage setting'
   ),
+  'settings:set-codex-plan-windows': switchSetting(
+    'Invalid Codex plan usage setting'
+  ),
   // Only a declared control can be set: an unknown id from the renderer is
   // refused, never stored as a switch nothing enforces.
   'settings:set-safety-control': {

@@ -187,7 +187,6 @@
         "scripts/merge-append-docs.mjs",
         "scripts/open-source-paths.mjs",
         "scripts/open-source-reseed.mjs",
-        "scripts/pace-opportunity-shot.mjs",
         "scripts/prepare-distribution.mjs",
         "scripts/prepare-electron-builder-config.mjs",
         "scripts/prepare-electron-main.mjs",

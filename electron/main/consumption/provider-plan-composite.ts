@@ -1,64 +1,86 @@
 /**
- * ENG-038 — composes the local scanner with the provider plan-account read
+ * ENG-038 — composes the local scanner with every provider plan-account read
  * behind the ONE `ConsumptionScannerLike` seam the IPC layer serves.
  *
  * The two source classes stay structurally separate — the scanner never
- * gains network code, the plan service never reads a local corpus — and this
+ * gains network code, an account read never reads a local corpus — and this
  * is the only place their outputs meet:
  *
- * - `planWindows`, `windowObservations`, `windowRates`, and
- *   `providerPlanAccounts` merge additively. Window buckets cannot collide:
- *   the vendor read's `limitId`s are its own (`claude-session`, …) and the
- *   local parse emits no `claude-code` window at all (spine §4).
- * - The served `scanState.revision` is scanner revision + plan revision.
- *   Both are monotonic within a launch, so the sum is too, and the
- *   renderer's revision-gated pulls keep working unchanged.
- * - A snapshot pull or rescan nudges `maybeRefresh()` — fire-and-forget and
- *   cadence-throttled in the service, so pulls never block on the network
- *   and the endpoint is never hammered.
+ * - `planWindows`, `windowObservations`, and `providerPlanAccounts` merge
+ *   additively, and `windowRates` is derived once from the merged history. An account read MAY report a
+ *   bucket the local scanner also reports (Codex writes its windows into
+ *   rollout logs too): both stay on the snapshot and the renderer keeps the
+ *   fresher per bucket (`latestPlanWindows`), which is exactly what a banked
+ *   reset needs, since the logs only catch up on the next Codex turn.
+ * - The served `scanState.revision` is the scanner revision plus every
+ *   account's revision. All are monotonic within a launch, so the sum is
+ *   too, and the renderer's revision-gated pulls keep working unchanged.
+ * - A snapshot pull or rescan nudges each account's `maybeRefresh()`, fire
+ *   and forget and cadence-throttled in the service, so pulls never block on
+ *   a read. An account whose harness left no local files at all is not read:
+ *   a machine without Codex never starts a Codex app-server.
  */
 import type {
+  ConsumptionScanState,
+  ConsumptionSourceId,
   ConsumptionUpdatedEvent,
   LiveConsumptionSnapshot,
   LiveConsumptionSnapshotRequest,
-  ConsumptionScanState,
 } from '@exawatt/core';
-import { idleScanState } from '@exawatt/core';
+import { derivePlanWindowRates, idleScanState } from '@exawatt/core';
 import type { ConsumptionScannerLike } from '../consumption-ipc';
-import type { ClaudePlanAccountService } from './claude-plan-account';
+import type { PlanAccountSource } from './plan-account-service';
 
 export class ProviderPlanCompositeSource implements ConsumptionScannerLike {
   /** Last RAW scanner scan state (its own revision, never the composed one). */
   private lastScanState: ConsumptionScanState | null = null;
+  /** Sources whose corpus held zero files at the last snapshot. */
+  private emptySources: readonly ConsumptionSourceId[] = [];
 
   constructor(
     private readonly scanner: ConsumptionScannerLike,
-    private readonly plan: ClaudePlanAccountService
+    private readonly accounts: readonly PlanAccountSource[]
   ) {}
+
+  private refreshAccounts(): void {
+    for (const account of this.accounts) {
+      if (this.emptySources.includes(account.view().account.source)) continue;
+      account.maybeRefresh();
+    }
+  }
+
+  private accountRevision(): number {
+    return this.accounts.reduce((n, account) => n + account.view().revision, 0);
+  }
 
   async snapshot(
     request?: LiveConsumptionSnapshotRequest
   ): Promise<LiveConsumptionSnapshot> {
-    this.plan.maybeRefresh();
+    this.refreshAccounts();
     const snapshot = await this.scanner.snapshot(request);
     this.lastScanState = snapshot.scanState;
-    const plan = this.plan.view();
-    const revision = snapshot.scanState.revision + plan.revision;
+    this.emptySources = snapshot.emptySources;
+    const views = this.accounts.map(account => account.view());
+    const revision =
+      snapshot.scanState.revision + views.reduce((n, v) => n + v.revision, 0);
+    const windowObservations = [
+      ...snapshot.windowObservations,
+      ...views.flatMap(v => v.observations),
+    ].sort((left, right) => left.observedAtMs - right.observedAtMs);
     return {
       ...snapshot,
       scanState: { ...snapshot.scanState, revision },
-      planWindows: [...snapshot.planWindows, ...plan.windows],
-      windowObservations: [
-        ...snapshot.windowObservations,
-        ...plan.observations,
-      ].sort((left, right) => left.observedAtMs - right.observedAtMs),
-      windowRates: { ...snapshot.windowRates, ...plan.rates },
-      providerPlanAccounts: [plan.account],
+      planWindows: [...snapshot.planWindows, ...views.flatMap(v => v.windows)],
+      windowObservations,
+      // One pace per bucket from the merged history: a bucket both the logs
+      // and the account report is one series, not two competing rates.
+      windowRates: derivePlanWindowRates(windowObservations),
+      providerPlanAccounts: views.map(v => v.account),
     };
   }
 
   rescan(): void {
-    this.plan.maybeRefresh();
+    this.refreshAccounts();
     this.scanner.rescan();
   }
 
@@ -68,19 +90,21 @@ export class ProviderPlanCompositeSource implements ConsumptionScannerLike {
 
   onUpdated(listener: (event: ConsumptionUpdatedEvent) => void): () => void {
     const compose = (scanState: ConsumptionScanState): ConsumptionUpdatedEvent => {
-      const revision = scanState.revision + this.plan.view().revision;
+      const revision = scanState.revision + this.accountRevision();
       return { revision, scanState: { ...scanState, revision } };
     };
     const offScanner = this.scanner.onUpdated(event => {
       this.lastScanState = event.scanState;
       listener(compose(event.scanState));
     });
-    const offPlan = this.plan.onUpdated(() => {
-      listener(compose(this.lastScanState ?? idleScanState()));
-    });
+    const offAccounts = this.accounts.map(account =>
+      account.onUpdated(() => {
+        listener(compose(this.lastScanState ?? idleScanState()));
+      })
+    );
     return () => {
       offScanner();
-      offPlan();
+      for (const off of offAccounts) off();
     };
   }
 }

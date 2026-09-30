@@ -280,6 +280,8 @@ Examples:
 
 Consumption should preserve raw usage measures before converting them to money. Provider pricing, discounts, free tiers, cached tokens, and contract terms change over time, so Exawatt should not treat public per-token price as the only source of truth. Where possible, Consumption should also connect resource usage to Initiative-level outcomes or KPI velocity.
 
+Plan limits belong to the vendor ACCOUNT, not to the harness. An account (a Claude Max plan, a ChatGPT Pro plan, an API key's monthly budget) meters everything drawn on it, including use outside Exawatt, and one account may be drawn on by several harnesses. Each account carries its limits (windows that reset on a fixed schedule or from first use, with their own reset instants), its pay-as-you-go spend, prepaid credits, and banked resets. Consumption shows account limits per account and never attributes them to Sessions; Session and Project attribution stays with locally measured usage.
+
 The energy framing is canonical: tokens are a metered fluid — closer to oil or watts than to seats or licenses. Consumption design should expect energy-market economics — metered units, fluctuating unit prices, allocation under scarcity, and eventually market-style allocation by ROI — rather than flat SaaS accounting. This framing is load-bearing for the product name and for future resource-allocation surfaces; it describes how Consumption behaves, and does not rename any canonical concept.
 
 ## Decision

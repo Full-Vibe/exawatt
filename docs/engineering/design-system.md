@@ -152,14 +152,18 @@ interpolation/formatting helpers, not universal production paint. “Unknown” 
 a neutral hatched data state—**never a fill or a zero**. Only Consumption
 surfaces use this channel.
 
-**Hatch meanings (closed set of three — do not mint a fourth):** −45° in the
-unknown grey = *unreported* (`unknownHatch`); −45° in the ramp color =
-*projection*, where the fill lands if the pace holds (`projectionHatch`);
-+45° in neutral chrome ink at a sparser 7px period = *expiry*, the region of
-a pace bar that dies unused if the pace holds (`expiryHatch`, ENG-008 E9 —
-`/usage` bars only, never the popover mini bars). The three separate on
-angle, ink, and density at once, because at 6px bar heights no single cue
-survives alone.
+**Usage account bars (ENG-008 E15, 2026-09-29).** Plan limits render in the
+idiom the frontier vendors converged on: one row per limit with its name, its
+reset instant, a thin bar, and "N% used", grouped into one card per vendor
+account. The bar is chrome-neutral until its window runs hot, then takes the
+pressure ramp; a hairline tick marks even pace; a forecast line under the bar
+takes `hot` only when the limit runs out before its reset. An account Exawatt
+cannot read draws NO bar: it states why in one sentence and keeps its locally
+measured tokens, because a bar or a 0% would claim a reading that does not
+exist. A stale reading keeps its bars dimmed at its true as-of. The three
+hatch textures (unreported, projection, expiry) retired with the pace bars
+that drew them; no surface draws a hatch today, and a new one amends this rung
+first.
 
 ### Project identity
 
@@ -387,6 +391,12 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-09-29 — ENG-008 E15: the Usage page becomes one card per vendor
+  account with vendor-style limit bars (operator pick). The Consumption
+  channel rung records the bar idiom and retires the hatch vocabulary with
+  the pace bars that drew it; labels on the page are sentence case (no
+  uppercase micro-labels), and the chrome meter keeps the fraction bar as its
+  only form.
 - 2026-09-24 — BUG-207: the **no em dashes in operator copy** rung gains
   its check. `scripts/check-screen-copy.mjs` (`pnpm copy:check`, on the
   landing floor for any `src/`, `packages/ui-model/src/` or overlay change)

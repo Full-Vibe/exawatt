@@ -34,6 +34,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media`                                                                                              | Hosted feature                                   | On when signed in                                                                                                                                | Settings → Privacy → Agent tile backgrounds                                                                                                                                                              |
 | `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in)                                                                               | Own-account feature (re-entry recap)             | On                                                                                                                                               | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0`                                                                                                                                        |
 | Signed Exawatt Chromium network stack → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On in packaged builds whose distribution declares `ownAccount.claudePlanUsage: 'stable-signed'`; off in community builds, development, and tests | Settings → Privacy → Claude plan usage (a build without the declaration shows "Not configured in this build" instead of a switch); focused integration testing only: `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` |
+| `codex app-server` → OpenAI (the **user's own** Codex sign-in; Exawatt never reads it)                                                                   | Own-account feature (Codex plan usage, ENG-038)  | On, except automated test launches                                                                                                               | Settings → Privacy → Codex plan usage                                                                                                                                                                    |
 | `<project>.supabase.co`                                                                                                                                   | Account, sync, feedback, stats                   | On when signed in                                                                                                                                | Sign out; individual features listed below                                                                                                                                                               |
 | `<project>.supabase.co/storage/.../desktop-updates`                                                                                                       | App updates                                      | Always on in signed builds                                                                                                                       | No user switch (known gap)                                                                                                                                                                               |
 | Locally spawned agent harnesses                                                                                                                           | User's own tools                                 | On user action                                                                                                                                   | Do not launch an Agent                                                                                                                                                                                   |
@@ -420,6 +421,31 @@ OAuth token Claude Code already stores in the macOS Keychain
   stable signed identity in its distribution contract. That declaration is a
   local capability, never Exawatt service authorization.
 
+A third own-account path exists since 2026-09-29 (ENG-038 slice 2): **Codex
+plan usage** (`electron/main/consumption/codex-plan-account.ts`). Electron main
+starts the operator's own `codex app-server` (the read-side process the
+delegation observer already uses) and asks it `account/rateLimits/read`, the
+question Codex's own `/status` asks. Codex makes the request to OpenAI under
+its own sign-in; Exawatt never reads `~/.codex/auth.json` or any token, and no
+request leaves through Exawatt's network identity, so no distribution
+declaration gates it.
+
+- **Sent**: nothing from Exawatt. The app-server receives one JSON-RPC
+  request over stdio with no content in it.
+- **Received and kept**: the account's window percentages and resets, its
+  prepaid credit balance, and its banked reset credits with their expiry,
+  cached locally under `userData/consumption-plan/codex-plan.json`.
+- **Purpose**: the Codex card in the Usage meter and `/usage`, current after
+  a banked reset is spent (rollout logs only catch up on the next Codex turn),
+  and the free resets row.
+- **Default**: on. Automated test launches never start an app-server for it,
+  and a machine with no Codex logs is never asked.
+- **Off**: Settings → Privacy → **Codex plan usage**
+  (`codexPlanWindows.enabled`): off starts no app-server for this read, and the
+  Codex card falls back to what the rollout logs report.
+- **Cadence**: at most one read per ~5 minutes, only while a consumption
+  surface is alive.
+
 Everything else is local. The retired `/api/oc/token` route returns `410` and
 never reads config, account state, or credentials. In Electron, main owns the
 Agent Source config read, token/device identity, endpoint selection, and
@@ -460,6 +486,9 @@ electron/main/consumption/claude-plan-account.test.ts`. The tests pin the
   boundary and prove a settings write cannot open the disabled dev path. OS4
   adds the distribution-contract cases: ad-hoc packaged community remains
   closed, while `stable-signed` exercises the Chromium transport.
+- Codex plan usage: `pnpm vitest run
+  electron/main/consumption/codex-plan-account.test.ts`, pinned to a recorded
+  answer from a real Pro account.
 - End to end: run a production build with the network inspector open, or watch
   the app's outbound connections in a firewall tool. The desktop app should
   show `exawatt.ai`, — when signed in and using hosted features — the Supabase

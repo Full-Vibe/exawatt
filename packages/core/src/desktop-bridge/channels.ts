@@ -369,6 +369,7 @@ interface RequestTable {
   >;
   'settings:set-reentry-recap': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-claude-plan-windows': Call<[enabled: boolean], ExawattSettings>;
+  'settings:set-codex-plan-windows': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-safety-control': Call<
     [control: SafetyControlId, enabled: boolean],
     ExawattSettings

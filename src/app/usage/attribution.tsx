@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * The drill-down floor, part 1 — attribution ("where is it going?").
+ * Usage Analytics, part 1: the breakdown ("where is it going?").
  *
- * One pivot — Project / Session / Model / Source / Roadmap item — over the
+ * One pivot, by Project or by Agent (operator scope, ENG-008 E15), over the
  * same rollups, normalized by default with a raw-units mode. Every bar is a
  * door: selecting it opens the sessions behind it in the shared drill panel.
  * Controls are neutral chrome; only the bars carry consumption color.
@@ -24,7 +24,7 @@ import { rawTotal } from '@/components/consumption/model';
 import { PIVOT_LABEL, type PivotKey, type PivotRow } from './derive';
 import { Band, Body, Caption, Data } from './chrome';
 
-const PIVOTS: PivotKey[] = ['project', 'session', 'model', 'source', 'roadmap'];
+const PIVOTS: PivotKey[] = ['project', 'session'];
 
 export type UnitMode = 'normalized' | 'raw';
 
@@ -76,7 +76,7 @@ export function Attribution({
   const overflow = ordered.slice(9);
   return (
     <Band
-      label="Attribution"
+      label="Breakdown"
       aside={
         <span className="flex items-center gap-1.5">
           {(['normalized', 'raw'] as const).map(m => (

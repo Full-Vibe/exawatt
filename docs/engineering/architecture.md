@@ -1208,6 +1208,20 @@ Built:
   while official or downstream distributions may set `stable-signed` beside
   their signing custody. The declaration controls local automatic traffic and
   is never service authentication.
+- ENG-038 slice 2 and ENG-008 E15 (2026-09-29): plan-account reads are one
+  vendor-neutral `PlanAccountService` (throttled read, last-known state,
+  bounded pace history, off switch, build grant) with a per-vendor reader, and
+  the composite merges a list of them. Claude keeps its credentialed endpoint
+  reader; Codex reads `account/rateLimits/read` from its own app-server under
+  its own sign-in (source-owned custody, no distribution grant), which adds
+  banked resets, the prepaid credit balance, and windows fresher than the
+  rollout logs. The composite skips an account whose harness left no local
+  files and derives one pace per bucket from the merged history. The renderer
+  projects every source through one `usageOverview` (accounts, meters,
+  forecasts, the run-out headline, and the window that bites first), which
+  the Usage page, the chrome meter, and the scenario workbench all render;
+  named scenarios travel the production live builder so tests, screenshots,
+  and the burn-forward simulator exercise the real path.
 
 Implemented:
 

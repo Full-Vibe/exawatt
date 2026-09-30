@@ -597,6 +597,16 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     );
   }
 
+  /**
+   * The signed-in account's plan windows, prepaid credits, and banked resets
+   * (ENG-038 slice 2), as Codex's own `/status` reads them. Codex makes the
+   * request with its own sign-in; Exawatt never sees the credential. Reset
+   * details are requested (not skipped) because their expiry is the point.
+   */
+  async accountRateLimits(): Promise<unknown> {
+    return this.request('account/rateLimits/read', {});
+  }
+
   /** An explicit local handoff reads only this exact thread's recent items. */
   async recentConversationItems(threadId: string): Promise<unknown[]> {
     const page = object(

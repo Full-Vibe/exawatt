@@ -75,7 +75,6 @@ The following are deliberately direct-use research, capture, or historical
 diagnostic tools. They are not standing gates and should not be presented as
 such without first revalidating their fixture and owner:
 
-- `pace-opportunity-shot.mjs`
 - `renderer-session-lifecycle-leak-probe.mjs`
 - `session-lifecycle-leak-probe.mjs`
 - `cold-composer-probe.mjs` — opt-in staged-renderer launch measurements; requires an explicit build SHA and an isolated fixture profile

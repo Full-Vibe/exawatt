@@ -1488,7 +1488,7 @@ window (#12), the closed-cycle ledger's two vocabularies (#14), heat ordered
 by used-% rather than time-to-exhaust (#15), 62 hover-only tooltips (#16),
 and the absent `/usage` surface gate (#19).
 
-### E12 — Usage as the vendor multiplexer: design options (landed 2026-08-14, awaiting the operator's pick)
+### E12 — Usage as the vendor multiplexer: design options (landed 2026-08-14; resolved 2026-09-29 by E15, see below)
 
 **Three directions are live at `/hud-gallery/usage-directions`, over a real
 capture of this machine, in six states each, deep-linked as
@@ -1791,6 +1791,77 @@ read. `pnpm eval:consumption-scan` runs the real scanner service against the
 159 MB corpus with no snapshot present at all. Three new harness tests
 (`scripts/electron-eval.test.mjs`), four store tests, and three page tests
 pinning the three-state presentation.
+
+### E15 — Usage as account bars (2026-09-29)
+
+**Brief.** The operator, spinning up a fleet against two different weekly
+resets before travel: the page was "really, really difficult to follow", said
+he had no Claude plan while he was using Claude all day, and should look like
+the usage bars claude.ai and chatgpt.com ship, so he can "pop open the usage
+page and multiplex across different vendors or accounts and see where my usage
+is and my burn". Answers in session: one card per account with a sentence on
+top only when something runs out before its reset or a banked reset would
+lapse; the breakdown moves to an Analytics tab (by Project, by Agent) and the
+rest of the composite page is deleted; agent-count translation parked; he pays
+by the dollar on every lane but paces to weekly plan limits and increasingly
+spends banked resets.
+
+**The "no Claude plan" report, diagnosed.** Not a parse defect: the installed
+0.1.14 was built from a stored schema-1 official contract, which reads as
+`ownAccount: null` (BUG-060), so the Claude read was closed at build level and
+`consumption-plan/claude-plan.json` had not been written since 2026-08-21. The
+Keychain credential was current and `~/.claude.json` reported
+`default_claude_max_20x`. The page compounded it by saying "not configured in
+this build" with nothing to act on. The custody fix is the operator's
+(`pnpm distribution:custody:upgrade`, then a release); the page now says
+"Plan limits aren't available in this build" and still shows the account's
+locally measured tokens, so a busy account never reads idle.
+
+**Real reads that shaped it.** Codex's own app-server (`account/rateLimits/read`,
+0.158.0) answered with the week at 45%, three banked "Full reset" credits
+with expiries, and a prepaid balance, while the newest rollout log still said
+78%: the operator had spent a reset and the logs only catch up on the next
+Codex turn. Claude's weekly window is a fixed anchor (Monday 2:00 AM Pacific);
+Codex's week starts from first use after a reset, so its reset day moves
+(observed Mon, Sun, Fri, Sun across September). The operator had the two
+swapped, which is the case for putting both on one page.
+
+**Architecture.** The account is the unit (`concepts.md`, Consumption). One
+renderer projection, `usageOverview` in `src/components/consumption/accounts.ts`,
+turns source views into account cards, meters, forecasts, the headline, and
+the binding window; the page body (`usage-overview.tsx`), the chrome popover,
+and the workbench render it, and `readMeter` was deleted so the glyph cannot
+run a second ranking. The binding window is the one that bites first
+(`bitesFirst`: spent, then soonest projected run-out before reset, then
+fullest), resolving the E12 finding. Pace moved with velocity: core's
+`derivePlanWindowRates` prefers the trailing six hours of the current cycle
+(at least 30 minutes observed) and falls back to the cycle average, and the
+projection now runs from the observation instant, not from now. On the data
+side (ENG-038 slice 2) the Claude service became a vendor-neutral
+`PlanAccountService` with a reader per vendor and the composite takes a list.
+
+**Scenarios and simulation.** `usage-scenarios.ts` states eight account
+situations in snapshot vocabulary and runs them through `buildLiveConsumption`;
+`advanceScenario` burns one forward (rollover at reset, reset credits lapse at
+expiry, failing reads get no new reading, a burn multiplier). They drive
+`accounts.test.ts` (61 checks, including "losing a read never calms the
+headline" across every scenario and account), the
+`/hud-gallery/usage-scenarios` workbench (scrubber and burn multiplier), and
+`pnpm eval:usage:scenarios`, which screenshots every scenario in Night, Air,
+and phone widths plus two simulated futures and the popover, and fails on
+horizontal scroll, content escaping a card, a percent label over its bar, a
+fill outgrowing its track, clipped text, a run-out without a headline, or a
+popover outside the viewport. It is the declared surface gate for Usage paths.
+
+**Retired.** The Verdict, Burn, Pace, Heat, Spend, sessions grid, and
+diagnostics bands; the E9 opportunity voice, coach line, and closed-cycle
+ledger; the three unused meter forms; the hatch helpers; the E12 directions
+study and the E9 pace-opportunity study (their subjects shipped). Demo Mode
+gained Claude account windows and Codex banked resets through the same
+account-read path (`demoAccountReads`), since a Claude card that says "no plan
+limits" contradicts the product. Limit labels dropped the em dash
+("Weekly — Fable" is now "Fable this week"): `PlanWindow.limitName` now names
+only a model scope, and saved Claude state migrates on load.
 
 ## 9. Open questions for the operator
 

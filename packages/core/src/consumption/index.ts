@@ -140,4 +140,7 @@ export type {
   ProviderPlanAccountState,
   ProviderPlanAccountStatus,
   ProviderPlanSpend,
+  PlanCreditBalance,
+  PlanResetCredit,
+  PlanResets,
 } from './live-snapshot';

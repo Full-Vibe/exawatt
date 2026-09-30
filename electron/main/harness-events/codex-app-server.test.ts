@@ -1059,3 +1059,24 @@ describe('CodexDelegationObserver', () => {
     expect(selectSpatialDelegationUnits(layout)).toHaveLength(2);
   });
 });
+
+describe('the account usage read (ENG-038 slice 2)', () => {
+  it('asks the app-server for account rate limits with reset details', async () => {
+    const seen: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const child = fakeAppServerAnswering((method, params) => {
+      seen.push({ method, params });
+      return method === 'initialize'
+        ? { userAgent: 'exawatt-delegation/0.158.0 (fixture)' }
+        : { rateLimits: { limitId: 'codex' } };
+    });
+    const client = new CodexAppServerClient(async () => child);
+    await client.connect();
+    await expect(client.accountRateLimits()).resolves.toEqual({
+      rateLimits: { limitId: 'codex' },
+    });
+    const read = seen.find(r => r.method === 'account/rateLimits/read');
+    // Details are requested: skipping them would drop every expiry.
+    expect(read?.params).toEqual({});
+    client.close();
+  });
+});

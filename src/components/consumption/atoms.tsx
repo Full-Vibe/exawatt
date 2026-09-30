@@ -27,51 +27,6 @@ import {
 } from './flux';
 import { rawTotal, type DisplayUsage } from './model';
 
-export function Sparkline({
-  values,
-  width = 72,
-  height = 16,
-  color = FLUX.calm,
-}: {
-  values: number[];
-  width?: number;
-  height?: number;
-  color?: string;
-}) {
-  if (values.length === 0) return null;
-  const step = width / (values.length - 1);
-  const pts = values
-    .map(
-      (v, i) =>
-        `${(i * step).toFixed(1)},${(height - v * (height - 2) - 1).toFixed(1)}`
-    )
-    .join(' ');
-  return (
-    <svg
-      aria-hidden
-      width={width}
-      height={height}
-      className="shrink-0 overflow-visible"
-    >
-      <polyline
-        points={pts}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.2}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        opacity={0.9}
-      />
-      <circle
-        cx={width}
-        cy={height - values[values.length - 1] * (height - 2) - 1}
-        r={1.7}
-        fill={color}
-      />
-    </svg>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* raw units                                                           */
 /* ------------------------------------------------------------------ */

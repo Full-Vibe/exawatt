@@ -387,7 +387,7 @@ export function demoWorkspacePlanWindows(): PlanWindow[] {
     {
       source: 'codex',
       limitId: 'codex-primary',
-      limitName: '5-hour window',
+      limitName: null,
       scope: 'primary',
       usedPercent: 57,
       windowMinutes: 300,
@@ -399,7 +399,7 @@ export function demoWorkspacePlanWindows(): PlanWindow[] {
     {
       source: 'codex',
       limitId: 'codex-weekly',
-      limitName: 'Weekly window',
+      limitName: null,
       scope: 'secondary',
       usedPercent: 71,
       windowMinutes: 10_080,

@@ -46,6 +46,11 @@ vi.mock('./consumption/claude-plan-account', async importOriginal => ({
     dispose = () => void world.log.push('dispose:plan-account');
   },
 }));
+vi.mock('./consumption/codex-plan-account', () => ({
+  CodexPlanAccountService: class {
+    dispose = () => void world.log.push('dispose:codex-plan-account');
+  },
+}));
 vi.mock('./consumption/provider-plan-composite', () => ({
   ProviderPlanCompositeSource: class {},
 }));
@@ -55,6 +60,7 @@ vi.mock('./consumption/retention-policy', () => ({
 vi.mock('./settings-store', () => ({
   loadSettings: () => ({}),
   isClaudePlanWindowsEnabled: () => true,
+  isCodexPlanWindowsEnabled: () => true,
 }));
 vi.mock('./installed-build', () => ({
   watchInstalledBuild: () => {

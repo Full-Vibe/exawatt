@@ -1,29 +1,23 @@
 /**
- * Derivations for the production `/usage` page (ENG-008).
+ * Derivations for the Usage Analytics tab (ENG-008 E15).
  *
- * Pure data and pure functions over the one `DemoConsumption` view-model —
- * both corpora (the Personal demo week and the Demo tenant's Voltaic
- * fortnight) flow through here unchanged. Every figure comes off the existing
- * model/rollups, weighted through `@exawatt/core`'s own weight table, never
- * retyped. No React, no DOM.
+ * Pure data and pure functions over the one `DemoConsumption` view-model:
+ * every corpus (the Personal live read, the demo week, the Demo tenant's
+ * Voltaic fortnight) flows through here unchanged. Figures come off the
+ * existing rollups, weighted through `@exawatt/core`'s own weight table,
+ * never retyped. No React, no DOM.
  *
- * Descended from the ENG-008 design-options workbench
- * (`consumption-redesign/derive.ts`, retired 2026-08-03 — design record in
- * git history and the E8 milestone log); this copy is the production line.
+ * The account bars do not live here: they are `usageOverview` in
+ * `@/components/consumption/accounts`, shared with the chrome meter.
  *
- * Honesty rules carried from the model layer:
- *   - absent is never zero (Claude Code plan windows, Codex delegation,
- *     provider sessions outside the fleet record);
- *   - pace and projection derive from reported window state, and a window's
- *     reconstructed past is labelled scaled, not measured.
+ * Honesty rules carried from the model layer: absent is never zero (Codex
+ * delegation, provider sessions outside the fleet record), and a session
+ * outside the fleet record keeps its measured figures with absent identity.
  */
 import {
   SOURCE_CAPABILITIES,
-  isConsumptionSourceId,
   isOperatorEntrypoint,
   resolveModelWeight,
-  rollupByModel,
-  rollupBySource,
   weightUsage,
   type ConsumptionSample,
 } from '@exawatt/core';
@@ -32,200 +26,22 @@ import type {
   DemoSessionRollup,
 } from '@/components/consumption/demo-source';
 import {
-  ACCOUNT_LABEL,
   HARNESS_LABEL,
   displayUsage,
-  planReadState,
   rawTotal,
-  sourceOwnerLabel,
   sumUsage,
-  unknownPlanSources,
-  windowFreshness,
-  type AccountSpendView,
-  type ConsumptionSourceView,
   type DisplayUsage,
   type Harness,
-  type PlanReadState,
 } from '@/components/consumption/model';
-import {
-  fleetHasUnknownSource,
-  readAllWindows,
-  type MeterReading,
-} from '@/components/consumption/meter/meter-model';
 
 const LIVE_WITHIN_MS = 45 * 60_000;
-
-/* ------------------------------------------------------------------ */
-/* pace — derived once, in meter-model (the shared instrument)         */
-/* ------------------------------------------------------------------ */
-
-/**
- * The page renders the SAME reading the chrome meter renders: one derivation
- * (`readWindowPace`), one even-pace band (`PACE_EVEN_BAND`), one freshness
- * discipline (live windows only — a four-month-old window must never
- * headline the page any more than the meter).
- */
-export type WindowPace = MeterReading;
-
-/**
- * Every LIVE reported window across every source, tightest first.
- *
- * Each reading carries whether the FLEET holds an unknown source, so the
- * opportunity voice is silenced on a partial picture — the page and the
- * chrome meter gate on the identical fact (`fleetHasUnknownSource`).
- */
-export function allPaces(demo: DemoConsumption): WindowPace[] {
-  const unknown = fleetHasUnknownSource(demo.sources, demo.nowMs);
-  return demo.sources
-    .flatMap(s => readAllWindows(s, demo.nowMs, unknown))
-    .sort((a, b) => b.usedPercent - a.usedPercent);
-}
-
-/**
- * Sources with no live window — rendered absent, never 0%. Three different
- * causes live here and the Headroom band tells them apart through
- * `planReadState`: a capability fact, an off switch, or a failed read.
- */
-export function silentSources(demo: DemoConsumption): ConsumptionSourceView[] {
-  return demo.sources.filter(
-    s => !s.windows.some(w => windowFreshness(w, demo.nowMs) === 'live')
-  );
-}
-
-/** Sources whose true plan position nobody can currently see. */
-export function unknownSources(demo: DemoConsumption): ConsumptionSourceView[] {
-  return unknownPlanSources(demo.sources, demo.nowMs);
-}
-
-/**
- * The Headroom band's partial-verdict line: names the sources the verdict on
- * screen does NOT cover. Null when it covers everything.
- */
-export function unknownVerdictNote(demo: DemoConsumption): string | null {
-  const unknown = unknownSources(demo);
-  if (unknown.length === 0) return null;
-  // One clause per cause. A mix never softens a real failure into a
-  // preference, never turns a switch into a failure, and a build with no
-  // grant is never the operator's switch.
-  const byState = new Map<PlanReadState, string[]>();
-  for (const source of unknown) {
-    const state = planReadState(source, demo.nowMs);
-    byState.set(state, [
-      ...(byState.get(state) ?? []),
-      sourceOwnerLabel(source),
-    ]);
-  }
-  const clauses = UNKNOWN_CLAUSE_ORDER.filter(state => byState.has(state)).map(
-    state => {
-      const names = byState.get(state)!;
-      const verb = names.length === 1 ? 'is' : 'are';
-      return `${listOf(names)} ${verb} ${UNKNOWN_CAUSE[state]}`;
-    }
-  );
-  const fact =
-    clauses.length === 1
-      ? clauses[0]
-      : `${clauses.slice(0, -1).join(', ')}, and ${clauses[clauses.length - 1]}`;
-  return `${fact}. This verdict covers the sources that reported.`;
-}
-
-type UnknownPlanReadState = Exclude<PlanReadState, 'reported' | 'none'>;
-
-/** Failures first: the cause the operator most needs to see leads. */
-const UNKNOWN_CLAUSE_ORDER: readonly UnknownPlanReadState[] = [
-  'unreadable',
-  'off',
-  'unconfigured',
-];
-
-const UNKNOWN_CAUSE: Record<UnknownPlanReadState, string> = {
-  unreadable: 'not readable',
-  off: 'turned off',
-  unconfigured: 'not configured in this build',
-};
-
-function listOf(names: readonly string[]): string {
-  return names.length === 1
-    ? names[0]
-    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
-/** Vendor-account plan-credit spend, per source that reports it (ENG-038). */
-export interface PlanCreditRow {
-  key: Harness;
-  /** The ACCOUNT's name, never the harness's — this is account truth. */
-  label: string;
-  spend: AccountSpendView;
-}
-
-export function planCreditRows(demo: DemoConsumption): PlanCreditRow[] {
-  const out: PlanCreditRow[] = [];
-  for (const source of demo.sources) {
-    const spend = source.accountRead?.spend;
-    if (!spend) continue;
-    out.push({
-      key: source.harness,
-      label: ACCOUNT_LABEL[source.harness],
-      spend,
-    });
-  }
-  return out;
-}
-
-/**
- * Windows that are genuinely overheating: spent, projected to exhaust before
- * their reset, or running hot. The Heat band renders exactly this list — the
- * page's only alarm state, in the consumption channel's hot color.
- */
-export function heatWindows(paces: WindowPace[]): WindowPace[] {
-  return paces.filter(
-    p => p.exhaustsBeforeReset || p.state === 'hot' || p.state === 'exhausted'
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* spend — modelled dollars, stated basis                              */
-/* ------------------------------------------------------------------ */
-
-export interface SpendView {
-  /** Operator-session weighted tokens over the corpus window. */
-  operatorWeighted: number;
-  /** Per-source split of `operatorWeighted`, largest first. */
-  bySource: Array<{ key: Harness; label: string; weighted: number }>;
-  /** Machine-invoked overhead (entrypoint-separated), weighted. */
-  overheadWeighted: number;
-}
-
-export function spendView(demo: DemoConsumption, rows: GridRow[]): SpendView {
-  const bySource = new Map<Harness, number>();
-  let operatorWeighted = 0;
-  for (const r of rows) {
-    operatorWeighted += r.weighted;
-    bySource.set(r.source, (bySource.get(r.source) ?? 0) + r.weighted);
-  }
-  return {
-    operatorWeighted,
-    bySource: [...bySource.entries()]
-      .map(([key, weighted]) => ({
-        key,
-        label: HARNESS_LABEL[key],
-        weighted,
-      }))
-      .sort((a, b) => b.weighted - a.weighted),
-    overheadWeighted: demo.overhead.rollup?.weightedTokens ?? 0,
-  };
-}
 
 /* ------------------------------------------------------------------ */
 /* samples                                                             */
 /* ------------------------------------------------------------------ */
 
-export function operatorSamples(demo: DemoConsumption): ConsumptionSample[] {
-  return demo.samples.filter(s => isOperatorEntrypoint(s.entrypoint));
-}
-
 /** Operator samples indexed by provider session id (children included). */
-export function sampleIndex(
+function sampleIndex(
   demo: DemoConsumption
 ): Map<string, ConsumptionSample[]> {
   const out = new Map<string, ConsumptionSample[]>();
@@ -236,61 +52,6 @@ export function sampleIndex(
     else out.set(s.providerSessionId, [s]);
   }
   return out;
-}
-
-/** Weighted burn across one Session's own span, normalized 0..1. */
-function sessionSpark(
-  samples: ConsumptionSample[],
-  fromMs: number,
-  toMs: number,
-  buckets = 14
-): number[] {
-  const span = Math.max(1, toMs - fromMs);
-  const values = new Array<number>(buckets).fill(0);
-  for (const s of samples) {
-    const at = Date.parse(s.at);
-    const i = Math.max(
-      0,
-      Math.min(buckets - 1, Math.floor(((at - fromMs) / span) * buckets))
-    );
-    values[i] += weightUsage(s.usage, resolveModelWeight(s.model).weight);
-  }
-  const peak = Math.max(...values, 1);
-  return values.map(v => v / peak);
-}
-
-/**
- * A window's position over its own span, reconstructed from observed burn and
- * SCALED so the last point equals the harness's reported percent. The chart
- * rendering this must carry the "scaled to reported" label — the shape is
- * measured, the y-axis anchor is the harness's own figure.
- */
-export function windowTimeline(
-  pace: WindowPace,
-  samples: ConsumptionSample[],
-  nowMs: number,
-  points = 48
-): Array<{ t: number; pct: number }> {
-  const startMs = pace.window.resetsAtMs - pace.window.windowMinutes * 60_000;
-  const spanMs = Math.max(1, nowMs - startMs);
-  const step = spanMs / (points - 1);
-  const cumulative = new Array<number>(points).fill(0);
-  for (const s of samples) {
-    if (s.source !== pace.source.harness) continue;
-    const at = Date.parse(s.at);
-    if (at < startMs || at > nowMs) continue;
-    const i = Math.min(points - 1, Math.floor((at - startMs) / step));
-    cumulative[i] += weightUsage(s.usage, resolveModelWeight(s.model).weight);
-  }
-  for (let i = 1; i < points; i += 1) cumulative[i] += cumulative[i - 1];
-  const total = cumulative[points - 1];
-  return cumulative.map((v, i) => ({
-    t: startMs + i * step,
-    pct:
-      total > 0
-        ? (v / total) * pace.window.usedPercent
-        : (i / (points - 1)) * pace.window.usedPercent,
-  }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -331,7 +92,6 @@ export interface GridRow {
   /** Context compactions during the run; null = not recorded. */
   compactions: number | null;
   live: boolean;
-  spark: number[];
 }
 
 function specRows(demo: DemoConsumption): DemoSessionRollup[] {
@@ -377,7 +137,6 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
       contextPeakTokens: s.spec.contextPeakTokens ?? null,
       compactions: s.spec.compactions ?? null,
       live: demo.nowMs - s.spec.lastAtMs < LIVE_WITHIN_MS,
-      spark: sessionSpark(samples, s.spec.startedAtMs, s.spec.lastAtMs),
     });
   }
 
@@ -430,7 +189,6 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
       contextPeakTokens: null,
       compactions: null,
       live: demo.nowMs - lastAtMs < LIVE_WITHIN_MS,
-      spark: sessionSpark(samples, startedAtMs, lastAtMs),
     });
   }
 
@@ -441,14 +199,11 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
 /* attribution pivot — rows are doors                                  */
 /* ------------------------------------------------------------------ */
 
-export type PivotKey = 'project' | 'session' | 'model' | 'source' | 'roadmap';
+export type PivotKey = 'project' | 'session';
 
 export const PIVOT_LABEL: Record<PivotKey, string> = {
-  project: 'Project',
-  session: 'Session',
-  model: 'Model',
-  source: 'Source',
-  roadmap: 'Roadmap item',
+  project: 'By project',
+  session: 'By agent',
 };
 
 /** A session listed behind a pivot row — what the drill panel shows. */
@@ -483,7 +238,7 @@ export interface PivotRow {
   drill: DrillSession[];
 }
 
-export function drillOf(rows: GridRow[]): DrillSession[] {
+function drillOf(rows: GridRow[]): DrillSession[] {
   return rows.map(r => ({
     id: r.id,
     title: r.title,
@@ -568,68 +323,6 @@ export function pivotRows(
     }
   }
 
-  if (key === 'model' || key === 'source') {
-    const operator = operatorSamples(demo);
-    const result =
-      key === 'model' ? rollupByModel(operator) : rollupBySource(operator);
-    for (const rollup of result.rollups) {
-      const id = rollup.scope.id;
-      const mine = rows.filter(r =>
-        key === 'source' ? r.source === id : r.models.includes(id)
-      );
-      out.push({
-        id,
-        label:
-          key === 'source'
-            ? isConsumptionSourceId(id)
-              ? HARNESS_LABEL[id]
-              : rollup.scope.label
-            : rollup.scope.label,
-        usage: displayUsage(rollup.totals, rollup.sources),
-        weighted: rollup.weightedTokens,
-        sessions: rollup.sessionCount,
-        drill: drillOf(mine),
-      });
-    }
-  }
-
-  if (key === 'roadmap') {
-    const rowById = new Map(rows.map(r => [r.id, r]));
-    const linked = new Set<string>();
-    for (const item of demo.roadmap) {
-      for (const s of item.sessions) linked.add(s.spec.id);
-      if (!item.rollup) continue;
-      out.push({
-        id: item.item.id,
-        label: `${item.item.id} · ${item.item.title}`,
-        meta:
-          item.inferredWeighted > 0
-            ? 'part inferred from branch or title'
-            : 'declared at launch',
-        usage: displayUsage(item.rollup.totals, item.rollup.sources),
-        weighted: item.rollup.weightedTokens,
-        sessions: item.sessions.length,
-        drill: drillOf(
-          item.sessions.flatMap(s => {
-            const r = rowById.get(s.spec.id);
-            return r ? [r] : [];
-          })
-        ),
-      });
-    }
-    const unlinked = rows.filter(r => !linked.has(r.id));
-    if (unlinked.length > 0) {
-      out.push(
-        bucket(
-          'unattributed',
-          'Not attributed',
-          'no declared or inferred roadmap link',
-          unlinked
-        )
-      );
-    }
-  }
-
   return out.sort((a, b) => b.weighted - a.weighted);
 }
 
@@ -637,10 +330,7 @@ export function pivotRows(
  * Why a pivot has nothing to show, stated instead of rendered as an empty
  * band or a single grey bar.
  *
- * The Roadmap pivot is the case that motivated it: on live data it collapses
- * to one `Not attributed` row, because a live Session carries no roadmap
- * link until ENG-017's declaration path exists (`live-source.ts`). One grey
- * bar reads as a measurement; this says it is a missing input.
+ * One grey bar reads as a measurement; this says it is a missing input.
  */
 export function pivotAbsenceNote(
   key: PivotKey,
@@ -649,143 +339,8 @@ export function pivotAbsenceNote(
   if (rows.length === 0) return 'Nothing to attribute in this window.';
   const onlyUnknown = rows.every(r => r.unknown);
   if (!onlyUnknown) return null;
-  if (key === 'roadmap') {
-    return 'No session in this window carries a roadmap link.';
-  }
   if (key === 'project') {
     return 'No session in this window resolves to a known Project.';
   }
   return null;
-}
-
-/* ------------------------------------------------------------------ */
-/* diagnostics — one quiet row                                         */
-/* ------------------------------------------------------------------ */
-
-export type DiagnosticState = 'steady' | 'watch' | 'not-recorded';
-
-export interface Diagnostic {
-  key: string;
-  label: string;
-  value: string;
-  state: DiagnosticState;
-  /** Short reading, production voice — rendered as a tooltip, not prose. */
-  hint: string;
-  /** 0..1 for the mini bar; omitted when the figure is not a share. */
-  share?: number;
-}
-
-const rate1 = (n: number) =>
-  n >= 10 ? Math.round(n).toString() : n.toFixed(1);
-
-/** Corpus window as the short qualifier the tile labels carry. */
-const WINDOW_SHORT: Record<string, string> = {
-  'seven days': '7d',
-  'fourteen days': '14d',
-};
-
-export function diagnostics(demo: DemoConsumption): Diagnostic[] {
-  // Every tile states its window, the way the delegated tile always did:
-  // corpus-window figures carry the corpus window, the 5h figure carries 5h.
-  const win = WINDOW_SHORT[demo.windowLabel] ?? demo.windowLabel;
-  const usage = displayUsage(demo.workspace.totals, demo.workspace.sources);
-  const raw = rawTotal(usage);
-  const prompt = usage.input + usage.cacheWrite + usage.cacheRead;
-  const missShare = prompt > 0 ? (usage.input + usage.cacheWrite) / prompt : 0;
-  const reread = usage.cacheWrite > 0 ? usage.cacheRead / usage.cacheWrite : 0;
-  const generated = usage.output + (usage.reasoning ?? 0);
-  const reasoningShare =
-    usage.reasoning !== null && generated > 0
-      ? usage.reasoning / generated
-      : null;
-  const claude = demo.sources.find(s => s.harness === 'claude-code');
-  const delegated = claude?.observedDelegatedShare ?? null;
-  const overheadRaw = demo.overhead.rollup
-    ? rawTotal(
-        displayUsage(demo.overhead.rollup.totals, demo.overhead.rollup.sources)
-      )
-    : 0;
-  const overheadShare = overheadRaw / Math.max(1, overheadRaw + raw);
-  const iv = demo.interventions.total;
-
-  const out: Diagnostic[] = [
-    {
-      key: 'cache-miss',
-      label: `Cache-miss share · ${win}`,
-      value: `${Math.round(missShare * 100)}%`,
-      state: missShare > 0.2 ? 'watch' : 'steady',
-      hint:
-        missShare > 0.2
-          ? 'fresh context is being rebuilt, so check for cold restarts'
-          : 'prompts are mostly served from cache',
-      share: missShare,
-    },
-    {
-      key: 'reread',
-      label: `Cache re-read · ${win}`,
-      value: `${reread.toFixed(1)}× per write`,
-      state: 'steady',
-      hint: 'every cached write is re-read this many times',
-    },
-  ];
-  if (reasoningShare !== null) {
-    out.push({
-      key: 'reasoning',
-      label: `Reasoning share · ${win}`,
-      value: `${Math.round(reasoningShare * 100)}%`,
-      state: reasoningShare > 0.75 ? 'watch' : 'steady',
-      hint:
-        reasoningShare > 0.75
-          ? 'of generated tokens, so the effort setting may be above the task'
-          : 'of generated tokens, within the usual band for this effort mix',
-      share: reasoningShare,
-    });
-  }
-  out.push(
-    delegated === null
-      ? {
-          key: 'delegated',
-          label: 'Delegated share · 5h',
-          value: 'not recorded',
-          state: 'not-recorded',
-          hint: 'this harness keeps no delegation record',
-        }
-      : {
-          key: 'delegated',
-          label: 'Delegated share · 5h',
-          value: `${Math.round(delegated * 100)}%`,
-          state: 'steady',
-          hint: 'of Claude Code burn, each child counted against its parent Session',
-          share: delegated,
-        }
-  );
-  out.push(
-    iv.sessions === 0
-      ? {
-          // No session in scope carries an intervention record (the live
-          // read until the snapshot carries counts): absent, never zero.
-          key: 'interventions',
-          label: `Intervention rate · ${win}`,
-          value: 'not recorded',
-          state: 'not-recorded',
-          hint: 'no session in this window carries an intervention record',
-        }
-      : {
-          key: 'interventions',
-          label: `Intervention rate · ${win}`,
-          value: `${rate1(iv.perSession)} per Session`,
-          state: 'steady',
-          hint: `${iv.interventions} operator messages after launch across ${iv.sessions} Sessions · ${rate1(iv.perActiveHour)} per active hour · ${iv.untouchedSessions} Sessions ran untouched · an upper bound: steering and a stuck agent arrive the same way`,
-          share: iv.sessions > 0 ? 1 - iv.untouchedShare : undefined,
-        }
-  );
-  out.push({
-    key: 'overhead',
-    label: `Exawatt overhead · ${win}`,
-    value: `${(overheadShare * 100).toFixed(1)}% of raw`,
-    state: 'steady',
-    hint: `${demo.overhead.sessionCount} machine-invoked calls, separated by entrypoint, never booked to a Project`,
-    share: overheadShare,
-  });
-  return out;
 }

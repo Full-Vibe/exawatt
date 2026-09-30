@@ -53,23 +53,20 @@ export const HARNESS_LABEL = Object.fromEntries(
 ) as Record<Harness, string>;
 
 /**
- * The VENDOR ACCOUNT behind a harness (ENG-038).
- *
- * A plan window read from the vendor's own account endpoint meters the whole
- * account — claude.ai chat included — so labelling it with the harness name
- * ("Claude Code · Weekly — Fable") states tool truth for an account figure.
- * Every surface that renders an account-scoped window names it from here
- * instead; `windowOwnerLabel` below is the one derivation.
+ * The VENDOR ACCOUNT a harness draws on, named the way the operator names it
+ * (ENG-008 E15). A plan window read from the vendor meters the whole account,
+ * claude.ai chat included, so Usage names the card for the account ("Claude"),
+ * never for the tool that shares its credential ("Claude Code").
  */
-export const ACCOUNT_LABEL: Record<Harness, string> = {
-  'claude-code': 'Claude account',
-  codex: 'OpenAI account',
-  grok: 'xAI account',
+export const ACCOUNT_NAME: Record<Harness, string> = {
+  'claude-code': 'Claude',
+  codex: 'Codex',
+  grok: 'Grok',
 };
 
-/** ENG-038 disclosure, stated once wherever an account window is rendered. */
-export const PLAN_LEVEL_NOTE =
-  'Account windows are plan-wide. Usage outside Exawatt is included.';
+/** Stated once on the page that shows account figures (ENG-038). */
+export const ACCOUNT_SCOPE_NOTE =
+  'Limits come from your accounts and include usage outside Exawatt.';
 
 /**
  * Disjoint raw-unit segments for one scope. `null` on any unit means the
@@ -158,6 +155,9 @@ export interface CapacityWindowView {
    */
   limitId: string;
   label: string;
+  /** The model a narrower limit applies to (`PlanWindow.limitName`);
+   *  null or absent for the plan's own windows. */
+  scope?: string | null;
   usedPercent: number;
   windowMinutes: number;
   resetsAtMs: number;
@@ -165,13 +165,6 @@ export interface CapacityWindowView {
   burnPercentPerHour: number;
   /** When Exawatt last saw this window state. Omitted by hand-authored fixtures. */
   observedAtMs?: number;
-  /**
-   * True for a window reported by the vendor's own account endpoint
-   * (ENG-038): PLAN truth — it meters everything on the plan, claude.ai chat
-   * included, and is never agent-attributable. Surfaces say so once, per
-   * source, in one line.
-   */
-  planLevel?: boolean;
 }
 
 /**
@@ -189,21 +182,32 @@ export function windowFreshness(
   return age > w.windowMinutes * 60_000 ? 'stale' : 'live';
 }
 
-/** Projected window position at reset if the observed pace holds. */
+/**
+ * Projected window position if the observed pace holds. The projection runs
+ * from the OBSERVATION instant, not from now: a Codex window last written
+ * three hours ago has been burning for those three hours at the same pace, so
+ * projecting from now would place its exhaustion three hours late.
+ */
 export function projectWindow(w: CapacityWindowView, nowMs: number) {
   const msToReset = Math.max(0, w.resetsAtMs - nowMs);
   const hoursToReset = msToReset / HOUR_MS;
-  const projectedPercent = w.usedPercent + w.burnPercentPerHour * hoursToReset;
-  const hoursToExhaust =
-    w.burnPercentPerHour > 0
-      ? (100 - w.usedPercent) / w.burnPercentPerHour
-      : Infinity;
+  const fromMs = Math.min(nowMs, w.observedAtMs ?? nowMs);
+  const hoursObservedToReset = Math.max(0, w.resetsAtMs - fromMs) / HOUR_MS;
+  const projectedPercent =
+    w.usedPercent + w.burnPercentPerHour * hoursObservedToReset;
+  const exhaustAtMs =
+    w.usedPercent >= 100
+      ? fromMs
+      : w.burnPercentPerHour > 0
+        ? fromMs + ((100 - w.usedPercent) / w.burnPercentPerHour) * HOUR_MS
+        : Infinity;
+  const msToExhaust = Math.max(0, exhaustAtMs - nowMs);
   return {
     msToReset,
     hoursToReset,
     projectedPercent,
-    hoursToExhaust,
-    msToExhaust: hoursToExhaust * HOUR_MS,
+    hoursToExhaust: msToExhaust / HOUR_MS,
+    msToExhaust,
     exhaustsBeforeReset: projectedPercent > 100,
   };
 }
@@ -242,7 +246,17 @@ export interface AccountReadView {
   observedAtMs: number | null;
   /** The account's own plan identity, e.g. `max`. */
   planType: string | null;
+  /** The vendor's tier id within the plan, e.g. `default_claude_max_20x`. */
+  rateLimitTier?: string | null;
   spend: AccountSpendView | null;
+  /** Banked resets. Absent: the source cannot report them (never "none"). */
+  resets?: {
+    available: number;
+    /** Soonest expiry first; null when only the count is known. */
+    credits: Array<{ title: string | null; expiresAtMs: number | null }> | null;
+  };
+  /** Prepaid credit balance. Absent: the source cannot report one. */
+  credits?: { balance: number | null; unlimited: boolean };
 }
 
 /**
@@ -296,28 +310,40 @@ export function capacityWindowFromPlan(
     // The provider's own window name wins when it carries one — it is the
     // only thing that can tell two same-length windows apart (Claude's
     // weekly all-models beside weekly Fable; Codex's model-scoped weeklies).
-    label: plan.limitName ?? planWindowLabel(plan.windowMinutes),
+    label: meterLabel(plan.windowMinutes, plan.limitName),
+    scope: plan.limitName,
     usedPercent: plan.usedPercent,
     windowMinutes: plan.windowMinutes,
     resetsAtMs,
     burnPercentPerHour,
     observedAtMs: Date.parse(plan.observedAt),
-    ...(plan.origin === 'provider-account' ? { planLevel: true } : {}),
   };
 }
 
-/** The one display name for a plan window length — every view reads this. */
-export function planWindowLabel(windowMinutes: number): string {
-  if (windowMinutes % 10_080 === 0) {
+/**
+ * The one display name for a plan window, in the vendors' own vocabulary
+ * (claude.ai: "Current session", "This week", "Fable this week"). `scope` is
+ * the model a narrower limit applies to (`PlanWindow.limitName`).
+ */
+export function meterLabel(windowMinutes: number, scope: string | null): string {
+  let period: string;
+  if (windowMinutes > 0 && windowMinutes % 10_080 === 0) {
     const weeks = windowMinutes / 10_080;
-    return weeks === 1 ? 'Weekly window' : `${weeks}-week window`;
-  }
-  if (windowMinutes % 1440 === 0) {
+    period = weeks === 1 ? 'this week' : `these ${weeks} weeks`;
+  } else if (windowMinutes >= 40_320 && windowMinutes <= 44_640) {
+    period = 'this month';
+  } else if (windowMinutes > 0 && windowMinutes % 1440 === 0) {
     const days = windowMinutes / 1440;
-    return days === 1 ? 'Daily window' : `${days}-day window`;
+    period = days === 1 ? 'today' : `these ${days} days`;
+  } else if (windowMinutes === 300) {
+    period = 'session';
+  } else {
+    const hours = Math.max(1, Math.round(windowMinutes / 60));
+    period = `${hours}-hour limit`;
   }
-  const hours = Math.round(windowMinutes / 60);
-  return hours >= 1 ? `${hours}-hour window` : `${windowMinutes}-minute window`;
+  if (scope) return `${scope} ${period}`;
+  if (period === 'session') return 'Current session';
+  return period.charAt(0).toUpperCase() + period.slice(1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -378,24 +404,6 @@ export function unknownPlanSources(
   nowMs: number
 ): ConsumptionSourceView[] {
   return sources.filter(s => planReadIsUnknown(planReadState(s, nowMs)));
-}
-
-/**
- * Who OWNS a window's figure — the account when the vendor's own endpoint
- * reported it, the harness when the local logs did. One derivation, so the
- * page, the chart asides, and the popover cannot label the same window
- * three ways (ENG-038).
- */
-export function windowOwnerLabel(
-  source: ConsumptionSourceView,
-  window: CapacityWindowView
-): string {
-  return window.planLevel ? ACCOUNT_LABEL[source.harness] : source.label;
-}
-
-/** The name to call a source whose plan position is unknown. */
-export function sourceOwnerLabel(source: ConsumptionSourceView): string {
-  return source.accountRead ? ACCOUNT_LABEL[source.harness] : source.label;
 }
 
 /* ------------------------------------------------------------------ */
