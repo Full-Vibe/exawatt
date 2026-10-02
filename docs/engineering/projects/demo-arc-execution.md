@@ -157,3 +157,191 @@ absorbs it rather than the handoff waiting on S2.
 - Name the owning roadmap item in the first commit. This is how the operator sees who is on what, and it is why an assignment mechanism is not being built (ENG-029's recorded correction).
 - UI work is not done without visual evidence. Compiling is not looking right.
 - If a packet's scope disagrees with its roadmap item, stop and reconcile the item — do not silently diverge.
+
+## Wave 3 — the Google workshop demo arc (added 2026-10-02, demo 2026-10-07)
+
+Sequencing for the roadmap's "Execution front (2026-10-02)". Same contract as
+the waves above: no scope of its own, every packet points at the item that
+owns it, and the item wins any disagreement. Recorded 2026-10-02 at the
+operator's request; **execution waits for the operator's go.**
+
+### What this demo must survive
+
+| Risk                                              | Answering work                                      |
+| ------------------------------------------------- | --------------------------------------------------- |
+| "The live board can't be trusted on screen"       | G1 fleet truth and motion                           |
+| "Zoom-out shows thirty agents, not a fleet"       | G2 Demo workspace alive                             |
+| "No Google in a demo for Google"                  | G3 Antigravity source, G4 Google card, G6 cloud row |
+| "Can't answer how twenty agents don't collide"    | G5 landings inside the roadmap lens                 |
+| "The future state is not on screen"               | G6 affordances                                      |
+| "Demo day itself"                                 | G7 readiness                                        |
+
+Operator direction (2026-10-02): real fleet first, then Demo for scale;
+Antigravity real from ⌘T plus an affordance for a hosted Gemini row; landings
+minimal and inside the roadmap lens ("should basically feel like the same
+feature / view"); Push to cloud and Safety policy as simple, holistically
+integrated affordances, both still provisional until the Friday checkpoint.
+
+### Collision map
+
+- **Fleet canvas** (`src/components/fleet/spatial/operations-board/*`): G1
+  owns it. G2 touches only Demo data and transport
+  (`packages/core/src/demo/*`, `packages/core/src/transports/demo-workspace.ts`)
+  and never the canvas.
+- **Turn truth and attention** (`electron/main/harness-events/*`,
+  `turn-truth.ts`, `codex-app-server.ts`, the tab strip's attention state):
+  G1 owns it.
+- **Source declaration and launch** (`contracts/agent-sources.json`, the S5.1
+  single declaration, `electron/main/pty/harness-registry.ts`, the launcher):
+  G3 owns it. G4 reads the usage command only and adds its account reader
+  under `packages/core/src/consumption/*` and `src/components/consumption/*`.
+- **Roadmap lens** (`src/components/roadmap/*`) plus a new main-process reader
+  of `<git-common-dir>/exawatt-delivery/`: G5 owns both.
+- **Tab menu, `/cloud`, Settings ▸ Safety** (`tab-strip.tsx`,
+  `demo-session-pane.tsx`, `src/app/cloud/*`, `src/app/settings/*`): G6 owns.
+- **`docs/product/demo-script.md`** (private): G7 owns.
+
+### G1 · Live fleet truth and motion
+
+- **Owns:** ENG-004 (BUG-262, BUG-263, V3.9 look), ENG-016 (BUG-257,
+  BUG-258, BUG-264), ENG-015 (BUG-265, BUG-163).
+- **Scope:** two sub-packets that can run in parallel. **G1a board:** the
+  frozen and blurry render (frameloop invalidation while working marks exist,
+  the `dpr`/resize path after a display change), the Fleet to Agent
+  transition (measure first, then fix the mount and teardown overlap), ⌘J from
+  Fleet, and the close pack plus focus field look as the proposed default.
+  **G1b truth:** the Codex finished glyph during compaction and sub-agent
+  fan-out, the Claude spinner after `Stop`, the Codex queued question raised as
+  needs-you without ending the turn, and one transition that produces both the
+  amber marker and the bell.
+- **Do not touch:** Demo data, the launcher, the roadmap lens.
+- **Acceptance:** on the dogfood build with 25 or more live Agents, working
+  marks animate for ten unattended minutes and stay sharp after unplugging a
+  display; every tab state matches its pane for one working day of dogfood;
+  a queued Codex question turns a tab amber and rings; ⌘J from Fleet visits
+  the oldest needs-you. Screenshots and the spatial evals before landing.
+- **May start:** now. Blocks nothing; G7's rehearsal needs it landed.
+
+### G2 · Demo workspace alive
+
+- **Owns:** ENG-027 W14.
+- **Scope:** a seeded, deterministic tick behind the Demo transport: statuses
+  move on plausible cadences, delegated children spawn and finish, landings
+  arrive (so G5's landing state has Demo rows to show), consumption advances.
+  Add Antigravity rows to the synthetic fleet once G3's declaration lands, so
+  the three-vendor board appears in Demo. Record the Google mark's brand
+  provenance in `LICENSES/brand/harness-marks.md` before drawing it; if the
+  guidelines forbid the use, draw the neutral mark.
+- **Do not touch:** the canvas, launch (Demo still launches nothing), the
+  website hero capture (it stays a frozen capture by design).
+- **Acceptance:** switching Workspace to Demo shows movement within two
+  seconds; reduced motion stops the ambient motion and keeps state changes;
+  the 1k and 10k eval tiers are unaffected; a reload lands on the same seed.
+- **May start:** design now, build after G3's declaration lands (one file).
+
+### G3 · Antigravity CLI source
+
+- **Owns:** ENG-003 S5.3.
+- **Scope:** step 0, the signed-in `agy` 1.2.x run on the operator's account
+  that S5.3 has waited on since 2026-09-24: let the installed 1.0.4
+  self-update, never run `agy install` or `--gemini_dir`, verify whether an
+  `--add-dir` folder's `.agents/hooks.json` loads per launch. Then the adapter
+  in the S5 shape: one declaration, a real terminal launched with `agy -i`,
+  resume with `--conversation=<id>`, identity learned from the first hook,
+  turn truth from `PreInvocation` and `Stop` when the seam verifies, status
+  inferred like OpenCode when it does not, model catalog from `agy models`,
+  kill-guard coverage, and a tile line in production voice that Antigravity
+  cannot yet tell Exawatt when it needs you. Never surface
+  `~/.gemini/antigravity-cli/history.jsonl`.
+- **Do not touch:** the Usage page (G4 reads the usage command), the canvas.
+- **Acceptance:** ⌘T lists Antigravity with its models; a launched Agent
+  appears on Agent, Team and Fleet with working and done truth; it resumes
+  after relaunch; the probe hygiene rule holds (no writes outside the real
+  home the operator already uses).
+- **May start:** now; step 0 first and alone.
+
+### G4 · Usage: live burn and the Google account
+
+- **Owns:** ENG-008 E16, ENG-038 slice 3.
+- **Scope:** a live burn line above the account cards (tokens per minute and
+  dollars per hour now, per vendor, from the sample log; modelled dollars
+  labelled as modelled) and a Google account card read from
+  `agy -p "/usage" --output-format json` through the account service, with
+  the E12/E15 honesty rules: absent is never zero, and losing information never
+  moves the headline the reassuring way.
+- **Operator prerequisite:** `pnpm distribution:custody:upgrade` and a release
+  before Tuesday, or the installed build keeps saying plan limits are not
+  available for Claude (BUG-060, operator half).
+- **Do not touch:** the launcher, the harness registry.
+- **Acceptance:** the Usage page on the dogfood build shows Claude, Codex and
+  Google cards with reset times, and a burn line that moves while agents work;
+  a failed Google read shows the account as unreadable, not as zero.
+- **May start:** the Google read probe now; the card after G3 step 0 confirms
+  the installed `agy` version.
+
+### G5 · Landings inside the roadmap lens
+
+- **Owns:** ENG-017 S16 (data from ENG-022's queue state; no change to
+  `agent:land`).
+- **Scope:** a main-process reader of `<git-common-dir>/exawatt-delivery/`
+  (queue directory plus the metrics tail) exposed through the existing
+  roadmap and project IPC, and the lens showing a landing state on each item
+  with a ticket in flight (queued with position, checking, integrating, landed
+  with sha) plus one header line (N in queue, head). Minimal, and visually the
+  same feature as the lens; no new page, no palette-only surface.
+- **Friday checkpoint (2026-10-03):** screenshots of the lens with the state
+  on real rows go to the operator before build continues.
+- **Do not touch:** the delivery scripts, the canvas.
+- **Acceptance:** while an agent lands, the Team view moves the ticket queued
+  to checking to landed and flips the item with the real sha; a missing or
+  unreadable delivery directory reads "not shown", never "nothing queued".
+- **May start:** the reader now; the lens after the checkpoint.
+
+### G6 · Future-state affordances
+
+- **Owns:** ENG-033 (Push to cloud, `/cloud`), ENG-044 (Safety policy
+  preview). Provisional: the operator is not yet sure and decides at the
+  Friday checkpoint.
+- **Scope:** Push to cloud on the tab menu and the demo pane chip leads to
+  `/cloud`, which names a Gemini managed environment (Gemini API managed
+  agents, public preview) beside Exawatt-hosted with each one's honest state;
+  Settings ▸ Safety shows the shaped next controls (destructive git,
+  credential reads, network egress, allowed harnesses and models) as a
+  default-off policy preview beside the live control, clearly not enforced,
+  in production voice. Simple; one screenshot each for the checkpoint.
+- **Do not touch:** enforcement, the kill guard, the launcher.
+- **Acceptance:** neither affordance claims a capability the build lacks; the
+  live control still works; both read like product, not documentation.
+- **May start:** mockups now; build after the checkpoint.
+
+### G7 · Demo readiness
+
+- **Owns:** ENG-027 (the private `docs/product/demo-script.md`).
+- **Scope:** rewrite the script for this arc (real fleet, Fleet zoom,
+  needs-you, Antigravity launch, a landing in the lens, Usage, the Workspace
+  switch to Demo at scale, the two affordances, the leaderboard numbers); two
+  backup recordings (a Fleet zoom and a landing, 30 to 90 seconds each);
+  dogfood freeze Tuesday 2026-10-06 12:00 PT with only demo blockers landing
+  after; rehearsal Tuesday afternoon on the frozen build.
+- **May start:** Monday 2026-10-05, after the packets above land.
+
+### Day sequence
+
+- **Thu 10-02:** G1a, G1b, G3 step 0, G2 tick design, G5 reader, G4 read probe.
+- **Fri 10-03:** checkpoint screenshots (G5 lens, G6 affordances, G1 board
+  look) to the operator; G3 adapter; G2 and G4 build.
+- **Sat and Sun:** G2, G4, G5, G6 build; G1 remainder; integration landings.
+- **Mon 10-05:** everything on `master` by evening; dogfood installs; G7
+  script; the operator's custody release.
+- **Tue 10-06:** freeze at noon; rehearsal; recordings; demo blockers only.
+- **Wed 10-07:** 09:00 demo.
+
+### Operator-owned items
+
+- Say go.
+- Friday checkpoint: the lens landing state, the two affordances, the board
+  look.
+- `pnpm distribution:custody:upgrade` and a release before Tuesday (the Claude
+  windows on Usage depend on it).
+- Be present for G3 step 0 if the signed-in `agy` run needs the Google account
+  in a browser.

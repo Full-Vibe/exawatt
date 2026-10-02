@@ -60,6 +60,72 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
 
+## Execution front (2026-10-02): the Google workshop demo arc
+
+On 2026-10-07 the operator demos Exawatt to Google Gemini model designers in a
+four-hour codesign workshop on agent behavior. The arc's job: the product at
+its best for agent parallelism, successful fleets, the future product state,
+and Google system integration. Evidence: the 2026-10-01 landscape pass
+(private market research, cited from the packets document) and the
+2026-10-01 inbox drain (BUG-257 to BUG-267). Operator direction, 2026-10-02,
+as four answers to steering questions: (1) the Fleet zoom-out shows the real
+fleet first, then a Workspace switch to Demo for scale; (2) Antigravity
+launches from ⌘T for real, with a designed affordance for a hosted Gemini
+row; (3) landings live inside the roadmap lens, minimal, "should basically
+feel like the same feature / view"; (4) future state as simple affordances
+for Push to cloud and Safety policy, holistically integrated; the operator is
+not yet sure about these two and reviews them at the Friday checkpoint.
+**Recorded, not yet authorized to execute**: the operator asked for the plan
+and takes the next turn.
+
+Ordered work (packets G1 to G7 in `projects/demo-arc-execution.md`, Wave 3):
+
+1. **G1 Live fleet truth and motion** (ENG-004, ENG-016, ENG-015): BUG-263
+   frozen and blurry board, BUG-262 Fleet to Agent stutter, BUG-257 Codex
+   finished while working, BUG-258 Claude spinner after done, BUG-264 Codex
+   queued question as needs-you, BUG-265 bell coupled to amber, BUG-163 ⌘J
+   from Fleet. V3.9: the arc runs close pack plus focus field (the V4.0
+   recommendation) as the proposed look; the operator confirms or reverts at
+   the Friday checkpoint. Exit: 25 or more live Agents on the dogfood build
+   with animated working marks for ten unattended minutes, sharp after a
+   display change, and tabs that tell the truth both ways.
+2. **G3 Antigravity CLI source** (ENG-003 S5.3, pulled forward): the
+   signed-in 1.2.x run first, then the adapter. Exit: ⌘T lists Antigravity
+   with its models; a launched Agent shows on Agent, Team and Fleet with
+   working and done truth and resumes after relaunch; the tile says plainly
+   that Antigravity cannot yet tell Exawatt when it needs you.
+3. **G2 Demo workspace alive** (ENG-027 W14): a seeded tick behind the Demo
+   transport so Voltaic Grid's 173 Agents visibly work, delegate, finish and
+   land, with Antigravity rows in the synthetic fleet once G3 declares the
+   source. Exit: switching Workspace to Demo shows movement within two
+   seconds; Demo still launches nothing.
+4. **G5 Landings inside the roadmap lens** (ENG-017 S16, data from ENG-022):
+   a main-process reader of the delivery queue projected onto the lens: a
+   landing state on each roadmap item with a ticket in flight (queued with
+   position, checking, integrating, landed with sha) and one header line (N
+   in queue, head). No new page. Friday checkpoint before build. Exit: a real
+   landing moves queued to checking to landed on Team while it happens; an
+   unreadable queue is "not shown", never "nothing queued".
+5. **G4 Usage: live burn and the Google account** (ENG-008 E16, ENG-038
+   slice 3): tokens per minute and dollars per hour now, per vendor, above
+   the cards; a Google card read from `agy -p "/usage" --output-format json`.
+   The E12/E15 honesty rules stand. Operator prerequisite: `pnpm
+   distribution:custody:upgrade` and a release, or the installed build keeps
+   showing no Claude windows (BUG-060, operator half).
+6. **G6 Future-state affordances** (ENG-033, ENG-044): Push to cloud (tab
+   menu, demo pane chip) leads to `/cloud`, which names a Gemini managed
+   environment (Gemini API managed agents, public preview) beside
+   Exawatt-hosted with each one's honest state; Settings ▸ Safety shows the
+   shaped next controls as a default-off policy preview beside the live
+   control, in production voice. Friday checkpoint; simple.
+7. **G7 Demo readiness** (ENG-027): rewrite the operator's private demo
+   script for this arc, two backup recordings, dogfood freeze Tuesday
+   2026-10-06 12:00 PT, rehearsal Tuesday afternoon.
+
+Rules for the arc: the daily-driver arc's correctness wins any surface
+conflict (unchanged); visual evidence before landing; no landing to the
+dogfood build after the Tuesday freeze except a demo blocker.
+
 ## Execution front (2026-08-03)
 
 The 2026-08-02 demo arc **landed in one day**: ENG-036 G0/G1, ENG-026 N0–N5, ENG-027 W1–W4, ENG-004 V3.0/V3.1, ENG-008 E4→E8, ENG-032 T0, the `0023` rename with the legacy trio retired, and ENG-023 D3a/D3b/D4. The explanatory picture is now on screen. The 2026-08-02 front below is kept for its reasoning; the ordered work is now this:
@@ -487,6 +553,7 @@ Milestones:
   dungeon — describing plan-then-dispatch. Corroboration for the milestone's
   existence, not new scope; the design pass this milestone already requires
   still owes the answer.
+- S16 Landings inside the lens (planned 2026-10-02; demo arc G5; operator: minimal, "should basically feel like the same feature / view"): the delivery queue (ENG-022 state under the common Git directory) read in the main process and projected onto the lens as a landing state on each item with a ticket in flight (queued with position, checking, integrating, landed with sha) plus one header line; no new page; Friday design checkpoint before build; an unreadable queue reads "not shown", never "nothing queued".
 - S13.7 Findable progress cockpit (OPERATOR DOGFOOD 2026-08-16; DESIGN PASS REQUIRED): S13's human view remains a dense pile the operator does not use daily. Make canonical milestones visibly tick down as done/active/next, increase working-size legibility, and add a slash-first find gesture. Deterministic id/title/text retrieval is the baseline; semantic retrieval remains a candidate, not a preselected architecture. The repo roadmap remains the only state truth.
 
 Project doc:
@@ -781,6 +848,7 @@ Milestones:
 - E13 Live work velocity (planned; product-feedback `2986a19e`): add an honestly windowed/stale per-Agent throughput signal for “is work moving?”, never a productivity score and never zero for unreported sources.
 - E14 Operator power envelope (planned; product-feedback `4a720856`): measure whole-app power by regime, visibility, projection, motion, DPR, scale, and power source before adding explicit fidelity/cadence preferences.
 - E15 Usage as account bars (landed 2026-09-29; operator design pass in session, RESOLVES E12 — see the Amendment chain). Operator brief: "dramatically simplified … like the familiar usage bars the frontier model companies" ship, so he can "quickly pop open the usage page and multiplex across different vendors or accounts and see where my usage is and my burn", pacing a fleet against two different weekly resets without "10 unfinished tasks" when a limit hits. Operator answers: (1) ONE CARD PER ACCOUNT, claude.ai/ChatGPT-style bars, with a single sentence above the cards only when something runs out before its reset or a banked reset would expire unused; (2) the attribution drill moves to an Analytics tab, cut to spend by Project and by Agent, and the heat, sessions grid, diagnostics and burn chart are deleted; (3) agent-count translation ("room for 3 more agents") is parked; (4) he pays by the dollar on every lane but paces to his weekly plan limits and increasingly spends banked resets. Architecture: the vendor ACCOUNT is the unit (a harness draws on an account; claude.ai chat and Claude Code draw on one), each account's meters are the vendor's own windows plus its pay-as-you-go lane and banked resets, and one pure projection (`src/components/consumption/accounts.ts`) feeds the page, the chrome meter and the scenario workbench. Pace moves with the operator's velocity: the observed rate prefers the trailing six hours of the current cycle and falls back to the cycle average, and the headline window is the one that runs out first, not the fullest. Scope: the projection and page; the E12 study retired and replaced by `/hud-gallery/usage-scenarios`, named scenarios driven through the production builder with a burn-forward simulator; meter labels without em dashes; data-side slice in ENG-038 slice 2. Exit criteria: on the operator's own machine the page answers "what runs out first, when, and before which reset" in the first line; a failed or unconfigured read renders a card that says so with its true as-of, never a reassuring absence; every scenario renders through the production components with its geometry asserted; the chrome meter and the page name the same headline window. Narrative in `projects/consumption-spine.md` §E15.
+- E16 Live burn and the Google account (planned 2026-10-02; demo arc G4; ENG-038 slice 3): tokens per minute and dollars per hour now, per vendor, above the account cards, from the sample log with modelled dollars labelled; a Google account card read from `agy -p "/usage" --output-format json` (five-hour and weekly buckets per model, plan tier) through the account service; E12/E15 honesty rules stand (absent never zero, losing information never moves the headline the reassuring way). Prerequisite for the Claude windows on installed builds: the operator's custody upgrade and a release (BUG-060).
 
 Project doc:
 
@@ -1193,7 +1261,7 @@ Milestones:
 - S2.1 OpenCode prelaunch discovery fails soft (landed 2026-08-20; product-feedback `ee18e704` / BUG-095, commit `a03119b4`): failed redundant catalog snapshots no longer abort launch; exact-model requirements remain fail-closed and tested.
 - S3 Provider and model plurality as observed truth (shaped 2026-08-03, follows S2): a provider is a fact a source reports, not an entity Exawatt connects to; the model axis becomes searchable and provider-grouped for catalogs of hundreds; local inference earns a distinct readout (nothing leaves this machine, no billed dollars, watts as the honest unit) and never a distinct code path. Per the operator the near-term job is the UI that shows the app supports this, under the ENG-026 readiness grammar — running local inference is not itself a near-term requirement
 - S4 The Grok Build adapter (landed 2026-08-13; operator-pulled during the Grok Bot wave): xAI's open-source terminal harness is the fourth launchable source — generated declaration, registry facts, D46/D49 launch path, live `grok models` catalog, Exawatt-allocated `--session-id` identity with exact `--resume`, native recent history from its own `summary.json`, and `updates.jsonl` `turn_completed` usage as the ENG-008 local consumption read. Auth stays source-owned (its own OAuth in `~/.grok/auth.json`, never read by Exawatt); decision `0027` is untouched because this is a native harness, not credential injection. TWO shaped assumptions were corrected against the real install: `signals.json` is live context occupancy, not a billed total, so the ledger reads `updates.jsonl` instead; and the interactive TUI exposes no per-launch hook seam, so delegation is declared unobservable and status rides inference like Codex's rather than the ENG-023 channel. Grok-the-model remains launchable via the S2 `opencode` source. Verified facts, both corrections, and the follow-up seam: project doc §S4
-- S5 Source plugins (active-build; SHAPED 2026-09-23 in an operator design session, resequenced the same night after the S5.2 probe): Exawatt ships every harness itself and makes each one cheaper than the last. S5.1 one declaration per source (LANDED 2026-09-24, `7caf4240`: a source was named in ~38 non-test files; adding Qwen made the compiler name three); S5.2 Qwen Code (LANDED 2026-09-24, same landing: a real terminal plus its own hooks injected per launch through a Qwen-specific normalizer); S5.3 Antigravity CLI, Google's current terminal agent, probed, next step needs one signed-in run. Gemini CLI is parked: Google moved consumer accounts to Antigravity CLI, the operator's account is refused, and 0.61 accepts hooks only from a root-owned file. Every OS permission arrives as a guided step when first needed. Trigger-deferred: user-added sources (until a user asks), the conversation kind and Instinct (operator deferral), Hermes and Kilo Code. Exawatt-provided identity for always-on agents is ENG-033 future direction. [Plan and progress](projects/agent-source-architecture.md#2026-09-23--s5-execution-plan-and-progress) · [probe verdict](projects/agent-source-architecture.md#2026-09-23--s52-probe-verdict-gemini-cli-is-amber-qwen-code-looks-closer) · [Instinct verdict](projects/agent-source-architecture.md#2026-09-23--instinct-verdict-reachable-only-as-a-text-thread).
+- S5 Source plugins (active-build; SHAPED 2026-09-23 in an operator design session, resequenced the same night after the S5.2 probe): Exawatt ships every harness itself and makes each one cheaper than the last. S5.1 one declaration per source (LANDED 2026-09-24, `7caf4240`: a source was named in ~38 non-test files; adding Qwen made the compiler name three); S5.2 Qwen Code (LANDED 2026-09-24, same landing: a real terminal plus its own hooks injected per launch through a Qwen-specific normalizer); S5.3 Antigravity CLI, Google's current terminal agent, probed, next step needs one signed-in run. Pulled into the 2026-10-02 Google workshop demo arc (Execution front, packet G3): the signed-in run, then the adapter, before 2026-10-07. Gemini CLI is parked: Google moved consumer accounts to Antigravity CLI, the operator's account is refused, and 0.61 accepts hooks only from a root-owned file. Every OS permission arrives as a guided step when first needed. Trigger-deferred: user-added sources (until a user asks), the conversation kind and Instinct (operator deferral), Hermes and Kilo Code. Exawatt-provided identity for always-on agents is ENG-033 future direction. [Plan and progress](projects/agent-source-architecture.md#2026-09-23--s5-execution-plan-and-progress) · [probe verdict](projects/agent-source-architecture.md#2026-09-23--s52-probe-verdict-gemini-cli-is-amber-qwen-code-looks-closer) · [Instinct verdict](projects/agent-source-architecture.md#2026-09-23--instinct-verdict-reachable-only-as-a-text-thread).
 
 Project doc:
 
@@ -1576,6 +1644,7 @@ Milestones (only landed ones are listed here):
 - W12 Eight operator notes on the assembled `/v2` — LANDED 2026-08-19: (1) **The product sentence sets on one line.** It needs 445px at 18px and the subhead's own `max-w-[26rem]` cap allowed 416px inside a column offering 472px at `lg`, so the cap comes off and the 18px rung starts at `lg` where the column widens, with `md` at 17px against 432px. Tracking and the sentence are untouched. One line at 1280, 1440 and 1536. (2) **A second control beside `Download for Mac`**, and it is an ordinary in-page link rather than a click handler: `panelStepId()` gives the next panel's existing snap sentinel an id, so the affordance lands exactly where a scroll settle parks and nothing calls `scrollTo`. Outline weight, no fill, named "See the fleet", focusable, smooth with a reduced-motion override. Measured delta from the sentinel: 0px in both modes. (3) **The attention panel stops being aphoristic**: "A hundred agents, one screen" over what every agent is doing, with the needs-you idea in one plain sentence. (4) **`any-lab` NAMES the harnesses** in the product's own labels, four that launch plus OpenClaw arriving, running side by side on the plan you already pay for. (5) **Every stat line and the last coda are deleted**, and the `coda` FIELD with them: all four stat lines were a second printing of the board chip or of the identity card. The lens legend stays, because it maps a colour the board IS using. (6) **A new `cloud` band** carries ENG-033's promise, after `altitude-delegation` (scale across a fleet and scale through time are one claim on two axes) and HOLDING the Project framing, so the monotonic ladder and the dive's finale are both untouched; written as real with no badge, future tense in the sentence, and the board does not pretend to prove a placement the capture does not carry. (7) **The GitHub link keeps its real destination** with its interim 404 recorded as a dated accepted operator decision. (8) **Leaderboard returns to the nav** (Changelog, Leaderboard, GitHub, Download), with `siteMenuLinks()` de-duplicating the phone menu; no header overflow at 1280, 1440 or 1536. Eight bands, 8.2 screens, 202 written words against a 170 floor. `eval:hero-board` at rest 0.451 mean delta / 0.77% of pixels per second and `eval:r3f` 100/100 at three draw calls, both green; zero console errors at four viewports. One latent defect fixed: W11's `hasFold` was read by the scroll pass and missing from its dependency array, which had bailed the React Compiler out of the page's one scroll-frequency component.
 
 - W13 Public licensing copy follows the reader's job (planned; product-feedback `567a590f`): remove AGPL/Apache implementation detail from homepage bands/footer while preserving actual licenses, notices, and contributor documentation.
+- W14 Demo workspace alive (planned 2026-10-02; demo arc G2): a seeded, deterministic tick behind the Demo transport so the Voltaic Grid fleet visibly works, delegates, finishes and lands, with Antigravity rows once ENG-003 S5.3 declares the source; Demo still launches nothing; reduced motion respected. Exit: a Workspace switch to Demo shows movement within two seconds.
 
 ### ENG-032 Theming and visual identity
 
