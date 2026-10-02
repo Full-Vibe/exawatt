@@ -480,7 +480,11 @@ async function runElectronAttempt({
     app = await electron.launch({ timeout: 30_000, ...launchOpts });
   }
   launch.connectedAt = performance.now();
-  const pid = app.process().pid;
+  // Playwright disposes its Electron dispatcher during close/disconnect.
+  // Retain the public ChildProcess while live; teardown must not resolve it
+  // through that dispatcher after graceful close has started.
+  const mainProcess = app.process();
+  const pid = mainProcess.pid;
   let processGroup;
   try {
     processGroup = captureElectronProcessGroup(pid);
@@ -497,7 +501,7 @@ async function runElectronAttempt({
     }
     // ChildProcess owns this exact main instance and refuses a kill after
     // exit. The group backstop also reaps helpers that retained its pipes.
-    app.process().kill('SIGKILL');
+    mainProcess.kill('SIGKILL');
     sweepOrphans(evalRoot);
   };
 
