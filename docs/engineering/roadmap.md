@@ -3299,7 +3299,6 @@ Evidence and acceptance: [Spatial project log](projects/spatial-operations-board
 Status: feature · ENG-036 · operator suggestion 2026-10-02 (Claude and Linear screenshots).
 Explore shared overlay components and an accurate Enter hint on the selected
 enabled palette row; preserve each surface's keyboard contract. Related ENG-025 F6.
-Evidence: [operator reference note](../research/ui-references/2026-10-02-command-palettes/README.md).
 Candidate for gallery review; the implementation scope awaits the current planning questions.
 
 ## Amendment chain
