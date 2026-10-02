@@ -186,8 +186,12 @@ function DialogContent({
   motion = 'auto',
   forceMount,
   primaryAction,
+  inert,
   ...props
 }: DialogContentProps) {
+  // Exit presence retains the DOM, never its keyboard, pointer or AX
+  // participation. Preserve an explicitly inert open subtree as well.
+  const open = React.useContext(DialogOpenContext);
   return (
     <DialogPortal data-slot="dialog-portal" forceMount={forceMount}>
       <DialogOverlay data-overlay-motion={motion} />
@@ -201,6 +205,7 @@ function DialogContent({
           className
         )}
         {...props}
+        inert={!open || inert}
       >
         <DialogPrimaryActionScopeProvider declaration={primaryAction}>
           {children}

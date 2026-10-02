@@ -322,8 +322,10 @@ material and action rungs; it introduces no palette or source-specific styling.
   redundant Replace/Remove labels do not become additional choices.
 - `DialogContent` owns real Radix presence animations: 240ms entrance and
   160ms exit, using the house easing and only opacity/transform. Radix retains
-  the actual closing subtree and owns unmounting. Reduced motion renders the
-  same states directly; the typed `motion: none` override lets screenshot
+  the actual closing subtree and owns unmounting and focus restoration.
+  Logical open state owns interaction: closing retained content is HTML
+  `inert` and releases its primary-action chord immediately. Reduced motion
+  renders the same states directly; the typed `motion: none` override lets screenshot
   capture close before reading the window. Undefined animation utilities,
   cloned dialogs, geometry snapshots and guessed close delays are not owners.
 - `OperationReceipt` presents pending, complete, partial, error and neutral

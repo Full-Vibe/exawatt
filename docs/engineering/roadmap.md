@@ -2965,6 +2965,8 @@ apps or sibling evals. Exit: repeated fresh-app evals exit with no owned helper
 or output pipe left behind, including bounded forced shutdown; a foreign app
 control survives. [Incident 0030](incidents/0030-electron-eval-network-helpers-retain-pipes.md).
 
+2026-10-02: verified shared process-group teardown; integration pending. [ENG-022 findings](projects/agent-development-loop.md#findings-log).
+
 ### BUG-237 Pausing an Agent showed it as failed
 
 Status: fixed · ENG-015 · found 2026-09-28 in the pre-0.1.14 review; release blocker, regression from BUG-186.

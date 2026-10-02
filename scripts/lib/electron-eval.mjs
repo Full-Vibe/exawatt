@@ -45,6 +45,7 @@ import {
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 import { assertFixtureHarnesses } from './harness-probe-fixture.mjs';
 import { ensuredExecutable } from './packaged-app.mjs';
+import { captureElectronProcessGroup } from './electron-process-group.mjs';
 
 /** Kill any orphaned playwright Electron left by a prior SIGKILLed run of THIS
  *  worktree, so a stale orphan can't poison this launch.
@@ -480,14 +481,23 @@ async function runElectronAttempt({
   }
   launch.connectedAt = performance.now();
   const pid = app.process().pid;
+  let processGroup;
+  try {
+    processGroup = captureElectronProcessGroup(pid);
+  } catch (error) {
+    console.warn(`[harness] cannot verify launch process group: ${error.message}`);
+  }
   let done = false;
 
   const hardKill = () => {
     try {
-      if (pid) process.kill(pid, 'SIGKILL');
+      processGroup?.forceKill();
     } catch {
-      /* already gone */
+      /* verification failed; never broaden ownership */
     }
+    // ChildProcess owns this exact main instance and refuses a kill after
+    // exit. The group backstop also reaps helpers that retained its pipes.
+    app.process().kill('SIGKILL');
     sweepOrphans(evalRoot);
   };
 
@@ -502,6 +512,11 @@ async function runElectronAttempt({
     if (done) return;
     done = true;
     if (watchdog) clearTimeout(watchdog);
+    try {
+      processGroup?.captureMembers();
+    } catch {
+      /* retain the previously verified members if main is unresponsive */
+    }
     await Promise.race([
       app.close().catch(() => {}),
       new Promise(r => setTimeout(r, gracefulMs)),

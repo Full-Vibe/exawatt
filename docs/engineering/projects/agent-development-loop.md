@@ -301,6 +301,24 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-10-02, BUG-230: **successful native evals now release their owned helpers.**
+  Incident [0030](../incidents/0030-electron-eval-network-helpers-retain-pipes.md)
+  recurred during feedback verification: two orphaned NetworkService helpers
+  held the Node wrapper's inherited pipes after every assertion passed. A
+  native control proved main, GPU, network, and renderer all share the
+  Playwright-created detached process group. Public `app.close()` remains the
+  graceful owner; `scripts/lib/electron-process-group.mjs` verifies PGID equals
+  the launched main PID, excludes the harness group, retains process birth and
+  command identities before close, and signals only a group with a surviving
+  captured identity. The existing bounded backstop therefore reaches helpers
+  after reparenting while refusing a departed/reused group. No machine-wide
+  kill pattern or unconditional eval `process.exit()` was added. All 24
+  harness tests passed, including a real orphan holding an output pipe and a
+  foreign detached process that remains usable. The native feedback/context
+  eval then passed across two fresh launches and exited 0 automatically.
+  Scoped lint passed; integration is pending. The helper owes
+  `eval:electron:project-agent` through the shared-harness surface gate.
+
 - 2026-09-28, BUG-246: **the landing owns the dev server its gates read.**
   Three landings in four days failed a gate against a server that predated
   the tree: BUG-244's second attempt (`eval:electron:delegation`, green after a

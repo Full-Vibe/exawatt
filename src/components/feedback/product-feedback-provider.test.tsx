@@ -28,6 +28,35 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function retainDialogExit() {
+  const getStyle = window.getComputedStyle.bind(window);
+  vi.stubGlobal('getComputedStyle', (element: Element) => {
+    const style = getStyle(element);
+    return new Proxy(style, {
+      get(target, property) {
+        if (
+          property === 'animationName' &&
+          element.matches(
+            '[data-slot="dialog-content"], [data-slot="dialog-overlay"]'
+          )
+        )
+          return element.getAttribute('data-state') === 'closed'
+            ? 'test-exit'
+            : 'test-entry';
+        return Reflect.get(target, property, target);
+      },
+    });
+  });
+}
+
+function finishDialogExit() {
+  for (const element of document.querySelectorAll('[data-state="closed"]')) {
+    const completed = new Event('animationend', { bubbles: true });
+    Object.defineProperty(completed, 'animationName', { value: 'test-exit' });
+    fireEvent(element, completed);
+  }
+}
+
 const SHOT = 'data:image/png;base64,cG5n';
 const NEW_SHOT = 'data:image/png;base64,bmV3';
 const INITIAL_HREF = window.location.href;
@@ -227,29 +256,13 @@ afterEach(() => {
 
 describe('unified feedback composer continuity', () => {
   it('reopening during a retained Radix exit preserves the original work invoker', async () => {
-    const getStyle = window.getComputedStyle.bind(window);
-    vi.stubGlobal('getComputedStyle', (element: Element) => {
-      const style = getStyle(element);
-      return new Proxy(style, {
-        get(target, property) {
-          if (
-            property === 'animationName' &&
-            element.matches(
-              '[data-slot="dialog-content"], [data-slot="dialog-overlay"]'
-            )
-          )
-            return element.getAttribute('data-state') === 'closed'
-              ? 'test-exit'
-              : 'test-entry';
-          return Reflect.get(target, property, target);
-        },
-      });
-    });
+    retainDialogExit();
     await renderSignedIn();
     const invoker = screen.getByRole('button', { name: 'Work area' });
     invoker.focus();
     await act(async () => feedback!.openFeedback());
-    fireEvent.keyDown(composerField(), { key: 'Escape' });
+    const field = composerField();
+    fireEvent.keyDown(field, { key: 'Escape' });
     expect(
       document.querySelector(
         '[data-slot="dialog-content"][data-state="closed"]'
@@ -258,12 +271,39 @@ describe('unified feedback composer continuity', () => {
     await act(async () => feedback!.openQuickCapture());
     expect(composerField()).toHaveFocus();
     fireEvent.keyDown(composerField(), { key: 'Escape' });
-    for (const element of document.querySelectorAll('[data-state="closed"]')) {
-      const completed = new Event('animationend', { bubbles: true });
-      Object.defineProperty(completed, 'animationName', { value: 'test-exit' });
-      fireEvent(element, completed);
-    }
+    // If focus leaves the retained subtree before unmount, reopening still
+    // owes restoration to the original work control.
+    field.blur();
+    expect(document.activeElement).toBe(document.body);
+    await act(async () => feedback!.openQuickCapture());
+    expect(composerField().closest('[data-slot="dialog-content"]')).not.toHaveAttribute('inert');
+    fireEvent.keyDown(composerField(), { key: 'Escape' });
+    finishDialogExit();
     await waitFor(() => expect(invoker).toHaveFocus());
+  });
+  it('closed retained editor cannot send by Enter or button activation, and reopening keeps its draft', async () => {
+    retainDialogExit();
+    const fetchSpy = vi.fn<typeof fetch>().mockResolvedValue(feedbackResponse());
+    vi.stubGlobal('fetch', fetchSpy);
+    await renderSignedIn();
+    await act(async () => feedback!.openFeedback());
+    const field = composerField();
+    fireEvent.change(field, { target: { value: 'Keep this unsent report' } });
+    const submit = screen.getByRole('button', { name: /^Send feedback/ });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(field.isConnected).toBe(true);
+    expect(field.closest('[data-slot="dialog-content"]')).toHaveAttribute('inert');
+    // These synthetic events bypass native inert. The write boundary must
+    // still reject them while the composer is logically closed.
+    fireEvent.keyDown(field, { key: 'Enter' });
+    fireEvent.click(submit);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    finishDialogExit();
+    await act(async () => feedback!.openFeedback());
+    expect(composerField()).toHaveValue('Keep this unsent report');
+    fireEvent.keyDown(composerField(), { key: 'Enter' });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
+    finishDialogExit();
   });
   it.each([
     { status: 500, retryable: false },

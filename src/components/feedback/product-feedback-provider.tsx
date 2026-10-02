@@ -254,8 +254,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     // it must retain the work origin rather than save its own closing input.
     if (
       restoreFocusRef.current?.isConnected &&
-      target instanceof Node &&
-      editorRef.current?.contains(target)
+      editorRef.current?.isConnected &&
+      (target === document.body ||
+        (target instanceof Node && editorRef.current.contains(target)))
     )
       return;
     restoreFocusRef.current =
@@ -441,7 +442,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     [store, upload]
   );
   const send = useCallback(() => {
-    if (Object.values(preparing).some(Boolean) || !tokenRef.current) return;
+    if (!open || Object.values(preparing).some(Boolean) || !tokenRef.current)
+      return;
     const current = store.getSnapshot().drafts.composer;
     if (!current.message.trim()) {
       setError('Add your feedback.');
@@ -480,7 +482,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     }
     closeEditor();
     void executeAttempt(attempt);
-  }, [preparing, store, closeEditor, executeAttempt]);
+  }, [open, preparing, store, closeEditor, executeAttempt]);
   const retry = useCallback(
     (id: string) => {
       if (!tokenRef.current) return;

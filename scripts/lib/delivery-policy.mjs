@@ -447,6 +447,7 @@ export const SURFACE_GATES = [
       // relaunches, so it crosses every workspace-state module.
       isWorkspaceState(file) ||
       file === 'scripts/lib/electron-eval.mjs' ||
+      file === 'scripts/lib/electron-process-group.mjs' ||
       file === 'scripts/lib/harness-probe-fixture.mjs' ||
       file === 'scripts/electron-project-agent-launcher-eval.mjs',
   },

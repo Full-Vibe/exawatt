@@ -50,13 +50,16 @@ describe('a dialog’s primary action', () => {
     const { rerender } = render(<Sheet open={false} forceMount onRun={run} />);
     const retained = screen.getByRole('dialog');
     expect(retained).toHaveAttribute('data-state', 'closed');
+    expect(retained).toHaveAttribute('inert');
     expect(runTopDialogPrimaryAction()).toBe(false);
     rerender(<Sheet open forceMount onRun={run} />);
+    expect(retained).not.toHaveAttribute('inert');
     expect(runTopDialogPrimaryAction()).toBe(true);
     expect(run).toHaveBeenCalledOnce();
     rerender(<Sheet open={false} forceMount onRun={run} />);
     expect(retained.isConnected).toBe(true);
     expect(retained).toHaveAttribute('data-state', 'closed');
+    expect(retained).toHaveAttribute('inert');
     expect(runTopDialogPrimaryAction()).toBe(false);
     expect(run).toHaveBeenCalledOnce();
   });

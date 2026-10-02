@@ -5,7 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import {
   chmodSync,
   existsSync,
@@ -27,6 +28,7 @@ import {
   waitForPageCondition,
   withElectronApp,
 } from './lib/electron-eval.mjs';
+import { captureElectronProcessGroup } from './lib/electron-process-group.mjs';
 import {
   assertFixtureHarnesses,
   FAKE_HARNESSES,
@@ -48,6 +50,80 @@ const listen = handler =>
       resolve({ server, origin: `http://127.0.0.1:${server.address().port}` })
     );
   });
+
+test(
+  'the verified launch group reaps an orphan holding output pipes and leaves a foreign group alive',
+  {
+    skip: process.platform === 'win32',
+  },
+  async t => {
+    const foreign = spawn(
+      process.execPath,
+      [
+        '-e',
+        `
+    process.on('message', () => process.send('pong'));
+    process.send('ready');
+  `,
+      ],
+      { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }
+    );
+    const leader = spawn(
+      process.execPath,
+      [
+        '-e',
+        `
+    const {spawn} = require('node:child_process');
+    const helper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: ['ignore', process.stdout, process.stderr]
+    });
+    helper.unref();
+    process.send({helper: helper.pid});
+    process.once('message', () => process.exit(0));
+  `,
+      ],
+      { detached: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+    );
+    const closed = once(leader, 'close');
+    t.after(() => {
+      for (const child of [leader, foreign]) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      }
+    });
+    await Promise.all([once(foreign, 'message'), once(leader, 'message')]);
+    const group = captureElectronProcessGroup(leader.pid);
+    assert.ok(group, 'the detached launch group must be verified');
+    assert.equal(
+      captureElectronProcessGroup(process.pid),
+      null,
+      'the harness group must never be admitted'
+    );
+    group.captureMembers();
+    const exited = once(leader, 'exit');
+    leader.send('orphan');
+    await exited;
+    assert.equal(
+      leader.stdout.destroyed,
+      false,
+      'the orphan still holds its exited parent output pipe'
+    );
+    assert.equal(group.forceKill(), true);
+    await closed;
+    assert.equal(leader.stdout.destroyed, true);
+    assert.equal(
+      group.forceKill(),
+      false,
+      'a departed group is never signalled again'
+    );
+    const pong = once(foreign, 'message');
+    foreign.send('ping');
+    assert.equal((await pong)[0], 'pong', 'a foreign group remains usable');
+  }
+);
 
 const DISTRIBUTION_DIGEST = 'a'.repeat(64);
 

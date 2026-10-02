@@ -664,6 +664,14 @@ test('native feedback evidence is required when reporting ownership changes', ()
   }
 });
 
+test('the shared Electron teardown owner owes a native driving gate', () => {
+  assert.ok(
+    missingSurfaceGates(['scripts/lib/electron-process-group.mjs']).some(
+      entry => entry.gate === 'eval:electron:project-agent'
+    )
+  );
+});
+
 test('source Settings changes require the repaired source gate', () => {
   for (const file of [
     'src/app/settings/agent-sources-settings.tsx',
