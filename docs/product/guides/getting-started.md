@@ -233,8 +233,11 @@ context and evidence when reopened.
 Sending closes the composer, shows a compact receipt and returns focus so you
 can continue working. Receipt states update immediately; the sending spinner
 indicates the pending request. **Feedback sent** confirms the report and any requested image were
-saved. If the report was saved without its image, retry the same attempt or
-choose **Finish without image**. **Delivery unconfirmed** keeps the attempt
+saved. If the receipt confirms the report but not its image, retry the same
+attempt or choose **Finish without image**. Finishing stops image recovery;
+it does not remove an image or prove that an earlier retry failed to store it.
+The receipt confirms saved feedback and keeps image delivery unconfirmed.
+**Delivery unconfirmed** keeps the attempt
 available for retry when offered; it does not mean nothing was saved. A later
 refused retry does not settle an earlier unconfirmed delivery. Some failed
 attempts cannot be retried unchanged. Editing an uncertain report starts a new

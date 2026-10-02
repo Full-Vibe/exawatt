@@ -37,7 +37,11 @@ would amplify misleading success and duplicate reports.
 - A text-only report succeeds when its row is accepted. An attempt with an
   image succeeds only when the receipt confirms that image. Text saved with
   image missing is a recoverable partial result; retain the evidence and offer
-  same-attempt retry or explicit completion without the image. A lost response
+  same-attempt retry or explicit completion without the image. Explicit
+  completion accepts the confirmed report and stops image recovery; it neither
+  removes a stored image nor proves that an earlier unconfirmed retry cannot
+  still save it. The receipt confirms saved feedback while retaining image
+  delivery uncertainty. A lost response
   is an unknown outcome, not proof that nothing was saved. Retry permission
   and outcome certainty are independent: honor a service problem's explicit
   `retryable` flag, keep transport/protocol uncertainty unconfirmed, and retain

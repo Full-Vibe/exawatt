@@ -64,7 +64,7 @@ export function FeedbackReceipt({
                   ? 'Feedback not sent'
                   : 'Delivery unconfirmed'
                 : attempt.acceptedWithoutImage
-                  ? 'Saved without image'
+                  ? 'Feedback saved'
                   : 'Feedback sent'
         }
         description={
@@ -72,7 +72,9 @@ export function FeedbackReceipt({
             ? 'Retry the image, or finish without it.'
             : attempt.status === 'error'
               ? (attempt.error ?? undefined)
-              : undefined
+              : attempt.acceptedWithoutImage
+                ? 'Image delivery unconfirmed.'
+                : undefined
         }
         onDismiss={
           attempt.status === 'sent'
