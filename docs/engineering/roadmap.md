@@ -3294,6 +3294,14 @@ Status: paper-cut · ENG-004 · product-feedback 11909db1 2026-10-02.
 Explain the lifecycle outline separately from Idle and the last-turn mark.
 Evidence and acceptance: [Spatial project log](projects/spatial-operations-board.md#2026-10-02--explain-the-stopped-session-outline-bug-268).
 
+### BUG-270 Consider spacious shared Cmd+K and feedback overlay language
+
+Status: feature · ENG-036 · operator suggestion 2026-10-02 (Claude and Linear screenshots).
+Explore shared overlay components and an accurate Enter hint on the selected
+enabled palette row; preserve each surface's keyboard contract. Related ENG-025 F6.
+Evidence: [operator reference note](../research/ui-references/2026-10-02-command-palettes/README.md).
+Candidate for gallery review; the implementation scope awaits the current planning questions.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
