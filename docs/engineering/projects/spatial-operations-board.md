@@ -2904,3 +2904,16 @@ colour.
 Contract: `pnpm eval:spatial` reads the live scene and fails when any status
 mark draws before the Agent body beneath it or before its plate. It failed in
 all four board scenarios with Idle's arcs returned to the opaque pass.
+
+### 2026-10-01 — Operator feedback: a stuttering transition and a frozen, blurry board (BUG-262, BUG-263)
+
+Two dogfood rows from 2026-09-30 after the V4.0 landing. `98117f69`: "the
+loading animation going from Fleet to Agent feels a bit crunch and slow and
+sluggish." `b0f1a3f2`, screenshot attached: "Animation on Fleet is frozen, I
+don't see the blue circles rotating. They all look fuzzy too"; the capture
+shows five Project rings, Working 3, static working marks, and soft marks and
+labels as if the canvas painted below device pixel ratio. Both are queued as
+roadmap backlog items BUG-262 and BUG-263. Measure the transition before
+changing it, and check `invalidate` ownership and the `dpr`/resize path
+against the R3F authoring guide; `eval:spatial` should assert motion while any
+Agent is working.

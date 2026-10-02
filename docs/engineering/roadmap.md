@@ -3156,6 +3156,138 @@ another implementation, so it catches this class. `v0.1.17` cannot finish its
 own workflow; its Release stays published and the feed moves at 0.1.18.
 [Log](projects/open-source-readiness.md#2026-09-29--the-source-archive-check-compares-gzip-bytes-across-platforms-bug-256).
 
+### BUG-257 A Codex tab shows the finished glyph while its agent is still working
+
+Status: bug · ENG-016 · product-feedback 5630707d 2026-09-25, f1013635
+2026-09-29, 6d54b4ab 2026-09-30 (three rows, one signal; screenshots on all
+three). The tab wears the green check while the Codex pane reads "Working
+(4m 44s · esc to interrupt)"; in the third capture the pane reads "Compacting
+context (28s)" with many subagents live. Operator: "We've tried to fix this
+several times before." The BUG-001 family again, and status truth is the
+product's core claim, so it outranks features. First moves: read the Codex
+app-server turn stream for the Session and establish which event the tab
+latched turn-end on; compaction and subagent fan-out are mid-turn states, and
+the latch must release only on a positive turn-end from the source, never on
+quiescence while children or compaction are live. Never widen a timeout.
+
+### BUG-258 A finished Claude Code tab keeps spinning after its turn ended
+
+Status: bug · ENG-016 · product-feedback 2c0f6f65 2026-09-29 (and the aside in
+f60d6cda: "they look blue and spinning, that's a bug"). Screenshot: an Opus 5.5
+tab shows the blue spinner while its pane reads "Sautéed for 11s · done
+6:59 PM" above an empty prompt. The inverse of BUG-257 and the shape of BUG-081
+(done 2026-08-18), so either a regression or an uncovered path: establish
+whether `Stop` arrived and the turn state was reclaimed, and whether the hook
+listener died, because the channel's fail-open ("no delegation reported") must
+never keep a spinner alive.
+
+### BUG-259 There is no way to mark a tab unread
+
+Status: feature · ENG-015 · product-feedback d054b1c5 2026-09-28. "Add mark
+unread to complement cmd+j (maybe cmd+shift j?)". ⌘J visits the oldest
+needs-you; once visited, the operator has no verb to put a tab back in the
+queue for later. The mail and Chrome model applies: mark unread re-raises the
+attention marker without re-firing notifications, and it is discoverable per
+D57 (a verb cannot be born undiscoverable).
+
+### BUG-260 Restarting for an update loses the state the operator was holding
+
+Status: bug · ENG-016 · product-feedback f60d6cda 2026-09-29, 55bb0776
+2026-10-01 (two rows, one signal; also the first evidence for ENG-019). An
+update banner
+invites a relaunch while a dozen tabs sit in mixed states, "some need me, some
+green and idle"; the operator wants to "end up in the exact same state", and
+on 10-01 he could not restart at all "because I have so many active tabs -
+including some unread amber ones that need me - and I won't be able to restart
+without losing all that progress." Exact-id resume restores the Sessions; what
+is lost is the attention layer: unread and needs-you marks, read state, paused
+and working badges, and tab order. Two halves: persist and restore the
+attention marks with the tab, and make the restart banner say what it will
+preserve so the update can be taken without a sinking feeling. ENG-019 stays
+planned; this is its first operator evidence.
+
+### BUG-261 Toasts and the feedback form's sending state use three treatments
+
+Status: paper-cut · ENG-036 · product-feedback d8a44d94 2026-09-29, 513ebfde
+2026-09-29 (evidence for ENG-025 too). The ⌘⇧T hint toast, the feedback-sent toast
+and the update-available banner each have their own treatment, and the
+feedback panel jumps from Enter straight to "sent" with no sending state.
+Operator: "Combine, unify, refine" and "the feedback panel itself should
+animatedly collapse to a loading then success-or-error state. This could be
+systematized into a design component or reusable loading-then-terminal
+language we may reuse throughout the app." One transient-state rung in the
+design system of record, adopted by all three, then the form.
+
+### BUG-262 The Fleet to Agent transition stutters
+
+Status: bug · ENG-004 · product-feedback 98117f69 2026-09-30. "The loading
+animation going from Fleet to Agent feels a bit crunch and slow and sluggish."
+The altitude transition is the moment every demo passes through. Measure
+before fixing: frame times across the transition on the dogfood build with
+about thirty live Agents; likely suspects are xterm mounting for the target
+Session during the transition and the board tearing down while the Agent
+surface paints. The timing sweep is advisory under HMR (no edits while it
+runs).
+
+### BUG-263 The Fleet board renders frozen and blurry
+
+Status: bug · ENG-004 · product-feedback b0f1a3f2 2026-09-30, screenshot
+attached. "Animation on Fleet is frozen, I don't see the blue circles
+rotating. They all look fuzzy too." The capture shows five Project rings with
+Working 3 and the working marks static, and every mark and label soft, as if
+the canvas is painting below the device pixel ratio. Two defects or one: a
+demand frameloop no longer invalidated while working marks exist, and a
+DPR/resize path that left the canvas at a stale size (a display change is the
+likely trigger). Check `invalidate` ownership against the R3F authoring guide
+and the canvas `dpr`/resize observer, and make `eval:spatial` assert motion
+while any Agent is working.
+
+### BUG-264 A Codex queued question is not a needs-you
+
+Status: bug · ENG-016 · product-feedback b23a3cbe 2026-09-30, screenshot
+attached. Codex now accepts follow-up questions while it keeps working: the
+pane shows "Queued follow-up inputs · ? 1 question · shift+← to answer" under a
+live "Working (4m 59s)". Operator: "I want Exawatt to be able to detect this if
+it can and cause this to be an agent that needs me or needs my input." Today
+the tab reads working, so the question waits unseen. Read it from the
+app-server item stream before falling back to the PTY cue, and mark the
+Session needs-you without ending its turn: a new blocker shape,
+waiting-while-working, which the attention lane should rank below a hard
+block.
+
+### BUG-265 The bell does not sound when an agent needs you
+
+Status: bug · ENG-015 · product-feedback 23814904 2026-10-01. "Sound bell isn't
+working when an agent needs me. Should be a super robust coupled state. Anytime
+there is an amber icon, that should correspond with a notification in our
+internal notification system, which at present only includes the bell icon
+sound." Rule to encode: the amber marker and the notification are one state
+produced by one transition, so neither fires without the other; a setting may
+mute the sound but the coupling stays. Check whether the sound still rides the
+PTY BEL path (D33) while the amber marker now comes from hooks (D4's
+`blockedOn`), so hook-raised attention never reaches the sound.
+
+### BUG-266 Images cannot be pasted into the feedback form
+
+Status: feature · ENG-025 · product-feedback 448c6c1d 2026-10-02. "Paste images
+/ screenshots into this submit bug / idea form (and make that discoverable)".
+The capture flow attaches its own screenshot; the form accepts no pasted or
+dropped image. Accept paste and drop, show a thumbnail with a remove action,
+and hint it on the form the way ⌘↩ is hinted (BUG-084).
+
+### BUG-267 A new personal record should arrive as a moment
+
+Status: feature · ENG-035 · product-feedback 98b0625c 2026-10-02, unshaped. On
+seeing his own stats the operator wrote: "woah I just learned of these stats. I
+was bragging about 90m hands-off runs just one month ago, didn't know I hit
+5:59 already. New highscores or noteworthy stats events should show up in a
+celebratory, delightful toast (like Superhuman's 'You've sent 1000 emails! keep
+it up')." The leaderboard already derives longest hands-off, peak fleet size
+and agent-hours; what is missing is the moment: detect a new personal record
+when the derivation advances and show it once, in BUG-261's transient-state
+treatment, with a share action. Unshaped: which records, thresholds, and
+whether the moment stays local or publishes.
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

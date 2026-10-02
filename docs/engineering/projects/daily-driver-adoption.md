@@ -7751,3 +7751,18 @@ control applies to newly launched processes. The task-owned worktree, branch
 and development server are removed. This supersedes both the review's pending
 repair recommendation and the in-progress checkpoint above. Resume from
 master; BUG-248 is fixed, while BUG-227's physical acceptance remains open.
+
+### 2026-10-01 — Operator feedback: Codex turn truth again, a spinner that never lands, queued questions, and restart continuity (BUG-257, BUG-258, BUG-260, BUG-264)
+
+Six dogfood rows between 2026-09-25 and 2026-10-01, all with the operator at
+eight to fourteen live tabs. Three rows (`5630707d`, `f1013635`, `6d54b4ab`,
+screenshots) show a Codex tab wearing the green check while the pane reads
+"Working" or "Compacting context", the BUG-001 family again: BUG-257. One row
+(`2c0f6f65`, screenshot) shows the inverse, a finished Opus 5.5 tab still
+spinning: BUG-258. One row (`b23a3cbe`, screenshot) shows Codex's new
+asynchronous follow-up question ("Queued follow-up inputs · 1 question ·
+shift+← to answer") under a live working state, which the tab does not raise
+as needs-you: BUG-264. Two rows (`f60d6cda`, `55bb0776`) describe the update
+restart he wants to take and cannot, because relaunch does not bring back the
+attention marks he is holding: BUG-260, the first operator evidence for
+ENG-019. All four are roadmap backlog items.

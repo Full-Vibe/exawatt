@@ -786,3 +786,12 @@ payload fields, recursive rejection, GitHub identity enforcement, Demo
 boundary, and no-pre-consent-history policy are unchanged. The publish panel
 now identifies the failing layer and the automatic retry behavior in the
 existing design-system status treatment.
+
+### 2026-10-01 — Operator evidence: a record should be a moment (BUG-267)
+
+`98b0625c`, on reading his own derived stats for the first time: "I was
+bragging about 90m hands-off runs just one month ago, didn't know I hit 5:59
+already. New highscores or noteworthy stats events should show up in a
+celebratory, delightful toast (like Superhuman's 'You've sent 1000 emails! keep
+it up')." Queued as BUG-267, unshaped: which records, which thresholds, and
+whether the moment stays local or publishes.

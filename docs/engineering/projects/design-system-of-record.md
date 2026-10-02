@@ -68,3 +68,11 @@ Board project's V3.3 milestone log.
   - **Routing.** The landing floor runs it for any `src/`, `packages/ui-model/src/` or overlay change; its unit test rides `test:agent-delivery`. One capped exception: the one-click roadmap launch prompt in `workspace-client.tsx`, which is addressed to the Agent.
   - **Found alongside.** `theme:check` is red on master and nothing runs it (BUG-208), which is the failure this routing exists to prevent.
 - 2026-09-24, colour ratchet routed (landed; BUG-208): the Colour rung's check, `theme:check`, was red on master for five weeks with 18 raw colours over their caps, and none needed a bigger cap. The status light's `unreported` reading carried a second copy of `off`'s paint and now shares one `UNLIT_PAINT`; the hero capture stopped carrying harness brand colours, which its `source` lens now reads from the Agent Source declarations by id, so the capture's exception is deleted; and the Connect dialog's hand copy of OpenClaw's colour reads its declaration. The floor runs `theme:check` for any change that paints or decides paint, and CI runs it. [Narrative](theming-and-visual-identity.md#roadmap-milestone-log).
+
+### 2026-10-01 — Queued: one transient-state component (BUG-261)
+
+Operator feedback `d8a44d94` and `513ebfde` (2026-09-29): the ⌘⇧T hint toast,
+the feedback-sent toast and the update-available banner have three
+treatments, and the feedback form has no sending state. One transient-state
+rung (pending, then success or error) adopted by all three, with the form as
+the first adopter.

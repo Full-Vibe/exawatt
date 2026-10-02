@@ -1859,3 +1859,13 @@ Both are evidence for ENG-015, not authorization to equate folding with stopping
 
 Keep these separate: visual folding must not imply process suspension; a
 Project pause must not promise a provider checkpoint it cannot preserve.
+
+### 2026-10-01 — Operator evidence: mark unread, and a bell that stayed silent (BUG-259, BUG-265)
+
+`d054b1c5` (2026-09-28): "Add mark unread to complement cmd+j (maybe cmd+shift
+j?)" — the attention queue has a visit verb and no return verb. `23814904`
+(2026-10-01): "Sound bell isn't working when an agent needs me. Should be a
+super robust coupled state. Anytime there is an amber icon, that should
+correspond with a notification." The rule this evidence asks for is that the
+amber marker and the notification are one state produced by one transition.
+Both queued as roadmap backlog items BUG-259 and BUG-265.
