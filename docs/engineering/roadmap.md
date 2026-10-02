@@ -3288,6 +3288,12 @@ when the derivation advances and show it once, in BUG-261's transient-state
 treatment, with a share action. Unshaped: which records, thresholds, and
 whether the moment stays local or publishes.
 
+### BUG-268 Fleet's dotted stopped-Session outline is absent from the legend
+
+Status: paper-cut · ENG-004 · product-feedback 11909db1 2026-10-02.
+Explain the lifecycle outline separately from Idle and the last-turn mark.
+Evidence and acceptance: [Spatial project log](projects/spatial-operations-board.md#2026-10-02--explain-the-stopped-session-outline-bug-268).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

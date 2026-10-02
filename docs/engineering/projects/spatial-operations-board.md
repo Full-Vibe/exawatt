@@ -2917,3 +2917,22 @@ roadmap backlog items BUG-262 and BUG-263. Measure the transition before
 changing it, and check `invalidate` ownership and the `dpr`/resize path
 against the R3F authoring guide; `eval:spatial` should assert motion while any
 Agent is working.
+
+### 2026-10-02 — Explain the stopped-Session outline (BUG-268)
+
+**The dotted ring needs its own explanation.** Operator row
+`11909db1-0f7d-4130-b8af-7b1302919357`, dogfood 0.1.14, screenshot from
+`/fleet/spatial`: some green checks have a dotted outline and others do not;
+the header legend does not explain the difference. Classified as a small
+fix under ENG-004, with design-system lifecycle/turn-state evidence.
+
+The September 29 BUG-225 fix deliberately draws a stopped Session's outline
+around its last turn mark. `StoppedAgentOutlines` in
+`operations-board-agent-layer.tsx` draws that outline for
+`sessionState === 'stopped'`. It is not the Idle status glyph and must not be
+labeled Idle. The screenshot confirms both checked forms and a legend that
+only explains turn states. Queue a discoverable lifecycle explanation at the
+legend and Agent detail/hover, using the shared lifecycle owner's words and
+preserving the separate turn mark. Review the meaning at overview zoom and in
+Air/Night before changing the glyph. No diagnosis or visual fix is claimed by
+this triage. R3F edits require the authoring guide and spatial/R3F evidence.
