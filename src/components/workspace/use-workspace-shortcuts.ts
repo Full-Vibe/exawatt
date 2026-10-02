@@ -36,6 +36,7 @@
 import { useEffect } from 'react';
 import { shortcutRegistry } from '@/lib/shortcuts';
 import { eventToBinding } from '@/lib/shortcuts/format';
+import { isOpenModalShortcutTarget } from '@/lib/shortcuts/chord-engine';
 import { bindingsMatch, isChord } from '@/types/shortcuts';
 import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
@@ -151,17 +152,8 @@ function useWorkspaceShortcutLayer(
 ): void {
   useEffect(() => {
     if (!enabled) return;
-    const isModalTarget = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof Element &&
-        e.target.closest('[role="dialog"], [cmdk-root]')
-      ) {
-        return true;
-      }
-      return false;
-    };
     const onCaptureKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isModalTarget(e)) return;
+      if (e.defaultPrevented || isOpenModalShortcutTarget(e.target)) return;
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'capture' || !family.outranksAltitudes) continue;
         const action = matchFixedFamily(family, e);
@@ -206,7 +198,7 @@ function useWorkspaceShortcutLayer(
       if (e.defaultPrevented) return;
       // a modal surface (⌘K palette, help modal) owns the keyboard while
       // open — ⌘W there must not close a terminal tab behind it
-      if (isModalTarget(e)) return;
+      if (isOpenModalShortcutTarget(e.target)) return;
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'bubble') continue;
         const action = matchFixedFamily(family, e);

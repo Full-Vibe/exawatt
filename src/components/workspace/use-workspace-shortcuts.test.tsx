@@ -249,6 +249,42 @@ describe('workspace focus shortcuts', () => {
     expect(handlers.focusTerminal).not.toHaveBeenCalled();
     dialog.remove();
   });
+
+  it('releases altitude capture when a palette logically closes before its DOM exits', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('data-state', 'open');
+    const root = document.createElement('div');
+    root.setAttribute('cmdk-root', '');
+    const input = document.createElement('input');
+    input.setAttribute('cmdk-input', '');
+    root.append(input);
+    dialog.append(root);
+    document.body.append(dialog);
+    try {
+      fireEvent.keyDown(input, {
+        key: '2',
+        code: 'Digit2',
+        ctrlKey: true,
+        metaKey: true,
+      });
+      expect(handlers.activateCommandAltitude).not.toHaveBeenCalled();
+      dialog.setAttribute('data-state', 'closed');
+      fireEvent.keyDown(input, {
+        key: '2',
+        code: 'Digit2',
+        ctrlKey: true,
+        metaKey: true,
+      });
+      expect(handlers.activateCommandAltitude).toHaveBeenCalledOnce();
+      expect(handlers.activateCommandAltitude).toHaveBeenCalledWith('sessions');
+      expect(handlers.selectTabOrdinal).not.toHaveBeenCalled();
+    } finally {
+      dialog.remove();
+    }
+  });
 });
 
 describe('keyboard doctrine + arrangement (D20)', () => {

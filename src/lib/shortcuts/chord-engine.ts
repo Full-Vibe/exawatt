@@ -6,6 +6,16 @@ const CHORD_TIMEOUT_MS = 500;
 
 type ChordListener = (pending: KeyBinding | null) => void;
 
+/** Radix may retain a closed dialog for its exit animation. Its logical
+ * state, rather than that DOM lifetime, owns the keyboard boundary. */
+export function isOpenModalShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const modal = target.closest('[role="dialog"], [cmdk-root], [cmdk-input]');
+  if (!modal) return false;
+  const dialog = modal.closest('[role="dialog"]') ?? modal;
+  return dialog.getAttribute('data-state') !== 'closed';
+}
+
 /** Text fields own ordinary typing and Option-modified character entry. Global
  *  command modifiers remain available so an operator can leave search with
  *  Cmd+Shift+M or open Cmd+K/Cmd+/ without first moving focus. */
@@ -13,7 +23,9 @@ export function shouldIgnoreShortcutEvent(event: KeyboardEvent): boolean {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return false;
 
-  if (target.closest('[cmdk-input]')) return true;
+  if (target.closest('[cmdk-input]') && isOpenModalShortcutTarget(target)) {
+    return true;
+  }
 
   const tagName = target.tagName.toLowerCase();
   const editable =
@@ -111,7 +123,7 @@ class ChordEngine {
 
   private notifyListeners(): void {
     const pending = this.state.pending;
-    this.listeners.forEach((l) => l(pending));
+    this.listeners.forEach(l => l(pending));
   }
 }
 

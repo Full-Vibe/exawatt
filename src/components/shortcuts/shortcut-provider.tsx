@@ -263,8 +263,6 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const personalTenantActive =
     (tenancy?.activeWorkspace.kind ?? 'personal') === 'personal';
 
-  // Track when modals close to prevent Enter key from double-triggering
-  const modalClosedAtRef = useRef<number>(0);
   // Open dialogs that declared a primary action (BUG-049). While one is up,
   // `modal-open` is live and ⌘⏎ presses it; with none, the verb is inert.
   const dialogPrimaryActions = useDialogPrimaryActionDepth();
@@ -669,9 +667,8 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       // cheat-sheet must not navigate. Radix handles Escape itself.
       if (helpModalOpen) return;
 
-      // Prevent double-triggering when a modal just closed (e.g., Enter in command palette)
-      if (Date.now() - modalClosedAtRef.current < 100) return;
-
+      // Event ownership prevents double execution; closing a dialog must not
+      // suppress the operator's next independent command.
       chordEngine.processKeyEvent(event);
     };
 
@@ -679,21 +676,15 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [commandPaletteOpen, helpModalOpen]);
 
-  // Wrapper to track when command palette closes
+  // An accepted command holds the palette closed until Radix releases focus.
   const handleCommandPaletteChange = useCallback((open: boolean) => {
     if (open && paletteActionPending.current) return;
     setCommandPaletteOpen(open);
-    if (!open) {
-      modalClosedAtRef.current = Date.now();
-    }
   }, []);
 
-  // Wrapper to track when help modal closes
+  // Logical state releases keyboard ownership even during retained exit motion.
   const handleHelpModalChange = useCallback((open: boolean) => {
     setHelpModalOpen(open);
-    if (!open) {
-      modalClosedAtRef.current = Date.now();
-    }
   }, []);
 
   // Subscribe to chord state
