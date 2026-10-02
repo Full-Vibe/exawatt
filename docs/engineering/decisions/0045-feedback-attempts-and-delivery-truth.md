@@ -1,7 +1,7 @@
 # 0045 Feedback attempts preserve delivery truth
 
 Date: 2026-10-02
-Status: adopted; simplified implementation in progress; verification and delivery pending
+Status: adopted; verified, integrated, deployed and dogfood-installed 2026-10-02
 
 **A feedback success means the report and every requested attachment were
 saved; a retry belongs to the same immutable attempt.**
@@ -10,10 +10,10 @@ saved; a retry belongs to the same immutable attempt.**
 
 Operator requests ask for a shared sending-to-terminal language, consistent
 notices and discoverable image paste.
-The quick composer currently disappears during delivery. Its provider ignores
-`attachmentStored`, creates a new idempotency key for each send and can clear a
-newer draft when an older request finishes. The hosted route can accept text
-while image storage fails, and skips image recovery on duplicate requests.
+Before F6, quick capture disappeared during delivery, ignored `attachmentStored`,
+created a new idempotency key for each send and could clear a newer draft when
+an older request finished. The hosted route could accept text while image
+storage failed and skipped image recovery on duplicate requests.
 Adding images and polished confirmation without addressing those contracts
 would amplify misleading success and duplicate reports.
 
@@ -110,12 +110,13 @@ Server receipt/reconciliation semantics land before the new client retry path.
 The operator explicitly authorizes adoption with receipt animation removed.
 The implementation contains a renderer-lifetime draft/attempt store, typed
 immediate receipts, shared Dialog presence/overlay presentation and a notice
-placement owner. Server fingerprint reconciliation is implemented in `77e59227`; its
-database migration has been applied and read back, but hosted deployment is
-still required before adopting the retrying client against production. This
-records implemented behavior, not integration, installation or deployment.
-The gallery study is retired; verification and delivery of the simplified tree
-remain required. Shared review evidence lives in
+placement owner. Server fingerprint reconciliation is integrated in `902ed1b5`
+and its production deployment is READY; the migration has been applied/read
+back. The simplified UI is verified and integrated in
+`9d6b0d46da562d59de52f5cdff685d6ecaec3ae3`; the normal landing floor and declared
+surface gates passed. The gallery study is retired. Combined UI deployment is READY;
+actual dogfood installation is confirmed by update-state read-back of the exact
+client SHA, not inferred from a queued worker. Shared review evidence lives in
 [ENG-036's project doc](../projects/design-system-of-record.md#2026-10-02--app-wide-review-shapes-paired-flows-and-shared-foundations).
 ENG-025 F6 owns reporting execution and acceptance through the roadmap's
 project reference.

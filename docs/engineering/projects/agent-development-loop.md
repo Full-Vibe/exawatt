@@ -301,6 +301,21 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-10-02, BUG-271: **server freshness includes generated artifact custody.**
+  [Incident 0031](../incidents/0031-community-build-poisons-live-distribution-icon.md)
+  records community verification replacing the mutable icon file beneath a
+  still-official dev server. Identity/sourceHead remained acceptable while its
+  sealed icon digest correctly refused the new bytes. The actual-source and
+  artwork control reproduced 200 followed by digest refusal; the original
+  server exception was lost when Next cleaned the root landing log. Its
+  cleanup explicitly preserves `.next/dev`, so missing logs do not establish
+  deleted dev caches. Stopping only the proven-owned server before the final
+  candidate let landing start it after community verification; all required
+  gates passed and UI SHA `9d6b0d46da562d59de52f5cdff685d6ecaec3ae3` integrated.
+  BUG-271 extends BUG-246 with immutable artifact generations, a generated
+  epoch/owned restore and restart boundary, and logs outside Next's build
+  directory. The verified restart remains a workaround, not the durable fix.
+
 - 2026-10-02, BUG-230: **successful native evals now release their owned helpers.**
   Incident [0030](../incidents/0030-electron-eval-network-helpers-retain-pipes.md)
   recurred during feedback verification: two orphaned NetworkService helpers
@@ -316,7 +331,8 @@ tests remain the recovery floor during the rollout.
   harness tests passed, including a real orphan holding an output pipe and a
   foreign detached process that remains usable. The native feedback/context
   eval then passed across two fresh launches and exited 0 automatically.
-  Scoped lint passed; integration is pending. The helper owes
+  Scoped lint and final delivery gates passed; integrated in
+  `9d6b0d46da562d59de52f5cdff685d6ecaec3ae3`. The helper owes
   `eval:electron:project-agent` through the shared-harness surface gate.
 
 - 2026-09-28, BUG-246: **the landing owns the dev server its gates read.**

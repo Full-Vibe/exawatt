@@ -418,8 +418,8 @@ restart persistence and automatic retry are not implemented.
 The hosted V1 route fingerprints immutable report fields and image bytes;
 duplicate responses reconcile stored evidence, changed same-key content is
 rejected, and concurrent image recovery shares an owned private object path.
-The fingerprint migration has been applied/read back; the implemented hosted
-route still requires deployment before production client adoption. Shared DOM
+The fingerprint migration has been applied/read back and server reconciliation
+is integrated in `902ed1b5` with its production deployment READY. Shared DOM
 operation/overlay components implement the operator-authorized simplification:
 receipt states render immediately, with only a reduced-motion-aware pending
 spinner. Shared `DialogContent` owns Radix-observed named CSS presence (240ms
@@ -427,8 +427,8 @@ enter/160ms exit) with a typed `motion: auto | none` override; capture uses `non
 to remove the overlay immediately. Cmd+K adopts comfortable shared presentation,
 keyboard footer and selected enabled Return cue while cmdk retains selection.
 State snapshots, receipt fades/background resizing and the operation-motion
-owner are removed. The gallery study is retired; verification and delivery
-remain pending. One notice lane owns placement for update, hint and chord
+owner are removed. The gallery study is retired; the client is verified and
+integrated in `9d6b0d46`. Combined UI deployment is READY and exact-SHA dogfood installation is confirmed. One notice lane owns placement for update, hint and chord
 notices while callers retain actions and lifetime; feedback receipts remain
 near the composer. These presentation owners do not replace Agent status or
 attention scheduling.

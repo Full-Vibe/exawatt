@@ -214,8 +214,8 @@ evidenced accomplishment only after reliability and restart trust are establishe
 palette and Help invoke one composer. Draft/evidence survive dismissal within
 the running app, immutable attempts preserve delivery truth, and a compact
 receipt returns work focus. The operator explicitly instructs proceeding with
-simplified states; verification, integration and installed/deployed evidence
-remain separate requirements, not another visual approval gate.
+simplified states. The paired increment is verified and integrated in
+`9d6b0d46`; combined UI deployment is READY and exact-SHA dogfood installation is confirmed. The broader G2 system remains open.
 
 The app-wide principles are concrete: show terse owned-key hints beside their
 controls; never promise activation on disabled controls; use one predictable
@@ -242,3 +242,18 @@ presentation boundary, not a new Agent attention engine. Retire the gallery
 study as this authorized direction moves into shared production components.
 ENG-025 F6 and decision 0045 own delivery acceptance; this log records the
 supersession and evidence rather than creating another roadmap.
+
+### 2026-10-02 — Paired G2 increment verified and integrated
+
+**The paired increment is delivered.** `9d6b0d46` integrates
+comfortable Cmd+K/shared Dialog presentation, local keyboard cues, one feedback
+composer, immediate truthful receipts and shared notice placement after the
+normal floor and declared surface gates passed. The gallery study is retired.
+This closes only the paired overlay/reporting increment; ENG-036's full G2
+component contracts, IA principles and recurring audit work remain open.
+
+The server reconciliation production deployment is READY. The combined UI
+deployment is READY and exact-SHA dogfood installation is confirmed. F6's delivery
+log owns exact artifact evidence; do not infer installation from a queued or
+building worker. No broader whole-app quality or public-release claim follows
+from these verified flows.

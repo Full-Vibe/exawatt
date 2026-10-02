@@ -860,11 +860,11 @@ Status: active-build — F1, F2, and F2.1 landed 2026-07-27 and closed the opera
 
 Direction (operator framing): submission must be cheap enough that the operator files everything — votes, bugs, ideas, huge feature kernels — the moment they occur, and the queue must drain somewhere canonical instead of accumulating in a table nobody reads. Reinflation is the deliberate second step where a drained row becomes canonical repo state at the right altitude: evidence on active work, an incident candidate, a gold-corpus candidate, or a new deliberately-unshaped roadmap kernel awaiting its own design pass. Submission never implies verbatim execution — insertion into the backlog is automatic, execution never is.
 
-Builds on ENG-021 E1's authenticated feedback intake, which remains the single write path; the tab label vote stream and Help modal are kept, not forked.
+Builds on ENG-021 E1's authenticated feedback intake, which remains the single write path. F6 supersedes the separate quick-capture and Help forms with one composer; the tab label vote stream remains.
 
 Scope:
 
-- F1 quick capture: a global shortcut and ⌘K verbs open a small overlay capture bar over the existing intake — one text field, kind toggles, Enter submits, Esc dismisses, a pre-captured window screenshot attachable with one key; the Help modal remains the long-form path; no new backend surface
+- F1 original quick capture (composer split superseded by F6): a global shortcut and ⌘K verbs open a small overlay capture bar over the existing intake — one text field, kind toggles, Enter submits, Esc dismisses, a pre-captured window screenshot attachable with one key; the Help modal remains the long-form path; no new backend surface
 - F2 reinflation: `triaged_at`/`triage_ref` triage state on `product_feedback` (service-role writes only), a drain script (`pnpm feedback:triage`), and a `/triage-feedback` repo command whose protocol classifies every untriaged row into canonical repo state and marks it with the integrating commit
 - classification targets: new unshaped ENG kernel, evidence on an owning ENG item's project doc, incident candidate per the incident contract, context-label gold-corpus candidate
 - operator-only authority for now: the triage agent auto-writes canonical docs and pushes; big kernels always land deliberately unshaped pending a design pass
@@ -872,7 +872,7 @@ Scope:
 - F3 (SHAPED 2026-08-06, operator; scheduled automation remains out of scope and deliberately unshaped): two lanes over one intake. The **operator lane** is unchanged — every ⌘⇧F row the operator files continues to flow into the triage-to-canon queue exactly as F2 built it. A **suggestions lane** holds every non-operator row: read and considered, never auto-promoted to canon. Lane membership is derived server-side from the submitting account, never a client-supplied field, so a user row cannot forge its way into the canon queue; triage columns stay service-role-only as F2 established. The submitter's experience is deliberately unchanged and deliberately minimal — the operator's position (2026-08-06) is that no reply or acknowledgement loop is owed, **provided pressing Enter shows a clear success**, which the existing `sent` confirmation already does once the capture bar can open at all
 - F3.1 (DEFECT, found 2026-08-06): the untriaged-count line F2.1 added reads under RLS, so it counts only the _signed-in user's own_ rows — the operator's inbox pressure will silently under-report the moment anyone else files. The same line also renders for every signed-in user, showing a non-operator an operator-only triage concept they cannot act on, which violates the production-voice rule. Scope the count to the operator lane and render it only for operators
 - F4 (added 2026-08-03 by ENG-017 S13.2): the triage protocol gains a second write target — a small fix or incident candidate writes a short **backlog entry into the owning repo's roadmap file** (title, owning item, provenance) in addition to its diagnostic narrative in the project doc. The entry is the machine-readable pointer that makes a defect visible to the roadmap lens; the project-doc note stays the reasoning. Today's triaged rows are prose only and therefore invisible to every UI. Depends on the convention/parser gaining a `backlog` status distinct from `later` — see ENG-017 S13.2
-- F6 (shaped 2026-10-02): app-wide review informs a paired Cmd+K/feedback gallery study, then shared overlay/receipt foundations with ENG-036. Reporting gains truthful partial-image receipts, immutable retry attempts, running-session draft retention and discoverable single-image paste/drop/pick. Compact sending/result receipt returns work focus; restart persistence and moving it into a shared notice area remain future work.
+- F6 (integrated 2026-10-02): app-wide review informed paired Cmd+K/feedback foundations with ENG-036. One composer provides truthful report/image receipts, immutable bounded retries, running-session drafts and single-image paste/drop/pick. Compact immediate receipts return work focus; shared notice presentation retains domain-specific lifetimes. Restart persistence and a shared notice destination remain future work.
 
 Exit criteria:
 
@@ -880,7 +880,7 @@ Exit criteria:
 - `/triage-feedback` drains every untriaged operator row into canonical repo state exactly once, and the mark survives re-runs
 - the tab label vote stream accretes as evidence against ENG-021 rather than sitting unread in the table
 - the triage step has authority to enqueue work, never to execute it
-- F6: one report per immutable attempt, truthful requested-image state, no stale completion altering newer drafts, accessible recoverable progress and image input; paired overlay review precedes visual adoption.
+- F6: one report per immutable attempt, truthful requested-image state and independent retry permission/outcome certainty, no stale completion altering newer drafts, accessible recoverable progress and image input; accepted paired foundations preserve keyboard/focus ownership.
 
 Milestones:
 
@@ -891,7 +891,7 @@ Milestones:
 - F1.2 Screenshot-chip label (landed 2026-08-03): the quick-capture screenshot toggle gains a visible `Screenshot` label beside its thumbnail and ⌘S hint, matching the kind-chip grammar while retaining its accessible name — feedback row `486a87e1`.
 - F5 Anonymized diagnostics (2026-08-14, with ENG-030 OS1.6): a bug report can carry machine state instead of a user's recollection of it. Bug in ⌘⇧F gains an `Anonymized diagnostics` chip on ⌘D beside F1.2's screenshot chip, with a review affordance that shows the exact JSON before it is sent. The bundle is build/system facts plus bounded tails of the `updater`, `auth`, and `summarizer` logs; never transcript, prompt, Project, or file content. Because ⌘⇧F is a no-op signed out and a broken install is disproportionately signed out, Settings → Privacy → Diagnostics saves the same report to a file and reveals it in Finder with no account and no network. Redaction moves to write time (see F5.1) so the logs on disk are safe before anything reads them.
 - F5.1 Shared log redaction (2026-08-14, architecture): `auth-diagnostics.ts` sanitizes bearer tokens, JWTs, and long opaque values; `diagnostics-log.ts` states in its own header that it is a sibling of that module but only clips to 400 chars, so `summarizer.jsonl` and `updater.jsonl` have always been written unredacted. Extract the sanitizer into `diagnostics-redaction.ts`, have both writers use it, and add home-directory anonymization so a path reads `~/...`. This is a correctness fix independent of F5: it is why F5 can attach a log tail without a bespoke scrubbing pass at send time.
-- F6 Reliable reporting (2026-10-02; accepted simplified direction adopted; verification and delivery pending): F6.1 paired study, F6.2 shared foundations/server integrity, F6.3 single composer/images, F6.4 flow/notice adoption, F6.5 delivery evidence; decision 0045, BUG-261/266/269/270.
+- F6 Reliable reporting (integrated, deployed and dogfood-installed 2026-10-02): one composer, same-attempt recovery, truthful receipts, shared overlays/notices; decision 0045, BUG-261/266/269/270; exact artifact evidence in the project log.
 
 Non-goal, stated on purpose: **no anonymous network intake.** The obvious
 completion of F5 is a signed-out send endpoint, and it is deliberately not
@@ -1058,7 +1058,7 @@ Scope:
 - a design review gate on UI changes: first a checklist an agent must satisfy with screenshot evidence before claiming a surface is done, later ENG-028 T3's Designer Type as the automated reviewer the operator described wanting
 - screenshot-and-iterate as a standing verification requirement, not an optional nicety — compiling is not looking right
 - a recurring IA audit cadence; the 2026-07 nav/IA audit found real P0s and that practice should not have been a one-off
-- G2 paired-flow increment (shaped 2026-10-02): app-wide source/demo review informs Cmd+K and feedback together, shared overlay/focus/shortcut and receipt/notice foundations next; BUG-270/261 with ENG-025 F6. Evidence, ownership and acceptance live in the design-system project's dated review.
+- G2 paired-flow increment (integrated 2026-10-02): app-wide source/demo review informed shared Cmd+K/feedback overlay, focus, shortcut and receipt/notice foundations; BUG-270/261 with ENG-025 F6. Evidence and acceptance live in the design-system project's dated review; broader G2 remains open.
 - boundary — **descriptive first, prescriptive second**: the system records what is accepted, and a change either adheres to it or deliberately improves it and updates it. Deliberate improvement is the point; silent divergence is the failure
 - boundary — this item does not redesign the product. ENG-032 owns the new visual identity and theming; this item owns the substrate both depend on
 
@@ -1075,7 +1075,7 @@ Milestones:
 - G0 Kernel (landed 2026-08-02): `docs/engineering/design-system.md` — a 12-rung named type scale over the D39 chrome roles (drift re-measured at 23 pixel sizes, off-scale usages registered), spacing steps and density tiers, the four scoped color palettes with the channel-ownership rule, D40 status iconography cited as canon, the amendment rule, and the `/hud-gallery` merge/retire decision list for G1. Docs only; no component changed.
 - G1 Gallery reconciliation (landed 2026-08-02): G0's decision list executed — quick-capture, context-label, and keyswitch/tactile studies retired (+301 lines of dead `.tactile-key` CSS out of `globals.css`), `/hud-gallery/agent-field` and `/hud-gallery/agent-sources` deleted, kept sections and labs indexed; `AGENTS.md` workbench rule amended to name the kernel as the source of design truth.
 - G2 Full system: component contracts, IA principles extracted from the existing decision records, and the recurring audit cadence.
-- G2 paired overlays/operations (2026-10-02; accepted direction adopted, delivery pending): app-wide review, paired gallery study, accepted shared primitives, incremental adoption with ENG-025 F6.
+- G2 paired overlays/operations (integrated, deployed and dogfood-installed 2026-10-02): accepted shared primitives adopted with ENG-025 F6; the study is retired; full G2 remains open.
 - G3 Review gate: the checklist-with-visual-evidence gate, later automated as ENG-028 T3's Designer Type.
 - G3 partial — demo-path polish (landed 2026-08-02; demo-arc packet P8): the kernel applied, with before/after screenshot evidence, to exactly the surfaces the demo walk shows — app chrome (title bar, account menu, Workspace switcher), the Agent-altitude chrome around the terminal (⌘T opener, launch controls, restore panel, terminal overlays), the Team overlay (tiles, roadmap rail + cards), the Fleet altitude's DOM layer, the ⌘K palette, and Settings' first screen. All bracketed px font sizes on those surfaces migrated to named rungs; 17px→`text-base`, 8/9px words→`text-chrome-micro`, glyph/ordinal 9px→`text-chrome-nano`, the roadmap card's fractional 11.5px snapped to label/meta. Deferred with owners and one flagged kernel contradiction (deliberate Exo 2 tile copy) recorded in the project doc's milestone log.
 - G3 partial — screen-copy guard (landed 2026-09-24; BUG-207): the Voice rung "no em dashes in operator copy" is enforced by `pnpm copy:check` on the landing floor; 65 strings rewritten first. Narrative in the project doc's milestone log.
@@ -2956,7 +2956,7 @@ watch unwatched mid-discovery opens nothing.
 
 ### BUG-230 Electron eval helpers retain output pipes after successful checks
 
-Status: bug · ENG-022 · observed 2026-09-28 during BUG-227 verification.
+Status: done · ENG-022 · observed 2026-09-28 during BUG-227 verification; resolved 2026-10-02.
 
 After both test apps exit, orphaned NetworkService helpers retain the Node
 harness stdout/stderr pipes, delaying a successful eval's process exit. Scope:
@@ -2965,7 +2965,7 @@ apps or sibling evals. Exit: repeated fresh-app evals exit with no owned helper
 or output pipe left behind, including bounded forced shutdown; a foreign app
 control survives. [Incident 0030](incidents/0030-electron-eval-network-helpers-retain-pipes.md).
 
-2026-10-02: verified shared process-group teardown; integration pending. [ENG-022 findings](projects/agent-development-loop.md#findings-log).
+2026-10-02: verified and integrated in `9d6b0d46`; 24 contract checks and actual native teardown prove owned-helper cleanup and foreign-process survival. The public main handle is retained while live. [ENG-022 findings](projects/agent-development-loop.md#findings-log).
 
 ### BUG-237 Pausing an Agent showed it as failed
 
@@ -3284,7 +3284,7 @@ planned; this is its first operator evidence.
 
 ### BUG-261 Toasts and the feedback form's sending state use three treatments
 
-Status: paper-cut · ENG-036 · product-feedback d8a44d94 2026-09-29, 513ebfde
+Status: done · ENG-036 · product-feedback d8a44d94 2026-09-29, 513ebfde
 2026-09-29 (evidence for ENG-025 too). The ⌘⇧T hint toast, the feedback-sent toast
 and the update-available banner each have their own treatment, and the
 feedback panel jumps from Enter straight to "sent" with no sending state.
@@ -3296,6 +3296,8 @@ palette/reporting study, shared presentation, reporting first, then hint/update
 adoption with domain-specific lifetimes. The Help form already has a spinner;
 the invisible quick-send path is the pending-state defect. Acceptance lives in
 the design-system project's 2026-10-02 review.
+
+Resolved 2026-10-02: verified and integrated in `9d6b0d46`; deployed UI and exact-SHA dogfood installation confirmed. Shared notices retain distinct lifetimes; reporting uses immediate compact receipts and returns work focus. The operator superseded elaborate state motion with pending-only animation. [F6 evidence](projects/feedback-reinflation.md#f6--reliable-expressive-feedback-reporting-delivered-2026-10-02).
 
 ### BUG-262 The Fleet to Agent transition stutters
 
@@ -3348,13 +3350,15 @@ PTY BEL path (D33) while the amber marker now comes from hooks (D4's
 
 ### BUG-266 Images cannot be pasted into the feedback form
 
-Status: feature · ENG-025 · product-feedback 448c6c1d 2026-10-02. "Paste images
+Status: done · ENG-025 · product-feedback 448c6c1d 2026-10-02. "Paste images
 / screenshots into this submit bug / idea form (and make that discoverable)".
 The capture flow attaches its own screenshot; the form accepts no pasted or
 dropped image. Accept paste and drop, show a thumbnail with a remove action,
 and hint it on the form the way ⌘↩ is hinted (BUG-084).
 Shaped in ENG-025 F6: one validated PNG/JPEG/WebP image, visible preview, one image picker, paste/drop and an accessible remove control,
 text paste untouched and failed replacement preserving the valid draft.
+
+Resolved 2026-10-02: verified and integrated in `9d6b0d46`; deployed UI and exact-SHA dogfood installation confirmed. Paste/drop/pick share one image validator and preview/remove ownership; text paste and a valid existing draft survive rejected input. [F6 evidence](projects/feedback-reinflation.md#f6--reliable-expressive-feedback-reporting-delivered-2026-10-02).
 
 ### BUG-267 A new personal record should arrive as a moment
 
@@ -3377,7 +3381,7 @@ Evidence and acceptance: [Spatial project log](projects/spatial-operations-board
 
 ### BUG-270 Consider spacious shared Cmd+K and feedback overlay language
 
-Status: feature · ENG-036 · operator suggestion 2026-10-02 (Claude and Linear screenshots).
+Status: done · ENG-036 · operator suggestion 2026-10-02 (Claude and Linear screenshots).
 Explore shared overlay components and an accurate Enter hint on the selected
 enabled palette row; preserve each surface's keyboard contract. Related ENG-025 F6.
 Operator scope confirmed: app-wide review informs both flows together, then
@@ -3385,14 +3389,32 @@ shared foundations; comfortable overlay density and enabled-row activation cues
 are adopted after the paired gallery review and explicit operator direction to proceed with simplified submission states. Execution: ENG-025 F6.1 and
 ENG-036's dated review; preserve cmdk/Radix ownership and registered shortcuts.
 
+Resolved 2026-10-02: verified and integrated in `9d6b0d46`; deployed UI and exact-SHA dogfood installation confirmed. Cmd+K and feedback share comfortable Dialog foundations; selected enabled palette rows expose Return, and cmdk/Radix retain registered keyboard/focus ownership. [F6 evidence](projects/feedback-reinflation.md#f6--reliable-expressive-feedback-reporting-delivered-2026-10-02).
+
 ### BUG-269 Feedback retry and receipt handling can misrepresent delivery
 
-Status: bug · ENG-025 · source review 2026-10-02.
+Status: done · ENG-025 · source review 2026-10-02.
 New retry UUIDs defeat attempt deduplication, attachment receipts are ignored,
 and late completions can clear newer drafts. Duplicate server requests cannot
 recover missing images. No particular production loss is asserted. F6.2–F6.4
 own immutable attempts, honest complete/partial receipts, concurrent recovery
 and generation-safe drafts; decision 0045 records the contract.
+
+Resolved 2026-10-02: verified and integrated in `9d6b0d46`; deployed UI and exact-SHA dogfood installation confirmed. Frozen same-key attempts, exact-hash server reconciliation and typed receipts separate saved feedback, image uncertainty and retry permission. Earlier transport uncertainty survives a later refused retry. Server `902ed1b5` is deployed. [F6 evidence](projects/feedback-reinflation.md#f6--reliable-expressive-feedback-reporting-delivered-2026-10-02).
+
+### BUG-271 Community builds overwrite live distribution-icon custody
+
+Status: bug · ENG-022 · observed 2026-10-02 during F6 delivery; successor to BUG-246.
+
+Community preparation/build rewrites generated distribution assets while an
+owned official dev server retains its launch digest. The icon route then returns
+500 despite healthy identity at the same HEAD. Scope: immutable generated-asset
+custody, or restore/restart the owned server on an artifact epoch change; keep
+delivery logs outside Next's build directory. Exit: the official server returns
+200 for its icon after community preparation/build or an owned restart, digest
+truth is preserved, and foreign servers remain untouched.
+[Incident 0031](incidents/0031-community-build-poisons-live-distribution-icon.md);
+[ENG-022 findings](projects/agent-development-loop.md#findings-log).
 
 ## Amendment chain
 
@@ -3400,8 +3422,8 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ENG-025 F6 separate quick/full composers and first gallery motion candidate | Operator review, 2026-10-02 | One shared composer replaces both forms. Keyboard hints sit beside owned actions; redundant image controls are removed. Elaborate state morphing is rejected: receipts update immediately with a pending-only spinner; real Radix presence owns panel entry/exit and reduced motion. The operator authorized production adoption; verification and delivery remain pending; execution detail stays in F6 and decision 0045. |
-| ENG-025 F1 invisible optimistic send dismissal; BUG-261 adoption ordering | ENG-025 F6 / ENG-036 G2 paired-flow plan, operator 2026-10-02 | App-wide review informs Cmd+K/feedback together; paired gallery study precedes shared visual adoption. Compact sending/result receipt returns focus, retries retain immutable identity, and success confirms requested evidence. Reporting adopts first, then hint/update presentation with distinct lifetimes. Running-session drafts only; restart persistence and shared notice destination deferred. Implementation remains pending. |
+| ENG-025 F6 separate quick/full composers and first gallery motion candidate | Operator review, 2026-10-02 | One shared composer replaces both forms. Keyboard hints sit beside owned actions; redundant image controls are removed. Elaborate state morphing is rejected: receipts update immediately with a pending-only spinner; real Radix presence owns panel entry/exit and reduced motion. The operator authorized production adoption; verified source is integrated and the combined UI deployed and exact-SHA dogfood installed; execution detail stays in F6 and decision 0045. |
+| ENG-025 F1 invisible optimistic send dismissal; BUG-261 adoption ordering | ENG-025 F6 / ENG-036 G2 paired-flow plan, operator 2026-10-02 | App-wide review informs Cmd+K/feedback together; paired gallery study precedes shared visual adoption. Compact sending/result receipt returns focus, retries retain immutable identity, and success confirms requested evidence. Reporting adopts first, then hint/update presentation with distinct lifetimes. Running-session drafts only; restart persistence and shared notice destination deferred. The accepted simplified implementation is verified, integrated, deployed and dogfood-installed. |
 | ENG-008 E12's recommendation "C's first screen over A's roster with B as the drill" and its fixed five-entry roster | ENG-008 E15, operator, 2026-09-29 | The operator picked one card per vendor account instead, with the attribution drill on an Analytics tab. E12's honesty rules still bind (a failed read keeps its true as-of and never reads better than a success), but the roster is the accounts the operator actually uses, not a fixed list that includes lanes nobody reads. The gallery study retired with its subject. |
 | 0.1.13 storage recovery: a corrupt JSON read “installs a durable write interlock”, and “quarantine cannot look like fresh-install absence” | BUG-247, 2026-09-28 | Still holds for operator choices (settings, workspace, connected sources, projection plan, closed Sessions). State Exawatt rebuilds (Session resume links, Claude plan history, the usage scan) sets damaged bytes aside the same way and starts fresh with no interlock; an unreadable file there blocks writes in memory only and is read again. |
 | ENG-044 S1 “It fails open: a guard that cannot answer lets the command run” | BUG-243, 2026-09-28 | A guard the operator turned on refuses a kill it could not check and records `safety.undecided`; only a target the shell decides at run time runs unchecked, and Claude Code's own hook timeout still proceeds. |

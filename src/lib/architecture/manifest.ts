@@ -708,7 +708,7 @@ export const architectureManifest = {
           id: 'feedback-intake',
           label: 'Product Feedback Intake',
           summary:
-            'Distribution-gated authenticated reports and label votes/corrections. Keyboard, palette and Help share one in-memory composer/attempt owner: validated image input, frozen same-key retries, independent retry permission/outcome certainty and truthful report/image receipts. Server fingerprint reconciliation is implemented pending hosted deployment. Shared Dialog owns real presence; receipts change immediately with pending-only motion. Cmd+K shares comfortable overlays and visible key cues; adoption is authorized with verification/delivery pending. Intake absence stays inert; operator triage promotes evidence into canon.',
+            'Distribution-gated authenticated reports and label votes/corrections. Keyboard, palette and Help share one in-memory composer/attempt owner: validated image input, frozen same-key retries, independent retry permission/outcome certainty and truthful report/image receipts. The hosted route reconciles immutable report/image fingerprints. Shared Dialog owns real presence; receipts change immediately with pending-only motion. Cmd+K shares comfortable overlays and visible key cues. Intake absence stays inert; operator triage promotes evidence into canon.',
           layer: 'coordination',
           status: 'implemented',
           x: 365,
