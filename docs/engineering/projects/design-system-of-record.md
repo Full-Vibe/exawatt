@@ -76,3 +76,128 @@ the feedback-sent toast and the update-available banner have three
 treatments, and the feedback form has no sending state. One transient-state
 rung (pending, then success or error) adopted by all three, with the form as
 the first adopter.
+
+### 2026-10-02 — App-wide review shapes paired flows and shared foundations
+
+**Repair continuity and delivery truth before broad restyling.** The operator
+confirmed app-wide review first, Cmd+K and feedback shaped together, then shared
+foundations. Initial feedback delivery uses a compact sending/result receipt
+with focus returned; a shared notice area remains a potential next destination.
+Drafts survive dismissal/failure while running. Restart persistence is deferred.
+No discovery question remains. BUG-270 records the supplied Claude/Linear
+palette suggestion; BUG-261 owns operation/notice presentation.
+
+#### Coverage and evidence confidence
+
+Two independent assessments reviewed current source/canon at `981378ed328d`:
+one assessed usability and personas, the other ran deterministic pattern scans
+and inventoried interaction owners. Coverage includes app navigation and chrome,
+Agent/Team/Fleet composition owners, palette/shortcuts, feedback, source setup,
+settings, Usage and update/close/recovery notices. This is an app-wide source
+review, not a claim of exhaustive native usability testing.
+
+A separate browser tab inspected the installed renderer's Air-theme Fleet demo,
+Project drill-in, Cmd+K and source settings. Fleet retains surrounding Projects
+when drilling in; status filters name their global counts. The palette visibly
+has a compact list, shortcut hints and selection, but no selected-row Enter cue
+or keyboard footer. Settings groups sources and shows explicit unknown status
+when the Electron bridge is unavailable. The browser's `/workspace` fallback
+requires the desktop bridge, so terminal/Team runtime interaction was not
+certified. The installed renderer is not this checkout's HEAD. Native focus,
+feedback faults, IME, large-type layouts and theme contrast remain execution
+checks; no feedback was sent and no source/account settings were changed.
+
+`impeccable 4.1.0 detect --no-config --json` returned zero supported findings
+across 139 TSX files (75 production files) in the reviewed component areas.
+That static result does not certify contrast, focus, motion or delivery. A
+separate lexical inventory found five independently positioned notices, bespoke
+quick-feedback/close shells and four feedback spinners without reduced-motion
+utilities. These are investigation evidence, not blanket anti-pattern counts.
+
+#### Provisional heuristic assessment
+
+Scores are source-based prioritization on a 0–4 scale (higher is stronger),
+not a measured whole-app rating. Independent structural review corroborated
+the lifecycle and overlay findings; limited runtime observation corroborated
+the palette presentation, not every score.
+
+| Heuristic | Score | Evidence / next check |
+| --- | --- | --- |
+| Visibility of status | 2 | Quick sending disappears; receipt/live announcement missing. |
+| Familiar language | 3 | Shared Agent/Team/Fleet and lifecycle vocabulary; test first-time comprehension. |
+| Control and freedom | 3 | Escape/history/recovery exist; general feedback blocks dismissal while pending. |
+| Consistency | 2 | Shared nav/theme/status owners; independent notices and feedback models. |
+| Error prevention | 2 | Feedback double activation/retry/draft races lack attempt ownership. |
+| Recognition over recall | 3 | Search/recents/disabled reasons; selected-row Enter cue missing. |
+| Efficiency | 3 | Keyboard grammar and scope-aware resume; capture awaits diagnostics before opening. |
+| Minimalism | 3 | Focused Usage/settings/inspector structure; notice overlap requires runtime check. |
+| Error recovery | 2 | Good connection/recovery boundaries; feedback discards attachment receipt truth. |
+| Help and guidance | 3 | Searchable shortcuts and readiness explanations; palette empty state offers no next step. |
+
+**26/40 provisional source score.** Cognitive load is concentrated at interrupted
+work: draft evidence is replaced on reopening and late results can mutate newer
+input. Chunking and progressive disclosure have good existing owners; visual
+hierarchy and compact-width learnability require rendered review. For a first-time
+user, the gaps are action discoverability and trustworthy progress. For a power
+operator, the gaps are modal interruption, stale completion and losing input.
+Neither persona benefits from a new navigation hierarchy or a cosmetic rewrite.
+
+#### Ranked work and ownership
+
+| Priority | Finding | Execution owner / boundary |
+| --- | --- | --- |
+| P1 | New retry key, ignored image receipt, late completion clearing newer drafts | ENG-025 / BUG-269; immutable attempt, typed receipt, server reconciliation. Reuse `useLatestRequest` for capture/reads, not cancellation of an accepted write. |
+| P1 | Quick dialog catches Enter on kind/evidence/Review controls and lacks IME guard | ENG-025 F6; composer owns send, focused controls retain native activation. |
+| P2 | Cmd+K/full/quick feedback have split spacing, focus and shortcut treatments | ENG-036 / BUG-270 with ENG-016 palette behavior; retain cmdk and Radix owners, extract accepted overlay presentation. |
+| P2 | At least five notices choose their own position/lifetime/announcement | ENG-036 / BUG-261; shared receipt/notice face and collision policy, domain-specific actions and lifetime. No new Agent attention model. |
+| P2 | Feedback progress motion lacks a consistent reduced-motion alternative | BUG-261 shared progress primitive; persistent text remains meaningful without motion. |
+| Follow-up | Compact altitude labels and palette empty-state guidance need first-time review | ENG-036 with ENG-016; validate in paired study before adding explanatory chrome. |
+| Existing lane | Fleet stopped outlines, restart trust and later celebrations | BUG-268 / ENG-004, BUG-260 / ENG-016, BUG-267 / ENG-035 respectively; keep their separate acceptance and sequencing. |
+
+#### Research and decisions transferred
+
+| Primary example | Useful behavior | Exawatt application |
+| --- | --- | --- |
+| [Raycast toast API](https://developers.raycast.com/api-reference/feedback/toast) and [2022 action-bar redesign](https://www.raycast.com/blog/a-fresh-look-and-feel) | One operation can update from animated to success/failure; contextual actions accompany feedback. | A stable receipt preserves operation identity and recovery actions. The historical redesign is inspiration, not a claim about every current Raycast surface. |
+| [Linear issue creation](https://linear.app/docs/creating-issues) | Temporary local drafts survive navigation; explicitly saved drafts have a separate policy. | Preserve running-session drafts now; do not imply restart durability. |
+| [Atlassian flags](https://atlassian.design/components/flag) | Actionable error/warning notices remain available. | Success/hints may expire; failure/partial delivery and update actions remain recoverable. |
+| [Apple feedback guidance](https://developer.apple.com/design/human-interface-guidelines/feedback) | Feedback belongs near its cause; interruption follows consequence. | Collapse near the composer first, restore work focus, evaluate shared placement through real overlap cases. |
+| [W3C status messages](https://www.w3.org/WAI/WCAG21/Understanding/status-messages) | Status can be announced without moving focus. | Routine pending/success use accessible status announcements; recovery does not steal focus. |
+| [Superhuman shortcuts](https://help.superhuman.com/hc/en-us/articles/46005789591693-Speed-Up-With-Shortcuts) | Cmd+K teaches shortcuts alongside actions. | Preserve manifest-derived chords and add a stable activation hint for the selected enabled row. |
+
+The supplied Claude screenshot's highlighted Enter cue and the Linear screenshot's
+roomy grouped rows motivate a comfortable overlay density tier. They do not
+justify copying pixel dimensions or turning every operational panel into a large
+modal. Sharing presentation must retain palette Enter-to-activate, quick composer
+Enter-to-send and full dialog's registered primary-action chord. Disabled reasons
+remain truthful. The selected action cue belongs to the palette row, not the
+Team tutorial header deliberately retired in September.
+
+#### Execution contract and exit
+
+The reporting package sequence is ENG-025 F6.1–F6.5; this log supplies its
+cross-surface review and shared-foundation boundary, not another roadmap.
+The roadmap's ENG-025 project reference owns detailed reporting acceptance.
+
+Start with one paired DOM `/hud-gallery` study. Show empty/search/disabled and
+selected palette states beside quick/full feedback editing, sending, success,
+partial and failure; include hint/update siblings to expose placement conflicts.
+Demonstrate the accepted compact receipt first and shared notice placement as an
+optional comparison. Use current Type, Spacing, semantic Color roles, overlay
+material, Menus, Dialogs, Motion and Voice. No new fonts/status lamps and no R3F
+sibling unless canvas rendering changes.
+
+After operator review, amend the design-system canon, extract shared overlay and
+receipt primitives, establish server receipt truth before retrying-client adoption,
+and wire the paired flows. Migrate close hints/update presentation incrementally;
+retain update restart/dismiss/shutdown semantics. Broader adoption follows measured
+need, not a forced app-wide replacement in one diff. Retire the study when shipped.
+
+Exit: keyboard-only activation and recovery work; disabled rows never promise
+Enter; focus returns once to the intended live control; older completions cannot
+alter a newer draft; same-attempt retries converge on one report and truthful
+image status; notices announce without stealing focus and avoid overlap. Review
+Classic/Air/Night, reduced motion, constrained widths and enlarged interface type.
+Test these contracts, not today's copy or layout dimensions. Architecture projections
+change with the implemented owner, not with this plan. Delight celebrates an
+evidenced accomplishment only after reliability and restart trust are established.
