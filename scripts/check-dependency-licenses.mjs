@@ -412,6 +412,7 @@ export function validateNotice({
 export async function runLicenseCheck({
   write = false,
   platform = process.platform,
+  additionalPlatforms = [],
 } = {}) {
   // Establish that node_modules is trustworthy before reporting on it. A stale
   // tree makes every row below describe packages the repository does not
@@ -433,13 +434,19 @@ export async function runLicenseCheck({
     await writeFile(NOTICE_PATH, expectedNotice);
   } else {
     const actualNotice = await readFile(NOTICE_PATH, 'utf8').catch(() => '');
-    const noticeFailures = validateNotice({
-      actualNotice,
-      expectedNotice,
-      noticeRows,
-      lockfileHash,
-      platform,
-    });
+    // Platform policy varies; installed evidence does not. Always validate the
+    // base platform, even when a caller supplies an empty additional matrix.
+    const noticeFailures = [
+      ...new Set([platform, ...additionalPlatforms]),
+    ].flatMap(candidate =>
+      validateNotice({
+        actualNotice,
+        expectedNotice,
+        noticeRows,
+        lockfileHash,
+        platform: candidate,
+      })
+    );
     if (noticeFailures.length > 0) {
       failures.push(...noticeFailures);
       failures.push(

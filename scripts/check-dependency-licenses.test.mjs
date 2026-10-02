@@ -25,12 +25,10 @@ test(
     timeout: 30_000,
   },
   async () => {
-    const result = await runLicenseCheck();
+    // Exercise native and Linux policy against one real installed inventory
+    // and the checked-in formatted notice, including on the macOS maintainer.
+    const result = await runLicenseCheck({ additionalPlatforms: ['linux'] });
     assert.ok(result.packageVersions > 800);
-    // Exercise the Linux comparison against the checked-in, formatted notice
-    // even when the maintainer runs this gate on macOS.
-    const linux = await runLicenseCheck({ platform: 'linux' });
-    assert.equal(linux.packageVersions, result.packageVersions);
   }
 );
 

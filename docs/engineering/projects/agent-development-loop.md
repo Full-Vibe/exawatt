@@ -1244,3 +1244,20 @@ durable fix is a repository-owned policy floor attached to the exact tree at
 the head of the delivery queue (decision `0030` as amended). This record
 remains because it is the first observed product failure from the delivery
 model, not because its initial race theory remains active.
+
+
+## 2026-10-02 — one license inventory, both platform policies
+
+**Validate every platform from one inventory.** ENG-025 backend delivery ticket
+550 passed its initial floor, then its docs-only upstream rebase hit the license
+suite's 30-second guard: 699 delivery tests passed and that one test was
+cancelled. Install freshness remained true; the exact license file passed all
+11 cases alone, distinguishing contention from dependency or notice drift. The
+first test had enumerated the installed graph, read its manifests, verified
+pinned texts and rendered the same notice twice solely to change the pure
+platform comparison. `runLicenseCheck({ additionalPlatforms: ['linux'] })` now
+collects that real evidence once and applies both native and Linux policies;
+the base platform always participates, including with empty additional input.
+The CLI, drift checks, generated notice contract and 30-second guard stay
+unchanged. This bounded repair removes duplicate work instead of extending a
+host-dependent deadline.
