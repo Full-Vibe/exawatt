@@ -34,7 +34,51 @@ function ControlledDialog({ open }: { open: boolean }) {
   );
 }
 
+function HandoffHarness({ onAccepted }: { onAccepted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Work origin</button>
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        onAfterClose={() => {
+          if (accepted) onAccepted();
+          setAccepted(false);
+        }}
+      >
+        <CommandInput aria-label="Command search" />
+        <button
+          onClick={() => {
+            setAccepted(true);
+            setOpen(false);
+          }}
+        >
+          Accept action
+        </button>
+      </CommandDialog>
+    </>
+  );
+}
+
 describe('CommandDialog focus restoration', () => {
+  it('runs accepted handoff once after the origin is focused and palette removed', async () => {
+    const accepted = vi.fn(() => {
+      expect(screen.getByRole('button', { name: 'Work origin' })).toHaveFocus();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    render(<HandoffHarness onAccepted={accepted} />);
+    const origin = screen.getByRole('button', { name: 'Work origin' });
+    origin.focus();
+    fireEvent.click(origin);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept action' }));
+    await waitFor(() => expect(accepted).toHaveBeenCalledOnce());
+    fireEvent.click(origin);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(origin).toHaveFocus());
+    expect(accepted).toHaveBeenCalledOnce();
+  });
   it('restores an ordinary control with preventScroll after Escape', async () => {
     render(<EscapeHarness />);
     const opener = screen.getByRole('button', { name: 'Open commands' });

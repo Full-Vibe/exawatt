@@ -11,6 +11,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MagnifyingGlassIcon } from '@radix-ui/react-icons';
+import {
+  COMFORTABLE_COMMAND_CLASS,
+  COMFORTABLE_OVERLAY_CONTENT_CLASS,
+  CommandActivationHint,
+  CommandKeyboardFooter,
+} from './overlay-presentation';
 
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
@@ -38,6 +44,8 @@ interface CommandDialogProps extends DialogProps {
   commandFilter?: CommandFilter;
   commandTitle?: string;
   commandDescription?: string;
+  /** Runs after Radix releases the palette and its origin has been restored. */
+  onAfterClose?: () => void;
 }
 
 const CommandDialog = ({
@@ -47,6 +55,7 @@ const CommandDialog = ({
   commandFilter,
   commandTitle = 'Command palette',
   commandDescription = 'Search Projects, Sessions, settings, and commands.',
+  onAfterClose,
   ...props
 }: CommandDialogProps) => {
   const restoreFocusRef = React.useRef<HTMLElement | null>(null);
@@ -54,7 +63,7 @@ const CommandDialog = ({
   return (
     <Dialog {...props}>
       <DialogContent
-        className="overflow-hidden p-0"
+        className={COMFORTABLE_OVERLAY_CONTENT_CLASS}
         primaryAction={{
           none: 'A palette has no single action of its own: ⏎ runs the highlighted row, which is cmdk’s own contract and the reason the operator is typing here at all.',
         }}
@@ -71,10 +80,11 @@ const CommandDialog = ({
           const restoreTarget = restoreFocusRef.current;
           restoreFocusRef.current = null;
 
-          if (!restoreTarget?.isConnected) return;
-
-          event.preventDefault();
-          restoreTarget.focus({ preventScroll: true });
+          if (restoreTarget?.isConnected) {
+            event.preventDefault();
+            restoreTarget.focus({ preventScroll: true });
+          }
+          onAfterClose?.();
         }}
       >
         {/* required for screen readers; visually hidden */}
@@ -86,9 +96,10 @@ const CommandDialog = ({
           value={commandValue}
           onValueChange={onCommandValueChange}
           filter={commandFilter}
-          className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5"
+          className={COMFORTABLE_COMMAND_CLASS}
         >
           {children}
+          <CommandKeyboardFooter />
         </Command>
       </DialogContent>
     </Dialog>
@@ -104,7 +115,7 @@ const CommandInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full rounded-md bg-transparent py-3 pr-10 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
       {...props}
@@ -171,15 +182,19 @@ CommandSeparator.displayName = CommandPrimitive.Separator.displayName;
 const CommandItem = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Item>
->(({ className, ...props }, ref) => (
+>(({ className, children, disabled, ...props }, ref) => (
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      'group/command-row relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       className
     )}
+    disabled={disabled}
     {...props}
-  />
+  >
+    <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
+    <CommandActivationHint disabled={disabled} />
+  </CommandPrimitive.Item>
 ));
 
 CommandItem.displayName = CommandPrimitive.Item.displayName;

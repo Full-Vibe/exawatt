@@ -6,10 +6,10 @@
  * what a dialog publishes, when it publishes it, and what ⌘⏎ finds when it
  * arrives.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Dialog, DialogContent, DialogFooter, DialogTitle } from './dialog';
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogTitle, DialogTrigger } from './dialog';
 import { runTopDialogPrimaryAction } from './dialog-primary-action';
 
 afterEach(cleanup);
@@ -19,15 +19,18 @@ function Sheet({
   label = 'Send feedback',
   disabled = false,
   onRun,
+  forceMount,
 }: {
   open: boolean;
   label?: string;
   disabled?: boolean;
   onRun: () => void;
+  forceMount?: true;
 }) {
   return (
     <Dialog open={open}>
       <DialogContent
+        forceMount={forceMount}
         primaryAction={{ label, run: onRun, disabled }}
         aria-describedby={undefined}
       >
@@ -42,6 +45,81 @@ function Sheet({
 }
 
 describe('a dialog’s primary action', () => {
+  it('cannot execute while closed content is retained, and registers only for the open state', () => {
+    const run = vi.fn();
+    const { rerender } = render(<Sheet open={false} forceMount onRun={run} />);
+    const retained = screen.getByRole('dialog');
+    expect(retained).toHaveAttribute('data-state', 'closed');
+    expect(runTopDialogPrimaryAction()).toBe(false);
+    rerender(<Sheet open forceMount onRun={run} />);
+    expect(runTopDialogPrimaryAction()).toBe(true);
+    expect(run).toHaveBeenCalledOnce();
+    rerender(<Sheet open={false} forceMount onRun={run} />);
+    expect(retained.isConnected).toBe(true);
+    expect(retained).toHaveAttribute('data-state', 'closed');
+    expect(runTopDialogPrimaryAction()).toBe(false);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('uncontrolled trigger and close actions share one logical state even with retained content', () => {
+    const run = vi.fn();
+    const changed = vi.fn();
+    // A force-mounted modal keeps Radix's background isolation. Use its
+    // nonmodal mode here to exercise the outside trigger's state ownership.
+    render(
+      <Dialog defaultOpen={false} onOpenChange={changed} modal={false}>
+        <DialogTrigger>Open editor</DialogTrigger>
+        <DialogContent forceMount primaryAction={{ label: 'Apply', run }} aria-describedby={undefined}>
+          <DialogTitle>Editor</DialogTitle>
+          <DialogFooter><DialogClose>Close editor</DialogClose></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+    expect(runTopDialogPrimaryAction()).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Open editor' }));
+    expect(runTopDialogPrimaryAction()).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close editor' }));
+    expect(runTopDialogPrimaryAction()).toBe(false);
+    expect(changed.mock.calls).toEqual([[true], [false]]);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('respects defaultOpen and releases the action when an uncontrolled dialog closes', () => {
+    const run = vi.fn();
+    render(
+      <Dialog defaultOpen>
+        <DialogContent forceMount primaryAction={{ label: 'Apply', run }} aria-describedby={undefined}>
+          <DialogTitle>Editor</DialogTitle>
+          <DialogFooter><DialogClose>Close editor</DialogClose></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+    expect(runTopDialogPrimaryAction()).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close editor' }));
+    expect(runTopDialogPrimaryAction()).toBe(false);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('keeps controlled authority when the owner refuses a requested close', () => {
+    const run = vi.fn();
+    const changed = vi.fn();
+    const view = (open: boolean) => (
+      <Dialog open={open} onOpenChange={changed}>
+        <DialogContent forceMount primaryAction={{ label: 'Apply', run }} aria-describedby={undefined}>
+          <DialogTitle>Editor</DialogTitle>
+          <DialogFooter><DialogClose>Close editor</DialogClose></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+    const { rerender } = render(view(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Close editor' }));
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith(false);
+    expect(runTopDialogPrimaryAction()).toBe(true);
+    rerender(view(false));
+    expect(runTopDialogPrimaryAction()).toBe(false);
+  });
+
   it('prints the chord on the button that runs it', () => {
     render(<Sheet open onRun={() => {}} />);
     const button = screen.getByRole('button', { name: /Send feedback/ });

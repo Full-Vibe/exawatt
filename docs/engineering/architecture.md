@@ -400,6 +400,39 @@ attachments. The renderer submits through the distribution-declared
 before account/session work and no request is possible. Inference excerpts
 themselves are not persisted.
 
+ENG-025 F6 implements one renderer-lifetime feedback draft/attempt store behind
+keyboard, palette and Help entry commands. A Radix-hosted composer owns focus;
+its shared image path validates paste, drop and file selection. Capture and
+read channels use `useLatestRequest`; submission freezes payload, original
+context, evidence and idempotency key independently. A complete receipt clears
+only the matching draft; accepted text with a missing requested image remains
+partial. Explicit retry reuses the attempt, and a 30-second foreground deadline
+leaves a timed-out result unconfirmed rather than claiming rollback. Retry
+permission honors the service's explicit flag independently of failure certainty;
+a later refused retry cannot prove an earlier lost-response write absent. Saved
+or unconfirmed drafts warn on generic reopen/edit, and unchanged nonretryable
+attempts cannot resubmit through Send. Account
+change/sign-out and provider unmount drop private in-memory draft/attempt data;
+restart persistence and automatic retry are not implemented.
+
+The hosted V1 route fingerprints immutable report fields and image bytes;
+duplicate responses reconcile stored evidence, changed same-key content is
+rejected, and concurrent image recovery shares an owned private object path.
+The fingerprint migration has been applied/read back; the implemented hosted
+route still requires deployment before production client adoption. Shared DOM
+operation/overlay components implement the operator-authorized simplification:
+receipt states render immediately, with only a reduced-motion-aware pending
+spinner. Shared `DialogContent` owns Radix-observed named CSS presence (240ms
+enter/160ms exit) with a typed `motion: auto | none` override; capture uses `none`
+to remove the overlay immediately. Cmd+K adopts comfortable shared presentation,
+keyboard footer and selected enabled Return cue while cmdk retains selection.
+State snapshots, receipt fades/background resizing and the operation-motion
+owner are removed. The gallery study is retired; verification and delivery
+remain pending. One notice lane owns placement for update, hint and chord
+notices while callers retain actions and lifetime; feedback receipts remain
+near the composer. These presentation owners do not replace Agent status or
+attention scheduling.
+
 Goal visual identity is a downstream projection of that accepted Session
 context, never a second classifier. Electron main creates a new revision only
 for the first accepted label, an Objective Engine `new_context` result, or an

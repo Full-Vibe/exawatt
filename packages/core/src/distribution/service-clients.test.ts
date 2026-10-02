@@ -56,6 +56,41 @@ function problem(
 }
 
 describe('production compatible-service operations', () => {
+  it('bounds feedback at the existing signal seam and preserves caller cancellation', async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    const caller = new AbortController();
+    const request = {
+      schemaVersion: 1 as const,
+      kind: 'bug' as const,
+      message: 'Send only once',
+      surface: 'test',
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    try {
+      for (const cancellation of [caller, deadline]) {
+        const fetcher = vi.fn<typeof fetch>().mockImplementation((_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+          })
+        );
+        const sending = submitProductFeedback(endpoint, 'token', request, {
+          fetcher,
+          ...(cancellation === caller ? { signal: caller.signal } : {}),
+        });
+        const reason = new DOMException('Cancelled', 'AbortError');
+        cancellation.abort(reason);
+        await expect(sending).rejects.toBe(reason);
+        expect(fetcher).toHaveBeenCalledOnce();
+        expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).idempotencyKey).toBe(request.idempotencyKey);
+      }
+      expect(timeout).toHaveBeenCalledWith(expect.any(Number));
+      expect(timeout.mock.calls.every(([milliseconds]) => milliseconds > 0 && Number.isFinite(milliseconds))).toBe(true);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it('builds and decodes all seven published operations', async () => {
     const identityKey = 'a'.repeat(64);
     const cases = [

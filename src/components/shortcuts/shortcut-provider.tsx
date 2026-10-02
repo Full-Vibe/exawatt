@@ -239,6 +239,13 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   } = useCommandNavigation();
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const paletteActionPending = useRef(false);
+  const openCommandPalette = useCallback(() => {
+    if (!paletteActionPending.current) setCommandPaletteOpen(true);
+  }, []);
+  const handlePaletteActionPendingChange = useCallback((pending: boolean) => {
+    paletteActionPending.current = pending;
+  }, []);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [pendingChord, setPendingChord] = useState<KeyBinding | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -340,7 +347,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
               activateCommandAltitude('spatial');
               break;
             case 'command-palette':
-              setCommandPaletteOpen(true);
+              openCommandPalette();
               break;
             // ⌘, is registered natively in the packaged app, so the main
             // process usually gets there first; this keeps the verb live in the
@@ -376,6 +383,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     navigateBack,
     navigateForward,
     navigateCommandSurface,
+    openCommandPalette,
     router,
   ]);
 
@@ -441,7 +449,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           router.push('/settings');
           break;
         case 'command-palette':
-          setCommandPaletteOpen(true);
+          openCommandPalette();
           break;
         case 'new-agent':
           requestAgentComposer();
@@ -589,6 +597,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     navigateBack,
     navigateForward,
     navigateCommandSurface,
+    openCommandPalette,
     onWorkspaceRoute,
     personalTenantActive,
     router,
@@ -672,6 +681,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
   // Wrapper to track when command palette closes
   const handleCommandPaletteChange = useCallback((open: boolean) => {
+    if (open && paletteActionPending.current) return;
     setCommandPaletteOpen(open);
     if (!open) {
       modalClosedAtRef.current = Date.now();
@@ -709,13 +719,19 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
   const value = useMemo(
     () => ({
-      openCommandPalette: () => setCommandPaletteOpen(true),
+      openCommandPalette,
       openHelpModal: handleOpenHelpModal,
       pendingChord,
       setContext,
       saveOverrides,
     }),
-    [pendingChord, setContext, saveOverrides, handleOpenHelpModal]
+    [
+      pendingChord,
+      setContext,
+      saveOverrides,
+      handleOpenHelpModal,
+      openCommandPalette,
+    ]
   );
 
   return (
@@ -727,6 +743,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           <CommandPalette
             open={commandPaletteOpen}
             onOpenChange={handleCommandPaletteChange}
+            onActionPendingChange={handlePaletteActionPendingChange}
             onOpenHelpModal={handleOpenHelpModal}
             launchConfigurations={launchConfigurations}
             cloneTargets={cloneTargets}

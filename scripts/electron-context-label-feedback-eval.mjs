@@ -11,6 +11,10 @@ import {
   withElectronApp,
 } from './lib/electron-eval.mjs';
 import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
+import {
+  evaluateFeedbackReporting,
+  installFeedbackTransport,
+} from './lib/feedback-reporting-eval.mjs';
 
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-context-eval-user-'));
 const projectDir = mkdtempSync(join(tmpdir(), 'exawatt-context-eval-project-'));
@@ -90,8 +94,21 @@ const server = createServer(async (request, response) => {
   requests.push(body);
   const latest = body.recentInstructions?.at(-1)?.text ?? '';
   if (/service failure/i.test(latest)) {
-    response.writeHead(503, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ error: 'simulated failure' }));
+    response.writeHead(503, {
+      'content-type': 'application/problem+json',
+      'Exawatt-Service-Version': '1',
+    });
+    response.end(
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'about:blank',
+        title: 'Context service unavailable',
+        status: 503,
+        code: 'service_unavailable',
+        detail: 'Simulated failure',
+        retryable: true,
+      })
+    );
     return;
   }
   const result = /widget checkout/i.test(latest)
@@ -117,8 +134,11 @@ const server = createServer(async (request, response) => {
             relationship: body.currentLabel ? 'same_context' : 'new_context',
             confidence: 0.9,
           };
-  response.writeHead(200, { 'content-type': 'application/json' });
-  response.end(JSON.stringify(result));
+  response.writeHead(200, {
+    'content-type': 'application/json',
+    'Exawatt-Service-Version': '1',
+  });
+  response.end(JSON.stringify({ schemaVersion: 1, ...result }));
 });
 await new Promise((resolve, reject) => {
   server.once('error', reject);
@@ -163,13 +183,37 @@ try {
       );
       const enrichment = contract.enrichment;
       const configuredContextEndpoint = enrichment.contextLabels?.url ?? null;
-      if (configuredContextEndpoint && configuredContextEndpoint !== endpoint) {
-        throw new Error(
-          `Context-label eval refuses non-fake configured endpoint ${configuredContextEndpoint}`
-        );
-      }
       const hostedLabelsConfigured = configuredContextEndpoint === endpoint;
+      // Main-process context inference uses Node's transport, so a renderer
+      // route cannot intercept it. Keep the exact renderer/main distribution
+      // and use the product's privacy boundary in this throwaway profile:
+      // only our loopback fixture may infer; real configured services stay off.
+      const fixturePolicy = await page.evaluate(async useFixture => {
+        const settings = window.electron.settings;
+        await settings.setHostedContextLabels(useFixture);
+        await settings.setGoalVisualsEnabled(false);
+        await settings.setHostedConversationSummaries(false);
+        await settings.setReentryRecap(false);
+        return settings.get();
+      }, hostedLabelsConfigured);
+      check(
+        'eval inference is confined to its loopback fixture through the real privacy policy',
+        fixturePolicy.contextLabels?.hosted === hostedLabelsConfigured &&
+          fixturePolicy.goalVisuals?.enabled === false &&
+          fixturePolicy.conversationSummaries?.hosted === false &&
+          fixturePolicy.reentryRecap?.enabled === false
+      );
+      console.log(
+        hostedLabelsConfigured
+          ? 'COVERAGE hosted context inference uses the loopback fixture'
+          : 'COVERAGE context persistence and privacy-off behavior; hosted inference is not exercised'
+      );
       const feedbackConfigured = contract.services.productFeedback !== null;
+      const transport = await installFeedbackTransport(
+        page,
+        contract.services.productFeedback?.url ?? null
+      );
+      const feedbackPayloads = transport.payloads;
       const feedbackMenuItem = () =>
         app.evaluate(({ Menu }, id) => {
           const item = Menu.getApplicationMenu()?.getMenuItemById(id);
@@ -316,7 +360,9 @@ try {
           first.durableSessionId
         );
         check(
-          'community contract keeps the local label and ignores poisoned endpoint env',
+          configuredContextEndpoint
+            ? 'privacy-off configured service retains the local label and ignores poisoned endpoint env'
+            : 'community contract retains the local label and ignores poisoned endpoint env',
           localSummary === 'Implement cmd+shift+t to reopen tabs' &&
             requests.length === 0
         );
@@ -358,19 +404,6 @@ try {
           : requests.length === 0
       );
 
-      const feedbackPayloads = [];
-      await page.route('**/api/feedback', async route => {
-        feedbackPayloads.push(JSON.parse(route.request().postData() || '{}'));
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            id: `feedback-${feedbackPayloads.length}`,
-            duplicate: false,
-            attachmentStored: !!feedbackPayloads.at(-1)?.attachment,
-          }),
-        });
-      });
       if (feedbackConfigured) {
         // The provider's auth listener mounts in an effect after hydration; a
         // single early dispatch can be missed, so re-dispatch (idempotent)
@@ -391,7 +424,66 @@ try {
         await staleTab.click();
         const controls = staleTab.locator('[data-context-label-feedback]');
         await controls.waitFor();
-        await staleTab.hover();
+        try {
+          await staleTab.hover();
+        } catch (cause) {
+          // Observe a failed pointer action before changing it: a screenshot
+          // cannot distinguish moving geometry from a transparent interceptor.
+          const geometry = await staleTab
+            .evaluate(async element => {
+              const frames = [];
+              for (let frame = 0; frame < 3; frame++) {
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                const rect = element.getBoundingClientRect();
+                frames.push({
+                  x: rect.x,
+                  y: rect.y,
+                  width: rect.width,
+                  height: rect.height,
+                });
+              }
+              const rect = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              const controls = element.querySelector(
+                '[data-context-label-feedback]'
+              );
+              return {
+                frames,
+                connected: element.isConnected,
+                display: style.display,
+                visibility: style.visibility,
+                pointerEvents: style.pointerEvents,
+                transform: style.transform,
+                controlsOpacity: controls
+                  ? getComputedStyle(controls).opacity
+                  : null,
+                hitTest: document
+                  .elementsFromPoint(
+                    rect.x + rect.width / 2,
+                    rect.y + rect.height / 2
+                  )
+                  .slice(0, 6)
+                  .map(hit => ({
+                    tag: hit.tagName,
+                    role: hit.getAttribute('role'),
+                    tab:
+                      hit
+                        .closest('[data-tab-id]')
+                        ?.getAttribute('data-tab-id') ?? null,
+                  })),
+                animations: element
+                  .getAnimations({ subtree: true })
+                  .map(animation => ({
+                    state: animation.playState,
+                    currentTime: animation.currentTime,
+                    timing: animation.effect?.getComputedTiming(),
+                  })),
+              };
+            })
+            .catch(error => ({ diagnosticError: String(error) }));
+          console.error('[context-feedback-hover]', JSON.stringify(geometry));
+          throw cause;
+        }
         const controlsElement = await controls.elementHandle();
         await page
           .waitForFunction(
@@ -433,82 +525,15 @@ try {
           )
         );
 
-        await app.evaluate(({ BrowserWindow }) => {
-          BrowserWindow.getAllWindows()[0].webContents.send(
-            'menu:command',
-            'submit-feedback'
-          );
+        await evaluateFeedbackReporting({
+          app,
+          page,
+          transport,
+          check,
+          screenshotDir,
+          originSessionId: fixtureTab('b', CORRECTED).durableSessionId,
+          alternateTabId: fixtureTab('a', CORRECTED).id,
         });
-        const dialog = page.getByRole('dialog', { name: 'Submit feedback' });
-        await dialog.waitFor();
-        await dialog
-          .getByLabel('What should we know?')
-          .fill('The label should pivot when the Session changes purpose.');
-        await dialog
-          .getByRole('button', { name: 'Capture this window' })
-          .click();
-        await page.getByAltText('Feedback attachment preview').waitFor();
-        await page.screenshot({
-          path: join(screenshotDir, 'general-feedback-dialog.png'),
-        });
-        await dialog.getByRole('button', { name: 'Send feedback' }).click();
-        await page.waitForFunction(
-          () => !document.querySelector('[role="dialog"]')
-        );
-        check(
-          'general feedback submits text, context, and an explicit screenshot',
-          feedbackPayloads.some(
-            payload =>
-              payload.kind === 'general' &&
-              payload.attachment?.dataUrl?.startsWith('data:image/jpeg;base64,')
-          )
-        );
-
-        // ENG-025 queued fixes: ⌘⇧F summons the quick-capture bar, the bar is
-        // an opaque HUD panel (not page bleed-through), and its payload stamps
-        // the app version and build metadata.
-        await page.keyboard.press('Meta+Shift+KeyF');
-        const quickBar = page.getByRole('dialog', { name: 'Quick feedback' });
-        await quickBar.waitFor();
-        const barColors = await quickBar.evaluate(element => {
-          const probe = document.createElement('div');
-          probe.style.color = getComputedStyle(
-            document.documentElement
-          ).getPropertyValue('--exa-hud-panel');
-          document.body.append(probe);
-          const panel = getComputedStyle(probe).color;
-          probe.remove();
-          return {
-            background: getComputedStyle(element).backgroundColor,
-            panel,
-          };
-        });
-        check(
-          'quick-capture bar renders the active theme opaque HUD panel background',
-          barColors.background === barColors.panel
-        );
-        await page.screenshot({
-          path: join(screenshotDir, 'quick-capture-bar.png'),
-        });
-        await quickBar
-          .getByLabel('Feedback')
-          .fill('Quick capture stays opaque over the workspace');
-        await quickBar.getByLabel('Feedback').press('Enter');
-        await page.waitForFunction(
-          () => !document.querySelector('[aria-label="Quick feedback"]')
-        );
-        // optimistic close: the submit fetch lands just after dismissal
-        await page.waitForTimeout(300);
-        const quickPayload = feedbackPayloads.find(
-          payload => payload.surface === 'quick-capture'
-        );
-        check(
-          'quick-capture payload stamps app version, sha, and build metadata',
-          typeof quickPayload?.appVersion === 'string' &&
-            quickPayload.appVersion.length > 0 &&
-            quickPayload.buildSha === 'development' &&
-            quickPayload.context?.buildDelivery === 'dogfood'
-        );
       } else {
         check(
           'community build renders no hosted context-feedback controls',

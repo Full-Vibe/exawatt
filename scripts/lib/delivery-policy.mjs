@@ -779,12 +779,19 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:electron:context-labels',
-    why: 'context labels restore across a relaunch and their feedback path follows the distribution contract',
+    why: 'context labels restore across a relaunch and reporting preserves immutable attempts, image evidence and truthful receipts through the distribution contract',
     match: file =>
       file === 'electron/main/pty/context-summarizer.ts' ||
       file === 'src/components/feedback/context-label-feedback.tsx' ||
+      file === 'src/components/feedback/product-feedback-provider.tsx' ||
+      file === 'src/components/feedback/feedback-receipt.tsx' ||
+      file === 'src/components/feedback/quick-capture-bar.tsx' ||
+      file === 'src/lib/feedback/attempt-store.ts' ||
+      file === 'src/lib/feedback/image.ts' ||
+      file === 'src/components/ui/operation-receipt.tsx' ||
       file === 'src/lib/context-labels/contract.ts' ||
       file === 'electron/main/application-menu.ts' ||
+      file === 'scripts/lib/feedback-reporting-eval.mjs' ||
       file === 'scripts/electron-context-label-feedback-eval.mjs',
   },
   {

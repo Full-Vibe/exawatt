@@ -108,11 +108,12 @@ describe('QuickCaptureBar', () => {
     expect(props.onAttachScreenshotChange).not.toHaveBeenCalled();
   });
 
-  it('shields workspace verbs behind a dialog role and keeps the error in the hint slot', () => {
+  it('shields workspace verbs behind a dialog role and announces errors', () => {
     renderBar({ error: 'Send failed — draft kept' });
     expect(screen.getByRole('dialog', { name: 'Quick feedback' })).toBeTruthy();
-    expect(screen.getByText('Send failed — draft kept')).toBeTruthy();
-    expect(screen.queryByText('↩ send')).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Send failed — draft kept'
+    );
   });
 
   it('names the toggle anonymized on a Bug', () => {
@@ -169,36 +170,164 @@ describe('QuickCaptureBar', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('keeps the diagnostics control out of the chip row', () => {
-    // The chip row had no width budget left: "Anonymized diagnostics" wrapped
-    // to two lines and pushed the send hint outside the card. The control
-    // lives on its own strip now, and the row holds kinds plus screenshot.
-    const { container } = render(
-      <QuickCaptureBar
-        kind="bug"
-        onKindChange={vi.fn()}
-        message="m"
-        onMessageChange={vi.fn()}
-        screenshot={SHOT}
-        attachScreenshot
-        onAttachScreenshotChange={vi.fn()}
-        diagnostics={REPORT}
-        attachDiagnostics
-        onAttachDiagnosticsChange={vi.fn()}
-        error={null}
-        onSubmit={vi.fn()}
-        onDismiss={vi.fn()}
-      />
+  it('keeps Enter on focused controls available for their native activation', () => {
+    const props = renderBar({
+      kind: 'bug',
+      diagnostics: REPORT,
+      attachDiagnostics: true,
+    });
+    for (const button of screen.getAllByRole('button')) {
+      expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+    }
+    expect(props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('ignores composing keys and modified Enter without cancelling input', () => {
+    const props = renderBar();
+    const field = screen.getByLabelText('Feedback');
+    for (const modifier of [
+      { metaKey: true },
+      { ctrlKey: true },
+      { altKey: true },
+      { shiftKey: true },
+      { isComposing: true },
+      { keyCode: 229 },
+    ]) {
+      expect(fireEvent.keyDown(field, { key: 'Enter', ...modifier })).toBe(
+        true
+      );
+    }
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true });
+    expect(props.onSubmit).not.toHaveBeenCalled();
+    expect(props.onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('offers a native picker without requiring window capture', () => {
+    const onImageFiles = vi.fn();
+    renderBar({ screenshot: null, onImageFiles });
+    const file = new File(['image'], 'report.png', { type: 'image/png' });
+    fireEvent.change(
+      document.querySelector<HTMLInputElement>('[data-feedback-image-input]')!,
+      {
+        target: { files: [file] },
+      }
     );
-    const row = container.querySelector('[data-capture-chip-row]');
-    const labels = [...(row?.querySelectorAll('button') ?? [])].map(button =>
-      (button.textContent ?? '').replace(/\s+/g, ' ').trim()
-    );
-    expect(labels).toEqual(['General⌘1', 'Bug⌘2', 'Idea⌘3', 'Screenshot⌘S']);
-    expect(row?.textContent).not.toContain('Anonymized');
-    // still present, just elsewhere
+    expect(onImageFiles).toHaveBeenCalledWith([file]);
+    expect(screen.getByRole('button', { name: 'Attach image' })).toBeEnabled();
+  });
+
+  it('keeps ordinary text paste native and routes file-bearing paste only within the composer', () => {
+    const onImageFiles = vi.fn();
+    renderBar({ onImageFiles });
+    const image = new File(['image'], 'capture.png', { type: 'image/png' });
+    const textFile = new File(['text'], 'notes.txt', { type: 'text/plain' });
+    const field = screen.getByLabelText('Feedback');
     expect(
-      screen.getByLabelText('Remove anonymized diagnostics')
-    ).toBeInTheDocument();
+      fireEvent.paste(field, {
+        clipboardData: { files: [], getData: () => 'pasted text' },
+      })
+    ).toBe(true);
+    expect(onImageFiles).not.toHaveBeenCalled();
+    expect(
+      fireEvent.paste(field, { clipboardData: { files: [image, textFile] } })
+    ).toBe(false);
+    expect(onImageFiles).toHaveBeenCalledWith([image, textFile]);
+    fireEvent.paste(document.body, { clipboardData: { files: [image] } });
+    expect(onImageFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents file drops from navigating away and routes unsupported replacements to validation', () => {
+    const onImageFiles = vi.fn();
+    renderBar({ onImageFiles, attachScreenshot: true });
+    const image = new File(['image'], 'capture.webp', { type: 'image/webp' });
+    const invalid = new File(['text'], 'notes.txt', { type: 'text/plain' });
+    const field = screen.getByLabelText('Feedback');
+    expect(
+      fireEvent.dragOver(field, { dataTransfer: { types: ['Files'] } })
+    ).toBe(false);
+    expect(fireEvent.drop(field, { dataTransfer: { files: [invalid] } })).toBe(
+      false
+    );
+    expect(onImageFiles).toHaveBeenCalledWith([invalid]);
+    expect(
+      screen.getByRole('img', { name: 'Feedback attachment preview' })
+    ).toHaveAttribute('src', SHOT);
+    expect(
+      fireEvent.drop(field, { dataTransfer: { files: [image, invalid] } })
+    ).toBe(false);
+    expect(onImageFiles).toHaveBeenLastCalledWith([image, invalid]);
+    expect(fireEvent.drop(field, { dataTransfer: { files: [] } })).toBe(true);
+  });
+
+  it('prevents file navigation while busy without replacing current evidence', () => {
+    const onImageFiles = vi.fn();
+    renderBar({ busy: true, onImageFiles, attachScreenshot: true });
+    const file = new File(['image'], 'capture.png', { type: 'image/png' });
+    expect(
+      fireEvent.drop(screen.getByLabelText('Feedback'), {
+        dataTransfer: { files: [file] },
+      })
+    ).toBe(false);
+    expect(onImageFiles).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('img', { name: 'Feedback attachment preview' })
+    ).toHaveAttribute('src', SHOT);
+  });
+
+  it('lets an attached image be reviewed, replaced and removed independently', () => {
+    const onPickImage = vi.fn();
+    const onRemoveImage = vi.fn();
+    renderBar({
+      attachScreenshot: true,
+      onPickImage,
+      onRemoveImage,
+      attachmentName: 'report.png',
+    });
+    expect(
+      screen.getByRole('img', { name: 'Feedback attachment preview' })
+    ).toHaveAttribute('src', SHOT);
+    fireEvent.click(screen.getByRole('button', { name: 'Image' }));
+    expect(onPickImage).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove attached image' })
+    );
+    expect(onRemoveImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('freezes payload controls and prevents a second send while busy', () => {
+    const onImageFiles = vi.fn();
+    const props = renderBar({ busy: true, onImageFiles });
+    expect(screen.getByLabelText('Feedback')).toBeDisabled();
+    for (const button of screen.getAllByRole('button'))
+      expect(button).toBeDisabled();
+    fireEvent.keyDown(screen.getByLabelText('Feedback'), { key: 'Enter' });
+    fireEvent.paste(screen.getByLabelText('Feedback'), {
+      clipboardData: {
+        files: [new File(['image'], 'capture.png', { type: 'image/png' })],
+      },
+    });
+    expect(props.onSubmit).not.toHaveBeenCalled();
+    expect(onImageFiles).not.toHaveBeenCalled();
+  });
+
+  it('allows editing a newer draft while an older attempt blocks another send', () => {
+    const props = renderBar({ sendDisabled: true });
+    const field = screen.getByLabelText('Feedback');
+    expect(field).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Send feedback' })
+    ).toBeDisabled();
+    fireEvent.change(field, { target: { value: 'Newer draft' } });
+    expect(props.onMessageChange).toHaveBeenCalledWith('Newer draft');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(props.onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Idea/ }));
+    expect(props.onKindChange).toHaveBeenCalledWith('idea');
+  });
+
+  it('defers dialog semantics and initial focus to its host when requested', () => {
+    renderBar({ dialogSemantics: false, autoFocus: false });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByLabelText('Feedback')).not.toHaveFocus();
   });
 });

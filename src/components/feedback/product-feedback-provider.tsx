@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
@@ -17,45 +18,37 @@ import {
   submitProductFeedback,
 } from '@exawatt/core/distribution';
 import { commandVerbMenuCommandId } from '@exawatt/core';
-import {
-  Camera,
-  Check,
-  ImagePlus,
-  LoaderCircle,
-  MessageSquareWarning,
-  X,
-} from 'lucide-react';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { runConfiguredService } from '@/lib/distribution/service-client';
-import type {
-  FeedbackKind,
-  ProductFeedbackRequest,
-  ProductFeedbackServiceRequestV1,
+import {
+  PRODUCT_FEEDBACK_SCHEMA_VERSION,
+  type ProductFeedbackRequest,
+  type ProductFeedbackServiceRequestV1,
 } from '@/lib/feedback/contract';
-import { PRODUCT_FEEDBACK_SCHEMA_VERSION } from '@/lib/feedback/contract';
 import {
   applyBuildMetadata,
   type FeedbackBuildInfo,
 } from '@/lib/feedback/build-metadata';
+import {
+  createFeedbackStore,
+  type FeedbackAttempt,
+  type FeedbackDraftPatch,
+} from '@/lib/feedback/attempt-store';
+import {
+  readFeedbackImage,
+  validateFeedbackImageFiles,
+} from '@/lib/feedback/image';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { COMFORTABLE_OVERLAY_CONTENT_CLASS } from '@/components/ui/overlay-presentation';
+import { FeedbackReceipt } from './feedback-receipt';
 import { QuickCaptureBar } from './quick-capture-bar';
 import {
   resolveQuickDiagnostics,
@@ -73,7 +66,6 @@ import {
   type QuickFeedbackDetail,
   type QuickFeedbackKind,
 } from './quick-feedback-events';
-import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 
 interface ContextRating {
   durableSessionId: string;
@@ -82,99 +74,149 @@ interface ContextRating {
   betterLabel?: string | null;
   projectName?: string | null;
 }
-
 interface FeedbackContextValue {
-  /** The distributor configured a feedback service for this build. */
   isAvailable: boolean;
   isAuthenticated: boolean;
   openFeedback: () => void;
-  /** ENG-025 F1: the keyboard-first capture bar; no-op when signed out */
   openQuickCapture: (kind?: QuickFeedbackKind) => void;
   submitContextRating: (rating: ContextRating) => Promise<boolean>;
 }
-
 const ProductFeedbackContext = createContext<FeedbackContextValue | null>(null);
-
-function wait(milliseconds: number) {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
-}
-
-function dataUrlFromFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read that image.'));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
- * The menu command that opens the feedback DIALOG: Help ▸ Submit Feedback…
- * (BUG-049's ⌘⏎ surface), as distinct from the ⌘⇧F capture bar. Read from
- * the manifest rather than spelled here, so the verb that publishes the
- * menu item and the listener that answers it cannot name different
- * commands: renaming or unpublishing the verb fails at module load.
- */
 const SUBMIT_FEEDBACK_MENU_COMMAND =
   commandVerbMenuCommandId('submit-feedback');
-
-/**
- * The menu commands this provider dispatches (ENG-010 C2).
- *
- * Menu dispatch is spread across a few owners, and a menu item whose owner
- * forgot it is silently dead. Each owner publishes its own set so the
- * command-verb contract can prove every declared menu verb reaches one.
- */
 export const FEEDBACK_MENU_COMMAND_IDS: ReadonlySet<string> = new Set([
   SUBMIT_FEEDBACK_MENU_COMMAND,
 ]);
+
+function currentContext() {
+  const attribution = sampleQuickFeedbackAttribution();
+  return {
+    schemaVersion: 1,
+    url: window.location.href,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    projectName: attribution?.projectName ?? null,
+    durableSessionId: attribution?.durableSessionId ?? null,
+  };
+}
+function recordFailure(cause: unknown) {
+  const problem = isCompatibleServiceProblemError(cause) ? cause : null;
+  captureAnalyticsEvent({
+    name: 'hosted_call_failed',
+    surface: analyticsSurface(),
+    service: 'product_feedback',
+    failure: problem
+      ? hostedFailureForStatus(problem.status)
+      : isCompatibleServiceProtocolError(cause)
+        ? 'invalid_response'
+        : 'network',
+    statusCode: problem?.status ?? null,
+  });
+  return problem;
+}
+
+const DUPLICATE_DELIVERY_WARNING =
+  'Earlier delivery may have succeeded. Sending edits creates a new report.';
+const UNRETRYABLE_ATTEMPT_REASON =
+  'This attempt cannot be retried. Change the report to send a new one.';
+
+function getDraftDeliveryWarning(
+  attempts: readonly FeedbackAttempt[],
+  draftId: string
+): string | null {
+  return attempts.some(
+    attempt =>
+      attempt.draftId === draftId &&
+      (attempt.receipt || attempt.failureOutcome === 'unconfirmed')
+  )
+    ? DUPLICATE_DELIVERY_WARNING
+    : null;
+}
 
 export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const distribution = useMemo(() => resolvedDistribution(), []);
   const feedbackEndpoint = distribution.services.productFeedback;
   const feedbackAvailable = feedbackEndpoint !== null;
+  const store = useMemo(() => createFeedbackStore(), []);
+  const snapshot = useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    store.getSnapshot
+  );
+  const draft = snapshot.drafts.composer;
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [open, setOpen] = useState(false);
-  const [kind, setKind] =
-    useState<Exclude<FeedbackKind, 'context_label'>>('general');
-  const [message, setMessage] = useState('');
-  const [attachment, setAttachment] = useState<string | null>(null);
-  const [captureAvailable, setCaptureAvailable] = useState(false);
-  const [status, setStatus] = useState<
-    'idle' | 'capturing' | 'submitting' | 'sent' | 'error'
-  >('idle');
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Explicit Edit creates a new draft identity but does not resolve the old write.
+  const [warnedEditingDraftId, setWarnedEditingDraftId] = useState<
+    string | null
+  >(null);
+  const [hiddenReceipts, setHiddenReceipts] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  // Independent channels cannot unlock another channel's unfinished evidence.
+  const [preparing, setPreparing] = useState({
+    capture: false,
+    diagnostics: false,
+    image: false,
+  });
   const tokenRef = useRef<string | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => setCaptureAvailable(!!window.electron?.feedback), []);
-
-  const syncSession = useCallback((session: Session | null) => {
-    // The Electron evaluator installs an explicit fake token after load. A
-    // slower cached-session read must not race in afterward and undo that
-    // test-only state; production preload never exposes this capability.
-    if (
-      !session &&
-      window.electron?.feedback?.testMode &&
-      tokenRef.current?.startsWith('test-')
-    ) {
-      return;
-    }
-    const token = session?.access_token ?? null;
-    tokenRef.current = token;
-    const authenticated = !!session?.user && !!token;
-    setIsAuthenticated(authenticated);
-    void window.electron?.pty?.setContextAuth?.(token);
-    void window.electron?.feedback?.setAuthenticated(authenticated);
-    if (!authenticated) {
-      setOpen(false);
-      setQuickOpen(false);
-    }
-  }, []);
+  const accountRef = useRef<string | null>(null);
+  const buildRef = useRef<FeedbackBuildInfo | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const openingRef = useRef<string | null>(null);
+  const temporaryCaptureRef = useRef(false);
+  const [temporaryCapture, setTemporaryCapture] = useState(false);
+  const captureReads = useLatestRequest();
+  const imageReads = useLatestRequest();
+  const [captureAvailable, setCaptureAvailable] = useState(false);
+  const invalidateReads = useCallback(() => {
+    captureReads.invalidate();
+    imageReads.invalidate();
+    openingRef.current = null;
+  }, [captureReads, imageReads]);
 
   useEffect(() => {
-    // Capability absence owns the outer edge: a community build must not even
-    // create an account client, much less inspect a cached session or fetch.
+    setCaptureAvailable(!!window.electron?.feedback?.captureScreenshot);
+    void window.electron?.app
+      ?.getBuildInfo?.()
+      .then(value => {
+        buildRef.current = value;
+      })
+      .catch(() => undefined);
+    return () => store.reset();
+  }, [store]);
+  const syncSession = useCallback(
+    (session: Session | null) => {
+      if (
+        !session &&
+        window.electron?.feedback?.testMode &&
+        tokenRef.current?.startsWith('test-')
+      )
+        return;
+      const token = session?.access_token ?? null;
+      const account = session?.user?.id ?? null;
+      if (accountRef.current !== account || !token) {
+        store.reset();
+        invalidateReads();
+        setOpen(false);
+        setPreparing({ capture: false, diagnostics: false, image: false });
+        setError(null);
+        setWarnedEditingDraftId(null);
+        setHiddenReceipts(new Set());
+        accountRef.current = account;
+        temporaryCaptureRef.current = false;
+        setTemporaryCapture(false);
+      }
+      tokenRef.current = token;
+      const authenticated = !!account && !!token;
+      setIsAuthenticated(authenticated);
+      void window.electron?.pty?.setContextAuth?.(token);
+      void window.electron?.feedback?.setAuthenticated(authenticated);
+    },
+    [store, invalidateReads]
+  );
+  useEffect(() => {
     if (!feedbackEndpoint) {
       syncSession(null);
       return;
@@ -184,31 +226,11 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       syncSession(null);
       return;
     }
-    // The subscription emits INITIAL_SESSION. A second startup read could
-    // complete after sign-out and reinstall an obsolete token in main.
-    // Keep one ordered auth source for both initialization and later changes.
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => syncSession(session)
     );
     return () => subscription.subscription.unsubscribe();
   }, [distribution, feedbackEndpoint, syncSession]);
-
-  useEffect(
-    () =>
-      window.electron?.menu?.onCommand(command => {
-        if (
-          command === SUBMIT_FEEDBACK_MENU_COMMAND &&
-          feedbackAvailable &&
-          tokenRef.current
-        ) {
-          setError(null);
-          setStatus('idle');
-          setOpen(true);
-        }
-      }),
-    [feedbackAvailable]
-  );
-
   useEffect(() => {
     if (!feedbackEndpoint || !window.electron?.feedback?.testMode) return;
     const install = (event: Event) => {
@@ -225,288 +247,374 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('exawatt:test-feedback-auth', install);
   }, [feedbackEndpoint]);
 
-  const submit = useCallback(
-    async (
-      request: Omit<ProductFeedbackRequest, 'idempotencyKey'>
-    ): Promise<boolean> => {
-      const result = await runConfiguredService(
-        feedbackEndpoint,
-        async endpoint => {
-          const token = tokenRef.current;
-          if (!token) return false;
-          let build: FeedbackBuildInfo | null = null;
-          try {
-            build = (await window.electron?.app?.getBuildInfo?.()) ?? null;
-          } catch {
-            // Build metadata is useful context, never a condition of feedback.
-          }
-          try {
-            await submitProductFeedback(endpoint, token, {
-              schemaVersion: PRODUCT_FEEDBACK_SCHEMA_VERSION,
-              ...applyBuildMetadata(request, build),
-              platform:
-                request.platform ??
-                window.electron?.platform ??
-                navigator.platform,
-              idempotencyKey: crypto.randomUUID(),
-            } satisfies ProductFeedbackServiceRequestV1);
-            window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
-            return true;
-          } catch (cause) {
-            // ENG-030 OS1.2. Feedback is the channel the external-user audit
-            // found dead; a silent failure here is the one failure that also
-            // destroys the report of itself.
-            const problem = isCompatibleServiceProblemError(cause)
-              ? cause
-              : null;
-            captureAnalyticsEvent({
-              name: 'hosted_call_failed',
-              surface: analyticsSurface(),
-              service: 'product_feedback',
-              failure: problem
-                ? hostedFailureForStatus(problem.status)
-                : isCompatibleServiceProtocolError(cause)
-                  ? 'invalid_response'
-                  : 'network',
-              statusCode: problem?.status ?? null,
-            });
-            return false;
-          }
-        }
-      );
-      if (!result.configured) return false;
-      return result.value;
+  const rememberInvoker = useCallback(() => {
+    if (open || temporaryCaptureRef.current) return;
+    const target = document.activeElement;
+    // Radix retains the same editor during its real exit animation. Reopening
+    // it must retain the work origin rather than save its own closing input.
+    if (
+      restoreFocusRef.current?.isConnected &&
+      target instanceof Node &&
+      editorRef.current?.contains(target)
+    )
+      return;
+    restoreFocusRef.current =
+      target instanceof HTMLElement &&
+      target !== document.body &&
+      target.isConnected
+        ? target
+        : null;
+  }, [open]);
+  const restoreFocus = useCallback((event: Event) => {
+    if (temporaryCaptureRef.current) {
+      event.preventDefault();
+      return;
+    }
+    const target = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    if (!target?.isConnected) return;
+    event.preventDefault();
+    target.focus({ preventScroll: true });
+  }, []);
+  const closeEditor = useCallback(() => {
+    invalidateReads();
+    setPreparing({ capture: false, diagnostics: false, image: false });
+    setOpen(false);
+  }, [invalidateReads]);
+  const patch = useCallback(
+    (next: FeedbackDraftPatch) => {
+      store.updateDraft('composer', next);
+      setError(null);
     },
-    [feedbackEndpoint]
+    [store]
   );
 
-  const openFeedback = useCallback(() => {
-    if (!feedbackAvailable || !tokenRef.current) return;
-    setError(null);
-    setStatus('idle');
-    setOpen(true);
-  }, [feedbackAvailable]);
-
-  // ENG-025 F1 quick capture. The draft survives dismissal and failed sends;
-  // the screenshot is captured BEFORE the bar renders so it never contains
-  // the capture UI itself.
-  const [quickOpen, setQuickOpen] = useState(false);
-  const [quickKind, setQuickKind] = useState<QuickFeedbackKind>('general');
-  const [quickMessage, setQuickMessage] = useState('');
-  const [quickShot, setQuickShot] = useState<string | null>(null);
-  const [quickAttach, setQuickAttach] = useState(false);
-  // ENG-025 F5. Collected alongside the screenshot, before the bar renders,
-  // so the toggle is instant and the bundle describes the moment the operator
-  // hit ⌘⇧F rather than the moment they decided to attach it.
-  const [quickDiagnostics, setQuickDiagnostics] =
-    useState<DiagnosticsReport | null>(null);
-  const [quickAttachDiagnostics, setQuickAttachDiagnostics] = useState(false);
-  const [quickError, setQuickError] = useState<string | null>(null);
-  const [sentPulse, setSentPulse] = useState(false);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-
-  const closeQuick = useCallback(() => {
-    setQuickOpen(false);
-    restoreFocusRef.current?.focus?.();
-    restoreFocusRef.current = null;
-  }, []);
-
-  const openQuickCapture = useCallback(
-    (kind: QuickFeedbackKind = 'general') => {
-      if (!feedbackAvailable || !tokenRef.current) return;
+  const openComposer = useCallback(
+    (kind: QuickFeedbackKind, surface: string) => {
+      if (
+        !feedbackAvailable ||
+        !tokenRef.current ||
+        openingRef.current ||
+        temporaryCaptureRef.current
+      )
+        return;
+      rememberInvoker();
+      const state = store.getSnapshot();
+      if (
+        state.attempts.some(
+          attempt =>
+            attempt.status === 'sending' &&
+            attempt.draftId === state.drafts.composer.id
+        )
+      )
+        store.newDraft('composer', kind);
+      const current = store.getSnapshot().drafts.composer;
+      if (current.context) {
+        setOpen(true);
+        return;
+      }
+      store.updateDraft('composer', {
+        kind,
+        context: currentContext(),
+        surface,
+      });
+      const ticket = captureReads.begin();
+      openingRef.current = current.id;
+      setPreparing(value => ({ ...value, capture: true, diagnostics: true }));
+      const diagnostics = Promise.resolve(
+        window.electron?.app?.getDiagnosticsReport?.(true)
+      ).catch(() => null);
       void (async () => {
-        setQuickError(null);
-        setQuickKind(kind);
         let shot: string | null = null;
         try {
           shot =
             (await window.electron?.feedback?.captureScreenshot?.()) ?? null;
         } catch {
-          shot = null;
+          /* Optional evidence */
         }
-        setQuickShot(shot);
-        let report: DiagnosticsReport | null = null;
-        try {
-          report =
-            (await window.electron?.app?.getDiagnosticsReport?.(
-              !!tokenRef.current
-            )) ?? null;
-        } catch {
-          report = null;
-        }
-        setQuickDiagnostics(report);
-        // A bug report usually wants the evidence; other kinds opt in.
-        setQuickAttach(kind === 'bug' && !!shot);
-        setQuickAttachDiagnostics(kind === 'bug' && !!report);
-        restoreFocusRef.current =
-          document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
-        setQuickOpen(true);
+        if (
+          !ticket.current ||
+          !tokenRef.current ||
+          store.getSnapshot().drafts.composer.id !== current.id
+        )
+          return;
+        if (shot)
+          store.updateDraft('composer', {
+            image: {
+              dataUrl: shot,
+              name: 'Window screenshot',
+              source: 'capture',
+            },
+            attachImage: kind === 'bug',
+          });
+        openingRef.current = null;
+        setOpen(true);
+        setPreparing(value => ({ ...value, capture: false }));
+        const report = await diagnostics;
+        if (
+          !ticket.current ||
+          !tokenRef.current ||
+          store.getSnapshot().drafts.composer.id !== current.id
+        )
+          return;
+        store.updateDraft('composer', {
+          diagnostics: report ?? null,
+          attachDiagnostics: kind === 'bug' && !!report,
+        });
+        setPreparing(value => ({ ...value, diagnostics: false }));
       })();
     },
-    [feedbackAvailable]
+    [feedbackAvailable, captureReads, rememberInvoker, store]
   );
-
+  const openQuickCapture = useCallback(
+    (kind: QuickFeedbackKind = 'general') =>
+      openComposer(kind, 'quick-capture'),
+    [openComposer]
+  );
+  const openFeedback = useCallback(
+    () => openComposer('general', window.location.pathname || 'unknown'),
+    [openComposer]
+  );
+  useEffect(
+    () =>
+      window.electron?.menu?.onCommand(command => {
+        if (command === SUBMIT_FEEDBACK_MENU_COMMAND) openFeedback();
+      }),
+    [openFeedback]
+  );
   useEffect(() => {
-    const onOpen = (event: Event) => {
-      const kind = (event as CustomEvent<QuickFeedbackDetail>).detail?.kind;
-      openQuickCapture(kind ?? 'general');
-    };
+    const onOpen = (event: Event) =>
+      openQuickCapture(
+        (event as CustomEvent<QuickFeedbackDetail>).detail?.kind ?? 'general'
+      );
     window.addEventListener(OPEN_QUICK_FEEDBACK_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_QUICK_FEEDBACK_EVENT, onOpen);
   }, [openQuickCapture]);
 
-  useEffect(() => {
-    if (!sentPulse) return;
-    const timer = setTimeout(() => setSentPulse(false), 1600);
-    return () => clearTimeout(timer);
-  }, [sentPulse]);
-
-  const submitQuick = useCallback(async () => {
-    const clean = quickMessage.trim();
-    if (!clean) return;
-    const kind = quickKind;
-    const attachment =
-      quickAttach && quickShot
-        ? { dataUrl: quickShot, name: 'screenshot' }
-        : null;
-    const diagnostics = resolveQuickDiagnostics(
-      kind,
-      quickAttachDiagnostics,
-      quickDiagnostics
-    );
-    const attribution = sampleQuickFeedbackAttribution();
-    // Optimistic: the bar closes on Enter; a failed send reopens it with the
-    // draft intact.
-    closeQuick();
-    const sent = await submit({
-      kind,
-      message: clean,
-      surface: 'quick-capture',
-      context: withDiagnostics(
-        {
-          schemaVersion: 1,
-          url: window.location.href,
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-          projectName: attribution?.projectName ?? null,
-          durableSessionId: attribution?.durableSessionId ?? null,
-        },
-        diagnostics
-      ),
-      attachment,
-    });
-    if (sent) {
-      setQuickMessage('');
-      setQuickShot(null);
-      setQuickAttach(false);
-      setQuickDiagnostics(null);
-      setQuickAttachDiagnostics(false);
-      setSentPulse(true);
+  const upload = useCallback(
+    async (request: ProductFeedbackRequest) => {
+      const token = tokenRef.current;
+      if (!token) throw new Error('Sign in to send. Draft kept.');
+      const result = await runConfiguredService(feedbackEndpoint, endpoint =>
+        submitProductFeedback(endpoint, token, {
+          schemaVersion: PRODUCT_FEEDBACK_SCHEMA_VERSION,
+          ...request,
+        } satisfies ProductFeedbackServiceRequestV1)
+      );
+      if (!result.configured) throw new Error('Feedback is unavailable.');
+      return result.value;
+    },
+    [feedbackEndpoint]
+  );
+  const executeAttempt = useCallback(
+    async (attempt: FeedbackAttempt) => {
+      try {
+        const receipt = await upload(attempt.request);
+        if (store.complete(attempt.id, receipt))
+          window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
+      } catch (cause) {
+        const problem = recordFailure(cause);
+        const retryable =
+          problem?.retryable ?? !isCompatibleServiceProtocolError(cause);
+        const failureOutcome =
+          attempt.failureOutcome === 'unconfirmed' && !attempt.receipt
+            ? 'unconfirmed'
+            : problem && problem.status < 500 && problem.status !== 408
+              ? 'not_accepted'
+              : 'unconfirmed';
+        store.fail(
+          attempt.id,
+          attempt.receipt
+            ? retryable
+              ? 'Text saved. Retry checks the same image.'
+              : 'Text saved. Image delivery is incomplete. Review or finish without it.'
+            : failureOutcome === 'not_accepted'
+              ? 'Report not accepted. Review your draft.'
+              : retryable
+                ? 'Delivery unconfirmed. Draft kept. Retry checks the same report.'
+                : 'Delivery unconfirmed. Draft kept. Review before sending another report.',
+          retryable,
+          failureOutcome
+        );
+      }
+    },
+    [store, upload]
+  );
+  const send = useCallback(() => {
+    if (Object.values(preparing).some(Boolean) || !tokenRef.current) return;
+    const current = store.getSnapshot().drafts.composer;
+    if (!current.message.trim()) {
+      setError('Add your feedback.');
       return;
     }
-    setQuickError('Send failed, draft kept');
-    setQuickOpen(true);
-  }, [
-    closeQuick,
-    quickAttach,
-    quickAttachDiagnostics,
-    quickDiagnostics,
-    quickKind,
-    quickMessage,
-    quickShot,
-    submit,
-  ]);
+    const diagnostics = resolveQuickDiagnostics(
+      current.kind,
+      current.attachDiagnostics,
+      current.diagnostics
+    );
+    const request = applyBuildMetadata(
+      {
+        kind: current.kind,
+        message: current.message.trim(),
+        surface: current.surface ?? 'quick-capture',
+        context: withDiagnostics(
+          current.context ?? currentContext(),
+          diagnostics
+        ),
+        attachment:
+          current.attachImage && current.image
+            ? { dataUrl: current.image.dataUrl, name: current.image.name }
+            : null,
+        platform: window.electron?.platform ?? navigator.platform,
+      },
+      buildRef.current
+    );
+    const attempt = store.start('composer', request);
+    if (!attempt) {
+      setError(
+        store.getSnapshot().attempts.some(value => value.status === 'sending')
+          ? 'Still sending. New draft kept.'
+          : UNRETRYABLE_ATTEMPT_REASON
+      );
+      return;
+    }
+    closeEditor();
+    void executeAttempt(attempt);
+  }, [preparing, store, closeEditor, executeAttempt]);
+  const retry = useCallback(
+    (id: string) => {
+      if (!tokenRef.current) return;
+      const attempt = store.retry(id);
+      if (attempt) void executeAttempt(attempt);
+    },
+    [store, executeAttempt]
+  );
+  const editAttempt = useCallback(
+    (attempt: FeedbackAttempt) => {
+      if (!tokenRef.current || !store.editAttempt(attempt.id)) return;
+      rememberInvoker();
+      setWarnedEditingDraftId(
+        attempt.receipt || attempt.failureOutcome === 'unconfirmed'
+          ? store.getSnapshot().drafts.composer.id
+          : null
+      );
+      setError(null);
+      setOpen(true);
+    },
+    [store, rememberInvoker]
+  );
+
+  const imageFiles = useCallback(
+    async (files: File[]) => {
+      let file: File | null;
+      try {
+        file = validateFeedbackImageFiles(files);
+      } catch (cause) {
+        setError((cause as Error).message);
+        return;
+      }
+      if (!file) return;
+      const ticket = imageReads.begin();
+      const draftId = store.getSnapshot().drafts.composer.id;
+      setPreparing(value => ({ ...value, image: true }));
+      try {
+        const image = await readFeedbackImage(file);
+        if (
+          ticket.current &&
+          tokenRef.current &&
+          store.getSnapshot().drafts.composer.id === draftId
+        )
+          patch({ image, attachImage: true });
+      } catch (cause) {
+        if (ticket.current) setError((cause as Error).message);
+      } finally {
+        if (ticket.current) setPreparing(value => ({ ...value, image: false }));
+      }
+    },
+    [store, imageReads, patch]
+  );
+  const captureImage = useCallback(async () => {
+    const capture = window.electron?.feedback?.captureScreenshot;
+    if (!capture || Object.values(preparing).some(Boolean)) return;
+    const ticket = imageReads.begin();
+    const draftId = store.getSnapshot().drafts.composer.id;
+    temporaryCaptureRef.current = true;
+    setTemporaryCapture(true);
+    setPreparing(value => ({ ...value, image: true }));
+    setOpen(false);
+    // Capture closures skip exit motion. Two paints ensure the overlay is gone.
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+    try {
+      const dataUrl = await capture();
+      if (
+        ticket.current &&
+        tokenRef.current &&
+        store.getSnapshot().drafts.composer.id === draftId
+      )
+        patch({
+          image: { dataUrl, name: 'Window screenshot', source: 'capture' },
+          attachImage: true,
+        });
+    } catch {
+      if (ticket.current) setError('Capture failed. Choose an image.');
+    } finally {
+      if (ticket.current && tokenRef.current) {
+        temporaryCaptureRef.current = false;
+        setTemporaryCapture(false);
+        setPreparing(value => ({ ...value, image: false }));
+        setOpen(true);
+      }
+    }
+  }, [preparing, store, imageReads, patch]);
 
   const submitContextRating = useCallback(
     async (rating: ContextRating) => {
       if (!feedbackAvailable || !tokenRef.current) return false;
+      const submittingAccount = accountRef.current;
       const correction =
         rating.betterLabel?.replace(/\s+/g, ' ').trim() || null;
-      if (correction) {
-        const accepted = await window.electron?.pty?.correctContext?.(
+      if (
+        correction &&
+        !(await window.electron?.pty?.correctContext?.(
           rating.durableSessionId,
           correction
-        );
-        if (!accepted) return false;
+        ))
+      )
+        return false;
+      if (!tokenRef.current || accountRef.current !== submittingAccount)
+        return false;
+      try {
+        await upload({
+          ...applyBuildMetadata(
+            {
+              kind: 'context_label',
+              sentiment: rating.sentiment,
+              message: correction,
+              surface: 'workspace-tab-strip',
+              context: {
+                schemaVersion: 1,
+                durableSessionId: rating.durableSessionId,
+                shownLabel: rating.label,
+                betterLabel: correction,
+                projectName: rating.projectName ?? null,
+              },
+              platform: window.electron?.platform ?? navigator.platform,
+            },
+            buildRef.current
+          ),
+          idempotencyKey: crypto.randomUUID(),
+        });
+        window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
+        return true;
+      } catch (cause) {
+        recordFailure(cause);
+        return false;
       }
-      return submit({
-        kind: 'context_label',
-        sentiment: rating.sentiment,
-        message: correction,
-        surface: 'workspace-tab-strip',
-        context: {
-          schemaVersion: 1,
-          durableSessionId: rating.durableSessionId,
-          shownLabel: rating.label,
-          betterLabel: correction,
-          projectName: rating.projectName ?? null,
-        },
-      });
     },
-    [feedbackAvailable, submit]
+    [feedbackAvailable, upload]
   );
-
-  const capture = useCallback(async () => {
-    const captureScreenshot = window.electron?.feedback?.captureScreenshot;
-    if (!captureScreenshot) {
-      fileRef.current?.click();
-      return;
-    }
-    setStatus('capturing');
-    setError(null);
-    setOpen(false);
-    await wait(180);
-    try {
-      setAttachment(await captureScreenshot());
-      setStatus('idle');
-    } catch {
-      setError(
-        'Could not capture this window. You can attach an image instead.'
-      );
-      setStatus('error');
-    } finally {
-      setOpen(true);
-    }
-  }, []);
-
-  const sendGeneral = useCallback(async () => {
-    const clean = message.trim();
-    if (!clean) {
-      setError('Tell us what happened or what you would like to improve.');
-      return;
-    }
-    setStatus('submitting');
-    setError(null);
-    const sent = await submit({
-      kind,
-      message: clean,
-      surface: window.location.pathname || 'unknown',
-      context: {
-        schemaVersion: 1,
-        url: window.location.href,
-        viewport: { width: window.innerWidth, height: window.innerHeight },
-      },
-      attachment: attachment
-        ? { dataUrl: attachment, name: 'screenshot' }
-        : null,
-    });
-    if (!sent) {
-      setStatus('error');
-      setError(
-        'Feedback could not be sent. Your text is still here, so try again.'
-      );
-      return;
-    }
-    setStatus('sent');
-    await wait(700);
-    setOpen(false);
-    setMessage('');
-    setAttachment(null);
-    setKind('general');
-    setStatus('idle');
-  }, [attachment, kind, message, submit]);
-
   const contextValue = useMemo<FeedbackContextValue>(
     () => ({
       isAvailable: feedbackAvailable,
@@ -523,212 +631,123 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       submitContextRating,
     ]
   );
-
+  const pending = snapshot.attempts.some(
+    attempt => attempt.status === 'sending'
+  );
+  const cannotRetryCurrent = snapshot.attempts.some(
+    attempt =>
+      attempt.draftId === draft.id &&
+      attempt.draftRevision === draft.revision &&
+      attempt.status === 'error' &&
+      !attempt.retryable
+  );
+  const deliveryWarning =
+    getDraftDeliveryWarning(snapshot.attempts, draft.id) ??
+    (warnedEditingDraftId === draft.id ? DUPLICATE_DELIVERY_WARNING : null);
   return (
     <ProductFeedbackContext.Provider value={contextValue}>
       {children}
       <Dialog
         open={open}
-        onOpenChange={next => status !== 'submitting' && setOpen(next)}
+        onOpenChange={next => {
+          if (!next) closeEditor();
+        }}
       >
         <DialogContent
-          className="max-w-xl border-hud-cyan/20 bg-hud-panel p-0 text-foreground shadow-2xl"
+          ref={editorRef}
+          motion={temporaryCapture ? 'none' : 'auto'}
+          className={`${COMFORTABLE_OVERLAY_CONTENT_CLASS} sm:max-w-xl`}
+          showCloseButton
+          // The close affordance has a reserved input-space footprint.
           primaryAction={{
-            label: (
-              <>
-                {status === 'submitting' && (
-                  <LoaderCircle className="size-4 animate-spin" />
-                )}
-                Send feedback
-              </>
-            ),
-            ariaLabel: 'Send feedback',
-            run: () => void sendGeneral(),
-            disabled: status === 'submitting' || status === 'sent',
+            none: 'Feedback sends Return from its composer; focused controls keep native activation.',
+          }}
+          onCloseAutoFocus={restoreFocus}
+          onEscapeKeyDown={event => {
+            if (event.isComposing || event.keyCode === 229)
+              event.preventDefault();
           }}
         >
-          <div className="border-b border-hud-cyan/20 px-6 py-5">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-base">
-                <MessageSquareWarning className="size-4 text-hud-cyan" />
-                Submit feedback
-              </DialogTitle>
-              <DialogDescription>
-                Bugs, rough edges, and ideas all land in the same review queue.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-          <div className="grid gap-5 px-6 py-1">
-            <div className="grid gap-2">
-              <Label htmlFor="feedback-kind">Type</Label>
-              <Select
-                value={kind}
-                onValueChange={value => setKind(value as typeof kind)}
-              >
-                <SelectTrigger
-                  id="feedback-kind"
-                  className="bg-[var(--exa-hud-fill)]"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="general">General feedback</SelectItem>
-                  <SelectItem value="bug">Bug report</SelectItem>
-                  <SelectItem value="idea">Product idea</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="feedback-message">What should we know?</Label>
-              <Textarea
-                id="feedback-message"
-                autoFocus
-                value={message}
-                maxLength={12_000}
-                rows={6}
-                onChange={event => setMessage(event.target.value)}
-                placeholder="What happened, what did you expect, or what would make this better?"
-                className="min-h-32 resize-y bg-[var(--exa-hud-fill)]"
-              />
-              <div className="text-right font-mono text-chrome-micro text-muted-foreground">
-                {message.length.toLocaleString()} / 12,000
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>
-                Screenshot{' '}
-                <span className="font-normal text-muted-foreground">
-                  (optional)
-                </span>
-              </Label>
-              {attachment ? (
-                <div className="flex items-center gap-3 rounded-md border border-hud-cyan/20 bg-[var(--exa-hud-fill)] p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={attachment}
-                    alt="Feedback attachment preview"
-                    className="h-14 w-24 rounded object-cover"
-                  />
-                  <div className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    Window capture attached
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Remove screenshot"
-                    onClick={() => setAttachment(null)}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="justify-start gap-2 bg-[var(--exa-hud-fill)]"
-                  onClick={() => void capture()}
-                  disabled={status === 'capturing'}
-                >
-                  {status === 'capturing' ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : captureAvailable ? (
-                    <Camera className="size-4" />
-                  ) : (
-                    <ImagePlus className="size-4" />
-                  )}
-                  {captureAvailable ? 'Capture this window' : 'Attach an image'}
-                </Button>
-              )}
-              <input
-                ref={fileRef}
-                className="sr-only"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={async event => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  if (file.size > 5 * 1024 * 1024) {
-                    setError('Screenshots must be 5 MB or smaller.');
-                    setStatus('error');
-                    return;
-                  }
-                  try {
-                    setAttachment(await dataUrlFromFile(file));
-                    setError(null);
-                    setStatus('idle');
-                  } catch (cause) {
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : 'Could not read that image.'
-                    );
-                    setStatus('error');
-                  }
+          <DialogTitle className="sr-only">Submit feedback</DialogTitle>
+          <DialogDescription className="sr-only">
+            Return sends feedback. Shift Return adds a line.
+          </DialogDescription>
+          <QuickCaptureBar
+            dialogSemantics={false}
+            className="w-full border-0 bg-transparent shadow-none [&_textarea]:pr-12"
+            kind={draft.kind}
+            onKindChange={kind => patch({ kind })}
+            message={draft.message}
+            onMessageChange={message => patch({ message })}
+            screenshot={draft.image?.dataUrl ?? null}
+            attachmentName={draft.image?.name}
+            attachScreenshot={draft.attachImage}
+            onAttachScreenshotChange={attachImage => patch({ attachImage })}
+            diagnostics={draft.diagnostics}
+            attachDiagnostics={draft.attachDiagnostics}
+            onAttachDiagnosticsChange={attachDiagnostics =>
+              patch({ attachDiagnostics })
+            }
+            error={
+              [
+                error,
+                cannotRetryCurrent ? UNRETRYABLE_ATTEMPT_REASON : null,
+                deliveryWarning,
+              ]
+                .filter(Boolean)
+                .join(' ') || null
+            }
+            busy={Object.values(preparing).some(Boolean)}
+            sendDisabled={pending || cannotRetryCurrent}
+            onImageFiles={files => void imageFiles(files)}
+            onCaptureImage={
+              captureAvailable ? () => void captureImage() : undefined
+            }
+            onRemoveImage={() => patch({ image: null, attachImage: false })}
+            onSubmit={send}
+            onDismiss={closeEditor}
+          />
+          {snapshot.attempts.some(attempt =>
+            hiddenReceipts.has(attempt.id)
+          ) && (
+            <div className="border-t border-border px-4 py-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setHiddenReceipts(new Set());
+                  closeEditor();
                 }}
-              />
+              >
+                Recover feedback
+              </Button>
             </div>
-            <div aria-live="polite" className="min-h-5 text-xs">
-              {error && <span className="text-destructive">{error}</span>}
-              {status === 'sent' && (
-                <span className="inline-flex items-center gap-1.5 text-emerald-400">
-                  <Check className="size-3.5" /> Feedback sent
-                </span>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="border-t border-hud-cyan/20 px-6 py-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setOpen(false)}
-              disabled={status === 'submitting'}
-            >
-              Cancel
-            </Button>
-          </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
-      {quickOpen && (
-        <>
-          {/* transparent backdrop: click-away dismisses but keeps the draft */}
-          <div
-            className="fixed inset-0 z-50"
-            onMouseDown={closeQuick}
-            aria-hidden
-          />
-          <div className="pointer-events-none fixed inset-x-0 top-24 z-50 flex justify-center px-4">
-            <div className="pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-150">
-              <QuickCaptureBar
-                kind={quickKind}
-                onKindChange={setQuickKind}
-                message={quickMessage}
-                onMessageChange={setQuickMessage}
-                screenshot={quickShot}
-                attachScreenshot={quickAttach}
-                diagnostics={quickDiagnostics}
-                attachDiagnostics={quickAttachDiagnostics}
-                onAttachDiagnosticsChange={setQuickAttachDiagnostics}
-                onAttachScreenshotChange={setQuickAttach}
-                error={quickError}
-                onSubmit={() => void submitQuick()}
-                onDismiss={closeQuick}
-              />
-            </div>
-          </div>
-        </>
-      )}
-      {sentPulse && (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center">
-          <div className="animate-in fade-in slide-in-from-top-1 flex items-center gap-1.5 rounded-full border border-hud-cyan/20 bg-hud-panel px-3 py-1 text-xs text-muted-foreground shadow-lg duration-200">
-            <Check className="size-3.5 text-emerald-400" /> Feedback sent
+      {!open && isAuthenticated && snapshot.attempts.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-24 z-50 flex justify-center px-4">
+          <div className="pointer-events-auto flex max-h-[60dvh] w-full max-w-xl flex-col gap-2 overflow-y-auto">
+            {snapshot.attempts
+              .filter(attempt => !hiddenReceipts.has(attempt.id))
+              .map(attempt => (
+                <FeedbackReceipt
+                  key={attempt.id}
+                  attempt={attempt}
+                  store={store}
+                  onHide={id =>
+                    setHiddenReceipts(current => new Set([...current, id]))
+                  }
+                  onRetry={retry}
+                  onEdit={editAttempt}
+                />
+              ))}
           </div>
         </div>
       )}
     </ProductFeedbackContext.Provider>
   );
 }
-
 export function useProductFeedback(): FeedbackContextValue {
   const value = useContext(ProductFeedbackContext);
   if (!value)
@@ -737,9 +756,6 @@ export function useProductFeedback(): FeedbackContextValue {
     );
   return value;
 }
-
-/** Chrome atoms are also rendered in isolation by the component workbench and
- * unit tests; those callers can omit the application-level provider. */
 export function useOptionalProductFeedback(): FeedbackContextValue | null {
   return useContext(ProductFeedbackContext);
 }

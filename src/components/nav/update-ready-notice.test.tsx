@@ -13,6 +13,18 @@ import {
 } from '@/test-support/desktop-bridge-double';
 
 let emitStatus: ((status: ProductUpdateStatus) => void) | undefined;
+let emitShutdown:
+  | ((status: {
+      phase:
+        | 'idle'
+        | 'confirming'
+        | 'checkpointing'
+        | 'stopping'
+        | 'finalizing';
+      agents: number;
+      shells: number;
+    }) => void)
+  | undefined;
 const UPDATE_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
   brand: {
@@ -29,6 +41,7 @@ const UPDATE_IDENTITY = resolveDistributionIdentity(UPDATE_DISTRIBUTION);
 afterEach(() => {
   removeBridgeDouble();
   emitStatus = undefined;
+  emitShutdown = undefined;
 });
 
 function installApi(productUpdates = true) {
@@ -96,7 +109,10 @@ function installApi(productUpdates = true) {
       setWorkspaceCheckpointOwner: async () => undefined,
       completeCheckpoint: async () => undefined,
       onCheckpointRequest: () => () => undefined,
-      onShutdownStatus: () => () => undefined,
+      onShutdownStatus: handler => {
+        emitShutdown = handler;
+        return () => undefined;
+      },
       onUpdateReady: () => () => undefined,
     },
   });
@@ -180,5 +196,44 @@ describe('UpdateReadyNotice', () => {
         'Update failed, so Orbit 1.0.0 stays installed. No reason was reported.'
       )
     ).toBeInTheDocument();
+  });
+
+  it('keeps an update available until dismissal and reveals later status', async () => {
+    const restart = installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    const ready: ProductUpdateStatus = {
+      phase: 'downloaded',
+      currentVersion: '1.0.0',
+      availableVersion: '1.1.0',
+      percent: 100,
+      liveSessions: 1,
+      error: null,
+      enabled: true,
+      disabledReason: null,
+      logPath: null,
+    };
+    act(() => emitStatus?.(ready));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(restart).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Dismiss update notice' })
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    act(() => emitStatus?.({ ...ready, availableVersion: '1.2.0' }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(restart).not.toHaveBeenCalled();
+  });
+
+  it('announces active shutdown without offering interruption or restart', async () => {
+    const restart = installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() => emitShutdown?.({ phase: 'checkpointing', agents: 2, shells: 1 }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(restart).not.toHaveBeenCalled();
+    act(() => emitShutdown?.({ phase: 'idle', agents: 0, shells: 0 }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

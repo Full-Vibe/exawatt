@@ -207,6 +207,41 @@ Settings, so the chord the bar shows is always the chord you have.
 See the [Session lifecycle reference](../reference/session-lifecycle.md) for the
 state and persistence contract.
 
+## Searching and commanding
+
+Open **⌘K** to search Projects, Sessions and commands. Arrow keys move the
+highlight; Return runs the selected enabled row, indicated by its Return icon.
+Registered shortcuts remain beside their commands. Disabled rows explain why
+the action is unavailable and never show an activation cue. Escape closes the
+palette and returns focus to the control you were using.
+
+## Sending feedback
+
+In builds with feedback configured, sign in and use **⌘⇧F**, a feedback
+command in **⌘K**, or **Help → Submit Feedback**. Each opens the same composer.
+Choose General, Bug or Idea and type your report. **Return** sends from the text
+field; **Shift Return** adds a line. Escape keeps the draft while the app runs.
+Drafts are not preserved across restart.
+
+Paste or drop one PNG, JPEG or WebP image up to 5 MiB, or use **Attach image**.
+A valid new image replaces the previous one; its preview close icon removes it.
+Desktop capture takes the window before the composer appears. Bug reports
+include available captured evidence by default; review or remove the image and
+anonymized diagnostics before sending. Existing drafts keep their original
+context and evidence when reopened.
+
+Sending closes the composer, shows a compact receipt and returns focus so you
+can continue working. Receipt states update immediately; the sending spinner
+indicates the pending request. **Feedback sent** confirms the report and any requested image were
+saved. If the report was saved without its image, retry the same attempt or
+choose **Finish without image**. **Delivery unconfirmed** keeps the attempt
+available for retry when offered; it does not mean nothing was saved. A later
+refused retry does not settle an earlier unconfirmed delivery. Some failed
+attempts cannot be retried unchanged. Editing an uncertain report starts a new
+report and can duplicate earlier text; the composer warns when you reopen or
+edit it. Hidden recovery
+receipts remain available from **Recover feedback** while signed in.
+
 ## Modes
 
 Exawatt has two first-class modes:

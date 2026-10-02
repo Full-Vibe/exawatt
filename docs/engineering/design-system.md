@@ -302,6 +302,45 @@ face (BUG-049; the ⌘W close confirm's `Close ⏎` is the precedent, D27).
 - Chord glyph register: `font-mono text-chrome-micro`, dimmed against the
   button's own foreground. No `kbd` chrome inside a filled button.
 
+### Comfortable overlays and operation receipts (ENG-025 F6 / ENG-036, 2026-10-02)
+
+**One clear path, visible owned keys, stable delivery truth.** The operator
+reviewed the paired Cmd+K/feedback study and authorized adoption after removing
+the elaborate state motion. The accepted treatment uses existing type, spacing,
+material and action rungs; it introduces no palette or source-specific styling.
+
+- Cmd+K and feedback share a comfortable overlay shell. Search uses the `title`
+  type rung with a 64px input row; commands use 48px minimum rows, `px-3 py-3`,
+  and a scroll-bounded list. Both reserve space for their close control. The
+  selected enabled command owns a constant trailing Return footprint; disabled
+  commands never advertise activation. cmdk owns ranking, selection and Enter.
+- Put a key hint beside its action and keep its footprint from first paint.
+  Feedback's text field owns Return to send and Shift+Return for a new line;
+  focused buttons retain native activation and IME composition never sends.
+  One composer serves Help, the palette and the global shortcut. Image input
+  offers one picker, a local paste hint, a preview and an accessible close icon;
+  redundant Replace/Remove labels do not become additional choices.
+- `DialogContent` owns real Radix presence animations: 240ms entrance and
+  160ms exit, using the house easing and only opacity/transform. Radix retains
+  the actual closing subtree and owns unmounting. Reduced motion renders the
+  same states directly; the typed `motion: none` override lets screenshot
+  capture close before reading the window. Undefined animation utilities,
+  cloned dialogs, geometry snapshots and guessed close delays are not owners.
+- `OperationReceipt` presents pending, complete, partial, error and neutral
+  facts on one stable material surface. State changes update immediately;
+  only pending spins, with a reduced-motion gate. Do not fade the whole message,
+  scale text, resize a separate plate or delay a fast result to exhibit motion.
+  Its polite atomic status excludes recovery actions and never steals focus.
+  Saved text, missing evidence, explicit refusal and uncertain delivery remain
+  distinct facts. Retry permission cannot stand in for delivery certainty.
+- Shared notice placement owns layout only. Update, restore-hint and chord
+  callers retain their own persistence, timers and actions; feedback keeps its
+  compact receipt near the composer. Hiding recovery presentation preserves
+  its immutable report and key until recovered, account sign-out or renderer teardown.
+
+The paired review study retires on adoption. Further app-wide motion work uses
+these shared owners and an operator-reviewed study, rather than local patches.
+
 ---
 
 ## `/hud-gallery` audit — G0 decisions (G1 executes)

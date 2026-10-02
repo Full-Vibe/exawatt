@@ -43,6 +43,7 @@ import {
 } from '@/components/workspace/session-jump';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
+import { useState, type ComponentProps } from 'react';
 import type { CommandPaletteLaunchConfiguration } from './command-palette-launch-configurations';
 import {
   installBridgeDouble,
@@ -52,6 +53,7 @@ import {
 
 const navigateCommandSurface = vi.fn();
 const activateCommandAltitude = vi.fn();
+const notifyPending = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
@@ -64,15 +66,18 @@ vi.mock('@/components/nav/command-navigation-provider', () => ({
   }),
 }));
 
-vi.mock('@/components/appearance/appearance-provider', () => ({
-  useAppearance: () => ({
+vi.mock('@/components/appearance/appearance-provider', () => {
+  // Match the provider's stable callbacks: closing resets the palette and
+  // depends on cancelPreview, so a new mock each render fabricates a loop.
+  const appearance = {
     preferences: { mode: 'system' },
     resolved: { themeId: 'exawatt-classic-dark' },
     previewTheme: vi.fn(),
     cancelPreview: vi.fn(),
     commitPreferences: vi.fn(),
-  }),
-}));
+  };
+  return { useAppearance: () => appearance };
+});
 
 vi.mock('@/components/feedback/product-feedback-provider', () => ({
   useOptionalProductFeedback: () => null,
@@ -176,20 +181,36 @@ beforeEach(() => {
   window.localStorage.clear();
   navigateCommandSurface.mockClear();
   activateCommandAltitude.mockClear();
+  notifyPending.mockClear();
   activeWorkspaceId = DEMO_WORKSPACE_ID;
   projectFixtures = [];
 });
 
 afterEach(cleanup);
 
+function LivePalette(
+  props: Omit<
+    ComponentProps<typeof CommandPalette>,
+    'open' | 'onOpenChange' | 'onOpenHelpModal'
+  >
+) {
+  const [open, setOpen] = useState(true);
+  return (
+    <CommandPalette
+      {...props}
+      open={open}
+      onOpenChange={setOpen}
+      onOpenHelpModal={() => undefined}
+      // A real parent may replace callback identity while accepting close.
+      onActionPendingChange={pending => notifyPending(pending)}
+    />
+  );
+}
+
 function renderPalette() {
   return render(
     <TooltipProvider>
-      <CommandPalette
-        open
-        onOpenChange={() => undefined}
-        onOpenHelpModal={() => undefined}
-      />
+      <LivePalette />
     </TooltipProvider>
   );
 }
@@ -233,6 +254,9 @@ describe('⌘K ranking (ENG-016)', () => {
     await waitFor(() =>
       expect(navigateCommandSurface).toHaveBeenCalledWith('/usage')
     );
+    expect(navigateCommandSurface).toHaveBeenCalledOnce();
+    expect(notifyPending).toHaveBeenCalledWith(true);
+    expect(notifyPending).toHaveBeenLastCalledWith(false);
   });
 
   it.each(['go to usage', 'go usage'])(
@@ -402,12 +426,7 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
   function renderPersonalPalette() {
     return render(
       <TooltipProvider>
-        <CommandPalette
-          open
-          onOpenChange={() => undefined}
-          onOpenHelpModal={() => undefined}
-          launchConfigurations={LAUNCH_CONFIGURATIONS}
-        />
+        <LivePalette launchConfigurations={LAUNCH_CONFIGURATIONS} />
       </TooltipProvider>
     );
   }
@@ -515,11 +534,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   function renderWorkspacePalette() {
     return render(
       <TooltipProvider>
-        <CommandPalette
-          open
-          onOpenChange={() => undefined}
-          onOpenHelpModal={() => undefined}
-        />
+        <LivePalette />
       </TooltipProvider>
     );
   }

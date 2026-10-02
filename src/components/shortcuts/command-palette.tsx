@@ -4,6 +4,7 @@ import {
   Fragment,
   useState,
   useEffect,
+  useEffectEvent,
   useMemo,
   useCallback,
   useRef,
@@ -200,6 +201,7 @@ const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onActionPendingChange?: (pending: boolean) => void;
   onOpenHelpModal: () => void;
   /** Ranked Project selector output. Persistence remains outside the palette. */
   launchConfigurations?: readonly CommandPaletteLaunchConfiguration[];
@@ -306,6 +308,7 @@ const WORKSPACE_ICONS = {
 export function CommandPalette({
   open,
   onOpenChange,
+  onActionPendingChange,
   onOpenHelpModal,
   launchConfigurations: suppliedLaunchConfigurations,
   cloneTargets = [],
@@ -323,6 +326,7 @@ export function CommandPalette({
   // the best group to the top, and a scroll position left over from an
   // earlier keystroke can hide the selected first row above the fold.
   const listRef = useRef<HTMLDivElement | null>(null);
+  const pendingAction = useRef<(() => void) | null>(null);
   const searchAndRescroll = useCallback((value: string) => {
     setSearch(value);
     listRef.current?.scrollTo?.({ top: 0 });
@@ -471,11 +475,26 @@ export function CommandPalette({
 
   const handleSelect = useCallback(
     (callback: () => void) => {
+      if (pendingAction.current) return;
+      pendingAction.current = callback;
+      onActionPendingChange?.(true);
       onOpenChange(false);
-      // Small delay to let the dialog close animation start
-      setTimeout(callback, 50);
     },
-    [onOpenChange]
+    [onOpenChange, onActionPendingChange]
+  );
+  const finishSelection = useCallback(() => {
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    onActionPendingChange?.(false);
+    action?.();
+  }, [onActionPendingChange]);
+  const releaseHandoff = useEffectEvent(() => onActionPendingChange?.(false));
+  useEffect(
+    () => () => {
+      pendingAction.current = null;
+      releaseHandoff();
+    },
+    []
   );
   const workspaceRows = useMemo(
     () =>
@@ -1807,6 +1826,7 @@ export function CommandPalette({
     <CommandDialog
       open={open}
       onOpenChange={handlePaletteOpenChange}
+      onAfterClose={finishSelection}
       commandValue={paletteMode === 'themes' ? themeValue : rowValue}
       onCommandValueChange={
         paletteMode === 'themes' ? previewTheme : setRowValue

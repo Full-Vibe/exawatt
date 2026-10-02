@@ -1,0 +1,62 @@
+/* Radix Presence observes these named animations and retains the real subtree
+   through exit. No timers, cloned dialogs or synthetic mount lifecycle. */
+.content[data-state='open'] {
+  animation: overlay-panel-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.content[data-state='closed'] {
+  animation: overlay-panel-out 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+.scrim[data-state='open'] {
+  animation: overlay-scrim-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.scrim[data-state='closed'] {
+  animation: overlay-scrim-out 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+.content[data-overlay-motion='none'],
+.scrim[data-overlay-motion='none'] {
+  animation: none;
+}
+@keyframes overlay-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes overlay-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+@keyframes overlay-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content[data-state],
+  .scrim[data-state] {
+    animation: none;
+  }
+}

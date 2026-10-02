@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
+import { Button } from '@/components/ui/button';
+import { OperationReceipt } from '@/components/ui/operation-receipt';
+import { NoticeLaneItem } from '@/components/ui/notice-lane';
 
 export function UpdateReadyNotice() {
   const [productName, setProductName] = useState('Exawatt');
@@ -79,32 +82,43 @@ export function UpdateReadyNotice() {
                 `Update failed, so ${productName} ${status?.currentVersion} stays installed. ${status?.error ?? 'No reason was reported.'}`;
 
   return (
-    <div className="exa-material-overlay fixed bottom-8 left-1/2 z-[100] flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center gap-3 border border-[var(--exa-foundation-border-strong)] px-3 py-2 text-xs text-[var(--exa-foundation-text)] shadow-lg">
-      <span className="min-w-0 flex-1">{message}</span>
-      {!shutdownActive && !installedSha && status?.phase === 'downloaded' && (
-        <button
-          type="button"
-          className="inline-flex h-7 items-center gap-1.5 border border-[var(--exa-foundation-border-strong)] px-2 text-[var(--exa-foundation-text)] hover:bg-[var(--exa-foundation-secondary)]"
-          onClick={() => void window.electron?.app?.updates?.restart()}
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Restart to Update
-        </button>
-      )}
-      {!shutdownActive && (
-        <button
-          type="button"
-          className="ml-auto grid h-6 w-6 shrink-0 place-items-center text-[var(--exa-foundation-text-muted)] hover:text-[var(--exa-foundation-text)]"
-          aria-label="Dismiss update notice"
-          title="Dismiss"
-          onClick={() => {
-            if (installedSha) setInstalledSha(null);
-            else setDismissed(productKey);
-          }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
+    <NoticeLaneItem lane="update">
+      <OperationReceipt
+        state={
+          shutdownActive ||
+          (!installedSha &&
+            (status?.phase === 'checking' || status?.phase === 'downloading'))
+            ? 'pending'
+            : installedSha || status?.phase === 'downloaded'
+              ? 'success'
+              : status?.phase === 'error'
+                ? 'error'
+                : 'neutral'
+        }
+        title={message}
+        actions={
+          !shutdownActive && !installedSha && status?.phase === 'downloaded' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void window.electron?.app?.updates?.restart()}
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Restart to Update
+            </Button>
+          ) : undefined
+        }
+        dismissLabel="Dismiss update notice"
+        onDismiss={
+          shutdownActive
+            ? undefined
+            : () => {
+                if (installedSha) setInstalledSha(null);
+                else setDismissed(productKey);
+              }
+        }
+      />
+    </NoticeLaneItem>
   );
 }

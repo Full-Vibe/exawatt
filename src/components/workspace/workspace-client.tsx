@@ -45,6 +45,8 @@ import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
 import { Button } from '@/components/ui/button';
+import { OperationReceipt } from '@/components/ui/operation-receipt';
+import { NoticeLaneItem } from '@/components/ui/notice-lane';
 import { useProjectPauseInteraction } from './use-project-pause-interaction';
 import {
   CloseConfirm,
@@ -2527,18 +2529,11 @@ export function WorkspaceClient() {
         />
       )}
       {closeToast && (
-        <div
-          data-close-toast
-          role="status"
-          className="fixed bottom-10 right-4 z-40 max-w-md rounded border px-3 py-2 font-sans text-xs motion-safe:animate-in motion-safe:fade-in"
-          style={{
-            borderColor: HUD.strokeSoft,
-            background: HUD.bg.panelFill,
-            color: HUD.textDim,
-          }}
-        >
-          {closeToast}
-        </div>
+        <NoticeLaneItem lane="hint">
+          <div data-close-toast>
+            <OperationReceipt state="neutral" title={closeToast} />
+          </div>
+        </NoticeLaneItem>
       )}
     </div>
   );

@@ -122,10 +122,11 @@ test('provider composition changes receive related consumer tests', () => {
       'stale-async-ratchet',
     ]
   );
-  assert.deepEqual(
-    checks.find(check => check.id === 'vitest-related').args,
-    ['run', 'test:related', 'src/components/ExposeOverlay.tsx']
-  );
+  assert.deepEqual(checks.find(check => check.id === 'vitest-related').args, [
+    'run',
+    'test:related',
+    'src/components/ExposeOverlay.tsx',
+  ]);
 });
 
 // BUG-206/BUG-207: whole-tree renderer guards import nothing they check, so
@@ -154,7 +155,10 @@ test('renderer changes run the screen-copy guard and the stale-async ratchet', (
       `${file} is outside the ratchet's tree`
     );
   }
-  for (const file of ['docs/engineering/design-system.md', 'electron/main/main.ts']) {
+  for (const file of [
+    'docs/engineering/design-system.md',
+    'electron/main/main.ts',
+  ]) {
     const routed = ids([file]);
     assert.ok(!routed.includes('copy:check'), `${file} renders no screen copy`);
     assert.ok(!routed.includes('stale-async-ratchet'));
@@ -641,6 +645,25 @@ test('quarantine says nothing about an untouched surface', () => {
   );
 });
 
+test('native feedback evidence is required when reporting ownership changes', () => {
+  for (const file of [
+    'src/components/feedback/product-feedback-provider.tsx',
+    'src/components/feedback/feedback-receipt.tsx',
+    'src/components/feedback/quick-capture-bar.tsx',
+    'src/lib/feedback/attempt-store.ts',
+    'src/lib/feedback/image.ts',
+    'src/components/ui/operation-receipt.tsx',
+    'scripts/lib/feedback-reporting-eval.mjs',
+  ]) {
+    assert.ok(
+      missingSurfaceGates([file]).some(
+        entry => entry.gate === 'eval:electron:context-labels'
+      ),
+      `${file} can break native feedback evidence and therefore owes its gate`
+    );
+  }
+});
+
 test('source Settings changes require the repaired source gate', () => {
   for (const file of [
     'src/app/settings/agent-sources-settings.tsx',
@@ -682,7 +705,13 @@ test('the vitest checks declare the isolated rerun; the others do not', () => {
     check => check.id === 'roadmap-contract'
   );
   assert.deepEqual(roadmap.rerun, { kind: 'vitest', script: 'test:alone' });
-  for (const id of ['type-check', 'content:scan', 'lint', 'exports:check', 'test:agent-delivery']) {
+  for (const id of [
+    'type-check',
+    'content:scan',
+    'lint',
+    'exports:check',
+    'test:agent-delivery',
+  ]) {
     assert.equal(
       classifyDeliveryPolicy(['src/lib/raw-tokens.ts']).find(
         check => check.id === id
@@ -1093,7 +1122,11 @@ test('lint and the delivery-script pins run on every landing and in every CI bat
     );
   }
   const lint = classifyDeliveryPolicy([]).find(check => check.id === 'lint');
-  assert.deepEqual(lint, { id: 'lint', command: 'pnpm', args: ['run', 'lint'] });
+  assert.deepEqual(lint, {
+    id: 'lint',
+    command: 'pnpm',
+    args: ['run', 'lint'],
+  });
 
   const workflow = await readFile(
     path.join(root, '.github/workflows/ci.yml'),
@@ -1109,7 +1142,11 @@ test('lint and the delivery-script pins run on every landing and in every CI bat
 // BUG-137. A new export with no consumer is refused at the door; the existing
 // 524 are not re-litigated. The check owes exactly the changed source files.
 test('changed source files owe the consumer-less export check', () => {
-  const checks = classifyDeliveryPolicy(['src/b.ts', 'docs/a.md', 'scripts/c.mjs']);
+  const checks = classifyDeliveryPolicy([
+    'src/b.ts',
+    'docs/a.md',
+    'scripts/c.mjs',
+  ]);
   const exportsCheck = checks.find(check => check.id === 'exports:check');
   assert.deepEqual(exportsCheck, {
     id: 'exports:check',

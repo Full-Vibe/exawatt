@@ -82,6 +82,9 @@ export interface ProductFeedbackResponseV1 {
   attachmentStored: boolean;
 }
 
+/** Foreground feedback never remains pending indefinitely; retries retain its key. */
+const FEEDBACK_REQUEST_DEADLINE_MS = 30_000;
+
 export interface OperatorStatsProfileV1 {
   enabled: boolean;
   startedAt: string;
@@ -357,6 +360,10 @@ export function submitProductFeedback(
   request: ProductFeedbackRequestV1,
   options: CompatibleServiceCallOptions = {}
 ): Promise<ProductFeedbackResponseV1> {
+  const deadline = AbortSignal.timeout(FEEDBACK_REQUEST_DEADLINE_MS);
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, deadline])
+    : deadline;
   return callJson(
     endpoint,
     accessToken,
@@ -364,7 +371,7 @@ export function submitProductFeedback(
     request,
     [200, 201],
     decodeProductFeedback,
-    options
+    { ...options, signal }
   );
 }
 

@@ -87,6 +87,9 @@ Drafts survive dismissal/failure while running. Restart persistence is deferred.
 No discovery question remains. BUG-270 records the supplied Claude/Linear
 palette suggestion; BUG-261 owns operation/notice presentation.
 
+The source findings below describe the pre-implementation baseline. The
+execution amendment at the end records the authorized simplified implementation.
+
 #### Coverage and evidence confidence
 
 Two independent assessments reviewed current source/canon at `981378ed328d`:
@@ -168,8 +171,9 @@ Neither persona benefits from a new navigation hierarchy or a cosmetic rewrite.
 The supplied Claude screenshot's highlighted Enter cue and the Linear screenshot's
 roomy grouped rows motivate a comfortable overlay density tier. They do not
 justify copying pixel dimensions or turning every operational panel into a large
-modal. Sharing presentation must retain palette Enter-to-activate, quick composer
-Enter-to-send and full dialog's registered primary-action chord. Disabled reasons
+modal. Sharing presentation must retain palette Return-to-activate and the
+single feedback composer's Return-to-send text-field contract. The operator execution amendment below
+supersedes the quick/full split. Disabled reasons
 remain truthful. The selected action cue belongs to the palette row, not the
 Team tutorial header deliberately retired in September.
 
@@ -179,19 +183,21 @@ The reporting package sequence is ENG-025 F6.1–F6.5; this log supplies its
 cross-surface review and shared-foundation boundary, not another roadmap.
 The roadmap's ENG-025 project reference owns detailed reporting acceptance.
 
-Start with one paired DOM `/hud-gallery` study. Show empty/search/disabled and
-selected palette states beside quick/full feedback editing, sending, success,
-partial and failure; include hint/update siblings to expose placement conflicts.
-Demonstrate the accepted compact receipt first and shared notice placement as an
-optional comparison. Use current Type, Spacing, semantic Color roles, overlay
-material, Menus, Dialogs, Motion and Voice. No new fonts/status lamps and no R3F
-sibling unless canvas rendering changes.
+The paired DOM study reviewed empty/search/disabled/selected palette states
+beside the single composer and receipt states, with hint/update siblings. The
+operator explicitly authorizes comfortable shared overlays, visible owned-key
+hints and immediate receipts after rejecting animation machinery. The study is
+retired; no further gallery approval is pending. Use existing Type, Spacing,
+semantic Color roles, Menus, Dialogs, Motion and Voice. No new fonts/status lamps
+or R3F changes are required.
 
-After operator review, amend the design-system canon, extract shared overlay and
-receipt primitives, establish server receipt truth before retrying-client adoption,
+Amend the design-system canon to the authorized simplified behavior: shared
+Dialog presence and overlay presentation, immediate receipt states with only a
+pending spinner. Establish server receipt truth before retrying-client adoption
 and wire the paired flows. Migrate close hints/update presentation incrementally;
 retain update restart/dismiss/shutdown semantics. Broader adoption follows measured
-need, not a forced app-wide replacement in one diff. Retire the study when shipped.
+need, not a forced app-wide replacement in one diff. The study is retired with
+shared adoption.
 
 Exit: keyboard-only activation and recovery work; disabled rows never promise
 Enter; focus returns once to the intended live control; older completions cannot
@@ -201,3 +207,38 @@ Classic/Air/Night, reduced motion, constrained widths and enlarged interface typ
 Test these contracts, not today's copy or layout dimensions. Architecture projections
 change with the implemented owner, not with this plan. Delight celebrates an
 evidenced accomplishment only after reliability and restart trust are established.
+
+### 2026-10-02 — Simplified shared foundations authorized for adoption
+
+**Immediate receipts and shared overlays are authorized.** Keyboard capture,
+palette and Help invoke one composer. Draft/evidence survive dismissal within
+the running app, immutable attempts preserve delivery truth, and a compact
+receipt returns work focus. The operator explicitly instructs proceeding with
+simplified states; verification, integration and installed/deployed evidence
+remain separate requirements, not another visual approval gate.
+
+The app-wide principles are concrete: show terse owned-key hints beside their
+controls; never promise activation on disabled controls; use one predictable
+path for validated evidence. Cmd+K adopts comfortable shared overlay spacing,
+a keyboard footer and selected enabled Return cue without hiding registered
+shortcuts. The attachment control, paste and drop share one validator; the
+preview close icon removes evidence without a redundant Replace button.
+Focused controls retain native Return behavior.
+
+The first snapshot flight was rejected as janky and failed to demonstrate real
+panel presence; the revised receipt fade/background-resize treatment was also
+rejected. Both mechanisms are removed. `ui/dialog.tsx` now owns real Radix
+Presence through `overlay-presence.module.css` named CSS animations (240ms
+enter, 160ms exit), with typed `motion: auto | none` and immediate screenshot
+capture override. Receipt states change immediately; only pending has a
+reduced-motion-aware spinner. There are no state snapshots, receipt body fades,
+resizing background plate or operation-motion owner. Reduced motion disables
+shared presence animation without changing state or actions.
+
+`ui/notice-lane.tsx` owns bottom-right placement/order for update, hint and chord
+notices. Domain owners retain lifetime, dismiss/restart actions and truth;
+feedback receipts stay near the composer initially. The notice lane is a shared
+presentation boundary, not a new Agent attention engine. Retire the gallery
+study as this authorized direction moves into shared production components.
+ENG-025 F6 and decision 0045 own delivery acceptance; this log records the
+supersession and evidence rather than creating another roadmap.

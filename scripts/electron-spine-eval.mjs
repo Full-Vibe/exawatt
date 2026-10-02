@@ -94,8 +94,8 @@ await withElectronApp(
     await backButton.isDisabled()
   );
 
-  // F1 feedback chip grammar: the screenshot toggle is named in visible UI,
-  // not only through accessibility metadata.
+  // The unified composer exposes image attachment through an actual visible
+  // control and a scoped picker; appearance copy can evolve independently.
   await page.evaluate(() => {
     window.dispatchEvent(
       new CustomEvent('exawatt:test-feedback-auth', {
@@ -105,16 +105,18 @@ await withElectronApp(
   });
   await page.waitForTimeout(100);
   await page.keyboard.press('Meta+Shift+KeyF');
-  const quickFeedback = page.getByRole('dialog', { name: 'Quick feedback' });
+  const quickFeedback = page.getByRole('dialog', { name: 'Submit feedback' });
   if (feedbackEnabled) {
     await quickFeedback.waitFor();
-    const screenshotToggle = quickFeedback.getByRole('button', {
-      name: 'Attach screenshot',
+    // A file input also has an implicit button role; scope this check to the
+    // visible control that opens it, while upload scenes target the input.
+    const imageAction = quickFeedback.locator('button').filter({
+      hasText: /^(Screenshot|Image|Attach image)$/,
     });
     check(
-      'quick feedback visibly labels the Screenshot chip',
-      (await screenshotToggle.innerText()).includes('Screenshot') &&
-        (await screenshotToggle.innerText()).includes('⌘S')
+      'feedback exposes a discoverable scoped image picker',
+      (await imageAction.isVisible()) &&
+        (await quickFeedback.locator('[data-feedback-image-input]').count()) === 1
     );
     await page.screenshot({
       path: join(OUT, 'quick-feedback-screenshot-label.png'),

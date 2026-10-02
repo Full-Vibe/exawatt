@@ -25,12 +25,14 @@
 // still cannot run.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { FAKE_HARNESSES } from './lib/harness-probe-fixture.mjs';
 import { git } from './lib/hermetic-git.mjs';
+import { installFeedbackTransport } from './lib/feedback-reporting-eval.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LAUNCHER = 'scripts/lib/electron-eval.mjs';
@@ -94,6 +96,160 @@ function scripts() {
 }
 
 const SCRIPTS = scripts();
+
+function feedbackPageDouble() {
+  let routeHandler;
+  const registrations = [];
+  const requestWaiters = [];
+  return {
+    registrations,
+    page: {
+      async route(matcher, handler) {
+        registrations.push(matcher);
+        routeHandler = handler;
+      },
+      async unroute(matcher, handler) {
+        assert.equal(matcher, registrations[0]);
+        assert.equal(handler, routeHandler);
+        routeHandler = undefined;
+      },
+      waitForRequest(predicate) {
+        return new Promise(resolve =>
+          requestWaiters.push({ predicate, resolve })
+        );
+      },
+    },
+    dispatch(payload, method = 'POST') {
+      const fulfilled = [];
+      let continued = false;
+      const request = {
+        method: () => method,
+        url: () => registrations[0],
+        postData: () => JSON.stringify(payload),
+      };
+      for (const waiter of requestWaiters.splice(0)) {
+        assert.ok(waiter.predicate(request));
+        waiter.resolve(request);
+      }
+      const completed = routeHandler({
+        request: () => request,
+        async fulfill(response) {
+          fulfilled.push(response);
+        },
+        async continue() {
+          continued = true;
+        },
+      });
+      return { completed, fulfilled, continued: () => continued };
+    },
+  };
+}
+
+test('feedback scenes intercept the configured operation and hold receipt completion explicitly', async () => {
+  const double = feedbackPageDouble();
+  const endpoint = 'https://intake.example.test/custom/v1/report?scope=desktop';
+  const transport = await installFeedbackTransport(double.page, endpoint);
+  assert.deepEqual(double.registrations, [endpoint]);
+  const held = transport.hold({ attachmentStored: false });
+  const payload = {
+    idempotencyKey: '11111111-2222-4333-8444-555555555555',
+    attachment: { dataUrl: 'data:image/png;base64,ZmFrZQ==' },
+  };
+  const first = double.dispatch(payload);
+  assert.deepEqual((await held.observed).payload, payload);
+  assert.deepEqual(
+    first.fulfilled,
+    [],
+    'pending is proved before the transport completes'
+  );
+  held.release();
+  await first.completed;
+  const receipt = JSON.parse(first.fulfilled[0].body);
+  assert.equal(receipt.schemaVersion, 1);
+  assert.equal(receipt.attachmentStored, false);
+  assert.equal(first.fulfilled[0].headers['Exawatt-Service-Version'], '1');
+  assert.equal(first.fulfilled[0].headers['Access-Control-Allow-Origin'], '*');
+  assert.match(
+    first.fulfilled[0].headers['Access-Control-Expose-Headers'],
+    /Exawatt-Service-Version/u
+  );
+  assert.match(receipt.id, /^[a-f\d-]{36}$/u);
+  const retry = double.dispatch(payload);
+  await retry.completed;
+  const reconciled = JSON.parse(retry.fulfilled[0].body);
+  assert.equal(
+    reconciled.id,
+    receipt.id,
+    'retry receipts identify the same saved report'
+  );
+  assert.equal(reconciled.duplicate, true);
+  assert.equal(reconciled.attachmentStored, true);
+  await transport.dispose();
+});
+
+test('feedback preflight and capability reads never reach a real service or consume a held submission', async () => {
+  const double = feedbackPageDouble();
+  const transport = await installFeedbackTransport(
+    double.page,
+    'https://intake.example.test/report'
+  );
+  transport.enqueue({ attachmentStored: false });
+  const preflight = double.dispatch(null, 'OPTIONS');
+  await preflight.completed;
+  assert.equal(preflight.fulfilled[0].status, 204);
+  assert.equal(preflight.continued(), false);
+  assert.match(
+    preflight.fulfilled[0].headers['Access-Control-Allow-Headers'],
+    /authorization/u
+  );
+  const capability = double.dispatch(null, 'GET');
+  await capability.completed;
+  assert.equal(capability.continued(), false);
+  assert.equal(JSON.parse(capability.fulfilled[0].body).canTriage, false);
+  assert.deepEqual(transport.payloads, []);
+  const submission = double.dispatch({
+    idempotencyKey: '11111111-2222-4333-8444-555555555555',
+    attachment: {},
+  });
+  await submission.completed;
+  assert.equal(
+    JSON.parse(submission.fulfilled[0].body).attachmentStored,
+    false
+  );
+});
+
+test('absent feedback configuration installs no intake interceptor', async () => {
+  const double = feedbackPageDouble();
+  const transport = await installFeedbackTransport(double.page, null);
+  assert.deepEqual(double.registrations, []);
+  assert.deepEqual(transport.payloads, []);
+  await transport.dispose();
+});
+
+test('the injected feedback failure is accepted by the production V1 problem decoder', async () => {
+  const { decodeCompatibleServiceProblem } = createRequire(import.meta.url)(
+    '@exawatt/core/distribution'
+  );
+  const double = feedbackPageDouble();
+  const endpoint = {
+    url: 'https://intake.example.test/report',
+    protocolVersion: 1,
+  };
+  const transport = await installFeedbackTransport(double.page, endpoint.url);
+  transport.enqueue({ error: 'Simulated reporting failure' });
+  const request = double.dispatch({
+    idempotencyKey: '11111111-2222-4333-8444-555555555555',
+  });
+  await request.completed;
+  const encoded = request.fulfilled[0];
+  const response = new Response(encoded.body, {
+    status: encoded.status,
+    headers: { ...encoded.headers, 'content-type': encoded.contentType },
+  });
+  const problem = await decodeCompatibleServiceProblem(endpoint, response);
+  assert.equal(problem.status, response.status);
+  assert.equal(problem.retryable, true);
+});
 
 test('the scan sees the launcher and the scripts it launches for', () => {
   const files = SCRIPTS.map(script => script.file);

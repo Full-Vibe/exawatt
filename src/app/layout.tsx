@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
+import { NoticeLaneProvider } from '@/components/ui/notice-lane';
 import { RendererErrorReporter } from '@/components/diagnostics/renderer-error-reporter';
 import { AccountFirstRunCard } from '@/components/auth/account-first-run-card';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
@@ -98,20 +99,22 @@ export default function RootLayout({
                 {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
                   the header switcher and every surface read the active tenant */}
                 <WorkspaceTenancyProvider>
-                  {/* Feedback sits above ShortcutProvider so the ⌘K palette can
+                  <NoticeLaneProvider>
+                    {/* Feedback sits above ShortcutProvider so the ⌘K palette can
                   read auth state for its quick-feedback verbs (ENG-025 F1) */}
-                  <ProductFeedbackProvider>
-                    <ShortcutProvider>
-                      <FleetProvider>
-                        <SiteHeader />
-                        <UpdateReadyNotice />
-                        {/* one-time, dismissible, never a gate (ENG-030
+                    <ProductFeedbackProvider>
+                      <ShortcutProvider>
+                        <FleetProvider>
+                          <SiteHeader />
+                          <UpdateReadyNotice />
+                          {/* one-time, dismissible, never a gate (ENG-030
                           OS0.1); it gates itself on signed-out app surfaces */}
-                        <AccountFirstRunCard />
-                        {children}
-                      </FleetProvider>
-                    </ShortcutProvider>
-                  </ProductFeedbackProvider>
+                          <AccountFirstRunCard />
+                          {children}
+                        </FleetProvider>
+                      </ShortcutProvider>
+                    </ProductFeedbackProvider>
+                  </NoticeLaneProvider>
                 </WorkspaceTenancyProvider>
               </CommandNavigationProvider>
             </TooltipProvider>
