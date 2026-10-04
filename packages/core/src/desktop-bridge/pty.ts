@@ -99,7 +99,8 @@ export type PtyAttentionKind =
   | 'bell'
   | 'turn-end'
   | 'blocked'
-  | 'roadmap-blocked';
+  | 'roadmap-blocked'
+  | 'reminder';
 
 /** "This Session needs the operator" (ENG-015 S1). */
 export interface PtyAttentionSignal {
@@ -118,7 +119,7 @@ export interface PtyAttentionSignal {
 
 /** Canonical independent source facts. Request and result may coexist. */
 export interface PtyAttentionRecord extends PtyAttentionSignal {
-  source: 'harness' | 'roadmap';
+  source: 'harness' | 'roadmap' | 'operator';
 }
 
 /** Compatibility projection; records, when present, are the canonical snapshot.

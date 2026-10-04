@@ -4,6 +4,7 @@ import {
   projectSessionAttention,
   readPtyAttention,
   withAttentionRead,
+  markAttentionUnread,
 } from '../session-attention';
 import type { PtyAttentionRecord } from '../desktop-bridge/pty';
 
@@ -63,6 +64,18 @@ describe('canonical Session attention records', () => {
     })!;
     expect(value.kind).toBe('roadmap-blocked');
     expect(value.records).toEqual([roadmap, question]);
+  });
+
+  it('creates an operator reminder without inventing a request or result', () => {
+    const reminder = markAttentionUnread(null, 50);
+    expect(reminder).toMatchObject({
+      kind: 'reminder',
+      since: 50,
+      unread: true,
+      records: [{ source: 'operator', kind: 'reminder' }],
+    });
+    expect(readPtyAttention(reminder)).toEqual(reminder);
+    expect(withAttentionRead(reminder, false).unread).toBe(false);
   });
 
   it('migrates legacy signals and bounds malformed checkpoints', () => {

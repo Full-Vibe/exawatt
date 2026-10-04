@@ -6,7 +6,7 @@ import type {
 
 /** Stable source dimension, separate from the changing source request identity. */
 export function attentionRecordKey(record: PtyAttentionRecord): string {
-  return `${record.source}:${record.kind === 'turn-end' ? 'result' : `request:${record.requestId ?? 'unreported'}`}`;
+  return `${record.source}:${record.kind === 'turn-end' ? 'result' : record.kind === 'reminder' ? 'reminder' : `request:${record.requestId ?? 'unreported'}`}`;
 }
 
 export function attentionRecords(snapshot: PtyAttention): PtyAttentionRecord[] {
@@ -14,14 +14,19 @@ export function attentionRecords(snapshot: PtyAttention): PtyAttentionRecord[] {
     snapshot.records ?? [
       {
         ...snapshot,
-        source: snapshot.kind === 'roadmap-blocked' ? 'roadmap' : 'harness',
+        source:
+          snapshot.kind === 'roadmap-blocked'
+            ? 'roadmap'
+            : snapshot.kind === 'reminder'
+              ? 'operator'
+              : 'harness',
       },
     ]
   );
 }
 
 function priority(record: PtyAttentionSignal): number {
-  if (record.kind === 'turn-end') return 2;
+  if (record.kind === 'turn-end' || record.kind === 'reminder') return 2;
   return record.request === 'working' || record.request === 'unknown' ? 1 : 0;
 }
 
@@ -58,12 +63,28 @@ export function withAttentionRead(
   )!;
 }
 
+/** Marking a working Session unread is operator intent, not fabricated work
+ * or a source request. The reminder shares custody but never emits an alert. */
+export function markAttentionUnread(
+  snapshot: PtyAttention | null,
+  now: number
+): PtyAttention {
+  if (
+    snapshot &&
+    attentionRecords(snapshot).some(record => record.kind !== 'reminder')
+  )
+    return withAttentionRead(snapshot, true);
+  return projectSessionAttention([
+    { source: 'operator', kind: 'reminder', since: now, unread: true },
+  ])!;
+}
+
 function readSignal(value: unknown): PtyAttentionSignal | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const { kind, since, unread, request, requestId } = record;
   if (
-    !['bell', 'turn-end', 'blocked', 'roadmap-blocked'].includes(
+    !['bell', 'turn-end', 'blocked', 'roadmap-blocked', 'reminder'].includes(
       kind as string
     ) ||
     typeof since !== 'number' ||
@@ -105,7 +126,11 @@ export function readPtyAttention(value: unknown): PtyAttention | null {
     const signal = readSignal(candidate);
     const source =
       candidate && typeof candidate === 'object' ? candidate.source : null;
-    if (!signal || (source !== 'harness' && source !== 'roadmap')) continue;
+    if (
+      !signal ||
+      (source !== 'harness' && source !== 'roadmap' && source !== 'operator')
+    )
+      continue;
     const record = { ...signal, source } as PtyAttentionRecord;
     const key = attentionRecordKey(record);
     if (!unique.has(key)) unique.set(key, record);
