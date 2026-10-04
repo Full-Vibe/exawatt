@@ -403,15 +403,22 @@ try {
       );
 
       await sendCodex('protocol-down');
-      await until(
-        async () =>
-          (await sessions()).find(s => s.id === codex.id)?.delegation == null,
-        'Codex protocol loss to withdraw the observation'
-      );
+      await until(async () => {
+        const report = (await sessions()).find(
+          s => s.id === codex.id
+        )?.delegation;
+        return (
+          report?.ownTurn === 'unknown' &&
+          report.requestCoverage === 'unavailable' &&
+          report.children.length === 0
+        );
+      }, 'Codex protocol loss to withdraw execution and child authority');
       const afterProtocolLoss = (await sessions()).find(s => s.id === codex.id);
       check(
-        'protocol loss fails to absent without a synthetic result',
-        afterProtocolLoss?.delegation == null &&
+        'protocol loss preserves uncertainty without a synthetic result',
+        afterProtocolLoss?.delegation?.ownTurn === 'unknown' &&
+          afterProtocolLoss.delegation.requestCoverage === 'unavailable' &&
+          afterProtocolLoss.delegation.children.length === 0 &&
           afterProtocolLoss?.attention?.kind !== 'turn-end'
       );
 
