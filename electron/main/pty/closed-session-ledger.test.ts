@@ -113,17 +113,36 @@ describe('ClosedSessionLedger (D23)', () => {
   );
 
   it.each(['future-source', 'toString', '__proto__'])(
-    'keeps unsupported source %s intact when reopen is refused',
+    'restores unsupported source %s as saved identity without purging history',
     harness => {
       const ledger = make();
       const saved = ledger.add({ ...entry('unsupported'), harness });
-      const bytes = fs.readFileSync(file, 'utf8');
-      expect(() => make().take(saved.durableSessionId)).toThrow(harness);
-      expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
-      expect(make().list()).toEqual([saved]);
+      expect(make().take(saved.durableSessionId)).toEqual(saved);
+      expect(make().list()).toEqual([]);
       expect(purged).toEqual([]);
     }
   );
+
+  it('keeps only inert source extensions through a close/reopen cycle', () => {
+    const ledger = make();
+    const sourceRecordExtensions = JSON.parse(
+      '{"vendor":{"thread":"kept"},"harness":"shell","__proto__":{"polluted":true},"constructor":"bad"}'
+    );
+    const saved = ledger.add({
+      ...entry('opaque'),
+      harness: 'retired-source',
+      sourceRecordExtensions,
+    });
+    const reopened = make().take(saved.durableSessionId)!;
+    expect(reopened.harness).toBe('retired-source');
+    expect(reopened.sourceRecordExtensions).toEqual({
+      vendor: { thread: 'kept' },
+    });
+    expect(Object.hasOwn(reopened.sourceRecordExtensions!, '__proto__')).toBe(
+      false
+    );
+    expect(purged).toEqual([]);
+  });
 
   it('take on an unknown id returns null without touching the file', () => {
     const ledger = make();

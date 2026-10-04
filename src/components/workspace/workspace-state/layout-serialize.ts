@@ -1,5 +1,5 @@
 import { sessionTabSource } from '../harnesses';
-import { safeSourceExtensions } from './session-record-extensions';
+import { safeSourceExtensions } from '@exawatt/core/desktop-bridge';
 /**
  * Writing the workspace layout (v7): what a save persists, and what it
  * deliberately leaves behind.

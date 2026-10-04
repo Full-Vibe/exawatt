@@ -52,10 +52,18 @@ describe('newDraftTab', () => {
 });
 
 describe('tabFromClosedEntry', () => {
-  it('refuses an unsupported source instead of producing a resumable tab', () => {
-    expect(() =>
-      tabFromClosedEntry(closedEntry({ harness: 'future-source' }), 't')
-    ).toThrow('future-source');
+  it('restores unsupported saved identity without admitting resume', () => {
+    const entry = closedEntry({
+      harness: 'future-source',
+      sourceRecordExtensions: { vendorThread: 'kept' },
+    });
+    const tab = tabFromClosedEntry(entry, 't');
+    expect(tab).toMatchObject({
+      harness: entry.harness,
+      sourceRecordExtensions: entry.sourceRecordExtensions,
+      sessionId: null,
+    });
+    expect(tabCanResumeAsAgent(tab)).toBe(false);
   });
 
   it('reopens as a stopped tab that keeps its identity and never a process', () => {

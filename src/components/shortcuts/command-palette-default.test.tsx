@@ -205,7 +205,7 @@ const groupOf = (row: HTMLElement) =>
     ?.textContent ?? null;
 
 describe('⌘K opening highlight', () => {
-  it('keeps unsupported closed Sessions discoverable while refusing reopen', async () => {
+  it('offers restore-only reopening for unsupported closed Sessions', async () => {
     const originalPath = window.location.pathname;
     window.history.replaceState(null, '', '/workspace');
     const entry = {
@@ -230,7 +230,7 @@ describe('⌘K opening highlight', () => {
         );
         expect(row).toBeDefined();
       });
-      expect(row).toHaveAttribute('aria-disabled', 'true');
+      expect(row).not.toHaveAttribute('aria-disabled', 'true');
       expect(row).toHaveTextContent(entry.harness);
       expect(row).not.toHaveAttribute('aria-selected', 'true');
     } finally {

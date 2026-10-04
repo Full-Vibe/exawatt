@@ -1,3 +1,4 @@
+import { safeSourceExtensions } from '@exawatt/core/desktop-bridge';
 /**
  * The workspace model (ENG-002 W0.2): Project groups keyed by PROJECT
  * DIRECTORY, and the two honest kinds of tab inside them.
@@ -6,18 +7,13 @@
  * React, or the clock beyond minting an identity, so every rule about what a
  * tab IS can be unit-tested without mounting the workspace.
  */
-import {
-  HARNESS_META,
-  isDefaultHarnessTitle,
-  sessionSource,
-} from '../harnesses';
+import { isDefaultHarnessTitle, sessionSource } from '../harnesses';
 import {
   sessionCanResume,
   sessionLifecyclePresentation,
 } from '@exawatt/ui-model';
 import type { SessionGlyphState } from '../session-status';
 import type { AgentSourceId } from '../agent-sources';
-import { isPtyHarness, type PtyHarness } from '@exawatt/core';
 import type {
   ClosedSessionEntry,
   PtySessionRecord,
@@ -460,12 +456,8 @@ export function tabFromClosedEntry(
   id: string
 ): SessionTab {
   const harness = entry.harness;
-  if (!isPtyHarness(harness)) {
-    throw new Error(
-      `This version of Exawatt does not support ${harness}. Exact resume is unavailable.`
-    );
-  }
   const repairsLegacyCatalogTitle =
+    sessionSource(harness).harness !== null &&
     entry.titleKind === undefined &&
     isLegacyCatalogTitleLeak({
       ...entry,
@@ -478,7 +470,7 @@ export function tabFromClosedEntry(
     durableSessionId: entry.durableSessionId,
     harness,
     title: repairsLegacyCatalogTitle
-      ? HARNESS_META[harness].label
+      ? sessionSource(harness).label
       : entry.title,
     titleKind: repairsLegacyCatalogTitle
       ? 'default'
@@ -498,6 +490,7 @@ export function tabFromClosedEntry(
     exitCode: null,
     roadmapItemId: null,
     initialTask: entry.initialTask,
+    sourceRecordExtensions: safeSourceExtensions(entry.sourceRecordExtensions),
   };
 }
 

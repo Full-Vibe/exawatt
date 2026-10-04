@@ -319,3 +319,24 @@ files). Native mixed-layout recovery, normal delivery gates, integration, and
 dogfood remain pending. The implementation lives on
 `agent/polish-source-compatibility`; its dependency baseline is `98d77349` and only
 subsequent BUG-273 commits should replay after the coupled restart/attention stack.
+
+The BUG-273 prelanding review caught a continuity gap in the earlier BUG-209
+safety boundary. Once unsupported stopped Sessions are representable, reopening
+saved work is safe and distinct from executing it. BUG-273 therefore supersedes
+BUG-209's refuse-before-ledger-take guard: restore-only reopen retains raw identity,
+purpose, history and opaque source fields, while all unsupported source runtime
+verbs remain unavailable. The JSON extension sanitizer is shared in core by the
+workspace decoder/serializer and closed-Session ledger, so archive/reopen does not
+introduce a second compatibility policy. Authored drafts keep the existing explicit
+close-to-discard behavior; restart never silently substitutes their source choice.
+
+Native proof on 2026-10-04 exercised the real Electron main/preload/renderer with
+an isolated v5 mixed-source layout: unknown purpose and retained transcript are
+readable, Cmd-W/Cmd-Shift-T restores the same raw source without creating a PTY,
+unsupported draft task/source remain outside the launch composer, Team retains
+the unavailable row without Resume, and a known Claude Session resumes its exact
+saved provider identity. The subsequent v7 save preserves opaque source JSON and
+the unsupported draft choice. No renderer errors were observed. Screenshots:
+`/tmp/exawatt-source-compatibility-proof/{unsupported-agent,unsupported-draft,unsupported-team}.png`.
+Focused close/reopen and source compatibility checks pass (41 tests in four files).
+Normal delivery and dogfood remain pending the coupled stack's integration.

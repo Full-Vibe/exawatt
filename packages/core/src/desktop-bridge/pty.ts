@@ -332,6 +332,8 @@ export interface ClosedSessionEntry {
   harnessSessionId: string | null;
   /** The composer's stated task (re-anchors the summarizer on resume). */
   initialTask: string | null;
+  /** Opaque known-layout source fields, never runtime configuration. */
+  sourceRecordExtensions?: Readonly<Record<string, unknown>>;
   closedAt: number;
 }
 

@@ -16,6 +16,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
+import { safeSourceExtensions } from '@exawatt/core/desktop-bridge';
 import { operatorPosition } from '@/components/nav/operator-position';
 import type {
   ClosedSessionEntry,
@@ -190,6 +191,9 @@ export function useRecentlyClosed({
           projectName: g.name,
           harnessSessionId: tab.harnessSessionId,
           initialTask: tab.initialTask,
+          sourceRecordExtensions: safeSourceExtensions(
+            tab.sourceRecordExtensions
+          ),
         };
         try {
           if (live) await api.closeSession(tab.durableSessionId);

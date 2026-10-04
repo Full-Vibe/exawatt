@@ -1666,12 +1666,11 @@ export function CommandPalette({
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               <span>
-                {isPtyHarness(entry.harness) ? 'Reopen ' : ''}
-                {entry.projectName} · {entry.goal ?? entry.title}
+                Reopen {entry.projectName} · {entry.goal ?? entry.title}
                 {!isPtyHarness(entry.harness) && (
                   <span className="block text-xs text-muted-foreground">
-                    This version does not support {entry.harness}. Exact resume
-                    unavailable.
+                    Saved work can be reopened. This version does not support{' '}
+                    {entry.harness} source actions.
                   </span>
                 )}
               </span>

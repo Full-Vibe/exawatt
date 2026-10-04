@@ -1,4 +1,4 @@
-import { isPtyHarness } from '@exawatt/core';
+import { safeSourceExtensions } from '@exawatt/core/desktop-bridge';
 import { readJsonDocument, writeJsonFileAtomic } from '../atomic-json-file';
 import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
@@ -33,6 +33,10 @@ function validEntry(e: unknown): e is ClosedSessionEntry {
       entry.titleKind === 'default' ||
       entry.titleKind === 'operator') &&
     typeof entry.harness === 'string' &&
+    (entry.sourceRecordExtensions === undefined ||
+      (entry.sourceRecordExtensions !== null &&
+        typeof entry.sourceRecordExtensions === 'object' &&
+        !Array.isArray(entry.sourceRecordExtensions))) &&
     typeof entry.cwd === 'string' &&
     typeof entry.projectDir === 'string' &&
     typeof entry.projectName === 'string' &&
@@ -70,7 +74,12 @@ export class ClosedSessionLedger {
       this.file,
       validLedger
     ) as StoredLedgerV1 | null;
-    this.entries = raw?.entries ?? [];
+    this.entries = (raw?.entries ?? []).map(entry => ({
+      ...entry,
+      sourceRecordExtensions: safeSourceExtensions(
+        entry.sourceRecordExtensions
+      ),
+    }));
     return this.entries;
   }
 
@@ -86,7 +95,13 @@ export class ClosedSessionLedger {
   }
 
   add(entry: Omit<ClosedSessionEntry, 'closedAt'>): ClosedSessionEntry {
-    const stamped: ClosedSessionEntry = { ...entry, closedAt: this.now() };
+    const stamped: ClosedSessionEntry = {
+      ...entry,
+      sourceRecordExtensions: safeSourceExtensions(
+        entry.sourceRecordExtensions
+      ),
+      closedAt: this.now(),
+    };
     if (!validEntry(stamped)) {
       throw new Error('invalid closed-session entry');
     }
@@ -108,13 +123,8 @@ export class ClosedSessionLedger {
       candidate => candidate.durableSessionId === durableSessionId
     );
     if (!entry) return null;
-    // A downgrade or retired source must not consume the only recovery row.
-    // Refuse here, before mutation, even when a renderer bypasses its UI guard.
-    if (!isPtyHarness(entry.harness)) {
-      throw new Error(
-        `This version of Exawatt does not support ${entry.harness}. Exact resume is unavailable; the closed Session has been kept.`
-      );
-    }
+    // Reopen restores saved work only. Runtime admission belongs to the
+    // source capability boundary; raw identity is valid recovery data.
     this.persist(entries.filter(candidate => candidate !== entry));
     return entry;
   }

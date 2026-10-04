@@ -18,3 +18,8 @@ export type * from './roadmap';
 export type * from './settings';
 
 export { readPtyAttention } from '../session-attention';
+
+export {
+  safeSourceExtensions,
+  isCanonicalSessionRecordField,
+} from '../session-record-extensions';
