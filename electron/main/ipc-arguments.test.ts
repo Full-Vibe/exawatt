@@ -101,7 +101,7 @@ describe('argument boundaries', () => {
 
   it('passes accepted values through unchanged', () => {
     const options = WELL_FORMED['pty:create'][0];
-    expect(read('pty:create', options)[0]).toBe(options);
+    expect(read('pty:create', options)[0]).toEqual(options);
     expect(read('agent-sources:list')).toEqual(['all', false]);
     expect(read('pty:list-agent-models', 'codex', '/r')).toEqual([
       'codex',

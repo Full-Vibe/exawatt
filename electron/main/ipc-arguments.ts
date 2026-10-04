@@ -117,7 +117,7 @@ function launchOptions(value: unknown): PtyCreateOptions {
   ) {
     throw new Error('Invalid launch options');
   }
-  // Accepted as sent: the launch path has always received this object.
+  // Preserve accepted launch values, with attention normalized at this boundary.
   return {
     ...value,
     ...(value.restoredAttention !== undefined

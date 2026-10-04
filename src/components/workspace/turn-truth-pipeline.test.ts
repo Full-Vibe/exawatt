@@ -56,13 +56,15 @@ function harness() {
     now: () => clock,
   });
   attention.attach(manager as unknown as PtySessionManager);
-  /** what `logs/main.jsonl` would hold */
+  /** Census expiry evidence from `logs/main.jsonl`, excluding other diagnostics. */
   const expiries: Array<Record<string, unknown>> = [];
   wireReportedTurnTruth({
     attention,
     delegation,
     now: () => clock,
-    record: (event, fields) => expiries.push({ event, ...fields }),
+    record: (event, fields) => {
+      if (event === CENSUS_EXPIRED_EVENT) expiries.push({ event, ...fields });
+    },
     harnessOf: () => 'claude',
   });
   attention.setWindowFocused(true);

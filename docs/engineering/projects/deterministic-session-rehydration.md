@@ -284,3 +284,15 @@ The update receipt and native shutdown confirmation now state the preservation
 boundary and explicit paused recovery policy. The combined attention/source/
 restart stack is entering normal delivery with every declared surface gate and
 queued dogfood installation; integration and installation evidence are pending.
+
+Delivery checkpoint (2026-10-04): the clean candidate passed all 707 delivery
+tests, lint and type checks. Seven related-test failures survived isolation and
+were repaired at their assertion boundaries: the expiry collector now filters
+the expiry event instead of treating every new source diagnostic as an expiry;
+IPC launch validation asserts preserved values instead of object identity after
+normalization. Both files then passed all 84 tests alone. The direct native
+delegation gate passed all 37 checks on freshly compiled Electron code. One
+earlier descendant-signal test passed alone after a load-sensitive failure;
+two abandoned projector extracts from canceled runs were removed only from this
+worktree, after which the exact projection test passed. Normal delivery is being
+rerun; none of this evidence yet claims integration or installation.
