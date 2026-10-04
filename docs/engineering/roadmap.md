@@ -56,6 +56,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-042 | Published research                               | planned      | UNSHAPED pending a design pass — publish the fleet's research and investigations as public articles or guides. |
 | ENG-043 | Documentation information architecture           | planned      | UNSHAPED pending a design pass — organize documentation by reader need, with Diátaxis as the candidate framework. |
 | ENG-044 | Agent safety and governance controls              | planned      | S1 landed: a Settings ▸ Safety home, one default-off control (block broad process kills). The enterprise governance product is UNSHAPED pending a design pass. |
+| ENG-045 | Permissions and grants                           | planned      | UNSHAPED pending a design pass — one registry of macOS permissions and in-app grants, primed first-party before any system dialog, with a Settings home. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
@@ -2443,6 +2444,60 @@ and other languages' kill calls are not read; `pkill -g 0` and `-t` resolve
 against Exawatt's process group and terminal, not the agent's; another
 Session's non-harness processes (its dev server) are not protected; a
 settings file unreadable since launch leaves new launches without the hook.
+
+### ENG-045 Permissions and grants
+
+Status: planned — deliberately unshaped pending a design pass. Created
+2026-10-04 from operator direction.
+
+Direction (operator, 2026-10-04): "architect 10 miles ahead even if we're only
+building 10 feet ahead." One modular system the app's happy paths consult,
+covering both macOS permissions and first-party grants:
+
+- A Settings home where a user sees each permission and clicks Allow.
+- A first-party dialog before any macOS permission or Keychain prompt that
+  explains what and why and guides multi-step grants through System Settings.
+- The same registry later drives a guided onboarding that pre-asks with
+  reasons.
+- In-app grants share the model: agents across repos talking to each other
+  (ENG-029), sharing an Agent with a teammate (ENG-034), network access
+  (ENG-044's network-egress control), and a secrets manager that shares API
+  keys across Agents and Projects (ENG-009).
+
+This restates the operator's 2026-09-23 rule that "OS permissions are product
+surface" (`docs/engineering/projects/agent-source-architecture.md`).
+
+What research settled: no app can intercept or replace a system dialog; the
+supported pattern is status-without-prompting, a one-button first-party
+primer, then the call that raises the system dialog. Privacy prompts raised by
+agents in Exawatt PTYs are attributed to Exawatt, so Exawatt can prime them;
+Keychain prompts are attributed to the calling binary, so it cannot prime an
+agent CLI's own.
+
+First slice (10 feet): the official build's own-account Claude plan read
+(ENG-038). The distribution secret's schema-2 `ownAccount` upgrade is held
+until it ships primed: the current read shells out to `/usr/bin/security`, so
+its dialog would name "security" and an "Always Allow" would widen access for
+every process; it moves to an in-process Keychain read behind a first-party
+primer, with the last good value kept and the read made on demand.
+
+Found while researching, not yet filed: no `NSLocalNetworkUsageDescription`
+(agents reaching LAN or `.local` hosts raise an unexplained prompt), and the
+"Sign in with {source}" `osascript` path has no Apple Events entitlement or
+usage string.
+
+Constraints already in canon: a registry declares and explains each grant and
+names its enforcer; it adds no second enforcement regime
+(`docs/product/concepts.md`, Policy). Onboarding builds on the D49/D54 owners,
+not a second wizard (`docs/engineering/projects/daily-driver-adoption.md`),
+and the 2026-10-04 polish priority puts a dedicated newcomer on-ramp later.
+Registry shape to follow: `SAFETY_CONTROLS` and `OUTBOUND_CONTROLS`.
+
+Unshaped (for the design pass): the vocabulary (Permissions, Grants, Access,
+or ENG-044's Safety and Policy), where the Settings home sits relative to
+Safety and Privacy, grant scope and lifetime (with ENG-006 Approvals), managed
+Workspace ceilings (ENG-012), and the order of first-party grants after the
+first slice.
 
 ## Backlog
 
