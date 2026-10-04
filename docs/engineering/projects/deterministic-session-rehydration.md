@@ -274,3 +274,13 @@ input restoration; Exawatt must not replay ambiguous terminal bytes as new
 operator commands. Those portions of the original BUG-260 report stay open for
 separate shaping and literal evidence. BUG-117's all-Claude-missing observation
 also remains an operator recheck, distinct from the automated recents fixture.
+
+Prelanding review completed at `400444f4`: restart creation seeds validated
+records before any PTY/source callback; exact asynchronous request identities
+survive generic turn boundaries; paginated source coverage advances only after
+successful observation; source outages withdraw execution authority without
+inventing resolution. Focused restart/attention checks and full type-check passed.
+The update receipt and native shutdown confirmation now state the preservation
+boundary and explicit paused recovery policy. The combined attention/source/
+restart stack is entering normal delivery with every declared surface gate and
+queued dogfood installation; integration and installation evidence are pending.

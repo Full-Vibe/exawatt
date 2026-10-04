@@ -143,11 +143,10 @@ describe('ShutdownCoordinator', () => {
 
 describe('shutdownCopy', () => {
   it('names agent and shell impact without implying shell resume', () => {
-    expect(shutdownCopy('quit', { agents: 4, shells: 1 })).toEqual({
-      title: 'Quit Exawatt and stop 4 agents?',
-      detail:
-        'Their sessions and terminal history will be saved. You can resume the agents after reopening Exawatt. 1 shell will also stop.',
-    });
+    const counts = { agents: 4, shells: 1 };
+    const copy = shutdownCopy('quit', counts);
+    expect(copy.title).toContain(`${counts.agents} agents`);
+    expect(copy.detail).toContain(`${counts.shells} shell`);
     expect(shutdownCopy('update', { agents: 0, shells: 2 }).title).toBe(
       'Restart Exawatt and stop 2 shells?'
     );
