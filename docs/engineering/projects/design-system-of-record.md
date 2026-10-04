@@ -297,10 +297,10 @@ Operator-confirmed direction: daily use leads; a newcomer must still discover
 and understand the same affordances. A dedicated newcomer on-ramp is a later
 prioritization regime. Layout and flow changes are welcome when they demonstrate
 an improvement. Significant new features are outside this polish pass.
-Research and shaping are authorized. Read versus unresolved attention and
+Execution authorized 2026-10-04 after the steering below. Read versus unresolved attention and
 priority ordering are accepted in decision `0046`; restart restores paused
 with an explicit resume action. This section is execution detail for ENG-036 with existing owners,
-not a new roadmap or an instruction to start implementation.
+not a new roadmap. The execution checkpoint below owns current lane handoffs.
 
 #### Research ledger and application hypotheses
 
@@ -421,3 +421,53 @@ authoring notes; current guide instructions remain accurate to shipped code.
 Update architecture and its manifest when implementation changes ownership. Research-backed explanations feed ENG-042/ENG-031 through
 Marketing Canon's research-informed design story; public claims follow the
 specific evidence available for each shipped interaction.
+
+
+### 2026-10-04 — Everyday-use execution checkpoint
+
+**Execution is authorized and running in isolated, coordinated worktrees.**
+The operator requested maximum useful parallelism, autonomous completion and
+cleanup, Boy Scout improvements to UX and architecture, and persistent handoffs.
+Material architecture/UX choices still come back with concrete evidence. The
+accepted purpose, attention and pause-first restart rules are not re-interviewed.
+
+| Lane / branch | Owning files or responsibility | Dependency and next evidence |
+| --- | --- | --- |
+| Coordination / `agent/polish-coordination` | This checkpoint, roadmap, decision 0046, concepts, architecture/manifest and evidenced marketing | Reconcile independent landings, collect concrete gallery review, preserve exact delivery evidence and cleanup roster. |
+| Attention / `agent/polish-attention` | Main attention monitor, bridge attention shape, renderer attention projection, workspace/demo queue wiring; ENG-015 log | Publish one durable read/request contract to restart and source lanes; prove inspection does not resolve a request, stable priority traversal, mark unread without re-alert, and bell coupling. |
+| Source truth / `agent/polish-source-truth` | Source adapters, harness-events/turn-truth and their production pipeline; ENG-016 log | Trace Codex parent/child/compaction and Claude completion, verify installed provider evidence; coordinate additive source evidence with attention owner. |
+| Restart / `agent/polish-restart` | Persisted layout, checkpoint, serialization/restoration and exact-Session recovery; ENG-018 log | Depend on attention contract, then rebase on its landed implementation; preserve operator state and the previously-running set, restore paused, expose explicit eligible resume. |
+| Purpose / `agent/polish-purpose` | Existing purpose projection and its consumers; ENG-021 log | Paired DOM gallery comparison before material hierarchy adoption; no new recap/Initiative model. Workspace-client wiring belongs to attention until coordinated. |
+| Spatial / `agent/polish-spatial` | Resolution, motion and handoff rendering; ENG-004 log | Reproduce on real 30-Agent fixture, prove DPR/display changes and characterize packaged transition; no state/query ownership fork. |
+| Delegation / `agent/polish-delegation` | Census/query/population responsibility; ENG-023 log | Read-only salvage from `agent/delegation-build`; exclude unrelated D8 and unreviewed Fleet presentation. Model proof first, concrete compact-popover review before new interaction adoption. |
+| Gallery hygiene / `agent/polish-gallery-hygiene` | Gallery index and confirmed consumer-less wrapper retirement | Preserve all active studies, including purpose and feedback; repair BUG-061/138 without a broad dead-code sweep. |
+| Unknown-harness recovery / restart-owned delegated lane | Closed ledger and unavailable exact-resume behavior, BUG-209 | Preserve unknown records and explain unavailable capability; never coerce into a different harness. Coordinate workspace-model edits with restart. |
+
+Every lane bootstraps its own worktree and server, commits recoverable progress,
+uses the FIFO landing floor with its declared surface gates and dogfood where
+applicable, then removes only its own landed branch/worktree. Cross-lane
+interfaces are coordinated before duplicate edits. The relevant owning project
+log records source findings, tests, current blockers and next steps. This table
+is a handoff index under the existing roadmap, not an independent plan.
+
+**Existing work preserved.** `agent/feedback-recovery` is a separate active,
+dirty worktree whose F7 candidate and real-delivery evidence already exist.
+Do not touch it, duplicate its Dialog/Button work, or claim its visual adoption.
+Its latest canonical log says real signed-app delivery is proved and retained
+workflow review remains pending. `agent/delegation-build` is clean but old;
+its checkpoint mixes useful D6 with D8 and unreviewed UI. Adapt useful portions
+in the new lane; leave the original untouched.
+
+**Early evidence, not completion claims.** Codex's installed read-side API can
+return an active TUI parent turn as interrupted with no completion time; schema
+presence is not authority. Preserve unknown instead of manufacturing done.
+A real Fleet DPR 1 to 2 change left the canvas at DPR 1 while active rotors
+continued moving, isolating a resolution defect. Battery power intentionally
+limits resolution/motion and is a separate policy question. Purpose is primary
+in some consumers but secondary in Cmd+K, and a stopped Team tile dims its whole
+purpose line. These findings guide bounded owner repairs and concrete reviews.
+
+Remaining visual reviews will be presented as actual studies/screenshots with
+one recommendation; keep independent correctness work moving while a review is
+pending. No study is accepted merely because it renders, and no installed claim
+follows from a queued dogfood request. Update this checkpoint as lanes land.

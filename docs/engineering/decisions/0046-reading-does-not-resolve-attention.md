@@ -1,7 +1,7 @@
 # 0046 Reading does not resolve attention
 
 Date: 2026-10-04
-Status: accepted direction; implementation planned
+Status: accepted; implementation active, 2026-10-04
 
 **Seeing an Agent request clears unread, not the outstanding work.**
 
