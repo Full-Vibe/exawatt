@@ -12,7 +12,6 @@ import {
 import { HarnessGlyph } from './harness-icons';
 import { sessionSource } from './harnesses';
 import { SessionGoalSummary } from './session-goal-summary';
-import type { SessionUnreadTreatment } from './session-unread-marker';
 import {
   DelegationDots,
   DelegationRail,
@@ -51,8 +50,6 @@ export interface SessionOverviewCardContentProps {
   harness: string;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
-  /** Gallery review candidate; production does not set this prop. */
-  unreadTreatment?: SessionUnreadTreatment;
   /** harness-reported delegated work (ENG-023); absent when unreported */
   delegation?: SessionDelegation | null;
   /**
@@ -87,7 +84,6 @@ type SessionOverviewCardHeaderProps = Pick<
   | 'harness'
   | 'glyphState'
   | 'attention'
-  | 'unreadTreatment'
   | 'delegation'
   | 'agentType'
   | 'initiative'
@@ -101,7 +97,6 @@ export function SessionOverviewCardHeader({
   harness,
   glyphState,
   attention,
-  unreadTreatment,
   delegation,
   agentType,
   initiative,
@@ -162,7 +157,6 @@ export function SessionOverviewCardHeader({
         <SessionStatusReadout
           state={glyphState}
           attention={attention}
-          unreadTreatment={unreadTreatment}
           delegation={delegation}
           fault={fault}
         />
@@ -185,7 +179,6 @@ export function SessionOverviewCardContent({
   harness,
   glyphState,
   attention,
-  unreadTreatment,
   delegation,
   agentType,
   initiative,
@@ -215,7 +208,6 @@ export function SessionOverviewCardContent({
           harness={harness}
           glyphState={glyphState}
           attention={attention}
-          unreadTreatment={unreadTreatment}
           delegation={delegation}
           agentType={agentType}
           initiative={initiative}

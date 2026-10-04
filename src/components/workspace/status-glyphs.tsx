@@ -17,10 +17,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { StatusLight } from '@/components/status-light/status-light';
-import {
-  SessionUnreadMarker,
-  type SessionUnreadTreatment,
-} from './session-unread-marker';
+import { SessionUnreadMarker } from './session-unread-marker';
 import {
   Tooltip,
   TooltipContent,
@@ -298,47 +295,36 @@ export function SessionStatusGlyph({
   attention,
   delegation,
   fault = false,
-  unreadTreatment,
 }: {
   state: SessionGlyphState;
   attention?: SessionAttentionSignal | null;
   /** corrects the tooltip: a delegating Session is quiet, not streaming */
   delegation?: SessionDelegation | null;
   fault?: boolean;
-  unreadTreatment?: SessionUnreadTreatment;
 }) {
   const lightState = sessionStatusLightState({ state, attention, fault });
+  const readCopy = attentionReadLabel(attention ?? undefined);
   const stateCopy =
     lightState === 'fault'
       ? FAULT_GLYPH_COPY
-      : lightState === 'needs-you'
-        ? // A REPORTED gate knows what it is waiting for; the generic attention
-          // sentence is the fallback for inferred signals that do not.
-          state === 'blocked'
+      : lightState === 'needs-you' &&
+          !(state === 'working' && attention?.request === 'working')
+        ? state === 'blocked'
           ? sessionGlyphCopy(state, delegation)
           : ATTENTION_GLYPH_COPY
         : sessionGlyphCopy(state, delegation);
-
-  const readCopy = attentionReadLabel(attention ?? undefined);
-  const copy = unreadTreatment
-    ? `${sessionGlyphCopy(state, delegation)}${readCopy ? ` ${readCopy}.` : ''}`
-    : stateCopy;
+  const copy = `${stateCopy}${readCopy ? ` ${readCopy}.` : ''}`;
   return (
     <StatusTooltip copy={copy}>
       <span
         data-attention={lightState === 'needs-you' || undefined}
         data-status={fault ? 'fault' : state}
-        className={`${GLYPH_BOX}${unreadTreatment ? ' relative' : ''}`}
-        role={unreadTreatment ? 'img' : undefined}
-        aria-label={unreadTreatment ? copy : undefined}
+        className={`${GLYPH_BOX} relative`}
+        role="img"
+        aria-label={copy}
       >
         <StatusLight decorative size="compact" state={lightState} />
-        {unreadTreatment && (
-          <SessionUnreadMarker
-            attention={attention}
-            treatment={unreadTreatment}
-          />
-        )}
+        <SessionUnreadMarker attention={attention} />
       </span>
     </StatusTooltip>
   );
@@ -372,13 +358,11 @@ export function SessionStatusReadout({
   attention,
   delegation,
   fault = false,
-  unreadTreatment,
 }: {
   state: SessionGlyphState;
   attention?: SessionAttentionSignal | null;
   delegation?: SessionDelegation | null;
   fault?: boolean;
-  unreadTreatment?: SessionUnreadTreatment;
 }) {
   const word = sessionStateWord({ state, attention, fault });
   return (
@@ -391,7 +375,6 @@ export function SessionStatusReadout({
         attention={attention}
         delegation={delegation}
         fault={fault}
-        unreadTreatment={unreadTreatment}
       />
       {/* chrome-meta is the secondary-metadata rung (design system, D39 type
           scale); `whitespace-nowrap` keeps the widest word — "Result ready" —

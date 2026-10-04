@@ -8,6 +8,7 @@
  */
 
 import * as THREE from 'three';
+import { UNREAD_CORNER_MARK } from '@/components/status-light/inspection';
 import {
   type SpatialBoardLens,
   type SpatialBoardPiece,
@@ -39,7 +40,6 @@ export function pieceLensColor(
     : spatialStatusColor(theme, piece.status);
 }
 
-
 /**
  * The one Agent-unit noun. Parents and delegated children are the same family
  * by construction — they share this geometry rather than each constructing an
@@ -56,8 +56,21 @@ export function pieceLensColor(
  * definition is what guarantees a delegated child's Active light is literally
  * the same light as its parent's rather than a lookalike.
  */
+const markSlot = 0.68;
+const unreadRadius =
+  (markSlot * UNREAD_CORNER_MARK.diameter) / UNREAD_CORNER_MARK.slot / 2;
+const unreadOffset =
+  markSlot / 2 -
+  unreadRadius -
+  (markSlot * UNREAD_CORNER_MARK.inset) / UNREAD_CORNER_MARK.slot;
+
 export const STATUS_MARK_GEOMETRY = {
-  backing: new THREE.CircleGeometry(0.34, 32),
+  backing: new THREE.CircleGeometry(markSlot / 2, 32),
+  unread: new THREE.CircleGeometry(unreadRadius, 16).translate(
+    unreadOffset,
+    unreadOffset,
+    0
+  ),
   ring: new THREE.RingGeometry(0.18, 0.28, 32),
   offSegment: new THREE.RingGeometry(0.21, 0.27, 8, 1, 0, Math.PI / 4),
   // The unreported mark, matching the DOM atom: an unbroken socket ring that

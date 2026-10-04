@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attentionRecords,
+  attentionIsUnread,
   projectSessionAttention,
   orderedAttentionTargets,
   readPtyAttention,
@@ -109,4 +110,22 @@ it('orders Sessions by eligible independent facts, not the oldest displayed faca
     'other',
     'mixed',
   ]);
+});
+
+describe('inspection projection', () => {
+  it('reads independent records without mistaking a read primary request for a read Session', () => {
+    const signal = {
+      kind: 'blocked' as const,
+      since: 1,
+      unread: false,
+      records: [question, result],
+    };
+    expect(attentionIsUnread(signal)).toBe(true);
+    expect(attentionIsUnread(withAttentionRead(signal, false))).toBe(false);
+    expect(attentionIsUnread({ ...signal, unread: true, records: [] })).toBe(
+      false
+    );
+    expect(attentionIsUnread(null)).toBe(false);
+    expect(attentionIsUnread({ kind: 'turn-end', since: 1 })).toBe(true);
+  });
 });

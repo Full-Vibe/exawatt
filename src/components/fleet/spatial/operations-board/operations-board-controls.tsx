@@ -462,7 +462,7 @@ export const AgentControls = memo(function AgentControls({
                 ? (multiSelection?.has(piece.agentId!) ?? false)
                 : undefined
             }
-            aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? `, ${SESSION_STOPPED_OUTLINE.description}` : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
+            aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.attentionLabel ? `, ${piece.attentionLabel}` : ''}${piece.sessionState === 'stopped' ? `, ${SESSION_STOPPED_OUTLINE.description}` : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
             onClick={event => {
               // Shift-activate (pointer or keyboard) toggles the Agent in
               // the multi-selection (V3.2); plain activate inspects it.

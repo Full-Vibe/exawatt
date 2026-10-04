@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { delegatedChildKey } from './fleet-census';
+import { attentionReadLabel } from './session-attention-copy';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   selectSpatialBandSelection,
@@ -1277,7 +1278,10 @@ describe('layout structural sharing', () => {
 
   function twoProjects(betaFirstStatus: ExawattAgent['status'] = 'idle') {
     return fleet([
-      { ...agent('a1', 'Alpha', 'working'), delegation: { children: [child('c1'), child('c2')] } },
+      {
+        ...agent('a1', 'Alpha', 'working'),
+        delegation: { children: [child('c1'), child('c2')] },
+      },
       agent('a2', 'Alpha', 'idle'),
       agent('b1', 'Beta', betaFirstStatus),
       agent('b2', 'Beta', 'working'),
@@ -1365,5 +1369,38 @@ describe('layout structural sharing', () => {
       const successor = after.zones.find(item => item.id === zone.id);
       expect(successor?.slotIndex).toBe(zone.slotIndex);
     }
+  });
+});
+
+describe('independent inspection detail', () => {
+  it('changes only the affected piece when a working reminder is read', () => {
+    const build = (unread: boolean) =>
+      fleet([
+        {
+          ...agent('a', 'Alpha', 'working'),
+          attention: { kind: 'reminder', since: 1, unread },
+        },
+        agent('b', 'Alpha', 'working'),
+      ]);
+    const before = selectSpatialBoardLayout(build(true));
+    const after = selectSpatialBoardLayout(build(false), {
+      previousLayout: before,
+    });
+    const oldPiece = before.pieces.find(piece => piece.agentId === 'a')!;
+    const newPiece = after.pieces.find(piece => piece.agentId === 'a')!;
+    expect(oldPiece.unread).toBe(true);
+    expect(newPiece.unread).toBe(false);
+    expect(newPiece).toEqual({
+      ...oldPiece,
+      unread: false,
+      attentionLabel: attentionReadLabel(
+        build(false).agents.a.attention ?? undefined
+      ),
+    });
+    expect(after.pieces.find(piece => piece.agentId === 'b')).toBe(
+      before.pieces.find(piece => piece.agentId === 'b')
+    );
+    expect(after.bounds).toBe(before.bounds);
+    expect(after.stats).toBe(before.stats);
   });
 });

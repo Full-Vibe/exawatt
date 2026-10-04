@@ -1,3 +1,5 @@
+import { attentionReadLabel } from './session-attention-copy';
+import { attentionIsUnread } from '@exawatt/core';
 import {
   resolveContextGroups,
   type AgentStatus,
@@ -137,6 +139,10 @@ export interface SpatialBoardPiece {
   visible: boolean;
   selected: boolean;
   needsAttention: boolean;
+  /** Operator inspection, independent of the status glyph. */
+  unread?: boolean;
+  /** Accessible inspection copy shared with the Agent and Team status slot. */
+  attentionLabel?: string | null;
   labelVisibility: SpatialBoardLabelVisibility;
   /** Burn-lens color figure (ENG-008): agent pieces carry their own
    *  intensity against the hottest reporting Agent; aggregate pieces carry
@@ -1025,6 +1031,8 @@ function individualPieces(
       summary: agent.name,
       activity: latestActivity || null,
       status: agent.status,
+      unread: attentionIsUnread(agent.attention),
+      attentionLabel: attentionReadLabel(agent.attention ?? undefined),
       ...(agent.sessionState ? { sessionState: agent.sessionState } : {}),
       ...(delegated.length > 0
         ? {
@@ -1661,6 +1669,8 @@ const samePieceScalars = scalarComparator<
   visible: true,
   selected: true,
   needsAttention: true,
+  unread: true,
+  attentionLabel: true,
   labelVisibility: true,
   burnIntensity: true,
 });

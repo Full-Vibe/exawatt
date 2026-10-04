@@ -149,6 +149,15 @@ export interface SessionAttentionSignal {
   records?: PtyAttentionRecord[];
 }
 
+/** Operator inspection across every canonical fact, independent of work state. */
+export function attentionIsUnread(
+  signal?: SessionAttentionSignal | null
+): boolean {
+  return signal?.records
+    ? signal.records.some(record => record.unread !== false)
+    : Boolean(signal && signal.unread !== false);
+}
+
 /** Turn completion is a ready result, not an operator gate. Presence-only
  *  legacy signals remain conservative needs-you state. Every consumer that
  *  exposes or navigates attention must use this same predicate. */

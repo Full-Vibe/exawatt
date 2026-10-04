@@ -1,3 +1,4 @@
+export { attentionReadLabel } from './session-attention-copy';
 import {
   resolveContextGroups,
   type AgentActivity,
