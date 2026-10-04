@@ -1,7 +1,9 @@
+import { StrictMode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
+  requestSessionJump,
   REOPEN_LAST_CLOSED_EVENT,
   SESSION_JUMP_EVENT,
 } from '@/components/workspace/session-jump';
@@ -45,6 +47,29 @@ function projectOrder(container: HTMLElement): string[] {
 }
 
 describe('Demo workspace on the real ribbon (W6)', () => {
+  it('consumes an exact cross-route handoff only after commit under render replay', async () => {
+    const target = demoShellAgents().find(
+      agent => agent.id !== 'vg-home-onboard'
+    )!;
+    requestSessionJump(target.id);
+    const { container } = render(
+      <StrictMode>
+        <TooltipProvider>
+          <FleetProvider>
+            <DemoWorkspaceClient />
+          </FleetProvider>
+        </TooltipProvider>
+      </StrictMode>
+    );
+    await waitFor(() =>
+      expect(
+        container
+          .querySelector('[data-demo-pane-agent]')
+          ?.getAttribute('data-demo-pane-agent')
+      ).toBe(target.id)
+    );
+  });
+
   it('pauses and resumes fixture Sessions through the same Project menu', async () => {
     const { container } = view();
     const project = demoShellProjects().find(item =>

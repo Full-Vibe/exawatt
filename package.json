@@ -84,6 +84,7 @@
     "eval:typography-stability": "node scripts/typography-stability-eval.mjs",
     "eval:goal-visuals-stability": "node scripts/goal-visuals-stability-eval.mjs",
     "eval:spatial": "node scripts/r3f-eval/spatial.mjs",
+    "eval:spatial:attention": "node scripts/spatial-attention-eval.mjs && node scripts/electron-fleet-attention-eval.mjs",
     "eval:spatial:viewport": "node scripts/spatial-viewport-eval.mjs",
     "eval:spatial:pointer": "node scripts/spatial-pointer-eval.mjs",
     "eval:spatial:scale": "node scripts/spatial-scale-eval.mjs",

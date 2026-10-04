@@ -33,7 +33,11 @@ try {
       );
       await page.locator('[data-agent-composer]').waitFor();
       await openShellFromLauncher(page);
+      await page.locator('.xterm-helper-textarea').waitFor();
       await openShellFromLauncher(page);
+      await page.waitForFunction(
+        async () => (await window.electron.pty.list()).length === 2
+      );
       const ids = await page.evaluate(async () =>
         (await window.electron.pty.list()).map(session => session.id)
       );

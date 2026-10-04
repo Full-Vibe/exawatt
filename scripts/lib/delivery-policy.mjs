@@ -124,6 +124,25 @@ export const SURFACE_GATES = [
       file === 'scripts/gallery-labels-eval.mjs',
   },
   {
+    gate: 'eval:spatial:attention',
+    why: 'Fleet attention uses source requests, preserves read receipts, and opens the exact Session through keyboard and native menu',
+    match: file =>
+      [
+        'src/components/fleet/spatial/use-fleet-attention.ts',
+        'src/components/fleet/spatial/spatial-fleet-client.tsx',
+        'src/components/shortcuts/shortcut-provider.tsx',
+        'src/components/workspace/session-jump.ts',
+        'src/lib/demo-workspace/demo-workspace-client.tsx',
+        'src/lib/fleet/fleet-provider.tsx',
+        'src/lib/fleet/local-workspace-sessions.ts',
+        'packages/core/src/session-attention.ts',
+        'packages/core/src/transports/demo-workspace.ts',
+        'packages/core/src/transports/local-sessions.ts',
+        'scripts/spatial-attention-eval.mjs',
+        'scripts/electron-fleet-attention-eval.mjs',
+      ].includes(file),
+  },
+  {
     gate: 'eval:electron:device-power',
     why: 'device power follows local work, power transitions and persisted operator policy without pausing Sessions',
     match: file =>
@@ -1416,6 +1435,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:navigation:spine': GATE,
   'eval:electron:packaged': GATE,
   'eval:spatial:viewport': GATE,
+  'eval:spatial:attention': GATE,
   'eval:electron:connected-fleet': GATE,
   'eval:electron:host-power': GATE,
   'eval:spatial:emergence': GATE,

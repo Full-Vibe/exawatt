@@ -17,7 +17,14 @@
  */
 import { SessionModelControl } from '@/components/workspace/session-model-control';
 import { demoModelCatalog } from './model-choice-source';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FolderOpen, SquareTerminal, Target } from 'lucide-react';
 import { HUD } from '@/components/hud';
@@ -206,17 +213,28 @@ export function DemoWorkspaceClient() {
   // Fleet-board "Open session" targets any board agent, and every one of
   // them owns an honest session record. Only an unknown id falls back to
   // the default hero — never a known agent to unrelated content.
-  const [activeId, setActiveSessionId] = useState<string>(() => {
+  // A pending handoff is consumed only by a committed mount. React may
+  // discard/replay state initializers; reading the slot there loses the exact
+  // destination and can acknowledge an unrelated default Session instead.
+  const [activeId, setActiveSessionId] = useState('');
+  const initialSelectionResolved = useRef(false);
+  useLayoutEffect(() => {
+    if (initialSelectionResolved.current) return;
+    initialSelectionResolved.current = true;
     const pending = consumePendingSessionJump();
-    if (pending && demoShellFleetAgentById(pending)) return pending;
-    return agents.some(agent => agent.id === DEFAULT_SESSION_ID)
-      ? DEFAULT_SESSION_ID
-      : (agents[0]?.id ?? '');
-  });
+    setActiveSessionId(
+      pending && demoShellFleetAgentById(pending)
+        ? pending
+        : agents.some(agent => agent.id === DEFAULT_SESSION_ID)
+          ? DEFAULT_SESSION_ID
+          : (agents[0]?.id ?? '')
+    );
+  }, [agents]);
   const { fleetState } = useFleet();
   const attentionSource = useSessionAttentionSource();
   const setActiveId = useCallback((id: string) => setActiveSessionId(id), []);
   useEffect(() => {
+    if (!activeId) return;
     void attentionSource?.focus(activeId);
     return () => {
       void attentionSource?.focus(null);

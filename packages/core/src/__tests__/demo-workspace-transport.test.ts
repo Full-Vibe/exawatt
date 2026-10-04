@@ -10,6 +10,27 @@ import { DEMO_PROJECTS } from '../demo/projects';
 import { demoFleetAgents, demoDelegatedRunCount } from '../demo/scale';
 
 describe('DemoWorkspaceTransport (ENG-027 W2)', () => {
+  it('marks a working Session unread without fabricating a source request or result', () => {
+    const manager = new FleetManager();
+    const transport = new DemoWorkspaceTransport({ tier: 'base' });
+    transport.initialize(manager);
+    transport.start();
+    const working = Object.values(manager.getFleetState().agents).find(
+      agent => agent.status === 'working' && !agent.attention
+    )!;
+    transport.markUnread(working.id);
+    expect(manager.getAgent(working.id)).toMatchObject({
+      status: 'working',
+      attention: { kind: 'reminder', unread: true },
+    });
+    transport.focus(working.id);
+    expect(manager.getAgent(working.id)).toMatchObject({
+      status: 'working',
+      attention: { unread: false },
+    });
+    transport.stop();
+  });
+
   it('keeps source-owned read receipts across consumers without resolving requests', () => {
     const manager = new FleetManager();
     const transport = new DemoWorkspaceTransport({ tier: 'base' });

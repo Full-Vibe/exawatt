@@ -22,6 +22,7 @@
 
 import {
   withAttentionRead,
+  markAttentionUnread,
   type SessionAttentionCommands,
 } from '../session-attention';
 import type { PtyAttention } from '../desktop-bridge/pty';
@@ -214,13 +215,21 @@ export class DemoWorkspaceTransport implements SessionAttentionCommands {
   private setUnread(id: string, unread: boolean): void {
     if (!this.upserted.includes(id)) return;
     const agent = this.manager?.getAgent(id);
-    if (!agent?.attention || agent.attention.unread === unread) return;
+    if (!agent || agent.attention?.unread === unread) return;
+    if (!unread && !agent.attention) return;
     this.manager?.upsertAgent({
       ...agent,
-      attention: withAttentionRead(
-        { ...agent.attention, kind: agent.attention.kind ?? 'bell' },
-        unread
-      ),
+      attention: unread
+        ? markAttentionUnread(
+            agent.attention
+              ? { ...agent.attention, kind: agent.attention.kind ?? 'bell' }
+              : null,
+            this.nowMs
+          )
+        : withAttentionRead(
+            { ...agent.attention!, kind: agent.attention!.kind ?? 'bell' },
+            false
+          ),
     });
   }
 

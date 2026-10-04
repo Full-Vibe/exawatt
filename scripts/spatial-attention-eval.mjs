@@ -41,7 +41,6 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${base}/fleet/spatial`, { waitUntil: 'load' });
   await page.locator('[data-spatial-board]').waitFor();
-  console.log('Fleet ready');
   const selected = () => page.locator('[data-open-agent]');
   for (const id of order.slice(0, 3)) {
     await page.keyboard.press('Meta+j');
@@ -56,12 +55,6 @@ try {
   await page.screenshot({ path: `${out}/demo-follow.png` });
   await page.keyboard.press('Enter');
   await page.waitForURL('**/workspace*');
-  console.log(
-    'workspace',
-    await page
-      .locator('[data-demo-session-pane]')
-      .getAttribute('data-demo-session-pane')
-  );
   await page.locator(`[data-demo-session-pane="${destination}"]`).waitFor();
   console.log(
     'PASS Demo Fleet stable priority pass, follow focus, Enter exact Session'
@@ -72,10 +65,12 @@ try {
   // by app navigation, so the existing transport remains the source owner.
   await page.keyboard.press('Control+Meta+3');
   await page.waitForURL('**/fleet/spatial*');
-  await page.getByPlaceholder('Search agents…').fill(result.name);
-  await page.getByPlaceholder('Search agents…').press('Tab');
   await page.keyboard.press('0');
+  await page.getByPlaceholder('Search agents…').fill(result.name);
+  await page.waitForURL(url => url.searchParams.get('q') === result.name);
+  await page.getByPlaceholder('Search agents…').press('Tab');
   await page.keyboard.press('Meta+j');
+
   await page.waitForFunction(
     expected =>
       document.activeElement?.getAttribute('data-open-agent') === expected,
@@ -83,18 +78,13 @@ try {
   );
   await page.keyboard.press('Enter');
   await page.waitForURL('**/workspace*');
-  console.log(
-    'workspace',
-    await page
-      .locator('[data-demo-session-pane]')
-      .getAttribute('data-demo-session-pane')
-  );
   await page.locator(`[data-demo-session-pane="${result.id}"]`).waitFor();
   await page.keyboard.press('Control+Meta+3');
   await page.waitForURL('**/fleet/spatial*');
-  await page.getByPlaceholder('Search agents…').fill(result.name);
-  await page.getByPlaceholder('Search agents…').press('Tab');
   await page.keyboard.press('0');
+  await page.getByPlaceholder('Search agents…').fill(result.name);
+  await page.waitForURL(url => url.searchParams.get('q') === result.name);
+  await page.getByPlaceholder('Search agents…').press('Tab');
   const before = page.url();
   await page.keyboard.press('Meta+j');
   assert.equal(page.url(), before);

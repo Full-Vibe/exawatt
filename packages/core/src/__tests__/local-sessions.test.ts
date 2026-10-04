@@ -342,6 +342,7 @@ describe('LocalSessionsTransport', () => {
     await flush();
     expect(manager.getAgent('pty-1')).toMatchObject({
       status: 'working',
+      attention: { kind: 'reminder' },
     });
     expect(manager.getAgent('pty-1')?.blockerInfo).toBeUndefined();
   });

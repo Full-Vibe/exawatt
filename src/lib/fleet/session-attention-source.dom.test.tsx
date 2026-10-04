@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useLayoutEffect } from 'react';
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAttentionCommands } from '@exawatt/core';
@@ -40,11 +41,14 @@ describe('attention source ownership', () => {
     let requestId = '';
     let requestUnread: boolean | undefined;
     function Probe() {
-      commands = useSessionAttentionSource();
+      const source = useSessionAttentionSource();
       const { agents } = useFleet();
       const request = agents.find(agent => agent.attention?.kind === 'blocked');
-      requestId = request?.id ?? '';
-      requestUnread = request?.attention?.unread;
+      useLayoutEffect(() => {
+        commands = source;
+        requestId = request?.id ?? '';
+        requestUnread = request?.attention?.unread;
+      }, [source, request]);
       return null;
     }
     const tree = () => (
