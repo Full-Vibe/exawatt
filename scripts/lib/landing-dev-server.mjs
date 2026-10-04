@@ -183,6 +183,52 @@ function signal(target, name) {
   }
 }
 
+function targetExists(target) {
+  try {
+    // Negative targets retain the whole owned group, even after its leader
+    // or HTTP listener exits. Closing a socket does not finish cache writes.
+    process.kill(target, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+/** Cache removal requires both the listener and every signalled owner to stop.
+ * The effect ports let the shutdown contract run without wall-clock tests. */
+export async function stopServerTargets(
+  port,
+  targets,
+  {
+    portFree = isPortFree,
+    exists = targetExists,
+    send = signal,
+    now = Date.now,
+    wait = sleep,
+  } = {}
+) {
+  for (const target of targets) send(target, 'SIGTERM');
+  const startedAt = now();
+  let escalated = false;
+  while (true) {
+    const remaining = targets.filter(exists);
+    if (remaining.length === 0 && (await portFree(port))) return;
+    const waited = now() - startedAt;
+    if (!escalated && waited >= STOP_ESCALATE_MS) {
+      escalated = true;
+      for (const target of remaining) send(target, 'SIGKILL');
+    }
+    if (waited >= STOP_GIVE_UP_MS) {
+      throw new Error(
+        `server shutdown incomplete after ${STOP_GIVE_UP_MS / 1_000}s: ` +
+          `port ${port}, remaining targets ${remaining.join(', ') || 'none'}`
+      );
+    }
+    await wait(POLL_MS);
+  }
+}
+
 function refusal(message) {
   const error = new Error(message);
   error.serverRefresh = { kind: 'refused' };
@@ -264,22 +310,7 @@ export function createLandingDevServer({
         targets.add(-pgid);
       } else targets.add(pid);
     }
-    for (const target of targets) signal(target, 'SIGTERM');
-    const startedAt = Date.now();
-    let escalated = false;
-    while (!(await isPortFree(port))) {
-      const waited = Date.now() - startedAt;
-      if (!escalated && waited >= STOP_ESCALATE_MS) {
-        escalated = true;
-        for (const target of targets) signal(target, 'SIGKILL');
-      }
-      if (waited >= STOP_GIVE_UP_MS) {
-        throw new Error(
-          `port ${port} was still held ${STOP_GIVE_UP_MS / 1_000}s after SIGKILL`
-        );
-      }
-      await sleep(POLL_MS);
-    }
+    await stopServerTargets(port, [...targets]);
     return [...targets];
   }
 

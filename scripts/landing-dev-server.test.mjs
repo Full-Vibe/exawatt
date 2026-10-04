@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import {
   existsSync,
   mkdtempSync,
@@ -22,10 +23,91 @@ import { SURFACE_GATES, gateNeedsDevServer } from './lib/delivery-policy.mjs';
 import { readDeliveryMetrics } from './lib/delivery-state.mjs';
 import {
   DEV_IDENTITY,
+  isPortFree,
   readDevServerIdentity,
 } from './lib/dev-server-identity.mjs';
 import { git, hermeticGitEnv } from './lib/hermetic-git.mjs';
-import { serverStaleness } from './lib/landing-dev-server.mjs';
+import {
+  serverStaleness,
+  stopServerTargets,
+} from './lib/landing-dev-server.mjs';
+
+test('a closed listener does not finish shutdown while its owned group can still write', async t => {
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      `
+    const listener = require('node:net').createServer();
+    process.on('SIGTERM', () => listener.close(() => process.send('listener-closed')));
+    process.on('SIGUSR2', () => process.exit(0));
+    setInterval(() => {}, 1000);
+    listener.listen({ host: '127.0.0.1', port: 0 }, () => {
+      process.send({ port: listener.address().port });
+    });
+  `,
+    ],
+    { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }
+  );
+  t.after(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+  });
+  const [{ port }] = await once(child, 'message');
+  const closed = once(child, 'message');
+  const exited = once(child, 'exit');
+  let writerFinished = false;
+  await stopServerTargets(port, [-child.pid], {
+    portFree: async () => {
+      // Arrange the reported race deterministically: the listener closes
+      // before the shutdown loop can use its port observation.
+      await closed;
+      return isPortFree(port);
+    },
+    wait: async () => {
+      assert.deepEqual(await closed, ['listener-closed', undefined]);
+      assert.equal(await isPortFree(port), true, 'the listener has stopped');
+      assert.equal(alive(child.pid), true, 'the owner still holds its cache');
+      // Release shutdown by an observed effect, not a delay. Cache deletion
+      // must remain after this point even though the HTTP port is free.
+      child.kill('SIGUSR2');
+      await exited;
+      writerFinished = true;
+    },
+  });
+  assert.equal(
+    writerFinished,
+    true,
+    'cache cleanup cannot overtake the writer'
+  );
+});
+
+test('shutdown escalates only surviving owned targets, even with a free port', async () => {
+  const live = new Set([-11, 22]);
+  const signals = [];
+  let clock = 0;
+  await stopServerTargets(123, [...live], {
+    portFree: async () => true,
+    exists: target => live.has(target),
+    send: (target, name) => {
+      signals.push([target, name]);
+      if (target === 22 || name === 'SIGKILL') live.delete(target);
+    },
+    now: () => clock,
+    wait: async () => {
+      clock += 10_000;
+    },
+  });
+  assert.deepEqual(signals, [
+    [-11, 'SIGTERM'],
+    [22, 'SIGTERM'],
+    [-11, 'SIGKILL'],
+  ]);
+});
 
 /**
  * BUG-246: the landing owns the dev server its surface gates read. A rebase
